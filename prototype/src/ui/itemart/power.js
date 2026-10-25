@@ -2,7 +2,8 @@
 // mounted spotlight and the fridge (sim/data-power.js, sim/electric.js). The generators run small to big: a red
 // suitcase inverter with a carry handle, a yellow wheeled house set in its tube frame, an orange contractor's set in a
 // roll cage, a grey standby cabinet with louvres, and the Army's olive skid-mounted set with its stencil. The
-// spotlight is a big round lamp head on a yoke and stand; the fridge a tall white two-door box.
+// spotlight is a big round lamp head on a yoke and stand; the fridge a tall white two-door box; the appliances (#19)
+// below it.
 import { C, R, H, V, line, disc, ring, box, shade, text } from "./kit.js";
 
 function genset_inverter(p) { // a red suitcase inverter: a rounded case, a carry handle across the top, a vent and a panel
@@ -69,4 +70,55 @@ function fridge(p) { // a tall white fridge-freezer: two doors, the handles, a l
   H(p, 4, 6, 14, C.whiteD);
 }
 
-export const GEAR_ART = { genset_inverter, genset_house, genset_contractor, genset_standby, genset_military, spotlamp, fridge };
+// The appliances (#19, sim/data-appliances.js): a low white chest freezer, a shop's glass-door cold case, a four-ring
+// range, a wall oven with its window, a countertop microwave; and propane, a squat white grill bottle.
+function f_freezer(p) { // a low white chest: the lid's seam, a handle, a little shade down its right side
+  box(p, 1, 5, 14, 14, C.white, C.white, C.whiteD);
+  H(p, 1, 14, 7, C.whiteD);
+  R(p, 6, 8, 9, 8, C.silverD);
+  V(p, 14, 5, 14, "#a8acb2");
+  p.set(3, 11, C.blue); p.set(4, 11, C.blueL);
+  H(p, 2, 13, 15, C.blackL);
+}
+function f_coldcase(p) { // a shop's cold case: a dark frame, two glass doors, shelves of cans behind them
+  box(p, 1, 0, 14, 15, C.blackL, C.blackL, C.black);
+  R(p, 2, 2, 7, 13, C.glassB); R(p, 9, 2, 13, 13, C.glassB);
+  for (const y of [5, 9, 13]) { H(p, 2, 7, y, C.silverD); H(p, 9, 13, y, C.silverD); }
+  for (const x of [3, 5, 10, 12]) { p.set(x, 4, C.red); p.set(x, 8, C.yellow); p.set(x, 12, C.green); }
+  V(p, 8, 2, 13, C.black);
+  R(p, 2, 0, 13, 1, C.blue);
+}
+function f_stove(p) { // a white range: four black rings on top, the knobs, the oven door and its handle
+  box(p, 1, 4, 14, 15, C.white, C.white, C.whiteD);
+  R(p, 1, 2, 14, 3, C.silver);
+  ring(p, 4, 6, 2, C.black); ring(p, 11, 6, 2, C.black);
+  H(p, 2, 13, 9, C.whiteD);
+  for (const x of [3, 6, 9, 12]) p.set(x, 10, C.black);
+  box(p, 3, 11, 12, 14, C.blackL, C.black, null);
+  H(p, 4, 11, 11, C.silver);
+}
+function f_oven(p) { // a steel wall oven: the control strip, a big window with the light on, the handle
+  box(p, 1, 1, 14, 15, C.silver, C.silver, C.silverD);
+  R(p, 2, 2, 13, 3, C.black); p.set(4, 2, C.green); p.set(11, 2, C.red);
+  H(p, 3, 12, 5, C.silverD);
+  box(p, 3, 7, 12, 13, C.black, C.blackL, null);
+  R(p, 5, 9, 10, 11, C.orange); H(p, 5, 10, 10, C.fireL);
+}
+function f_microwave(p) { // a countertop microwave: a dark window with the plate, the keypad on the right
+  box(p, 0, 4, 15, 13, C.white, C.white, C.whiteD);
+  box(p, 2, 6, 10, 11, C.blackL, C.black, null);
+  H(p, 4, 8, 10, C.silverD);
+  R(p, 12, 6, 13, 7, C.black);
+  for (const y of [9, 11]) { p.set(12, y, C.silverD); p.set(13, y, C.silverD); }
+  H(p, 1, 14, 14, C.blackL);
+}
+function propane(p) { // a white grill bottle: the collar and its handholds, the brass valve, the foot ring
+  R(p, 6, 0, 9, 1, C.gold); p.set(7, 0, C.goldL);
+  R(p, 4, 1, 11, 3, C.silverD); p.clear(6, 2); p.clear(9, 2);
+  box(p, 3, 4, 12, 13, C.white, C.white, C.whiteD);
+  H(p, 3, 12, 8, C.whiteD);
+  R(p, 4, 14, 11, 15, C.silverD);
+}
+
+export const GEAR_ART = { genset_inverter, genset_house, genset_contractor, genset_standby, genset_military, spotlamp, fridge, f_freezer, f_coldcase, f_stove, f_oven, f_microwave };
+export const SUPPLY_ART = { propane };

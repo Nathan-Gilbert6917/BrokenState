@@ -13,7 +13,8 @@
 //     the stair run (every stairs or ladder cell in the room, however many: #9's runs, read from the cells), each stair
 //     cell's landing (its free neighbours) kept clear too. The lane's path is the cheapest walk with cells along a wall
 //     dearer (LAYOUT.WALL_COST), so it keeps off the walls the pieces hug and runs down the room's middle, along its
-//     length. Nothing is placed on a lane unless a style asks for force (a required piece with no other room);
+//     length. Nothing is placed on a lane unless a style asks for force (a required piece with no other room), and
+//     after the style buildingmaps.js keeps the lanes clear of what comes later (decor.js's plants and lamps);
 //   - block's connectivity guard (buildingmaps.js) still refuses any piece that would cut a walkable cell off;
 //   - backs to the wall: a piece stands with its back to a solid wall (not a door, a window or a stair), facing into
 //     the room (c.fc on its cells: "n" | "s" | "e" | "w", the way its front looks; -y is north, the back wall);

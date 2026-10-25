@@ -152,7 +152,7 @@ export function syncBuildings(state, f) {
     if (h.real) continue; // a base of yours they hold: its buildings are what you built
     const goal = worksBuildings(state, f, tile);
     const have = {};
-    for (const b of h.buildings) have[b.type] = (have[b.type] || 0) + 1;
+    for (const b of h.buildings) if (!b.item) have[b.type] = (have[b.type] || 0) + 1; // a piece set from their stores (appliances.js groupAppliancesDaily) is not one of their works: left alone
     for (const [type, n] of Object.entries(goal)) for (let i = have[type] || 0; i < n; i++) {
       const keep = peekNextId();
       const b = addBuilding(h, type);
@@ -162,7 +162,7 @@ export function syncBuildings(state, f) {
     // Pulled down, burnt or given up: what is no longer theirs there goes (the newest first).
     for (const [type, n] of Object.entries(have)) {
       let extra = n - (goal[type] || 0);
-      for (let i = h.buildings.length - 1; extra > 0 && i >= 0; i--) if (h.buildings[i].type === type) { h.buildings.splice(i, 1); extra--; }
+      for (let i = h.buildings.length - 1; extra > 0 && i >= 0; i--) if (h.buildings[i].type === type && !h.buildings[i].item) { h.buildings.splice(i, 1); extra--; }
     }
   }
 }

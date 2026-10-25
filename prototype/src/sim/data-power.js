@@ -10,7 +10,8 @@
 // more yield. Have a panel in the base to turn on and off machines/buildings that require power. When they are off
 // they can not be used for machines or for buildings reduce mood as your survivors do not have lights or cool during
 // summer warmth during the winter these work when the buildings are on.").
-// Plain data that imports nothing; the rules are sim/electric.js (and power.js for the supply and the demand).
+// Plain data that imports only plain data (data-appliances.js); the rules are sim/electric.js (and power.js for the supply
+// and the demand).
 //
 // MORE OF THE GRID (2026-10-24, the user's request: "Add some more recipes for building that would use electronics.
 // Add pre-requisite items as well as what makes sense; add items if needed."): five more things built with
@@ -50,6 +51,9 @@
 // and fridges once any source stands, an array included. The grain mill and the meat grinder (buildings.js) have an
 // optional 1-power motor since the same audit: power.js POWER_USERS / POWER_BOOST, cooking.js machineBoost.
 // AI groups: the groups' side of the same request is groupworks.js's (their works, not these records).
+// The appliances (#19, 2026-10-25: data-appliances.js, the rules appliances.js): the chest freezer, the shop's cold case,
+// the kitchen range, the oven and the microwave are set pieces in the fridge's mould, merged into the tables below
+// (POWER_GEAR, POWER_BUILDINGS, POWER_FOOT, POWER_FIXTURES, POWER_TAGS, POWER_FINDS).
 // Merged by: data.js (POWER_GEAR into GEAR), buildings.js (POWER_BUILDINGS into BUILDINGS), basemap.js (POWER_FOOT into
 // FOOT), loot.js (POWER_TAGS into ITEM_TAGS), crafting.js (POWER_CRAFTS into CRAFTS), breakdowns.js (POWER_FIXTURES
 // into FIXTURES).
@@ -68,6 +72,8 @@
 //   heat       Heat at the base while it runs (an inverter whispers, a contractor's set roars, the Army's is muffled)
 //   w, h       its footprint on the base map
 //   kg, value  the item's weight and worth
+import { APPLIANCE_GEAR, APPLIANCE_BUILDINGS, APPLIANCE_FOOT, APPLIANCE_FIXTURES, APPLIANCE_TAGS, APPLIANCE_FINDS } from "./data-appliances.js"; // plain data too (#19)
+
 /** @type {Record<string, { name: string, out: number, idle: number, full: number, tank: number, heat: number, w: number, h: number, kg: number, value: number, what: string }>} */
 export const GENSETS = {
   genset_inverter:   { name: "Inverter generator",          out: 3,  idle: 0.03, full: 0.06, tank: 1.5, heat: 1, w: 1, h: 1, kg: 22,  value: 40,  what: "a quiet suitcase inverter set off a camping trip or an RV" },
@@ -160,6 +166,7 @@ POWER_GEAR.spotlamp = { name: "Mounted spotlight", slot: "pack", skill: null, po
   desc: `A big halogen work light on a swivel bracket and a cable reel: too heavy to aim by hand. Set it on a wall stand or the open ground at a base (the base map's Build list, Power): with power (${SPOT.need} a night) it lights ${SPOT.R} cells round it in a night fight there (${SPOT.STAND_R} from up on a wall stand), and your people hit better in its light.` };
 POWER_GEAR.fridge = { name: "Refrigerator", slot: "pack", skill: null, power: 0, req: 0, value: 22, noise: 0, weight: 60, cat: "household", bulky: true, twoHands: true, placed: "fridge",
   desc: `A kitchen fridge-freezer, cord coiled on its back. 60 kg: both arms, a cart or a vehicle. Set it inside a hut, cabin, lodge, hall or barn (the base map's Build list, Power): with ${FRIDGE.need} power it keeps ${FRIDGE.room} days of fresh food at a quarter of its shelf life a day; without power it is only a cupboard.` };
+Object.assign(POWER_GEAR, APPLIANCE_GEAR); // the appliances (#19, data-appliances.js): the chest freezer, the cold case, the range, the oven, the microwave
 
 // The recipes (crafting.js Object.assign(CRAFTS, POWER_CRAFTS)): the spotlight from a work light's parts at a workshop.
 /** @type {Record<string, any>} */
@@ -206,6 +213,8 @@ export const POWER_BUILDINGS = {
   charging_station: { name: "Charging station", fit: true, grid: true, cost: { scrap: 4, electronics: 2 }, hours: 4, max: 1, req: { mechanics: 2 },
     desc: `A bench of chargers, adapters and a power strip, 1 × 1 on the floor of a general building. Draws ${CHARGER.need} power while anything here wants charging: every powered hour it puts ${CHARGER.rate} uses back into the most drained rechargeable gear at the base (electronic ear defenders, a military headset: in the stores or on anyone here), so nobody spends a pack of batteries at a bench on them. Needs a Mechanics 2+ survivor here to build.` },
 };
+Object.assign(POWER_BUILDINGS, APPLIANCE_BUILDINGS); // the appliances (#19)
+
 
 // Their footprints (basemap.js Object.assign(FOOT, POWER_FOOT)). A generator is a pump-like machine in the yard; the
 // spotlight a lamp (mount: it may stand on a wall stand's cell, basemap.js placeProblemAt); the fridge a fitting (a
@@ -227,6 +236,8 @@ export const POWER_FOOT = {
   elec_heater: { kind: "prop", k: "locker", w: 1, h: 1, fit: true, indoor: true },
   charging_station: { kind: "prop", k: "counter", w: 1, h: 1, fit: true, indoor: true },
 };
+Object.assign(POWER_FOOT, APPLIANCE_FOOT); // the appliances (#19): fittings on a general building's floor
+
 
 // Where they are kept (loot.js ITEM_TAGS).
 /** @type {Record<string, string[]>} */
@@ -235,6 +246,8 @@ export const POWER_TAGS = {
   genset_contractor: ["tools", "industry", "garage"], genset_standby: ["home", "farm", "medical", "industry"], genset_military: ["military"],
   spotlamp: ["tools", "industry", "police", "military", "fire", "sport"], fridge: ["home", "kitchen"],
 };
+Object.assign(POWER_TAGS, APPLIANCE_TAGS); // the appliances (#19)
+
 // The hour-by-hour search (scavenge.js; electric.js rollPowerFind, its own dice), by the site or point of interest
 // searched (data.js LOCATIONS keys): p a search hour at a full pool, items the weights. Big sets are rare.
 /** @type {Record<string, { p: number, items: Record<string, number> }>} */
@@ -256,6 +269,16 @@ export const POWER_FINDS = {
   military: { p: 0.03, items: { genset_military: 2, spotlamp: 1.5 } },
   convoy: { p: 0.04, items: { genset_military: 3, spotlamp: 1 } },
 };
+// The appliances (#19): the range at a third of the fridge's weight; p grows with the weights added, so every older
+// piece is found as often as before.
+for (const [k, items] of Object.entries(APPLIANCE_FINDS)) {
+  const f = POWER_FINDS[k];
+  if (!f) continue;
+  const tot = Object.values(f.items).reduce((a, w) => a + w, 0);
+  Object.assign(f.items, items);
+  f.p = Math.round(f.p * (Object.values(f.items).reduce((a, w) => a + w, 0) / tot) * 10000) / 10000;
+}
+
 // A raid's containers (combat.js searchBox; electric.js rollAreaPower, its own dice), by the raid area: p a container.
 /** @type {Record<string, { p: number, items: Record<string, number> }>} */
 export const AREA_POWER = {
@@ -294,3 +317,5 @@ export const POWER_FIXTURES = {
   elec_heater:   { power: true, use: 0.4, idle: 0.02, repair: { hours: 2, cost: { scrap: 1, electronics: 1 }, min: 1 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "cold coils: the fires burn for everyone again" },
   charging_station: { power: true, use: 0.2, idle: 0.02, repair: { hours: 2, cost: { scrap: 1, electronics: 1 }, min: 1 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "no charging: battery packs at a bench again" },
 };
+Object.assign(POWER_FIXTURES, APPLIANCE_FIXTURES); // the appliances (#19)
+

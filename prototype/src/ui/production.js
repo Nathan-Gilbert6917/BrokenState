@@ -12,6 +12,7 @@ import {
   productKey, inputKeys, untilMargin, craftOrders, addCraftOrder, setCraftOrder, removeCraftOrder, craftOrderStatus, bestQuality,
 } from "../sim/production.js";
 import { POWER, POWER_USERS, STILL, REFUEL, powerStatus, refreshPower, generators, generatorLine, setGenReserve, GEN_TIERS, genTier, genDef, genName, genTank, genTierText, isGenset, isSource } from "../sim/power.js"; // isGenset: a found generator (sim/electric.js), never upgraded; isSource: a solar array or a battery bank (2026-10-24)
+import { isAppliance } from "../sim/appliances.js"; // the Power card's "Appliances" group (#19)
 import { canUpgradeGenerator } from "../sim/buildings.js"; // gen-tiers: a generator upgraded where it stands
 import { gridWired, climateNeed, circuitState, solarLine } from "../sim/electric.js"; // the breaker panel's circuits (the switchboard); the solar array's line (2026-10-24)
 import { BATTERY, SOLAR } from "../sim/data-power.js"; // the battery bank's and the solar array's numbers (2026-10-24)
@@ -94,7 +95,7 @@ export function powerCard(state, b) {
   const toggle = (x, off) => `<button class="mini" data-action="pw-toggle" data-base="${b.id}" data-id="${x.id}"${tip(off ? "Let it run (or draw power) again" : "Switch it off (saves fuel)")}>${off ? "Switch on" : "Switch off"}</button>`;
   const row = (u) => {
     const d = BUILDINGS[u.b.type];
-    const st = u.b.broken ? `<span class="chip off"${tip("Broken: it draws no power until it is repaired (Repairs tab)")}>Broken</span>` : u.off ? `<span class="chip off">Switched off</span>` : u.served ? `<span class="chip on">Powered</span>` : u.wants ? `<span class="chip off"${tip("Not enough power: build another generator or a solar panel array, fill the tank, or switch something off")}>No power</span>` : `<span class="chip"${tip(u.b.type === "grainmill" || u.b.type === "meatgrinder" ? "No cook's bill calls for it today: it draws nothing (and turns by hand when it does without power)" : "A workshop station draws power only while its operator works it; a spotlight or the alarm only at night, the heaters on a cold day, the charger while something is short")}>Not working</span>`;
+    const st = u.b.broken ? `<span class="chip off"${tip("Broken: it draws no power until it is repaired (Repairs tab)")}>Broken</span>` : u.off ? `<span class="chip off">Switched off</span>` : u.served ? `<span class="chip on">Powered</span>` : u.wants ? `<span class="chip off"${tip("Not enough power: build another generator or a solar panel array, fill the tank, or switch something off")}>No power</span>` : `<span class="chip"${tip(u.b.type === "grainmill" || u.b.type === "meatgrinder" ? "No cook's bill calls for it today: it draws nothing (and turns by hand when it does without power)" : u.b.type === "range" || u.b.type === "microwave" ? "No cook's bill wants cooking here today: it draws nothing (a range cooks on propane without power)" : "A workshop station draws power only while its operator works it; a spotlight or the alarm only at night, the heaters on a cold day, the charger while something is short")}>Not working</span>`;
     const what = u.what || (POWER_USERS[u.b.type] ? POWER_USERS[u.b.type].what : "");
     return `<tr><td${tip(`${d.desc} Powered: ${what}.`)}>${esc(d.name)}</td><td>${u.need}</td><td class="small">${esc(what)}</td><td>${st}</td><td>${toggle(u.b, u.off)}</td></tr>`;
   };
@@ -120,7 +121,8 @@ export function powerCard(state, b) {
   const reserve = gens.length ? `<div class="row prodctl" style="margin-top:0.3rem">Keep <input type="number" min="0" max="99999" step="1" class="po-n" data-action="pw-reserve" data-base="${b.id}" value="${res ? res.n : 0}"${tip("Fuel kept back for the vehicles, the floodlights, the winter's heating: the generators' tanks are filled only from the fuel above it. At the reserve they run their tanks dry and the power goes off.")}> fuel back from the generators${res && res.by === "ai" ? ` <span class="chip"${tip("Set by this base's steward (or the autopilot). Change it and it becomes yours: stewards leave it alone.")}>steward</span>` : ""}</div>` : "";
   const cls = ps.demand > ps.supply ? "danger" : "";
   // The switchboard's groups: the machines, and the wired buildings' circuits (a breaker panel), each with All on / All off.
-  const machines = ps.users.filter((u) => !u.circuit), circuits = ps.users.filter((u) => u.circuit);
+  const machines = ps.users.filter((u) => !u.circuit && !isAppliance(u.b.type)), circuits = ps.users.filter((u) => u.circuit);
+  const appliances = ps.users.filter((u) => !u.circuit && isAppliance(u.b.type)); // the fridge and the appliances set from the stores (sim/appliances.js, #19)
   const groupHead = (name, g, list) => {
     const anyOn = list.some((u) => !u.off), anyOff = list.some((u) => u.off);
     return `<tr><th colspan="4" class="small">${esc(name)}</th><th><span class="row">${anyOff ? `<button class="mini" data-action="pw-group" data-base="${b.id}" data-g="${g}" data-on="1"${tip(`Switch every one of these on`)}>All on</button>` : ""}${anyOn ? `<button class="mini" data-action="pw-group" data-base="${b.id}" data-g="${g}" data-on="0"${tip(`Switch every one of these off (saves fuel${g === "circuits" ? "; the people here miss the lights and the comfort" : ""})`)}>All off</button>` : ""}</span></th></tr>`;
@@ -134,7 +136,7 @@ export function powerCard(state, b) {
     <div class="card small">
       <div class="spread"><b class="${cls}">${ps.supply} supply / ${ps.demand} demand</b><span class="muted">${gens.length ? `${ps.running} of ${gens.length} generator${gens.length === 1 ? "" : "s"} running · ${ps.fuelPerDay} fuel a day · +${ps.heat} Heat · ${Math.floor(b.stock.fuel || 0)} fuel here` : `no generator · no fuel burned · no Heat`}${srcSum}</span></div>
       ${gens.length ? "" : sources.length ? `<div class="muted">No generator: the sun and the battery banks are all the power here${ps.demand > ps.supply ? " (not enough now)" : ""}.</div>` : `<div class="danger">No generator: build one in Construction (Mechanics 3+).</div>`}
-      <table class="t"><tr><th>Building</th><th${tip("Power it gives (+) or draws")}>Power</th><th>With power</th><th>Status</th><th></th></tr>${ps.gens.map(genRow).join("")}${sources.map(srcRow).join("")}${machines.length ? groupHead("Machines", "machines", machines) : ""}${machines.map(row).join("")}${circuits.length ? groupHead("Buildings (lights and climate)", "circuits", circuits) : ""}${circuits.map(row).join("")}</table>
+      <table class="t"><tr><th>Building</th><th${tip("Power it gives (+) or draws")}>Power</th><th>With power</th><th>Status</th><th></th></tr>${ps.gens.map(genRow).join("")}${sources.map(srcRow).join("")}${machines.length ? groupHead("Machines", "machines", machines) : ""}${machines.map(row).join("")}${appliances.length ? groupHead("Appliances", "appliances", appliances) : ""}${appliances.map(row).join("")}${circuits.length ? groupHead("Buildings (lights and climate)", "circuits", circuits) : ""}${circuits.map(row).join("")}</table>
       ${users.length ? "" : `<div class="muted">Nothing here draws power yet. ${esc(usesText)}.</div>`}
       ${gridLine}
       ${refuel ? `<div class="muted" style="margin-top:0.3rem">⛽ ${refuel}</div>` : ""}${reserve}${gu}
@@ -295,10 +297,10 @@ export const PROD_ACTIONS = {
     if (!b) return;
     b.powerOff = b.powerOff || {};
     const on = d.on === "1";
-    const list = powerStatus(state, b).users.filter((u) => (d.g === "circuits" ? u.circuit : !u.circuit));
+    const list = powerStatus(state, b).users.filter((u) => (d.g === "circuits" ? u.circuit : !u.circuit && (d.g === "appliances") === isAppliance(u.b.type)));
     for (const u of list) { if (on) delete b.powerOff[u.b.id]; else b.powerOff[u.b.id] = true; }
     refreshPower(state, b);
-    say(ui, `${d.g === "circuits" ? "The buildings' circuits" : "The machines"}: ${list.length} switched ${on ? "on" : "off"}.`);
+    say(ui, `${d.g === "circuits" ? "The buildings' circuits" : d.g === "appliances" ? "The appliances" : "The machines"}: ${list.length} switched ${on ? "on" : "off"}.`);
   },
   "co-toggle": (state, ui, d) => { const b = baseOf(state, d); const o = b && craftOrders(b).find((x) => x.id === Number(d.id)); if (o) say(ui, setCraftOrder(state, b, o.id, { on: !o.on }) || `Order ${o.on ? "resumed" : "paused"}.`); },
   "co-del": (state, ui, d) => { const b = baseOf(state, d); if (b) say(ui, removeCraftOrder(state, b, d.id)); },

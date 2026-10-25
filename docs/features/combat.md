@@ -51,12 +51,26 @@ When a raid has a street and buildings to go into, a card asks which before the 
 Raids go into generated buildings and neighbourhood streets to search, past locks, keys and safes.
 - Procedurally generated buildings, containers and searches; raid loot carried by hand [buildingmaps, search, raidloot]. Raid planning (entry side, scout, wait for night) [raidplan]; locks, keys and safes [locks, gunsafes]. A site's building is picked before the map (see above).
 - **Neighbourhood POI**: a street of 3–5 two-storey houses on one map (rows facing a road, yards, fences, parked cars to search; ways out at both ends and the back gardens). Each house's containers are kept apart in the POI's ledger with the one pool falling across them. Headless it is one POI searched a house at a time [buildingmaps `streetMap`, `streetHouses`, `STREET`, `streetIntro`; combat `createRaid` (upper floors' reach from every stairwell); poicont `poiHouses`; scavenge `searchHour` / `afterRaid`].
+- **Room floors** (sim/buildingmaps.js `ROLES` fl, set on `c.fl` by `addRoom`; a franchise's front room by its `plan.fl`; drawn by ui/isoview.js `floorColor`; footsteps by ui/sfx-steps.js `HARD_FL`). Since 2026-10-25 (issue #13, the decor layer: see [ui.md](ui.md#interior-decor)) each room has a floor that suits it; the floor never changes a rule:
+
+  | fl | Look | Rooms | Steps |
+  |---|---|---|---|
+  | hardwood | narrow warm boards, staggered joints | living, dining, hall, bedroom, apartment, day room | wood |
+  | plank (and the old wood) | wide floorboards | great room, bunk room, gun room, pantry, tack room, hayloft | wood |
+  | lino | a smooth sheet, a faint fleck | kitchen, break room, mess hall, corridor, ward, exam room, nurse's office, classroom | hard |
+  | checker | 4 px black and white checks | bathroom, cafeteria | hard |
+  | tile | 8 px tiles with grout | entry hall, lobby, front desk, sales floor, restroom, dispensary, pharmacy, locker room, dorm, terminal, control room, lab | hard |
+  | carpet | soft, mottled | office, vestry, motel room, library stacks | carpet |
+  | conc | bare concrete | storage, stockroom, garage, armory, evidence room, cells, parts room, warehouse, factory, motor pool, hangar, workshop | hard |
+  | rubber | studded mats | gym | carpet |
+  | steel | diamond plate | service bays | hard |
+  | dirt | a barn's earth and straw | barn floor | dirt |
 - **Makeshift picks** (bent wire, `GEAR.makeshiftpick`, a stack of up to 10; `CRAFTS.makeshiftpick` three a scrap at a base or in the field). Test `tools/makeshiftpicktest.js`.
   - Pick without the crowbar, like lockpicks from a lower base, as quiet; one snaps off the stack half the time an attempt.
   - A safe, a steel security door and the gun safes are beyond them. The crowbar's picks are used first.
   - Modules: [locks `MAKESHIFT_PICK`, `picksOf`, `crowbarOf`, `makeshiftPicksOf`, `isMakeshiftPicks`, `makeshiftPickable`, `pickChance`, `wearPicks`, `openOdds` (pick.makeshift / left), `openLock`, `lockedSearchHour`; foundcars (cars), rescueraid `pickOdds` (a cell's lock); ui/locks `lockPanel` "Pick (makeshift)", ui/carpanel].
 - **Furniture and appliance catalogue** (issue #8 of the interiors epic #7, the user's request 2026-10-25: "Make the layouts make sense and filled with appliances, furniture and decor that makes it feel lived in. […] I want all reasonable appliances, furniture and some decor to be lootable and taken to your base for use […] some will require two survivors to carry"). Test `tools/furnituretest.js`.
-  - One table, `FURNITURE_KINDS` in [data-furniture], keyed by cell kind: the twelve old kinds (their cover, sight, names and shove hit points unchanged) and 49 new ones. Each row: `name`, `cell` { walk, cover, los }, `hp`, `kg`, `carry` (`one`, `two`, `fixed`), `size` [w, h], `loot` (also a container), `tags` (room roles), `use` (the base-use key), `wall` (stands against a wall).
+  - One table, `FURNITURE_KINDS` in [data-furniture], keyed by cell kind: the twelve old kinds (their cover, sight, names and shove hit points unchanged) and 49 new ones; since issue #13 four lootable decor pieces more (plant, floor lamp, painting, wall clock: placed by sim/decor.js, the painting and the clock hung on a wall as `c.wart` marked `piece`; see [ui.md](ui.md#interior-decor)). Each row: `name`, `cell` { walk, cover, los }, `hp`, `kg`, `carry` (`one`, `two`, `fixed`), `size` [w, h], `loot` (also a container), `tags` (room roles), `use` (the base-use key), `wall` (stands against a wall).
   - Driven from it: combat `CELL` (`furnitureCells`, merged at load), barricade `FURNITURE` (`furnitureHp`: every piece that is not fixed shoves and is battered; sandbags kept), ui/isoview's `FURNITURE` and `FLOORED` sets, the outlines, the joins and the wall-facing turn (`WALL_FURN`), `structureName` tooltips, and the codex's Barricades entry ("What shoves", "Two people", "Never shoved").
   - Rules picked (the issue's numbers were starting points): a "one" piece weighs at most 30 kg, a "two" piece at least 35 kg (`CARRY_KG`). Nothing that holds loot is fixed. Fixed pieces are plumbed in, bolted down or built in, and are never shoved: cell bars, the gun safe, the safe, water heater, boiler, sink, toilet, bathtub, shower, altar, booth, bar counter, bleachers. The gun safe and the safe are not area boxes (their own locks), so they are `loot: false`. The counter stays shoveable, so it is a "two" piece (70 kg), not fixed. The fridge is 60 kg like the Refrigerator item.
   - Uses: `fridge`, `freezer`, `stove`, `oven`, `microwave`, `storage:<kg>`, `comfort:<mood>`, `work:<station>`, `bed:<BED_SPEC kind>` (beds, bunks, hospital beds and gurneys sleep as data-beds' kinds), `none`. Helpers: `pieceDef(k)` (the row or null), `useOf`, `furnitureFor(tag, loot)`, `isFurniture`.
@@ -128,6 +142,10 @@ Raids go into generated buildings and neighbourhood streets to search, past lock
 | Server rack | `serverrack` | two | 120 | 1 × 1 | 50 | full, blocks sight | yes | none |
 | Photocopier | `copier` | two | 80 | 1 × 1 | 30 | half |  | none |
 | Safe | `safe` | fixed | 200 | 1 × 1 | 80 | full |  | storage:20 |
+| Potted plant | `plant` | one | 8 | 1 × 1 | 5 | none |  | comfort:0.2 |
+| Floor lamp | `floorlamp` | one | 6 | 1 × 1 | 5 | none |  | comfort:0.1 |
+| Painting | `painting` | one | 4 | 1 × 1 | 5 | none |  | comfort:0.2 |
+| Wall clock | `wallclock` | one | 2 | 1 × 1 | 3 | none |  | comfort:0.05 |
 
 - **Homes laid out room by room** (issue #10 of the interiors epic #7, the user's request 2026-10-25: "I want the interiors of buildings during raids and crawls to make sense. Make the layouts make sense and filled with appliances, furniture and decor that makes it feel lived in."). Test `tools/interiortest.js` ("Homes room by room").
   - Where: every room of a house, farmhouse, cabin, hunting lodge, ranger station, apartment block and motel (`HOME_KEYS`) whose role has a style, and the rooms of a shop's flat above (their leaves carry `flat: true`). The neighbourhood street's houses are `BUILDINGS.house` assembled the usual way, so they inherit it. Every other room keeps `buildingmaps.js FURNISH`.
