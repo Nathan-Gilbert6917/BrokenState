@@ -257,6 +257,109 @@ Shops with richer gun, gear and building-material finds, as POIs and as places o
   - **Shop fronts**: aisles of shelving in rows a walk apart (a row shifts off the lanes between the doors), a shelf to search at each end and every few cells, a checkout with its register by the front door. A liquor store, a gas station and a truck stop's shop (a grocery and a corner store on an older save's plan): a cold case run along a side wall (drinks); a new save's grocery stores by size below. A gun store: the gun counter (display cases across the room) and gun racks along the wall behind it. A pawn shop: the pawn counter of display cases caged in bars at its ends. A bookstore: bookshelves in rows and a reading table. A pet store: fish tanks along a wall, cages of bars. A garden center: potting benches. Clothing: clothes racks in rows. Electronics and a radio shop: the workbench at the back with a counter in front of it, display cases. Hardware: tool aisles and a key-cutting counter (a workbench and a counter). A pharmacy, sporting goods (clothes racks too), a feed store: aisles.
   - **Shop back rooms**: the stockroom (shelves to search, crates stacked between), the manager's office (a desk and chair, filing, the safe always locked where the office locks a safe), the staff toilet (a toilet and a sink, two in a long restroom), the fitting rooms (cubicle partitions, a stool in each stall, clothes racks), the gun cage (gun racks, lockers, a crate), the dispensary (the pharmacist's counter, shelves), the repair bench (a workbench, a tool chest, shelves), a garden center's greenhouse (glass walls, potting benches) and a lumber or garden yard (pallet racks in rows, crates).
   - **Restaurants, diners, pizza places, bars**: a restaurant's dining room has the order counter along the back, the register, booths on the side walls and tables with chairs; a diner's (a pizza place's, a truck stop's) the long counter with bar stools, the pie case at its end, booths; a bar the long bar with stools, the liquor shelves and the beer fridge (a cold case) behind it when the room is deep enough, a jukebox, a pool table in a big room, a booth, tables, the till. The kitchen: a range of six rings, a deep fryer where the place fries, a pizza oven at a pizza place, stainless counters, a sink, a dishwasher, a prep island in a big kitchen, shelves. The walk-in cold room behind a steel door: cold-room shelving (tins among the spoiled food). A bar's keg room: kegs and shelves; its stage: a jukebox, tables.
+  - **Restaurants by kind of food, format and size** (issue #33, the user's request 2026-10-25: "there should be a few dozen varients, sizes layout and kind of food for resauraunts"; the rules in [combat.md](combat.md#raids-into-building-interiors)). A new save's restaurant, pizza place, diner or bar is a variant (`data-eateries.js VARIANTS`: a cuisine, a format and a size): the 27 franchises there were keep their names, looks and plans and gain one each (Burger Barn fast-food burgers, Taj Palace…), and 39 new ones join the four lists (`FRANCHISES.restaurant` 44, `pizza` 7, `diner` 6, `bar` 9: 66 in all, 63 distinct cuisine × format × size combinations). No new site kinds: a café, a fast-food place, a buffet, a banquet hall, a kiosk and a food truck are restaurant variants (decision recorded here: new kinds would need their own POI, loot and map rows for no gain). Each variant has its look (colours, sign, the painter's style, the booths' colour by its cuisine), its plan (floor, front room's name), its setting weights (city, suburb, town, as every franchise) and the places it suits (`at`: main street, strip-mall pad, highway exit, city block, mall, hotel, truck stop), which #29's hotels and #30's mall food court read through `eaterylayout.js eateryVariant({ format, cuisine, setting, size, avoid, r })`. An older save keeps its restaurants' one plan (the `roomsLegacy` rule).
+    - Sizes (`EAT_SIZE`, a cell about a metre; #24's size table was not on dev, so one const): tiny 8–10 × 9–10, small 11–14 × 10–12, medium 16–22 × 13–16, large 26–34 × 18–22, huge 40–46 × 26–30.
+    - Placement: unchanged weights (shops.js `PLACE_W`), but with 66 variants two restaurants on a map or a block are rarely the same one, and a tile or a block never holds two of one kind already.
+
+    | Cuisine | Format | Size | Place (kind:id) | Stands at |
+    |---|---|---|---|---|
+    | Burgers | Fast food | medium | Burger Barn (`restaurant:burgerbarn`) | highway, strip, truckstop, main, strip |
+    | Fried chicken | Fast food | medium | Cluck Shack (`restaurant:cluckshack`) | highway, strip, truckstop, main, strip |
+    | Mexican | Fast food | medium | Taco Rio (`restaurant:tacorio`) | highway, strip, truckstop, strip, mall |
+    | Chinese | Takeaway kitchen | small | Golden Wok (`restaurant:goldenwok`) | strip, city, main |
+    | Steakhouse | Family sit-down | large | Big Sky Steakhouse (`restaurant:bigsky`) | highway, strip, hotel |
+    | BBQ and smokehouse | Family sit-down | medium | Smoky Pete's BBQ (`restaurant:smokypete`) | highway, main |
+    | Coffee and bakery | Café | small | Bean There Coffee (`restaurant:beanthere`) | city, main, strip, mall, hotel |
+    | Sandwiches and deli | Fast-casual | small | Sub Station (`restaurant:substation`) | strip, mall, city |
+    | Noodle bar | Fast-casual | medium | Noodle House (`restaurant:noodlehouse`) | city, mall |
+    | Italian | Family sit-down | medium | Sal's Italian Kitchen (`restaurant:sals`) | main, city, hotel |
+    | Japanese and sushi | Family sit-down | medium | Sakura Sushi (`restaurant:sakura`) | city, strip, hotel |
+    | Japanese and sushi | Fine dining | large | Kobe Teppan House (`restaurant:kobe`) | city, hotel |
+    | Thai and Vietnamese | Fast-casual | small | Saigon Pho (`restaurant:saigonpho`) | city, strip, mall |
+    | Thai and Vietnamese | Family sit-down | medium | Bangkok Garden (`restaurant:bangkok`) | main, city, strip |
+    | Indian | Family sit-down | medium | Taj Palace (`restaurant:tajpalace`) | city, strip, hotel |
+    | Indian | Takeaway kitchen | small | Curry Express (`restaurant:curryexpress`) | city, strip |
+    | Italian | Fine dining | large | Villa Toscana (`restaurant:villatoscana`) | city, hotel, main |
+    | Steakhouse | Fine dining | large | The Chophouse (`restaurant:chophouse`) | city, hotel |
+    | Seafood | Family sit-down | medium | Captain's Catch (`restaurant:captainscatch`) | highway, strip, main |
+    | Seafood | Fine dining | large | The Pearl Oyster Bar (`restaurant:pearloyster`) | city, hotel |
+    | Mediterranean and Greek | Fast-casual | small | Olympia Gyros (`restaurant:olympia`) | city, strip, mall |
+    | Coffee and bakery | Café | medium | Golden Crust Bakery (`restaurant:goldencrust`) | main, city |
+    | Donuts | Café | small | Hole Lotta Donuts (`restaurant:holelotta`) | highway, strip, truckstop, strip |
+    | Ice cream | Kiosk or food truck | tiny | Polar Swirl (`restaurant:polarswirl`) | mall, strip, main |
+    | Ice cream | Café | small | Frosty's Creamery (`restaurant:frostys`) | main, highway |
+    | Sandwiches and deli | Fast-casual | medium | Uncle Moe's Deli (`restaurant:unclemoes`) | city, main |
+    | Breakfast and pancakes | Family sit-down | medium | Sunny Side Pancake House (`restaurant:sunnyside`) | highway, strip, hotel |
+    | Southern and soul food | Family sit-down | medium | Mama Lou's Soul Kitchen (`restaurant:mamalous`) | main, city |
+    | Vegetarian and salad | Fast-casual | small | Green Leaf Salads (`restaurant:greenleaf`) | city, mall, strip |
+    | Korean BBQ | Family sit-down | large | Seoul Grill (`restaurant:seoulgrill`) | city, strip |
+    | Hot dogs | Kiosk or food truck | tiny | Top Dog (`restaurant:topdog`) | mall, city, highway |
+    | Chinese | Buffet | huge | Emperor's Buffet (`restaurant:emperorsbuffet`) | strip, highway |
+    | Southern and soul food | Buffet | large | Country Kitchen Buffet (`restaurant:countrybuffet`) | highway, strip |
+    | Cafeteria | Buffet | large | Ruby's Cafeteria (`restaurant:rubys`) | city, main, mall |
+    | Italian | Banquet hall | huge | The Crystal Ballroom (`restaurant:crystalballroom`) | city, hotel |
+    | Southern and soul food | Banquet hall | large | Liberty Hall Banquets (`restaurant:libertyhall`) | main, highway |
+    | Mexican | Kiosk or food truck | tiny | El Camión Taco Truck (`restaurant:elcamion`) | strip, highway, city |
+    | BBQ and smokehouse | Kiosk or food truck | tiny | Smoke Wagon BBQ (`restaurant:smokewagon`) | highway, main |
+    | Chinese | Kiosk or food truck | tiny | Wok To Go (`restaurant:woktogo`) | mall, city |
+    | Wings and sports bar | Takeaway kitchen | medium | Wing It (`restaurant:wingit`) | city, strip |
+    | Fried chicken | Fast food | large | Big Bird Fried Chicken (`restaurant:bigbird`) | highway, strip, truckstop |
+    | Coffee and bakery | Kiosk or food truck | tiny | Java Cart (`restaurant:javacart`) | mall, hotel, city |
+    | Burgers | Kiosk or food truck | tiny | Fry Shack (`restaurant:fryshack`) | mall, highway |
+    | Mexican | Family sit-down | large | Taco Fiesta Cantina (`restaurant:tacofiesta`) | strip, highway |
+    | Pizza | Family sit-down | medium | Tony's Pizzeria (`pizza:tonys`) | main, city, strip |
+    | Pizza | Buffet | large | Pizza Palace (`pizza:pizzapalace`) | strip, highway |
+    | Pizza | Fast-casual | small | Slice of Heaven (`pizza:sliceheaven`) | city, mall, strip |
+    | Pizza | Family sit-down | medium | Brick Oven Co. (`pizza:brickoven`) | main, city |
+    | Pizza | Takeaway kitchen | small | The Pie Hole (`pizza:piehole`) | main, strip |
+    | Pizza | Fast food | medium | Pizza Pronto (`pizza:pizzapronto`) | highway, strip, truckstop, strip |
+    | Pizza | Kiosk or food truck | tiny | Slice Cart (`pizza:slicecart`) | mall, city |
+    | Burgers | Diner | medium | Starlite Diner (`diner:starlite`) | highway, main, truckstop |
+    | Breakfast and pancakes | Diner | medium | Route 9 Diner (`diner:route9`) | highway, truckstop |
+    | Sandwiches and deli | Diner | small | Lou's Lunch Counter (`diner:lous`) | main |
+    | Southern and soul food | Diner | medium | Silver Spoon Diner (`diner:silverspoon`) | highway, main |
+    | Breakfast and pancakes | Diner | small | Waffle Shack (`diner:waffleshack`) | highway, truckstop |
+    | Steakhouse | Diner | large | Highway 40 Truckers' Diner (`diner:hwy40`) | highway, truckstop |
+    | Burgers | Pub | small | The Rusty Nail (`bar:rustynail`) | main, highway |
+    | BBQ and smokehouse | Pub | large | Roadhouse 61 (`bar:roadhouse61`) | highway |
+    | Burgers | Pub | medium | O'Malley's Pub (`bar:omalleys`) | city, main |
+    | Mediterranean and Greek | Pub | medium | The Velvet Lounge (`bar:velvetlounge`) | city, hotel |
+    | Wings and sports bar | Pub | large | Touchdown Sports Bar (`bar:touchdown`) | strip, city |
+    | Burgers | Pub | small | Last Call Tavern (`bar:lastcall`) | main |
+    | Steakhouse | Pub | medium | Neon Moose Saloon (`bar:neonmoose`) | main, highway |
+    | Burgers | Pub | large | Copper Kettle Brewpub (`bar:copperkettle`) | city, main |
+    | BBQ and smokehouse | Pub | large | Iron Horse Brewing Co. (`bar:ironhorse`) | main, highway |
+
+    The loot by cuisine (foods.js `MIXES` "eat:<cuisine>" and its keeps, the rooms' `mix`):
+
+    | Cuisine | Signature pieces | Food (walk-ins, freezers, cases) | Preserved (dry store) |
+    |---|---|---|---|
+    | Burgers | flattop, fryer | frozenmeat, potatoes, bread, cheese | cannedmeat, sugar, beans |
+    | Fried chicken | fryer | frozenmeat, potatoes, flour, bread | flour, cannedmeat, beans |
+    | Pizza | deckoven | flour, cheese, cannedveg, frozenmeat | flour, cannedveg, pasta |
+    | Mexican | tortillapress | drybeans, rice, flour, frozenmeat | drybeans, beans, rice |
+    | Chinese | wokrange | rice, pasta, frozenmeat, cannedveg | rice, pasta, cannedveg |
+    | Japanese and sushi | sushibar | rice, smokedfish, frozenmeat, eggs | rice, smokedfish, crackers |
+    | Thai and Vietnamese | wokrange, stockpot | rice, pasta, frozenmeat, cannedveg | rice, pasta, peanutbutter |
+    | Indian | tandoor | rice, drybeans, flour, frozenmeat | rice, drybeans, flour |
+    | Italian | stockpot | pasta, flour, cannedveg, cheese | pasta, cannedveg, jarred |
+    | Steakhouse | chargrill | frozenmeat, potatoes, onions, bread | cannedmeat, jerky, beans |
+    | BBQ and smokehouse | smoker | frozenmeat, drybeans, potatoes, bread | jerky, beans, cannedmeat |
+    | Seafood | lobstertank | smokedfish, potatoes, flour, rice | smokedfish, crackers, cannedveg |
+    | Mediterranean and Greek | gyrospit | frozenmeat, flour, rice, drybeans | drybeans, rice, jarred |
+    | Coffee and bakery | espresso | flour, sugar, bread, eggs | sugar, flour, crackers |
+    | Donuts | fryer, pastrycase | flour, sugar, eggs, candybar | sugar, flour, candybar |
+    | Ice cream | softserve, dipcabinet | sugar, candybar, cannedfruit, crackers | sugar, cannedfruit, candybar |
+    | Sandwiches and deli | slicer | bread, frozenmeat, cheese, chips | cannedmeat, crackers, chips |
+    | Breakfast and pancakes | flattop | flour, eggs, oats, sugar | oats, flour, sugar |
+    | Southern and soul food | steamtable | frozenmeat, flour, drybeans, potatoes | drybeans, beans, jarred |
+    | Vegetarian and salad | saladbar | cannedveg, drybeans, rice, apples | drybeans, cannedveg, driedfruit |
+    | Noodle bar | stockpot | pasta, rice, eggs, frozenmeat | pasta, rice, soup |
+    | Korean BBQ | kbbqtable | frozenmeat, rice, cannedveg, onions | rice, jarred, cannedmeat |
+    | Hot dogs | flattop | frozenmeat, bread, onions, chips | cannedmeat, chips |
+    | Wings and sports bar | fryer | frozenmeat, potatoes, flour, chips | cannedmeat, chips, crackers |
+    | Cafeteria | steamtable | potatoes, rice, pasta, cannedveg | beans, cannedveg, rice |
+
   - **The office tower**: the lobby (the reception counter, the security desk with its monitors, chairs); offices as an open-plan floor (desks in pods of two facing rows with chairs, cubicle partitions between pods, a copier, a water cooler, filing) from 24 cells, else a meeting room (a long table, chairs, a whiteboard: 35%) or a private office (a desk, a bookshelf, a sofa, a safe 30%); the break room (a sink, a microwave, a vending machine, a table, the fridge); the records room or, 20%, the server room (server racks); the plant room (the boiler, the water heater, a workbench, tool chests); the cafe (the register, a cold case, tables); the restrooms. The stairwells are #9's.
   - **The motel**: each room a bed, a nightstand by it, a TV stand on the wall the bed faces, a chest of drawers, a chair (the drawers and the nightstand searched within the room's share), its bathroom (#10's: a toilet, a sink, a shower); the upper rooms have theirs on the far side from the walkway. The front desk: the counter, the key rack, the safe, a sofa, the vending machine, the ice machine. The manager's flat: a kitchenette (fridge, sink, stove), a bed and nightstand, a table. The laundry: washers and dryers, linen shelves. The upper walkway: an ice machine. Not done: the pool.
   - **The bank**: the ATM lobby at the front door (the ATM: a locked container, a cash box 40%), the banking hall (teller windows along its back wall, queue posts, chairs, a desk), the teller line (cash drawers, filing, desks), the vault (always locked; safe-deposit boxes) and the safe-deposit room beside it, the manager's office (desk, safe), offices above.
@@ -264,7 +367,7 @@ Shops with richer gun, gear and building-material finds, as POIs and as places o
   - **The supermarket (an older save's) and the department store**: the supermarket's floor has checkout lanes at the front, the cold aisle of shop fridges along a side wall and aisles in long rows; the deli (display and cold cases, the bakery's oven, counters, a sink); the pharmacy counter; the back room of pallet racks with a forklift. The department store: a display bed, a sofa, an armchair, wardrobes and chests of drawers (the furniture department), racks of clothes, the checkout; its sporting goods section aisles.
   - **The library**: the stacks (bookshelves in rows), the circulation desk, the reading and study rooms (tables, chairs, bookshelves), the children's corner, the workroom (a desk, filing), the archive.
   - **The dealer, garages, warehouses, factories, barns**: a dealer's showroom (cars on the tiles, the salesmen's desks); service bays (the cars, the first on a car lift, a workbench and tool chest, an air compressor, tyre racks, shelves), the parts room (the parts counter, shelves, tyre racks); a workshop (workbenches, tool chests, a compressor); a warehouse floor of pallet racks in rows and a forklift; a factory floor of machine tools in rows with a tool chest or a workbench in front of each; a barn floor's stalls of fence, hay, the truck, and the tack room's saddle racks. The hayloft is as it was.
-- Modules: [shops, data-shops, pois, citycrawl genBlock placeOption, poiraid poiPlace, buildingmaps shop dealer bank library vet, shoplayout; ui/mapsprites, ui/render].
+- Modules: [shops, data-shops, data-eateries, eaterylayout, pois, citycrawl genBlock placeOption, poiraid poiPlace, buildingmaps shop dealer bank library vet, shoplayout; ui/mapsprites, ui/render].
 - **Office buildings of every kind, with named firms** (issue #27 of the interiors epic #7, the user's request 2026-10-25: "add office building varients"). Seven new site types and the office tower's firms, data in `data-offices.js` merged into data-shops.js's tables (NEW_KINDS, AREA_DEFS, PLACE_W, FRANCHISES, ROWS); plans in `officeplans.js`, rooms in `officelayout.js` (the rules in [combat.md](combat.md#raids-into-building-interiors)); test `tools/officestest.js`, renders `tools/officeshot.cjs`.
   - **The kinds** (sizes in cells of about a metre, `officeplans.js SIZE`, until #24's real-world table takes them; storeys `STOREYS_BY_TYPE`):
     - **Storefront office** `storefront` (10–14 × 15–20, 1–2 storeys): an insurance agent, a lawyer, an accountant, a realtor or a travel agent (a front desk and waiting chairs, a hall down one side to private offices, the file room, a kitchenette, a restroom; a 2-storey firm's partner's office and more offices upstairs), a dentist (operatories with the dental chair, a sterilization room) or a doctor's practice (exam rooms, #14's exam style, and the drug cupboard): the firm's `plan.office`.
@@ -290,8 +393,8 @@ Issue #35 of the interiors epic #7, the user's requests 2026-10-25: "every build
 - **Ways in**: the front door always; by the plan a back door, a side door, a second entrance, a fire exit, a loading door (a roller), a yard gate, a drive-through window, bay doors front and back (`EXITS`).
 - **Upstairs** (`UPPER`): the shop's flat, offices (a corridor of offices, a meeting room, records, a break room), an upper stockroom, an upper sales floor, a feed mill's grain loft, a truck stop's drivers' bunks; the supermarket's mezzanine or a food hall. A franchise with a flat above (`plan.flat`: a bodega, a used bookshop, an outfitter) rolls it on a one-storey plan, as before. Storey ranges in `STOREYS_BY_TYPE` (most of these types 1–2, the bank 1–3).
 - **Each kind's signature in every plan**: the pharmacy's dispensary, the gun store's gun cage (locked behind its vault door on the dice, 80%), the pawn shop's gun case, the bank's vault behind its vault door and its ATM lobby, the gas station's and the truck stop's pumps on the lot (a new save's pumps take the row beside, or the lot beside the building, when trucks or the ways to the exits fill theirs), the truck stop's shop, diner and kitchen, the garden center's greenhouse, the clothing store's fitting rooms, the hardware store's tool crib; #22's rooms in every grocery tier (the corner store's store and stockroom, the grocery's sales floor, stockroom and walk-in cooler, the supermarket's café, restrooms, bakery, pharmacy, deli and butcher, warehouse with 2–3 dock doors, walk-in cooler and freezer, baler and cash office). The fronts' pieces as #16 laid them (a narrow front: its rack, its cold case or its pawn counter's bars along a wall where the aisles or the counter could not take them).
-- **Picked** (`shopVariant`, the plan's first roll): a place's own variant id (`option.layout`: a strip mall's slot, a test, a render) first; else among its franchise's variants (`FRANCHISES` `plan.variants`: each franchise maps to the plans that fit it, a kind's franchises together covering all 12), weighted by the setting (`variantSetting` from the tile: a city "city", a suburb "town", a road through the country "highway", else "rural"; "strip" for a strip mall's slot), on the building's dice. With no setting every variant alike.
-- **Names**: each variant has a name ("Chain drugstore with a drive-through", "Old service station with repair bays"). The map's plan carries it (`plan.layout`) and the raid's opening lines start with it; a franchise's place keeps its franchise's name on the POI and the map.
+- **Picked** (`shopVariant`, the plan's first roll): a place's own variant id (`option.plan`, as #37's plans: a strip mall's slot, a test, a render) first; else among its franchise's variants (`FRANCHISES` `plan.variants`: each franchise maps to the plans that fit it, a kind's franchises together covering all 12), weighted by the setting (`variantSetting` from the tile: a city "city", a suburb "town", a road through the country "highway", else "rural"; "strip" for a strip mall's slot), on the building's dice. With no setting every variant alike.
+- **Names**: each variant has a name ("Chain drugstore with a drive-through", "Old service station with repair bays"). The map's plan carries it (`plan.variant`, its id `plan.vid`, as #37's) and the raid's opening lines start with it; the tile panel's places show it after the place's name (ui/poiview `poiLayout`), the crawl's block card after the kind (citycrawl `placeHint`); a franchise's place keeps its franchise's name on the POI and the map.
 - **For a strip mall** (#30): `shopPlan(kind, { layout, size, setting, variant, seed })` returns a kind's plan for a slot.
 - **Loot**: within ±10% a 100 cells (all floors) of today's (dev before the variants, a new save's plan, 200 seeds; the test's `TODAY`): pharmacy 0%, gas station +6%, truck stop −1%, gun store +3%, pawn shop −6%, sporting goods +5%, electronics +5%, radio −6%, bookstore +3%, pet store −3%, garden +6%, clothing +6%, liquor −5%, hardware −5%, feed store +6%, dealer −3%, bank +4%, auto shop +3%, garage 0%, workshop −2%, corner store +9%, grocery −7%, supermarket +8%. The densities `boxes`: bookstore 0.8, liquor 0.55, sporting goods 0.93, feed store 0.94, clothing 0.95, pawn shop 1.05, dealer 1.08, garage 1.08, grocery 0.9. tools/shopstest.js compares these types by the area too (#22's corner store and grocery by the building, as before).
 - **Older saves**: an older save (`roomsLegacy`) keeps every building's old plan: all 77 archetypes build the same maps as on dev (cells, containers and their ids, rooms, locked doors; checked by hash, 12 seeds each).
@@ -689,7 +792,7 @@ Issue #35 of the interiors epic #7, the user's requests 2026-10-25: "every build
 
 ## Bunkers as places
 Issue #26 (the user's request 2026-10-25: "Add bunker buildings"). Points of interest on their own dice after the shops (pois.js `bunkerExtra`, `BUNKER_POI`; hash dice of the seed and the tile, never the world's: every seed's map is as it was, and an older save's lists gain the bunker at their end as they gained the shops), one bunker at most on a tile, within `POI.MAX`:
-- **Military bunker** (`bunker`, data.js `LOCATIONS.bunker`, secret): hills 0.05%, mountains 0.08% of tiles, × `NEAR` 20 within `NEAR_HEX` 8 hexes of a military site. **Government bunker** (`govbunker`, secret): mountains 0.06%, city blocks 0.2%. **Fallout shelter** (`shelter`, found like a roadside place: known in the known zone half the time): suburbs (a town's ring) 5%, city blocks 4%. **Prepper bunker** (`prepper`, secret): plains 0.6%, forest 1%, hills 1.2%, mountains 0.8%. On a 250 × 150 world (seed 4242, interiortest): 15 military bunkers, 4 government bunkers, 66 shelters (124 at the base rate: suburb tiles are often full), 279 prepper bunkers.
+- **Military bunker** (`bunker`, data.js `LOCATIONS.bunker`, secret): hills 0.05%, mountains 0.08% of tiles, × `NEAR` 20 within `NEAR_HEX` 8 hexes of a military site. **Government bunker** (`govbunker`, secret): mountains 0.06%, city blocks 0.2%. **Fallout shelter** (`shelter`, found like a roadside place: known in the known zone half the time): suburbs (a town's ring) 5%, city blocks 4%. **Prepper bunker** (`prepper`, secret): plains 0.6%, forest 1%, hills 1.2%, mountains 0.8%. On a 250 × 150 world (seed 4242, interiortest): 15 military bunkers, 4 government bunkers, 57 shelters (68 at the base rate on the tiles their other places leave room on, POI.MAX), 260 prepper bunkers.
 - Crashlanding's mountain bunker stays its own site (`bunker_mil`, crashstart.js), now with its building.
 - Each opens its building (buildingmaps.js `SITES`: `bunker_mil` → `mountainbunker`, `bunker` → `milbunker`, `govbunker`, `shelter`, `prepper`); the rest of the POI flow (surveys, the per-POI raid, the container ledger, tile heat, other groups surveying and raiding them through `aiscav`) is the shared one. Their loot by place: loot.js tags (`bunker` military, guns, camp; `govbunker` tech, office, military; `shelter` kitchen, medical, camp; `prepper` camp, hunt, guns, kitchen, outdoor). The building: [combat.md Bunkers](combat.md#bunkers).
 
@@ -698,6 +801,20 @@ Issue #26 (the user's request 2026-10-25: "Add bunker buildings"). Points of int
 - **Air bases** (issue #25, the user's request 2026-10-25: "yes open a ticket for the military buildings bases, airports, air bases, etc that fits too"): a location type of its own, `airbase` (data.js `LOCATIONS`: "Air base", ✈, special, danger 3, public; fuel, ammunition and parts; military gear, flares, chest rigs). Its buildings (buildingmaps.js `SITES.airbase`): two hangars of aircraft, the control tower, flight operations, barracks and a mess hall, laid out as [combat.md](combat.md#raids-into-building-interiors) says; its street map's areas `AREA_SETS.airbase` (a hangar, a barracks, an armory, a warehouse); its finds by the military, guns and crash themes (loot.js `SITE_TAGS`), its guns from the military's bands (gundist.js, itemcond.js), its locks (locks.js: a hangar key), a raid map of the Large class (battlesize.js), its map sprite (ui/mapsprites.js `paintAirBase`: an olive hangar, a grey fighter, a tower).
   - Where (mapgen.js, at the end of the land's making): some of the military sites are air bases, one in six of them and never the first (a Normal map's 11–12: two; Small one; Large three), picked by hash dice of the tile, so nothing else on the map changes; named "<nearest town> Air base". They stay in `state.militaryIds` (military sites: the soldiers' dead, the groups that hold a base); Custom's "Military sites" count includes them (one once it asks for two or more). Crashlanding's unit falls back only to a Guard base (crashstart.js).
   - Test `tools/interiortest.js` (air bases on generated maps at a sensible rate; the site's buildings).
+
+## Hotels and their chains
+
+The user's request 2026-10-25 (issue #29 of the interiors epic #7): "add hotel 200x200 max". A new site type `hotel` (data-shops.js `NEW_KINDS.hotel`: LOCATIONS "Hotel", glyph "Ht", danger 2, richness 0.6; its raid rooms, tags and map size merged like the shops'), four kinds by its chain, its building and map in [combat.md](combat.md#raids-into-building-interiors) ("Special buildings: hotels"). Tests `tools/hoteltest.js` (the rates over 300 seeds, the crawl, a raid on each kind), `tools/interiortest.js` ("Hotels room by room").
+
+- **The chains** (`FRANCHISES.hotel`, fictional; `plan.hotel` the kind, `plan.fl` the guest floors' floor, `look` the map sprite's colours and the lobby's wall; `w` by setting, `w.scenic` in scenic land):
+  - roadside inns: **Willow Creek Inn** (town 1, suburb 0.4), **Old Mill Bed & Breakfast** (town 0.9, suburb 0.2);
+  - business hotels: **Interstate Inn & Suites** (suburb 1, town 0.7, city 0.5), **Meridian Business Hotel** (city 1, suburb 0.8, town 0.3);
+  - resorts: **Pinecrest Lodge Resort** (scenic 1, town 0.12), **Lakeshore Grand Resort** (scenic 0.8, suburb and town 0.08);
+  - city towers: **Calder Grand Hotel** (city 1), **Harbor View Tower** (city 0.8).
+- **As points of interest** (hotels.js `hotelExtra`, from pois.js `generatePois` last, on dice of its own after the shops, so a world's lists and a save's changes to them stay as they were): a tile holds a hotel at `HOTELS.AT` by its setting (`hotelSetting`: shops.js `settingOf`'s city block, city suburb or town ring; else **scenic land** on or by a road: forest, hills, a mountain, or any land by water): a city block 9%, a city's suburb 6%, a town's ring 4.5%, scenic land 0.6%; never past `POI.MAX` (4), never two on a tile, never beside a site it would out-rank; known in the known zone `SHOP.KNOWN` of the time (a survey finds the rest). Its chain by the setting's weights: a town's 62% inns, 32% business hotels, 6% resorts; a suburb's 73% business hotels, 24% inns, 3% resorts; a city's 54% towers, 46% business hotels; scenic land's resorts only (tools/hoteltest.js over 300 seeds: 9.1%, 5.9%, 4.6%, 0.6%). Three generated worlds held 285 hotels (town 158, scenic 72, suburb 36, city 19: city blocks are often full). Its building: buildingmaps.js `SITES.hotel` (poiraid.js `poiPlace`: the chain's name and layout).
+- **In the crawl** (hotels.js `hotelPlace`, from citycrawl.js `genBlock` after the shops, on dice of its own): a block with room for one more place (`CRAWL.PLACES[1]`) holds a hotel at `HOTELS.CRAWL` (a city's 7%, a town's 6%, +1.5% a block deeper, at most 15%; measured 7.9% / 9.1% / 15.4% at blocks 1, 3, 6 of a city); its place's richness 1.05 and its dead 1.2 (`HOTELS.PLACE`); its chain the crawl's (shops.js `crawlFranchise`: downtown 55% towers, 45% business hotels; a town's 60% inns, 34% business hotels, 6% resorts). Its upper floors hold survivors or raiders (floorfolk.js: the penthouse first).
+- **The map sprite** (ui/mapsprites.js `paintHotel`, by the chain's kind in its colours): a gabled inn with its porch and sign, a business hotel's slab of windows and porte-cochere, a resort's long low lodge with the pool in front, a tower with its crown and sign.
+- Modules: [hotels, hotellayout, data-shops, pois, citycrawl genBlock, shops franchiseFor, buildingmaps SITES; ui/mapsprites].
 
 ## POI surveys and the per-POI raid flow
 Survey and Quick look find and rate the places on a tile; a scavenge or raid goes into one POI at a time.

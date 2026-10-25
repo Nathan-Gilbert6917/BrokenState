@@ -145,4 +145,4 @@ export const PROPANE_FINDS = {
   farm: [0.06, 1, 3], ranch: [0.05, 1, 3], cabin: [0.06, 1, 2], lodge: [0.05, 1, 2], garage: [0.06, 1, 2], shed: [0.05, 1, 2],
 };
 /** @type {Record<string, number[]>} */
-export const AREA_PROPANE = { garage: [0.06, 1, 2], hardware: [0.12, 1, 4], campsite: [0.1, 1, 2], house: [0.03, 1, 1], farmhouse: [0.05, 1, 2], cabin: [0.05, 1, 2] };
+export const AREA_PROPANE = { garage: [0.06, 1, 2], hardware: [0.12, 1, 4], campsite: [0.1, 1, 2], house: [0.03, 1, 1], farmhouse: [0.05, 1, 2], cabin: [0.05, 1, 2], pitroom: [0.6, 1, 3] }; // pitroom: a BBQ's pit room (issue #33)

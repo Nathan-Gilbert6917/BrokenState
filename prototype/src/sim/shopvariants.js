@@ -11,7 +11,8 @@
 // list, the arrangement (VARIANT_LAYS), the entrances, a corridor or an open plan, the size (SIZES) and the storeys
 // (tools/shopvarianttest.js checks every pair). Each is data: a row of VARIANTS[type] with
 //   id, name     the variant's id and the name the place and its map show ("Drive-through pharmacy"; a franchise's
-//                place shows its franchise's name, the variant under it: layoutName);
+//                place shows its franchise's name, the variant under it: layoutName; the map's plan.variant and vid, the
+//                raid's opening lines, as #37's plans);
 //   w            its weight by setting [rural, town, city, highway, strip] (SETTINGS; no setting: every variant alike);
 //   size         the footprint's class (SIZES by type: S, M, L, XL; one table, #24's real-world scale takes it over);
 //   lay          the arrangement (below), depth the front room's share of the depth (else the type's);
@@ -33,7 +34,8 @@
 //             dice pick the side);
 //   wrap      an L of rooms: the back strip and a column down one side.
 //
-// Picking (shopVariant): o.layout (a variant's id: a strip mall's slot, a test, a render) first; else the franchise's
+// Picking (shopVariant): o.plan (a variant's id, buildingmaps.js option.plan as #37's: a strip mall's slot, a test, a
+// render; o.layout the same) first; else the franchise's
 // variants (data-shops.js FRANCHISES plan.variants: a franchise maps to the plans that fit it) weighted by the setting
 // (o.setting: buildingmaps.js variantSetting from the tile; a crawl's place: its city or town), drawn on the building's
 // dice (the plan's first roll). A kind without franchises names its variants itself.
@@ -42,6 +44,7 @@
 import { FRANCHISES } from "./data-shops.js";
 import { Rng } from "./rng.js";
 import { ROLES } from "./buildingmaps.js"; // the rooms' usual containers (read when a plan is made: no cycle at load)
+import { eateryVariant } from "./eaterylayout.js"; // a truck stop's diner is one of #33's diners (issue #33's table)
 
 export const SETTINGS = ["rural", "town", "city", "highway", "strip"];
 const W = (rural, town, city, highway, strip) => [rural, town, city, highway, strip];
@@ -183,6 +186,8 @@ export const VARIANT_TYPES = {
   // ---------- the truck stop: the shop and the diner in every plan (#33 owns restaurants; this diner is the stop's) ----------
   truckstop: {
     base: { name: "Shop", type: "store" }, depth: 0.55, pumps: 3, ground: "lot", fw: 2,
+    eatery: { diner: "eatdiner", kit: "eatkitchen" }, // #33's styles for its diner and kitchen
+    boxes: 1.3, // the rest of the stop (its shop: shoplayout.js SHOP.BOXES "minimart:truckstop"): #33's diner and kitchen hold what its table sets by their area
     rooms: {
       diner: { role: "dining", name: "Diner", type: "store", hub: true },
       kit: { role: "kitchen", fry: true },
@@ -637,7 +642,7 @@ export const variantById = (key, id) => (id ? variantsOf(key).find((v) => v.id =
 export function shopVariant(key, rng, o = {}) {
   const list = variantsOf(key);
   const r = rng.next(); // the plan's first roll, always drawn
-  const set = variantById(key, o.layout);
+  const set = variantById(key, o.plan || o.layout);
   if (set) return set;
   const fr = o.variant ? (FRANCHISES[(o.kind && FRANCHISES[o.kind] ? o.kind : frKind(key))] || []).find((f) => f.id === o.variant) : null;
   const ids = fr && fr.plan && fr.plan.variants ? fr.plan.variants : null;
@@ -691,10 +696,15 @@ export function shopVariantSpec(key, rng, o = {}, withPlan = (l) => l, plan = {}
   const ih = bh - 2;
   const flip = rng.chance(0.5); // the side column's side (side, wrap) and the bays' end
   const colSide = flip ? "left" : "right", other = flip ? "right" : "left";
+  // A truck stop's diner and its kitchen: one of #33's truck-stop diners (eaterylayout.js eateryVariant: its cuisine, its
+  // counter and grill, its kitchen's line, its food), on the plan's dice.
+  const ev = T.eatery ? eateryVariant({ format: "diner", setting: "truckstop", r: rng.next() }) : null;
+  const eat = ev ? { eat: ev.cuisine, mix: `eat:${ev.cuisine}`, kind: "diner", ...(ev.tint ? { tint: ev.tint } : {}) } : null;
   const R = (t) => {
     if (t === S) return withPlan({ role: "sales", entry: true, ...T.base, ...(v.sales || {}) }, plan);
     if (typeof t !== "string") return { ...t };
     const leaf = T.rooms[t] || COMMON[t];
+    if (eat && leaf && T.eatery[t]) return { ...leaf, ...eat, lay: T.eatery[t] };
     return leaf ? { ...leaf } : { role: t };
   };
   const P = (list) => list.map(([s, t]) => [sz(s, rng), R(t)]);
@@ -741,7 +751,7 @@ export function shopVariantSpec(key, rng, o = {}, withPlan = (l) => l, plan = {}
     bw, bh, program, exits, front: { width: v.fw || T.fw || (bw >= 14 ? 2 : 1) }, openDoors: T.openDoors ?? 0.3,
     ground: v.ground || T.ground || "town", pumps: v.pumps ?? T.pumps ?? 0,
     storeys: n, upper: up ? (g, r, ctx) => scaleBoxes(up(g, r, { ...ctx, type }), bk) : null, foot: footOf(bw, bh),
-    stairs: { roles: BACK_STAIRS }, layout: { id: v.id, name: v.name },
+    stairs: { roles: BACK_STAIRS }, layout: { id: v.id, name: v.name }, vname: v.name, vid: v.id,
   };
 }
 
@@ -781,7 +791,7 @@ function superSpec(rng, v, o) {
   return {
     bw, bh, front: { width: 2 }, openDoors: 0.3, ground: v.ground || "lot", storeys: n, upper: n > 1 ? (v.up === "food" ? food : mezz) : null, foot: "huge", stairs: { roles: BACK_STAIRS },
     margins: { back: 8 }, dockTruck: true, pumps: v.pumps || 0,
-    program: Ys([["*", main], [backD, back]]), exits, layout: { id: v.id, name: v.name },
+    program: Ys([["*", main], [backD, back]]), exits, layout: { id: v.id, name: v.name }, vname: v.name, vid: v.id,
   };
 }
 

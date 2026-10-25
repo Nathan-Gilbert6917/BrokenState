@@ -1,5 +1,5 @@
 // The shops' and services' layout variants (issue #35, sim/shopvariants.js) rendered in the real game, fully revealed,
-// one PNG a floor: each loaded straight into a raid as a place (setup.raid.place = { id, key, name, layout }: the
+// one PNG a floor: each loaded straight into a raid as a place (setup.raid.place = { id, key, name, plan }: the
 // variant pinned by its id), the roofs off, the dead sent away, every cell seen (ui/combat.js cui.cache.vis and
 // .known.cells filled after a refresh). Prints one JSON line a shot and the page's errors. (After tools/officeshot.cjs.)
 // Usage: NODE_PATH=$(npm root -g) node tools/shopshot.cjs [outdir] [key:layout ...]
@@ -43,7 +43,7 @@ const port = 5300 + Math.floor(Math.random() * 600);
         const p = r.party;
         p.path = [t.id]; p.idx = 0; p.phase = "engaged";
         game.ui.speed = 0;
-        const place = { id: `shot-${key}-${variant}`, key, name: B.BUILDINGS[key].name, layout: variant };
+        const place = { id: `shot-${key}-${variant}`, key, name: B.BUILDINGS[key].name, plan: variant };
         game.combat.start({ mode: "raid", tile: t.id, partyId: p.id, canRetreat: true, ambush: null, handler: "scavenge", enemy: { kind: "mixed", count: 1, power: 1, name: "the dead", groups: [{ kind: "zombie", count: 1, power: 1 }] }, raid: { heat0: 0, choose: true, poi: null, kind: null, place, building: null }, plan: true, context: {} });
         const b = st.combat;
         return b ? { w: b.w, h: b.h } : null;

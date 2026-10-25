@@ -12,7 +12,7 @@
 //     shop's gun case, the bank's vault behind its vault door and its ATM, the gas station's and the truck stop's pumps,
 //     the truck stop's shop and diner, #22's corner store, grocery and supermarket rooms) and everything connected (every
 //     room and every container reached from the front, upstairs from the stairs);
-//   - the variant's name on the map (plan.layout) and in the raid's opening lines; an older save keeps the old plan;
+//   - the variant's name on the map (plan.variant) and in the raid's opening lines; an older save keeps the old plan;
 //   - loot per kind within ±10% per area (a 100 cells) of today's (dev's before the variants; BS_QUICK: 60 seeds, else 200).
 // Usage: node tools/shopvarianttest.js
 import { createWorld } from "../src/sim/world.js";
@@ -166,7 +166,7 @@ section("Every variant keeps its kind's signature, everything connected");
   for (const k of KEYS) for (const v of variantsOf(k)) for (let s = 0; s < (QUICK ? 2 : 4); s++) {
     const { m } = make(k, 900 + s * 7919 + v.id.length, { layout: v.id }), tag = `${k} ${v.id} ${s}`;
     built++;
-    if (m.plan.layout !== v.name) err("name", tag);
+    if (m.plan.variant !== v.name || m.plan.vid !== v.id) err("name", tag);
     if (SIGN[k] && !SIGN[k](m)) err("signature", tag);
     if (k === "gunstore") { const g = m.rooms.find((a) => a.name === "Gun cage"); cages++; if (g && m.lockedDoors.some((d) => d.area === g.id && d.kind === "vault")) locked++; }
     const z = m.zones[0], f0 = walk(m, 0, z.x0 + 1, z.y0 + 1);
@@ -187,7 +187,7 @@ section("Every variant keeps its kind's signature, everything connected");
     }
     if (m.storeys > 1 && !(m.runs || []).some((r) => !r.single && r.len >= 2)) err("stairs", tag);
   }
-  const msg = { name: "the variant's name on its map (plan.layout)", signature: "every variant its kind's signature rooms and pieces", rooms: "every room reached from the front (upstairs from the stairs)", boxes: "every container reached", loot: "every container in a room with a loot type", stairs: "a flight of stairs in every multi-storey variant" };
+  const msg = { name: "the variant's name and id on its map (plan.variant, plan.vid)", signature: "every variant its kind's signature rooms and pieces", rooms: "every room reached from the front (upstairs from the stairs)", boxes: "every container reached", loot: "every container in a room with a loot type", stairs: "a flight of stairs in every multi-storey variant" };
   for (const [k, t] of Object.entries(msg)) check(!errs[k], `${t} (${built} buildings)${errs[k] ? `: ${errs[k].length} bad, e.g. ${errs[k].slice(0, 4).join("; ")}` : ""}`);
   check(locked >= cages * 0.7, `the gun store's gun cage locked behind its vault door in most (${locked} of ${cages})`);
   // The raid's opening lines name the layout.
