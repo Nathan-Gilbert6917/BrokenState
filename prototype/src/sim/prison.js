@@ -41,19 +41,23 @@
 // (map.deadScale); the guards lie dead at their posts with their kit (the towers, the gatehouse, the pickets, central
 // control: PRISON.POSTS); raiders or a prison gang may hold a unit (floorfolk.js / wanderers.js interiorOccupants: the
 // plan's hold room). The ways out are the zones at the map's edge outside the perimeter: from inside only through the
-// gates, a hole in the fence (PRISON.HOLES) or one cut (wire.js: FENCE_CUTS cuts with a cutter).
+// gates, a hole in the fence (PRISON.HOLES) or one cut (wire.js: FENCE_CUTS cuts with a cutter). #25's barrier gates and
+// guard booth stand at the checkpoint on the approach road.
 import { Rng } from "./rng.js";
+import { realFoot } from "./data-buildingsize.js"; // the buildings' footprints (#24's REAL_SIZE rows, a metre a cell)
 import { hash01 } from "./skills.js";
 import { assemble, BMAP, DOOR_KINDS } from "./buildingmaps.js"; // call-time only (buildingmaps.js builds the complexes through here)
 import { placeCar, placeVehicle } from "./combat.js";
+import { mapCap } from "./battlesize.js"; // the per-site map cap (#24): a prison's 400, a jail's 130
 import { compoundGrid, placeBuilding, link, guard, parkingLot, compoundResult, compoundVehicle, orient } from "./compound.js"; // the multi-building map shared with #28 and #30
 
 export const PRISON = {
-  // The map's cap (cells a side). #24's big-map engine work raises it to 400 (the user's "max of 400x400").
-  CAP: 300,
+  // The map's cap (cells a side): the user's "max of 400x400", battlesize.js MAP_CAP prison (#24's big-map engine work is
+  // on dev; it was 300 until then). A jail's is MAP_CAP jail.
+  CAP: 400,
   KINDS: {
     jail:  { name: "County jail", map: [[110, 130], [95, 110]], beds: [50, 200], units: [2, 2] },
-    state: { name: "State prison", map: [[240, 300], null], beds: [500, 1500], units: [4, 6], tower: 60, gap: 4 },
+    state: { name: "State prison", map: [[250, 350], null], beds: [500, 1500], units: [4, 6], tower: 60, gap: 4 },
     max:   { name: "Maximum-security penitentiary", map: [[300, 400], null], beds: [500, 1500], units: [6, 8], tower: 40, gap: 4 },
   },
   MAX_SHARE: 0.35,            // a prison site is a maximum-security penitentiary on these dice (else a state prison)
@@ -85,6 +89,8 @@ const leaves = (list) => list.map(([s, r]) => [s, typeof r === "string" ? { role
 const corridorPlan = (front, back, fd, cw = 1) => ({ split: "y", parts: [[fd, { split: "x", parts: leaves(front) }], [cw, { role: "corridor" }], ["*", { split: "x", parts: leaves(back) }]] });
 const spec = (bw, bh, program, o = {}) => ({ bw, bh, front: { width: 1 }, ground: "none", storeys: 1, foot: "large", margins: ring1, program, exits: [], ...o });
 
+// A building's footprint from its REAL_SIZE row (data-buildingsize.js, #24): [bw, bh] in cells.
+const foot = (rng, key) => { const F = realFoot(rng, key); return F ? [F.bw, F.bh] : [20, 14]; };
 // A housing unit. o: { len, day, tiers, picket: "left" | "right", unitId, kind: "cells" | "dorm", single, dk, name, yard }
 export function housingUnit(rng, o) {
   const day = o.day ?? rng.int(7, 10), tiers = o.tiers ?? 2, unitId = o.unitId ?? 0;
@@ -106,34 +112,38 @@ export function housingUnit(rng, o) {
 const spine = (len) => spec(5, len, { role: "mainhall", name: "Main corridor", entry: true });
 // Central control: the control room, its lobby, receiving and the inmates' property, the shift office.
 function centralControl(rng) {
-  return spec(rng.int(24, 28), rng.int(11, 13), { split: "x", parts: leaves([["*", { role: "pcontrol", prison: "control", panels: 4, name: "Central control" }], [6, { role: "lobby", entry: true, name: "Control lobby" }], [7, { role: "property", prison: "property", name: "Receiving and property", lock: ["door", 0.4] }], ["*", { role: "office", prison: "office", name: "Shift office" }]]) });
+  const [bw, bh] = foot(rng, "pcontrol");
+  return spec(bw, bh, { split: "x", parts: leaves([["*", { role: "pcontrol", prison: "control", panels: 4, name: "Central control" }], [6, { role: "lobby", entry: true, name: "Control lobby" }], [7, { role: "property", prison: "property", name: "Receiving and property", lock: ["door", 0.4] }], ["*", { role: "office", prison: "office", name: "Shift office" }]]) });
 }
 // The chow hall: the hall, the kitchen and the food warehouse behind.
 export function chowHall(rng) {
-  return spec(rng.int(30, 38), rng.int(22, 26), { split: "y", parts: [["*", { role: "chow", prison: "chow", entry: true }], [8, { split: "x", parts: leaves([["*", { role: "pkitchen", prison: "pkitchen" }], [10, { role: "pstores", prison: "pstores", lock: ["door", 0.4] }], [5, { role: "storage", name: "Dry store", type: "pstores" }]]) }]] },
+  const [bw, bh] = foot(rng, "pchow");
+  return spec(bw, bh, { split: "y", parts: [["*", { role: "chow", prison: "chow", entry: true }], [8, { split: "x", parts: leaves([["*", { role: "pkitchen", prison: "pkitchen" }], [10, { role: "pstores", prison: "pstores", lock: ["door", 0.4] }], [5, { role: "storage", name: "Dry store", type: "pstores" }]]) }]] },
     { exits: [{ side: "back", roles: ["pstores", "storage"], chance: 1, roller: true, width: 2, lock: 0.3, name: "Loading dock" }] });
 }
 // The infirmary: the ward, the desk, the exam room, the pharmacy along the front; the psych unit's cells behind.
 export function prisonInfirmary(rng) {
-  return spec(rng.int(28, 34), 17, corridorPlan([["*", { role: "pward", prison: "ward" }], [5, { role: "lobby", entry: true, name: "Infirmary desk" }], [5, "exam"], [5, { role: "pharmroom", lock: ["door", 0.6], boxLock: ["drugs", 0.5] }]],
+  const [bw, bh] = foot(rng, "pinfirmary");
+  return spec(bw, bh, corridorPlan([["*", { role: "pward", prison: "ward" }], [5, { role: "lobby", entry: true, name: "Infirmary desk" }], [5, "exam"], [5, { role: "pharmroom", lock: ["door", 0.6], boxLock: ["drugs", 0.5] }]],
     [["*", { role: "psych", prison: "tier", face: "n", single: true }], [5, { role: "office", prison: "office", name: "Doctor's office" }], [4, { role: "storage", type: "clinic", name: "Medical stores" }]], 6, 2));
 }
-const chapel = (rng) => spec(rng.int(14, 18), rng.int(22, 26), { split: "y", parts: [[3, { role: "foyer", name: "Narthex", entry: true, type: "chapel", civic: "narthex" }], ["*", { role: "nave", name: "Chapel", civic: "nave" }], [4, { split: "x", parts: leaves([[4, { role: "vestry", civic: "vestry" }], ["*", { role: "storage", type: "chapel", name: "Chaplain's store" }]]) }]] });
-const education = (rng) => spec(rng.int(30, 36), 16, corridorPlan([["*", { role: "plibrary", civic: "library", name: "Library" }], [5, { role: "lobby", entry: true, name: "Education lobby" }], ["*", { role: "classroom", civic: "classroom" }]],
+const chapel = (rng) => spec(...foot(rng, "pchapel"), { split: "y", parts: [[3, { role: "foyer", name: "Narthex", entry: true, type: "chapel", civic: "narthex" }], ["*", { role: "nave", name: "Chapel", civic: "nave" }], [4, { split: "x", parts: leaves([[4, { role: "vestry", civic: "vestry" }], ["*", { role: "storage", type: "chapel", name: "Chaplain's store" }]]) }]] });
+const education = (rng) => spec(...foot(rng, "pschool"), corridorPlan([["*", { role: "plibrary", civic: "library", name: "Library" }], [5, { role: "lobby", entry: true, name: "Education lobby" }], ["*", { role: "classroom", civic: "classroom" }]],
   [["*", { role: "classroom", civic: "classroom" }], ["*", { role: "office", prison: "office", name: "Education office" }], [3, "restroom"]], 6, 2));
-const industries = (rng) => spec(rng.int(40, 50), rng.int(16, 20), { split: "x", parts: leaves([["*", { role: "pshop", prison: "industries", name: "Licence-plate shop", entry: true }], ["*", { role: "pshop", prison: "industries", name: "Print shop" }], ["*", { role: "plaundry", prison: "laundry" }]]) },
+const industries = (rng) => spec(...foot(rng, "pworks"), { split: "x", parts: leaves([["*", { role: "pshop", prison: "industries", name: "Licence-plate shop", entry: true }], ["*", { role: "pshop", prison: "industries", name: "Print shop" }], ["*", { role: "plaundry", prison: "laundry" }]]) },
   { exits: [{ side: "back", roles: ["pshop", "plaundry"], chance: 1, roller: true, width: 2, lock: 0.3, name: "Loading door" }] });
-const admin = (rng) => spec(rng.int(26, 32), 14, corridorPlan([["*", { role: "office", prison: "office", name: "Warden's office", boxLock: ["safe", 0.3], gunSafe: ["gunsafe2", 0.3] }], [6, { role: "lobby", entry: true, name: "Administration lobby" }], ["*", { role: "office", prison: "office", name: "Records", boxLock: ["evidence", 0.3] }]],
+const admin = (rng) => spec(...foot(rng, "padmin"), corridorPlan([["*", { role: "office", prison: "office", name: "Warden's office", boxLock: ["safe", 0.3], gunSafe: ["gunsafe2", 0.3] }], [6, { role: "lobby", entry: true, name: "Administration lobby" }], ["*", { role: "office", prison: "office", name: "Records", boxLock: ["evidence", 0.3] }]],
   [["*", { role: "office", prison: "office", name: "Personnel" }], [5, "breakroom"], [3, "restroom"]], 5), { storeys: 2, upper: () => corridorPlan([["*", { role: "office", prison: "office", name: "Deputy warden" }], [6, { role: "office", prison: "office", name: "Conference room" }], ["*", { role: "office", prison: "office", name: "Accounts" }]], [["*", { role: "office", prison: "office", name: "Records store" }], [5, "breakroom"], [3, "restroom"]], 5) });
-const armory = (rng) => spec(rng.int(16, 20), 12, { split: "y", parts: [[3, { role: "foyer", name: "Issue window", entry: true, type: "barracks" }], ["*", { split: "x", parts: leaves([["*", { role: "parmory", prison: "parmory", name: "Armory", lock: ["vault", 0.8], boxLock: ["cage", 0.4], gunSafe: ["gunsafe3", 0.3] }], ["*", { role: "parmory", prison: "parmory", name: "Riot gear store", lock: ["door", 0.5] }]]) }]] });
-// The gatehouse straddles the two fences: its front door outside, its back door inside. bh: the depth it must span.
+const armory = (rng) => spec(...foot(rng, "parmory"), { split: "y", parts: [[3, { role: "foyer", name: "Issue window", entry: true, type: "barracks" }], ["*", { split: "x", parts: leaves([["*", { role: "parmory", prison: "parmory", name: "Armory", lock: ["vault", 0.8], boxLock: ["cage", 0.4], gunSafe: ["gunsafe3", 0.3] }], ["*", { role: "parmory", prison: "parmory", name: "Riot gear store", lock: ["door", 0.5] }]]) }]] });
+// The gatehouse straddles the two fences: its front door outside, its back door inside. bh: the depth it must span
+// (REAL_SIZE pgate: own, the complex's).
 const gatehouse = (rng, bh) => spec(rng.int(12, 14), bh, { split: "y", parts: [["*", { role: "gatepost", prison: "gate", entry: true, name: "Visitor processing" }], ["*", { role: "gatepost", prison: "gate", name: "Officers' post" }]] },
   { exits: [{ side: "back", roles: ["gatepost"], chance: 1, lock: 0, name: "Into the prison" }] });
 // The county jail's building: the public side along the front (the sally port, booking, the lobby, visitation), the
 // holding tanks, the property room, the kitchen and the medical room behind, and a secure corridor along the back wall
 // (the pods' corridors join it); upstairs the control room and the offices.
 function jailMain(rng) {
-  const bw = rng.int(42, 48);
+  const [bw] = foot(rng, "jailmain");
   const band = (list) => ({ split: "x", parts: leaves(list) });
   const back = [2, { role: "corridor", name: "Secure corridor", hub: true }];
   return spec(bw, 2 + 7 + 1 + 7 + 1 + 2, { split: "y", parts: [[7, band([[6, { role: "bays", name: "Sally port", type: "garage", maxBoxes: 2, civic: "sallyport" }], ["*", { role: "booking", prison: "booking", name: "Booking and intake" }], [6, { role: "lobby", entry: true, name: "Public lobby" }], ["*", { role: "visitation", prison: "visit" }]])],
@@ -269,7 +279,7 @@ export function prisonMap(state, tileId, option, withVehicle, o = {}) {
 
 // A state prison or a penitentiary.
 function penMap(rng, seed, option, kind, withVehicle, o) {
-  const K = PRISON.KINDS[kind], cap = o.cap || PRISON.CAP;
+  const K = PRISON.KINDS[kind], cap = o.cap || mapCap("prison") || PRISON.CAP;
   const S = Math.min(cap, rng.int(K.map[0][0], K.map[0][1]));
   const W = S, H = S;
   const R = PRISON.RING, F = PRISON.FRONT, gap = K.gap;
@@ -286,14 +296,14 @@ function penMap(rng, seed, option, kind, withVehicle, o) {
   for (let i = 0; i < n; i++) {
     const side = i % 2 ? "right" : "left"; // left of the corridor: its picket on its right (toward the corridor)
     const dorm = kind === "state" && rng.chance(PRISON.DORM);
-    const len = rng.int(54, 66); // a real block 40–70 m long: about 16–20 cells a tier
+    const len = foot(rng, "pblock")[0]; // a real block 40–70 m long: about 16–20 cells a tier
     const u = build(seed, `unit${i}`, (r) => housingUnit(r, { len, picket: side === "left" ? "right" : "left", unitId: i + 1, kind: dorm ? "dorm" : "cells", tiers: 2 }), "pblock", `Housing unit ${String.fromCharCode(65 + i)}`, legacy);
     u.role = "housing"; u.unitId = i + 1; u.side = side; u.row = Math.floor(i / 2); u.dorm = dorm;
     units.push(u);
   }
   // A penitentiary's death row at the far end, a cells block of single cells with a security door into each tier.
   if (kind === "max") {
-    const u = build(seed, "deathrow", (r) => housingUnit(r, { len: r.int(30, 36), picket: "left", unitId: n + 1, kind: "cells", single: true, dk: "security", tiers: 2 }), "pblock", "Death row", legacy);
+    const u = build(seed, "deathrow", (r) => housingUnit(r, { len: foot(r, "pdeathrow")[0], picket: "left", unitId: n + 1, kind: "cells", single: true, dk: "security", tiers: 2 }), "pblock", "Death row", legacy);
     u.role = "deathrow"; u.unitId = n + 1; u.side = "right"; u.row = rows; units.push(u);
   }
   const rowH = Math.max(...units.map((u) => u.m.building.h)) + 6;
@@ -335,7 +345,7 @@ function penMap(rng, seed, option, kind, withVehicle, o) {
   const others = [
     ["chow", chowHall, "pchow", "Chow hall"], ["infirmary", prisonInfirmary, "pinfirmary", "Infirmary"], ["chapel", chapel, "pchapel", "Chapel"],
     ["education", education, "pschool", "Library and education"], ["industries", industries, "pworks", "Prison industries"],
-    ["seg", (r) => housingUnit(r, { len: r.int(28, 34), picket: "left", unitId: 90, kind: "cells", single: true, tiers: 1 }), "pblock", "Segregation unit"],
+    ["seg", (r) => housingUnit(r, { len: foot(r, "pseg")[0], picket: "left", unitId: 90, kind: "cells", single: true, tiers: 1 }), "pblock", "Segregation unit"],
   ];
   for (const [role, mk, key, name] of others) {
     const b = build(seed, role, mk, key, name, legacy);
@@ -464,6 +474,8 @@ function penMap(rng, seed, option, kind, withVehicle, o) {
     { x0: Math.floor(W / 2) - 1, y0: 0, w: Z, h: Z, side: "north", exit: "north", name: "The north fields", vehicle: false },
   ];
   for (let y = southOuter + 1; y < H; y++) for (let x = gx; x < gx + 4; x++) if (cells[I(x, y)].k === "open") cells[I(x, y)].f = "road"; // the approach road
+  // The checkpoint on the approach (#25's pieces): a barrier gate either side of the lane, a guard booth beside it.
+  for (const [x, k] of [[gx - 1, "barrier"], [gx + 4, "barrier"], [gx + 5, "guardbooth"]]) if (setK(x, southOuter + 4, k, { f: "road", fc: "s" })) G.keep[I(x, southOuter + 4)] = 1;
   for (const z of zones) for (let y = z.y0 - 1; y <= z.y0 + z.h; y++) for (let x = z.x0 - 1; x <= z.x0 + z.w; x++) if (x >= 0 && y >= 0 && x < W && y < H) G.keep[I(x, y)] = 1;
   const vehicle = compoundVehicle(G, zones[0], withVehicle);
   // ---------- dressing: floodlights along the inner fence, crates and barrels by the buildings' back doors ----------
@@ -485,7 +497,8 @@ function penMap(rng, seed, option, kind, withVehicle, o) {
 // A county jail: the jail building and two pods north of it, a fenced pen off a pod, the street in front.
 function jailMap(rng, seed, option, withVehicle, o) {
   const K = PRISON.KINDS.jail;
-  const W = rng.int(K.map[0][0], K.map[0][1]), H = rng.int(K.map[1][0], K.map[1][1]);
+  const jcap = mapCap("jail") || K.map[0][1];
+  const W = Math.min(jcap, rng.int(K.map[0][0], K.map[0][1])), H = Math.min(jcap, rng.int(K.map[1][0], K.map[1][1]));
   const legacy = !!o.legacy;
   const main = build(seed, "jail", jailMain, "jailmain", "County jail", legacy); main.role = "jail";
   const mw = main.m.building.w, mh = main.m.building.h;
@@ -493,7 +506,7 @@ function jailMap(rng, seed, option, withVehicle, o) {
   const units = [];
   const left = rng.chance(0.5);
   for (let i = 0; i < 2; i++) {
-    const len = rng.int(26, 32);
+    const len = foot(rng, "ppod")[0];
     const u = build(seed, `pod${i}`, (r) => housingUnit(r, { len, picket: i === 0 ? "left" : "right", unitId: i + 1, kind: "cells", tiers: 2, yard: i === (left ? 0 : 1) }), "pblock", `Pod ${String.fromCharCode(65 + i)}`, legacy);
     u.role = "housing"; u.unitId = i + 1; units.push(u);
   }

@@ -190,6 +190,13 @@ export function deserializeState(save) {
   if (!state.roomsV) { state.roomsLegacy = true; state.roomsV = 1; }
   // Prison complexes (prison.js, issue #31): a save from before keeps its prison's one-building pick and no jails.
   if (!state.prisonV) { state.prisonLegacy = true; state.prisonV = 1; }
+  // Buildings at real size (data-buildingsize.js, issue #24, 2026-10-25): a save from before keeps every building's
+  // footprint and storeys (worldcfg.js legacyScale), so its places, their containers and the crawl's snapshots stay as they were.
+  if (!state.scaleV) { state.scaleLegacy = true; state.scaleV = 1; }
+  // The office buildings of every kind and their firms (data-offices.js, issue #27): a save from before gets none of the
+  // new places on its tiles or its crawls' blocks, and its office towers no firm (shops.js legacyOffices), so its
+  // points of interest regenerate as they were.
+  if (!state.officesV) { state.officesLegacy = true; state.officesV = 1; }
   if (!state.woodcutting) {
     for (const b of state.bases || []) if (b.stock && !Number.isFinite(b.stock.wood)) b.stock.wood = 0;
     for (const r of (state.work && state.work.roles) || []) if (r.pri && r.pri.wood == null && r.pri.forage > 0) r.pri.wood = r.pri.forage;

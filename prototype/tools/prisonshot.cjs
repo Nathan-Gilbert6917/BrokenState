@@ -31,7 +31,12 @@ const port = 5300 + Math.floor(Math.random() * 600);
       const P = await import("/src/sim/parties.js"), W = await import("/src/sim/world.js"), S = await import("/src/sim/scavenge.js"), PR = await import("/src/sim/prison.js");
       const st = game.state, hub = W.hub(st);
       let t = st.tiles.find((x) => x.id !== hub.tile && x.loc && x.loc.type === site && !st.bases.some((b) => b.tile === x.id) && (want !== "max" || PR.prisonKind(st, x.id, { key: "prison" }) === "max"));
-      if (!t && want === "max") { const q = st.tiles.find((x) => x.id !== hub.tile && x.terrain !== "water" && !x.loc && !st.bases.some((b) => b.tile === x.id) && PR.prisonKind(st, x.id, { key: "prison" }) === "max"); st.tiles[q.id] = { ...q, loc: { type: "prison", name: "Penitentiary" }, road: false }; t = st.tiles[q.id]; }
+      if (want === "max") { // the biggest penitentiary of a few bare tiles (its map rolled by its own dice, up to the cap)
+        const cands = st.tiles.filter((x) => x.id !== hub.tile && x.terrain !== "water" && !x.loc && !st.bases.some((b) => b.tile === x.id) && PR.prisonKind(st, x.id, { key: "prison" }) === "max").slice(0, 24);
+        let best = null;
+        for (const q of cands) { const m = PR.prisonMap(st, q.id, { key: "prison", id: "prison", name: "p" }, false); if (!best || m.w > best.w) best = { q, w: m.w }; if (m.w >= 390) break; }
+        st.tiles[best.q.id] = { ...best.q, loc: { type: "prison", name: "Penitentiary" }, road: false }; t = st.tiles[best.q.id];
+      }
       if (!t) { t = st.tiles.find((x) => x.id !== hub.tile && x.terrain !== "water" && !x.loc && !st.bases.some((b) => b.tile === x.id)); st.tiles[t.id] = { ...t, loc: { type: site, name: site === "jail" ? "County jail" : "State prison" }, road: false }; t = st.tiles[t.id]; }
       st.hour = Math.floor(st.hour / 24) * 24 + 12; // noon: the inside in daylight
       hub.stock.ammo = 400; hub.stock.food = 100; hub.stock.water = 100; hub.stock.meds = 10;

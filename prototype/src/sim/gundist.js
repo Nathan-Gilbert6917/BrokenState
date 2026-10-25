@@ -55,7 +55,7 @@ export function gunClass(k) {
 }
 
 // ---------- sources ----------
-const SITE_THEME = { police: "police", prison: "police", military: "military", crash_mil: "military", convoy: "military", airdrop: "military" };
+const SITE_THEME = { police: "police", prison: "police", military: "military", airbase: "military", crash_mil: "military", convoy: "military", airdrop: "military" };
 // The draws of a list of loot.js theme tags: the best of each use among them.
 /** @param {string[]} tags */
 function themeDraws(tags) {

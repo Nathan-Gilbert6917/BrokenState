@@ -20,7 +20,7 @@
 //   sickness     health.js illnessRisk
 //   loot*        scavenge.js searchHour, combat.js searchBox (raids and city crawls), economy.js (the base job): lootMult
 //   baseMin/Max  basemap.js gridOf (the yard a base starts with and the most it grows to)
-//   raidMin/Max  battlesize.js raidDims / buildingTarget (raid maps: a site's place between the two; cities and towns the largest), and past 40 × 30
+//   raidMin/Max  battlesize.js raidDims / buildingTarget (raid maps: a site's place between the two, up to 300 across; cities and towns the largest), and past 40 × 30
 //                the BIG scales: more dead, slower Heat, a smaller find a container (combat.js raidTurn / searchBox / spawnWave)
 //   cityMin/Max  citygrid.js gridOf (blocks across a city crawl; a town is scaled the same way)
 //   hiveMin/Max  hivecrawl.js denDepth (rings from a den's rim to its heart)
@@ -62,7 +62,7 @@ export const WORLD_CFG = {
   baseMin: { group: "sizes", name: "Base yard to start", kind: "mult", min: 0.5, max: 2, step: 0.05, def: 1, pair: "baseMax", tip: "The yard a base starts with, as a share of the usual (76 across for every base since 2026-10-23). Smaller yards leave less room to build before the walls move out." },
   baseMax: { group: "sizes", name: "Base yard at most", kind: "mult", min: 0.5, max: 2, step: 0.05, def: 1, pair: "baseMin", tip: "The most a base's yard grows to, as a share of the usual (a hub's 180 across, an outpost's 100; camps and shelters do not grow). Never less than the yard it starts with, and the map stays within its biggest grid." },
   raidMin: { group: "sizes", name: "Raid map, smallest", kind: "int", min: 24, max: 80, step: 2, def: 32, pair: "raidMax", tip: "Tiles across the smallest raid map (a gas station's, a shed's, a building picked at a site with several); every map is three quarters as deep. The usual 32 × 24." },
-  raidMax: { group: "sizes", name: "Raid map, largest", kind: "int", min: 24, max: 80, step: 2, def: 56, pair: "raidMin", tip: "Tiles across the largest raid map (a hospital's, a prison's); a city's and a town's raid maps, their buildings and their streets, are always this size. Every other site sits between the two. The usual 56 × 42. Past 40 × 30 a map has more rooms, containers and dead, but Heat rises slower and each container holds a little less, and a street map gets a way out on both long sides; big maps cost more every turn." },
+  raidMax: { group: "sizes", name: "Raid map, largest", kind: "int", min: 24, max: 300, step: 2, def: 56, pair: "raidMin", tip: "Tiles across the largest raid map (a hospital's, a prison's); a city's and a town's raid maps, their buildings and their streets, are always at least this size. Every other site sits between the two. The usual 56 × 42; up to 300 across. A building's map is never smaller than the building at its real size (a cell is a metre: a hospital 60–100 m, a warehouse 40–80 m) and the outside round it, up to 300 × 300. Past 40 × 30 a map has more rooms, containers and dead, but Heat rises slower and each container holds a little less, and a street map gets a way out on both long sides; big maps cost more every turn." },
   cityMin: { group: "sizes", name: "City crawl, smallest", kind: "int", min: 4, max: 40, step: 1, def: 15, pair: "cityMax", tip: "The fewest blocks across a city crawl is (the usual 15–30; a town's 9–12 is scaled the same way)." },
   cityMax: { group: "sizes", name: "City crawl, largest", kind: "int", min: 4, max: 40, step: 1, def: 30, pair: "cityMin", tip: "The most blocks across a city crawl is (the usual 15–30). The heart of a bigger crawl climbs to a higher level." },
   hiveMin: { group: "sizes", name: "Hive crawl, shallowest", kind: "int", min: 1, max: 12, step: 1, def: 2, pair: "hiveMax", tip: "The fewest rings from a den's mouths to its heart (the usual 2 for a young hive, 9 for the oldest tier; a screamer spire adds one)." },
@@ -144,6 +144,12 @@ export const legacyRooms = (state) => !!(state && state.roomsLegacy);
 // A save from before the prison complexes (issue #31, save.js prisonLegacy: no state.prisonV): a prison keeps its pick
 // of one building (buildingmaps.js SITES.prison) and no town has a county jail (pois.js jailExtra).
 export const legacyPrisons = (state) => !!(state && (state.prisonLegacy || state.roomsLegacy));
+// A save from before buildings at real size (issue #24, save.js scaleLegacy; an older one still, roomsLegacy): every
+// building keeps the footprint and storeys its archetype gave it (buildingmaps.js realScale is not applied).
+export const legacyScale = (state) => !!(state && (state.scaleLegacy || state.roomsLegacy));
+// A save from before the office buildings of every kind (save.js officesLegacy, issue #27): its points of interest and
+// its crawls' blocks get none of them (shops.js), and its office towers no firm, so its places stay as they were.
+export const legacyOffices = (state) => !!(state && state.officesLegacy);
 // The run's raid map dials as [smallest, largest]: each clamped to its range, the two in order whatever was stored
 // (a hand-edited or older settings object can hold them the wrong way round: the range never runs backwards).
 /** @param {any} state */

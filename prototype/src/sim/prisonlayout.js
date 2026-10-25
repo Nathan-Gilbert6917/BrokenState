@@ -15,6 +15,8 @@
 //              floors (prison.js housingUnit); single cells (segregation, death row, the psych unit) are the same cells.
 //   dayroom    steel tables with their stools fixed (2 × 2) in rows, a television on a wall.
 //   picket     an officers' station: a control panel by the window onto the block, a desk and a chair, a locker.
+// Reused pieces (2026-10-25, once on dev): #25's intake lockers (the property room), #25's X-ray scanner and #27's
+// walk-through scanner (the gatehouse, booking), #26's footlockers (a dorm's bunks) and radio console (central control).
 //   control    central control: control panels along the walls (each the switch of a housing unit's cell doors: its
 //              unit id, prison.js cellSwitch), monitors (a server rack), a desk, lockers of riot gear.
 //   dorm       a dormitory unit's bays: bunks in rows with an aisle, a locker each two.
@@ -31,8 +33,8 @@
 //   ward       the infirmary's ward: hospital beds against the walls with a medicine cabinet.
 //   gate       the gatehouse's post: a metal detector by the lane, a counter, a control panel, a locker.
 //   office     the warden's office, records, the shift office: a desk and its chair, filing cabinets, a bookshelf.
-// The pieces: data-furniture.js's prison rows (steelbunk, steeltoilet, daytable, ctrlpanel, visitbooth, proplocker,
-// metaldetector) and the catalogue's own (gunrack, ammocab, locker, hospbed, washer, dryer, workbench...).
+// The pieces: data-furniture.js's prison rows (steelbunk, steeltoilet, daytable, ctrlpanel, visitbooth),
+// and the catalogue's own (gunrack, ammocab, locker, hospbed, washer, dryer, workbench...).
 import { hash01 } from "./skills.js";
 import { pieceDef } from "./data-furniture.js";
 import { registerScene, SCENES } from "./interiorscenes.js"; // the prisons' signs of survival (issue #11's hook)
@@ -129,13 +131,14 @@ export const PRISON_STYLES = {
     for (let i = 0; i < (L.room.panels || 3); i++) if (L.wall("ctrlpanel", { prefer: "middle" })) panels++;
     if (!panels) L.need("ctrlpanel");
     L.wall("serverrack", { prefer: "corner" });
+    L.wall("radioconsole", { prefer: "corner" }); // #26's radio console
     desk(L);
     along(L, "locker", 3);
   },
   dorm(L) {
     const c = L.c;
     // Bunks (1 × 2) in rows across the bay, two cells of aisle between the columns, two rows free between bunk rows.
-    for (let y = c.y0; y + 1 <= c.y1; y += 4) for (let x = c.x0; x <= c.x1; x += 3) L.place("bunk", [[x, y], [x, y + 1]], { face: "s" });
+    for (let y = c.y0; y + 1 <= c.y1; y += 4) for (let x = c.x0; x <= c.x1; x += 3) { const b = L.place("bunk", [[x, y], [x, y + 1]], { face: "s" }); if (b && x + 1 <= c.x1 && L.boxes().length < L.target()) L.place("footlocker", [[x + 1, y + 1]], { face: "w" }); } // a footlocker at a bunk's foot (#26's)
     along(L, "locker", 6);
   },
   chow(L) {
@@ -153,10 +156,10 @@ export const PRISON_STYLES = {
     along(L, "palletrack", 8);
     L.fill(["crate", "shelf"]);
   },
-  property(L) { along(L, "proplocker", 20); L.fill(["proplocker"]); },
+  property(L) { along(L, "intakelocker", 20); L.fill(["intakelocker"]); }, // #25's intake lockers
   booking(L) {
     L.wall("counter", { prefer: "middle" }) || L.need("counter");
-    L.wall("metaldetector", { prefer: "corner" });
+    L.wall("screener", { prefer: "corner" }); // #27's walk-through scanner
     desk(L);
     along(L, "filing", 2);
     L.wall("pew", { prefer: "corner" });
@@ -199,7 +202,8 @@ export const PRISON_STYLES = {
     L.fill(["medcab"]);
   },
   gate(L) {
-    L.wall("metaldetector", { prefer: "middle" }) || L.need("metaldetector");
+    L.wall("screener", { prefer: "middle" }) || L.need("screener"); // #27's walk-through scanner
+    L.wall("scanner", { prefer: "corner" }); // #25's X-ray belt for the bags
     L.wall("ctrlpanel", { prefer: "corner" });
     L.wall("counter", { prefer: "corner" });
     along(L, "locker", 1);

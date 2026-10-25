@@ -70,14 +70,14 @@ section("Which model, in what look");
   check(army.tint === VM.TEAM_BLUE && army.color !== VM.TEAM_BLUE, "the team's Army truck olive, its canvas tinted the team's blue");
 }
 
-section("Every model builds, at every heading");
+section("Every model builds, at every heading"); // the aircraft (issue #25), a bike and a box truck take no upgrades
 {
   const finite = (F) => F.every((q) => [...q.A, ...q.B, q.ra, q.rb].every(Number.isFinite));
   for (const m of VM.MODEL_NAMES) {
     const plain = VM.vehicleLimbs(m, { color: "#3b5a7a", seed: 2 }, m === "bicycle" ? 2 : m === "m35" ? 5 : 4);
     const armed = VM.vehicleLimbs(m, { color: "#3b5a7a", seed: 2, plating: 2, glass: 1, turret: "m2hb", manned: true, scrap: 0 }, m === "bicycle" ? 2 : 4);
     const burnt = VM.vehicleLimbs(m, { color: "#2b2723", burnt: true, cond: "burnt", seed: 2 }, 4);
-    check(plain.length >= 7 && finite(plain) && finite(armed) && finite(burnt) && (m === "bicycle" || m === "boxtruck" || armed.length > plain.length), `${m}: ${plain.length} limbs plain, ${armed.length} armed, ${burnt.length} burnt out`);
+    check(plain.length >= 7 && finite(plain) && finite(armed) && finite(burnt) && (["bicycle", "boxtruck", "jet", "helo", "cargoplane", "airliner"].includes(m) || armed.length > plain.length), `${m}: ${plain.length} limbs plain, ${armed.length} armed, ${burnt.length} burnt out`);
   }
   let ok = true, cells = 0;
   const car = { kind: "vehicle", body: "truck", type: "truck", L: 4, ax: "x", v: 0, up: { p: 1, s: 0, g: 0, m: 1, t: "lmg", manned: false } };

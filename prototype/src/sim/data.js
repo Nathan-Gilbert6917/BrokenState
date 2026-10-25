@@ -523,6 +523,9 @@ export const LOCATIONS = {
   // A county jail (issue #31, prison.js): a point of interest in the suburb ring of a town (pois.js jailExtra), a
   // complex of the jail and its housing pods; the prison's gear on a smaller scale.
   jail:     { name: "County jail",    glyph: "J",  cat: "town",    danger: 2, loot: { food: 2, scrap: 1, ammo: 1, meds: 0.4 }, gear: ["shotgun", "pistol", "vest", "riothelmet", "baton", "cuffs", "semishotgun"], richness: 0.6, known: "public" },
+  // Air bases (issue #25, 2026-10-25): hangars of aircraft, a control tower, flight operations, barracks and a mess
+  // (buildingmaps.js SITES airbase), near the National Guard bases; public like them.
+  airbase:  { name: "Air base", glyph: "✈", cat: "special", danger: 3, loot: { ammo: 3, fuel: 5, parts: 3, meds: 0.6 }, gear: ["ar", "carbine", "vest", "plate", "milhelmet", "milradio", "nvg", "assaultpack", "rucksack", "binoculars", "combatknife", "flare", "chestrig"], richness: 1.0, known: "public" },
   prison:   { name: "State prison",   glyph: "#",  cat: "special", danger: 3, loot: { food: 2, scrap: 2, ammo: 1 }, gear: ["shotgun", "vest", "riothelmet", "baton", "riotarms", "riotlegs", "carbine", "semishotgun"], richness: 0.7, known: "public" },
   univ:     { name: "University",     glyph: "U",  cat: "urban",   danger: 2, loot: { parts: 3, meds: 1, scrap: 2 }, gear: ["surgkit", "bandagekit", "bat", "fireaxe", "slingbag", "telescope"], richness: 0.8, known: "public" },
   dam:      { name: "Dam and power plant", glyph: "D", cat: "special", danger: 1, loot: { parts: 4, scrap: 3, fuel: 0.3 }, gear: ["sandbags", "prybar", "sledge", "flashlight"], richness: 0.7, known: "public" },

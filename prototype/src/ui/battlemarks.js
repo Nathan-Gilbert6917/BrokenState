@@ -57,8 +57,8 @@ function freshState(b, key) {
   preplaced(st);
   return st;
 }
-// What the map came with (sim/interiorscenes.js): blood on the floors (c.blood { kind, amount }) and spent brass
-// (c.brass: cases) on every floor of the building, found like any mark when someone sees the cell.
+// What the map came with (sim/interiorscenes.js): blood on the floors (c.blood { kind, amount }), spent brass
+// (c.brass: cases) and a fire's scorch (c.scorch: 1–3, a restaurant kitchen's) on every floor of the building, found like any mark when someone sees the cell.
 function preplaced(st) {
   const b = st.b;
   const floors = b.floors && b.floors.length ? b.floors.map((F) => F.cells) : [b.cells];
@@ -66,13 +66,14 @@ function preplaced(st) {
     if (!cells) return;
     for (let i = 0; i < cells.length; i++) {
       const c = cells[i];
-      if (!c || (!c.blood && !c.brass)) continue;
+      if (!c || (!c.blood && !c.brass && !c.scorch)) continue;
       const x = i % b.w, y = (i / b.w) | 0;
       const put = (m) => { m.t0 = -GROW_MS; m.seen = false; m.f = f; m.cell = i; st.list.push(m); st.unseen++; };
       if (c.blood) {
         const n = Math.max(1, Math.min(3, c.blood.amount || 1));
         for (let k = 0; k < n; k++) put({ k: c.blood.kind === "zombie" ? "zblood" : "blood", x: x + 0.5 + (hash(i, k, 21) - 0.5) * 0.5, y: y + 0.5 + (hash(i, k, 22) - 0.5) * 0.5, r: 0.16 + 0.1 * n + hash(i, k, 23) * 0.08, a: hash(i, k, 24) * 6.28, n: 3 + n, seed: i * 11 + k + 5 });
       }
+      if (c.scorch) { put({ k: "scorch", x: x + 0.5, y: y + 0.5, r: 0.4 + 0.1 * c.scorch, a: 0, n: 4, seed: i * 13 + 1 }); put({ k: "ash", x: x + 0.5, y: y + 0.5, r: 0.35, a: 0, n: 6, seed: i * 13 + 2 }); } // a kitchen fire's aftermath (sim/eaterylayout.js)
       for (let k = 0; k < Math.min(8, c.brass || 0); k++) put({ k: "brass", x: x + 0.2 + hash(i, k, 31) * 0.6, y: y + 0.2 + hash(i, k, 32) * 0.6, r: 0.1, a: hash(i, k, 33) * 6.28, n: 1, seed: i * 13 + k });
     }
   });
@@ -271,21 +272,41 @@ export function drawMarks(ctx, b, now, fl = 0) {
   const live = MARKS.level >= 2 ? st.list.filter((m) => m.seen && m.f === fl && growing(m, now)) : [];
   if (st.dirty || st.fl !== fl || (st.live && st.live > live.length)) bake(st, now, fl);
   st.live = live.length;
-  if (st.cv) ctx.drawImage(st.cv, 0, 0);
+  if (st.cv) for (const t of st.cv) ctx.drawImage(t.cv, t.x, t.y);
   for (const m of live) paintMark(ctx, m, 0.3 + 0.7 * easeOut((now - m.t0) / GROW_MS));
   return st.list.length;
 }
 const easeOut = (t) => 1 - (1 - Math.max(0, Math.min(1, t))) ** 3;
+// Baked in tiles of TILE cells a side (issue #24: a 300 × 300 map would be one 4800 px picture), only the tiles that
+// hold a mark (a mark is painted into each tile its reach touches). st.cv: [{ cv, x, y }] in map px.
+const TILE = 128;
 function bake(st, now, fl) {
-  const b = st.b, w = b.w * MARK_TEX, h = b.h * MARK_TEX;
-  if (!st.cv || st.cv.width !== w || st.cv.height !== h) st.cv = mkCanvas(w, h);
-  const c = st.cv.getContext("2d");
-  c.clearRect(0, 0, w, h);
+  const b = st.b, T = TILE * MARK_TEX;
   const full = MARKS.level >= 2;
   // The ground first (scorch, ash), then glass, then blood, then the brass on top.
   const order = { scorch: 0, ash: 1, glass: 2, zblood: 3, blood: 3, acid: 3, brass: 4, shell: 4 };
   const list = st.list.filter((m) => m.seen && m.f === fl && (full || (m.k !== "brass" && m.k !== "shell" && m.k !== "ash")) && !(full && growing(m, now))).sort((p, q) => order[p.k] - order[q.k]);
-  for (const m of list) paintMark(c, m, 1);
+  const old = new Map((st.cv || []).map((t) => [`${t.x},${t.y}`, t])), tiles = new Map();
+  const tileAt = (tx, ty) => {
+    const k = `${tx * T},${ty * T}`;
+    let t = tiles.get(k);
+    if (!t) {
+      const w = Math.min(T, b.w * MARK_TEX - tx * T), h = Math.min(T, b.h * MARK_TEX - ty * T), o = old.get(k);
+      t = { cv: o && o.cv.width === w && o.cv.height === h ? o.cv : mkCanvas(w, h), x: tx * T, y: ty * T };
+      const c = t.cv.getContext("2d");
+      c.setTransform(1, 0, 0, 1, 0, 0);
+      c.clearRect(0, 0, w, h);
+      c.translate(-t.x, -t.y);
+      tiles.set(k, t);
+    }
+    return t;
+  };
+  for (const m of list) {
+    const R = (m.r * 3 + 1) / TILE; // a pool's splashes and a scorch's reach (tiles, generous)
+    for (let ty = Math.max(0, Math.floor((m.y / TILE) - R)); ty <= Math.min(Math.ceil(b.h / TILE) - 1, Math.floor((m.y / TILE) + R)); ty++)
+      for (let tx = Math.max(0, Math.floor((m.x / TILE) - R)); tx <= Math.min(Math.ceil(b.w / TILE) - 1, Math.floor((m.x / TILE) + R)); tx++) paintMark(tileAt(tx, ty).cv.getContext("2d"), m, 1);
+  }
+  st.cv = [...tiles.values()];
   st.dirty = false; st.fl = fl; st.rev++;
   st.baked = list.length;
 }

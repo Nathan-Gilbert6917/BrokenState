@@ -87,6 +87,8 @@ import { syncModes, modeOf, modeRounds, modeRolls, modeAim, modeRefusal, FIRE_MO
 import { MEDS } from "./medfinds.js"; // how rare meds are
 import { bonebackMult, afterHit, onDeath, climbOver, sowerRound, terrorRuns } from "./middead.js"; // the mid game's special dead
 import { placeBodies, spotCheck, wakeNear, sleeperDies, burnBodies } from "./sleepers.js"; // bodies on the ground, the Sleepers among them
+import { dressCheckpoint } from "./militarylayout.js"; // the crawl's checkpoint dressed with the military pieces (issue #25)
+import { Rng } from "./rng.js";
 import { sceneBattle, sceneSeen } from "./interiorscenes.js"; // signs of survival in a building: the scenes' bodies, piles and intro lines
 import { stirBodies, carrierRound, burst, swarmHit, swarmBite, crush, tapRefusal, tap, pickUp, putDown, stowBody, botCrush, turnedBody, walkingBody, walkingBox, walksOn, turnedName, turnedLine, dropBodyBox, endBodies, placeWalking } from "./carriers.js"; // the Carrier raises the human dead; its worm swarm; bodies carried, shot, burnt; the walking loot
 import { hasWorm, WORM } from "./worm.js"; // the worm in a living person (half the healing while it is in them)
@@ -164,12 +166,13 @@ import { swapGun, kitGunSource, bodyGunSource, areaSourceName } from "./gundist.
 import { planStart, closePlan } from "./raidplan.js"; // choices before a raid: the side, a scout, the night (docs/suggestions-5.md #23)
 import { fightersOf } from "./groupfight.js"; // a group's people in a fight by the numbers
 import { ammoFactor } from "./arsenal.js";
-import { cfgOf, lootQty, battleDials, legacyRaids } from "./worldcfg.js";
+import { cfgOf, lootQty, battleDials, legacyRaids, legacyScale } from "./worldcfg.js";
 import { concealHidden, concealAim, concealScore, softOn, softCost, markShot, tentStep, tentAI, tearTent, softSetup, settleTents } from "./softcover.js"; // bushes and tents: they hide people, stop no bullets; tents slashed, burned and worn (the user's picks 2026-10-20) // the run's dials (World… on the new-run screen): the battle carries its own
 import { strikeAct, slashAct, settleTentsDown } from "./tentfight.js"; // tents taken down (and carried off) and slashed in a fight (the user's request 2026-10-20)
 import { campRaidMap, campRaidUnits, campSleeperTurn, tentBoxLoot, campAfter } from "./campsite.js"; // the campsite raid: its clearing, its tents and their loot, its campers (the user's request 2026-10-20)
 import { furnitureCells } from "./data-furniture.js"; // the furniture and appliance catalogue: its cells (merged into CELL below)
 import { NEW_KINDS, AREA_DEFS } from "./data-shops.js"; // the shops and services new as places: their raid rooms
+import { OFFICE_BOX } from "./data-offices.js"; // the office buildings' new pieces: their own tables (issue #27)
 
 // Result handlers by key. Other modules register theirs while they load (conflicts.js, scavenge.js), which can be
 // before this module's own body has run (the imports are circular), so the map is made on first use: a `var`
@@ -746,11 +749,11 @@ export const CELL = {
   car:     { walk: false, cover: 1, los: false, name: "Car" },
   fence:   { walk: false, cover: 1, los: false, name: "Fence" },
   wirefence: { walk: false, cover: 0, los: false, name: "Wire fence" }, // a farmland field's post-and-wire fence (basescatter.js fieldLayer): no cover, climbed over (vaultable)
-  fieldgate: { walk: true, cover: 0, los: false, name: "Field gate" },
+  fieldgate: { walk: true, cover: 0, los: false, name: "Field gate" }, // a farmland field's gate (basescatter.js fieldLayer): swung open and walked through
   // A prison's perimeter fence (prison.js, issue #31): chain-link four metres high with a coil of razor wire along its
   // top. Seen through, no cover, never vaulted or crawled over (a real barrier: only the gates, a hole in it, or a cut
   // through it: wire.js cutTargets, FENCE_CUTS actions with a cutter, then it is a hole).
-  pfence:    { walk: false, cover: 0, los: false, name: "Perimeter fence" }, // a farmland field's gate (basescatter.js fieldLayer): swung open and walked through
+  pfence:    { walk: false, cover: 0, los: false, name: "Perimeter fence" },
   sandbag: { walk: false, cover: 1, los: false, name: "Sandbags" },
   pump:    { walk: false, cover: 1, los: false, name: "Fuel pump" },
   water:   { walk: false, cover: 0, los: false, name: "Water" },
@@ -1201,7 +1204,7 @@ export function placeCar(cells, W, H, x, y, ax, L, kind, ok, v = 0, opts = {}) {
   for (let yy = r.y0; yy < r.y0 + r.h; yy++) for (let xx = r.x0; xx < r.x0 + r.w; xx++) {
     const c = cells[yy * W + xx];
     c.k = kind;
-    c.car = { id, i: ax === "x" ? xx - r.x0 : yy - r.y0, j: ax === "x" ? yy - r.y0 : xx - r.x0, L, ax, kind, v, body: opts.body || kind };
+    c.car = { id, i: ax === "x" ? xx - r.x0 : yy - r.y0, j: ax === "x" ? yy - r.y0 : xx - r.x0, L, ax, kind, v, body: opts.body || kind , ...(opts.wide > 2 ? { wide: opts.wide } : {}) }; // wide: an aircraft's cells across (issue #25: ui/vehiclemodel.js)
   }
   return { id, ...r, ax, L, kind };
 }
@@ -2597,7 +2600,10 @@ const DIRS8 = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, 
 export const LOS_DENSE = 5000;
 // The sparse one is a Map with the typed array's fill() (every `losCache.fill(0)` clears it). A save writes it as a
 // plain Map; save.js makes a fresh one on load (it is only a cache).
-export class SparseLos extends Map { fill() { this.clear(); } }
+// It holds at most SPARSE_MAX entries (about 30 MB): past that it starts again (a 300 × 300 map with ten floors, issue
+// #24, would otherwise grow without end as the team looks round).
+export const SPARSE_MAX = 400000;
+export class SparseLos extends Map { fill() { this.clear(); } set(k, v) { if (this.size >= SPARSE_MAX) this.clear(); return super.set(k, v); } }
 export function makeLosCache(w, h) {
   const n = w * h;
   return n <= LOS_DENSE ? new Int8Array(n * n) : new SparseLos();
@@ -2757,7 +2763,7 @@ export function reachable(b, u, maxCost, opts = {}) {
   bindDims(b);
   const avoid = !opts.manual && b.fires && b.fires.length && (u.kind === "human" || u.ztype === "shepherd") ? new Set(b.fires.map((f) => idx(f.x, f.y))) : null;
   const aw = acidWeights(b, u, opts.manual && !opts.wary);
-  const d = new Float32Array(W * H).fill(Infinity), prev = new Int16Array(W * H).fill(-1);
+  const d = new Float32Array(W * H).fill(Infinity), prev = new Int32Array(W * H).fill(-1);
   const real = aw ? new Float32Array(W * H).fill(Infinity) : d; // without pools the weight is the cost
   const occ = new Uint8Array(W * H);
   // thirdside.js: your people squeeze past the survivors and soldiers who are not fighting them (as over the downed:
@@ -5149,7 +5155,8 @@ export function combatAct(state, act) {
       const so = stairOptions(b, u), up = act.type === "goup";
       if (!(up ? so.up : so.down)) {
         const here = b.cells[idx(u.x, u.y)], onStairs = here.k === "stairs";
-        return !onStairs ? "Stand on a stairwell first." : !stairTop(here) ? "Climb to the top step first: the stairs change floor there." : up ? (u.f + 1 >= b.floors.length ? "This is the top floor." : "Someone is on the stairs above.") : (!u.f ? "This is the ground floor." : "Someone is on the stairs below.");
+        const seal = onStairs && up && stairTop(here) && u.f + 1 >= b.floors.length ? here.sealUp : null; // buildingmaps.js OPEN_STOREYS: the floors above a tall building's are not built
+        return !onStairs ? "Stand on a stairwell first." : !stairTop(here) ? "Climb to the top step first: the stairs change floor there." : up ? (seal ? (seal === "barricade" ? "The stairs up are barricaded: desks, filing cabinets and wire jammed into the stairwell, wedged too tight to clear." : "The stairs up have collapsed: the flight above is rubble and twisted rail. There is no way higher.") : u.f + 1 >= b.floors.length ? "This is the top floor." : "Someone is on the stairs above.") : (!u.f ? "This is the ground floor." : "Someone is on the stairs below.");
       }
       { const why = pieceStairsRefusal(b, u, (u.f || 0) + (up ? 1 : -1)); if (why) return why; } // furnicarry.js: with a piece, both actions (each of two)
       u.ap -= stairsAp(u);
@@ -6899,14 +6906,17 @@ export const AREAS = {
   // inmates' belongings (phones, watches, rings and chains, photos, smokes); the kitchen and the food warehouse food in
   // bulk; the cells contraband (BOX_LOOT steelbunk: a stash under the bunk); an officers' station and central control
   // radios, batons and a little riot gear; the laundry clothes; a prison bus in the sally port the guards' bags.
-  pcells:    { name: "Cells",          boxes: ["proplocker", "locker"],        loot: { food: [0.2, 1, 2], scrap: [0.2, 1, 2] }, gear: [["shiv", 0.04], ["cigarettes", 0.05], ["lighters", 0.03], ["makeshiftpick", 0.015]] },
+  pcells:    { name: "Cells",          boxes: ["intakelocker", "locker"],        loot: { food: [0.2, 1, 2], scrap: [0.2, 1, 2] }, gear: [["shiv", 0.04], ["cigarettes", 0.05], ["lighters", 0.03], ["makeshiftpick", 0.015]] },
   pcontrol:  { name: "Officers' post", boxes: ["locker", "cabinet"],           loot: { ammo: [0.45, 6, 16], meds: [0.1, 1, 1], water: [0.3, 1, 2] }, gear: [["handradio", 0.12], ["baton", 0.1], ["cuffs", 0.12], ["taser", 0.04], ["riothelmet", 0.05], ["flashlight", 0.08], ["shotgun", 0.03]] },
   pkitchen:  { name: "Prison kitchen", boxes: ["shelf", "counter", "cabinet"], loot: { food: [0.95, 8, 18], water: [0.6, 3, 8] }, gear: [["knife", 0.1]] },
   pstores:   { name: "Food warehouse", boxes: ["crate", "palletrack", "shelf"], loot: { food: [0.95, 12, 28], preserved: [0.55, 3, 8], water: [0.5, 4, 10] }, gear: [] },
-  property:  { name: "Property room",  boxes: ["proplocker"],                  loot: { scrap: [0.15, 1, 2] }, gear: [["phone", 0.1], ["watch", 0.07], ["goldring", 0.05], ["goldchain", 0.04], ["photos", 0.08], ["cigarettes", 0.1], ["lighters", 0.06], ["cashbox", 0.01], ["leatherjacket", 0.03], ["knife", 0.03]] },
+  property:  { name: "Property room",  boxes: ["intakelocker"],                  loot: { scrap: [0.15, 1, 2] }, gear: [["phone", 0.1], ["watch", 0.07], ["goldring", 0.05], ["goldchain", 0.04], ["photos", 0.08], ["cigarettes", 0.1], ["lighters", 0.06], ["cashbox", 0.01], ["leatherjacket", 0.03], ["knife", 0.03]] },
   plaundry:  { name: "Laundry",        boxes: ["shelf", "crate"],              loot: { scrap: [0.3, 1, 3], water: [0.2, 1, 2] }, gear: [["leatherjacket", 0.02], ["backpack", 0.02]] },
   parmory:   { name: "Prison armory",  boxes: ["gunrack", "ammocab", "locker"], loot: { ammo: [0.9, 20, 50] }, gear: [["shotgun", 0.16], ["semishotgun", 0.07], ["tacpump", 0.06], ["riothelmet", 0.16], ["riotarms", 0.12], ["riotlegs", 0.12], ["vest", 0.12], ["tacvest", 0.05], ["baton", 0.14], ["taser", 0.06], ["cuffs", 0.1], ["handradio", 0.06], ["carbine", 0.05], ["ar", 0.02], ["huntrifle", 0.02]] },
   pbus:      { name: "Prison bus",     outdoor: true, boxes: ["pbus"],         loot: { water: [0.5, 2, 6], food: [0.4, 2, 5], meds: [0.3, 1, 2] }, gear: [["shotgun", 0.15], ["baton", 0.2], ["cuffs", 0.3], ["handradio", 0.2], ["backpack", 0.15]] },
+  // An air base's crew room and life support room (issue #25, militarylayout.js): flight gear, the nearest items there
+  // are (a military helmet for a flight helmet, a chest rig for a survival vest), flares, radios, first aid.
+  flightgear: { name: "Flight gear", boxes: ["locker", "locker", "shelf"], loot: { meds: [0.25, 1, 2], water: [0.3, 1, 3], food: [0.2, 1, 2] }, gear: [["milhelmet", 0.08], ["chestrig", 0.05], ["flare", 0.15], ["handradio", 0.06], ["binoculars", 0.04], ["bandagekit", 0.05], ["flashlight", 0.06], ["knife", 0.04]] },
   cargodrop: { name: "Scattered cargo",  outdoor: true, boxes: ["crate", "crate", "crate"], loot: { food: [0.6, 3, 8], water: [0.5, 2, 6], meds: [0.25, 1, 2], preserved: [0.35, 2, 6], ammo: [0.25, 5, 15] }, gear: [["assaultpack", 0.03], ["bandagekit", 0.05], ["rucksack", 0.03], ["stove", 0.03]] },
 };
 // What a piece of furniture holds (the user's request 2026-10-25, issue #10: homes furnished room by room,
@@ -6973,6 +6983,10 @@ export const BOX_LOOT = {
   // rack their rifles.
   humvee:       { rest: 0, loot: { fuel: [0.7, 3, 8], parts: [0.4, 1, 3], ammo: [0.5, 20, 60] }, gear: [["milradio", 0.15], ["rucksack", 0.15], ["etool", 0.2], ["sandbags", 0.1], ["traumakit", 0.1]] },
   hazmatrack:   { rest: 0, loot: {}, gear: [["hazmat", 0.75], ["hazmat", 0.35]] },
+  // Labs (issue #37, industrylayout.js): a lab freezer's racks of samples long thawed, with the reagents and the first
+  // aid the lab kept in it; a few vials still good.
+  labfreezer:   { rest: 0.4, loot: { meds: [0.35, 1, 2] }, gear: [["bandagekit", 0.03]] },
+  drum:         { rest: 0.2, loot: { fuel: [0.6, 2, 6] }, gear: [] }, // a fuel depot's drum: what is left in it
   rationshelf:  { rest: 0, loot: { preserved: [0.95, 3, 7], water: [0.55, 2, 5] }, gear: [["puritabs", 0.1]] },
   "rationshelf@cabin": { rest: 0, loot: { preserved: [1, 6, 12], food: [0.7, 3, 6], water: [0.8, 4, 9], meds: [0.3, 1, 2] }, gear: [["puritabs", 0.25]] },
   radioconsole: { rest: 0.3, loot: { electronics: [0.7, 1, 3], parts: [0.4, 1, 2] }, gear: [["milradio", 0.2], ["handradio", 0.15]] },
@@ -6997,11 +7011,48 @@ export const BOX_LOOT = {
   "nightstand@clinic": { rest: 0.25, loot: { water: [0.3, 1, 1] }, gear: [["flashlight", 0.03], ["knife", 0.02]] },
   "medcab@vet":        { rest: 0.5, loot: { meds: [0.75, 1, 4] }, gear: [["dewormer", 0.08]] },
   "crate@vet":         { rest: 0, loot: { food: [0.75, 1, 4] }, gear: [] }, // the food store's sacks of feed: food, at a low worth
-  // Prisons and jails (issue #31): the stash under a cell's bunk (contraband), a property locker (an inmate's things),
-  // a prison bus in the sally port (the guards' bags, a shotgun in its rack, water for the ride).
+  // Prisons and jails (issue #31): the stash under a cell's bunk (contraband), a property room's locker (#25's intake
+  // locker: the property room's own table, AREAS.property, the inmates' belongings), a prison bus in the sally port (the
+  // guards' bags, a shotgun in its rack, water for the ride).
   steelbunk:           { rest: 0, loot: { food: [0.15, 1, 1] }, gear: [["shiv", 0.12], ["cigarettes", 0.18], ["lighters", 0.08], ["makeshiftpick", 0.04], ["flipknife", 0.02], ["photos", 0.04]] },
-  proplocker:          { rest: 1, loot: {}, gear: [] },
+  "intakelocker@property": { rest: 1, loot: {}, gear: [] },
   pbus:                { rest: 1, loot: {}, gear: [] },
+  // A hotel's (issue #29, hotellayout.js): a guest's suitcase (clothes as rags, toiletries, a phone or a laptop, now and
+  // then a pistol or meds), a room's minibar (snacks, drinks, the little bottles), the front desk's safe (the night's
+  // cash, guests' valuables), its desk drawers, housekeeping's shelves (soap, shampoo, the mini bottles).
+  suitcase:            { rest: 0.3, loot: { scrap: [0.6, 1, 3], meds: [0.12, 1, 2], water: [0.15, 1, 1] }, gear: [["soap", 0.12], ["shampoo", 0.1], ["toothpaste", 0.1], ["deodorant", 0.08], ["perfume", 0.04], ["makeup", 0.04], ["phone", 0.08], ["laptop", 0.03], ["camera", 0.03], ["watch", 0.03], ["pistol", 0.025], ["compact9", 0.02], ["slingbag", 0.03]] },
+  minifridge:          { rest: 0, loot: { food: [0.6, 1, 3], water: [0.7, 1, 4] }, gear: [["vodka", 0.12], ["whiskey", 0.1], ["wine", 0.06], ["chocolate", 0.2], ["candy", 0.15]] },
+  "safe@hotelfront":   { rest: 0, loot: { scrap: [0.2, 1, 2] }, gear: [["cashbox", 0.6], ["watch", 0.15], ["goldring", 0.12], ["goldchain", 0.1], ["phone", 0.1], ["pistol", 0.06]] },
+  frontdesk:           { rest: 0.6, loot: {}, gear: [["flashlight", 0.05], ["phone", 0.04]] },
+  "shelf@hotelhk":     { rest: 0.6, loot: {}, gear: [["soap", 0.35], ["shampoo", 0.3], ["toothpaste", 0.2], ["wetwipes", 0.15], ["deodorant", 0.1]] },
+  // Restaurants by kind of food (issue #33, eaterylayout.js): a dry store's shelving its sacks and tins (the cuisine's:
+  // the room's mix), a pastry case stale biscuits and the sugar, a dipping cabinet ice cream long melted but in winter,
+  // a wine rack wine, a food truck its stock, its propane bottles and a little fuel. Tuned with tools/restauranttest.js
+  // so a restaurant holds what the old ones did per area within ±10%.
+  dryshelf:   { rest: 0, loot: { preserved: [0.8, 2, 5], food: [0.45, 1, 3] }, gear: [] },
+  pastrycase: { rest: 0, loot: { preserved: [0.25, 1, 2], food: [0.2, 1, 2] }, gear: [] },
+  dipcabinet: { rest: 0, loot: { food: [0.1, 1, 2] }, cold: { food: [0.8, 2, 6], preserved: [0.1, 1, 2] }, gear: [] },
+  winerack:   { rest: 0, loot: { water: [0.5, 1, 3] }, gear: [["wine", 0.45], ["bottle", 0.2]] },
+  foodtruck:  { rest: 0, loot: { preserved: [0.6, 2, 5], food: [0.4, 1, 3], propane: [0.8, 1, 2], fuel: [0.3, 1, 3] }, gear: [["knife", 0.15], ["cleaver", 0.15], ["flashlight", 0.1]] },
+  // Military bases, air bases, airports and prisons (issue #25, militarylayout.js; the footlocker, the radio console and
+  // the Humvee are #26's rows above): an ammo crate the rounds and the odd grenade; a fuel bladder fuel; an inmate's
+  // property locker what was taken off them at intake (a phone, a watch, a knife, cigarettes); a suitcase what a traveller
+  // packed. The wrecks and vehicles (2 × L containers): an Army truck in the motor pool its kit and fuel, a helicopter the
+  // crew's (a rifle, a radio, flares), a fighter little but parts and the pilot's flares, a transport plane its cargo.
+  // The flight gear (helmets, survival vests) maps to the nearest items there are (a military helmet, a chest rig), as
+  // #15's turnout gear did: no new items. Measured with tools/interiortest.js (the comment on issue #25).
+  "sportcage@armory": { rest: 0.2, loot: {}, gear: [["nvg", 0.12], ["binoculars", 0.2], ["thermal", 0.04], ["spotscope", 0.08], ["holo", 0.08], ["reddot", 0.08], ["milradio", 0.04]] }, // an armory's NVG and optics cage
+  "sportcage@barracks": { rest: 0.6, loot: { ammo: [0.3, 5, 15] }, gear: [["rucksack", 0.06], ["camonet", 0.06], ["etool", 0.08], ["sandbags", 0.06]] }, // a quartermaster's cage, a barracks supply room
+  ammocrate:    { rest: 0.4, loot: { ammo: [0.9, 20, 60] }, gear: [["frag", 0.08]] },
+  fuelbladder:  { rest: 0, loot: { fuel: [0.85, 6, 16] }, gear: [] },
+  intakelocker: { rest: 0, loot: { scrap: [0.2, 1, 2] }, gear: [["phone", 0.08], ["watch", 0.06], ["knife", 0.05], ["cigarettes", 0.1], ["photos", 0.06], ["slingbag", 0.03]] },
+  luggage:      { rest: 0, loot: { food: [0.15, 1, 2], water: [0.15, 1, 2], meds: [0.1, 1, 1] }, gear: [["slingbag", 0.04], ["duffle", 0.03], ["cigarettes", 0.06], ["watch", 0.03], ["phone", 0.05], ["photos", 0.04], ["flashlight", 0.03]] },
+  m35:          { rest: 0, loot: { fuel: [0.6, 4, 10], parts: [0.5, 1, 3], food: [0.3, 2, 6] }, gear: [["sandbags", 0.15], ["barbedwire", 0.1], ["etool", 0.2], ["camonet", 0.08]] },
+  helo:         { rest: 0, loot: { ammo: [0.5, 10, 30], fuel: [0.5, 2, 6], parts: [0.5, 1, 3], meds: [0.3, 1, 2] }, gear: [["ar", 0.05], ["milhelmet", 0.12], ["milradio", 0.05], ["chestrig", 0.06], ["flare", 0.4], ["bandagekit", 0.2]] },
+  jet:          { rest: 0, loot: { parts: [0.7, 2, 4], scrap: [0.7, 3, 8], fuel: [0.4, 2, 6] }, gear: [["milhelmet", 0.1], ["flare", 0.4], ["chestrig", 0.04]] },
+  cargoplane:   { rest: 0, loot: { food: [0.5, 3, 8], water: [0.4, 2, 6], parts: [0.5, 1, 3], fuel: [0.5, 3, 8], ammo: [0.3, 10, 25] }, gear: [["assaultpack", 0.06], ["rucksack", 0.04], ["sandbags", 0.1], ["flare", 0.3]] },
+  airliner:     { rest: 0, loot: { food: [0.5, 2, 6], water: [0.5, 2, 6], fuel: [0.4, 2, 6] }, gear: [["slingbag", 0.15], ["duffle", 0.1], ["phone", 0.15], ["watch", 0.08], ["cigarettes", 0.15], ["flare", 0.2]] },
+  firetruck:    { rest: 0, loot: { fuel: [0.5, 2, 6], parts: [0.3, 1, 2] }, gear: [["fireaxe", 0.5], ["prybar", 0.3], ["bandagekit", 0.2], ["flashlight", 0.2]] },
 };
 const boxDefs = new Map();
 // The table a container rolls: its room's (AREAS[type]), or its kind's (BOX_LOOT) with the room's rows at `rest` times
@@ -7024,7 +7075,7 @@ export const AREA_SETS = {
   town: ["house", "house", "store", "garage", "kitchen", "wreck"], city: ["store", "office", "office", "house", "warehouse", "wreck"],
   farm: ["farmhouse", "barn", "barn", "campsite"], gas: ["store", "garage", "pumps", "wreck"], mall: ["store", "store", "lockers", "kitchen", "warehouse"],
   hospital: ["clinic", "clinic", "pharmacy", "office", "kitchen"], police: ["armory", "office", "garage", "cellblock"],
-  military: ["armory", "barracks", "motorpool", "warehouse"], prison: ["cellblock", "cellblock", "kitchen", "armory", "clinic"],
+  military: ["armory", "barracks", "motorpool", "warehouse"], airbase: ["hangar", "barracks", "armory", "warehouse"], prison: ["cellblock", "cellblock", "kitchen", "armory", "clinic"],
   univ: ["lab", "lab", "office", "kitchen"], dam: ["control", "workshop", "warehouse"], airport: ["hangar", "warehouse", "store", "office"],
   factory: ["workshop", "warehouse", "office", "garage"], quarry: ["workshop", "garage", "campsite"],
   forest: ["cabin", "campsite", "wreck"], hills: ["cabin", "campsite"], mountain: ["campsite", "cabin"], plains: ["farmhouse", "barn", "wreck"],
@@ -7226,8 +7277,11 @@ function genRaidMap(rng, tile, areaTypes, withVehicle, extra = {}) {
     // A building with doors, windows and containers against the inside walls.
     let built = false;
     const big = W * H > 900 ? 2 : W * H > 700 ? 1 : 0; // bigger rooms on a bigger map (battlesize.js)
+    // A city's or a town's street in a world made since buildings at real size (extra.real, issue #24): a shop's or a
+    // house's front, 9–16 × 8–12 m (data-buildingsize.js CELL_M: a cell a metre), where the map has room for it.
+    const real = !!extra.real && W >= 40 && H >= 30;
     for (let tries = 0; tries < 40 && !built; tries++) {
-      const w = rng.int(5, 8 + big), h = rng.int(4, 6 + Math.min(1, big));
+      const w = real && tries < 30 ? rng.int(9, 16) : rng.int(5, 8 + big), h = real && tries < 30 ? rng.int(8, 12) : rng.int(4, 6 + Math.min(1, big));
       const x0 = rng.int(4, W - 5 - w), y0 = rng.int(1, H - 1 - h);
       if (!rectFree(x0, y0, w, h)) continue;
       const edge = [];
@@ -7373,7 +7427,8 @@ export function createRaid(state, setup) {
     if (tile && tile.road && !types.includes("roadcars")) types.push("roadcars"); // a site on a road: the cars left on the road outside it too (AREAS.roadcars)
     const trucks = trucksAt(state, tileId); // miltrucks.js: Army trucks here (a road, a convoy, a base's motor pool, an army wreck)
     if (trucks.length && !types.includes("miltrucks")) { if (poiI != null) types.push("miltrucks"); else types.unshift("miltrucks"); } // first: they want the room (a POI's map: last)
-    map = genRaidMap(mrng, tile, types, withVehicle, { trucks, big: raidBig(state, W, H) });
+    map = genRaidMap(mrng, tile, types, withVehicle, { trucks, big: raidBig(state, W, H), real: !legacyScale(state) && !!tile && !!tile.loc && (tile.loc.type === "city" || tile.loc.type === "town") }); // real: a city's or a town's street, its buildings at real size (issue #24)
+    if (setup.raid && setup.raid.checkpoint) dressCheckpoint(map, W, H, new Rng(Math.floor(hash01(state.seed, "checkpoint", tileId, state.hour) * 4294967296)), (k) => !!(CELL[k] && CELL[k].walk)); // militarylayout.js: the crawl's checkpoint gets the military pieces (issue #25; a new save's)
     if (entryFrom(map, entrySide, withVehicle)) { const z = map.zones[0]; map.reach = flood(map.cells, z.x0 + 1, z.y0 + 1); }
     if (campPoi) { campRaidMap(state, tileId, poiI, map, W, H, mrng); map.reach = flood(map.cells, map.zones[0].x0 + 1, map.zones[0].y0 + 1); } // campsite.js: the clearing, the fire and the tents round it
   }
@@ -7397,6 +7452,7 @@ export function createRaid(state, setup) {
     ...battleDials(state), // worldcfg.js: the run's dials this battle reads (b.zDmg, b.infectBite, b.wear, b.failures)
     raid: {
       areas: map.areas, containers: map.containers, zones: map.zones,
+      ...(map.natMap ? { natMap: map.natMap.slice() } : {}), // buildingmaps.js realScale: the map its plan would have had at its own size (a container's find goes by it)
       hasVehicle: !!withVehicle, vehicleZone: map.zones.findIndex((z) => z.vehicle), heat: setup.raid?.heat0 || 0, stage: 0, spawned: 0, spawnCap: Math.round(RAID_SIZE.SPAWN_CAP * raidDeadScale(W, H, big)), ...(big ? { big: true } : {}), // vehicleZone: the zone the vehicle touches now (syncVehicleZone), -1 when driven off
       // Hardcore (hardcore-loot.js): sites hold about twice a normal start's loot, so the cap is higher there.
       // A point of interest's containers hold what they held untouched (pois.js poiFull: how picked over it is shows
@@ -7421,6 +7477,7 @@ export function createRaid(state, setup) {
     b.floors = map.floors.map((F, i) => ({ cells: F.cells, reach: i === 0 ? map.reach : map.street || map.compound ? upReach(F) : flood(F.cells, map.stairs[0][0], map.stairs[0][1]), losCache: i === 0 ? b.losCache : null, name: F.name }));
     b.floor = 0;
     b.raid.storeys = map.floors.length;
+    if (map.height > map.floors.length) b.raid.height = map.height; // a taller building: the floors above are not built (their stairs blocked)
     b.raid.stairs = map.stairs.map((s) => s.slice()); // the cells that change floor: each stair run's top step
     b.raid.runs = (map.runs || []).map((r) => ({ ...r })); // the runs themselves (buildingmaps.js STAIR_DIRS)
   } else if (pick) { b.raid.storeys = 1; b.raid.stairs = []; b.raid.runs = []; }
@@ -7734,7 +7791,7 @@ export function searchBox(state, b, u, box, open = false, quick = false) {
   const party = state.parties.find((x) => x.id === b.setup.partyId);
   if (u.xpT && !box.contents) u.xpT.boxes++; // skills.js: Scavenging XP for each container opened
   const rich = box.kind === "body" ? 1 : R.richness * Math.min(FLOOR_RICH.cap, Math.pow(FLOOR_RICH.perFloor, box.f || 0)) * (box.rich || 1); // upper storeys are less picked over (buildingmaps.js); a nest's floor richer still (floorfolk.js)
-  const reward = box.kind === "body" ? 1 : (R.reward ?? 1) * (box.truck || !R.big ? 1 : raidLootShare(b.w, b.h)); // buildingmaps.js rewardMult: city sites pay more, the countryside less; a map past the old Large has more containers, each holds a little less (battlesize.js BIG)
+  const reward = box.kind === "body" ? 1 : (R.reward ?? 1) * (box.truck || !R.big ? 1 : R.natMap ? raidLootShare(R.natMap[0], R.natMap[1]) : raidLootShare(b.w, b.h)); // a building at real size (R.natMap): its containers hold what its plan's map's did (as many to the square metre, each as full) // buildingmaps.js rewardMult: city sites pay more, the countryside less; a map past the old Large has more containers, each holds a little less (battlesize.js BIG)
   // Roll what is inside (once); anything that does not fit stays in the container.
   if (!box.contents) {
     const sup = {}, gear = [];
@@ -7840,7 +7897,7 @@ export function searchBox(state, b, u, box, open = false, quick = false) {
     lockedLoot(state, b, u, box, sup, gear); // locks.js: more in locked things, keys, blueprints (its own dice)
     const site = poiKind || (state.tiles[b.tileId] && state.tiles[b.tileId].loc ? state.tiles[b.tileId].loc.type : null);
     const rTheme = box.kind === "body" ? "home" : box.truck ? "military" : raidTheme(site, box.area != null && R.areas[box.area] ? R.areas[box.area].type : "house");
-    typeFind(state, sup, box.kind === "body" ? (box.zombie ? "travel" : "raider") : box.truck ? "military" : box.area != null && R && R.areas[box.area] ? AREA_MIX[R.areas[box.area].type] || "house" : "house", box.kind === "body" ? null : b.tileId, pd ? drng : undefined); // foods.js: the food as the items a place like this holds (a site's shelves run down)
+    typeFind(state, sup, box.kind === "body" ? (box.zombie ? "travel" : "raider") : box.truck ? "military" : box.area != null && R && R.areas[box.area] ? R.areas[box.area].mix || AREA_MIX[R.areas[box.area].type] || "house" : "house", box.kind === "body" ? null : b.tileId, pd ? drng : undefined); // foods.js: the food as the items a place like this holds (a site's shelves run down)
     sortFind(sup, rTheme, "box", b.tileId, bid); // ammo.js: what turns up there, by calibre
     if (box.kind !== "body") formFinds(sup, gear, rTheme, "box", b.tileId, bid); // ammo.js: some of it boxed (stacks of boxes), now and then a bulk ammo container; the rest loose
     box.contents = { sup, gear };
@@ -8205,3 +8262,4 @@ MED.setMedicHooks({ take, spendRounds, medsOf, spendMed, alertAll, foesOf, heal,
 // data-shops.js: the town's and the city's shops and services (their rows; this module's own rows win).
 for (const [k, d] of Object.entries(AREA_DEFS)) if (!AREAS[k]) AREAS[k] = d.def;
 for (const [k, d] of Object.entries(NEW_KINDS)) if (!AREA_SETS[k]) AREA_SETS[k] = d.areas;
+for (const [k, d] of Object.entries(OFFICE_BOX)) if (!BOX_LOOT[k]) BOX_LOOT[k] = d;
