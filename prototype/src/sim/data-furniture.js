@@ -123,6 +123,34 @@ export const FURNITURE_KINDS = {
   booth:       P("Booth",           HALF, 30, 80, "fixed", S21, false, ["dining", "bar"], "none"),
   barcounter:  P("Bar counter",     HALF, 35, 150, "fixed", S1, false, ["bar"], "none"),
   barstool:    P("Bar stool",       HALF, 8, 6, "one", S1, false, ["bar", "kitchen"], "comfort:0.1"),
+  // ---------- shops, restaurants, bars, offices, motels, banks and big stores (issue #16: shoplayout.js lays them) ----------
+  // A cold-room shelf, a cold case and a server rack hold their own tables (combat.js BOX_LOOT); the ATM is fixed and
+  // is its own container (buildingmaps.js puts one at a bank's door, as a safe), not an area's box.
+  range:        P("Range",              HALF, 40, 120, "two", S1, false, ["kitchen"], "stove", true), // six rings and an oven under them
+  fryer:        P("Deep fryer",         HALF, 25, 55, "two", S1, false, ["kitchen"], "none", true),
+  pizzaoven:    P("Pizza oven",         STEEL, 60, 450, "fixed", S21, false, ["kitchen"], "oven", true), // brick-lined, built in
+  coldshelf:    P("Cold-room shelving", HALF, 25, 40, "two", S1, true, ["kitchen", "shop"], "storage:60", true),
+  jukebox:      P("Jukebox",            C(false, 1, false), 25, 110, "two", S1, false, ["bar"], "comfort:0.5", true),
+  pooltable:    P("Pool table",         HALF, 50, 300, "two", S21, false, ["bar"], "comfort:0.5"),
+  clothesrack:  P("Clothes rack",       HALF, 10, 18, "one", S1, true, ["shop"], "storage:20"),
+  tank:         P("Fish tank",          C(false, 1, false), 15, 70, "two", S1, false, ["shop"], "none", true),
+  pottingbench: P("Potting bench",      HALF, 20, 40, "two", S21, true, ["shop", "yard"], "work:table", true),
+  palletrack:   P("Pallet rack",        FULL, 50, 160, "two", S1, true, ["bay", "shop"], "storage:200"),
+  tirerack:     P("Tyre rack",          HALF, 30, 60, "two", S1, true, ["bay"], "storage:40", true),
+  carlift:      P("Car lift",           C(false, 1, false), 80, 900, "fixed", S1, false, ["bay"], "none"),
+  machine:      P("Machine tool",       STEEL, 80, 900, "fixed", S21, false, ["bay"], "none"), // a lathe, a press, a mill: bolted down
+  forklift:     P("Forklift",           STEEL, 80, 3000, "fixed", S12, false, ["bay"], "none"),
+  saddlerack:   P("Saddle rack",        HALF, 15, 25, "one", S1, true, ["barn"], "storage:20", true),
+  cubicle:      P("Cubicle partition",  C(false, 1, false), 10, 15, "one", S1, false, ["office"], "none"),
+  whiteboard:   P("Whiteboard",         POLE, 5, 8, "one", S1, false, ["office", "school"], "none", true),
+  watercooler:  P("Water cooler",       HALF, 10, 20, "one", S1, false, ["office"], "none", true),
+  secdesk:      P("Security desk",      HALF, 30, 60, "two", S21, true, ["office"], "work:desk"), // the monitors on it
+  keyrack:      P("Key rack",           POLE, 5, 3, "one", S1, false, ["office"], "none", true),
+  icemachine:   P("Ice machine",        FULL, 40, 90, "two", S1, false, ["shop", "office"], "none", true),
+  teller:       P("Teller window",      C(false, 1, false), 40, 200, "fixed", S1, false, ["office"], "none"), // a counter under a glass screen
+  deposit:      P("Safe-deposit boxes", STEEL, 60, 160, "two", S1, true, ["office"], "storage:20", true),
+  atm:          P("ATM",                STEEL, 80, 400, "fixed", S1, false, ["shop", "office"], "none", true),
+  stanchion:    P("Queue post",         POLE, 3, 6, "one", S1, false, ["office", "shop"], "none"),
   // ---------- workshops, bays and garages ----------
   workbench: P("Workbench",  HALF, 35, 60, "two", S21, true, ["bay", "cellar", "school"], "work:workbench", true),
   toolchest: P("Tool chest", HALF, 35, 55, "two", S1, true, ["bay", "cellar"], "storage:40", true),
@@ -138,7 +166,7 @@ export const FURNITURE_KINDS = {
   // The armory's gun racks and ammo cabinets, the evidence room's lockers, a fire station's turnout lockers, a school
   // corridor's narrow lockers and a gym's storage cage are containers with their own tables (combat.js BOX_LOOT); a cot
   // (a gym or a nave used as a shelter: interiorscenes.js) is data-beds.js's own Cot item (FURNITURE_ITEM_KEY).
-  gunrack:     P("Gun rack",          HALF, 35, 40, "two", S1, true, ["armory"], "storage:30", true),
+  gunrack:     P("Gun rack",          HALF, 35, 40, "two", S1, true, ["armory", "shop"], "storage:30", true), // a gun store's too (shoplayout.js, issue #16)
   ammocab:     P("Ammo cabinet",      FULL, 45, 60, "two", S1, true, ["armory"], "storage:40", true),
   evlocker:    P("Evidence locker",   FULL, 40, 45, "two", S1, true, ["evidence", "office"], "storage:40", true),
   turnout:     P("Turnout locker",    FULL, 35, 40, "two", S1, true, ["bay"], "storage:40", true),

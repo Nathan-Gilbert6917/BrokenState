@@ -82,8 +82,8 @@ const RULES = {
   house: [["cabinet", "locker"], "lockbox", 0.12], farmhouse: [["cabinet", "locker"], "lockbox", 0.1], cabin: [["locker"], "lockbox", 0.15],
   lockers: [["locker"], "locker", 0.3], barracks: [["locker"], "locker", 0.35], garage: [["locker"], "locker", 0.15], workshop: [["locker"], "locker", 0.15],
   pharmacy: [["cabinet"], "drugs", 0.35], clinic: [["cabinet", "locker"], "drugs", 0.3], lab: [["cabinet"], "drugs", 0.25],
-  office: [["cabinet"], "safe", 0.08], control: [["cabinet"], "safe", 0.12], cellblock: [["locker", "cabinet"], "evidence", 0.3],
-  armory: [["locker", "crate"], "cage", 0.45], gunshop: [["locker", "counter"], "cage", 0.4], pawnshop: [["counter", "cabinet"], "cage", 0.35], // a pawn shop's locked cases (shops.js)
+  office: [["cabinet", "filing"], "safe", 0.08], control: [["cabinet"], "safe", 0.12], cellblock: [["locker", "cabinet"], "evidence", 0.3],
+  armory: [["locker", "crate"], "cage", 0.45], gunshop: [["locker", "counter", "gunrack", "displaycase"], "cage", 0.4], pawnshop: [["counter", "cabinet", "displaycase"], "cage", 0.35], // a pawn shop's locked cases (shops.js); the gun racks and cases shoplayout.js lays (issue #16)
   warehouse: [["crate"], "crate", 0.12], hangar: [["crate", "locker"], "crate", 0.2], motorpool: [["crate", "locker"], "crate", 0.2],
   milwreck: [["crate"], "case", 0.45], medwreck: [["crate"], "case", 0.4], newswreck: [["crate"], "case", 0.35],
   fuselage: [["crate", "locker"], "case", 0.4], cargodrop: [["crate"], "case", 0.25],

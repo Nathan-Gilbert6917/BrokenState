@@ -23,6 +23,8 @@
 //     locked; every room's doors reachable from the stairs on every floor; the containers exactly the lootable pieces
 //     (and the ambulance); the meds per building within ±10% of the old layout (200 seeded buildings); the hospital's
 //     scenes (an ER overrun, a sealed ward, the morgue's dead) roll; an older save keeps the old plan;
+//   - commercial buildings laid out for their kind (shoplayout.js, issue #16: the rest in tools/shopstest.js): every
+//     room's doors and stairs reachable from each other, no piece of 2+ cells on a door's front;
 //   - civic buildings laid out for their kind (civiclayout.js, issue #15): a police station's rooms with their pieces
 //     (the front desk's counter, the squad room's desks, the armory's gun racks, the evidence room's lockers, cells each
 //     with bars, a cell door, a bunk, a toilet and a sink, a one-way window from an interview room, a police car in the
@@ -45,6 +47,7 @@ import { raidBuildings, buildingPickFor } from "../src/sim/poiraid.js"; // a sit
 import { BUILDINGS, SITES, assemble, siteBuildings, buildingMap, buildingOptions, placeOccupantGroups, windowsNear, BMAP } from "../src/sim/buildingmaps.js";
 import { HOME_STYLES, HOME_KEYS, MEDICAL_STYLES, MED_KEYS } from "../src/sim/roomlayout.js";
 import { rollScenes } from "../src/sim/interiorscenes.js";
+import { COMMERCIAL_KEYS, styleName } from "../src/sim/shoplayout.js";
 import { CIVIC_STYLES } from "../src/sim/civiclayout.js";
 import { pieceDef } from "../src/sim/data-furniture.js";
 import { boxLoot, FLOOR_RICH } from "../src/sim/combat.js";
@@ -755,6 +758,38 @@ console.log("\nHospitals, clinics, infirmaries and vets room by room (roomlayout
     for (const a of m.rooms) if (["er", "icu", "theatre", "morgue", "ambbay", "nursestation", "laundry", "staffroom"].includes(a.role)) newer++;
   }
   check(!newer, `an older save's hospital, clinic and vet keep the old plan (${newer} new rooms or pieces)`);
+}
+
+// ======================================================================================
+console.log("\nCommercial buildings room by room (shoplayout.js)");
+{
+  const N = Math.max(SEEDS, 4);
+  const errs = {};
+  const err = (k, msg) => { (errs[k] = errs[k] || []).push(msg); };
+  let built = 0, styled = 0;
+  for (const key of COMMERCIAL_KEYS) for (let s = 0; s < N; s++) {
+    const rng = new Rng(52000 + s * 7919 + key.length * 13);
+    const m = assemble(rng, BUILDINGS[key].make(rng, {}), { key, name: key });
+    const grids = m.floors || [{ cells: m.cells }];
+    built++;
+    for (const a of m.rooms.filter((r) => !r.outdoor)) {
+      const g = grids[a.f].cells, doors = a.doors || [];
+      if (styleName(a, key)) styled++;
+      if (doors.length) {
+        const seen = walkFrom(m, doors[0][0], doors[0][1], true, g);
+        for (const [x, y] of doors) if (!seen[y * m.w + x]) err("doors", `${key} ${s} ${a.name} door ${x},${y}`);
+        for (let y = a.y0 + 1; y < a.y0 + a.h - 1; y++) for (let x = a.x0 + 1; x < a.x0 + a.w - 1; x++) if (g[y * m.w + x].k === "stairs" && !seen[y * m.w + x]) err("stairs", `${key} ${s} ${a.name}`);
+      }
+      const isDoor = (x, y) => ["idoor", "odoor", "door"].includes(g[y * m.w + x].k);
+      for (let y = a.y0 + 1; y < a.y0 + a.h - 1; y++) for (let x = a.x0 + 1; x < a.x0 + a.w - 1; x++) {
+        const c = g[y * m.w + x];
+        if (c.pc && pieceDef(c.k) && styleName(a, key) && [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => isDoor(x + dx, y + dy))) err("doorway", `${key} ${s} ${a.name} ${c.k}`);
+      }
+    }
+  }
+  for (const [what, label] of [["doors", "every room's doors reachable from each other"], ["stairs", "the stairs reachable from the rooms' doors"], ["doorway", "no piece of 2+ cells on a door's front"]]) {
+    check(!errs[what], `${label} (${built} commercial buildings, ${styled} rooms styled)${errs[what] ? `: ${errs[what].length} bad, e.g. ${errs[what].slice(0, 3).join("; ")}` : ""}`);
+  }
 }
 
 // ======================================================================================

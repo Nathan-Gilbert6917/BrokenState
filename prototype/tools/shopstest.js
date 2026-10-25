@@ -17,12 +17,24 @@
 //   flat above, the front room's floor and name); a POI or a crawl building left before franchises keeps its layout
 // - a shop POI's shelves: guns, rigs, survival gear (gun store, pawn shop), materials (hardware), valuables (bank)
 // - a search on a pawn shop POI runs hour by hour; the hardware store's materials
+// - laid out for their kind (shoplayout.js, issue #16): every shop front has a checkout and its kind's pieces (a cold
+//   case, the gun counter and racks, bookshelves, tanks, potting benches, clothes racks, a workbench...); every
+//   restaurant a kitchen with a range and a walk-in cold room behind a steel door (a pizza place a pizza oven); every
+//   motel room a bed and a bathroom; the bank's vault locked, its ATM; the office tower's desks, meeting rooms, server
+//   racks; every container on its piece and reachable, every room's floor one walk; the same building the same layout;
+//   loot per kind within ±10% of the old layout over 200 seeds; an older save's buildings furnished the old way; their
+//   signs of survival (a motel room held, a stockroom shelter, a counter stand, a walk-in) on the new layouts only
 // Usage: node tools/shopstest.js [seed]
 import { createWorld, hub, atBase } from "../src/sim/world.js";
 import { LOCATIONS, GEAR } from "../src/sim/data.js";
 import { SITE_TAGS, AREA_TAGS, BUILDMAT_FINDS, SITE_WOOD } from "../src/sim/loot.js";
 import { AREA_SETS, AREAS, WEAPONS } from "../src/sim/combat.js";
-import { SITES, BUILDINGS, buildingHint, buildingMap, siteBuildings } from "../src/sim/buildingmaps.js";
+import { SITES, BUILDINGS, buildingHint, buildingMap, siteBuildings, assemble } from "../src/sim/buildingmaps.js";
+import { COMMERCIAL_KEYS, styleName } from "../src/sim/shoplayout.js";
+import { pieceDef } from "../src/sim/data-furniture.js";
+import { boxLoot, CELL } from "../src/sim/combat.js";
+import { supValue } from "../src/sim/data.js";
+import { rollScenes } from "../src/sim/interiorscenes.js";
 import { SIZES } from "../src/sim/battlesize.js";
 import { SITE_KIT, AREA_KIT } from "../src/sim/carrykit.js";
 import { SURV_FINDS, AREA_SURV } from "../src/sim/data-survival.js";
@@ -346,6 +358,120 @@ section("The hardware store: materials for building and crafting");
   const tools = { n: 0 };
   for (let i = 0; i < 3000; i++) { s0.hour = 9000 + i; tools.n += rollShopShelves(s0, tile.id, "hardware", 1, 1, `k${i}`).length; }
   check(tools.n > 300, `its shelves' small finds, lamps, carts and hard hats as a POI (${tools.n} in 3000 hours)`);
+}
+
+// ---------- 6. laid out for their kind ----------
+section("Laid out for their kind (shoplayout.js, issue #16)");
+{
+  const N = process.env.BS_QUICK ? 10 : 30;
+  const FK = { gasstation: "gas" };
+  const KEYS = [...COMMERCIAL_KEYS];
+  const make = (key, s, legacy = false, noDecor = false) => {
+    const fr = FRANCHISES[FK[key] || key] || [], rng = new Rng(9000 + s * 104729 + key.length);
+    return assemble(rng, BUILDINGS[key].make(rng, { variant: fr.length ? fr[s % fr.length].id : null, legacy }), { key, name: key, legacy, noDecor });
+  };
+  const grid = (m, f) => (m.floors ? m.floors[f].cells : m.cells);
+  const inside = (m, a) => { const out = []; for (let y = a.y0 + 1; y < a.y0 + a.h - 1; y++) for (let x = a.x0 + 1; x < a.x0 + a.w - 1; x++) out.push([x, y, grid(m, a.f)[y * m.w + x]]); return out; };
+  const kinds = (m, a) => new Set(inside(m, a).map(([, , c]) => c.k));
+  const walk = (m, f, sx, sy) => {
+    const g = grid(m, f), seen = new Uint8Array(m.w * m.h), q = [sy * m.w + sx];
+    seen[q[0]] = 1;
+    while (q.length) { const i = q.pop(), x = i % m.w, y = (i / m.w) | 0; for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = x + dx, ny = y + dy; if (nx < 0 || ny < 0 || nx >= m.w || ny >= m.h) continue; const j = ny * m.w + nx; if (!seen[j] && (CELL[g[j].k].walk || g[j].k === "door")) { seen[j] = 1; q.push(j); } } }
+    return seen;
+  };
+  const SIG = {
+    grocery: ["coldcase", "rack"], corner: ["coldcase"], gasstation: ["coldcase"], liquor: ["coldcase"], truckstop: ["coldcase", "barcounter"], pharmacy: ["rack"], sportshop: ["rack"], petstore: ["tank"],
+    feedstore: ["rack"], garden: ["pottingbench"], hardware: ["workbench", "rack"], gunstore: ["displaycase", "gunrack"], pawnshop: ["displaycase", "bars"], electronics: ["workbench"], radioshop: ["workbench"],
+    bookstore: ["bookshelf"], clothing: ["clothesrack"], restaurant: ["table"], diner: ["barcounter", "barstool"], pizza: ["barcounter", "barstool"], bar: ["barcounter", "barstool"], supermarket: ["coldcase", "rack"], deptstore: ["clothesrack"],
+  };
+  const errs = {}, seen = {};
+  const err = (k, msg) => { (errs[k] = errs[k] || []).push(msg); };
+  const saw = (k) => { seen[k] = (seen[k] || 0) + 1; };
+  let built = 0, styled = 0, rooms = 0;
+  for (const key of KEYS) for (let s = 0; s < N; s++) {
+    const m = make(key, s), tag = `${key} ${s}`;
+    built++;
+    const R = m.rooms.filter((a) => !a.outdoor);
+    for (const a of R) { rooms++; if (styleName(a, key)) styled++; }
+    // Every shop front (a sales floor, a dining room, a bar) has a checkout; the kind's own pieces in its fronts.
+    const fronts = R.filter((a) => a.f === 0 && (a.role === "sales" || a.role === "dining") && (SIG[key] || ["supermarket", "deptstore"].includes(key)));
+    for (const a of fronts) if (!kinds(m, a).has("checkout")) err("checkout", `${tag} ${a.name}`);
+    if (SIG[key]) { const all = new Set(fronts.flatMap((a) => [...kinds(m, a)])); for (const k of SIG[key]) if (!all.has(k)) err("signature", `${tag}: no ${k}`); }
+    // Every restaurant, diner and pizza place: a kitchen with a range, the walk-in cold room behind a steel door.
+    if (["restaurant", "diner", "pizza"].includes(key)) {
+      const kit = R.filter((a) => a.role === "kitchen");
+      if (!kit.some((a) => kinds(m, a).has("range"))) err("range", tag);
+      if (key === "pizza" && !kit.some((a) => kinds(m, a).has("pizzaoven") || kinds(m, a).has("oven"))) err("oven", tag);
+      const cold = R.find((a) => /Walk-in/.test(a.name));
+      if (!cold || !kinds(m, cold).has("coldshelf")) err("walkin", tag);
+      else if (!cold.doors.some(([x, y]) => grid(m, cold.f)[y * m.w + x].dk === "steel")) err("steel", tag);
+    }
+    if (key === "bar" && !R.some((a) => a.role === "kitchen" && kinds(m, a).has("range")) && R.some((a) => a.role === "kitchen")) err("range", tag);
+    // A motel: every room a bed, as many bathrooms with a toilet; the front desk's safe; the laundry.
+    if (key === "motel") {
+      const mr = R.filter((a) => a.role === "motelroom"), baths = R.filter((a) => a.role === "bath" && kinds(m, a).has("toilet"));
+      for (const a of mr) if (!kinds(m, a).has("bed")) err("motelbed", `${tag} ${a.name}`);
+      if (baths.length < mr.length) err("motelbath", `${tag}: ${baths.length} of ${mr.length}`);
+      if (!m.containers.some((c) => c.kind === "safe" && c.lockKind === "safe")) err("motelsafe", tag);
+      if (R.some((a) => a.name === "Laundry" && kinds(m, a).has("washer"))) saw("laundry");
+    }
+    // A bank: the vault behind its locked vault door, the ATM by the front door, the safe-deposit room.
+    if (key === "bank") {
+      const v = R.find((a) => a.name === "Vault");
+      if (!v || !m.lockedDoors.some((d) => d.area === v.id && d.kind === "vault")) err("vault", tag);
+      if (!m.containers.some((c) => c.kind === "atm" && c.lockKind === "safe")) err("atm", tag);
+      if (R.some((a) => a.name === "Safe-deposit room" && kinds(m, a).has("deposit"))) saw("deposit");
+      if (R.some((a) => a.name === "Banking hall" && kinds(m, a).has("teller"))) saw("teller");
+    }
+    if (key === "offices") for (const a of R) for (const k of kinds(m, a)) if (["desk", "cubicle", "whiteboard", "serverrack", "secdesk", "copier", "sofa", "safe", "fridge"].includes(k)) saw(`office ${k}`);
+    if (key === "supermarket") { if (R.filter((a) => a.role === "sales").reduce((n, a) => n + inside(m, a).filter(([, , c]) => c.k === "checkout").length, 0) < 2) err("lanes", tag); if (R.some((a) => a.name === "Deli" && kinds(m, a).has("oven"))) saw("deli oven"); if (R.some((a) => a.name === "Pharmacy counter")) saw("pharmacy counter"); }
+    for (const [k, test] of [["pallet racks", key === "warehouse" && R.some((a) => kinds(m, a).has("palletrack"))], ["machine tools", key === "factory" && R.some((a) => kinds(m, a).has("machine"))], ["car lift", ["autoshop", "garage", "dealer"].includes(key) && R.some((a) => kinds(m, a).has("carlift"))], ["saddle rack", key === "barn" && R.some((a) => kinds(m, a).has("saddlerack"))], ["greenhouse", key === "garden" && R.some((a) => a.name === "Greenhouse")], ["jukebox", key === "bar" && R.some((a) => kinds(m, a).has("jukebox"))], ["fryer", R.some((a) => kinds(m, a).has("fryer"))]]) if (test) saw(k);
+    // Every container on a piece of its kind and searched from a cell its room's first door reaches; every room's
+    // floor one walk (the aisles leave a 1-cell walk).
+    for (const c of m.containers) {
+      const a = m.rooms.find((r) => r.id === c.area);
+      if (!a || a.outdoor || c.kind === "car") continue;
+      const g = grid(m, c.f || 0);
+      if (g[c.y * m.w + c.x].k !== c.kind) err("onpiece", `${tag} ${c.label} on ${g[c.y * m.w + c.x].k}`);
+    }
+    for (const a of R) {
+      if (!a.doors || !a.doors.length) continue;
+      const w = walk(m, a.f, a.doors[0][0], a.doors[0][1]), g = grid(m, a.f);
+      for (const [x, y, c] of inside(m, a)) if ((CELL[c.k].walk || c.k === "door") && !w[y * m.w + x]) { err("walk", `${tag} ${a.name} ${x},${y}`); break; }
+      for (const c of m.containers.filter((q) => q.area === a.id)) if (![[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => w[(c.y + dy) * m.w + c.x + dx])) err("reach", `${tag} ${c.label}`);
+      if (g.length !== m.w * m.h) err("grid", tag);
+    }
+  }
+  const label = { checkout: "every shop front has a checkout", signature: "every front its kind's pieces", range: "every restaurant's kitchen a range", oven: "a pizza place's pizza oven", walkin: "every restaurant a walk-in cold room of cold-room shelving", steel: "behind a steel door", motelbed: "every motel room a bed", motelbath: "every motel room its bathroom with a toilet", motelsafe: "the motel's front desk safe, locked", vault: "the bank's vault behind a locked vault door", atm: "the bank's ATM, a locked container", lanes: "a supermarket's checkout lanes", onpiece: "every container stands on its piece", reach: "every container searched from a cell its room's door reaches", walk: "every room's floor one walk (the aisles leave a 1-cell walk)", grid: "every floor's grid whole" };
+  for (const [k, msg] of Object.entries(label)) check(!errs[k], `${msg} (${built} buildings)${errs[k] ? `: ${errs[k].length} bad, e.g. ${errs[k].slice(0, 3).join("; ")}` : ""}`);
+  if (process.env.SHOPS_DEBUG) console.log(JSON.stringify(errs.signature || []));
+  check(styled >= rooms * 0.85, `the rooms take their styles (${styled} of ${rooms})`);
+  const want = ["laundry", "deposit", "teller", "office desk", "office cubicle", "office whiteboard", "office serverrack", "office secdesk", "office copier", "office fridge", "deli oven", "pharmacy counter", "pallet racks", "machine tools", "car lift", "saddle rack", "greenhouse", "jukebox", "fryer"];
+  check(want.every((k) => seen[k]), `the rooms' pieces turn up (${want.map((k) => `${k} ${seen[k] || 0}`).join(", ")})`);
+  // The same building the same layout (a saved site keeps its map); two of a kind laid out differently.
+  const sig = (m) => grid(m, 0).map((c) => c.k).join(",");
+  check(KEYS.every((k) => sig(make(k, 3)) === sig(make(k, 3))), "the same building lays out the same every visit");
+  check(KEYS.filter((k) => sig(make(k, 3)) !== sig(make(k, 4))).length >= KEYS.length - 1, "two of a kind lay out differently");
+  // Loot per kind: the old layout (legacy) against the new over 200 seeds, by the tables' value (as tools/interiortest.js).
+  const value = (def) => { let v = 0; for (const [k, [p, lo, hi]] of Object.entries(def.loot)) v += Math.min(0.95, p) * ((lo + hi) / 2) * supValue(k); for (const [k, p] of def.gear) v += p * ((GEAR[k] && GEAR[k].value) || 0); return v; };
+  const total = (key, legacy) => { let v = 0; for (let s = 0; s < 200; s++) { const m = make(key, s, legacy); for (const c of m.containers) { const a = m.rooms.find((r) => r.id === c.area); if (a && a.type) v += value(boxLoot(a.type, c.kind)); } } return v / 200; };
+  const off = [], rows = [];
+  for (const key of KEYS) { const b = total(key, true), a = total(key, false), r = a / b - 1; rows.push(`${key} ${(r * 100).toFixed(0)}%`); if (Math.abs(r) > 0.1) off.push(`${key} ${a.toFixed(0)} against ${b.toFixed(0)}`); }
+  check(!off.length, `every kind holds what it did within ±10% (200 seeds each: ${off.join("; ") || rows.join(", ")})`);
+  // An older save: furnished the old way (none of the new pieces, no style's marks).
+  const NEWK = new Set(["range", "fryer", "pizzaoven", "coldshelf", "jukebox", "pooltable", "clothesrack", "gunrack", "tank", "pottingbench", "palletrack", "tirerack", "compressor", "carlift", "machine", "forklift", "saddlerack", "cubicle", "whiteboard", "watercooler", "secdesk", "keyrack", "icemachine", "teller", "deposit", "atm", "stanchion", "checkout", "displaycase", "coldcase", "barcounter", "barstool", "desk", "filing", "bookshelf"]);
+  let newer = 0;
+  for (const key of KEYS) for (let s = 0; s < 3; s++) { const m = make(key, s, true, true); for (const F of m.floors || [{ cells: m.cells }]) for (const c of F.cells) if (NEWK.has(c.k)) newer++; if (m.rooms.some((a) => /Walk-in cold|ATM lobby|Safe-deposit|Pharmacy counter|Greenhouse/.test(a.name) && !/^Walk-in$/.test(a.name))) newer++; }
+  check(!newer, `an older save's shops are furnished and planned the old way (${newer} new pieces or rooms)`);
+  // Their signs of survival (interiorscenes.js registerScene): a motel room held, a stockroom shelter, a counter stand,
+  // a walk-in hiding place; only on a map laid out by these styles.
+  const SC = { motel: "motelhold", supermarket: "stockshelter", gunstore: "counterstand", liquor: "counterstand", restaurant: "walkin", diner: "walkin" };
+  const got = {}, old = {};
+  for (const [key, kind] of Object.entries(SC)) for (let s = 0; s < 40; s++) for (const legacy of [false, true]) {
+    const S = rollScenes(make(key, s, legacy), new Rng(900 + s), key);
+    if (S && S.list.some((x) => x.kind === kind)) (legacy ? old : got)[key] = ((legacy ? old : got)[key] || 0) + 1;
+  }
+  check(Object.keys(SC).every((k) => got[k] > 0) && !Object.keys(old).length, `their scenes turn up on the new layouts, none on an older save's (${Object.entries(SC).map(([k, v]) => `${k} ${v} ${got[k] || 0}`).join(", ")})`);
 }
 
 console.log(`\n${passes} passed, ${fails} failed.`);

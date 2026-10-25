@@ -224,7 +224,7 @@ console.log("Talk: what they know of the floor, a gift, a follow-up card; or a r
   state.cards.splice(state.cards.indexOf(CARD), 1);
   check(S.state === "talked" && /They talk/.test(text) && /place/.test(text), `a good talk: "${text.slice(0, 140)}..."`);
   check(deadUp.every((e) => b.ghosts && b.ghosts[e.id] && b.ghosts[e.id][3] === S.f), `the dead on their floor are marked on the map (${deadUp.length} ghosts)`);
-  check(b.raid.containers.filter((x) => (x.f || 0) === S.f && !x.barred && !x.searched).every((x) => x.known), "the floor's places to search are known");
+  check(b.raid.containers.filter((x) => (x.f || 0) === S.f && x.kind !== "body" && !x.barred && !x.searched).every((x) => x.known), "the floor's places to search are known"); // a body is not a place they name (floorfolk.js tellFloor; bodies since issue #11)
   const gifted = (u.haul && (u.haul.sup.food || 0) > 0) || S.mood === "desperate";
   check(gifted, `${S.mood === "desperate" ? "the desperate have nothing to spare" : `they pass food and water out (${u.haul.sup.food} food, ${u.haul.sup.water} water on ${u.name})`}`);
   const follow = battleCard(state);

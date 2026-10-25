@@ -927,6 +927,101 @@ const FURN_DRAW = {
     return [run(ax, 0.22, 0.78, 0, 13, panel, 0, 1), run(ax, 0.18, 0.82, 13, 14, (f, s, t, X, Y) => mul(PAL.woodLt, 1.05 + n2(X, Y, 49) * 0.1), 0, 1)];
   } },
   barstool: { top: 11, p: () => [{ cyl: [0.5, 0.5, 0.12], z0: 0, z1: 1, m: flatM(FURNC.chrome) }, fbox(0.47, 0.53, 0.47, 0.53, 1, 9, flatM(FURNC.chrome)), { cyl: [0.5, 0.5, 0.16], z0: 9, z1: 11, m: (f) => (f === "top" ? mul(FURNC.red, 1.15) : FURNC.red) }] },
+  // ---------- shops, restaurants, bars, offices, motels, banks and big stores (issue #16, sim/shoplayout.js) ----------
+  range: { top: 15, p: (o) => {
+    const ax = along(o), face = (f, s, t, X, Y, sw) => (f === "top" ? mul(FURNC.black, 1.2) : t >= 2 && t < 8 && s > 2 && s < (sw || 16) - 2 ? FURNC.glassDk : t >= 9 && t < 10 ? FURNC.black : mul(FURNC.steel, 0.95 + n2(X, Y, 90) * 0.06));
+    const out = [run(ax, 0.18, 0.82, 0, 13, face, 0.06, 0.94)];
+    for (const c of [0.34, 0.66]) for (const a of [0.22, 0.5, 0.78]) out.push(fcyl(ax, c, a, 0.08, 13, 14, (f) => (f === "top" ? FURNC.ring : mul(FURNC.ring, 1.4))));
+    return out;
+  } },
+  fryer: { top: 14, p: (o) => {
+    const ax = along(o), oil = (f, s, t, X, Y) => (f === "top" ? mul(FURNC.amber, 0.7 + n2(X, Y, 91) * 0.15) : FURNC.steel);
+    return [run(ax, 0.22, 0.78, 0, 12, fappl(FURNC.steel, [8], [[9, 10]]), 0.14, 0.86), run(ax, 0.3, 0.7, 12, 13, oil, 0.22, 0.48), run(ax, 0.3, 0.7, 12, 13, oil, 0.52, 0.78), run(ax, 0.2, 0.28, 13, 14, flatM(FURNC.chrome), 0.3, 0.7)];
+  } },
+  pizzaoven: { top: 22, p: (o) => {
+    const ax = along(o), brick = (f, s, t, X, Y) => (f === "top" ? mul(PAL.brick, 0.8) : t > 6 && t < 12 && s > 4 && s < 12 ? mul(FURNC.black, 1.3 + n2(X, Y, 92) * 0.3) : t % 4 < 1 ? PAL.mortar : mul(PAL.brick, 0.9 + n2(Math.floor(X / 4), Math.floor(t / 4), 93) * 0.2));
+    return [run(ax, 0.16, 0.84, 0, 18, brick, 0.04, 0.96), run(ax, 0.3, 0.7, 18, 22, flatM(mul(PAL.brick, 0.75)), 0.4, 0.6)];
+  } },
+  coldshelf: { top: 24, p: (o) => {
+    const ax = along(o), face = (f, s, t, X, Y) => (f === "top" ? FURNC.chrome : Math.floor(t) % 6 < 1 ? FURNC.chrome : n2(Math.floor(X / 2), Math.floor(t / 6), 94) > 0.45 ? mul(fgoods(Math.floor(X / 2), Math.floor(t / 6), 95), 1.05) : mul(FURNC.steel, 0.6));
+    return [run(ax, 0.26, 0.74, 0, 24, face, 0.06, 0.94)];
+  } },
+  jukebox: { top: 22, p: (o) => {
+    const ax = along(o), face = (f, s, t, X, Y, sw) => { if (f === "top") return mul(FURNC.red, 1.1); const w = sw || 12; if (t > 14 && Math.abs(s - w / 2) < w * 0.32) return mul(FURNC.amber, 1 + n2(X, Y, 96) * 0.3); if (t > 6 && t < 12 && s > 2 && s < w - 2) return FURNC.glassDk; return mul(FURNC.red, 0.9); };
+    return [run(ax, 0.28, 0.72, 0, 22, face, 0.2, 0.8)];
+  } },
+  pooltable: { top: 11, p: (o) => {
+    const ax = along(o), felt = (f, s, t, X, Y) => (f === "top" ? mul(FURNC.felt, 1.05 + n2(X, Y, 97) * 0.06) : PAL.woodDk);
+    return [run(ax, 0.3, 0.7, 0, 8, fwood(PAL.woodDk), 0.2, 0.8), run(ax, 0.12, 0.88, 8, 10, flatM(PAL.woodDk), 0.02, 0.98), run(ax, 0.16, 0.84, 10, 11, felt, 0.06, 0.94)];
+  } },
+  clothesrack: { top: 20, p: (o, v) => {
+    const ax = along(o), clothes = (f, s, t, X) => mul(fgoods(Math.floor(X / 2), v, 98), 1.1);
+    return [run(ax, 0.48, 0.52, 0, 20, flatM(FURNC.chrome), 0.1, 0.14), run(ax, 0.48, 0.52, 0, 20, flatM(FURNC.chrome), 0.86, 0.9), run(ax, 0.48, 0.52, 19, 20, flatM(FURNC.chrome), 0.1, 0.9), run(ax, 0.34, 0.66, 7, 19, clothes, 0.16, 0.84)];
+  } },
+  tank: { top: 18, p: (o) => {
+    const ax = along(o), glass = (f, s, t, X, Y) => (f === "top" ? FURNC.black : t > 16 ? FURNC.black : n2(Math.floor(X / 2), Math.floor(t / 3), 99) > 0.85 ? FURNC.amber : t < 3 ? mul(FURNC.sheet, 0.8) : mul(FURNC.water, 1.1 + n2(X, Y, 100) * 0.1));
+    return [run(ax, 0.26, 0.74, 0, 8, fwood(PAL.woodDk), 0.1, 0.9), run(ax, 0.28, 0.72, 8, 18, glass, 0.12, 0.88)];
+  } },
+  pottingbench: { top: 16, p: (o) => {
+    const ax = along(o), w = flatM(PAL.woodDk), pots = (f) => (f === "top" ? mul(FLOORC.dirt, 0.8) : mul(PAL.rust, 1.1));
+    return [run(ax, 0.24, 0.3, 0, 10, w, 0.04, 0.1), run(ax, 0.7, 0.76, 0, 10, w, 0.04, 0.1), run(ax, 0.24, 0.3, 0, 10, w, 0.9, 0.96), run(ax, 0.7, 0.76, 0, 10, w, 0.9, 0.96), run(ax, 0.2, 0.8, 10, 12, fwood(PAL.woodLt), 0.02, 0.98), fcyl(ax, 0.5, 0.25, 0.1, 12, 16, pots), fcyl(ax, 0.5, 0.7, 0.12, 12, 15, pots)];
+  } },
+  palletrack: { top: 30, p: (o) => {
+    const ax = along(o), steel = flatM(hex("#c8742a")), load = (f, s, t, X, Y) => mul(n2(Math.floor(X / 4), Math.floor(t / 10), 101) > 0.5 ? FURNC.beige : PAL.woodLt, 0.9 + n2(X, Y, 102) * 0.1);
+    return [run(ax, 0.14, 0.86, 0, 30, flatM(FURNC.steel), 0.02, 0.06), run(ax, 0.14, 0.86, 0, 30, flatM(FURNC.steel), 0.94, 0.98), run(ax, 0.14, 0.86, 9, 10, steel, 0, 1), run(ax, 0.14, 0.86, 19, 20, steel, 0, 1), run(ax, 0.2, 0.8, 0, 8, load, 0.08, 0.92), run(ax, 0.2, 0.8, 10, 18, load, 0.08, 0.92), run(ax, 0.2, 0.8, 20, 28, load, 0.08, 0.92)];
+  } },
+  tirerack: { top: 20, p: (o) => {
+    const ax = along(o), out = [run(ax, 0.22, 0.26, 0, 20, flatM(FURNC.steel), 0.06, 0.94)];
+    for (const z of [2, 11]) for (const a of [0.28, 0.72]) out.push(fcyl(ax, 0.5, a, 0.2, z, z + 7, (f) => (f === "top" ? mul(PAL.tire, 1.6) : PAL.tire)));
+    return out;
+  } },
+  carlift: { top: 22, p: (o) => {
+    const ax = along(o), post = flatM(hex("#c8402f"));
+    return [run(ax, 0.36, 0.64, 0, 22, post, 0.36, 0.64), run(ax, 0.3, 0.7, 0, 1, flatM(FURNC.steel), 0.3, 0.7), run(ax, 0.6, 0.98, 6, 7, flatM(FURNC.steel), 0.44, 0.56)];
+  } },
+  machine: { top: 20, p: (o) => {
+    const ax = along(o), body = (f, s, t, X, Y) => (f === "top" ? mul(FURNC.felt, 0.8) : t < 2 ? FURNC.black : mul(FURNC.felt, 0.7 + n2(X, Y, 103) * 0.1));
+    return [run(ax, 0.2, 0.8, 0, 12, body, 0.04, 0.96), run(ax, 0.3, 0.6, 12, 20, body, 0.1, 0.4), fcyl(ax, 0.5, 0.75, 0.1, 12, 15, flatM(FURNC.chrome))];
+  } },
+  forklift: { top: 26, p: (o) => {
+    const ax = along(o), yel = (f) => (f === "top" ? mul(FURNC.gold, 1.05) : FURNC.gold);
+    return [run(ax, 0.2, 0.8, 1, 10, yel, 0.3, 0.98), run(ax, 0.22, 0.26, 10, 26, flatM(FURNC.black), 0.32, 0.98), run(ax, 0.74, 0.78, 10, 26, flatM(FURNC.black), 0.32, 0.98), run(ax, 0.22, 0.78, 25, 26, flatM(FURNC.black), 0.32, 0.98), run(ax, 0.3, 0.7, 0, 18, flatM(FURNC.steel), 0.04, 0.08), run(ax, 0.32, 0.4, 0, 1, flatM(FURNC.steel), 0.04, 0.3), run(ax, 0.6, 0.68, 0, 1, flatM(FURNC.steel), 0.04, 0.3)];
+  } },
+  saddlerack: { top: 18, p: (o) => {
+    const ax = along(o), saddle = (f, s, t, X, Y) => mul(FURNC.leather, (f === "top" ? 1.2 : 1) + n2(X, Y, 104) * 0.1);
+    return [run(ax, 0.2, 0.28, 0, 18, fwood(PAL.woodDk), 0.2, 0.8), run(ax, 0.28, 0.7, 10, 16, saddle, 0.24, 0.76), run(ax, 0.34, 0.62, 4, 10, flatM(mul(FURNC.leather, 0.8)), 0.3, 0.7)];
+  } },
+  cubicle: { top: 16, p: (o) => {
+    const ax = along(o), panel = (f, s, t, X, Y) => (f === "top" ? FURNC.steel : t > 15 ? FURNC.steel : mul(hex("#6a7480"), 0.9 + n2(Math.floor(X / 2), Math.floor(t / 2), 105) * 0.1));
+    return [run(ax, 0.45, 0.55, 0, 16, panel, 0, 1)];
+  } },
+  whiteboard: { top: 22, p: (o) => {
+    const ax = along(o), face = (f, s, t, X, Y, sw) => (f === "top" || s < 0.8 || s > (sw || 12) - 0.8 || t < 8.8 || t > 21 ? FURNC.chrome : n2(Math.floor(X / 3), Math.floor(t), 106) > 0.9 ? hex("#2f5d8a") : mul(FURNC.white, 1.1));
+    return [run(ax, 0.42, 0.5, 8, 22, face, 0.08, 0.92), run(ax, 0.42, 0.5, 0, 8, flatM(FURNC.chrome), 0.1, 0.14), run(ax, 0.42, 0.5, 0, 8, flatM(FURNC.chrome), 0.86, 0.9)];
+  } },
+  watercooler: { top: 22, p: () => [fbox(0.32, 0.68, 0.32, 0.68, 0, 13, fappl(FURNC.white, [], [[9, 11]])), { cyl: [0.5, 0.5, 0.15], z0: 13, z1: 22, m: (f, s, t, X, Y) => mul(FURNC.water, (f === "top" ? 1.3 : 1.15) + n2(X, Y, 107) * 0.1) }] },
+  secdesk: { top: 16, p: (o) => {
+    const ax = along(o), mon = (f, s, t, X, Y) => (f === "top" ? FURNC.black : t > 12 && n2(Math.floor(X / 4), 0, 108) > 0.3 ? mul(FURNC.screen, 1.4 + n2(X, Y, 109) * 0.3) : FURNC.black);
+    return [run(ax, 0.18, 0.82, 0, 10, fdrawers(FURNC.beige, 5, FURNC.black), 0.02, 0.98), run(ax, 0.16, 0.84, 10, 11, flatM(mul(FURNC.beige, 1.1)), 0, 1), run(ax, 0.22, 0.34, 11, 16, mon, 0.08, 0.92)];
+  } },
+  keyrack: { top: 16, p: (o) => {
+    const ax = along(o), face = (f, s, t, X) => (f === "top" ? PAL.woodDk : t < 10 && Math.floor(X) % 2 ? FURNC.gold : PAL.wood);
+    return [run(ax, 0.44, 0.52, 6, 16, face, 0.2, 0.8)];
+  } },
+  icemachine: { top: 24, p: (o) => { const ax = along(o); return [run(ax, 0.22, 0.78, 0, 24, fappl(FURNC.steel, [14], [[15, 18]]), 0.1, 0.9)]; } },
+  teller: { top: 26, p: (o) => {
+    const ax = along(o), glass = (f, s, t) => (f === "top" ? FURNC.chrome : t > 24.5 ? FURNC.chrome : mul(FURNC.water, 1.3));
+    return [run(ax, 0.3, 0.7, 0, 12, fwood(PAL.woodDk), 0, 1), run(ax, 0.26, 0.74, 12, 13, flatM(FURNC.cream), 0, 1), run(ax, 0.46, 0.52, 13, 26, glass, 0, 1)];
+  } },
+  deposit: { top: 28, p: (o) => {
+    const ax = along(o), face = (f, s, t, X) => (f === "top" ? FURNC.steel : Math.floor(t) % 4 < 1 || Math.floor(X) % 4 < 1 ? mul(FURNC.steel, 0.6) : Math.floor(X) % 4 === 2 && Math.floor(t) % 4 === 2 ? FURNC.gold : mul(FURNC.chrome, 0.9));
+    return [run(ax, 0.26, 0.74, 0, 28, face, 0.04, 0.96)];
+  } },
+  atm: { top: 24, p: (o) => {
+    const ax = along(o), face = (f, s, t, X, Y, sw) => { if (f === "top") return FURNC.steel; const w = sw || 12; if (t > 14 && t < 20 && s > 2 && s < w - 2) return mul(FURNC.screen, 1.5); if (t > 9 && t < 12 && s > 3 && s < w - 3) return FURNC.black; return mul(hex("#2f5d8a"), 0.9 + n2(X, Y, 110) * 0.1); };
+    return [run(ax, 0.24, 0.76, 0, 24, face, 0.16, 0.84)];
+  } },
+  stanchion: { top: 16, p: () => [{ cyl: [0.5, 0.5, 0.14], z0: 0, z1: 1, m: flatM(FURNC.chrome) }, { cyl: [0.5, 0.5, 0.04], z0: 1, z1: 15, m: flatM(FURNC.chrome) }, { cyl: [0.5, 0.5, 0.07], z0: 15, z1: 16, m: flatM(FURNC.gold) }, fbox(0.5, 1, 0.47, 0.53, 12, 13, flatM(FURNC.red))] },
   // ---------- workshops and bays ----------
   workbench: { top: 14, p: (o) => {
     const ax = along(o), w = flatM(PAL.woodDk);

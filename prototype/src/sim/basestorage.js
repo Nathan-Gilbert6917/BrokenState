@@ -51,13 +51,14 @@
 import { BUILDINGS, isCamp, isShelter, tentOf, tentKind } from "./buildings.js"; // call-time only (the import cycle)
 import { GEAR, SUPPLIES, supValue, supWeight } from "./data.js";
 import { BOX_STORE_KG } from "./data-boxes.js";
+import { FURN_STORE } from "./data-basefurniture.js"; // furniture at the base (#20): a storage piece's own rules (a gun rack: guns only, six)
 import { itemLoad, itemKg } from "./inventory.js"; // call-time only
 import { isBox } from "./boxes.js"; // call-time only
 import { itemValue } from "./valuation.js"; // call-time only
 import { carsAtBase, VEHICLE_TYPES } from "./vehicles.js"; // call-time only
 import { log, day } from "./world.js"; // call-time only
 import { weatherOnDay } from "./weather.js"; // call-time only
-import { rollsWear, isPaper } from "./itemcond.js"; // call-time only
+import { rollsWear, isPaper } from "./itemcond.js"; // call-time only (isPaper: a filing cabinet's papers too)
 import { itemDur, itemDurMax } from "./crafting.js"; // call-time only
 import { keyWord } from "./water.js"; // call-time only
 export { STORE_KG } from "./buildings.js";
@@ -135,6 +136,31 @@ export const itemRoomKg = (it) => (!it || !GEAR[it.key] ? 0 : isOpenBox(it) ? Ma
 /** A good of the fill: a supply stack ({ sup, q, unit }) or an armory item ({ i }), with its worth a kg. */
 export const supGood = (k, q) => ({ sup: k, kg: q * supWeight(k), unit: supWeight(k), q, dens: supDensity(k), rank: 0 });
 export const itemGood = (it, i) => { const kg = itemRoomKg(it); return { i, kg, unit: kg, q: 1, dens: itemDensity(it, kg), rank: 1 }; };
+// Furniture at the base (#20, furniture.js): a storage piece set in a building is a building container (BUILDINGS
+// storeKg), with its own rules (data-basefurniture.js FURN_STORE): `first` the class of item containers.js autoStore
+// puts in it before anywhere else; `only` it holds nothing but that class (no supplies), and its spare room is room for
+// nothing else (not pooled for the loose goods); `max` at most that many items (a gun rack's six slots).
+const GUN_CATS = new Set(["pistol", "shotgun", "rifle", "automatic"]);
+const WEAR_SLOTS = new Set(["head", "armor", "arms", "legs", "ears", "insert", "backpack", "rig", "cargo"]);
+const DEAR_CATS = new Set(["jewelry", "luxury", "collectibles"]);
+/**
+ * Whether an armory item is of a class a storage piece names: "guns", "tools", "paper" (books and manuals), "wear"
+ * (clothing, armour and bags), "dear" (guns, armour, jewellery and the like), "gear" (anything else that is not dear).
+ * @param {any} it @param {string} cls
+ */
+export function fitsClass(it, cls) {
+  const d = it && GEAR[it.key];
+  if (!d) return false;
+  const gun = d.slot === "weapon" && GUN_CATS.has(d.cat), wear = WEAR_SLOTS.has(d.slot) || d.cat === "packs";
+  if (cls === "guns") return gun;
+  if (cls === "tools") return d.cat === "tools" || d.slot === "tool";
+  if (cls === "paper") return isPaper(it.key);
+  if (cls === "wear") return wear;
+  const dear = gun || (WEAR_SLOTS.has(d.slot) && d.slot !== "backpack" && d.slot !== "cargo" && d.slot !== "ears") || (d.slot === "weapon" && d.power >= 3) || DEAR_CATS.has(d.cat);
+  return cls === "dear" ? dear : cls === "gear" ? !dear : false;
+}
+/** A storage piece's rules ({} for any other container type). @param {string} type */
+export const storeRule = (type) => (GEAR[type] && GEAR[type].furniture && FURN_STORE[GEAR[type].furniture]) || {};
 // Containers the goods can be assigned to by containers.js (item.store, base.bins): the core, a building, a parked car, a tent.
 // An opened box is room but no assignable container: it is an item of the armory, and its index moves.
 const ASSIGNABLE = new Set(["core", "building", "vehicle", "tent"]); // a pitched tent too (the user's pick 2026-10-20: tents in the Storage tab)
@@ -179,16 +205,17 @@ export function storageOf(state, base) {
   const asgUnits = {};
   const placed = new Set();
   const bins = base.bins && typeof base.bins === "object" ? base.bins : null;
-  let held = 0;
+  let held = 0, reserved = 0;
   for (const c of containers) {
     if (!ASSIGNABLE.has(c.kind)) continue;
     const mine = [];
     const bin = bins && bins[c.key];
-    if (bin && typeof bin === "object") for (const k of Object.keys(bin).sort()) {
+    const rule = c.kind === "building" ? storeRule(c.type) : {};
+    if (bin && typeof bin === "object" && !rule.only) for (const k of Object.keys(bin).sort()) {
       const n = Math.min(Math.floor(Number(bin[k]) || 0), Math.floor(have(k) - (asgUnits[k] || 0) + EPS));
       if (n > 0) mine.push(supGood(k, n));
     }
-    armory.forEach((it, i) => { if (it && it.store === c.key && GEAR[it.key] && !isOpenBox(it) && !placed.has(i)) { const g = itemGood(it, i); if (g.kg > EPS) mine.push(g); } });
+    armory.forEach((it, i) => { if (it && it.store === c.key && GEAR[it.key] && !isOpenBox(it) && !placed.has(i) && (!rule.only || fitsClass(it, rule.only))) { const g = itemGood(it, i); if (g.kg > EPS) mine.push(g); } });
     mine.sort(byWorth);
     let room = c.cap, kg = 0;
     for (const g of mine) {
@@ -197,11 +224,12 @@ export function storageOf(state, base) {
         if (fit <= 0) continue;
         c.sup[g.sup] = fit; asgUnits[g.sup] = (asgUnits[g.sup] || 0) + fit;
         room -= fit * g.unit; kg += fit * g.unit;
-      } else if (g.kg <= room + EPS) { c.gear.push(/** @type {number} */ (g.i)); placed.add(g.i); room -= g.kg; kg += g.kg; }
+      } else if (g.kg <= room + EPS && !(rule.max && c.gear.length >= rule.max)) { c.gear.push(/** @type {number} */ (g.i)); placed.add(g.i); room -= g.kg; kg += g.kg; }
     }
     c.gear.sort((a, b) => a - b);
     c.kg = r1(kg);
     held += kg;
+    if (rule.only) reserved += Math.max(0, room); // its spare room holds nothing else (FURN_STORE only)
     out.used += kg;
   }
 
@@ -218,7 +246,7 @@ export function storageOf(state, base) {
     if (g.kg > EPS) goods.push(g);
   });
   goods.sort(byWorth);
-  let room = Math.max(0, out.cap - held);
+  let room = Math.max(0, out.cap - held - reserved);
   for (const g of goods) {
     out.used += g.kg;
     if (g.sup) {
@@ -236,7 +264,7 @@ export function storageOf(state, base) {
   out.used = r1(out.used);
   out.outsideKg = r1(out.outsideKg);
   out.inside = r1(Math.max(0, out.used - out.outsideKg));
-  out.free = r1(Math.max(0, out.cap - out.inside));
+  out.free = r1(Math.max(0, out.cap - out.inside - reserved));
   return out;
 }
 /** The share of a base's goods (by weight) lying outside, 0–1: raiders find it easier (basemap.js). @param {any} state @param {any} base */
