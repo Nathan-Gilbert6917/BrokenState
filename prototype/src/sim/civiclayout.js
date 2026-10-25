@@ -625,8 +625,8 @@ function shelter(civic, what, kind) {
     for (const r of civicRooms(ctx, civic)) {
       const f = r.f || 0;
       const free = ctx.freeIn(r).filter(([x, y]) => (x + y) % 2 === 0 && NEXT4.every(([ox, oy]) => { const c = ctx.at(f, x + ox, y + oy); return c && c.k !== "stairs" && c.k !== "ladder"; }));
-      if (free.length < 6) continue;
-      const cots = rng.shuffle(free).slice(0, rng.int(4, 8));
+      if (free.length < 4) continue;
+      const cots = rng.shuffle(free).slice(0, rng.int(3, 8));
       for (const [x, y] of cots) ctx.piece(f, x, y, "cot");
       const left = ctx.freeIn(r);
       if (!left.length) continue;
@@ -660,9 +660,11 @@ function pewDoors(ctx) {
   }
   return null;
 }
-registerScene("frontstand", { w: 3, place: frontStand, kinds: ["police"] });
-registerScene("turned", { w: 3, place: turned, kinds: ["police"] });
-registerScene("classbar", { w: 3, place: classBar, kinds: ["school"] });
-registerScene("gymshelter", { w: 2, place: shelter("gym", "gym", "gymshelter"), kinds: ["school"] });
-registerScene("naveshelter", { w: 3, place: shelter("nave", "nave", "naveshelter"), kinds: ["church"] });
-registerScene("pewdoors", { w: 2, place: pewDoors, kinds: ["church"] });
+// Only on a map laid out by these styles (when): an older save's building rolls its scenes as it did.
+const styled = (ctx) => ctx.rooms.some((r) => !!r.civic);
+registerScene("frontstand", { w: 3, place: frontStand, kinds: ["police"], when: styled });
+registerScene("turned", { w: 3, place: turned, kinds: ["police"], when: styled });
+registerScene("classbar", { w: 3, place: classBar, kinds: ["school"], when: styled });
+registerScene("gymshelter", { w: 3, place: shelter("gym", "gym", "gymshelter"), kinds: ["school"], when: styled });
+registerScene("naveshelter", { w: 3, place: shelter("nave", "nave", "naveshelter"), kinds: ["church"], when: styled });
+registerScene("pewdoors", { w: 2, place: pewDoors, kinds: ["church"], when: styled });

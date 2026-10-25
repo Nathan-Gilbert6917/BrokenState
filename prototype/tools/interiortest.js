@@ -747,6 +747,25 @@ console.log("\nPolice stations, fire stations, schools and churches laid out for
     for (const F of m.floors || [{ cells: m.cells }]) for (const c of F.cells) if (NEW.has(c.k)) newKinds++;
   }
   check(!marks && !newKinds, `an older save's police station, fire station, school and church keep their old layouts (${marks} styled rooms, ${newKinds} new pieces)`);
+  // The civic scenes (interiorscenes.js, registered by civiclayout.js): each turns up; a turned prisoner is one of the
+  // dead that rises, behind a cell door that is a locked door of the map.
+  const sw = createWorld({ seed: 11, factionCount: 2 }), stiles = sw.tiles.filter((t) => t.loc).slice(0, 4);
+  const seenKinds = new Set();
+  let turnedOk = true;
+  for (const key of ["police", "school", "church"]) for (let i = 0; i < 30; i++) {
+    const m = buildingMap(sw, stiles[i % stiles.length].id, { key, id: `${key}-${i}`, name: key }, false);
+    for (const sc of (m.scenes && m.scenes.list) || []) {
+      seenKinds.add(sc.kind);
+      if (sc.kind !== "turned") continue;
+      const c = (m.floors ? m.floors[sc.f].cells : m.cells)[sc.y * m.w + sc.x];
+      const locked = m.lockedDoors.some((d) => d.x === sc.x && d.y === sc.y && (d.f || 0) === sc.f && d.dk === "cell");
+      const risen = m.scenes.bodies.some((b) => b.sleeper && !b.human && b.x === c.cellIn[0] && b.y === c.cellIn[1]);
+      if (c.k !== "door" || c.dk !== "cell" || !locked || !risen) turnedOk = false;
+    }
+  }
+  const want = ["frontstand", "turned", "classbar", "gymshelter", "naveshelter", "pewdoors"];
+  check(want.every((k) => seenKinds.has(k)), `the civic scenes turn up (${want.filter((k) => seenKinds.has(k)).join(", ")} of ${want.join(", ")})`);
+  check(turnedOk, "a turned prisoner: one of the dead that rises, behind a locked cell door");
 }
 
 console.log(`\n${passes} passed, ${fails} failed. (${Math.round(performance.now() - t0)} ms)`);

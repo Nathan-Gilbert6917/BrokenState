@@ -81,7 +81,8 @@ export const BY_KIND = {
   house: { barricade: 1.5, quiet: 1.5 }, apartments: { barricade: 2, stand: 1.5 }, motel: { barricade: 2 },
   supermarket: { choke: 1.5, overrun: 1.5 }, offices: { stand: 1.5, choke: 1.5 },
 };
-// A scene of another module's (the special buildings' layouts): def { w, place(ctx, room?) → scene | null, kinds? }.
+// A scene of another module's (the special buildings' layouts): def { w, place(ctx, room?) → scene | null, kinds?, when?
+// (ctx → whether the map can have it: kept out of the weighted draw otherwise) }.
 export function registerScene(name, def) { SCENE_KINDS[name] = def; }
 
 // The building's own dice for its scenes: the world seed, the tile and the building's option id.
@@ -345,7 +346,7 @@ export function rollScenes(map, rng, key) {
   const ctx = context(map, rng, key);
   const by = BY_KIND[key] || {};
   for (let i = 0; i < want; i++) {
-    const kinds = Object.keys(SCENE_KINDS).filter((k) => !SCENE_KINDS[k].kinds || SCENE_KINDS[k].kinds.includes(key));
+    const kinds = Object.keys(SCENE_KINDS).filter((k) => (!SCENE_KINDS[k].kinds || SCENE_KINDS[k].kinds.includes(key)) && (!SCENE_KINDS[k].when || SCENE_KINDS[k].when(ctx))); // when: the map has what it needs (an older save's building rolls as it did)
     // By weight, the ones that fit nowhere giving way to the next.
     let placed = null;
     while (kinds.length && !placed) {
