@@ -654,6 +654,7 @@ export function rollCar(state, p, people, keptOwner = null) {
   p.vehicleId = car.id;
   let trunk = rollTrunk(state, rng, A, people);
   if (own) trunk = rollTrunk(state, own, A, people); // rolled again: the back from its own dice too
+  if (fleet0 && fleet0.backRoll != null) trunk = rollTrunk(state, new Rng(fleet0.backRoll), A, people); // the back alone rolled again (🎲 Reroll back), the car as it was
   owner.diceTrunk = { items: trunk.gear.map((it) => pickOf(it)).filter(Boolean), supplies: { ...trunk.supplies } }; // the dice's back (until Start); a gun with the parts it came with
   if (picked) { const mine = trunkFromPicks(fleet0.load); trunk.gear = mine.gear; trunk.supplies = mine.supplies; }
   typeFind(state, trunk.supplies, "travel"); // foods.js: the back's food as what people threw in a car (light, keeps; bread and cheese in the first days)
@@ -711,7 +712,8 @@ function rollVehicle(state, f, i, people, owned, loc, R) {
 }
 // Its back from the dice (after its kind and tank): its owner's background's trunk table (a custom background: one
 // drawn, its own car's back being theirs already: normalStartKit), noted on the slot (f.diceTrunk: As rolled, 👁 Back).
-function rollBack(state, f, owner, rng, people) {
+function rollBack(state, f, owner, rng0, people) {
+  const rng = f.backRoll != null ? new Rng(f.backRoll) : rng0; // the back alone rolled again (🎲 Reroll back): its own dice, the vehicle as it was
   const own = archetypeOf(state, owner.background);
   const A = own && !own.custom && own.trunk ? own : HC_START.ARCHETYPES[rng.pick(Object.keys(HC_START.ARCHETYPES))];
   const dice = rollTrunk(state, rng, A, people);
