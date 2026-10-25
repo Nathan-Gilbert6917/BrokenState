@@ -9,7 +9,8 @@
 // - a car's cells each get a share of one painting (no cell empty, the shares' pixels together the whole car's, every
 //   share placed from the cell's own corner), one painting a look (the cache), another heading another picture;
 // - on a raid's map the team's vehicle carries its type (sim/combat.js fitMapVehicle) and the fleet's others theirs
-//   (placeRaidConvoy); the view draws them as models (vehicleArtStats), and the straight view as the prisms still;
+//   (placeRaidConvoy); the view draws them as models (vehicleArtStats) in the diagonal views and the straight one (its own
+//   projection: a share placed from the cell's top-left corner); a car on one cell (no c.car) as the model shrunk onto it;
 // - the State Map: pieces for an SUV, a van and a Hummer that differ from each other and from the sedan's; the flat
 //   sprites and the parked markers for them paint; render.js vehicleKind maps a vehicle's type to its piece.
 // Usage: node tools/vehiclemodeltest.js [seed]   (a few seconds)
@@ -128,12 +129,31 @@ section("On the raid's map: the team's fleet by type, drawn as models");
   let err = "";
   try { ISO.isoCenterOn(b, b.vehicle.x, b.vehicle.y, false); UI.drawCombat(st, 1e9); } catch (e) { err = e.stack.split("\n").slice(0, 3).join(" "); }
   check(!err && !nan && VM.vehicleArtStats.painted >= n0 + 2 && VM.vehicleArtStats.cells >= c0 + 6, `the view draws the SUV and the van as models (${VM.vehicleArtStats.painted - n0} painted, ${VM.vehicleArtStats.cells - c0} cells)${err ? `: ${err}` : ""}`);
-  // The straight view: the prisms still (nothing painted here).
+  // The straight view: the models in its own projection.
   for (let g = 0; g < 8 && !ISO.iso.straight; g++) ISO.isoRotate(b, 1);
   const n1 = VM.vehicleArtStats.painted, c1 = VM.vehicleArtStats.cells;
   try { b.rev = (b.rev || 0) + 1; UI.drawCombat(st, 2e9); } catch (e) { err = e.stack.split("\n").slice(0, 3).join(" "); }
-  check(ISO.iso.straight && !err && VM.vehicleArtStats.painted === n1 && VM.vehicleArtStats.cells === c1, `the straight view keeps the prisms (${VM.vehicleArtStats.cells - c1} cells cut)${err ? `: ${err}` : ""}`);
+  check(ISO.iso.straight && !err && !nan && VM.vehicleArtStats.painted >= n1 + 2 && VM.vehicleArtStats.cells >= c1 + 6, `the straight view draws them as models too (${VM.vehicleArtStats.painted - n1} painted, ${VM.vehicleArtStats.cells - c1} cells)${err ? `: ${err}` : ""}`);
   st.combat = null;
+}
+
+section("The straight view's projection and a car on one cell");
+{
+  const car = { kind: "vehicle", body: "car", type: "sedan", L: 3, ax: "x", v: 0 };
+  const iso = VM.vehicleCellSprite({ ...car, i: 1, j: 0 }, 0), st = VM.vehicleCellSprite({ ...car, i: 1, j: 0 }, 0, { straight: true });
+  check(iso && st && solid(st.cv) > 0 && (st.w !== iso.w || st.h !== iso.h || solid(st.cv) !== solid(iso.cv)), `a straight-view share is its own picture (${st.w} × ${st.h} vs ${iso.w} × ${iso.h} art px)`);
+  const shares = []; for (let i = 0; i < 3; i++) for (let j = 0; j < 2; j++) shares.push(VM.vehicleCellSprite({ ...car, i, j }, 0, { straight: true }));
+  const whole = VM.vehiclePainting(car, 0, true).px.filter(Boolean).length, sum = shares.reduce((a, s) => a + solid(s.cv), 0), k = Math.max(1, Math.round(Math.sqrt(sum / whole)));
+  check(shares.every((s) => s && solid(s.cv) > 0) && sum >= whole * k * k && sum <= whole * k * k * 1.6 && new Set(shares.map((s) => `${s.ox},${s.oy}`)).size === 6, `its six cells share one straight-view painting, each placed from its own corner (${whole} px)`);
+  const flat = VM.vehiclePainting(car, 0, true), tall = VM.vehiclePainting(car, 0, false);
+  const rows = (p) => { let y0 = p.h, y1 = -1; for (let y = 0; y < p.h; y++) for (let x = 0; x < p.w; x++) if (p.px[y * p.w + x]) { if (y < y0) y0 = y; if (y > y1) y1 = y; } return y1 - y0 + 1; };
+  check(rows(flat) < rows(tall), `in the straight view the car is drawn flatter (${rows(flat)} vs ${rows(tall)} grid rows: v foreshortened to ${11 / 16} of a tile)`);
+  const one = ["car", "truck", "vehicle"].map((kind) => VM.vehicleOneSprite(kind, 9, "u"));
+  check(one.every((s) => s && solid(s.cv) > 0 && s.w <= 34 && s.h <= 30), `a car on one cell: a small model within its cell's diamond (${one.map((s) => `${s.w} × ${s.h}`).join(", ")} art px)`);
+  const turned = VM.vehicleOneSprite("car", 9, "v"), straight = VM.vehicleOneSprite("car", 9, "u", { straight: true });
+  const pic = (s) => (s && s.cv.img ? s.cv.img.data.join("") : "");
+  check(turned && straight && pic(turned) !== pic(one[0]) && pic(straight) !== pic(one[0]) && solid(straight.cv) > 0, "along the other axis, and in the straight view: their own pictures");
+  check(!nan, `no NaN drawn (${nan})`);
 }
 
 section("The State Map: pieces and sprites by type");

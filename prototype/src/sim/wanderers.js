@@ -90,6 +90,10 @@ const cap = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
 const skillChance = (s, dc) => clamp((s + 10 - dc + 1) / 10, 0.05, 0.95);
 const NUM = ["no one", "one", "two", "three", "four", "five", "six"];
 const UPSTAIRS_TYPES = new Set(["offices", "apartments", "police"]); // interiorOccupants: squatters prefer an upper floor here
+// interiorOccupants: the rooms a building's people make for, by its kind and their side (the rooms' styles,
+// civiclayout.js: the new saves' plans): a police station's armed squatters the squad room or the armory, a school's
+// survivors the gym, a church's the nave. Unchanged where a building or a side has none.
+const KIND_ROOMS = { police: { hostile: ["squad", "armory"] }, school: { neutral: ["gym"] }, church: { neutral: ["nave"] } };
 
 // ---------- state ----------
 export function wanderers(state) {
@@ -323,7 +327,11 @@ export function interiorOccupants(state, tile, plan) {
     const rng = rngFor(state, "wander-inside", tileId, state.hour, i);
     const people = g.people ? g.people.map((x) => ({ kit: g.kind, weapon: WEAPONS[x.weapon] ? x.weapon : "fists", power: g.power, name: x.name, hp: x.hp, s: x.gear ? x : x.s })) // fighters.js: the person themselves
       : Array.from({ length: g.count }, () => ({ kit: g.kind, weapon: swapGun(kitGunSource(g.kind), rng.pick(kit.weapons), rng), power: g.power })); // gundist.js: a gun of their kind in the band
-    const pool = !g.side || g.side === "hostile" ? (upstairs.length ? upstairs : rooms) : rooms; // the armed squatters (no side: the raid's guards)
+    const hostile = !g.side || g.side === "hostile";
+    const kinds = plan && KIND_ROOMS[plan.key] && KIND_ROOMS[plan.key][hostile ? "hostile" : g.side];
+    const theirs = kinds ? rooms.filter((r) => kinds.includes(r.civic)) : [];
+    const theirsUp = theirs.filter((r) => upstairs.includes(r));
+    const pool = theirsUp.length ? theirsUp : theirs.length ? theirs : hostile ? (upstairs.length ? upstairs : rooms) : rooms; // the armed squatters (no side: the raid's guards)
     const room = pool.length ? pool[Math.floor(hash01(state.seed, "wander-room", tileId, state.hour, i) * pool.length)] : null;
     return { ...g, side: g.side || "hostile", people, aware: false, room: room ? room.id : undefined };
   });

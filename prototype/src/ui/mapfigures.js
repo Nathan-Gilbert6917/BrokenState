@@ -44,6 +44,7 @@ const lerp = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a
 const rotator = (deg) => { const a = (deg * Math.PI) / 180, c = Math.cos(a), s = Math.sin(a); return (q) => [q[0] * c - q[1] * s, q[0] * s + q[1] * c, q[2]]; };
 
 // ---------- colours ----------
+const FURN = "#b8b2a2"; // a piece of furniture carried home (look.carry "furniture"): an appliance's off-white
 const TIRE = "#1c1c1e", HUB = "#8a8a8a", GLASS = "#7d9db5", WOOD = "#7a5230", WOOD_LIT = "#a2713f", PACK = "#6b5434", SKIN = "#d6a77a", PANTS = "#34363c", HAIR = "#3a2a1c";
 const METAL = "#7d848c", STEEL = "#cdd5da", STONE = "#8d8a82", WHITE = "#e8e4da", RED = "#d0342c", CANVAS = "#b3a27a", OLIVE = "#5d6b3a", OLIVE_DARK = "#454f2c", RUST = "#7b5a44", GOLD = "#e8c04a";
 const FIRE = "#ffb43b", FIRE_HOT = "#fff0a0", FIRE_RED = "#e0542a", GLOW = "#ff9a3a55", BONE = "#d8d0bc", HAY = "#c9b25a", SHOE = "#2a2622", GUN = "#4b5159", LOG = "#8a5e36";
@@ -297,8 +298,10 @@ function person(push, look, pose = {}) {
   const up = (side, Hf, Hz) => arm(side, add(SH(side), [1.0, side * 0.6, -0.4]), add(SH(side), [Hf, side * 0.4, Hz]));
   const W1 = { group: G.weapon }, pole = (A, B, col, r = 0.32) => push(limb(A, B, r, r, col, { sides: 4, ...W1 }));
   const ac = look.armColor || cloth, right = R, left = Lf; // "right": the near hand
-  const a = dead ? "reach" : look.arm || "none";
-  if (a === "reach") { // the dead: both arms out ahead, hanging a little
+  const a = dead ? "reach" : look.carry === "furniture" ? "overhead" : look.arm || "none";
+  if (a === "overhead") { // a piece of furniture on the shoulders (sim/furnicarry.js, issue #17): both hands up at its sides
+    for (const side of [-1, 1]) arm(side, add(SH(side), [0.5, side * 0.7, 0.6]), add(SH(side), [0.6, side * 0.5, 2.0]));
+  } else if (a === "reach") { // the dead: both arms out ahead, hanging a little
     for (const side of [-1, 1]) arm(side, add(SH(side), [2.0, side * 0.2, -1.4]), add(SH(side), [4.2, side * 0.1, -2.4]), cloth);
   } else if (a === "rifle") { // low ready: the right hand on the grip, the left out to the fore-end
     const butt = add(shP, [-0.6, R * 1.4, -1.6]), muzzle = add(shP, [5.0, R * 1.0, -2.6]);
@@ -374,6 +377,7 @@ function person(push, look, pose = {}) {
   if (look.carry === "logs") push(limb(add(shP, [-2.6, R * 2.2, 1.2]), add(shP, [2.6, R * 2.2, 1.6]), 0.9, 0.9, LOG, { sides: 6, group: G.carry, tex: (face, s, tt) => (tt < 0.06 || tt > 0.94 ? "#c8a070" : (Math.round(s * 5) + Math.round(tt * 9)) % 4 === 0 ? shade(LOG, -0.25) : null) }));
   if (look.carry === "game") { const hide = "#8a6a48", C = { sides: 6, group: G.carry }; push(limb(add(shP, [-2.4, 0, 1.4]), add(shP, [2.6, 0, 1.6]), 1.0, 1.2, hide, { ...C, tex: (face) => (face === "top" ? shade(hide, 0.2) : null) })); push(limb(add(shP, [2.6, 0, 1.6]), add(shP, [3.6, 0, 0.2]), 0.5, 0.5, hide, { ...C, sides: 4 })); push(limb(add(shP, [-2.4, R * 0.8, 1.2]), add(shP, [-2.6, R * 0.8, -1.4]), 0.3, 0.3, shade(hide, -0.3), { ...C, sides: 4 })); push(limb(add(shP, [3.8, 0.3, 0.6]), add(shP, [4.6, 0.6, 1.8]), 0.2, 0.2, BONE, { ...C, sides: 4 })); }
   if (look.carry === "fish") for (let i = 0; i < 3; i++) push(limb(add(SH(right), [0.6, R * 0.5, -4.8 - i * 0.6]), add(SH(right), [1.6, R * 0.5, -5.4 - i * 0.6]), 0.35, 0.25, i % 2 ? "#aab8c0" : "#8a9aa4", { sides: 4, group: G.carry }));
+  if (look.carry === "furniture") push(boxL(add(shP, [0.1, 0, 0.6]), add(shP, [0.1, 0, 3.8]), 1.7, 2.3, FURN, { u: [1, 0, 0], group: G.carry, tex: (face, s, tt) => (face === "top" ? shade(FURN, 0.25) : Math.abs(tt - 0.55) < 0.06 || s < 0.08 || s > 0.92 ? shade(FURN, -0.35) : null) })); // a stove, a dresser, a fridge carried home: a box on the shoulders
   if (look.carry === "small") push(limb(add(SH(right), [0.5, R * 0.5, -4.6]), add(SH(right), [0.7, R * 0.5, -6.4]), 0.5, 0.4, "#8a6a48", { sides: 5, taper: 0.7, group: G.carry }));
   // the neck and the head: the face on the front; tipped forward on the dead
   const drop = dead ? 0.8 : 0, hz = shoulderZ + 0.6 - drop, hf = lf + (dead ? 0.8 : 0) + (pose.lean ? 0.3 : 0);
@@ -717,12 +721,15 @@ const nearOf = (yaw) => (yaw > 45 && yaw < 225 ? -1 : 1);
 // "miltruck" (the team's vehicle by its type, render.js partyLook; ups: the vehicle's upgrades, mapsprites.js upsCode)
 // | "boat" | "raft" | "convoy" | "supply" (a loaded pickup) | "cart" | "supplycart" (a handcart and two on foot).
 // yaw: the heading; frame: 0 still, 1–FRAMES the cycle.
-export function mapPartyCanvas(kind, color, count = 3, ups = "", yaw = 315, frame = 0) {
+// furn: how many of a party on foot carry a piece of furniture home (s.gear.carry, sim/furnicarry.js): the first in the
+// column, each with it on the shoulders (look.carry "furniture").
+export function mapPartyCanvas(kind, color, count = 3, ups = "", yaw = 315, frame = 0, furn = 0) {
   const y = roundYaw(yaw), f = clampFrame(frame), n = Math.max(1, Math.min(4, count));
-  const people = PEOPLE.has(kind);
-  return cached(`party:${kind}:${color}:${people ? n : ""}:${ups}:${y}:${f}`, GRIDS.party, y, f, (g) => mapPartyCanvas(kind, color, count, ups, y, g), () => {
+  const people = PEOPLE.has(kind), fn = people ? Math.max(0, Math.min(n, furn | 0)) : 0;
+  return cached(`party:${kind}:${color}:${people ? n : ""}:${ups}:${y}:${f}${fn ? `:furn${fn}` : ""}`, GRIDS.party, y, f, (g) => mapPartyCanvas(kind, color, count, ups, y, g, fn), () => {
     const F = [], t = phaseOf(f), U = upsOf(ups);
     const push = (L) => F.push(L); push.F = F;
+    const fu = (i, L) => (i < fn ? { ...L, carry: "furniture" } : L); // the first fn of the column carry a piece home
     if (kind === "truck") place(F, [0, 0, 0], 0, (q) => pickup(q, color, t, U, (q2, bx) => q2(boxL([bx, 0, 4.0], [bx + 5.4, 0, 4.0], 0.9, 2.4, "#8c7a52", { u: [0, 0, 1], group: G.load, tex: (face) => (face === "top" ? shade("#8c7a52", 0.2) : null) }))));
     else if (kind === "sedan") place(F, [0, 0, 0], 0, (q) => sedan(q, color, t, U));
     else if (kind === "suv") place(F, [0, 0, 0], 0, (q) => suv(q, color, t, U));
@@ -742,10 +749,10 @@ export function mapPartyCanvas(kind, color, count = 3, ups = "", yaw = 315, fram
       place(F, [-6.4, 1.6, 0], 0, (q) => person(q, { cloth: shade(color, -0.15), pack: true, arm: "rifle" }, walkPose(f, 1)));
     } else if (kind === "scouts") {
       const col = columnOf(Math.min(2, n));
-      col.forEach(([pf, pl], i) => place(F, [pf, pl, 0], 0, (q) => person(q, { cloth: i ? shade(color, -0.15) : color, pack: true, hat: "cap", hatColor: shade(color, -0.4), arm: i ? "rifle" : f ? "none" : "binoc" }, walkPose(f, i))));
+      col.forEach(([pf, pl], i) => place(F, [pf, pl, 0], 0, (q) => person(q, fu(i, { cloth: i ? shade(color, -0.15) : color, pack: true, hat: "cap", hatColor: shade(color, -0.4), arm: i ? "rifle" : f ? "none" : "binoc" }), walkPose(f, i))));
     } else if (kind === "relief") {
-      columnOf(Math.min(3, n)).forEach(([pf, pl], i) => place(F, [pf, pl, 0], 0, (q) => person(q, { cloth: i % 2 ? shade(color, -0.15) : color, pack: true, hat: "helmet", hatColor: shade(color, -0.45), arm: i === 0 ? "banner" : "raised", armColor: color, band: RED }, walkPose(f, i))));
-    } else columnOf(Math.min(3, n)).forEach(([pf, pl], i) => place(F, [pf, pl, 0], 0, (q) => person(q, { cloth: i % 2 ? shade(color, -0.15) : color, pack: true, arm: kind === "raid" ? "rifle" : "none" }, walkPose(f, i))));
+      columnOf(Math.min(3, n)).forEach(([pf, pl], i) => place(F, [pf, pl, 0], 0, (q) => person(q, fu(i, { cloth: i % 2 ? shade(color, -0.15) : color, pack: true, hat: "helmet", hatColor: shade(color, -0.45), arm: i === 0 ? "banner" : "raised", armColor: color, band: RED }), walkPose(f, i))));
+    } else columnOf(Math.min(3, n)).forEach(([pf, pl], i) => place(F, [pf, pl, 0], 0, (q) => person(q, fu(i, { cloth: i % 2 ? shade(color, -0.15) : color, pack: true, arm: kind === "raid" ? "rifle" : "none" }), walkPose(f, i))));
     return F;
   });
 }
@@ -760,11 +767,13 @@ export const soloKind = (kind) => PEOPLE.has(kind);
 
 // A team of one on foot: kind as mapPartyCanvas's people; light "torch" | "lamp" | "" (carried, lit at night); gait ""
 // | "limp" (wounded: the hurt leg swings short, bandaged) | "heavy" (bent under a big load with a bedroll).
-export function mapSoloCanvas(kind, color, yaw = 315, frame = 0, light = "", gait = "") {
+// furn: a piece of furniture carried home (s.gear.carry, sim/furnicarry.js): on the shoulders (look.carry "furniture").
+export function mapSoloCanvas(kind, color, yaw = 315, frame = 0, light = "", gait = "", furn = false) {
   const y = roundYaw(yaw), f = clampFrame(frame), l = light ? (light === "torch" ? "torch" : "lamp") : "", g = gait === "limp" || gait === "heavy" ? gait : "";
-  return cached(`solo:${kind}:${color}:${y}:${f}:${l}:${g}`, GRIDS.solo, y, f, (fr) => mapSoloCanvas(kind, color, y, fr, light, gait), () => {
+  return cached(`solo:${kind}:${color}:${y}:${f}:${l}:${g}${furn ? ":furn" : ""}`, GRIDS.solo, y, f, (fr) => mapSoloCanvas(kind, color, y, fr, light, gait, furn), () => {
     const F = [], look = soloLook(kind, color, f > 0);
     if (l) look.arm = l;
+    if (furn) look.carry = "furniture";
     if (g === "heavy") { look.bigpack = true; look.pack = false; }
     if (g === "limp") look.bandage = true;
     place(F, [0, 0, 0], 0, (q) => person(q, look, walkPose(f, 0, g === "heavy" ? { lean: 0.35, stride: 0.7 } : g === "limp" ? { stride: 0.8, limp: 0.35 } : {})));
