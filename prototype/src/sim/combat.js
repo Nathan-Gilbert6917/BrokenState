@@ -6893,6 +6893,20 @@ export const BOX_LOOT = {
   coldcase:   { rest: 0.7, loot: { water: [0.75, 3, 7], preserved: [0.15, 1, 2] }, gear: [["bottle", 0.06]] },
   coldshelf:  { rest: 0.6, loot: { preserved: [0.6, 2, 5], food: [0.25, 1, 3] }, gear: [] },
   atm:        { rest: 0, loot: {}, gear: [["cashbox", 0.4]] },
+  // Grocery stores by size (issue #22, shoplayout.js): a store's freezers (the freezer case, the island freezer, a walk-in
+  // freezer's shelving) hold frozen food long gone bad but in winter (cold: as the chest freezer, no power since the fall),
+  // a butcher's case spoiled meat (kept in winter), produce bins the potatoes and onions that keep, a bread rack crackers
+  // and hard biscuit; a supermarket warehouse's pallet racks (palletrack@store) whole pallets of tins and water, the
+  // richest containers in the building, and the box truck at its dock a load of them. The self-checkout keeps the
+  // room's table (as the checkout). Tuned with tools/shopstest.js.
+  freezercase:     { rest: 0, loot: { food: [0.12, 1, 3] }, cold: { food: [0.85, 3, 8], preserved: [0.15, 1, 2] }, gear: [] },
+  islandfreezer:   { rest: 0, loot: { food: [0.15, 1, 3] }, cold: { food: [0.85, 4, 10], preserved: [0.2, 1, 3] }, gear: [] },
+  freezershelf:    { rest: 0, loot: { food: [0.2, 1, 4] }, cold: { food: [0.9, 5, 12], preserved: [0.3, 1, 3] }, gear: [] },
+  meatcase:        { rest: 0, loot: { preserved: [0.15, 1, 2] }, cold: { food: [0.8, 3, 8], preserved: [0.15, 1, 2] }, gear: [["knife", 0.05]] },
+  producebin:      { rest: 0, loot: { food: [0.25, 1, 3] }, gear: [] },
+  breadrack:       { rest: 0, loot: { preserved: [0.3, 1, 2], food: [0.15, 1, 2] }, gear: [] },
+  "palletrack@store": { rest: 0, loot: { preserved: [0.85, 5, 12], water: [0.7, 5, 12], food: [0.35, 2, 5] }, gear: [] },
+  boxtruck:        { rest: 0, loot: { preserved: [0.85, 8, 20], water: [0.75, 6, 16], food: [0.4, 3, 8], fuel: [0.4, 2, 6] }, gear: [["prybar", 0.1], ["flashlight", 0.15]] },
   // Police stations, fire stations, schools and churches (issue #15, civiclayout.js). An armory's gun racks hold the long
   // guns and its ammo cabinets the rounds (its lockers keep the armory's own table): about what the armory held before.
   // An evidence locker: drugs (meds), knives and pistols taken off people. A fire station's turnout lockers: coats,
@@ -6943,7 +6957,7 @@ export const BOX_LOOT = {
 };
 const boxDefs = new Map();
 // The table a container rolls: its room's (AREAS[type]), or its kind's (BOX_LOOT) with the room's rows at `rest` times
-// their chances (cold: a chest freezer in winter). The same object for the same three every time.
+// their chances (cold: a freezer in winter, the kinds with cold rows). The same object for the same three every time.
 export function boxLoot(type, kind, cold = false) {
   const A = AREAS[type], K = A && (BOX_LOOT[`${kind}@${type}`] || BOX_LOOT[kind]);
   if (!K) return A;
@@ -7718,7 +7732,7 @@ export function searchBox(state, b, u, box, open = false, quick = false) {
       Object.assign(sup, got.sup);
       gear.push(...got.gear);
     } else {
-      const def = boxLoot(R.areas[box.area].type, box.kind, box.kind === "freezer" && Weather.season(state).key === "winter"); // a piece's own table (BOX_LOOT: a fridge, a nightstand...), else the room's
+      const def = boxLoot(R.areas[box.area].type, box.kind, Weather.season(state).key === "winter"); // a piece's own table (BOX_LOOT: a fridge, a nightstand...), else the room's; a freezer's cold rows in winter (any kind with them: the chest freezer, a store's freezers)
       const site = poiKind || (state.tiles[b.tileId] && state.tiles[b.tileId].loc ? state.tiles[b.tileId].loc.type : null);
       const gunSite = (b.setup && b.setup.raid && b.setup.raid.gunSite) || site; // gundist.js: the building a city crawl's map is (a police station, an Army checkpoint), else the site
       const got = boxFinds(state, drng, { def, type: R.areas[box.area].type, rich, scav, reward, site, gunSite, deep: R.deep, tileId: b.tileId, bid });

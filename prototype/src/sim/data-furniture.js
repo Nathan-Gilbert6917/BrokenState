@@ -165,6 +165,22 @@ export const FURNITURE_KINDS = {
   loungechair: P("Lounge chair",      HALF, 15, 25, "one", S1, false, ["living", "office"], "comfort:0.5"),
   lounger:     P("Pool lounger",      HALF, 8, 12, "one", S1, false, ["yard"], "comfort:0.3"),
   tennisnet:   P("Tennis net",        POLE, 5, 15, "fixed", S1, false, ["yard"], "none"),
+  // ---------- grocery stores by size (issue #22: shoplayout.js cornerstore, grocerfloor, superstore, the back of house) ----------
+  // The freezer case (an upright glass-door freezer), the island freezer and the butcher's case are appliances at a base
+  // (data-appliances.js freezer_case, island_freezer, meat_case: #19's rules through their use); each holds its own table
+  // in a raid (combat.js BOX_LOOT: frozen food gone bad but in winter, spoiled meat), as do the produce bins, the bread
+  // rack, the freezer shelving of a walk-in freezer and the self-checkout's till. The cart corral and the baler are
+  // bolted down; the aisle marker is the sign on a post at the head of a supermarket's aisle (decor).
+  freezercase:   P("Freezer case",      FULL, 40, 130, "two", S1, true, ["shop"], "freezer", true),
+  islandfreezer: P("Island freezer",    HALF, 35, 110, "two", S21, true, ["shop"], "freezer"),
+  meatcase:      P("Butcher's case",    HALF, 30, 140, "two", S1, true, ["shop", "kitchen"], "fridge"),
+  freezershelf:  P("Freezer shelving",  HALF, 25, 40, "two", S1, true, ["kitchen", "shop"], "storage:60", true),
+  producebin:    P("Produce bins",      HALF, 15, 28, "one", S1, true, ["shop"], "storage:30"),
+  breadrack:     P("Bread rack",        C(false, 1, false), 15, 20, "one", S1, true, ["shop", "kitchen"], "storage:20", true),
+  selfcheckout:  P("Self-checkout",     HALF, 30, 60, "two", S1, true, ["shop"], "storage:10"),
+  cartcorral:    P("Cart corral",       C(false, 1, false), 40, 150, "fixed", S21, false, ["shop"], "none"),
+  baler:         P("Baler",             STEEL, 80, 700, "fixed", S1, false, ["bay", "shop"], "none", true),
+  aislesign:     P("Aisle marker",      POLE, 5, 6, "one", S1, false, ["shop"], "none"),
   // ---------- workshops, bays and garages ----------
   workbench: P("Workbench",  HALF, 35, 60, "two", S21, true, ["bay", "cellar", "school"], "work:workbench", true),
   toolchest: P("Tool chest", HALF, 35, 55, "two", S1, true, ["bay", "cellar"], "storage:40", true),

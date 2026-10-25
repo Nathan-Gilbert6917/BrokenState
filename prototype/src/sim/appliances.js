@@ -59,7 +59,7 @@ import { hash01 } from "./skills.js";
 export { COLD, RANGE, OVEN, MICROWAVE };
 // Every appliance's building type, the fridge first: the governor's order too.
 export const APPLIANCES = ["fridge", ...APPLIANCE_TYPES];
-const ORDER = ["fridge", "chest_freezer", "cold_case", "range", "oven", "microwave"];
+const ORDER = ["fridge", "chest_freezer", "freezer_case", "island_freezer", "cold_case", "meat_case", "range", "oven", "microwave"];
 /** @param {string} type */
 export const isAppliance = (type) => APPLIANCES.includes(type);
 /** The catalogue's use of a set appliance (fridge, freezer, stove, oven, microwave). @param {string} type */
@@ -72,12 +72,12 @@ export const workingAt = (base, type) => ((base && base.buildings) || []).filter
 export const appliancesOn = (base, key) => ((base && base.buildings) || []).filter((b) => (b.type === key || (isAppliance(b.type) && useOf(b.type) === key)) && !b.broken && isPowered(base, b)).length;
 
 // ---------- the cold rooms (storage.js storeSpaces) ----------
-// [{ key, name, kind, cap }]: the chest freezers and the cold cases on (their own kind and rate) and off (a pantry).
+// [{ key, name, kind, cap }]: the chest freezers and the cold cases (and a store's freezers and butcher's cases) on (their own kind and rate) and off (a pantry).
 // A broken one holds nothing (as the fridge). on(b): powered; a group's base reads rec.groupOn (groupMachinesDaily).
 /** @param {any} base */
 export function coldRooms(base) {
   const out = [];
-  for (const type of ["chest_freezer", "cold_case"]) {
+  for (const type of Object.keys(COLD)) { // the chest freezer, the cold case, a store's freezer case, island freezer and butcher's case (issue #22)
     const list = workingAt(base, type);
     if (!list.length) continue;
     const C = COLD[type], on = list.filter((b) => (base.group ? !!b.groupOn : isPowered(base, b))).length;
