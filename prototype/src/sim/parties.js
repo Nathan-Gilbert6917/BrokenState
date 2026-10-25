@@ -46,6 +46,7 @@ import { rescueArrive, captivesOf, contactAttack } from "./conflicts.js";
 import { handoverArrive } from "./ransom.js";
 import { assaultArrive } from "./conquest.js";
 import { occupyArrive, occupyProblem } from "./occupy.js"; // Occupy: move into an abandoned base
+import { convoyRecoverArrive, convoyProblem, convoyAt, recoveryArrive, recoveryLost } from "./convoyrecover.js"; // Recover convoy: your team, or a group's party (call-time only)
 import { abandonedAt } from "./groupworld.js"; // a base standing empty on a tile (Occupy instead of Build outpost there)
 import { BUILDINGS, CAMP } from "./buildings.js"; // a new outpost is a camp first, its step up (outpost_up) placed from its Build list
 import { hiveAt, hiveArrive, zombieToughness, BOSS_NAMES } from "./hives.js";
@@ -139,6 +140,7 @@ export const MISSIONS = {
   growth:      { name: "Burn the growth",  desc: "Attack a structure a hive has grown beside it (a pit, a brood chamber, a warren...): fight its guard in a small battle, or burn it with 4 fuel or 2 Molotovs (it may take two fires). Gone, the hive loses what it gave: income, a bigger guard, a kind of special dead, its Wallbreakers. Bring three or four fighters." },
   nomads:      { name: "Attack the nomad camp", desc: "Go to a nomad camp your people spotted (nomads.js) and attack it: a battle against the band with its tier's kit (drifters: pipe spears and scrap weapons; looters: clubs and pistols; survivalists: hunting rifles and bows; preppers: rifles and plate armour). Win and what they carry is yours. They move on every few days: the camp may be gone when you get there." },
   investigate: { name: "Investigate find", desc: "Check a cache, wrecked car or abandoned camp your teams spotted." },
+  convoy:      { name: "Recover convoy",   desc: "Go to a tile where vehicles of yours stand abandoned and get them out: a raid on the tile's map with the vehicles parked by the edge you come in at, their cargo inside and the tile's dead (and anyone else there) about. Every vehicle with one of the team at the wheel comes away, with what fits of its cargo; the rest stays there, marked. Then the team heads home to the base it left from (convoyrecover.js)." },
   getvehicle:  { name: "Recover vehicle",  desc: "Bring fuel (and a part if it is badly damaged) to get an abandoned vehicle running. A vehicle found on a map that needs work is repaired on the spot (foundcars.js)." },
   drivehome:   { name: "Drive it home",    desc: "One of the team drives a found vehicle home on their own (foundcars.js).", hidden: true },
   rescue:      { name: "Rescue captives",  desc: "Go to the group base where your people are held: sneak in or storm the base (on its map, or by the numbers), negotiate or pay a ransom." },
@@ -896,6 +898,7 @@ export function missionProblem(state, tile, mission) {
   if (mission === "scavenge" && t.terrain === "water" && !t.bridge) return "There is nothing to search on the water.";
   if (mission === "assault" && !state.factions.some((f) => f.alive && f.bases.includes(tile))) return "No group holds that place.";
   if (mission === "occupy") return occupyProblem(state, tile) || null; // occupy.js
+  if (mission === "convoy") return convoyProblem(state, tile) || null; // convoyrecover.js: a vehicle of yours known to stand there
   return null;
 }
 
@@ -1771,6 +1774,7 @@ export function orderOptions(state, p, tile = partyTile(p)) {
   if (fix) out.push(fixOption(state, p, fix));
   if (runner && p.vehicle) out.push(driveHomeOption(state, p, runner));
   scoutOptions(state, p, tile, out); // campscout.js: on an unscouted tile the camp's orders say "blind", Scout first beside each
+  if (p.owner === "player" && convoyAt(state, tile).length) add("convoy"); // convoyrecover.js: a raid to drive them all out
   const v = state.vehicles.find((x) => x.loc.kind === "abandoned" && x.loc.tile === tile && !(x.found && x.found.repair));
   if (v && !p.vehicle) {
     // What is still in its tank counts: the team only has to bring what is missing (bikes need none).
@@ -2137,6 +2141,8 @@ function arrive(state, p) {
     }
     case "drivehome":
       return driveHome(state, p); // foundcars.js: one of the team takes the found vehicle home
+    case "convoy":
+      return convoyRecoverArrive(state, p); // convoyrecover.js: a raid on the tile's map to drive the convoy out
     case "rescue":
       p.phase = "engaged";
       return rescueArrive(state, p);
@@ -2268,7 +2274,7 @@ function investigate(state, p) {
 // Moves what was left inside a vehicle (leaveVehicle) into the team's cargo, as far as it fits. Returns
 // { got, left } as text lists; what does not fit stays in the vehicle.
 /** @param {State} state @param {Party} p @param {Vehicle} v */
-function takeVehicleCargo(state, p, v) {
+export function takeVehicleCargo(state, p, v) {
   const got = [], left = [];
   const c = vehicleCargo(v);
   if (!c) return { got, left };
@@ -2591,6 +2597,7 @@ export function removeParty(state, p) {
     if (f && f.alive && f.stock && (f.bases || []).includes(partyTile(p))) for (const [k, q] of Object.entries(p.rations)) if (q > 0) f.stock[k] = (f.stock[k] || 0) + q;
     delete p.rations;
   }
+  if (p.recovery) recoveryLost(state, p); // convoyrecover.js: a group's party lost driving your convoy leaves it there
   if (p.owner !== "player" && p.siegeGear) siegeGearHome(state, p, partyTile(p)); // arsenal.js: a raid's ladders and ram home with whoever is left, else where it ended
   if (p.owner !== "player" && p.meds > 0) { // its meds too
     const f = state.factions.find((x) => x.id === p.owner);
@@ -2815,7 +2822,7 @@ function aiPartyHour(state, p) {
       }
       if (horde.size < 5) state.hordes.splice(state.hordes.indexOf(horde), 1); // too few left to be a horde
     }
-    if ((p.kind === "convoy" || p.kind === "caravan" || p.kind === "envoy" || p.kind === "loan" || p.kind === "opparty") && !caravanGuarded(state, p)) { // jobs.js: raiders leave a caravan you escort alone; envoys.js: an envoy on the road is fair game too
+    if ((p.kind === "convoy" || p.kind === "caravan" || p.kind === "envoy" || p.kind === "loan" || p.kind === "opparty" || p.kind === "recovery") && !caravanGuarded(state, p)) { // jobs.js: raiders leave a caravan you escort alone; envoys.js: an envoy on the road is fair game too
       for (const r of state.factions) {
         // Raider gangs (not a group they have a pact with), and aggressive groups at war with its group (caravanraids.js wouldRaid).
         if (!r.alive || r.id === p.owner || !isAggressiveType(r)) continue;
@@ -2879,6 +2886,8 @@ function aiPartyHour(state, p) {
       loanPartyArrive(state, p); // loans.js: volunteers at your base or home; a joint operation's party at the rendezvous
     } else if (p.kind === "scav") {
       scavArrived(state, p); // aiscav.js: at the site (search) or home (the haul into their stock)
+    } else if (p.kind === "recovery") {
+      recoveryArrive(state, p); // convoyrecover.js: a group's party at your convoy, at the destination, or home
     } else if (p.kind === "fwraid") {
       fieldRaidArrive(state, p); // fieldworks.js: a raid on a field work of yours (it fights the lookouts, takes or wrecks it)
     } else if (p.kind === "raid") {

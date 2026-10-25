@@ -615,6 +615,7 @@ export function siteMissions(state, id) {
   if (!fb && !empty && (t.terrain !== "water" || t.bridge) && (!info || info.owner == null || info.owner === "player")) actions.push(["outpost", t.bridge ? "Barricade the bridge (outpost)" : "Build outpost"]);
   if (markers.some((m) => m.type === "death")) actions.push(["recover", "Recover bodies"]);
   if (markers.some((m) => m.type === "vehicle")) actions.push(["getvehicle", "Recover vehicle"]);
+  if (markers.some((m) => m.type === "vehicle")) actions.push(["convoy", "Recover convoy"]); // sim/convoyrecover.js: a raid to drive them all out (or ask a group: Diplomacy, Envoys)
   if (markers.some((m) => (m.type === "cache" || m.type === "car" || m.type === "camp") && !m.info?.emptied)) actions.push(["investigate", "Investigate find"]);
   if (info && info.hordeSize) actions.push(["cull", "Cull horde"]);
   if (markers.some((m) => m.type === "nomadcamp")) actions.push(["nomads", "Attack the nomad camp"]); // sim/nomads.js: a camp seen there

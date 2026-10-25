@@ -50,6 +50,7 @@
 // there; they thin the dead to SQUAT_DEAD). The same threat for everyone (AI parity): your Occupy order (occupy.js)
 // fights it; a group moving in pays ABANDON.AI_LOSS of its count in people (rounded by the dice), coarse, and the group
 // whose base it was (still standing elsewhere) takes it ill: relations ABANDON.FORMER_REL.
+import { noteTaken } from "./convoyrecover.js"; // a vehicle of yours taken from the map, remembered (call-time only)
 import { foodIn, takeFood, addFoodsTo, DAY_VALUE, typeGoods, groupMix } from "./foods.js"; // food paid in days
 import { SUPPLIES, GEAR } from "./data.js";
 import { wallTier, pieceKind, matOf } from "./buildings.js"; // WALL_TIERS: a base's wall by its tier
@@ -297,6 +298,7 @@ function vehicleDaily(state, f, d) {
   for (const v of [...state.vehicles]) {
     if (v.loc.kind !== "abandoned" || (v.type === "bike" && !cargoIn(v)) || nearOwn(state, f, v.loc.tile) > VEH.TAKE_RANGE) continue;
     if (h(state, f.name, tickOf(f), "take", v.loc.tile, v.type) >= VEH.TAKE * W) continue;
+    noteTaken(state, f, v, v.type === "bike" ? "stripped" : "took"); // convoyrecover.js: remembered (who, when), recording only
     if (v.type === "bike") { stripRacks(state, f, v); return; }
     takeVehicle(state, f, v);
     if (f.known || state.live.has(v.loc.tile)) log(state, `${f.known ? f.name : "Another group"} took the ${v.name} that stood at ${tileName(state, v.loc.tile)}.`, "danger");
