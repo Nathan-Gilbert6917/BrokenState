@@ -2,7 +2,10 @@
 
 Detail for section 6 of [docs/agents/features.md](../agents/features.md). `[name]` is `prototype/src/sim/name.js`; `ui/name` is `prototype/src/ui/name.js`. (Screenshots removed: the battle-iso and battle-sizes shots are no longer in the repo.)
 
+Contents: [Walking on the battle map](#walking-on-the-battle-map) · [Lost pictures drawn again](#lost-pictures-drawn-again) · [Battle map sizes](#battle-map-sizes) · [A raid without the side panel](#a-raid-without-the-side-panel) · [Before you go in (the raid plan)](#before-you-go-in-the-raid-plan) · [The building picked before the raid map](#the-building-picked-before-the-raid-map) · [Raids into building interiors](#raids-into-building-interiors) · [Vaulting half cover](#vaulting-half-cover) · [Windows and the kinds of door](#windows-and-the-kinds-of-door) · [Raiders and the dead fight each other in a raid](#raiders-and-the-dead-fight-each-other-in-a-raid) · [Barricades](#barricades) · [Shoving people and the dead](#shoving-people-and-the-dead) · [Soft cover: bushes and tents](#soft-cover-bushes-and-tents) · [Taking tents down and slashing them](#taking-tents-down-and-slashing-them) · [Hearing, deafening and ear pro](#hearing-deafening-and-ear-pro) · [Side arm and melee slots](#side-arm-and-melee-slots) · [Car alarms](#car-alarms) · [The ground in a survivor's inventory](#the-ground-in-a-survivors-inventory) · [Talking to other groups in a raid](#talking-to-other-groups-in-a-raid) · [Orders to allies](#orders-to-allies) · [Siege kit](#siege-kit) · [Terrain in combat](#terrain-in-combat) · [Weather in battle: rain, fog and snow](#weather-in-battle-rain-fog-and-snow) · [Retreat](#retreat) · [Vehicles in battle](#vehicles-in-battle) · [Auto-resolve by the numbers](#auto-resolve-by-the-numbers)
+
 ## Walking on the battle map
+Moves on the battle map are walked cell by cell at each mover's pace, not teleported.
 - The user's request 2026-10-21: "add movement animations for battle map currently its like teleportations". Test `tools/moveanimtest.js`.
 - Every move is walked cell by cell at the mover's pace: walk 170 ms a cell, dash 115, sneak 240; the dead by kind: shuffle 220, runner 115, brute 240, crawl 280. A long move is quicker: 1.5 s unless that is past 80 ms a cell.
 - Easing in and out; the figure faces the step it is on; legs stride and free arms swing (five poses, at most four new ones painted a frame, the standing figure meanwhile) with a little bob.
@@ -10,16 +13,18 @@ Detail for section 6 of [docs/agents/features.md](../agents/features.md). `[name
 - Modules: [ui/moveanim PACE, planOf, moveAt, strideOf; ui/combat stampMoves, moveNow, walkWait; ui/figures figureCanvas o.stride / o.cached; ui/isoview walkFigure; ui/sfx-steps].
 
 ## Lost pictures drawn again
+Every cached picture is redrawn after the browser loses and restores its GPU context.
 - Every kept picture (sprites, figures, the carts' models, the battle's ground, fog, edge, light masks and marks, the map's chunks and shade, the minimap, the clouds, the gun art) is dropped and drawn again when the browser's GPU context is lost and restored.
 - The game's canvases report `contextlost` / `contextrestored`; a sentinel picture is read back once a second from the frame loop for a loss the page is not told about. A battle no longer goes on with ringed units and no bodies after a driver reset.
 - Modules: [ui/pictures; onForgetPictures in each module (ui/cartmodel too); ui/combat initCombatUI, ui/render initRenderer]; desktop/main.js logs a GPU process gone.
 
 ## Battle map sizes
-- By context, from 24×18 up to 48×34, with anti-slog endings.
+Battle maps are sized by context, from 24×18 up to 48×34, with anti-slog endings.
 - Raid maps run between the run's *Raid map, smallest / largest* dials (32×24 to 56×42 as it stands; cities and towns always the largest). Past 40×30 the dead, Heat's rise, a container's find and the ways out scale with the ground; the plan window and the building choice show the size.
 - Modules: [battlesize, worldcfg]; `tools/raidshot.cjs` shoots a big raid in the browser.
 
 ## A raid without the side panel
+A raid on a site uses the whole screen as the map, with a top strip, cards over the map and a log window.
 - The user's request 2026-10-18. A raid on a site (`b.raid`) uses the whole screen as the map. Every other battle keeps the side panel. Test `tools/raidscreentest.js`.
 - **Top strip**: the place, the turn and the clock, Heat with its bar, the floor shown with ▲ ▼ in a building with storeys, what is carried, ammo and meds, what is left to search, the ways out, the keys, the night; at the right ⚙ Menu, the view's buttons and 📜 Log.
 - **Cards over the map**: the choices before you go in, a warning, the hover details, the result (the building to search is picked before the map since 2026-10-25: see below).
@@ -27,11 +32,13 @@ Detail for section 6 of [docs/agents/features.md](../agents/features.md). `[name
 - Modules: [ui/combat `raidLayout`, `renderRaidTop`, `renderRaidCards`, `renderRaidLog`, `renderRaidLogFoot`; ui/logwindow; main.js renderCombat; styles.css `#combat.noside`, `#cbtop`, `#cbcards`, `#cblogwin`].
 
 ## Before you go in (the raid plan)
+A raid opens with the plan window: scout, wait for night, kit, the side to go in from, or leave.
 - A raid (an assault, a rescue) opens with the plan as a window over the battle screen: the site under fog, nobody of yours placed until you go in [raidplan, ui/raidplan].
 - Options: send a scout first (the odds); wait for night; Look at the map first (only once a scout came back unseen: the window put aside, a chip in the strip brings it back); the team's kit (Team inventory, Teams together; the battle made again with the kit as it stands); go in from a side (North / East / South / West places the team and starts the fight; one way in: Go in); or Leave (called off, nobody hurt).
 - Every rebuild (the kit window closing, another side, a scout, the night) first puts the rounds in each gun back onto the gun (gunload gunOut, read by mags fillUnit), so nothing loaded is lost or loaded twice [raidplan gunsOut; tools/raidscreentest "The rounds across a rebuild"].
 
 ## The building picked before the raid map
+When a raid has a street and buildings to go into, a card asks which before the raid map is made; the map never offers them.
 - The user's request 2026-10-25: "When raiding a tile and there is a street and buildings you can go to show the options before loading the raid map and not provide the options when you load into the map." Test `tools/buildingpicktest.js`.
 - **Before**: a raid with several buildings and none picked (a tile without places that has buildings: open plains' farmhouse and barn, a forest's cabin; the site POI picked with no building) loaded the street map first, with a "Where do you go in?" card over it (combat.js `R.choose`, `chooseBuilding`; ui/combat `chooseHtml`) until anyone acted; picking a building made the battle again inside it.
 - **Now**: the scavenge order puts up a card first, no raid map made yet (parties.js the scavenge order → poiraid `buildingPickWanted`, `buildingPickCard`): "Scavenge …: where do you go in?", a choice per building (its size, rooms, what it likely holds, its map in tiles) and the street last (buildingmaps `buildingOptions` through poiraid `raidBuildings`), then Not now (the team waits). The pick (p.poiBuilding, with p.poi when the site POI was picked on the POI card) gives the order again, and the raid map is made for it: inside the building, or the street map. The raid plan (side, scout, night, kit) comes after on that map as before, and its rebuilds keep the building.
@@ -41,6 +48,7 @@ Detail for section 6 of [docs/agents/features.md](../agents/features.md). `[name
 - Modules: [poiraid `raidBuildings`, `buildingPickWanted`, `buildingPickCard`, `buildingPickFor`, `poiRaidSetup`; parties the scavenge order; scavenge `startScavenge`; combat `createRaid`, `autoPlayerTurn`; ui/combat `renderRaidCards`]. Tests: `tools/buildingpicktest.js`, `tools/interiortest.js` ("A site with several buildings: picked before the map"), `tools/poicontainertest.js`.
 
 ## Raids into building interiors
+Raids go into generated buildings and neighbourhood streets to search, past locks, keys and safes.
 - Procedurally generated buildings, containers and searches; raid loot carried by hand [buildingmaps, search, raidloot]. Raid planning (entry side, scout, wait for night) [raidplan]; locks, keys and safes [locks, gunsafes]. A site's building is picked before the map (see above).
 - **Neighbourhood POI**: a street of 3–5 two-storey houses on one map (rows facing a road, yards, fences, parked cars to search; ways out at both ends and the back gardens). Each house's containers are kept apart in the POI's ledger with the one pool falling across them. Headless it is one POI searched a house at a time [buildingmaps `streetMap`, `streetHouses`, `STREET`, `streetIntro`; combat `createRaid` (upper floors' reach from every stairwell); poicont `poiHouses`; scavenge `searchHour` / `afterRaid`].
 - **Makeshift picks** (bent wire, `GEAR.makeshiftpick`, a stack of up to 10; `CRAFTS.makeshiftpick` three a scrap at a base or in the field). Test `tools/makeshiftpicktest.js`.
@@ -49,6 +57,7 @@ Detail for section 6 of [docs/agents/features.md](../agents/features.md). `[name
   - Modules: [locks `MAKESHIFT_PICK`, `picksOf`, `crowbarOf`, `makeshiftPicksOf`, `isMakeshiftPicks`, `makeshiftPickable`, `pickChance`, `wearPicks`, `openOdds` (pick.makeshift / left), `openLock`, `lockedSearchHour`; foundcars (cars), rescueraid `pickOdds` (a cell's lock); ui/locks `lockPanel` "Pick (makeshift)", ui/carpanel].
 
 ## Vaulting half cover
+People go over waist-high cells at extra cost and land winded; the dead crawl over instead.
 - A person (yours, a human enemy, the third side) goes over a waist-high cell nobody can stand on (a fence, crates, a car, sandbags, a table; not a window, cell bars, a railing or a well) at VAULT.COST tiles more than a step, never ending on it or cutting its corner.
 - Lands winded: VAULT.COST tiles less movement for the rest of the turn (`u.vaulted` read by `moveMob`). A scuff heard nearby and VAULT.NOISE on the raid's noise.
 - With hands full of a load it costs double and never goes through a closed window; Set over cover leaves the load on the far side. Not while pushing a cart. The dead crawl over it instead, dearer (see Barricades).
@@ -56,6 +65,8 @@ Detail for section 6 of [docs/agents/features.md](../agents/features.md). `[name
 - Modules: [combat VAULT, vaultable, canVault, reachable, distField, moveAlong, moveMob; ui/isoview (the VAULT mark on the path), ui/combat (tooltips), ui/battlehud (the WINDED chip)].
 
 ## Windows and the kinds of door
+Windows have states (open, locked, broken); doors come in kinds with their own hit points, sight and locks.
+
 Modules: [windows, buildingmaps DOOR_KINDS, combat vaultBreaks / vaultCost / clambers / breakCell / structureName, locks; ui/combat (windowButtons, window and door tooltips, the click on a window), ui/isoview (the SMASH tag), ui/sfx-doors (glass and screen doors, sash, glassBreak), ui/battlebar, ui/codex (Windows, Doors)].
 - **Window state** `c.win = { open, lock: none | locked | fixed, known }`, rolled from the map's own dice where windows are placed (`buildingmaps.js assemble`, `combat.js genMap` / `genRaidMap`, `interior.js`).
   - Checking is free; opening or closing is 1 action and quiet (unlocked from either side, locked from indoors only: `insideOf`).
@@ -64,6 +75,7 @@ Modules: [windows, buildingmaps DOOR_KINDS, combat vaultBreaks / vaultCost / cla
 - **Door kinds** (`c.dk`, `DOOR_KINDS`): screen, wood, front, glass, steel, security, roller, cell, barred, gate, vault; placed by archetype (`doorStyleOf`). The kind sets hit points, sight through a closed glass or screen door (`doorSees`, `los`), the lock's difficulty and whether it can be kicked or forced (`locks.js openOdds` by `lock.dk`), the crash of a glass door and its sound (`ui/sfx-doors.js doorKind`). The dead and the human AI prefer doors by hit points on the siege field.
 
 ## Raiders and the dead fight each other in a raid
+In a raid, raiders and the dead fight each other, and unseen shots are heard and marked in the fog.
 - The user's request 2026-10-18. Test `tools/crossfiretest.js`.
 - **Contact**: one of the dead next to a raider, or within `CROSS.CONTACT` tiles in sight, goes for them (an unaware one too, without waking to you). A raider with the dead coming within `CROSS.SHOOT` tiles in their cone, or next to them, shoots or strikes back without learning you are there.
 - **Their noise draws the dead** while you are unseen: a raider's shot, grenade or flashbang, or a bite or blow on one of theirs, sends unaware dead within earshot (and nearby raiders) to look there instead of waking them to hunt you, as long as no raider is aware of you. The noise still feeds the raid's Heat and the tile's heat.
@@ -74,6 +86,8 @@ Modules: [windows, buildingmaps DOOR_KINDS, combat vaultBreaks / vaultCost / cla
 - Modules: [crossfire `CROSS`, `crossFoes`, `crossTurn`, `crossDraw`, `crossHit`, `noteShot`, `noteBlast`, `noteNoise`, `noiseGhosts`, `crossRound`, `shotSound`, `blastSound`; combat `foesOf`, `aiUnit`, `alertNear` (src), `fire`, `suppress`, `strike`, `startPlayerTurn`; throwables `landEffect`, `flashBurst`; ui/combat (the ghosts, the tooltip, the Throw button's text), ui/isoview `drawGhost`].
 
 ## Barricades
+Shove furniture into place and board up doors and windows; the dead crawl over half cover.
+
 The user's request 2026-10-18. Test `tools/barricadetest.js`.
 - **Shove furniture**: a person with free arms shoves a piece right next to them (shelves, a cabinet, a counter, a table, a bed, crates, tall shelving, lockers, barrels, hay, sandbags: `FURNITURE`) one tile for both actions, pushed onto a free open cell beside it or pulled onto their own cell while they step back (`SHOVE`, `shoveTargets`, `shoveDests`, `shoveAct`). A raid's container goes with its piece. A shoved piece gets hit points the dead batter; rubble at 0.
   - A piece goes into a broken or open door's frame too (`isFrame`, `breakPiece`: the frame kept under it, back when it moves or is smashed).
@@ -89,6 +103,8 @@ The user's request 2026-10-18. Test `tools/barricadetest.js`.
 - Modules: [barricade; combat CELL boarded, reachable, distField, moveAlong, breakCell, structureName, combatAct; windows insideOf; data GEAR.boards; crafting CRAFTS.boards; ui/combat barricadeButtons / shoveChooser / shoveCbAct / shoveClick, ui/battlebar, ui/keymap, ui/isoview (boarded cells drawn as planks), ui/codex "Barricades"].
 
 ## Shoving people and the dead
+Shove a foe back or floor them for 1 action; the dead may grapple whoever they hit.
+
 The user's request 2026-10-20. Tests `tools/shovetest.js`, `tools/shoveviewtest.js`, `tools/shovebalance.js` (the same fights before this feature and now).
 - **Shove foe**: a person with free arms shoves a foe right next to them for 1 action (`PUSH`, `pushTargets`, `pushRefusal`, `pushOdds`, `pushAct`; combatAct "shoveFoe", Shove foe in the Fight tray, Alt+V).
 - **Odds** about 65%. Better for a good hand-to-hand fighter (u.meleeAim), a Strong back (u.strongBack), the Bulldozer trait (u.bulldozer: +10/15/20% to land, +15/25/35% to floor; picked only, never rolled: data.js PICK_ONLY_TRAITS keeps every seed's rolls), a target unaware or reeling. Worse on the armoured dead and on a target hunkered down (−`PUSH.HUNKER`) or bracing a door (−`PUSH.BRACE`). Brutes, wall-breakers, brood mothers, dead cows and bosses do not budge.
@@ -101,6 +117,8 @@ The user's request 2026-10-20. Tests `tools/shovetest.js`, `tools/shoveviewtest.
 - Modules: [shoving; combat combatAct, meleeOdds, moveAlong, aiUnit, playerUnit strongBack / bulldozer, hAt; traits TRAIT_TIERS.bulldozer; data TRAITS.bulldozer, PICK_ONLY_TRAITS; ui/combat (button, target mode, odds, animTile), ui/battlebar, ui/keymap, ui/isoview (topple, lying figure, FLAT and HELD tags), ui/sfx-melee, ui/codex, ui/ui help].
 
 ## Soft cover: bushes and tents
+Bushes and tents conceal whoever is in or next to them but never stop bullets; tents tear and are mended.
+
 The user's picks 2026-10-20: "Bushes hide whoever stands next to them or in them, but don't stop bullets", "Tents are soft cover". Test `tools/softcovertest.js`.
 - A bush (the base map's scatter) and a tent (a camp's, any size; driven by the cell kind) are walked into at CONCEAL.MOVE tiles more and are no cover at all (CELL cover 0: no shield, no bipod rest, a shot is not stopped or weakened).
 - **Concealment**: whoever stands in one (CONCEAL.IN) or right next to one (CONCEAL.NEXT: a bush on any side, a tent only between them and the viewer) is seen only within a share of the viewer's sight (not at all while sneaking, from more than a tile), noticed by the unaware (people and the dead) at a share of the range, and harder to hit from more than a tile off (a line of the hit breakdown, a note on the odds line, "concealed …" on the target card; the HIDDEN chip on your people).
@@ -110,6 +128,8 @@ The user's picks 2026-10-20: "Bushes hide whoever stands next to them or in them
 - Modules: [softcover concealAt / concealHidden / concealAim / concealScore / noticeMult / tentAI / tentStep / softSetup / settleTents / mendTents; combat CELL bush / tent / torn, canSee, shotOdds, reachable, distField, moveAlong, fire, suppress, scoreCell, aiUnit, breakCell, createBattle, finishCombat; stealth noticeRange / detectRange; throwables FIRE.fuel; breakdowns breakdownsDaily; ui/battlehud (HIDDEN, the target card), ui/combat (the hover), ui/isoview (the torn tent)].
 
 ## Taking tents down and slashing them
+Tents on a battle map can be taken down and carried off as a bag, or slashed; the owner loses them.
+
 The user's request 2026-10-20: "take tents down in raids and steal them". Test `tools/campsitetest.js`.
 - Every tent on a battle map is on the battle's list (b.tents: whose camp, its owner, its bag, its container; tentfight.js addTent: your base's via softcover softSetup; an AI camp's via conquest; a band's or a campsite's via campsite.js; unregistered runs found by their cells).
 - **Take down** (Alt+T, the Doors & lights tray): both actions a go, TENT_TAKE.GOES (makeshift 1, one- and two-person 2, four-person 3; two people share it). Then its cells are open ground and it is the bag in the arms of whoever finished it (on the ground when the hands are full).
@@ -121,6 +141,7 @@ The user's request 2026-10-20: "take tents down in raids and steal them". Test `
 - Modules: [tentfight, softcover tentAI, data-tents TENT_TAKE, tents pitchTentAtBase / strikeTentAtBase; ui/combat tentButtons, ui/battlebar, ui/keymap].
 
 ## Hearing, deafening and ear pro
+Loud fights deafen; ear protection works only in the Ear pro slot.
 - [hearing]. Ear protection: foam earplugs, muffs, electronic defenders and the team headset [data-helmets, helmets `earGearOf`]; makeshift rag earplugs crafted from a scrap (weaker than foam, under any helmet, a pair a fight) [data `ragplugs`, crafting `CRAFTS.ragplugs`, hearing `isPlugsKey` / `settleEars`].
 - **Ear pro slot** (the user's request 2026-10-21: "add ear pro slot to put ear plugs and such to prevent deaf. this is now the way to have ear protection work"): an equip slot (`s.gear.ears`, SLOT_NAMES "Ear pro"), the only place ear protection works.
   - Plugs (GEAR `plugs`) under any helmet; muffs and headsets not under a full-shell helmet (`earSlotReason`). In a pocket, the pack or on the head: nothing.
@@ -129,6 +150,7 @@ The user's request 2026-10-20: "take tents down in raids and steal them". Test `
 - Modules: [helmets `isPlugs`, `earSlotReason`, `earGearOf`; inventory fitReason / stow; loadouts wearEars; startgear `START_GEAR.SLOTS`; ui/inventory doll, ui/startgear, ui/codex "k:holsters"]; tests `tools/holstertest.js`, `tools/heartest.js`.
 
 ## Side arm and melee slots
+A holstered handgun or belt blade is drawn for 1 action, by every side alike.
 - The user's request 2026-10-21: "add a melee slot and side arm slot so a survivor can swap to a small melee weapon if they run out of ammo and can be used instead of a gun to attack adjacent tiles. it takes an action to swap … side arm can only fit small guns not long guns. Ai groups can do the same". Test `tools/holstertest.js`.
 - `s.gear.sidearm` takes a handgun (GEAR cat pistol); `s.gear.melee` a one-handed melee weapon up to `BELT_KG` (1 kg: a knife, a hatchet, a machete, a bat). A handgun or blade picked up with the hands full goes onto the belt (inventory stow).
 - **In a fight**: Draw side arm (Alt+P), Draw melee (Alt+M), Main weapon (Alt+R), each `DRAW_AP` (1 action) (combatAct "draw", `drawAct`, `drawRefusal`). The holstered weapon goes into the hands; what was held goes back in its own holster or slung (`s.gear.slung`, shown under the hands while it holds something).
@@ -139,6 +161,7 @@ The user's request 2026-10-20: "take tents down in raids and steal them". Test `
 - Modules: [holsters, combat, inventory, equip, bulk, gunload; ui/combat holsterButtons / DRAW_V, ui/battlebar, ui/keymap, ui/inventory doll SLOT_HINT, ui/soundcues (fx "draw"), ui/codex "k:holsters"].
 
 ## Car alarms
+An armed car's alarm lures the dead; set one off by hand or a thrown object, or by accident when breaking in.
 - The user's request 2026-10-23: "Be able to set off car alarms to attract zombies to the alarm and away from you. Be able to set them off from afar as well by throwing something through the window. Add chance of alarm set off when smashing the window to try to loot a locked car or to hotwire it." Test `tools/caralarmtest.js`.
 - **Which cars**: a civilian sedan, van or pickup, 50 / 45 / 40% of them, only with a live battery (about one car in five overall); never a burnt-out box truck or an Army vehicle. A group's motor-pool car by the same share. An armed one blinks a red light on the dash: the car panel says so from next to it; the AI sees it within 8 tiles with eyes on the car.
 - **Ringing**: a lure at the car's middle (radius 16, noise, a decoy) for 8 enemy turns. The unaware (people and the dead that hear noise) go to look; the dead already after someone walk to it unless someone they are after is within 2.5 tiles; a Shepherd's pack hears nothing. Raid Heat +10 at once, +1 each turn it rings. Then it rings out for good.
@@ -150,11 +173,14 @@ The user's request 2026-10-20: "take tents down in raids and steal them". Test `
 - Modules: [caralarms `ALARM`, `fitAlarm`, `soundAlarm`, `alarmTurn`, `silenceAlarm`, `tripAlarm`, `throwAtCar`, `alarmsNear`, `ringingCars`, `ledSeen`, `alarmThrowSpot`; foundcars carRecord / carOptions / carAct ops `alarm`, `silence`; stealth throwAt / stealthTurn / pull; decoys stimuli / botDecoy; locks openLock; combat searchBox; siege overlay; ui/carpanel `carThrowPreview`, ui/combat, ui/isoview, ui/battlelights, ui/sfx-vehicles `carAlarm`, ui/sfx-gear].
 
 ## The ground in a survivor's inventory
+The ground's piles show in a survivor's inventory window, in a fight and on the State Map.
 - The user's report 2026-10-20. The fight's Inventory window (🎒, Shift+B) lists the piles on and next to them beside a Carried list; things are dragged or clicked between them and the person as in the Ground window (picking up is hauling time, putting down free; look only with no action left).
 - On the State Map a team member's inventory (and the team inventory) has an On the ground here box for the tile's ground: a thing onto a slot or pocket is picked up onto them; a cart (or a bag onto In arms) into their arms; supplies into the pool; a thing of theirs dropped on it goes down.
 - Modules: [ui/inventory fightGround, groundBox; carry groundToPerson].
 
 ## Talking to other groups in a raid
+Call out to other human groups in a raid: a truce, trade, recruits or fighting together; some are treacherous.
+
 The user's request 2026-10-20. Modules: [parley, thirdside thirdPlan thirdFoes thirdSideHit, combat callout detect notice damage autoRaidTurn RAID_HEAT, buildingmaps placeInterior, scavenge raidEnemies afterRaid, citycrawl enterPlace afterPlace, wanderers talkChance, ui/combat, ui/isoview].
 
 - **Groups on the map**: every human group on a raid's map (a third side, a hostile group's pod) has a record with a hostility on a range (an AI group's goodwill and type, a wanderer group's mood, raiders and squatters by kit) and a stance by it (friendly, neutral, hostile). Some hostile groups are treacherous and show as friendly.
@@ -175,6 +201,8 @@ The user's request 2026-10-20. Modules: [parley, thirdside thirdPlan thirdFoes t
 - **Raid bot** answers the cards and calls out on its own (the best talker who sees them, once a group: a group not hostile and aware, or an unaware hostile pod that outnumbers the squad, weighed by the odds and the shout's risk).
 
 ## Orders to allies
+Give an allied survivor an order for 1 action; they may ignore it.
+
 The user's request 2026-10-21. Modules: [allyorders, thirdside thirdFoes, parley parleyEnd parleyResult parleyGoodwill, combat allyorder aiUnit endPlayerTurn evac checkEnd autoRaidTurn, ui/combat, ui/isoview, ui/battlebar].
 - One of your people may give an allied survivor (Fight with us) within 5 tiles on the same floor an order for 1 action, to one ally or its whole group within range:
   - attack a target your side sees; move to any cell (the fog too: the nearest cell they can reach); push to a cell and fight what is there;
@@ -185,11 +213,13 @@ The user's request 2026-10-21. Modules: [allyorders, thirdside thirdFoes, parley
 - Evac, the raid bot leaving and your extraction tell every ally to retreat. Their people who die under your orders cost a little goodwill after.
 
 ## Siege kit
+Ladders, rams and frag grenades for assaults; groups and raiders bring only their own.
 - Ladders, rams and frag grenades [siege]. A group's raid brings only its own (its ladders and ram on its books, made by your recipe when it has none; grenades carried by the raiders) [arsenal packRaidKit, siegeGearHome].
 - Raiders from beyond the border bring the ladders and ram they set out with, items in their gear carried by the carry rule, made more of by a group's crafting when they have the means (your bench), home with the living after the raid, else in your yard or on the ground [siege bandSetOutKit; visitors bandKit, makeSiegeGear, siegeGearBack, dropBandGoods; arsenal bandMakes].
 - (Screenshots removed: the siege shots are no longer in the repo.)
 
 ## Terrain in combat
+Height changes aim, cover and sight in a fight, and the AI paths and stands by the land.
 - The user's request 2026-10-23: "improve high ground accuracy and sight range, low ground inaccuracy and can't see beyond the first tiles around a hollow. High ground acts as half cover if one layer high and can see the survivor and full cover if two layers high. You can use hills to see into upper floors of buildings if any are in range with a window. Update AI pathing".
 - Aim and cover by height (combat HEIGHT): shooting down +5 a level to MAX_AIM 15; shooting up −5 a level to MAX_UPHILL −15 (UPHILL); a target a level up has half cover (COVER), two or more full (FULL_UP 2; full cover is −40 aim, the target stays visible); no height cover from an adjacent shooter. Rows "High ground", "Uphill", "Half cover: hill" / "Full cover: hill" in the breakdown (shotOdds, coverAgainst `rise`/`high`; ui/battlehud, ui/combat, ui/isoview). The uphill and full-cover rules apply to every height (walkways, roofs, towers).
 - Sight +2 tiles a level (−2 in a hollow). A unit in a hollow sees the hollow and the first ring round its rim, nothing beyond, both ways (highground hollowShut, in los, cached per map revision).
@@ -197,6 +227,7 @@ The user's request 2026-10-21. Modules: [allyorders, thirdside thirdFoes, parley
 - AI pathing: distField costs ground steps through climbCost (with the weather's climbX), so the dead go round a tall hill and people over it when cheaper, never through crag; anyone with a gun scores hills +2 a level and hollows −6 a level (highground terrainScore, TERRAIN_AI; combat scoreCell). `tools/terraincombattest.js`, `tools/defencetest.js`, `tools/terrainshot.cjs`.
 
 ## Weather in battle: rain, fog and snow
+The State Map's weather over the fight's tile is drawn over the battle; fog and blizzards cut every side's sight.
 - The user's request 2026-10-23: "Add rain and fog effect during raid … when it is foggy or raining in the world map that is when it is foggy or raining in a raid. Fog reduces visibility on the world map too" (the State Map's own rain, fog and sight are ui/render, ui/wxmap; this is the battle's side).
 - The battle's weather is the State Map's over its tile as the battle is made: weather.js weatherAt(state, b.tileId), kept as `b.wx` (wxsight battleWxKey; "clear" with no tile, and under the ground in a hive's caves). No dice: the same seed and hour, the same weather. Every battle counts: raids (createRaid), fights in the open, a base's defence.
 - Sight [wxsight WX_SIGHT, WX_SIGHT_MIN, wxSightSetup, fogEyes]: fog cuts everyone's day sight (`u.daySight`) by WX_SIGHT.fog = 4 tiles, a blizzard by WX_SIGHT.blizzard = 3, never below WX_SIGHT_MIN = 4 (a person 13 → 9, the dead 9 → 5); `b.wxSight` the cut, `u.fogCut` what came off a unit (once). The night's caps come on top as before (stealth senses, ailights, vision: sight = min(day sight, the dark's reach)). AI parity (docs/adr/0001): every unit on every side alike, your people, raiders, the third side, volunteers and the dead; hooks in stealth.js stealthSetup (as the battle is made) and stealthTurn (anyone who came onto the map since, before the night's cap). Rain and snow cut nothing.
@@ -206,3 +237,17 @@ The user's request 2026-10-21. Modules: [allyorders, thirdside thirdFoes, parley
 - Rain over a raid is the world tile's own rain (the user's request 2026-10-23: "Make sure Rain in a raid depends on if the world tile is raining"): the rain now comes in belts that move over the map (weather.js WAVE), so a raid on a tile under a belt rains, a raid on a dry tile the same hour does not, and the same tile once the belt has passed is dry again. The world clock stands still in a battle (main.js), so the raid keeps the hour's weather.
 - A battle made with no tile of its own (the base map view, a base's wall map: sim/basemap.js openBaseMap) takes its base's tile (wxsight battleTile, also used by ui/battlewx wxFxFor and ui/battleedge battleWeather): its rain, fog and snow are the base's, and fog over a base cuts sight in a fight at its walls too.
 - Test `tools/battlewxtest.js`: a raid on a raining tile rains and one on a dry tile the same hour does not, nor the first once the belt has gone; the base map view rains with its base's tile; the cut for both sides (a fight with raiders, with the dead, a raid) in fog and none in clear weather or rain, the log and hover words, the same seed the same sight, a newcomer cut once at the turn, the floor; the overlay's pick by the weather (rain, storm, fog, snow, blizzard, none), its counts at Full, Light and Off, bounded on a 4K screen, the puff painted once, held still under Reduce motion, and a foggy raid drawn through drawCombat on stub canvases.
+
+## Retreat
+"Sound the retreat" in a tactical battle, and break-off policies for fights resolved by the numbers.
+- **Sound the retreat** (combat `soundRetreat`): every unit still standing tries to get out now (escapeOdds), carrying the downed next to them; the battle ends as a retreat (a defeat if nobody got out). The AI can give the order too.
+- **Break-off policies** [breakoff]: a fight by the numbers plays out in rounds, and the team's "Retreat if it goes badly" policy (never, most, losing, blood) decides whether it breaks off after the first two rounds.
+- Modules: [combat soundRetreat, breakoff].
+
+## Vehicles in battle
+Humvee gunners and ramming gates in a battle.
+- Modules: [combat raidCarTurn (a raid's enemy vehicle driven on its turn)].
+
+## Auto-resolve by the numbers
+A fight nobody plays on the map is decided by the numbers (the Auto-resolve button, headless tools, the autopilot and crews).
+- Modules: [combat autoResolveCombat; breakoff for breaking off].

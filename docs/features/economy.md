@@ -4,7 +4,10 @@ Detail for section 3 of [docs/agents/features.md](../agents/features.md) (what r
 
 `[name]` is `prototype/src/sim/name.js`; `ui/name` is `prototype/src/ui/name.js`.
 
+Contents: [No idle workers](#no-idle-workers) · [Farming: placed crop plots](#farming-placed-crop-plots) · [Winter's lean months](#winters-lean-months) · [Woodcutting and heating](#woodcutting-and-heating) · [Stone](#stone) · [The land order box: hours and expected yield](#the-land-order-box-hours-and-expected-yield) · [Teamwork on job trips](#teamwork-on-job-trips) · [Tools as prerequisites](#tools-as-prerequisites) · [Crafting stacks](#crafting-stacks) · [Building materials and metal sheets](#building-materials-and-metal-sheets) · [The power grid](#the-power-grid) · [Hauling](#hauling) · [Electronics recipes](#electronics-recipes) · [More of the grid: electronics builds](#more-of-the-grid-electronics-builds) · [The governor builds the grid](#the-governor-builds-the-grid)
+
 ## No idle workers
+Anyone whose job has no work helps elsewhere and keeps their role.
 - The user's requests 2026-10-20: "There should never be idle workers for any profession. If there are no buildings to build do not leave any survivors as builders" [noidle]. Test `tools/noidletest.js`.
 - **A job has work** when its activity line is not idle or stalled. Per role: a build or clearing job not waiting for its materials, a field work, a repair or upkeep; plots to tend; a lit kitchen with food; a patient, anyone hurt or ill, or a trainee for a medic; a craft job they can do; a running station; ruins not picked clean; the land for the outdoor jobs; a learner or a book; guard and trainee always.
 - Rest, sleep, sickness, eating, off hours and too weak to work are not idle.
@@ -15,6 +18,7 @@ Detail for section 3 of [docs/agents/features.md](../agents/features.md) (what r
 - **AI parity**: a group's crew-days are never left on work that does not exist; a job finished mid-day hands its spare crew-days to the next job; a day with nothing to build leaves the crew on the land (groupworks groupWorksDaily f.crewCarry / f.crewDay).
 
 ## Farming: placed crop plots
+Crop plots are 2 × 2 pieces placed by hand on the base map's soil; no free plots by tier.
 - The user's requests 2026-10-22: "Farm plots are placeable remove the hardcoded number of plots per base level. The player sets them up with 2x2 tiles for each plot on soil tiles", "Farm plots can only be set on soil tiles in a base map".
 - Each Farm plot is one 2 × 2 crop plot on the base map (buildings farm_plot, basemap FOOT farm_plot, a field), only on soil (grass and dirt; never road, a paved lot or a ford: basemap NOT_SOIL / SOIL_WHY), queued only while the map has free soil for one more (basemap soilRoom, buildings canBuild SOIL_FULL).
 - The user's request 2026-10-23: "update the farm plot to have a small wood border around the 2x2 plot when putting a plot next to each other remove the wood border between to have the plots merge seamlessly". The base map marks every plot cell (basemap buildBaseMap: cell.plot) and ui/isoview.js plotEdges gives each cell a bit for each side with no plot beside it (1 north, 2 south, 4 west, 8 east); floorColor paints a plank border (PLOT_EDGE, 0.14 of a cell wide) on those sides only, so plots side by side or end to end read as one bed.
@@ -24,6 +28,7 @@ Detail for section 3 of [docs/agents/features.md](../agents/features.md) (what r
 - A save from before has its plots dug and its tiers' beds kept (buildings migrateCropPlots, save.js state.cropV).
 
 ## Winter's lean months
+Frost kills crops, and forage, game, fish and wood yield less in winter.
 - The user's request 2026-10-21: "Winters can kill crops easier, food is hard to find in winter wood can be found but yields less in winter".
 - **Frost**: hard freezes kill tender crops ×1.5 in winter and ×1.3 in late autumn and early spring. Outdoors a cold snap takes hardy crops too (a third of a hardy crop over a whole winter; deep snow halves it; a greenhouse none). Log line "❄ the frost killed …" [winter `FROST` `frostPhase` `frostMult` `coldSnap`; weather `cropDamage` (farmers' plans read it too); farming `farmingDaily` `out.frost`].
 - **Winter yields**: forage 0.08, game 0.6 (hunts, snares, the cabin), fish 0.5, wood 0.7 (trips and felling), scavenged food ×0.85 [winter `WINTER` `winterScavFood`; foraging `seasonForage`, hunting `seasonGame` `seasonFish`, woodcutting `seasonWood`, woodwork `chopRate`, scavenge `searchHour`, economy `scavTrip`].
@@ -31,6 +36,7 @@ Detail for section 3 of [docs/agents/features.md](../agents/features.md) (what r
 - **AI parity**: the wild share of their food follows the season (winter ×0.86, autumn ×1.08, a year's mean 1); their wood and finds follow your rules [winter `groupWildSeason`; grouptrips `groupFoodLand` `groupWoodLand`; aiscav `haulFor`].
 
 ## Woodcutting and heating
+Wood is fuel and a building material: wooden builds cost wood, woodcutters fell on the base map, and every fire burns it.
 Modules: [woodcutting, woodwork, upkeep, needs]. Test `tools/woodworktest.js`.
 
 ### Wood as a supply
@@ -66,6 +72,8 @@ Modules: [woodcutting, woodwork, upkeep, needs]. Test `tools/woodworktest.js`.
 - Wood first, then fuel. Every fire burns it: a camp's or shelter's fire by the hour (warmth, boiling, the pot); the night's fire at every base on a cool night; the whole day's heating in the frost; the boiler and the Kitchen's stove [woodcutting, upkeep, needs].
 
 ## Stone
+Field stone from rocks and boulders cleared on the build map, the Gather stone job and the team's order; a camp's fire and some buildings take it.
+
 The user's request 2026-10-23: "Add rocks as a material to gather like wood can be gathered from demolition of rocks in build mode and add a gathering job. This is used to create campfires and update other buildings that make sense to use rocks in the cost/recipe ... The first campfire for hardcore will also require the cost of wood and stone".
 - **The supply**: Stone, field stone, 1 kg a unit (data.js SUPPLIES.stone; data-supitems an armful of 8 a slot; icon 🪨).
 - **From the build map**: a rock rolled away gives 12, a boulder broken up 40 (basescatter CLEAR), into the stores when the builders finish; the camp's 5 × 5 too when it is set up.
@@ -75,6 +83,8 @@ The user's request 2026-10-23: "Add rocks as a material to gather like wood can 
 - Modules: [stone, work, economy, orders, basescatter, buildings, staging, ui/teamctx, ui/hardcore, ui/guide]; test `tools/stonetest.js`.
 
 ## The land order box: hours and expected yield
+The land jobs ask for their hours first and show what they would bring back.
+
 The user's request 2026-10-23: "For gathering LAND orders for Forage, Hunt, Fish, Cut Wood, Gather Stones when you select provide a input dialogue to set how many hours and estimated amount of yield depending on how many hours and the gear of the team/survivor(s) inventory and skills".
 - **Where**: picking Forage, Hunt, Fish, Cut wood or Gather stone from the team panel's Land row (one button a job, Gather stone added there), the map's right-click menu (Land: "Forage…", "Hunt…", "Fish…", "Cut wood…", "Gather stone…", no hours in the name and 2–24h in the time column, since the box sets them; the old 4h and 12h copies under All orders are gone) or the low-food list's Go opens the box first; Set snares, Fetch water (its own how-much box, ui/carry.js) and the autopilot's teams are not asked.
 - **The hours**: 2 to 24 (orders.js huntHours: HUNT.minHours to maxHours), a slider (the headline follows it as it is dragged), a number and 4 / 8 / 12 / 24 each with what it would bring.
@@ -85,6 +95,7 @@ The user's request 2026-10-23: "For gathering LAND orders for Forage, Hunt, Fish
 - Modules: [landest, stone expectStone, ui/landorder, ui/teamctx landPick, ui/expedition landBlock, ui/carry askQty, main]; test `tools/landordertest.js`.
 
 ## Teamwork on job trips
+Workers on the same job and tile are a crew sharing load, events, battles and loot.
 - The user's request 2026-10-20: "People that do the same job in the same tile help each other and if an event occurs it involves both of them including battles. If loot is gathered it goes to one of them randomly".
 - **A crew**: two or more of one base out on the same job trip to the same tile at the same time (teamwork crewKey: base, job, tile and a route's end; generic by job, so haulers pair up too).
 - **Load**: each one's load × teamMult (+15% a pair, +5% each one more, at most +25%; hunting −10% a member past the first for the noise, at most −15%; Fetch water none); the land thinned by it too [teamwork TEAM, teamMult, noteMates; jobtrips rollLoad].
@@ -95,6 +106,7 @@ The user's request 2026-10-23: "For gathering LAND orders for Forage, Hunt, Fish
 - **AI groups**: their people out make crews of groupCrew a job; a crew of two or more fells a build's wood teamMult faster (groupworks startWork) and loses ×0.6 the dead and ×0.75 the wounds on the land (grouptrips groupTripLosses); daily wood and food stay per head.
 
 ## Tools as prerequisites
+Builds and recipes need tool kinds at the base; tools are never used up.
 - The user's request 2026-10-21: "Add pre-requisite items needed to be in the base inventory to build certain buildings and craft certain items such as needing a tool kit item or axe or hammer etc". Test `tools/toolreqstest.js`.
 - A build or recipe lists the tool kinds it needs (hammer, saw, axe, shovel, wrenches, drill, pliers, welding kit, sewing kit; several at once), each covered by any of its items (a tool kit counts as hammer, saw, wrenches and pliers), kept in the base's armory or on someone there when queued (a team's field craft: what the team carries).
 - Never used up; the makeshift ones (hammer, saw, axe, shovel made from scrap anywhere, no tools needed) lose a use a job.
@@ -105,9 +117,11 @@ The user's request 2026-10-23: "For gathering LAND orders for Forage, Hunt, Fish
 - Modules: [data-tools TOOL_ITEMS / TOOL_KINDS / BUILD_TOOLS / WALL_TOOLS / CRAFT_TOOLS / TOOL_FINDS / AREA_TOOLS / CAR_TOOLS / WARE_TOOLS, toolreqs, buildings canBuild, crafting canCraft / fieldCraftOptions, ui/ui toolChips].
 
 ## Crafting stacks
+Recipes that make more than one of a thing.
 - A recipe can make a stack (`CRAFTS[k].n`; makeshift picks: three a craft) that joins one of the same thing in the armory or on the team [crafting `craftItem`, `craftingHour`, `fieldCraft`; production `craftOrderHave` counts the stack; itemstack `mergeInto`].
 
 ## Building materials and metal sheets
+Two heavy, two-handed supplies every build needs by its size, made from scrap on site when short.
 - The user's requests 2026-10-21: "Add metal sheets as a lootable items that can be carried by the carried slot with two hands. stacked up to 4", "make sure building materials are also items only carried by the carried slot with two hands and stack up to 4", "make sure all buildings require building materials to some degree depending on the building".
 - **Two heavy supplies**, `buildmat` and `metalsheet` (6 kg a sheet), carried in both arms only (item forms `s_buildmat` / `s_metalsheet`: twoHands stacks of 4 in the Carried slot; a team's armful up to 4 a person, filling both hands; a raid haul likewise) or in a vehicle [data, data-supitems, carry, raidloot].
 - **Costs**: every building, defence and upgrade takes building materials by its size; roofed, steel-clad and reinforced ones take metal sheets too (`buildings.js SHEETS`: garage, storehouse, shed, warehouse, armory, reinforced gate, guard towers, watchtower, bunkhouses, the general buildings, hospital tiers…). Wall cells are their own material (the metal-sheet wall and its gates take sheets); gates and stands take building materials.
@@ -117,6 +131,7 @@ The user's request 2026-10-23: "For gathering LAND orders for Forage, Hunt, Fish
 - **Finds**: hardware stores, factories, warehouses, auto shops, barns, sheds, crash sites (`loot.js SHEET_FINDS`); raid-map garages, workshops and car wrecks (`AREA_SHEETS`). Salvaged from a stripped car (by its type, and half its plating's), a wrecked car on the road, a base-map wreck, an escort's wreck and the hub's wreck card. A building pulled down gives half its sheets back. A car's armour plate and scrap plating take sheets [vehicles, parties, basescatter, caravanraids, hubevents].
 
 ## The power grid
+Found generators power spotlights, a breaker panel's circuits, an ammo press, fridges, pumps and fence chargers.
 - Generators and an ethanol still [power]. The user's request 2026-10-21: "Add spotlights as a placeable item on wall supports or on the ground … generators (Carried in the carried slot using 2 hands and are heavy) … house generators up to military generators … run on fuel per hour using 0.x per hour … Make buildings require x power to have lights inside … fridges … Have ammo crafter that requires no power but is slower and a machine ammo crafter that is quicker and more yield … a panel in the base to turn on and off machines/buildings … when they are off … reduce mood".
 - Modules: [data-power, electric, power, basemap, fort, ui/production, ui/itemart/power]; test `tools/powergridtest.js`.
 - **Found generators** (GENSETS): inverter 3 power at 0.03–0.06 fuel an hour, house 5 at 0.08, contractor 9, home standby 14, military tactical 20 at 0.08–0.25; +1 to +6 Heat while running. Items, both arms and heavy (22–140 kg), found in garages, sheds, hardware stores, farms, clinics and with the Army (POWER_FINDS, AREA_POWER).
@@ -130,6 +145,7 @@ The user's request 2026-10-23: "For gathering LAND orders for Forage, Hunt, Fish
 - **More of the grid** (2026-10-24): solar arrays, battery banks, the perimeter alarm, electric heaters and the charging station: see [More of the grid: electronics builds](#more-of-the-grid-electronics-builds).
 
 ## Hauling
+A Haul role and standing orders move goods between bases; local hauling fills the rest of the day.
 - The user's request 2026-10-20: "Add a hauling job to haul items from one base to another and add other hauling to gather other things than just water and wood". Modules: [hauling, ui/hauling]; test `tools/haultest.js`.
 - **Haul** role (economy.js ROLES haul, 📦).
 - **Standing haul orders** between your bases: state.haulOrders `{ from, to, what, mode, qty, gov? }`.
@@ -147,10 +163,11 @@ The user's request 2026-10-23: "For gathering LAND orders for Forage, Hunt, Fish
 - **UI**: the Supply runs tab's Hauling panel (haulers, routes, what waits, vehicles, Add order) [ui/hauling]; activity lines ("Hauling 40 kg scrap to Riverbend (2 h out)"); haulers drawn on the State Map along their route [ui/workermap].
 
 ## Electronics recipes
+Nine crafts that use electronics, gated by a soldering iron and, for three, the Hobby Electronics Handbook.
 - The user's request 2026-10-24: "Add some more recipes for crafting that would use electronics. Add pre-requisite items as well as what makes sense; add items if needed."
 - **Nine recipes** in `crafting.js CRAFTS` (an electronics block after traumakit), every output an item an existing system reads (key: in | gearIn | tools | hours | skill | needs | lock):
   - pocketradio (the thrown decoy, stealth.js): scrap 1, electronics 1 | a pack of batteries | pliers | 2 h | Mechanics 1 | field: true, no bench.
-  - handradio (a receiver for a radio network, radio.js): scrap 3, parts 1, electronics 1 | — | pliers, solder | 5 h | Mechanics 2 | a bench.
+  - handradio (the hand-crank radio: a receiver for a radio network, radio.js): scrap 3, parts 1, electronics 1 | — | pliers, solder | 5 h | Mechanics 2 | a bench.
   - helmetlight (helmets.js helmetLight): scrap 1, electronics 1 | — | pliers | 3 h | Mechanics 2 | a bench.
   - weaponlight (gunmods.js, the real part, not the duct-taped tapedlight): scrap 1, electronics 1 | a flashlight | pliers, drill | 3 h | Mechanics 2 | a bench.
   - laser (the laser sight): scrap 1, electronics 2 | — | solder, drill | 5 h | Mechanics 3, Crafting 3 | workshop.
@@ -167,6 +184,7 @@ The user's request 2026-10-23: "For gathering LAND orders for Forage, Hunt, Fish
 - Modules: [crafting CRAFTS / craftOutputText / durUnit, data-tools solderiron / TOOL_KINDS.solder / CRAFT_TOOLS / TOOL_TAGS / TOOL_FINDS / WARE_TOOLS / TOOL_HELP, blueprints hobbyelec / unlockName / CRASH_BP, loot SITE_FINDS / AREA_FINDS, data-shops ROWS, arsenal groupCraftable / payCraft / GROUP_SUBS, repair, ui/codex].
 
 ## More of the grid: electronics builds
+Five grid buildings that use electronics: solar arrays, battery banks, a perimeter alarm, electric heaters and a charging station.
 - The user's request 2026-10-24: "Add some more recipes for building that would use electronics. Add pre-requisite items as well as what makes sense; add items if needed."
 - **Five grid buildings** in `data-power.js POWER_BUILDINGS` (merged into BUILDINGS; constants SOLAR, BATTERY, ALARM, HEATER, CHARGER; each with a POWER_FOOT footprint and a POWER_FIXTURES entry for wear and repair). Utility-plot builds get buildmats.js's conversion like every other (part of the scrap becomes building materials); fittings are exempt.
   - **Solar panel array** (solar_array; a utility plot, `grid`, `source`): scrap 14, 2 metal sheets, 4 electronics (stored as scrap 5, buildmat 3, metalsheet 2, electronics 4), 24 work-hours, max 3, Mechanics 3, tools wrench + drill + pliers, needs the Solar Installer's Handbook. Output (`electric.js solarFactor` / `solarOut`): SOLAR.out 4 power in full sun × daylight (06:00–20:00, the first and last two hours at half) × season (spring 0.75, summer 1, autumn 0.7, winter 0.4) × the sky over the base's tile (clear 1, frost 0.9, heat and drought 1, overcast 0.5, fog 0.4, rain 0.35, storm 0.2, snow 0.15, blizzard 0; unknown 0.5): a summer clear noon 4, a winter clear noon 1.6, nothing at night. No fuel, no Heat, no refuelling; switched like a generator. Wear age 0.04 a day, a storm +3, an attack +1; repair 4 h for 2 scrap and 1 electronics (Mechanics 2), rig 2 h for 1 scrap. Refund half: 2 scrap, 1 sheet, 2 electronics.
@@ -177,10 +195,11 @@ The user's request 2026-10-23: "For gathering LAND orders for Forage, Hunt, Fish
 - **The Solar Installer's Handbook** (`blueprints.js BLUEPRINTS.solarinst`, item bp_solarinst): Mechanics 3 to study, 24 hours, value 60; unlocks the solar array and the battery bank; found at hardware stores, universities, the dam, radio towers and factories.
 - **UI**: the Power card (ui/production.js) shows source rows (an array's power from the sun now and its line; a bank's stored of cap, giving / charging / holding / full / empty, ± power), a summary "☀ x from the sun · 🔋 a of b stored", a softer "No generator" line when sources stand; Construction lists them under Utilities, Defenses and the fittings; the base map's Build list puts them in its Power group; the Repairs tab, demolition and the switchboard are generic. breakdowns.js `machinesHelp` gained a "More of the grid" paragraph with every number; `COST_WORD` names car parts.
 - **AI parity**: the groups' side came the same day (groups-power-grid 2026-10-24): their machines run on an hourly budget once a day and they build all five by the same numbers at WORKS-scaled costs. See [The groups' power grid](groups.md#the-groups-power-grid); the player's governor's wishes for them are in [The governor builds the grid](#the-governor-builds-the-grid) below. Electronics and car parts trade as any supply.
-- **Not done, and why**: no electric cooker (the breaker's kitchen circuit and POWER_USERS.kitchen cover powered cooking); no intercom (relay and radio cover it); the charging station covers only `recharge: true` gear (night vision, flashlights and sights have no battery wear); the governor's wishes for them came the same day ([below](#the-governor-builds-the-grid)); `genCapacity` / `autoGenUpgrade` ignore the sun (a 0–4 output would stop upgrades a winter night needs).
+- **Not done, and why**: no electric cooker (the breaker's kitchen circuit and POWER_USERS.kitchen cover powered cooking); no intercom (relay and radio cover it); the charging station covers only `recharge: true` gear (night vision, flashlights and sights have no battery wear); `genCapacity` / `autoGenUpgrade` ignore the sun (a 0–4 output would stop upgrades a winter night needs).
 - Modules: [data-power POWER_BUILDINGS / POWER_FOOT / POWER_FIXTURES / SOLAR / BATTERY / ALARM / HEATER / CHARGER, electric solarFactor / solarOut / solarLine / alarmOn / heaterHeads / heaterWants / chargeables / chargeWanted / chargeHour, power POWER_USERS / SOURCE_TYPES / powerStatus / refreshPower / solarNow / batteryStored, buildings canBuild / demolishRefund REFUND_KEYS, upkeep heatUse / heaterHeads, watch lookoutsSpot / surpriseAt / watchSawText, defences armoryDefence, blueprints solarinst, data-tools BUILD_TOOLS, breakdowns machinesHelp, groupworks (the stance), ui/production]; the grid test `tools/powergridtest.js` and `tools/repairorderstest.js` check every grid building has a footprint and a fixture.
 
 ## The governor builds the grid
+The governor and a steward with Building queue the grid's buildings, and every machine's power draw and output is right and shown.
 - The user's request 2026-10-24: "Both players and AI groups should build these and fix and implement any machine power needs and power output and setting up power grids for the base." The player's side: the governor (a base on auto) and a steward with Building queue the grid's buildings, and every machine's draw and output is right and shown. The groups' side is [The groups' power grid](groups.md#the-groups-power-grid).
 - **Grid wishes** (`autopilot.js gridWishes(state, base, people, queued)`, exported; called from `buildWishes` right after `foodStoreWishes`; nothing at a camp or a shelter). Constants: `GRID_SPARE = { parts: 2, electronics: 1 }` kept in the stores over every cost (as the freezer keeps FREEZER_SPARE parts), `SOLAR_WISH = { fuelLow: 15, richEl: 4 }`, `NIGHT_USERS = ["freezer", "fridge", "spotlamp", "perimeter_alarm", "radio"]`, `NIGHT_HOURS = 10`, `gridSpare(state, base, season = 1)` = genCapacity + arrays × SOLAR.out × season − powerWanted(state, base, () => true). Every wish: countAll + queued under the building's max, `buildLock` clear (its manual), a Mechanics hand here at `req.mechanics`, and its cost as the stores pay it (`buildmats.js siteCost`) plus the reserve; `canBuild` at queue time still checks the plot, the tools and the rest. `planBuilds` queues the first it can pay for, in this order:
   - **Breaker panel**: a generator (built or a found set) stands, 6+ people, a CIRCUITS building standing, `gridSpare` ≥ half its lights (so the panel does not darken most buildings and cost mood). Why: "electric light in the buildings for N people (mood)".
