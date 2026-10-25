@@ -40,7 +40,7 @@ import { survivorById, factionById, alive, atBase, homeAt, combatPower, hurt, lo
 import { partyMembers, partyTile, partyCapacity, cargoLoad, cargoRoom, unitsThatFit, wipeParty, leaveVehicle } from "./parties.js";
 import { noteGunfire } from "./fieldheat.js";
 import { GEAR, SUPPLIES, TERRAIN } from "./data.js";
-import { partyVehicle, partyVehicles, isBike, upgradesOf, armourOf, riderMult, vehicleOdds, UPGRADE_FX, technicalPlated, SEATS } from "./vehicles.js"; // the team's car or truck on the map (placeVehicle); its upgrades (glass, plating)
+import { partyVehicle, partyVehicles, isBike, upgradesOf, armourOf, riderMult, vehicleOdds, UPGRADE_FX, technicalPlated, SEATS, teamDrivers } from "./vehicles.js"; // the team's car or truck on the map (placeVehicle); its upgrades (glass, plating)
 import { wearAfterFight, wearSlot, itemDur, medKitBonus } from "./crafting.js";
 import { armorMult, enemyBody, allyBody, bodyEmpty, takeAllBodies, leaveBodies, ARMOR_SLOTS, itemLoad, lootItem, deadBodyFinds, carryMods, carriedThrowables } from "./inventory.js";
 import { areaSource, kitSource, spend } from "./itemcond.js";
@@ -1274,6 +1274,12 @@ const inVehicle = (v, x, y) => x >= v.x && y >= v.y && x < v.x + v.w && y < v.y 
 // (b.raidHumvee: placeRaidHumvee; raidCarTurn drives it) while it is still on this map. Riding in one: aboard, on its side.
 export const carOf = (b, u) => { const v = u && u.side === "enemy" ? b.raidHumvee : b.vehicle; return v && !v.gone && !v.parked ? v : null; };
 const ridesIn = (b, o, v) => !!v && !!o.aboard && !o.dead && (o.side === "enemy") === (v === b.raidHumvee);
+// The team's driver of its car (vehicles.js teamDrivers, the new-run screen's pick: v.wheelSid) on this map, or null.
+// Inside, they are at the wheel (cabSeat), take it as they get in (boardVehicle), and nobody else drives it (wheelTaken).
+export const wheelUnit = (b, v = b.vehicle) => (v && v === b.vehicle && v.wheelSid != null ? b.units.find((o) => o.side === "player" && o.sid === v.wheelSid && !o.dead) || null : null);
+const atWheel = (b, o, v) => !!o && ridesIn(b, o, v) && !o.down && !o.gunner;
+/** Someone else at the wheel of the team's car for u (the driver inside, not on the gun), or null. */
+export const wheelTaken = (b, u) => { const w = wheelUnit(b); return w && w !== u && atWheel(b, w, b.vehicle) ? w : null; };
 const GUNNER_ACTS = new Set(["shoot", "cab", "turret", "reload", "unjam", "overwatch", "gunner", "drive", "turn", "disembark", "extract"]);
 export const aboardCount = (b) => b.units.filter((u) => ridesIn(b, u, b.vehicle)).length;
 // Board from next to it (1 action): the unit rides, off the map (not a target, not drawn), until it gets out.
@@ -1285,7 +1291,9 @@ export function boardVehicle(b, u) {
   if (n() >= (v.seats || 4)) return `The ${v.kind} is full (${v.seats || 4} seats).`;
   u.aboard = true; u.off = true; u.ow = u.hunker = false; u.ap = Math.max(0, u.ap - 1);
   u.x = v.x; u.y = v.y;
-  say(b, `${u.name} gets into the ${v.kind} (${n()} of ${v.seats || 4} seats).`, u.side === "enemy" ? "danger" : "info");
+  const wheel = wheelUnit(b, v) === u; // the team's driver: at the wheel
+  if (wheel) v.driver = u.id;
+  say(b, `${u.name} gets into the ${v.kind}${wheel ? " and takes the wheel" : ""} (${n()} of ${v.seats || 4} seats).`, u.side === "enemy" ? "danger" : "info");
   bump(b);
   return "";
 }
@@ -1537,8 +1545,10 @@ function settleConvoy(state, b, party) {
 // b.vehicle.up: its upgrades; its cells' c.car.up { p: plating, s: scrap plating, g: glass, m: mesh, t: turret gun } for
 // the views and for cover (sideCover: a plated vehicle is full cover; platedCell: what stops a round through light cover).
 const carUpTag = (u) => (u.plating || u.scrapPlate || u.glass || u.mesh || u.turret ? { p: u.plating || 0, s: u.scrapPlate || 0, g: u.glass || 0, m: u.mesh || 0, t: u.turret ? u.turret.gun : null } : null);
-export function fitMapVehicle(b, pv) {
+// state, party: the team's driver of it (vehicles.js teamDrivers) as v.wheelSid, the one at its wheel (wheelUnit).
+export function fitMapVehicle(b, pv, state = null, party = null) {
   const v = b.vehicle;
+  if (v && pv && state && party && !isBike(pv)) { const d = teamDrivers(state, party).get(pv.id); if (d) v.wheelSid = d.id; }
   if (v && pv && Number.isFinite(pv.condition)) v.cond0 = pv.condition; // the condition it came in with: blasts that wear it past this blow it up (vehicleBlast)
   if (!v || !pv || isBike(pv)) return;
   const u = upgradesOf(pv);
@@ -2093,20 +2103,24 @@ export function botCar(state, b) {
   const coming = team.filter((x) => !x.aboard && x.botCar && x.ap > 0); // on their way to it from an earlier turn
   for (const o of coming) if (walkIn(o)) delete o.botCar;
   const riders = b.units.filter((o) => ridesIn(b, o, v));
+  const w = wheelUnit(b, v); // the team's driver: the wheel theirs, the gun someone else's while there is someone
   // The gun first (one inside who is not at the wheel, if there is one).
   if (!gunnerOf(b, "player")) {
-    const inside = riders.find((o) => !o.down && o.ap > 0 && o.id !== v.driver) || riders.find((o) => !o.down && o.ap > 0);
-    const o = inside || (team.length >= 2 && !b.units.some((x) => x.botCar) ? byNear(team.filter((x) => !x.aboard)).find(reach) : null);
+    const inside = riders.find((o) => !o.down && o.ap > 0 && o.id !== v.driver && o !== w) || riders.find((o) => !o.down && o.ap > 0 && o !== w) || riders.find((o) => !o.down && o.ap > 0);
+    const walkers = byNear(team.filter((x) => !x.aboard));
+    const o = inside || (team.length >= 2 && !b.units.some((x) => x.botCar) ? walkers.filter((x) => x !== w).find(reach) || walkers.find(reach) : null);
     if (o && !inside) { if (walkIn(o)) delete o.botCar; else o.botCar = "gun"; }
     if (o && o.aboard && o.ap > 0) { manTurret(b, o); if (v.driver === o.id) v.driver = null; }
   }
   // Then the wheel.
   const d = unitById(b, v.driver);
-  if (!(d && ridesIn(b, d, v) && !d.down && !d.gunner)) {
+  if (atWheel(b, w, v)) v.driver = w.id; // the team's driver inside: theirs
+  else if (!(d && ridesIn(b, d, v) && !d.down && !d.gunner)) {
     const inside = b.units.find((o) => ridesIn(b, o, v) && !o.gunner && !o.down);
     if (inside) v.driver = inside.id;
     else if (team.filter((o) => !o.aboard && !o.botCar).length >= RAID_CAR.FOOT) {
-      const o = byNear(team.filter((x) => !x.aboard && !x.botCar)).find(reach);
+      const free = byNear(team.filter((x) => !x.aboard && !x.botCar));
+      const o = (w && free.includes(w) && reach(w) ? w : null) || free.find(reach); // the team's driver first
       if (o) { if (walkIn(o)) { v.driver = o.id; say(b, `${o.name} takes the wheel.`, "info"); } else o.botCar = "wheel"; }
     }
   }
@@ -2142,6 +2156,8 @@ function strikeHull(v, info) {
 export function cabSeat(b, v) {
   const d = v ? unitById(b, v.driver) : null;
   if (d && ridesIn(b, d, v) && !d.gunner) return d;
+  const w = wheelUnit(b, v); // the team's driver inside
+  if (w && ridesIn(b, w, v) && !w.gunner) return w;
   return v ? b.units.find((o) => ridesIn(b, o, v) && !o.gunner) || null : null;
 }
 // The other side's vehicle the shooter can see: { v, x, y } (its cell nearest them in sight), or null.
@@ -4046,7 +4062,7 @@ export function createBattle(state, setup) {
         const vr = placeVehicle(b.cells, W, H, { x0: 1, y0: y, side: "north" }, kind, (x, yy) => inside(x, yy) && b.cells[idx(x, yy)].k === "open" && b.reach[idx(x, yy)]);
         if (vr) { b.vehicle = vr; break; }
       }
-      if (b.vehicle) { b.vehicle.seats = SEATS[kind === "bike" ? "bike" : (pv && pv.type) || "sedan"] ?? 4; b.reach = flood(b.cells, 0, Math.floor(H / 2)); fitMapVehicle(b, pv); }
+      if (b.vehicle) { b.vehicle.seats = SEATS[kind === "bike" ? "bike" : (pv && pv.type) || "sedan"] ?? 4; b.reach = flood(b.cells, 0, Math.floor(H / 2)); fitMapVehicle(b, pv, state, party); }
     }
     // The team's other vehicles (vehicles.js fleets): parked beside the lead one, the team's own (blue). Cover, and
     // theirs to lose: a blast wears them and can blow them up (vehicleBlast), settled after the fight (settleVehicle).
@@ -4866,6 +4882,8 @@ export function combatAct(state, act) {
     case "drive": { // the team's vehicle (DRIVE, driveTo): from inside or next to it, both actions, loud; through people and light obstacles (RAMMING)
       if (!b.vehicle) return "You came on foot: there is no vehicle here.";
       if (!u.aboard && !atVehicle(b, u)) return "Stand next to the vehicle (or get in) to drive it.";
+      const w = wheelTaken(b, u);
+      if (w) return `${w.name} is at the wheel: drive it with them.`; // the team's driver (vehicles.js teamDrivers)
       if (u.ap < DRIVE.AP) return "Driving takes both actions.";
       const err = driveTo(b, u, Number(act.x), Number(act.y));
       if (err) return err;
@@ -7186,7 +7204,7 @@ export function createRaid(state, setup) {
     b.raid.storeys = map.floors.length;
     b.raid.stairs = map.stairs.map((s) => s.slice());
   } else if (pick) { b.raid.storeys = 1; b.raid.stairs = []; }
-  if (b.vehicle) { b.vehicle.seats = SEATS[b.vehicle.kind === "bike" ? "bike" : (pv && pv.type) || "sedan"] ?? 4; fitMapVehicle(b, pv); } // who can ride in it (boardVehicle); its upgrades
+  if (b.vehicle) { b.vehicle.seats = SEATS[b.vehicle.kind === "bike" ? "bike" : (pv && pv.type) || "sedan"] ?? 4; fitMapVehicle(b, pv, state, party); } // who can ride in it (boardVehicle); its upgrades; who drives it (wheelSid)
   pondsBattle(state, b, b.tileId); // ponds.js: the hollows' water, mud or ice by the tile's weather; the slopes in the rain or in winter
   seasonGround(state, b, b.tileId); // seasonground.js: spring's mud on the dirt, winter's snow on the ground
   puddlesBattle(state, b, b.tileId); // puddles.js: rain water standing on the level ground after hours of rain (decor only)

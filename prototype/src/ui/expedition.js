@@ -9,7 +9,7 @@ import { SUPPLIES, SUPPLY_KEYS, STOCK_KEYS, SKILL_NAMES, TRAITS } from "../sim/d
 import { traitChips } from "./traitpick.js"; // trait chips: coloured by kind, the tier
 import { skill, gearEffect, baseById, hub } from "../sim/world.js";
 import { MISSIONS, STANCES, teamName, partyMembers, partyCapacity, cargoLoad, poolLoad, bodyLoad, partyLoad, partyPace, tileLabel, partyTile, orderOptions, carried, cargoRoom, clockFrac, clockText, clockAt, plannedArrival } from "../sim/parties.js";
-import { partyVehicle, partyVehicles, partyFleet, tank, isBike, vehicleLabel, upgradeText, upgradeEffects, seatsOf, MAX_VEHICLES } from "../sim/vehicles.js";
+import { partyVehicle, partyVehicles, partyFleet, tank, isBike, vehicleLabel, upgradeText, upgradeEffects, seatsOf, MAX_VEHICLES, teamDrivers } from "../sim/vehicles.js";
 import { bandName } from "../sim/load.js";
 import { loadRows, carLine, paceLine, BANDS_HELP } from "./loadview.js";
 import { orderStatus, queueEstimate, queueEndTile, contactable, repairInfo, campHealPerHour, describeOrder, REPAIR_HOURS, SURVEY_HOURS, besideWater, FETCH_WATER_HOURS } from "../sim/orders.js";
@@ -434,12 +434,13 @@ function suppliesBlock(state, p) {
   </div>`;
 }
 
-function vehicleBlock(state, p, v) {
+// drivers: who is at each car's wheel (sim/vehicles.js teamDrivers; the whole team's, worked out once for the cards).
+function vehicleBlock(state, p, v, drivers = teamDrivers(state, p)) {
   // Several vehicles (sim/vehicles.js fleets): one card each, the lead (driven on a battle map) first.
   const vs = partyVehicles(state, p);
   if (vs.length > 1) {
     const f = partyFleet(state, p);
-    return `<h3${tip(`Up to ${MAX_VEHICLES} vehicles: seats, payload and fuel add up, the slowest sets the pace. Every vehicle wears on the road; a breakdown hits one of them. The first is the one driven on a battle map.`)}>Vehicles (${vs.length}) · ${seatsOf(f)} seats</h3>${vs.map((x) => vehicleBlock(state, { ...p, vehicleIds: [x.id], vehicleId: x.id }, x).replace(/^<h3>Vehicle<\/h3>/, "")).join("")}`;
+    return `<h3${tip(`Up to ${MAX_VEHICLES} vehicles: seats, payload and fuel add up, the slowest sets the pace. Every vehicle wears on the road; a breakdown hits one of them. The first is the one driven on a battle map.`)}>Vehicles (${vs.length}) · ${seatsOf(f)} seats</h3>${vs.map((x) => vehicleBlock(state, { ...p, vehicleIds: [x.id], vehicleId: x.id }, x, drivers).replace(/^<h3>Vehicle<\/h3>/, "")).join("")}`;
   }
   if (!v) return `<h3>Vehicle</h3><div class="card small muted">On foot.</div>`;
   if (isBike(v)) return `<h3>Vehicle</h3><div class="card small">
@@ -447,8 +448,10 @@ function vehicleBlock(state, p, v) {
     <div class="row"><span class="muted" style="width:5rem">Condition</span><div style="flex:1">${bar(v.condition, v.condition < 40 ? "var(--danger)" : "var(--good)")}</div><span style="width:2.5rem;text-align:right">${Math.round(v.condition)}%</span></div>
     <div class="muted">No fuel. Racks carry 15 kg a bike; riding takes 55% of the load's slow-down away. A part or a bit of scrap patches them on the road.</div>
   </div>`;
+  const d = drivers.get(v.id); // at the wheel: its own driver when on the team, else the next free one
+  const dTip = d ? `${d.name} drives it${d.id === v.driver ? " (its driver)" : v.driver != null ? " (its own driver is not on this team)" : ""}: at the wheel when the team gets in on a battle map, and nobody else drives it while they are inside` : "";
   return `<h3>Vehicle</h3><div class="card small">
-    <b>${esc(v.name)}</b>
+    <b>${esc(v.name)}</b>${d ? ` <span class="muted"${tip(dTip)}>· ${esc(d.name)} at the wheel</span>` : ""}
     <div class="row"><span class="muted" style="width:5rem">Condition</span><div style="flex:1">${bar(v.condition, v.condition < 40 ? "var(--danger)" : "var(--good)")}</div><span style="width:2.5rem;text-align:right">${Math.round(v.condition)}%</span></div>
     <div class="row"><span class="muted" style="width:5rem">Tank</span><div style="flex:1">${bar((v.fuel / tank(v)) * 100, "var(--accent)")}</div><span style="width:2.5rem;text-align:right">${n0(v.fuel)}/${tank(v)}</span></div>
     ${upgradeText(v) ? `<div${tip(upgradeEffects(v))}>🛡 ${esc(upgradeText(v))}</div>` : ""}

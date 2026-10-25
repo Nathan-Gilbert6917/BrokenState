@@ -96,6 +96,21 @@ export const partyVehicles = (state, p) => partyVehicleIds(p).map((id) => vehicl
 // The lead vehicle (old callers: "the team's vehicle"); partyFleet for all of them together.
 export const partyVehicle = (state, p) => (p.vehicleId ? vehicleById(state, p.vehicleId) || null : partyVehicles(state, p)[0] || null);
 export const partyFleet = (state, p) => fleetOf(partyVehicles(state, p));
+// Who drives each of a team's cars (2026-10-24, user request: "make the driver be the one at the wheel in battles and
+// teams with vehicles"): the car's own driver (v.driver: startfleet.js seatDrivers, the new-run screen's pick) when they
+// are on the team, else the first of the team not at another wheel, in the team's order. Bikes: each rider their own,
+// none named. A Map of vehicle id → survivor (on a battle map: combat.js wheelSid, the one at the lead car's wheel).
+/** @param {any} state @param {any} p @returns {Map<any, any>} */
+export function teamDrivers(state, p) {
+  const out = new Map();
+  if (!p) return out;
+  const crew = (p.members || []).map((id) => (state.survivors || []).find((s) => s.id === id)).filter((s) => s && s.alive);
+  const cars = partyVehicles(state, p).filter((v) => !isBikeOne(v)), taken = new Set();
+  const seat = (v, s) => { out.set(v.id, s); taken.add(s); };
+  for (const v of cars) { const s = crew.find((m) => m.id === v.driver); if (s && !taken.has(s)) seat(v, s); }
+  for (const v of cars) if (!out.has(v.id)) { const s = crew.find((m) => !taken.has(m)); if (s) seat(v, s); }
+  return out;
+}
 const leadOrder = (vs) => [...vs.filter((v) => !isBikeOne(v)), ...vs.filter(isBikeOne)];
 // null, the one vehicle itself, or { fleet, id (the lead's), type (the lead's), upgrades (the lead's), count (bikes),
 // fuel (every car's), condition (the worst), name ("Pickup truck + Old sedan") }.
