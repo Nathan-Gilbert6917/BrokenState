@@ -584,6 +584,13 @@ export const LOCATIONS = {
   // the search hour's gear roll × this (scavenge.js; 1 elsewhere). The gun store above is the same shop as a site.
   pawnshop:    { name: "Pawn shop",          glyph: "Pw", cat: "town",  danger: 1, gearRate: 1.6, loot: { ammo: 3, scrap: 2, parts: 1, fuel: 0.2 }, gear: ["pistol", "revolver", "shotgun", "huntrifle", "leverrifle", "rifle22", "pistol22", "compact9", "pistol45", "dbshotgun", "compbow", "xbow", "binoculars", "monocular", "spotscope", "knife", "machete", "kukri", "katana", "golfclub", "hikingpack", "backpack", "duffle", "waterfilter", "stove", "headlamp", "lantern", "handradio", "windlight", "bicycle", "vest", "kneeguards", "ghillie", "camonet", "hatchet", "tomahawk", "combatknife", "repairkit", "handwarmer"], richness: 0.6, known: "public" },
   mineshack:   { name: "Mine shack",         glyph: "Mn", cat: "rural", danger: 0, loot: { scrap: 3, parts: 1.5, fuel: 0.4 }, gear: ["sledge", "prybar", "crowbar", "headlamp", "flashlight", "lantern", "repairkit", "flare", "windlight"], richness: 0.3, known: "road" },
+  // Bunkers (issue #26, bunkerlayout.js; pois.js bunkerExtra places them on their own dice: never the world map's): a
+  // military command bunker in the hills or mountains near a military site, a government continuity bunker under a
+  // mountain or a city, a public fallout shelter in a town or a city, a prepper's bunker in the countryside.
+  bunker:      { name: "Military bunker",    glyph: "Bk", cat: "special", danger: 3, loot: { ammo: 4, meds: 1, parts: 2, fuel: 1, food: 1.5, electronics: 1 }, gear: ["ar", "carbine", "plate", "milhelmet", "milradio", "nvg", "assaultpack", "rucksack", "binoculars", "combatknife", "etool", "hazmat"], richness: 1.0, known: "secret" },
+  govbunker:   { name: "Government bunker",  glyph: "Gb", cat: "special", danger: 2, loot: { electronics: 2, food: 2, water: 1.5, meds: 1, ammo: 1.5, scrap: 2 }, gear: ["pistol", "carbine", "milradio", "handradio", "flashlight", "binoculars", "hazmat", "traumakit"], richness: 0.9, known: "secret" },
+  shelter:     { name: "Fallout shelter",    glyph: "Fs", cat: "town",  danger: 1, loot: { food: 3, water: 3, meds: 1.5 }, gear: ["flashlight", "lantern", "bandagekit", "hazmat", "puritabs", "handradio"], richness: 0.6, known: "road" },
+  prepper:     { name: "Prepper bunker",     glyph: "Pb", cat: "rural", danger: 1, loot: { food: 5, water: 3, ammo: 3, meds: 1.5, fuel: 1 }, gear: ["huntrifle", "ar", "shotgun", "rucksack", "puritabs", "binoculars", "lantern", "headlamp", "etool", "waterfilter"], richness: 0.85, known: "secret" },
 };
 // Where a placed site stands (tile.loc.zone): map icon color and the inspect panel.
 export const SITE_ZONES = {

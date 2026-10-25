@@ -45,24 +45,31 @@ const field = (st, tile, enemy, extra = {}) => {
 // map in rows, each at its own size (a sofa two cells, bleachers two by two) with a free cell round it, on a floor of
 // floorboards; the cells under it cleared first, anyone standing there moved off, any raid container there dropped.
 // Used by the "furniture" layout below and by tools/raidshot.cjs (site "furniture": the same on a real raid's map).
-// showroom(b, x0?, y0?) → [{ k, x, y }] (each piece's first cell; from (1, 1) by default: 101 kinds since issues #15 and #16).
+// showroom(b, x0?, y0?) → [{ k, x, y }] (each piece's first cell; from (1, 1) by default: 123 kinds since issue #22).
 export function showroom(b, x0 = 1, y0 = 1) {
   const placed = [];
-  const kinds = Object.keys(FURNITURE_KINDS);
+  // The one-deep pieces first, then the two-deep (the catalogue order within each): the rows pack tighter (issue #22's
+  // pieces outgrew the field map in catalogue order).
+  const kinds = Object.keys(FURNITURE_KINDS).sort((a, b) => FURNITURE_KINDS[a].size[1] - FURNITURE_KINDS[b].size[1]);
   // Packed in rows, each piece at its own width with a free cell after it, a row as tall as its tallest piece and a free
   // row under it (the catalogue outgrew a grid of 3 × 3 slots on the field map: issue #15).
-  // When that runs off the map (the campus pieces, issue #28), the pieces stand side by side along a row instead.
-  let spots = [], x = x0, y = y0, rowH = 1;
-  for (const gap of [1, 0]) {
-    spots = []; x = x0; y = y0; rowH = 1;
+  // The free row under each row goes once the catalogue would not fit with it (the bunkers' pieces, issue #26); then the
+  // free cell after each piece (the campus pieces, issue #28: they stand side by side along a row).
+  const pack = (gap, after = 1) => {
+    const out = [];
+    let x = x0, y = y0, rowH = 1;
     for (const k of kinds) {
       const [w, h] = FURNITURE_KINDS[k].size;
-      if (x + w > b.w - 2) { x = x0; y += rowH + 1; rowH = 1; }
-      spots.push({ k, x, y, w, h });
-      x += w + gap; rowH = Math.max(rowH, h);
+      if (x + w > b.w - 2) { x = x0; y += rowH + gap; rowH = 1; }
+      out.push({ k, x, y, w, h });
+      x += w + after; rowH = Math.max(rowH, h);
     }
-    if (y + rowH <= b.h - 1) break;
-  }
+    return { out, y, rowH };
+  };
+  let P = pack(1);
+  if (P.y + P.rowH > b.h - 1) P = pack(0);
+  if (P.y + P.rowH > b.h - 1) P = pack(0, 0);
+  const spots = P.out, y = P.y, rowH = P.rowH;
   const x1 = Math.min(b.w - 1, Math.max(...spots.map((p) => p.x + p.w))), y1 = Math.min(b.h - 1, y + rowH);
   for (let yy = y0 - 1; yy <= y1; yy++) for (let xx = x0 - 1; xx <= x1; xx++) {
     if (xx < 0 || yy < 0 || xx >= b.w || yy >= b.h) continue;

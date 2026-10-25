@@ -64,7 +64,7 @@ export const CAMPUS = {
   FIELD: { w: 64, h: 42, track: 3 }, // the sports field with its running track round it
   TREES: 0.012,        // trees on a quad, a share of its cells
   BENCH: 0.004,        // benches likewise
-  DENSE: { dorm: 1.7, dininghall: 1.6, studentunion: 1.2, garage: 0.6, maintenance: 0.6, security: 0.8 }, // the dead per cell of a building by kind (1 else)
+  DENSE: { dorm: 1.7, dininghall: 1.6, studentunion: 1.2, parkgarage: 0.6, maintenance: 0.6, security: 0.8 }, // the dead per cell of a building by kind (1 else)
   OUTSIDE: 0.3,        // the share of the dead on the open ground
   DEAD_AREA: 2500,     // the site's roster × (the campus's ground-floor building area / this) ^ DEAD_EXP …
   DEAD_EXP: 0.5,
@@ -79,15 +79,15 @@ export const CAMPUS = {
     liberal: { name: "Liberal arts college", w: [200, 240], h: [180, 220], n: [8, 15], dorms: [2, 4], dormStoreys: [2, 4], quads: 2, lots: 1, field: true,
       must: ["admin", "chapel", "lecturehall", "sciencehall", "univlibrary", "dininghall", "studentunion"], more: ["athletics", "theatre", "healthcentre", "security", "maintenance", "lecturehall", "sciencehall", "dorm"] },
     state: { name: "State university", w: [400, 500], h: [400, 500], n: [15, 40], dorms: [4, 10], dormStoreys: [3, 6], quads: 3, lots: 2, field: true, stadium: true,
-      must: ["admin", "univlibrary", "studentunion", "dininghall", "athletics", "garage", "security", "healthcentre", "maintenance", "lecturehall", "lecturehall", "sciencehall", "sciencehall"],
-      more: ["lecturehall", "sciencehall", "theatre", "chapel", "dininghall", "dorm", "garage", "admin", "lecturehall", "sciencehall", "studentunion", "dorm", "univlibrary"] },
+      must: ["admin", "univlibrary", "studentunion", "dininghall", "athletics", "parkgarage", "security", "healthcentre", "maintenance", "lecturehall", "lecturehall", "sciencehall", "sciencehall"],
+      more: ["lecturehall", "sciencehall", "theatre", "chapel", "dininghall", "dorm", "parkgarage", "admin", "lecturehall", "sciencehall", "studentunion", "dorm", "univlibrary"] },
   },
   // Which row a building stands in, north to south.
-  ZONES: { dorm: 0, dininghall: 0, admin: 1, univlibrary: 1, lecturehall: 1, sciencehall: 1, studentunion: 1, chapel: 1, theatre: 1, healthcentre: 1, security: 1, athletics: 2, garage: 2, maintenance: 2 },
+  ZONES: { dorm: 0, dininghall: 0, admin: 1, univlibrary: 1, lecturehall: 1, sciencehall: 1, studentunion: 1, chapel: 1, theatre: 1, healthcentre: 1, security: 1, athletics: 2, parkgarage: 2, maintenance: 2 },
 };
 // The halls' names (a franchise-like list in the setting's style): a dorm's, the others' after their kind.
 const HALL_NAMES = ["Hale", "Whitcombe", "Calder", "Granite", "Morrow", "Ashby", "Lindqvist", "Carver", "Thorne", "Pell", "Halvorsen", "Brandt", "Okafor", "Reyes", "Sutter", "Wren", "Delacroix", "Ingram", "Marsh", "Quill", "Fenwick", "Adair", "Bellamy", "Crane"];
-const KIND_NAME = { lecturehall: "Lecture Hall", sciencehall: "Science Center", univlibrary: "Library", studentunion: "Student Union", dininghall: "Dining Commons", athletics: "Athletics Center", admin: "Administration", security: "Campus Security", maintenance: "Physical Plant", theatre: "Arts Center", garage: "Parking Garage", chapel: "Chapel", healthcentre: "Health Center" };
+const KIND_NAME = { lecturehall: "Lecture Hall", sciencehall: "Science Center", univlibrary: "Library", studentunion: "Student Union", dininghall: "Dining Commons", athletics: "Athletics Center", admin: "Administration", security: "Campus Security", maintenance: "Physical Plant", theatre: "Arts Center", parkgarage: "Parking Garage", chapel: "Chapel", healthcentre: "Health Center" };
 // The fictional colleges a college site is named after (mapgen.js collegeName): a town's own name in most.
 export const COLLEGE_NAMES = {
   community: ["{town} Community College", "{town} Valley Community College", "{town} County Community College", "{town} Technical College"],

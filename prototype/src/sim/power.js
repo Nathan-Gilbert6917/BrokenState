@@ -167,6 +167,9 @@ export const POWER_USERS = {
   // cook's bill here wants cooking today (rangeWanted, cookingWanted).
   chest_freezer: { need: COLD.chest_freezer.need, what: `a chest freezer: ${COLD.chest_freezer.room} days of food frozen (×${COLD.chest_freezer.factor} of its shelf a day)` },
   cold_case:    { need: COLD.cold_case.need, what: `a cold case: ${COLD.cold_case.room} days of food chilled (×${COLD.cold_case.factor} of its shelf a day)` },
+  freezer_case: { need: COLD.freezer_case.need, what: `a freezer case: ${COLD.freezer_case.room} days of food frozen (×${COLD.freezer_case.factor} of its shelf a day)` }, // a grocery store's (issue #22)
+  island_freezer: { need: COLD.island_freezer.need, what: `an island freezer: ${COLD.island_freezer.room} days of food frozen (×${COLD.island_freezer.factor} of its shelf a day)` },
+  meat_case:    { need: COLD.meat_case.need, what: `a butcher's case: ${COLD.meat_case.room} days of food chilled (×${COLD.meat_case.factor} of its shelf a day)` },
   range:        { need: RANGE.need, what: `a kitchen range: cooks its bills with no wood (off the grid it burns ${RANGE.propane} propane a batch); on while its bills cook` },
   microwave:    { need: MICROWAVE.need, what: `a microwave: ×${MICROWAVE.boost} on a meal's time at every station here; on while the cooks work` },
   // More of the grid (2026-10-24, data-power.js): the alarm at night, the heaters on a cold day, the charger while something is short.

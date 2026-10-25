@@ -33,7 +33,7 @@
 //                 boiler room, a tool room, the stores.
 //   theatre       an auditorium (seating facing a stage with a piano and a lectern), the scene shop, the green room,
 //                 the box office; upstairs an art studio, a music room, a rehearsal room.
-//   garage        a parking garage of 2–4 levels of parked cars (each a container: AREAS.wreck), a stair run up each level.
+//   parkgarage    a parking garage of 2–4 levels of parked cars (each a container: AREAS.wreck), a stair run up each level.
 //   chapel        #15's church plan (the nave's pews, the altar, the vestry) under the campus's name.
 //   healthcentre  #14's clinic (exam rooms, a drug cupboard), under the campus's name.
 // Older saves: none of these buildings existed before, so there is nothing to keep; an older save's university keeps its
@@ -59,7 +59,7 @@ export const CAMPUS_SIZE = {
   security:     { w: [18, 22], h: [13, 15], storeys: [1, 1] },
   maintenance:  { w: [24, 30], h: [16, 18], storeys: [1, 1] },
   theatre:      { w: [28, 34], h: [24, 28], storeys: [1, 2] },
-  garage:       { w: [34, 42], h: [24, 30], storeys: [2, 4] },
+  parkgarage:   { w: [34, 42], h: [24, 30], storeys: [2, 4] },
 };
 export const CAMPUSL = {
   DORM_ROOM: 4,       // a double room's width (a bed, a desk and a wardrobe either side)
@@ -241,8 +241,8 @@ function theatre(rng, o = {}) {
     exits: [{ side: "back", roles: ["workshop", "dayroom"], chance: 0.8, lock: 0.3, roller: rng.chance(0.5), width: 2 }, ...fireExits(0.3)],
   };
 }
-function garage(rng, o = {}) {
-  const { bw, bh } = footOf(rng, "garage", o), n = storeysOf(rng, "garage", o);
+function parkgarage(rng, o = {}) {
+  const { bw, bh } = footOf(rng, "parkgarage", o), n = storeysOf(rng, "parkgarage", o);
   const deck = (f) => ({ split: "x", parts: [["*", room("bays", `Level ${f + 1}`, "deck", { type: "wreck", fl: "conc", maxBoxes: 14, entry: f === 0 })], [5, { split: "y", parts: leaves([[8, { role: "stairwell", name: "Stairs" }], ["*", room("storage", f === 0 ? "Pay booth" : "Utility room", "stores", { type: "garage", maxBoxes: 1 })]]) }]] });
   return {
     bw, bh, front: { width: 3 }, ground: "lot", storeys: n, foot: "wide", stairs: { roles: ["stairwell", "bays"], n: 2, len: 3 },
@@ -251,11 +251,11 @@ function garage(rng, o = {}) {
   };
 }
 // key → plan maker; buildingmaps.js BUILDINGS makes each through it (chapel and healthcentre are the church's and the clinic's).
-export const CAMPUS_PLANS = { dorm, lecturehall, sciencehall, univlibrary, studentunion, dininghall, athletics, admin, security, maintenance, theatre, garage };
+export const CAMPUS_PLANS = { dorm, lecturehall, sciencehall, univlibrary, studentunion, dininghall, athletics, admin, security, maintenance, theatre, parkgarage };
 export const CAMPUS_NAMES = {
   dorm: "Residence hall", lecturehall: "Lecture hall", sciencehall: "Science building", univlibrary: "University library", studentunion: "Student union",
   dininghall: "Dining hall", athletics: "Athletics centre", admin: "Administration building", security: "Campus security", maintenance: "Maintenance building",
-  theatre: "Theatre and arts building", garage: "Parking garage", chapel: "Chapel", healthcentre: "Health centre",
+  theatre: "Theatre and arts building", parkgarage: "Parking garage", chapel: "Chapel", healthcentre: "Health centre",
 };
 // The building keys whose rooms take these styles (the health centre's by role: #14's MEDICAL_STYLES).
 export const CAMPUS_KEYS = new Set([...Object.keys(CAMPUS_PLANS), "chapel", "healthcentre"]);
