@@ -640,7 +640,12 @@ export function rollCar(state, p, people, keptOwner = null) {
   const fleet0 = state.fleet && state.fleet[0];
   const picked = !!(fleet0 && fleet0.load); // the back set on the new-run screen
   const A = archetypeOf(state, owner.background) || {};
-  const rolledType = A.custom && A.car.type ? A.car.type : pickW(rng, A.custom ? { sedan: 2, truck: 1 } : A.cars || { sedan: 2, truck: 1 });
+  const kindOf = (r) => (A.custom && A.car.type ? A.car.type : pickW(r, A.custom ? { sedan: 2, truck: 1 } : A.cars || { sedan: 2, truck: 1 }));
+  // Rolled again on the new-run screen (startfleet.js f.roll, its 🎲 Reroll; the user's request 2026-10-25: "make the
+  // reroll button also reroll the vehicle kind"): the world's dice drawn all the same (so the dice after them are where
+  // they were), its kind and then its back from its own.
+  const own = fleet0 && fleet0.roll != null ? new Rng(fleet0.roll) : null;
+  const worldType = kindOf(rng), rolledType = own ? kindOf(own) : worldType;
   const type = fleet0 && fleet0.type && VEHICLE_TYPES[fleet0.type] ? fleet0.type : rolledType; // a kind set on the new-run screen (startfleet.js): that kind, the dice cast all the same
   const T = VEHICLE_TYPES[type];
   const fuel = Math.round(T.tank * rng.range(C.CAR.FUEL[0], C.CAR.FUEL[1]) * 10) / 10;
@@ -648,9 +653,7 @@ export function rollCar(state, p, people, keptOwner = null) {
   p.vehicle = true;
   p.vehicleId = car.id;
   let trunk = rollTrunk(state, rng, A, people);
-  // A back rolled again on the new-run screen (startfleet.js f.roll, its 🎲 Reroll): the world's dice drawn all the same
-  // above (so the dice after them are where they were), the back from its own.
-  if (fleet0 && fleet0.roll != null) trunk = rollTrunk(state, new Rng(fleet0.roll), A, people);
+  if (own) trunk = rollTrunk(state, own, A, people); // rolled again: the back from its own dice too
   owner.diceTrunk = { items: trunk.gear.map((it) => pickOf(it)).filter(Boolean), supplies: { ...trunk.supplies } }; // the dice's back (until Start); a gun with the parts it came with
   if (picked) { const mine = trunkFromPicks(fleet0.load); trunk.gear = mine.gear; trunk.supplies = mine.supplies; }
   typeFind(state, trunk.supplies, "travel"); // foods.js: the back's food as what people threw in a car (light, keeps; bread and cheese in the first days)
