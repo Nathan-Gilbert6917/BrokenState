@@ -49,6 +49,7 @@ import { applyZType, siteList } from "./zombietypes.js";
 import { fitMargins, buildingTarget, densifyOutside, densify, coverTarget, buildingDeadScale, streetDeadScale, raidMaxDims, raidDims, SIZE_CLASSES } from "./battlesize.js";
 import { legacyRaids, legacyRooms } from "./worldcfg.js"; // an older save: a neighbourhood's street laid out as it always was; its buildings furnished as they were
 import { roomLayout, homeStyle, LAYOUT } from "./roomlayout.js"; // homes furnished room by room (the placement helpers)
+import { civicStyle } from "./civiclayout.js"; // police stations, fire stations, schools and churches laid out for their kind (issue #15)
 import { decorate, flipDecoY, placeDecorPieces } from "./decor.js"; // rugs, clutter, wall art, wall colours, light fixtures (cosmetic)
 import { rollWin, winMixOf, windowOpen } from "./windows.js"; // the windows' states (open, locked, fixed), a throw through an open one
 import { rollScenes, sceneRng } from "./interiorscenes.js"; // signs of survival: barricades, blood, bodies (dice of their own)
@@ -101,6 +102,7 @@ export const DOOR_KINDS = {
   barred:   { name: "Barred door", hp: 45, see: false, kick: true, sfx: "barred", desc: "a base building's, barred from inside" },
   gate:     { name: "Gate", hp: 100, see: false, kick: false, sfx: "gate", desc: "a base's gate" },
   vault:    { name: "Steel security door", hp: 240, see: false, diff: 3, kick: false, sfx: "vault", desc: "an armory's or a gun cage's" },
+  coldroom: { name: "Cold room door", hp: 50, see: false, diff: 2, kick: true, sfx: "metal", desc: "a walk-in's insulated steel door" }, // a school kitchen's walk-in (issue #15)
 };
 // A closed door seen through (combat.js los): a glass door, a screen door, a cell's bars.
 export const doorSees = (c) => !!c && (c.k === "idoor" || c.k === "door") && !!c.dk && !!DOOR_KINDS[c.dk] && !!DOOR_KINDS[c.dk].see;
@@ -442,8 +444,8 @@ function bigstore(rng, v) {
 // one at each end of the main corridor, 3 steps long.
 const BACK_STAIRS = ["stock", "warefloor", "office", "storage", "breakroom", "kitchen", "pantry", "parts"];
 const ENDS = { roles: ["corridor"], n: 2, len: 3, ends: true };
-function corridorPlan(front, back, fd, cw = 1) {
-  return { split: "y", parts: [[fd, { split: "x", parts: leaves(front) }], [cw, { role: "corridor" }], ["*", { split: "x", parts: leaves(back) }]] };
+function corridorPlan(front, back, fd, cw = 1, hall = null) { // hall: the corridor's own marks (a school's lined with lockers)
+  return { split: "y", parts: [[fd, { split: "x", parts: leaves(front) }], [cw, { role: "corridor", ...(hall || {}) }], ["*", { split: "x", parts: leaves(back) }]] };
 }
 function institution(rng, v, o = {}) {
   const L = (o) => ({ role: "lobby", entry: true, ...o });
@@ -474,6 +476,7 @@ function institution(rng, v, o = {}) {
       };
     }
     case "police": {
+      if (!o.legacy) return policeStation(rng); // laid out for its kind (civiclayout.js); an older save as below
       const bw = rng.int(23, 26), bh = rng.int(14, 16);
       const main = corridorPlan([["*", { role: "office", name: "Detectives' office", boxLock: ["evidence", 0.25] }], [rng.int(5, 6), L({ name: "Front desk", type: "office" })], [4, { role: "lockerroom", type: "barracks" }], ["*", { role: "office", name: "Chief's office", gunSafe: ["gunsafe2", 0.3] }]], // locks.js: a gun safe, not a plain safe
         [[4, { role: "armory", lock: ["vault", 0.85], boxLock: ["cage", 0.5], gunSafe: ["gunsafe3", 0.3] }], [4, { role: "evidence", lock: ["door", 0.7], boxLock: ["evidence", 0.6] }], ["*", "cells"]], 5);
@@ -488,6 +491,7 @@ function institution(rng, v, o = {}) {
       };
     }
     case "school": {
+      if (!o.legacy) return schoolPlan(rng);
       const bw = rng.int(26, 30), bh = rng.int(16, 18);
       const n = rng.int(2, 3); // classrooms above
       return {
@@ -595,6 +599,7 @@ function institution(rng, v, o = {}) {
     }
     default: // firestation
     {
+      if (!o.legacy) return fireStation(rng);
       const bw = rng.int(18, 22), bh = rng.int(12, 14);
       const living = { split: "y", parts: [["*", { role: "dayroom", entry: true }], ["*", { split: "x", parts: leaves([["*", { role: "dorm", type: "barracks" }], [4, { role: "storage", name: "Medical store", type: "nurse", lock: ["door", 0.3] }], [4, "kitchen"]]) }]] };
       const bays = [0.48, { role: "bays", name: "Engine bay", type: "motorpool", maxBoxes: 5 }];
@@ -671,12 +676,79 @@ function openfloor(rng, v) {
   }
 }
 
-function church(rng) {
+function church(rng, o = {}) {
+  if (!o.legacy) return churchPlan(rng);
   const bw = rng.int(13, 16), bh = rng.int(16, 19);
   return {
     bw, bh, front: { width: 2 }, ground: "town", storeys: 1, foot: "medium",
     program: { split: "y", parts: [[3, { role: "foyer", name: "Narthex", entry: true, type: "chapel" }], ["*", { role: "nave" }], [4, { split: "x", parts: leaves([[4, { role: "vestry", boxLock: ["lockbox", 0.4] }], ["*", { role: "kitchen", name: "Parish kitchen" }], [3, { role: "storage", type: "chapel" }]]) }]] },
     exits: [{ side: "back", roles: ["kitchen", "storage"], chance: 0.7, lock: 0.3 }, { side: "left", roles: ["nave"], chance: 0.5, lock: 0.4 }, { side: "right", roles: ["nave"], chance: 0.5, lock: 0.4 }],
+  };
+}
+
+// ---------- police stations, fire stations, schools and churches laid out for their kind (issue #15) ----------
+// The new saves' plans (an older save keeps the ones above: o.legacy): every room's leaf names its style (civic:
+// civiclayout.js CIVIC_STYLES), dk a room's own door kind (an armory's steel door, an evidence room's barred one, a
+// walk-in's cold room door). Police: the front desk, the detectives' squad room, the locker room and the chief's
+// office along the front, the armory, the evidence room and the cell block behind, the sally port beside; upstairs the
+// squad room, interview rooms with their observation nooks, dispatch (the second floor a briefing room), records and a
+// break room. Fire station: the engine bay (two bays: the engine and an ambulance or an empty one) beside the day room,
+// the kitchen, the medical store and the workshop; upstairs the dorm, the gym, the watch office and a bathroom. School:
+// classrooms, the principal's office, the lobby and the nurse at the front, the science lab, the gym, the cafeteria and
+// its kitchen with a walk-in behind, a corridor lined with lockers (they stand in for the old locker room); upstairs classrooms, the staff
+// room, a shop class or an art room and the library. Church: the narthex, the nave, and behind it the vestry, the
+// parish hall and its kitchen, the food bank's pantry and the bell tower (raised: a ladder up, as a barn's hayloft).
+function policeStation(rng) {
+  const bw = rng.int(25, 28), bh = rng.int(15, 17);
+  const lobby = (o) => ({ role: "lobby", entry: true, ...o });
+  const main = corridorPlan([["*", { role: "office", name: "Detectives' office", boxLock: ["evidence", 0.25], civic: "squad" }], [rng.int(5, 6), lobby({ name: "Front desk", type: "office", civic: "frontdesk" })], [4, { role: "lockerroom", type: "barracks", civic: "plockers" }], ["*", { role: "office", name: "Chief's office", gunSafe: ["gunsafe2", 0.3], civic: "chief" }]],
+    [[4, { role: "armory", lock: ["vault", 0.85], boxLock: ["cage", 0.5], gunSafe: ["gunsafe3", 0.3], civic: "armory", dk: "steel", boxTarget: 3 }], [3, { role: "evidence", lock: ["door", 0.7], boxLock: ["evidence", 0.6], civic: "evidence", dk: "cell" }], ["*", { role: "cells", civic: "cells" }]], 5);
+  const port = [rng.int(5, 6), { role: "bays", name: "Sally port", type: "garage", maxBoxes: 3, civic: "sallyport" }];
+  const right = rng.chance(0.5);
+  const n = rng.int(2, 3);
+  const interview = [6, { split: "x", parts: leaves([["*", { role: "office", name: "Interview room", civic: "interview" }], [2, { role: "office", name: "Observation", civic: "observation" }]]) }];
+  const back = [["*", { role: "office", name: "Records", boxLock: ["evidence", 0.3], civic: "records" }], [4, { role: "breakroom", civic: "breakroom" }], [2, { role: "restroom", civic: "washroom" }]];
+  return {
+    bw, bh, front: { width: 2 }, ground: "city", storeys: n, foot: "large",
+    program: { split: "x", parts: right ? [["*", main], port] : [port, ["*", main]] },
+    upper: (f) => corridorPlan(f === 1 ? [["*", { role: "office", name: "Squad room", civic: "squad" }], interview, ["*", { role: "office", name: "Dispatch", civic: "dispatch" }]] : [["*", { role: "office", name: "Briefing room", civic: "briefing" }], interview, ["*", { role: "office", name: "Squad room", civic: "squad" }]], back, 5),
+    exits: [{ side: right ? "right" : "left", roles: ["bays"], chance: 1, roller: true, width: 2, lock: 0.3, name: "Sally port" }, { side: "back", roles: ["bays"], chance: 0.6, lock: 0.5 }],
+  };
+}
+function fireStation(rng) {
+  const bw = rng.int(20, 23), bh = rng.int(13, 15);
+  const living = { split: "y", parts: [["*", { role: "dayroom", entry: true, civic: "fdayroom" }], ["*", { split: "x", parts: leaves([["*", { role: "kitchen", civic: "fkitchen" }], [4, { role: "storage", name: "Medical store", type: "nurse", lock: ["door", 0.3], civic: "medstore" }], [4, { role: "workshop", civic: "fworkshop" }]]) }]] };
+  const bays = [0.5, { role: "bays", name: "Engine bay", type: "enginebay", maxBoxes: 5, civic: "enginebay" }];
+  const left = rng.chance(0.5);
+  return {
+    bw, bh, front: { width: 1 }, ground: "town", storeys: 2, foot: "medium",
+    program: { split: "x", parts: left ? [bays, ["*", living]] : [["*", living], bays] },
+    upper: () => ({ split: "y", parts: [["*", { role: "dorm", type: "barracks", civic: "fdorm" }], ["*", { split: "x", parts: leaves([["*", { role: "gym", civic: "fgym" }], [4, { role: "office", name: "Watch office", civic: "watch" }], [3, { role: "bath", civic: "washroom" }]]) }]] }),
+    exits: [{ side: "front", roles: ["bays"], chance: 1, roller: true, width: 3, lock: 0.1, name: "Bay door" }, { side: "back", roles: ["bays"], chance: 0.6, roller: true, width: 2, lock: 0.3 }, { side: "back", roles: ["kitchen", "workshop"], chance: 0.6, lock: 0.3 }],
+  };
+}
+function schoolPlan(rng) {
+  const bw = rng.int(28, 31), bh = rng.int(17, 19);
+  const n = rng.int(2, 3);
+  const C = (o = {}) => ({ role: "classroom", civic: "classroom", ...o });
+  const hall = { type: "schoolhall", civic: "schoolhall", boxTarget: 10 }; // a corridor lined with lockers: many small draws
+  const lobby = { role: "lobby", entry: true, name: "Lobby", type: "office", civic: "slobby" };
+  const kitchen = [4, { split: "y", parts: leaves([["*", { role: "kitchen", name: "School kitchen", maxBoxes: 1, civic: "skitchen" }], [2, { role: "pantry", name: "Walk-in", type: "kitchen", dk: "coldroom", civic: "walkin" }]]) }];
+  return {
+    bw, bh, front: { width: 2 }, ground: "town", storeys: n, foot: "large",
+    program: corridorPlan([["*", C()], [4, { role: "office", name: "Principal's office", lock: ["door", 0.3], boxLock: ["safe", 0.2], civic: "principal" }], [rng.int(5, 6), lobby], [4, { role: "nurse", civic: "nurse" }], ["*", C()]],
+      [["*", C({ name: "Science lab", type: "lab", civic: "sciencelab" })], [rng.int(8, 9), { role: "gym", civic: "gym" }], [rng.int(6, 7), { role: "cafeteria", civic: "cafeteria" }], kitchen], 5, 2, hall),
+    upper: (f, r) => corridorPlan([["*", C()], ["*", C()], [5, { role: "breakroom", name: "Staff room", type: "office", civic: "staffroom" }]],
+      [["*", C()], [5, { role: "workshop", name: r.chance(0.5) ? "Shop class" : "Art room", type: "office", maxBoxes: 2, civic: "shopclass" }], [6, { role: "storage", name: "Library", type: "office", maxBoxes: 4, civic: "library" }]], 5, 2, hall),
+    exits: [{ side: "back", roles: ["gym", "cafeteria"], chance: 0.8, lock: 0.3 }, { side: "left", roles: ["corridor"], chance: 0.9, lock: 0.3 }, { side: "right", roles: ["corridor"], chance: 0.9, lock: 0.3 }],
+  };
+}
+function churchPlan(rng) {
+  const bw = rng.int(14, 16), bh = rng.int(19, 22);
+  return {
+    bw, bh, front: { width: 2 }, ground: "town", storeys: 1, foot: "medium", loft: { roles: ["storage"], chance: 1, ladder: true }, // the bell tower, a ladder up
+    program: { split: "y", parts: [[3, { role: "foyer", name: "Narthex", entry: true, type: "chapel", civic: "narthex" }], ["*", { role: "nave", civic: "nave" }], [5, { split: "x", parts: leaves([[3, { role: "vestry", boxLock: ["lockbox", 0.4], civic: "vestry" }], ["*", { role: "kitchen", name: "Parish hall", civic: "parishhall" }], [2, { role: "pantry", name: "Food bank pantry", type: "kitchen", civic: "cpantry" }], [2, { role: "storage", name: "Bell tower", type: "chapel", civic: "belltower" }]]) }]] },
+    exits: [{ side: "back", roles: ["kitchen", "pantry"], chance: 0.7, lock: 0.3 }, { side: "left", roles: ["nave"], chance: 0.5, lock: 0.4 }, { side: "right", roles: ["nave"], chance: 0.5, lock: 0.4 }],
   };
 }
 
@@ -839,8 +911,8 @@ export const BUILDINGS = {
   clinic:      { name: "Clinic", make: (r, o) => institution(r, "clinic", o) },
   infirmary:   { name: "Infirmary", make: (r) => institution(r, "infirmary") },
   hospital:    { name: "Hospital", make: (r) => institution(r, "hospital") },
-  police:      { name: "Police station", make: (r) => institution(r, "police") },
-  school:      { name: "School", make: (r) => institution(r, "school") },
+  police:      { name: "Police station", make: (r, o) => institution(r, "police", o) },
+  school:      { name: "School", make: (r, o) => institution(r, "school", o) },
   offices:     { name: "Office building", make: (r, o) => institution(r, "offices", o) },
   lab:         { name: "Lab building", make: (r) => institution(r, "lab") },
   barracks:    { name: "Barracks", make: (r) => institution(r, "barracks") },
@@ -850,7 +922,7 @@ export const BUILDINGS = {
   control:     { name: "Control building", make: (r) => institution(r, "control") },
   radio:       { name: "Transmitter hut", make: (r) => institution(r, "radio") },
   terminal:    { name: "Terminal", make: (r) => institution(r, "terminal") },
-  firestation: { name: "Fire station", make: (r) => institution(r, "firestation") },
+  firestation: { name: "Fire station", make: (r, o) => institution(r, "firestation", o) },
   warehouse:   { name: "Warehouse", make: (r) => openfloor(r, "warehouse") },
   factory:     { name: "Factory", make: (r) => openfloor(r, "factory") },
   hangar:      { name: "Hangar", make: (r) => openfloor(r, "hangar") },
@@ -860,7 +932,7 @@ export const BUILDINGS = {
   workshop:    { name: "Workshop", make: (r) => openfloor(r, "workshop") },
   machineshed: { name: "Machine shed", make: (r) => openfloor(r, "machineshed") },
   barn:        { name: "Barn", make: (r) => openfloor(r, "barn") },
-  church:      { name: "Church", make: (r) => church(r) },
+  church:      { name: "Church", make: (r, o) => church(r, o) },
   motel:       { name: "Motel", make: (r) => motel(r) },
   apartments:  { name: "Apartment block", make: (r, o) => apartments(r, o) },
   // A street of houses (the neighbourhood point of interest): buildingMap builds it with streetMap; make gives one of
@@ -1775,7 +1847,7 @@ export function assemble(rng, spec, opts = {}) {
   }
   // Homes room by room (roomlayout.js): which bedroom is the master, which a child's, a great room with no kitchen on
   // its floor, a flat with no bedroom (a studio). An older save (opts.legacy) furnishes every room as it did.
-  const styleOf = (room) => (opts.legacy ? null : homeStyle(room, opts.key));
+  const styleOf = (room) => (opts.legacy ? null : homeStyle(room, opts.key) || civicStyle(room)); // civiclayout.js: a civic building's rooms (their leaf's civic mark)
   if (!opts.legacy) {
     for (const r of rooms) if (r.role === "bedroom" && styleOf(r) && r.iw * r.ih <= 4) Object.assign(r, { role: "storage", name: "Box room", furnish: "shelves" }); // too small for a bed and a wardrobe
     const beds = rooms.filter((r) => r.role === "bedroom" && styleOf(r)).sort((a, b) => b.iw * b.ih - a.iw * a.ih);
@@ -1829,7 +1901,9 @@ export function assemble(rng, spec, opts = {}) {
       unblock: (x, y) => { const i = I(x, y), c = cells[i]; const was = pass[i]; c.k = "open"; delete c.fc; delete c.pc; passAt(i); if (!was && pass[i]) total++; },
       container: (x, y, k, lane = true) => (free(x, y) && box(room, x, y, k, null, lane) ? containers[containers.length - 1] : null),
       boxes: () => containers.filter((q) => q.area === room.id),
-      target: canBox ? Math.max(1, Math.min(room.maxBoxes ?? 4, Math.round((room.iw * room.ih) / 10))) : 0,
+      target: canBox ? room.boxTarget ?? Math.max(1, Math.min(room.maxBoxes ?? 4, Math.round((room.iw * room.ih) / 10))) : 0, // boxTarget: a plan's own count (a school corridor's lockers)
+      roomAt: (x, y) => (inside(x, y) && rid[I(x, y)] >= 0 ? rooms[rid[I(x, y)]] : null), // civiclayout.js: the room next door (an interview room's observation nook)
+      decor: !opts.noDecor, // civiclayout.js: a whiteboard on the wall the desks face (decor.js's wall art), not on a bare map
       seed: hash01(layoutSeed, "rooms", f) * 0x7fffffff, canBox, piece: () => ++pieceNo,
       kinds: () => (room.type && AREAS[room.type] ? AREAS[room.type].boxes : ["shelf"]),
       block: (x, y, k) => free(x, y) && block(x, y, k, room),
@@ -1843,6 +1917,23 @@ export function assemble(rng, spec, opts = {}) {
         total -= rect.w * rect.h;
         if (!connected()) { removeCar(cells, W, rect); passRect(rect); total += rect.w * rect.h; return false; }
         return true;
+      },
+      // A vehicle of the room's (civiclayout.js: a fire engine, an ambulance, a police car): placeCar at (x, y) along o.ax,
+      // o.len cells, drawn as o.body, never cutting anything off; o.box: a container of that kind over the whole of it
+      // (combat.js BOX_LOOT), searched from a free cell beside it.
+      vehicle: (x, y, o) => {
+        const rect = placeCar(cells, W, H, x, y, o.ax, o.len, o.kind, (cx, cy) => free(cx, cy) && rid[I(cx, cy)] === room.id, rng.int(0, 1e6), { ring: false, body: o.body });
+        if (!rect) return null;
+        passRect(rect);
+        total -= rect.w * rect.h;
+        const side = [];
+        for (let yy = rect.y0 - 1; yy <= rect.y0 + rect.h; yy++) for (let xx = rect.x0 - 1; xx <= rect.x0 + rect.w; xx++) if ((xx < rect.x0 || xx >= rect.x0 + rect.w) !== (yy < rect.y0 || yy >= rect.y0 + rect.h) && inside(xx, yy) && rid[I(xx, yy)] === room.id && walkAt(xx, yy)) side.push([xx, yy]);
+        if (!side.length || !connected()) { removeCar(cells, W, rect); passRect(rect); total += rect.w * rect.h; return null; }
+        if (o.box && canBox) {
+          keep[I(side[0][0], side[0][1])] = 1;
+          containers.push({ id: cid++, x: rect.x0, y: rect.y0, w: rect.w, h: rect.h, f, area: room.id, kind: o.box, searched: false, label: `${room.name}: ${o.box === "engine" ? "fire engine" : o.box === "policecar" ? "police car" : o.box}` });
+        }
+        return rect;
       },
       keep: keepAt,
       box: (x, y, k) => free(x, y) && box(room, x, y, k || rng.pick(room.type && AREAS[room.type] ? AREAS[room.type].boxes : ["shelf"])),
@@ -1928,8 +2019,9 @@ export function assemble(rng, spec, opts = {}) {
     const x = i % W, y = (i / W) | 0;
     const lockedOne = c.k === "door" ? lockedDoors.find((d) => d.x === x && d.y === y) : null;
     const d = doors.find((q) => q.x === x && q.y === y);
-    const cellsRoom = d && !d.ext && (rooms[d.a].role === "cells" || rooms[d.b].role === "cells");
-    const dk = c.roll ? "roller" : lockedOne && lockedOne.kind === "vault" ? "vault" : d && d.ext ? pickKind(d.side === "front" ? style.front : d.side === "back" ? style.back : style.side, x, y) : cellsRoom ? "cell" : "wood";
+    const cellsRoom = (d && !d.ext && (rooms[d.a].role === "cells" || rooms[d.b].role === "cells")) || c.cellDoor; // cellDoor: a cell's own door (civiclayout.js)
+    const roomDk = d && !d.ext ? rooms[d.a].dk || rooms[d.b].dk : null; // a room's own door kind (civiclayout.js plans: an evidence room's barred door, a walk-in's)
+    const dk = c.roll ? "roller" : lockedOne && lockedOne.kind === "vault" ? "vault" : d && d.ext ? pickKind(d.side === "front" ? style.front : d.side === "back" ? style.back : style.side, x, y) : roomDk && DOOR_KINDS[roomDk] ? roomDk : cellsRoom ? "cell" : "wood";
     const K = DOOR_KINDS[dk];
     c.dk = dk;
     const frail = dk === "glass" || dk === "screen";
@@ -1952,7 +2044,7 @@ export function assemble(rng, spec, opts = {}) {
     hub: !!r.hub, locked: r.locked || null, up: !!r.up, entry: !!r.entry, noLabel: r.label === false,
   }));
   rooms.forEach((r, i) => { if (r.gunSafe) areas[i].gunSafe = r.gunSafe.slice(); }); // locks.js placeGunSafes: a gun safe may stand here
-  if (!opts.legacy) rooms.forEach((r, i) => { if (r.flat) areas[i].flat = true; if (r.unit) areas[i].unit = r.unit; }); // roomlayout.js: a shop's flat above, an apartment's rooms
+  if (!opts.legacy) rooms.forEach((r, i) => { if (r.flat) areas[i].flat = true; if (r.unit) areas[i].unit = r.unit; if (r.civic) areas[i].civic = r.civic; if (r.aisle != null) areas[i].aisle = r.aisle; }); // roomlayout.js: a shop's flat above, an apartment's rooms; civiclayout.js: a room's style, a nave's aisle
   for (const a of outdoor) areas.push({ ...a, id: idBase + a.id, f: 0 });
   for (const c of containers) c.area += idBase;
   for (const d of lockedDoors) { d.f = f; if (d.area != null) d.area += idBase; }
@@ -1970,7 +2062,7 @@ export function assemble(rng, spec, opts = {}) {
   }
   const plan = {
     key: opts.key, id: opts.id || opts.key, name: opts.name, w: W, h: H, building: { x0: bx0, y0: by0, w: bw, h: bh }, tall, storeys, stairs: stairCells.map((s) => s.slice()), runs: runs.map((r) => ({ ...r })),
-    rooms: areas.filter((a) => !a.outdoor).map((a) => ({ id: a.id, f: a.f, name: a.name, role: a.role, type: a.type, x0: a.x0, y0: a.y0, w: a.w, h: a.h, locked: a.locked, up: a.up, hub: a.hub, entry: a.entry })),
+    rooms: areas.filter((a) => !a.outdoor).map((a) => ({ id: a.id, f: a.f, name: a.name, role: a.role, type: a.type, x0: a.x0, y0: a.y0, w: a.w, h: a.h, locked: a.locked, up: a.up, hub: a.hub, entry: a.entry, ...(a.civic ? { civic: a.civic } : {}) })), // civic: wanderers.js interiorOccupants' rooms by kind
     front: { x: front.x, y: front.y },
     exits: exits.map((e) => ({ side: e.side, name: e.name, x: e.x, y: e.y, cells: e.cells, locked: e.locked, roller: e.roller, zone: e.zone })),
   };
