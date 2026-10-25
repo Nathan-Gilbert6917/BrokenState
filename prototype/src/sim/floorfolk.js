@@ -91,10 +91,13 @@ function freeCells(b, room) {
   for (let y = room.y0 + 1; y < room.y0 + room.h - 1; y++) for (let x = room.x0 + 1; x < room.x0 + room.w - 1; x++) if (cells[I(b, x, y)].k === "open" && !takenAt(b, f, x, y)) out.push([x, y]);
   return out;
 }
-// Free open cells by a stairwell on floor f: its landings (buildingmaps.js stairWaits), not its steps.
+// Free open cells by a stairwell on floor f, for a watcher who holds the stairs: the top landing of a run (where the
+// stairs arrive from above and below), else its other landing or a cell by one (buildingmaps.js stairWaits), never a step.
 function stairSide(b, f) {
   const cells = cellsOf(b, f);
-  return stairWaits(b.raid, (x, y) => x > 0 && y > 0 && x < b.w - 1 && y < b.h - 1 && cells[I(b, x, y)].k === "open" && !takenAt(b, f, x, y));
+  const ok = (x, y) => x > 0 && y > 0 && x < b.w - 1 && y < b.h - 1 && cells[I(b, x, y)].k === "open" && !takenAt(b, f, x, y);
+  const tops = (b.raid.runs || []).filter((r) => !r.single).map((r) => runLandings(r)[1]).filter(([x, y]) => ok(x, y));
+  return tops.length ? tops : stairWaits(b.raid, ok);
 }
 // The human AI holding an upper floor (the survivors barricaded in, the raiders holed up) shoves a piece of furniture
 // onto the top landing of a stair run on that floor, as anyone barricading would (barricade.js FURNITURE: its hit points
@@ -267,6 +270,10 @@ function barricadeSurvivors(state, b) {
   placeOccupantGroups(state, b, [grp]);
   const units = b.units.filter((u) => !before.has(u));
   for (const u of units) u.folk = "survivors";
+  // Inside their room: placeOccupantGroups seats people on cells reached from the stairs, and a room a scene already
+  // boarded shut (area.scene.alive, held first above) is not, so whoever it put elsewhere comes in (in cell order).
+  const inside = freeCells(b, room);
+  for (const u of units) if (!inRoom(room, u.x, u.y) || (u.f || 0) !== f) { const c = inside.shift(); if (c) { u.x = c[0]; u.y = c[1]; u.f = f; u.away = f !== (b.floor || 0); u.home = c.slice(); u.wp = null; } }
   // The door, barricaded from inside: furniture piled against it. Their room's containers are theirs (the bot leaves them).
   const cells = cellsOf(b, f);
   const doors = room.doors.map((d) => d.slice());
@@ -306,6 +313,12 @@ function holeUpRaiders(state, b, n, up) {
   let stash = null;
   if (room) {
     const f = room.f || 0;
+    // The dead already in it are not shut in with them (as the survivors' room): out onto the rest of the floor.
+    for (const u of unitsIn(b, room)) {
+      if (u.side !== "enemy" || u.kind !== "zombie") continue;
+      const spot = rng.pick(roomsOn(b, f).filter((r) => r !== room && !r.locked && !roomUsed(b, r)).flatMap((r) => freeCells(b, r)));
+      if (spot) { u.x = spot[0]; u.y = spot[1]; u.home = spot.slice(); u.wp = null; }
+    }
     stash = makeStash(state, b, room, n); // before the raiders take its cells: a wall spot for the crate (with them on it a small room had none)
     const home = [room.x0 + Math.floor(room.w / 2), room.y0 + Math.floor(room.h / 2)];
     for (const u of raiders) {

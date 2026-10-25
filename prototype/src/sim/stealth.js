@@ -576,6 +576,7 @@ export function stealthAI(b, u) {
   if (u.aware || !active(u)) return false;
   if (spotBodies(b, u)) return false;
   if (!u.investigate) return false;
+  if (u.nesting || u.watcher) { delete u.investigate; return false; } // a nest's dead and a watcher keep their places (combat.js aiUnit; floorfolk.js wakes a nest)
   investigate(b, u);
   return true;
 }
