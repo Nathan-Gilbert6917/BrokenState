@@ -2,14 +2,20 @@
 
 Detail for sections 10 and 11 of [docs/agents/features.md](../agents/features.md). `[name]` is `prototype/src/sim/name.js`; `ui/name` is `prototype/src/ui/name.js`. Related docs: [ADR 0001 (AI parity)](../adr/0001-ai-parity.md), [docs/ai-parity-audit.md](../ai-parity-audit.md), [docs/coalition-war-plan.md](../coalition-war-plan.md), [docs/prompts/poi-and-nomads.md](../prompts/poi-and-nomads.md).
 
-Contents: [Group arsenals and job kit](#group-arsenals-and-job-kit) · [Packing for the job](#packing-for-the-job) · [Combat and inventory parity](#combat-and-inventory-parity) · [The groups' power grid](#the-groups-power-grid) · [Keeping the coalition together](#keeping-the-coalition-together) · [Envoys: word carried in person](#envoys-word-carried-in-person) · [Volunteers on loan and joint operations](#volunteers-on-loan-and-joint-operations) · [Meeting to trade](#meeting-to-trade) · [Outsiders and raider bands](#outsiders-and-raider-bands) · [Nomads](#nomads) · [Radio network](#radio-network) · [Your radio and your allies' on the Radio layer](#your-radio-and-your-allies-on-the-radio-layer)
+Contents: [AI parity](#ai-parity) · [Group arsenals and job kit](#group-arsenals-and-job-kit) · [Packing for the job](#packing-for-the-job) · [Combat and inventory parity](#combat-and-inventory-parity) · [The groups' power grid](#the-groups-power-grid) · [Keeping the coalition together](#keeping-the-coalition-together) · [Envoys: word carried in person](#envoys-word-carried-in-person) · [Volunteers on loan and joint operations](#volunteers-on-loan-and-joint-operations) · [Meeting to trade](#meeting-to-trade) · [Outsiders and raider bands](#outsiders-and-raider-bands) · [Nomads](#nomads) · [Radio network](#radio-network) · [Your radio and your allies' on the Radio layer](#your-radio-and-your-allies-on-the-radio-layer)
+
+## AI parity
+The groups live by the player's rules on the State Map, not by scripts ([ADR 0001](../adr/0001-ai-parity.md)).
+- Groups heal [groupcare], repair, build [groupworks], take job trips [grouptrips], scavenge, flee hordes [groupflight], take over abandoned bases [groupworld] and keep hidden outposts [hiding].
 
 ## Group arsenals and job kit
+Groups fight and work only with what they gathered, job kit included.
 - Groups fight only with what they gathered [arsenal].
 - What is in an item (a rig's pouches, a pack's slots, a gun's fitted parts) can be on the books for itself as well (the home kit-out books a magazine it puts in a pouch). An item off the books (`arsenal removeFromArsenal`: lost, taken, given, picked up by another holder) takes those off with it, still in it (`contentsOnBooks`): before 2026-10-25 a dead Guard's plate carrier picked up by Red Hand (`caravanraids escortLost`) left its two magazines on the Guard's books, and both groups dealt them out, two people with one magazine (`tools/conservationtest.js` seed 7). A share of a group's stores taken (`arsenalShareTo`) brings a thing in what it is in, not loose as well.
 - Their job kit (decoys and flares, packs, the crowbar and lockpicks, picks, a drill) is on their books too: scavenged on its own draw (what they are short of first), decoys crafted by your recipes while short, paid more for while short [arsenal isJobKitKey, jobKitShort, scavFinds SCAV_KIT, arsenalDaily CRAFT.decoys; trade gearPool].
 
 ## Packing for the job
+A group's party packs for its job from its own stores.
 - A group's party packs as your team is packed for its trip, out of the group's own stores: a pack on every empty back; a raid: grenades, smoke, tourniquets, a med kit and a second helping of rounds; a way through the dead: decoys, Molotovs, flares and a blade beside the gun; scavengers: the crowbar, picks and drill; a caravan: a med kit; a hunter: a hunting rifle.
 - The home keeps a share of its decoys, set out at its walls against a horde they will not hold, by your warning card's odds.
 - Modules: [loadouts packForJob JOB_KIT jobsOf, parties spawnAiParty; groupfight hordeAtGroup; defences armoryDecoys decoyChance lureOff]; test `tools/jobkittest.js`.
@@ -130,6 +136,7 @@ The user's request 2026-10-21. Test `tools/trademeettest.js`.
 - Modules: [trademeet, caravans sendCaravan meetTile, radio radioRequestCaravan offerCard, radiotrade "meet", factions convoys, parties aiPartyHour, ui/tradewindow meetPicker meetRow meetPick*, main.js meetPick mode, ui/codex "Meeting to trade"].
 
 ## Outsiders and raider bands
+Outsiders from beyond the state, and the raider bands who live by the nomads' code.
 - Outsiders/visitors from beyond the state [visitors].
 - Raider bands live as a nomad band does, by the nomads' own code: people records with what they carry; stores and shelf carried by your teams' rule; a day's forage; food and water from their stores (hungry, they lose people); their wounded cared for from their own meds.
 - They take only what they can carry and leave the rest; a band broken or wiped out leaves its goods where it ended [visitors raiderDay, addToStock, dropBandGoods; nomads bandRoom, bandFeeds, bandCare].

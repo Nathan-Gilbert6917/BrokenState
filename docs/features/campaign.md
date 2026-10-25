@@ -5,12 +5,14 @@ Detail for section 1 of [docs/agents/features.md](../agents/features.md). `[name
 Contents: [Hardcore mode](#hardcore-mode) · [Bare start and the hub's start layout](#bare-start-and-the-hubs-start-layout) · [New-run shortcuts](#new-run-shortcuts) · [Custom mode and starting vehicles](#custom-mode-and-starting-vehicles) · [Crashlanding](#crashlanding) · [World sizes](#world-sizes) · [No map until it is needed, and the crew's own dice](#no-map-until-it-is-needed-and-the-crews-own-dice) · [The map kept between settings](#the-map-kept-between-settings) · [Unique names on the map](#unique-names-on-the-map) · [World configuration](#world-configuration) · [Ponds in the hollows](#ponds-in-the-hollows) · [Seasonal weather in play](#seasonal-weather-in-play) · [The ground by the season](#the-ground-by-the-season) · [Ponds on the map](#ponds-on-the-map) · [Rain and fog on the State Map](#rain-and-fog-on-the-state-map) · [Rain in waves](#rain-in-waves) · [Puddles after rain](#puddles-after-rain) · [Hub events](#hub-events)
 
 ## Hardcore mode
+Start the day Calder falls, on the road with 1–4 survivors and no hub.
 - Start on the day Calder falls with 1–4 survivors on the road, no hub, sites only half looted, and the outbreak year [hardcore*, hardcore-start, hardcore-loot, hardcore-outbreak, hardcore-groups].
 - **The opening card** ("The day Calder fell", `hardcore-start introCard`, one Begin button): laid out in pieces instead of one paragraph (2026-10-24, the user: "a long large paragraph no one is going to read, make it easier to read with spacing and reducing text"): the lead "Calder is falling.", *What you grabbed* as a list (one line each: the name in bold, who they were muted, the bag, things and weapon; the car and what was in its back; the tents), one *Between you* line of supplies, and *First steps* numbered (find food and water; Establish base on a good spot; bring in the shelter's needs). The background blurbs ("a cab full of coffee cups") are left off the lines. `card.parts` (`{ lead, grabbed: [{ who, tag, rest }], supplies: { label, rest }, steps }`) is rendered by `ui cardText` (`styles.css .text.intro`); `card.text` is the same as one string (`lineText` joins a part), which the autopilot and the tests read, and `state.hardcore.start.grabbed` holds the lines as before. `tools/startblurbtest.js`.
 - **The Guard's base falls**: its splinter groups and stragglers carry out the base's own stores and armory (the strike force's remnant what the strike took out), as far as their people can carry. Nothing is made for them; the rest lies in the ruin's ground. A splinter that founds a hub has its people's kit for books [hardcore-groups militaryFalls carryOut strikeStores, loadouts grabKit, carry leaveOnGround, arsenal arsenalFromPeople].
 - **Outbreak-year cards**: road and hub cards of its own: gridlock, Guard checkpoints and relief drops, the emergency broadcast, holdouts, looters, the newly dead; hungry people at the gate, a Guard deserter, the radio going quiet, city refugees [events HC_EVENTS, hubevents hc_*].
 
 ## Bare start and the hub's start layout
+Bases start bare; the normal hub starts with a fixed layout.
 - Every base starts with empty plots [world HUB_START].
 - The user's requests 2026-10-22: "the normal mode base map should start with 6 beds in a building or some tents and beds in a building". The normal hub starts with a Lodge with four beds set in it, a two-person tent pitched from its bag and eight crop plots dug (sown before the fall), placed by the game [world HUB_LAYOUT / hubLayout].
 - Where: out in the open (never a town: startpick isSettlementTile), START_CLEAR (5) tiles or more from towns, cities, hives and the Guard's bases, on a road where one fits, named for the nearest town [world createWorld, startpick startNear].
@@ -127,6 +129,7 @@ Every city, town and named site is unique on a map (plain names, then "North Had
 - Modules: [mapgen, pois, shops, data] `tools/uniquenametest.js` (Small and Normal on two seeds, a crash map, determinism, a Huge map once: about 40 s; `BS_QUICK=1` skips the Huge map).
 
 ## World configuration
+The new-run *World…* window's dials and presets.
 - The new-run screen's *World…* window sets a run's dials [worldcfg, ui/worldcfg]:
   - needs: hunger, thirst, spoilage, sickness;
   - the dead: horde size, the dead at sites, hive growth, zombie damage, infection from bites and from the land, whether the worm is curable;

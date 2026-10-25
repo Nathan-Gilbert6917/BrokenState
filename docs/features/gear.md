@@ -19,6 +19,7 @@ Rounds are real stacks in guns and magazines, in firing order; a Reload draws on
 - **Kit check** before the first move names empty guns (a button into the Inventory), no healing and the hurt (kitcheck, ui/combat `kitWarnHtml`).
 
 ## Ammo by calibre, reload sources and loading magazines
+Rounds by calibre and type, where a reload draws them from, and loading magazines.
 - Ammo by calibre and type, physical magazines, rounds tracked in each gun, and a reloading bench [ammo, rounds, mags, gunload, gunrounds, reloading].
 - Rounds come boxed or loose. Boxes open into loose rounds; loose rounds can be boxed again (Box, or dropped on each other) [itemstack].
 - **Reload sources** decide a Reload's cost (mags `roundSplit` / `roundSource` / `MAGS.SOURCE_AP`, `reloadPlan`'s `from`):
@@ -49,10 +50,12 @@ Out of a fight, reload, unload and swap magazines free, at a base or in the fiel
 - An event's pistol comes with its own rounds (events hc_newdead); a carried case's rounds go onto the carrier like its gun (boxes `takeFromBox`); a body's pistol and a sentry's gun bring their calibre (inventory `deadBodyFinds`, citycrawl).
 
 ## Armour and rigs
+Armour classes, helmets, plate carriers and rigs.
 - Armour classes AC 1–6 with per-hit durability, helmets and face shields, plate carriers and rigs [armour, helmets, data-helmets, data-kit].
 - A rig's pouches come by kind (rifle and pistol magazines, a grenade, a radio, admin up to 0.5 kg). Every rig has **pocket pouches** that take anything a pocket takes (a chest rig and a tactical vest two; a makeshift rig and a plate carrier one) [data-kit POUCH_NAMES / SUPPLY_POUCHES, inventory pouchReason / stow / quickMove].
 
 ## Inventory
+Slots, pockets, packs and stacks, supplies as items, and moving kit in a fight.
 - RPG equipment slots, pockets, packs and stacks [inventory, itemstack, stacks].
 - **A person's weight line** in every inventory window (the base's, a team's, the plan's before a raid, a fight's) is what is on them (load wornLoad), so it moves with every thing moved. Their share of the team's supplies and cargo on foot (or past the bikes' racks) is a second figure; a car carries all of it, nothing on its riders. The raid search window's cached shares (raidloot raidShares) are made again after a move into or out of the vehicle (the user's request 2026-10-18) [ui/inventory doll, raidloot raidMove].
 - **Supplies held as items**: anything in the stores can be taken out into pockets, a pack or the off hand; it goes back into the stock when put in storage or brought home. Loot goes into pockets and packs the same way. Carried is for bulky things and whatever has no room [supitems, data-supitems, raidloot].
@@ -79,6 +82,7 @@ Survival guns, gun parts and gear added 2026-10-19 (the SKS, the Uzi, the Hallig
 - Each works through an existing system; found on their own dice [data-survival, survival, data-guns SURV_*, data-gunmods, data-kit SURV_*].
 
 ## Lock boxes and cases (2026-10-19)
+Boxes and cases whose contents are unseen until opened with the right tool.
 - Cash boxes, fire safes, toolboxes, equipment cases and gun cases hold valuables, a gun, rounds, camera gear or nothing, unseen until opened. Their weight (the box's own plus what is inside) is the clue.
 - A locked one opens to the right tool (cheap lock: picks, a blade, a pry bar, a power tool; steel: a pry bar or a power tool) from the right-click menu, free out of a fight, into a window of what is inside (Take, Take all); in a raid for actions and Heat.
 - Modules: [data-boxes, boxes, gunsafes rollGunCase, locks caseOdds, ui/boxview].

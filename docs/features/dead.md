@@ -5,12 +5,14 @@ Detail for section 8 of [docs/agents/features.md](../agents/features.md). `[name
 Contents: [Bosses on 2 × 2 cells](#bosses-on-2--2-cells) · [Hive crawl](#hive-crawl) · [Hordes](#hordes) · [Special dead and the dead beasts](#special-dead-and-the-dead-beasts) · [Attacked alone (2026-10-19)](#attacked-alone-2026-10-19) · [The counter-dead](#the-counter-dead) · [The Digger's tunnels](#the-diggers-tunnels) · [The pool of the dead widens with the years](#the-pool-of-the-dead-widens-with-the-years)
 
 ## Bosses on 2 × 2 cells
+The two boss dead take 2 × 2 cells.
 - The Broodmother and the Hivemind stand on 2 × 2 cells (`defences.js` BOSSES size; `combat.js` unitSize / unitCells / nearCell / coversCell).
 - The footprint blocks all four cells and answers `unitAt` on any of them. Distance for shots, melee reach and blasts goes by the nearest cell; sight by any cell; the figure and its ring by the centre.
 - The Hivemind's own throws-at-it targeting and its brood's spawn window go by its heart (the centre cell, the old one cell); the flames on it and the lash by its edge.
 - Modules: [combat, defences, hivecrawl; ui/isoview, ui/battlehud].
 
 ## Hive crawl
+The raid down into a hive, chamber by chamber.
 - Chamber by chamber down to the Hivemind through a round grid of chambers, each open on 3 sides with 1 wall (a hallway with a room off the side).
 - Four mouths, one on each side, to pick from and walk back out by. The core deep in it, open on 1–2 sides; the beat through the walls, the warmth along the passages [hivecrawl, citygrid].
 
