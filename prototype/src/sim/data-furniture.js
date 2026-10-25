@@ -151,6 +151,19 @@ export const FURNITURE_KINDS = {
   deposit:      P("Safe-deposit boxes", STEEL, 60, 160, "two", S1, true, ["office"], "storage:20", true),
   atm:          P("ATM",                STEEL, 80, 400, "fixed", S1, false, ["shop", "office"], "none", true),
   stanchion:    P("Queue post",         POLE, 3, 6, "one", S1, false, ["office", "shop"], "none"),
+  // ---------- hotels (issue #29: hotellayout.js lays them) ----------
+  // The reception desk (its drawers searched; the key rack stands behind it), a guest's suitcase (a luggage room's or a
+  // room's: clothes, toiletries, a phone, now and then a pistol or meds: combat.js BOX_LOOT), a room's minibar (snacks,
+  // drinks, little bottles), the luggage cart, the ballroom's round banquet tables (the lift lobby's lift doors are
+  // #27's liftdoor below), the lobby's lounge chairs, the pool deck's loungers and a tennis court's net.
+  frontdesk:   P("Reception desk",    HALF, 35, 80, "two", S21, true, ["office"], "storage:40"),
+  suitcase:    P("Suitcase",          HALF, 8, 12, "one", S1, true, ["bedroom", "office"], "storage:30"),
+  minifridge:  P("Mini fridge",       HALF, 15, 20, "one", S1, true, ["bedroom", "office"], "storage:15", true),
+  luggagecart: P("Luggage cart",      HALF, 15, 25, "one", S1, false, ["office", "bedroom"], "storage:60"),
+  banquet:     P("Banquet table",     HALF, 20, 30, "one", S1, false, ["dining"], "work:table"),
+  loungechair: P("Lounge chair",      HALF, 15, 25, "one", S1, false, ["living", "office"], "comfort:0.5"),
+  lounger:     P("Pool lounger",      HALF, 8, 12, "one", S1, false, ["yard"], "comfort:0.3"),
+  tennisnet:   P("Tennis net",        POLE, 5, 15, "fixed", S1, false, ["yard"], "none"),
   // ---------- grocery stores by size (issue #22: shoplayout.js cornerstore, grocerfloor, superstore, the back of house) ----------
   // The freezer case (an upright glass-door freezer), the island freezer and the butcher's case are appliances at a base
   // (data-appliances.js freezer_case, island_freezer, meat_case: #19's rules through their use); each holds its own table

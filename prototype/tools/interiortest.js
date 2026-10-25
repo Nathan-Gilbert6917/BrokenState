@@ -47,7 +47,12 @@
 //     hangar's aircraft, a base's fence, towers and gatehouse, the HQ's
 //     helipad), doors reachable, containers on their pieces; the loot at least what it was and no richer a square metre,
 //     the armory the richest; an older save keeps its layouts; the sites (the air base's, a base's); air
-//     bases on generated maps; the scenes; the crawl's checkpoint with its new pieces.
+//     bases on generated maps; the scenes; the crawl's checkpoint with its new pieces;
+//   - hotels (hotellayout.js, issue #29), every kind (an inn, a business hotel, a resort, a tower) over its franchises'
+//     seeds: the lobby with its reception desk, key rack and locked safe; guest floors of rooms each with a bed and its
+//     en suite bathroom (a toilet, a sink, a tub or a shower); housekeeping on every guest floor; two stair runs at 6+
+//     floors (every big hotel has two); the laundry and the kitchen (and its walk-in) back of house; every walkable cell
+//     reachable on every floor; the map within 200 × 200; an inn's 10–20 rooms; the loot of each kind, reported.
 // Usage: node tools/interiortest.js [seeds per archetype] [raids]
 import { createWorld, hub, atBase } from "../src/sim/world.js";
 import { launchExpedition } from "../src/sim/parties.js";
@@ -72,6 +77,9 @@ import { boxLoot, FLOOR_RICH } from "../src/sim/combat.js";
 import { GEAR, supValue } from "../src/sim/data.js";
 import { Rng } from "../src/sim/rng.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
+import { mapCap } from "../src/sim/battlesize.js"; // a building's own map cap (a hotel's 200 × 200, issue #29)
+import { HOTEL } from "../src/sim/hotellayout.js";
+import { FRANCHISES } from "../src/sim/data-shops.js";
 
 const SEEDS = Number(process.argv[2] || 6);
 const FURN = new Set(Object.keys(CELL).filter((k) => pieceDef(k)));
@@ -123,8 +131,9 @@ console.log(`Every archetype (${Object.keys(BUILDINGS).length}), ${SEEDS} seeds 
       const W = m.w, H = m.h;
       sizes[key].push(`${W}x${H}`);
       const errs = [];
+      const cap = mapCap(key); // a hotel's map up to 200 × 200 (its grounds round it, issue #29)
       const huge = spec.foot === "huge" || (m.building && m.building.w >= 50); // a bunker at real-world scale (bunkerlayout.js BUNKER.SIZE, issue #26); the supermarket since issue #22: past the largest size class, its map its footprint and margins
-      if (W < 14 || H < 14 || (MIL_KEYS.has(key) ? W > 300 || H > 300 : W > (huge ? m.building.w + 12 : 44) || H > (huge ? m.building.h + 16 : 34))) errs.push(`size ${W}x${H}`); // issue #25: the military buildings at their real size (the maps up to 300 × 300, #24)
+      if (W < 14 || H < 14 || (MIL_KEYS.has(key) ? W > 300 || H > 300 : W > (cap || (huge ? m.building.w + 12 : 44)) || H > (cap || (huge ? m.building.h + 16 : 34)))) errs.push(`size ${W}x${H}`); // issue #25: the military buildings at their real size (the maps up to 300 × 300, #24)
       const z0 = m.zones[0];
       const start = [z0.x0 + 1, z0.y0 + (s % 2 === 1 ? 0 : 1)];
       if (!CELL[m.cells[start[1] * W + start[0]].k].walk) errs.push("the front zone is blocked");
@@ -963,6 +972,93 @@ console.log("\nPolice stations, fire stations, schools and churches laid out for
   check(turnedOk, "a turned prisoner: one of the dead that rises, behind a locked cell door");
 }
 
+// ===============================================================================}
+console.log("\nHotels room by room (hotellayout.js): an inn, a business hotel, a resort, a city tower");
+{
+  const N = Math.max(SEEDS, 4);
+  const value = (def) => { let v = 0; for (const [k, [p, lo, hi]] of Object.entries(def.loot)) v += Math.min(0.95, p) * ((lo + hi) / 2) * supValue(k); for (const [k, p] of def.gear) v += p * ((GEAR[k] && GEAR[k].value) || 0); return v; };
+  const byKind = {};
+  for (const kind of HOTEL.KINDS) {
+    const ids = FRANCHISES.hotel.filter((f) => f.plan.hotel === kind).map((f) => f.id);
+    const errs = [], rep = byKind[kind] = { maps: 0, w: [], h: [], storeys: [], rooms: [], boxes: [], loot: [], area: [] };
+    for (let s = 0; s < N; s++) {
+      const v = ids[s % ids.length];
+      const rng = new Rng(61000 + s * 7919 + kind.length * 17);
+      const spec = BUILDINGS.hotel.make(rng, { variant: v });
+      let m;
+      try { m = assemble(rng, spec, { key: "hotel", name: "Hotel", withVehicle: s % 2 === 1 }); } catch (e) { errs.push(`${v} ${s}: ${e.message}`); continue; }
+      const tag = `${v} ${s}`;
+      if (spec.hotel !== kind) errs.push(`${tag}: a ${spec.hotel}`);
+      rep.maps++; rep.w.push(m.w); rep.h.push(m.h); rep.storeys.push(m.storeys);
+      const grids = m.floors || [{ cells: m.cells }];
+      const at = (f, x, y) => grids[f].cells[y * m.w + x];
+      const inside = (a) => { const out = []; for (let y = a.y0 + 1; y < a.y0 + a.h - 1; y++) for (let x = a.x0 + 1; x < a.x0 + a.w - 1; x++) out.push(at(a.f || 0, x, y).k); return out; };
+      const rooms = m.rooms.filter((a) => !a.outdoor), shop = (k) => rooms.filter((a) => a.shop === k);
+      // The map within its cap; every walkable cell reachable on every floor (from the front zone, upstairs the stairs).
+      if (m.w > 200 || m.h > 200 || m.w > mapCap("hotel") || m.h > mapCap("hotel")) errs.push(`${tag}: map ${m.w}x${m.h}`);
+      const z0 = m.zones[0];
+      grids.forEach((F, f) => {
+        const seen = f === 0 ? walkFrom(m, z0.x0 + 1, z0.y0 + (s % 2 === 1 ? 0 : 1)) : walkFrom(m, m.stairs[0][0], m.stairs[0][1], true, F.cells);
+        let cut = 0;
+        for (let i = 0; i < m.w * m.h; i++) if ((CELL[F.cells[i].k].walk || F.cells[i].k === "door") && !seen[i]) cut++;
+        if (cut) errs.push(`${tag}: floor ${f}: ${cut} walkable cells cut off`);
+        if (f > 0 && !m.stairs.every(([x, y]) => seen[y * m.w + x])) errs.push(`${tag}: floor ${f}: a stairwell cut off`);
+      });
+      // The lobby: the reception desk, the key rack, the safe (locked: cash and valuables).
+      const lobby = shop("hotellobby").find((a) => (a.f || 0) === 0);
+      if (!lobby || !inside(lobby).includes("frontdesk") || !inside(lobby).includes("keyrack")) errs.push(`${tag}: no reception desk and key rack in the lobby`);
+      else if (!m.containers.some((c) => c.area === lobby.id && c.kind === "safe" && c.lockKind)) errs.push(`${tag}: no locked safe at the front desk`);
+      // Guest floors: rooms of beds, each with its en suite bathroom (a toilet, a sink, a tub or a shower).
+      const guest = shop("guestroom");
+      if (guest.length < 1) errs.push(`${tag}: no guest rooms`);
+      for (const r of guest) {
+        if (!inside(r).includes("bed")) errs.push(`${tag}: ${r.name} has no bed`);
+        const bath = rooms.find((a) => a.shop === "ensuite" && a.unit && a.unit === r.unit);
+        if (!bath) { errs.push(`${tag}: ${r.name} has no en suite`); continue; }
+        const k = inside(bath);
+        if (!k.includes("toilet") || !k.includes("sink") || !(k.includes("bathtub") || k.includes("shower"))) errs.push(`${tag}: ${bath.name} lacks a toilet, a sink or a tub (${[...new Set(k)].join(" ")})`);
+      }
+      // Housekeeping (and the ice nook) on every guest floor.
+      const guestFloors = [...new Set(guest.map((r) => r.f || 0))];
+      for (const f of guestFloors) {
+        if (!shop("housekeeping").some((a) => (a.f || 0) === f)) errs.push(`${tag}: floor ${f} has no housekeeping`);
+        else if (!shop("housekeeping").some((a) => (a.f || 0) === f && inside(a).includes("linencart"))) errs.push(`${tag}: floor ${f}'s housekeeping has no linen cart`);
+      }
+      // Two stair runs at 6+ floors (every big hotel has two), on every floor.
+      if ((m.storeys >= 6 || kind !== "inn") && (m.runs || []).filter((r) => !r.single).length < 2) errs.push(`${tag}: ${m.storeys} storeys, ${(m.runs || []).length} stair runs`);
+      // Back of house: the laundry (washers, dryers), the kitchen and its walk-in.
+      const laundry = shop("hotellaundry");
+      if (!laundry.length || !laundry.some((a) => inside(a).includes("washer") && inside(a).includes("dryer"))) errs.push(`${tag}: no laundry with washers and dryers`);
+      if (!shop("galley").some((a) => inside(a).includes("range"))) errs.push(`${tag}: no kitchen with its range`);
+      if (kind !== "inn" && !shop("walkin").length) errs.push(`${tag}: no walk-in cold room`);
+      // The kind's own rooms.
+      const need = { inn: ["parlour", "breakfast", "ownersflat"], business: ["hotelrestaurant", "conference", "bizcentre", "giftshop", "luggage", "liftlobby"], resort: ["ballroom", "spa", "hotelgym", "hotelrestaurant", "barroom", "liftlobby"], tower: ["penthouse", "barroom", "ballroom", "parking", "liftlobby", "hotelgym"] }[kind];
+      for (const k of need) if (!shop(k).length) errs.push(`${tag}: no ${k}`);
+      if (kind === "resort" && !["Pool deck", "Tennis court"].every((n) => m.rooms.some((a) => a.outdoor && a.name === n))) errs.push(`${tag}: no pool deck or tennis court in the grounds`);
+      if (kind === "resort" && !m.cells.some((c) => c.f === "pool")) errs.push(`${tag}: the pool deck has no pool`);
+      if (kind === "tower" && !shop("penthouse").some((a) => (a.f || 0) === m.storeys - 1)) errs.push(`${tag}: the penthouse is not on the top floor`);
+      if (kind === "inn" && (guest.length < 10 || guest.length > 20)) errs.push(`${tag}: ${guest.length} rooms`);
+      if (shop("liftlobby").length && !shop("liftlobby").every((a) => inside(a).includes("liftdoor"))) errs.push(`${tag}: a lift lobby with no lift doors`);
+      // The loot (the containers' tables' worth).
+      let worth = 0;
+      for (const c of m.containers) { const a = m.rooms.find((r) => r.id === c.area); if (a && a.type && AREAS[a.type]) worth += value(boxLoot(a.type, c.kind)); }
+      rep.rooms.push(guest.length); rep.boxes.push(m.containers.length); rep.loot.push(worth); rep.area.push(spec.bw * spec.bh * m.storeys);
+    }
+    const avg = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0), rng2 = (a) => `${Math.min(...a)}–${Math.max(...a)}`;
+    check(!errs.length, `${kind}: ${rep.maps} hotels (${ids.join(", ")}), maps ${rng2(rep.w)} × ${rng2(rep.h)}, ${rng2(rep.storeys)} storeys, ${rng2(rep.rooms)} rooms: lobby and reception, guest rooms with beds and en suites, housekeeping a floor, ${kind === "inn" ? "one stair run" : "two stair runs"}, laundry and kitchen, all connected, within 200 × 200${errs.length ? `: ${errs.length} bad, e.g. ${errs.slice(0, 4).join("; ")}` : ""}`);
+    console.log(`    loot: ${avg(rep.boxes).toFixed(0)} containers, worth ${avg(rep.loot).toFixed(0)} (${(avg(rep.loot) / Math.max(1, avg(rep.area)) * 100).toFixed(1)} per 100 cells of floor)`);
+  }
+  // The hotel's scenes turn up (the map's own dice: buildingMap → rollScenes).
+  const sw = createWorld({ seed: 13, factionCount: 2 }), stiles = sw.tiles.filter((t) => t.loc).slice(0, 4);
+  const seenKinds = new Set();
+  const vs = ["willowcreek", "interstate", "pinecrest", "caldergrand", "meridian", "harborview", "lakeshore", "oldmill"];
+  for (let i = 0; i < 64; i++) {
+    const m = buildingMap(sw, stiles[i % stiles.length].id, { key: "hotel", id: `hotel-${i}`, name: "Hotel", variant: vs[i % vs.length] }, false);
+    for (const sc of (m.scenes && m.scenes.list) || []) seenKinds.add(sc.kind);
+  }
+  const want = ["hotelbarricade", "evaccentre", "lobbyoverrun", "penthouse"];
+  check(want.every((k) => seenKinds.has(k)), `the hotel's scenes turn up (${want.filter((k) => seenKinds.has(k)).join(", ")} of ${want.join(", ")}; also ${[...seenKinds].filter((k) => !want.includes(k)).join(", ")})`);
+=======
 
 console.log("\nBunkers (bunkerlayout.js)");
 {
