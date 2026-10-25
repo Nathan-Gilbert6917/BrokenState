@@ -112,8 +112,8 @@ console.log(`Every archetype (${Object.keys(BUILDINGS).length}), ${SEEDS} seeds 
       const W = m.w, H = m.h;
       sizes[key].push(`${W}x${H}`);
       const errs = [];
-      const huge = spec.foot === "huge"; // a bunker at real-world scale (bunkerlayout.js BUNKER.SIZE, issue #26): up to 72 × 34 cells and its margins
-      if (W < 14 || H < 14 || W > (huge ? 84 : 44) || H > (huge ? 50 : 34)) errs.push(`size ${W}x${H}`);
+      const huge = spec.foot === "huge" || (m.building && m.building.w >= 50); // a bunker at real-world scale (bunkerlayout.js BUNKER.SIZE, issue #26); the supermarket since issue #22: past the largest size class, its map its footprint and margins
+      if (W < 14 || H < 14 || W > (huge ? m.building.w + 12 : 44) || H > (huge ? m.building.h + 16 : 34)) errs.push(`size ${W}x${H}`);
       const z0 = m.zones[0];
       const start = [z0.x0 + 1, z0.y0 + (s % 2 === 1 ? 0 : 1)];
       if (!CELL[m.cells[start[1] * W + start[0]].k].walk) errs.push("the front zone is blocked");

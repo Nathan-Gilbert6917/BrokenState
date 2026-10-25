@@ -3396,7 +3396,7 @@ function foodStoreWishes(state, base, people, queued) {
 // campYard's). The AI groups' side is theirs (groupworks.js).
 const GRID_SPARE = { parts: 2, electronics: 1 };
 const SOLAR_WISH = { fuelLow: 15, richEl: 4 };
-const NIGHT_USERS = ["freezer", "fridge", "chest_freezer", "cold_case", "spotlamp", "perimeter_alarm", "radio"]; // what draws after dark (a battery bank's reason)
+const NIGHT_USERS = ["freezer", "fridge", "chest_freezer", "cold_case", "freezer_case", "island_freezer", "meat_case", "spotlamp", "perimeter_alarm", "radio"]; // what draws after dark (a battery bank's reason)
 const NIGHT_HOURS = 10; // the hours the banks carry (20:00 to 06:00: data-power.js SOLAR.to to SOLAR.from)
 const gridSpare = (state, base, season = 1) => genCapacity(base) + solarArrays(base).length * SOLAR.out * season - powerWanted(state, base, () => true);
 export function gridWishes(state, base, people, queued) { // exported for the tests (tools/powergridtest.js can call it as foodStoreWishes is called)

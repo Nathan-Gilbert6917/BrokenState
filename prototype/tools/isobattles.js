@@ -45,10 +45,12 @@ const field = (st, tile, enemy, extra = {}) => {
 // map in rows, each at its own size (a sofa two cells, bleachers two by two) with a free cell round it, on a floor of
 // floorboards; the cells under it cleared first, anyone standing there moved off, any raid container there dropped.
 // Used by the "furniture" layout below and by tools/raidshot.cjs (site "furniture": the same on a real raid's map).
-// showroom(b, x0?, y0?) → [{ k, x, y }] (each piece's first cell; from (1, 1) by default: 101 kinds since issues #15 and #16).
+// showroom(b, x0?, y0?) → [{ k, x, y }] (each piece's first cell; from (1, 1) by default: 123 kinds since issue #22).
 export function showroom(b, x0 = 1, y0 = 1) {
   const placed = [];
-  const kinds = Object.keys(FURNITURE_KINDS);
+  // The one-deep pieces first, then the two-deep (the catalogue order within each): the rows pack tighter (issue #22's
+  // pieces outgrew the field map in catalogue order).
+  const kinds = Object.keys(FURNITURE_KINDS).sort((a, b) => FURNITURE_KINDS[a].size[1] - FURNITURE_KINDS[b].size[1]);
   // Packed in rows, each piece at its own width with a free cell after it, a row as tall as its tallest piece and a free
   // row under it (the catalogue outgrew a grid of 3 × 3 slots on the field map: issue #15).
   // The free row under each row goes once the catalogue would not fit with it (the bunkers' pieces, issue #26).
