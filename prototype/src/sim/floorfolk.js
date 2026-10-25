@@ -12,6 +12,8 @@
 //   raiders holed up   - the place's raiders (citycrawl.js RAIDERS) hold an upper-floor room in offices, apartments and
 //                        police stations, one of them a watcher on the floor below by the stairwell (he stands his post),
 //                        their stash (a crate with their kit, ammunition and food) in the room. Deeper blocks arm them better.
+//                        Their barricades are up (issue #21): the room's windows boarded, half cover dragged up beside its
+//                        doors (boardWindows, pileAgainst); the survivors pile furniture beside their barred door too.
 //   nests              - from block NEST.from in a building of NEST.storeys or more: a cluster of the special dead around
 //                        a knot of hive flesh on the top floor, keeping still (u.nesting: combat.js patrol) until noise
 //                        (alertNear through the floors), Heat NEST.heat or the sight of you wakes them. The top floor's

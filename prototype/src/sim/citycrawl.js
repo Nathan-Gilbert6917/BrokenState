@@ -32,8 +32,11 @@ import { log, hurt, isNight, tickHour, day } from "./world.js";
 import {
   partyMembers, partyTile, bestSkill, cargoRoom, unitsThatFit, carryCapacity, poolLoad, wipeParty, awaitOrders, tileLabel, teamName, giveOrder, addGearToCargo,
 } from "./parties.js";
-import { registerCombatHandler, createBattle, startCombat, autoResolveCombat, finishCombat, byNumbersOdds, AREAS, floodReach, say, setFloor, makeLosCache } from "./combat.js";
-import { BUILDINGS, buildingHint, buildingSpec } from "./buildingmaps.js";
+import { registerCombatHandler, createBattle, startCombat, autoResolveCombat, finishCombat, byNumbersOdds, AREAS, floodReach, say, setFloor, makeLosCache, boxFinds, boxLoot, FLOOR_RICH } from "./combat.js";
+import { BUILDINGS, buildingHint, buildingSpec, buildingMap, rewardMult } from "./buildingmaps.js";
+import { raidLootShare, raidBig } from "./battlesize.js"; // the quick search's containers hold what the laid-out map's do (issue #21)
+import * as Weather from "./weather.js"; // the season: a chest freezer's food kept in winter (combat.js boxLoot)
+import { newItem } from "./inventory.js";
 import { breakBoarded, breakPiece } from "./barricade.js"; // a place picked over: a scene's barricade broken through (pickedOver)
 import { LIFT, liftDef, pieceKindOf, dropPiece, reweigh, partnerOf } from "./furnicarry.js"; // a piece of furniture carried block to block (issue #21)
 import { weighPlayer, CARRY as KIT } from "./carrykit.js"; // its pace: the carrier's band
@@ -1114,6 +1117,53 @@ function afterPlace(state, result, setup, battle) {
 }
 
 // ---------- searching a place by the numbers ----------
+// Issue #21 rule 5 (parity with the laid-out building): the quick search goes through the place's own building, the
+// map raidBuilding would lay out for it (placeProfile: built once, its containers kept on the place as plain data), and
+// opens QUICK.rolls (+ rollsPerBlock a block deeper, fewer the more picked over: × (1 − looted × LOOTED.strip), as
+// pickedOver strips the map's) of its containers at random, each rolled as searchBox rolls it on the map (combat.js
+// boxFinds: the piece's or the room's table, the place's richness × the floor's, the site's reward, the deep shift).
+// A building the team has been inside: only what it left unopened. So a container searched quickly holds what it
+// holds on the map (tools/citycrawltest.js: ±10% a kind over 200 seeds); the map is where the rest is.
+// The building's profile: { rooms: [AREAS type by area], boxes: [[area, kind, f]], reward, best (the worthiest "one"
+// piece of furniture's kind, or null) }.
+export function placeProfile(state, c, place, n = c.block) {
+  if (place.profile && place.profile.v === 1) return place.profile;
+  const t = state.tiles[c.tile];
+  const map = buildingMap(state, c.tile, placeOption(c, place, n), false);
+  const boxes = (map.containers || []).filter((x) => x.kind !== "body" && x.kind !== "ground" && map.rooms[x.area] && AREAS[map.rooms[x.area].type]).map((x) => [x.area, x.kind, x.f || 0]);
+  const reward = rewardMult(t) * (raidBig(state, map.w, map.h) ? raidLootShare(map.w, map.h) : 1);
+  let best = null, worth = 0;
+  for (const F of map.floors && map.floors.length ? map.floors : [{ cells: map.cells }]) for (const cell of F.cells) {
+    const d = cell && liftDef(cell.k);
+    if (!d || d.carry !== "one" || !d.item || !GEAR[d.item]) continue;
+    const w = itemValue(newItem(d.item)) || 0;
+    if (w > worth) { worth = w; best = d.kind; }
+  }
+  return (place.profile = { v: 1, rooms: map.rooms.map((r) => r.type || null), boxes, reward, best });
+}
+// What the quick search finds in the place: { sup, gear, opened }. rng: the dice (the world's).
+export function quickLoot(state, p, c, place, rng = state.rng, n = c.block) {
+  const Q = CRAWL.QUICK;
+  const prof = placeProfile(state, c, place, n);
+  const snap = c.buildings && c.buildings[place.id];
+  const left = snap ? snap.containers.filter((x) => x.kind !== "body" && x.kind !== "ground" && !x.contents && !x.searched && prof.rooms[x.area]).map((x) => [x.area, x.kind, x.f || 0]) : prof.boxes.slice();
+  const rolls = Math.max(1, Math.round((Q.rolls + (Q.rollsPerBlock || 0) * (n - 1)) * (1 - CRAWL.LOOTED.strip * (place.looted || 0))));
+  const scav = bestSkill(state, p, "scavenging");
+  const rich = placeRichness(state, c, place, n);
+  const t = state.tiles[c.tile];
+  const site = t && t.loc ? t.loc.type : null;
+  const winter = Weather.season(state).key === "winter";
+  const sup = {}, gear = [];
+  let opened = 0;
+  for (let i = 0; i < rolls && left.length; i++) {
+    const [area, kind, f] = left.splice(rng.int(0, left.length - 1), 1)[0];
+    const type = prof.rooms[area];
+    const got = boxFinds(state, rng, { def: boxLoot(type, kind, kind === "freezer" && winter), type, rich: rich * Math.min(FLOOR_RICH.cap, Math.pow(FLOOR_RICH.perFloor, f)), scav, reward: prof.reward, site, gunSite: place.key, deep: n, tileId: c.tile, bid: `q${place.id}-${i}` });
+    addSup(sup, got.sup); gear.push(...got.gear);
+    opened++;
+  }
+  return { sup, gear, opened };
+}
 export function quickSearch(state, p, place) {
   const c = p.crawl;
   const n = c.block;
@@ -1136,12 +1186,7 @@ export function quickSearch(state, p, place) {
     if (res.outcome === "defeat") { place.quick = true; say2(c, `${place.name}: driven out before you could search it.`, "danger", state.hour); return lines.join(" "); }
   }
   const scav = bestSkill(state, p, "scavenging");
-  const rich = placeRichness(state, c, place);
-  const holds = buildingHint(place.key).holds.filter((x) => AREAS[x]);
-  const sup = {}, gear = [];
-  const rolls = Math.max(1, Math.round((Q.rolls + (Q.rollsPerBlock || 0) * (n - 1)) * (1 - 0.6 * (place.looted || 0))));
-  for (let i = 0; i < rolls && holds.length; i++) { const r = rollArea(rng, rng.pick(holds), rich, scav, place.key); addSup(sup, r.sup); gear.push(...r.gear); }
-  deepShift(sup, n); // deeploot.js: fewer tins, more rounds and meds the deeper the block
+  const { sup, gear } = quickLoot(state, p, c, place, rng, n); // the building's own containers (issue #21)
   // A cache (deeploot.js): a locker, a stash behind a panel, a medic's bag; only what is small and dear is taken.
   if (rng.chance(cacheChance(n))) {
     const area = rng.pick(DEEP.cacheAreas.filter((a) => AREAS[a]));
@@ -1153,6 +1198,16 @@ export function quickSearch(state, p, place) {
     }
   }
   const text = give(state, p, c, sup, gear);
+  // A piece of furniture (issue #21, abstract #18): never on foot; with the team's vehicle waiting at the rim, the
+  // worthiest "one" piece of the place (placeProfile best), once a place, carried out to it (c.atVehicle: into the
+  // vehicle's cargo when the team walks out, finishCrawl).
+  const best = p.vehicleId && !place.pieceTaken ? placeProfile(state, c, place, n).best : null;
+  if (best) {
+    const def = liftDef(best);
+    place.pieceTaken = best;
+    (c.atVehicle = c.atVehicle || []).push(newItem(def.item));
+    lines.push(`The ${def.name.toLowerCase()} goes out to the vehicle at the edge of the city.`);
+  }
   place.quick = true;
   place.looted = 1 - (1 - (place.looted || 0)) * (1 - Q.looted);
   memOf(state.tiles[c.tile]).looted[place.id] = place.looted;
@@ -1394,6 +1449,7 @@ function finishCrawl(state, p) {
   const c = p.crawl;
   if (!c) return "";
   if (!c.choosing && c.cell) rimExitPieces(state, p); // a piece still carried: loaded at the vehicles, or dropped here (issue #21, #18)
+  for (const it of c.atVehicle || []) if (!addGearToCargo(state, p, it)) say2(c, `No room in the vehicle for the ${it.name.toLowerCase()}: it stays at the edge of the city.`, "info", state.hour); // the quick search's pieces (issue #21)
   const t = state.tiles[c.tile];
   const mem = memOf(t);
   mem.alert = c.alert;

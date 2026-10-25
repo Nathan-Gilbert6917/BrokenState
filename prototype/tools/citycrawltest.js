@@ -11,7 +11,14 @@ import { autoPlayerTurn, runEnemyPhase, finishCombat, combatAct } from "../src/s
 import { saveToString, loadFromString } from "../src/sim/save.js";
 import * as CC from "../src/sim/citycrawl.js";
 import { isEdge, headingToward, rimOf, cellsOf, xyOf, keyOf } from "../src/sim/citygrid.js";
-import { newItem, stow } from "../src/sim/inventory.js";
+import { newItem, stow, ensureInv } from "../src/sim/inventory.js";
+import { BUILDINGS, buildingMap } from "../src/sim/buildingmaps.js";
+import { searchBox, setFloor } from "../src/sim/combat.js";
+import { liftDef, setTargets } from "../src/sim/furnicarry.js";
+import { sceneBias, SCENES } from "../src/sim/interiorscenes.js";
+import { boardCell } from "../src/sim/barricade.js";
+import { createVehicle } from "../src/sim/vehicles.js";
+import { readFileSync } from "node:fs";
 
 const SEEDS = Number(process.argv[2] || 6);
 const STATS = process.argv.includes("stats");
@@ -684,6 +691,263 @@ console.log("The round grid (2026-10-13): moving, slipping away, the ways out, t
   check(CC.blockHeat(state, { ...c, alert: 20, trail: { 4: 10 } }, 4, 1.35) === 30 * 1.35, "a block's heat: (Alert + its trail) × its activity");
   check(CC.genBlock(state, c, 2).threat === CC.threatOf(state, c, 2).level, "the block card carries its level");
 }
+
+// ---------- 10. parity with the raid tickets (issue #21) ----------
+console.log("Parity (issue #21): snapshots keep everything, scenes by the place, pieces carried block to block, hints, the quick search");
+const QN = process.env.BS_QUICK ? 30 : 200; // buildings a kind for the quick search's parity (the ticket: 200 seeds)
+// A place of this kind on the team's block (its slot: a building of its own), what it holds forced.
+function testPlace(state, c, key, slot, o = {}) {
+  const pl = { id: `t21-${key}-${slot}`, slot, key, name: `${BUILDINGS[key].name} on Test Street`, kind: BUILDINGS[key].name, dead: 1, rich: 1, raiders: false, looted: 0, blocked: null, quick: false, known: false, folk: { survivors: false, raidersUp: false, nest: false }, ...o };
+  CC.blockOf(c).places = [pl];
+  return pl;
+}
+const cellsOfF = (b, f) => (b.floors ? b.floors[f].cells : b.cells);
+const allCells = (b) => JSON.stringify((b.floors ? b.floors.map((F) => F.cells) : [b.cells]));
+const outAndBack = (state, p, c, pl) => { const b = state.combat; walkOut(state); finishCombat(state, b.setup, b.result); CC.enterPlace(state, p, pl.id, { map: true }); return state.combat; };
+{
+  // 10a. Every field the raid tickets add, round-tripped through the snapshot (walk out, back in).
+  const { state, p, c } = crawlIn(2101);
+  let pl = null, b = null;
+  for (let slot = 20; slot < 120 && !b; slot++) {
+    pl = testPlace(state, c, "apartments", slot);
+    if (CC.placeStoreys(state, c, pl) < 2) continue;
+    CC.enterPlace(state, p, pl.id, { map: true });
+    if (state.combat && state.combat.raid.scenes) b = state.combat; else { state.combat = null; c.inside = null; }
+  }
+  check(!!b, "test setup: a block of flats of 2+ storeys with scenes");
+  const R = b.raid;
+  const u = b.units.find((x) => x.side === "player" && !x.dead);
+  const home = [u.x, u.y, u.f || 0];
+  // A piece lifted (#12) off the ground floor and set down elsewhere.
+  let lifted = null, setAt = null;
+  const C0 = cellsOfF(b, 0);
+  for (let i = 0; i < C0.length && !lifted; i++) {
+    const d = liftDef(C0[i].k);
+    if (!d || d.carry !== "one" || !d.item || !b.reach[i] || C0[i].pc != null) continue;
+    const x = i % b.w, y = (i / b.w) | 0;
+    const spot = [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dy]) => [x + dx, y + dy]).find(([sx, sy]) => C0[sy * b.w + sx] && C0[sy * b.w + sx].k === "open" && b.reach[sy * b.w + sx] && !b.units.some((o) => !o.dead && (o.f || 0) === 0 && o.x === sx && o.y === sy));
+    if (!spot) continue;
+    u.x = spot[0]; u.y = spot[1]; u.f = 0; u.ap = 2;
+    if (combatAct(state, { type: "liftPiece", unit: u.id, x, y }) !== "") continue;
+    lifted = { x, y, kind: d.kind };
+    u.ap = 2;
+    const t = setTargets(b, u)[0];
+    if (t && combatAct(state, { type: "setPiece", unit: u.id, x: t.x, y: t.y }) === "") setAt = { x: t.x, y: t.y, kind: d.kind };
+  }
+  check(!!lifted && !!setAt, `test setup: a piece lifted and set down (${lifted && lifted.kind})`);
+  u.x = home[0]; u.y = home[1]; u.f = home[2];
+  // Blood, decor, wall art, boards, brass on the floors; a body by floor; a ground pile.
+  const top = b.floors ? b.floors.length - 1 : 0, CT = cellsOfF(b, top);
+  const openAt = (cells) => cells.findIndex((x, i) => x.k === "open" && !x.blood && !x.deco && i !== (setAt ? setAt.y * b.w + setAt.x : -1));
+  const ib = openAt(CT); CT[ib].blood = { kind: "human", amount: 3 };
+  const id = openAt(C0); C0[id].deco = { k: "trash", r: 1 }; C0[id].brass = 5;
+  const iw = C0.findIndex((x) => x.k === "window");
+  if (iw >= 0) { setFloor(b, 0); boardCell(b, C0[iw], iw % b.w, (iw / b.w) | 0); }
+  const wart = C0.findIndex((x) => x.wart);
+  b.corpses = b.corpses || []; b.corpses.push({ id: 991, x: ib % b.w, y: (ib / b.w) | 0, f: top, seed: 7 });
+  R.containers.push({ id: 9991, x: id % b.w, y: (id / b.w) | 0, f: 0, kind: "ground", searched: true, label: "test pile", contents: { sup: { food: 3 }, gear: [newItem("pistol")] } });
+  const sceneText = JSON.stringify(R.scenes.list);
+  const before = allCells(b), stairs = JSON.stringify(R.stairs);
+  const b2 = outAndBack(state, p, c, pl);
+  const C02 = cellsOfF(b2, 0), CT2 = cellsOfF(b2, top);
+  check(allCells(b2) === before, "every floor's cells come back exactly as they were left");
+  check(CT2[ib].blood && CT2[ib].blood.amount === 3, "blood (c.blood) on an upper floor stays");
+  check(C02[id].deco && C02[id].deco.k === "trash" && C02[id].brass === 5, "decor (c.deco) and spent brass (c.brass) stay");
+  check(iw < 0 || (C02[iw].k === "boarded" && C02[iw].boards === 1 && C02[iw].under && C02[iw].under.k === "window"), "boards (c.boards, c.under) stay");
+  check(wart < 0 || JSON.stringify(C02[wart].wart) === JSON.stringify(C0[wart].wart), "wall art (c.wart) stays");
+  check(lifted && C02[lifted.y * b2.w + lifted.x].k !== lifted.kind, "a cell a piece was lifted off stays empty");
+  check(setAt && C02[setAt.y * b2.w + setAt.x].k === setAt.kind && C02[setAt.y * b2.w + setAt.x].moved, "a piece set down is there on the second visit, where it was set");
+  check(b2.corpses.some((x) => x.id === 991 && x.f === top), "a body (b.corpses) stays on its floor");
+  check(b2.raid.containers.some((x) => x.kind === "ground" && x.label === "test pile" && x.contents.sup.food === 3 && x.contents.gear.length === 1), "a ground pile stays with what lies on it");
+  check(JSON.stringify(b2.raid.stairs) === stairs, "the stair cells (R.stairs) stay");
+  check(JSON.stringify(b2.raid.scenes.list) === sceneText, "the same scenes (rolled once, kept)");
+  C02[id].deco.k = "papers";
+  check(c.buildings[pl.id].cells[id].deco.k === "trash", "the snapshot shares nothing with the battle (a change in play leaves it as left)");
+  walkOut(state); finishCombat(state, b2.setup, b2.result);
+}
+{
+  // 10b. Scenes by the place (interiorscenes.js sceneBias), a place picked over, the raiders' and the survivors' barricades.
+  check(sceneBias("apartments", null) === null, "elsewhere (no place) the scene roll is as it was");
+  const lo = sceneBias("apartments", { dead: 0.8 }), hi = sceneBias("apartments", { dead: 1.6 });
+  check(hi.odds > lo.odds && hi.w.overrun > lo.w.overrun && hi.w.stand > lo.w.stand, `more of the dead: likelier scenes, more overrun rooms and last stands (${lo.odds.toFixed(2)} → ${hi.odds.toFixed(2)})`);
+  check(sceneBias("apartments", { survivors: true }).w.barricade > 1 && sceneBias("apartments", { survivors: true }).odds >= SCENES.PLACE.survivorsOdds, "people upstairs: a scene, a barricaded room likelier");
+  check(sceneBias("offices", { raiders: true }).w.barricade > 1 && sceneBias("offices", { looted: 1 }).w.quiet < 1, "raiders: barricades; picked over: fewer quiet rooms");
+  // Scenes counted over buildings with few and many of the dead: the place's say shows.
+  const { state, p, c } = crawlIn(2102);
+  let few = 0, many = 0;
+  for (let slot = 0; slot < (process.env.BS_QUICK ? 30 : 80); slot++) {
+    for (const [dead, add] of [[0.6, (n) => (few += n)], [1.6, (n) => (many += n)]]) {
+      const pl = testPlace(state, c, "offices", slot, { dead });
+      const m = buildingMap(state, c.tile, CC.placeOption(c, pl), false);
+      add(m.scenes ? m.scenes.list.length : 0);
+    }
+  }
+  check(many > few, `offices with many of the dead show more signs of survival (${few} → ${many} scenes)`);
+  // A place picked over: containers stripped, a barricade broken through.
+  let stripped = 0, boxes = 0, broke = 0, tried = 0;
+  for (let slot = 0; slot < 12; slot++) {
+    const pl = testPlace(state, c, "apartments", 200 + slot, { looted: 0.9 });
+    CC.enterPlace(state, p, pl.id, { map: true });
+    const b = state.combat;
+    const list = b.raid.containers.filter((x) => x.kind !== "body" && x.kind !== "ground");
+    boxes += list.length; stripped += list.filter((x) => x.stripped && x.contents && !x.contents.gear.length && !Object.keys(x.contents.sup).length).length;
+    const P = b.raid.scenes && b.raid.scenes.pieces || [];
+    if (P.some((q) => q.k === "boarded" || q.frame)) { tried++; if (P.some((q) => { const cl = cellsOfF(b, q.f)[q.y * b.w + q.x]; return cl.k !== "boarded" && q.k === "boarded" || (q.frame && !cl.moved); })) broke++; }
+    state.combat = null; c.inside = null;
+  }
+  check(boxes > 0 && stripped / boxes > 0.3 && stripped / boxes < 0.75, `a place picked over (90%): ${Math.round(stripped / boxes * 100)}% of its containers found stripped`);
+  check(tried === 0 || broke > 0, `... and a barricade of its scenes already broken through (${broke}/${tried} buildings with one)`);
+  // Raiders upstairs: their room's windows boarded, half cover dragged up; survivors: furniture beside the barred door.
+  let fortOk = 0, fortTried = 0, piledOk = 0, piledTried = 0;
+  const deep = deepCrawl(2103, 4);
+  CC.jumpToLevel(deep.state, deep.c, 4);
+  for (let slot = 0; slot < 40 && (fortTried < 4 || piledTried < 4); slot++) {
+    const pl = testPlace(deep.state, deep.c, "offices", 300 + slot, { raiders: true, folk: { survivors: true, raidersUp: true, nest: false } });
+    if (CC.placeStoreys(deep.state, deep.c, pl) < 2) continue;
+    CC.enterPlace(deep.state, deep.p, pl.id, { map: true });
+    const F = deep.state.combat.raid.folk;
+    if (F && F.raiders && F.raiders.fort) { fortTried++; if (F.raiders.fort.boards + F.raiders.fort.pieces > 0) fortOk++; }
+    if (F && F.survivors) { piledTried++; if (F.survivors.pieces > 0) piledOk++; }
+    deep.state.combat = null; deep.c.inside = null;
+  }
+  check(fortTried > 0 && fortOk > 0, `raiders holed up put their barricades up (windows boarded, half cover dragged up: ${fortOk}/${fortTried})`);
+  check(piledTried > 0 && piledOk > 0, `survivors upstairs have furniture piled beside their barred door (${piledOk}/${piledTried})`);
+}
+{
+  // 10c. A piece carried block to block (#12): the card, the pace, into a place, out at the rim.
+  const { state, p, c, h } = crawlIn(2104);
+  const [a, m] = partyMembers(state, p);
+  ensureInv(a); ensureInv(m);
+  const ways = CC.waysOn(c).filter((w) => w.cell && !w.wall);
+  const t0h = state.hour;
+  CC.nextBlock(state, p, ways[0].dir);
+  const plain = state.hour - t0h;
+  if (c.enc) c.enc = null;
+  a.gear.carry = newItem("fridge");
+  c.mates = { [a.id]: m.id };
+  check(CC.carryLine(state, p) === `Carrying: a refrigerator (${a.name.split(" ")[0]}, ${m.name.split(" ")[0]})`, `the card: "${CC.carryLine(state, p)}"`);
+  const pace = CC.carryPace(state, p);
+  const back = CC.waysOn(c).find((w) => w.back) || CC.waysOn(c).find((w) => w.cell && !w.wall);
+  const t1 = state.hour;
+  CC.nextBlock(state, p, back.dir);
+  check(pace.hours > CRAWL_MOVE() && state.hour - t1 === pace.hours && state.hour - t1 > plain, `carrying a fridge between two the walk takes longer (${plain} h → ${state.hour - t1} h; mob ${pace.mob})`);
+  if (c.enc) c.enc = null;
+  c.mates = {};
+  check(CC.carryPace(state, p).hours > pace.hours, `alone the fridge is slower still (${CC.carryPace(state, p).hours} h a block)`);
+  c.mates = { [a.id]: m.id };
+  // Into a place: in the arms at the door, the tether between the two.
+  const pl = testPlace(state, c, "grocery", 401);
+  CC.enterPlace(state, p, pl.id, { map: true });
+  let b = state.combat;
+  const ua = b.units.find((x) => x.sid === a.id), um = b.units.find((x) => x.sid === m.id);
+  const foe = b.units.some((e) => e.side === "enemy" && !e.dead && (e.f || 0) === 0 && Math.max(Math.abs(e.x - ua.x), Math.abs(e.y - ua.y)) <= CC.CRAWL.CARRY.fightRange);
+  check(foe ? !ua.piece && b.log.some((l) => /down at the door to fight/.test(l.text || l)) : ua.piece === "fridge" && ua.bag === a.gear.carry && ua.tether === um.id && um.tether === ua.id && um.shareKg > 0, foe ? "the dead right inside: the fridge is set down at the door (a log line)" : "the fridge is in the arms at the entry, the two tethered at half the weight each");
+  walkOut(state); finishCombat(state, b.setup, b.result);
+  if (foe) { a.gear.carry = newItem("fridge"); c.mates = { [a.id]: m.id }; }
+  else check(a.gear.carry && a.gear.carry.key === "fridge" && c.mates[a.id] === m.id, "carried back out: still in the arms, the pair kept for the next block");
+  // Forced: the dead within reach of the door (fightRange stretched).
+  const fr = CC.CRAWL.CARRY.fightRange;
+  CC.CRAWL.CARRY.fightRange = 999;
+  const pl2 = testPlace(state, c, "grocery", 402, { dead: 1.5 });
+  CC.enterPlace(state, p, pl2.id, { map: true });
+  b = state.combat;
+  CC.CRAWL.CARRY.fightRange = fr;
+  const hasFoe = b.units.some((e) => e.side === "enemy" && !e.dead);
+  check(!hasFoe || (b.units.every((x) => !x.piece) && c.log.some((l) => /down at the door to fight/.test(l.text))), "a fight on entry: the piece is set down at the door, a line in the log");
+  state.combat = null; c.inside = null;
+  if (!a.gear.carry) { a.gear.carry = newItem("fridge"); c.mates = { [a.id]: m.id }; }
+  // The pair must both be on the team: the other end gone, a "two" piece is left on the block.
+  const party0 = p.members.slice();
+  {
+    p.members = p.members.filter((x) => x !== m.id);
+    const cell = c.cell;
+    CC.nextBlock(state, p, CC.waysOn(c).find((w) => w.cell && !w.wall).dir);
+    if (c.enc) c.enc = null;
+    const mem = CC.crawlMemOf(state.tiles[c.tile]);
+    check(!a.gear.carry && mem.left && mem.left[cell] && mem.left[cell].some((o) => o.kind === "fridge"), "the other end gone: the fridge (two to carry) is left on the block, remembered");
+    p.members = party0;
+    // Back on that block: it is on the card, and taken up again.
+    c.cell = cell; c.block = CC.levelAt(c, cell);
+    CC.genBlock(state, c, cell);
+    check((CC.blockOf(c).left || []).length > 0 && CC.takeLeft(state, p, 0) === "" && partyMembers(state, p).some((s) => s.gear.carry && s.gear.carry.key === "fridge"), "the block card lists it and it is taken up again (two with free arms)");
+  }
+}
+{
+  // 10d. Out at the rim with a piece: loaded at the block the vehicles wait at; dropped from exhaustion at another.
+  const run = (sameBlock) => {
+    const { state, p, c, h } = crawlIn(2105);
+    const car = createVehicle(state, "van", { kind: "party", partyId: p.id }, { condition: 90 });
+    p.vehicleId = car.id; p.vehicleIds = [car.id]; p.vehicle = true;
+    const [a, m] = partyMembers(state, p);
+    ensureInv(a);
+    a.gear.carry = newItem("fridge"); c.mates = { [a.id]: m.id };
+    if (!sameBlock) { const rim = rimOf(c.grid).map(([x, y]) => keyOf(x, y)).find((k) => k !== c.entry); c.cell = rim; c.block = CC.levelAt(c, rim); CC.genBlock(state, c, rim); }
+    const cell = c.cell;
+    c.alert = 0;
+    CC.walkOut(state, p);
+    const mem = CC.crawlMemOf(state.tiles[c.tile]);
+    return { p, a, cell, mem, log: c.log.map((l) => l.text).join(" ") };
+  };
+  const one = run(true);
+  check(!one.a.gear.carry && one.p.cargo.gear.some((g) => g.key === "fridge") && /into the vehicle/.test(one.log), "out at the block the vehicles wait at: the fridge goes into the vehicle");
+  const two = run(false);
+  check(!two.a.gear.carry && !(two.p.cargo && two.p.cargo.gear.some((g) => g.key === "fridge")) && /exhaustion/.test(two.log) && (two.mem.left[two.cell] || []).some((o) => o.kind === "fridge"), "out at another rim block: dropped from exhaustion there, the block remembers it");
+}
+{
+  // 10e. The hint line from the archetype; the quick search's parity with the laid-out building; its pieces.
+  const { state, p, c } = crawlIn(2106);
+  const hosp = testPlace(state, c, "hospital", 5);
+  const hint = CC.placeHint(state, c, hosp);
+  check(/^Hospital: \d+ floors, wards/.test(hint) && hint.includes(String(CC.placeStoreys(state, c, hosp))), `the hint names the kind's signature rooms: "${hint}"`);
+  check(CC.placeHint(state, c, testPlace(state, c, "offices", 5)).includes("offices") && !/Corridor/i.test(CC.placeHint(state, c, testPlace(state, c, "offices", 5))), "an office tower's: offices (not its corridors)");
+  // Per kind over QN buildings: every container opened both ways, the supplies found within ±10%.
+  for (const s of partyMembers(state, p)) s.skills.scavenging = 3;
+  const kinds = Object.keys(CC.PLACE_POOL);
+  const rolls = CC.CRAWL.QUICK.rolls, per = CC.CRAWL.QUICK.rollsPerBlock;
+  const bad = [];
+  let worst = 0;
+  for (const key of kinds) {
+    let mapSup = 0, quickSup = 0, mapBoxes = 0, quickBoxes = 0;
+    for (let i = 0; i < QN; i++) {
+      const pl = testPlace(state, c, key, 1000 + i);
+      CC.CRAWL.QUICK.rolls = 9999; CC.CRAWL.QUICK.rollsPerBlock = 0;
+      const q = CC.quickLoot(state, p, c, pl);
+      CC.CRAWL.QUICK.rolls = rolls; CC.CRAWL.QUICK.rollsPerBlock = per;
+      quickSup += Object.values(q.sup).reduce((x, v) => x + v, 0); quickBoxes += q.opened;
+      if (i % 4) continue; // the map side on a quarter of them (a battle each), the same buildings
+      CC.enterPlace(state, p, pl.id, { map: true });
+      const b = state.combat, u = b.units.find((x) => x.side === "player");
+      u.scavBonus = 0;
+      for (const box of b.raid.containers.filter((x) => x.kind !== "body" && x.kind !== "ground" && !x.stash)) {
+        searchBox(state, b, u, box, true);
+        mapSup += Object.values(box.contents.sup).reduce((x, v) => x + v, 0); mapBoxes++;
+      }
+      state.combat = null; c.inside = null;
+    }
+    const a = mapSup / Math.max(1, mapBoxes), q = quickSup / Math.max(1, quickBoxes);
+    const off = Math.abs(q - a) / Math.max(1e-9, a);
+    worst = Math.max(worst, off);
+    if (off > 0.1) bad.push(`${key} ${a.toFixed(2)}/${q.toFixed(2)}`);
+  }
+  check(!bad.length, `a container searched quickly holds what it holds on the map, every kind within ±10% (${QN} buildings a kind; worst ${Math.round(worst * 100)}%)${bad.length ? `: off ${bad.join(", ")}` : ""}`);
+  // No pieces on foot; with the vehicle at the rim, the worthiest "one" piece once a place.
+  const pl = testPlace(state, c, "deptstore", 77);
+  const prof = CC.placeProfile(state, c, pl);
+  c.enc = null;
+  CC.quickSearch(state, p, pl);
+  check(!(c.atVehicle || []).length && !partyMembers(state, p).some((s) => s.gear.carry), "no vehicle: the quick search takes no furniture");
+  const car = createVehicle(state, "van", { kind: "party", partyId: p.id }, { condition: 90 });
+  p.vehicleId = car.id; p.vehicleIds = [car.id];
+  const pl2 = testPlace(state, c, "deptstore", 78);
+  const best = CC.placeProfile(state, c, pl2).best;
+  CC.quickSearch(state, p, pl2);
+  check(!best || ((c.atVehicle || []).length === 1 && liftDef(best).carry === "one" && pl2.pieceTaken === best), `a vehicle at the rim: one "one" piece by worth goes out to it (${best})`);
+  void prof;
+  // The hive crawl takes nothing new.
+  const hive = readFileSync(new URL("../src/sim/hivecrawl.js", import.meta.url), "utf8");
+  check(!/furnicarry|interiorscenes|floorfolk/.test(hive), "hivecrawl.js imports nothing new");
+}
+function CRAWL_MOVE() { return CC.CRAWL.MOVE_HOURS; }
 
 // ---------- 9. stats: map raids with the bot ----------
 if (STATS) {
