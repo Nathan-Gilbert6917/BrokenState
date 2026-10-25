@@ -2,7 +2,8 @@
 // with the map's size, then the battle screen as the team goes in, and the camera (zoom, whether your people are on
 // screen, how much of the map shows). Usage: NODE_PATH=$(npm root -g) node tools/raidshot.cjs [outdir] [raidMin raidMax] [site]
 // e.g. raidshot.cjs /tmp/shots 80 80 farm (a street map 80 × 60) or 80 80 hospital (a building's map). Starts the
-// prototype's server on a free port and drives headless Chromium; prints one JSON line a shot.
+// prototype's server on a free port and drives headless Chromium; prints one JSON line a shot. A 6th argument "scene":
+// then the team is set in a barricaded room (or another scene) of the building and the view centred on it (scene.png).
 const { chromium } = require("playwright");
 const { spawn } = require("child_process");
 const path = require("path");
@@ -11,6 +12,7 @@ const fs = require("fs");
 const outDir = path.resolve(process.argv[2] || path.join(__dirname, "..", "..", "docs", "shots"));
 const [rawMin, rawMax] = [Number(process.argv[3] || 80), Number(process.argv[4] || 80)];
 const site = process.argv[5] || "farm";
+const wantScene = process.argv[6] === "scene"; // a building's signs of survival (sim/interiorscenes.js): the team set in a scene's room, the view on it (scene.png)
 const port = 5300 + Math.floor(Math.random() * 600);
 
 (async () => {
@@ -84,6 +86,34 @@ const port = 5300 + Math.floor(Math.random() * 600);
     const far = path.join(outDir, `battle-${rawMax}-out.png`);
     await page.screenshot({ path: far });
     console.log(far, JSON.stringify(out));
+    if (wantScene) {
+      const scene = await page.evaluate(async () => {
+        const C = await import("/src/sim/combat.js"), b = game.state.combat;
+        const L = (b.raid.scenes && b.raid.scenes.list) || [];
+        const s = L.find((q) => q.kind === "barricade" && !q.alive) || L.find((q) => q.kind === "overrun") || L[0];
+        if (!s) return null;
+        const r = b.raid.areas.find((a) => a.id === s.room);
+        C.setFloor(b, s.f);
+        const cells = b.cells, mine = b.units.filter((u) => u.side === "player");
+        const spots = [];
+        if (r) for (let y = r.y0 + 1; y < r.y0 + r.h - 1; y++) for (let x = r.x0 + 1; x < r.x0 + r.w - 1; x++) if (cells[y * b.w + x].k === "open" && !b.units.some((u) => u.x === x && u.y === y && (u.f || 0) === s.f)) spots.push([x, y]);
+        mine.forEach((u, i) => { const p = spots[i] || spots[0]; if (p) { u.x = p[0]; u.y = p[1]; u.f = s.f; u.away = false; } });
+        for (const u of b.units) if (u.side === "enemy" && (u.f || 0) === s.f && r && u.x >= r.x0 && u.x < r.x0 + r.w && u.y >= r.y0 && u.y < r.y0 + r.h) u.x = -50;
+        document.querySelectorAll(".tipbox, .coach, [data-action='coach-close']").forEach((e) => e.remove && e.remove());
+        const I = await import("/src/ui/isoview.js");
+        for (let i = 0; i < 6; i++) I.isoZoom(b, 1); // back in from the zoomed-out shot
+        I.isoCenterOn(b, s.x, s.y, false);
+        game.refresh();
+        return { kind: s.kind, text: s.text, f: s.f, door: [s.x, s.y], cell: cells[s.y * b.w + s.x].k, blood: cells.filter((c) => c.blood).length };
+      });
+      console.log("scene:", JSON.stringify(scene));
+      await page.waitForTimeout(800);
+      await page.evaluate(() => game.refresh());
+      await page.waitForTimeout(500);
+      const sceneShot = path.join(outDir, "scene.png");
+      await page.screenshot({ path: sceneShot });
+      console.log(sceneShot);
+    }
     console.log("page errors:", JSON.stringify(errs.slice(0, 5)));
     await browser.close();
   } finally { srv.kill(); }
