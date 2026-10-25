@@ -140,6 +140,10 @@ export const KEYMAP = [
     // Shift letter is taken; not Alt+D, E or F, which a browser takes for its own menus).
     ["shove", "Shove: a piece of furniture next to them one tile (2 actions)", "Alt+KeyS"], ["boardup", "Board up: boards and nails across the door or window next to them (2 actions)", "Alt+KeyB"],
     ["teardown", "Tear down: the boards next to them (2 actions)", "Alt+KeyJ"],
+    // sim/furnicarry.js: a piece of furniture or an appliance lifted (Alt+U: Up; Alt+L is the light), set down (Alt+G:
+    // Ground), loaded into the vehicle (Alt+W: Wagon).
+    ["liftPiece", "Lift: a piece of furniture or an appliance next to them, alone or with a teammate (2 actions each)", "Alt+KeyU"], ["setPiece", "Set down: the piece carried, next to them (a pair: left or right of the two; 1 action each)", "Alt+KeyG"],
+    ["stowPiece", "Load into vehicle: the piece carried, at the vehicle (1 action)", "Alt+KeyW"],
     // sim/parley.js: shout to another group in sight (a raid's survivors, a hostile group's people) to talk (Alt+O: call Out).
     ["callout", "Call out: talk to another group in sight (raids; 1 action)", "Alt+KeyO"],
     // sim/allyorders.js: tell an allied survivor within 5 tiles what to do; they may ignore it (Alt+A: Ally).

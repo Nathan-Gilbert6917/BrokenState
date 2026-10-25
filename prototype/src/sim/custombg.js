@@ -33,11 +33,11 @@ export const CUSTOM_BG = {
 
 export const isCustomBg = (key) => typeof key === "string" && key.startsWith(CUSTOM_BG.PREFIX);
 export const customTraitKeys = () => Object.keys(TRAITS); // enumerable only: the prepper's background trait is not one to give
-export const slotOptions = (slot) => Object.keys(GEAR).filter((k) => GEAR[k].slot === slot);
+export const slotOptions = (slot) => Object.keys(GEAR).filter((k) => GEAR[k].slot === slot && !GEAR[k].piece); // data.js piece: a furniture item (furnicarry.js), never a background's
 // Carried things: anything that fits a pocket, a pack or the off hand (no packs, nothing bulky, no bicycle).
 export const carryOptions = () => Object.keys(GEAR).filter((k) => GEAR[k].slot !== "backpack" && GEAR[k].slot !== "cargo" && !GEAR[k].bulky && !GEAR[k].supKey); // supplies held as items (supitems.js) are not kit
 // The car's back holds anything.
-export const trunkOptions = () => Object.keys(GEAR).filter((k) => !GEAR[k].supKey);
+export const trunkOptions = () => Object.keys(GEAR).filter((k) => !GEAR[k].supKey && !GEAR[k].piece);
 export const carTypes = () => Object.keys(VEHICLE_TYPES).filter((k) => VEHICLE_TYPES[k].motor);
 // The round keys a background can carry (every calibre and type; not the bench's handloads).
 export const roundOptions = () => Object.keys(ROUND_SUPPLIES).filter((k) => !HAND_SUPPLIES[k]);

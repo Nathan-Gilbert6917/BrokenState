@@ -1,6 +1,6 @@
 // Procedural pixel sprites for parties on the State Map (same approach as sprites.js: painted on a small
-// pixel grid, outlined, upscaled once to an offscreen canvas and cached by look). A pickup truck or a sedan
-// for motorized teams and convoys, a small group of walkers with packs for teams on foot (armed for raids),
+// pixel grid, outlined, upscaled once to an offscreen canvas and cached by look). A pickup truck, a sedan, an SUV,
+// a work van, a Hummer or an Army truck (by the vehicle's type) for motorized teams and convoys, a small group of walkers with packs for teams on foot (armed for raids),
 // and a boat (or a raft carrying the vehicle) while a team crosses water. The body or clothes are tinted
 // with the owner's color. Sprites face right; drawMapSprite mirrors them for travel to the left.
 // A team of one gets a figure of its own, bigger and animated: a walker (standing, or a walk cycle leaning into the
@@ -94,28 +94,37 @@ function walker(p, x, y, cloth, armed) {
 }
 
 // ---------- sprites ----------
-// Pickup truck: cab, hood and a bed with cargo under a tarp.
+// The team's cars, 22 × 13 facing right, drawn like real cars (the user's ask 2026-10-25): a low body from the sill
+// (row 9) to the belt line (row 5), the cabin's flat roof with the windscreen and the rear window sloping down to the
+// belt (cab: [x0, x1] of the roof row, widening a px a row), glass between its pillars, the wheels in their arches
+// under the sills, a lamp at the nose and a tail light behind. A pickup's cab has a straight back, a van's box a
+// straight back and a sloped nose.
+function carSide(p, color, o) {
+  const dark = shade(color, -0.35), lit = shade(color, 0.25), frame = shade(color, -0.2);
+  const y0 = o.belt ?? 5, y1 = 9;
+  p.rect(1, y0, 20, y1, color);                                   // the body
+  p.rect(1, y1, 20, y1, dark);                                    // the sill
+  p.rect(1, y0, 20, y0, lit);                                     // the belt line, lit
+  const [c0, c1] = o.cab, top = o.top ?? 2, rows = y0 - top;      // the cabin: a trapezoid over the belt
+  for (let r = 0; r < rows; r++) {
+    const y = top + r, a = o.backStraight ? c0 : c0 - r, b = o.frontStraight ? c1 : c1 + r;
+    p.rect(a, y, b, y, r === 0 ? lit : frame);
+    if (r > 0) for (let x = a + 1; x <= b - 1; x++) if (!(o.pillars || []).includes(x)) p.set(x, y, GLASS);
+    if (r === 1) p.set(b - 1, y, "#e4f1f8");                     // the lit corner of the windscreen
+  }
+  if (o.rack) p.rect(c0, top - 1, c1, top - 1, METAL);           // a rack on the roof
+  p.set(20, y0 + 1, "#ffe28a"); p.set(1, y0 + 1, "#d24a3a");     // the lamp, the tail light
+  p.rect(19, y1 - 1, 20, y1 - 1, shade(dark, -0.2));             // the grille
+  wheel(p, 3, 8); wheel(p, 15, 8);                               // the wheels in their arches
+}
+// Pickup truck: the cab mid-body with a straight back, the bed behind it between its rails, a load under a tarp.
 function paintTruck(color) {
   const p = painter(22, 13);
-  const dark = shade(color, -0.35), lit = shade(color, 0.25);
-  p.rect(1, 6, 20, 9, color);                          // body
-  p.rect(1, 9, 20, 9, dark);
-  p.rect(1, 6, 11, 6, lit);                            // bed rail
-  p.rect(2, 3, 10, 5, "#8c7a52");                      // tarp-covered cargo
-  p.rect(2, 3, 10, 3, shade("#8c7a52", 0.2));
-  p.set(6, 4, shade("#8c7a52", -0.3)); p.set(6, 5, shade("#8c7a52", -0.3));
-  p.rect(12, 2, 16, 6, color);                         // cab
-  p.rect(12, 2, 16, 2, lit);
-  p.rect(14, 3, 16, 5, GLASS);                         // window
-  p.set(14, 3, "#e4f1f8");
-  p.rect(17, 5, 20, 6, color);                         // hood
-  p.set(20, 7, "#ffe28a");                             // headlight
-  p.set(1, 7, "#d24a3a");                              // tail light
-  wheel(p, 3, 9);
-  wheel(p, 15, 9);
+  carSide(p, color, { cab: [11, 15], backStraight: true });
+  p.rect(2, 4, 10, 4, shade(color, 0.25));                       // the bed's rails
+  p.rect(3, 3, 9, 4, "#8c7a52"); p.rect(3, 3, 9, 3, shade("#8c7a52", 0.2)); p.set(6, 4, shade("#8c7a52", -0.3)); // the load under a tarp
   return p;
 }
-
 // Army cargo truck (sim/miltrucks.js, vehicles.js miltruck): a tall square cab, a canvas-covered bed on six wheels,
 // olive drab with a white star; `color` tints the canvas a little (your team's colour on its own truck). burnt: black
 // and rusted, the canvas gone to ribs; wrecked: faded, a flat.
@@ -153,8 +162,11 @@ function paintMilTruckMarker() { return paintMilTruck(OLIVE, "wrecked"); }
 // a machine gun on a ring on the roof. u: the code from upsCode ("" for none).
 const PLATE = "#6f757c", PLATE_DK = "#4d5258", SCRAP_A = "#7b5a44", SCRAP_B = "#5f6158", BGLASS = "#7fb3a6", MESH = "#3e4044";
 const ARMOUR_AT = { // band: [x0, x1, y0, y1] the body, band2: up the cab, roof: where the gun's ring sits
-  truck: { band: [1, 20, 7, 8], band2: [12, 13, 3, 6], roof: [13, 1] },
-  sedan: { band: [1, 20, 6, 7], band2: [5, 5, 3, 5], roof: [9, 1] },
+  truck: { band: [1, 20, 6, 8], band2: [11, 11, 3, 4], roof: [13, 1] },
+  sedan: { band: [1, 20, 6, 8], band2: [5, 6, 3, 4], roof: [9, 1] },
+  suv: { band: [1, 20, 6, 8], band2: [3, 4, 3, 4], roof: [8, 0] },
+  van: { band: [1, 20, 6, 8], band2: [1, 1, 2, 4], roof: [8, 1] },
+  hummer: { band: [1, 20, 5, 8], band2: [5, 5, 2, 3], roof: [9, 1] },
   miltruck: { band: [1, 22, 8, 9], band2: [16, 17, 4, 7], roof: [17, 2] },
 };
 // "p<plating>s<scrap>g<glass>m<mesh>t<gun>" from v.upgrades, "" when it has none.
@@ -189,24 +201,33 @@ function armourOverlay(p, kind, code) {
   return p;
 }
 
-// Old sedan: low body, cabin with two windows.
+// Sedan: the cabin set back on a long low body, a pillar between its doors' windows.
 function paintSedan(color) {
-  const p = painter(22, 12);
-  const dark = shade(color, -0.35), lit = shade(color, 0.25);
-  p.rect(1, 5, 20, 8, color);
-  p.rect(1, 8, 20, 8, dark);
-  p.rect(5, 2, 15, 4, color);                          // cabin
-  p.rect(6, 2, 14, 2, lit);
-  p.rect(6, 3, 9, 4, GLASS);
-  p.rect(11, 3, 14, 4, GLASS);
-  p.set(6, 3, "#e4f1f8");
-  p.set(20, 6, "#ffe28a");
-  p.set(1, 6, "#d24a3a");
-  wheel(p, 3, 8);
-  wheel(p, 15, 8);
+  const p = painter(22, 13);
+  carSide(p, color, { cab: [7, 12], pillars: [10] });
   return p;
 }
-
+// SUV: a tall long cabin running back to the tailgate, two pillars, a rack on the roof.
+function paintSuv(color) {
+  const p = painter(22, 13);
+  carSide(p, color, { cab: [5, 13], pillars: [8, 12], rack: true });
+  return p;
+}
+// Work van: one tall box from the sloped windscreen to the straight back doors, the sliding door's line down it.
+function paintVan(color) {
+  const p = painter(22, 13);
+  carSide(p, color, { cab: [1, 14], top: 1, backStraight: true, pillars: [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] });
+  p.rect(2, 2, 12, 4, color); p.rect(8, 2, 8, 4, shade(color, -0.35)); // the box's blank side, the sliding door's line
+  return p;
+}
+// Hummer of the team's (humvee: a group's, armed): a wide low slab with a long flat bonnet and a squat cab; the gun on
+// its roof only as an upgrade (armourOverlay).
+function paintHummer(color) {
+  const p = painter(22, 13);
+  const body = mixHex(OLIVE, color, 0.45);
+  carSide(p, body, { cab: [5, 12], top: 2, belt: 4, backStraight: true, frontStraight: true, pillars: [9] });
+  return p;
+}
 // A few walkers with packs (1–3 figures by team size); armed for raids.
 function paintWalkers(color, count, armed) {
   const p = painter(20, 14);
@@ -3004,7 +3025,8 @@ function paintBikes(color, damaged) {
 
 function paintParked(type, color, needsFuel, damaged, ups = "") {
   if (type === "bike") return paintBikes(color, damaged);
-  const base = armourOverlay(type === "sedan" ? paintSedan(desatHex(color, 0.45)) : type === "miltruck" ? paintMilTruck(desatHex(color, 0.45), damaged ? "wrecked" : "intact") : paintTruck(desatHex(color, 0.45)), type, ups); // its upgrades
+  const faded = desatHex(color, 0.45);
+  const base = armourOverlay(type === "sedan" ? paintSedan(faded) : type === "suv" ? paintSuv(faded) : type === "van" ? paintVan(faded) : type === "hummer" ? paintHummer(faded) : type === "miltruck" ? paintMilTruck(faded, damaged ? "wrecked" : "intact") : paintTruck(faded), type, ups); // its upgrades, by its type (render.js markerLook)
   const p = painter(base.w + 2, base.h + 6);
   blit(p, base, 0, 6);
   for (const [x, y] of [[3, 13], [7, 14], [12, 13], [16, 14], [9, 12], [18, 12]]) if (p.get(x, y)) p.set(x, y, "#9a8a6a");
@@ -3099,12 +3121,16 @@ function cached(key, paint) {
 // "convoy" | "supply" for trade-route and supply-run convoys by vehicle, "cart" | "supplycart" for the same on foot.
 // count: people shown for walkers, raids, scouts and relief squads.
 const PEOPLE_KINDS = new Set(["walkers", "raid", "scouts", "relief"]);
-// ups: the vehicle's upgrades (upsCode: plates, glass or grilles, a gun on the roof) for "truck" | "sedan" | "miltruck".
+// ups: the vehicle's upgrades (upsCode: plates, glass or grilles, a gun on the roof) for "truck" | "sedan" | "suv" |
+// "van" | "hummer" | "miltruck" (the team's vehicle by its type: render.js partyLook).
 export function partySpriteCanvas(kind, color, count = 3, ups = "") {
   const n = Math.max(1, Math.min(3, count));
   return cached(`${kind}:${color}:${PEOPLE_KINDS.has(kind) ? n : ""}${ups ? `:${ups}` : ""}`, () => {
     if (kind === "truck") return armourOverlay(paintTruck(color), kind, ups);
     if (kind === "sedan") return armourOverlay(paintSedan(color), kind, ups);
+    if (kind === "suv") return armourOverlay(paintSuv(color), kind, ups);
+    if (kind === "van") return armourOverlay(paintVan(color), kind, ups);
+    if (kind === "hummer") return armourOverlay(paintHummer(color), kind, ups);
     if (kind === "miltruck") return armourOverlay(paintMilTruck(color), kind, ups); // an Army truck got running (sim/foundcars.js)
     if (kind === "boat" || kind === "raft") return paintBoat(color, kind === "raft");
     if (kind === "convoy" || kind === "supply") return paintConvoyTruck(color, kind === "supply");

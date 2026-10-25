@@ -147,9 +147,10 @@ export function splitCarParts(f) {
 }
 
 // How much this group values one unit at a given stock level (default: what they hold now). Car parts: a group with
-// no vehicles has no use for them (it sells them as it would any surplus, never buys).
+// no vehicles has no use for them (it sells them as it would any surplus, never buys); nor has any group for propane.
 export function need(f, key, stock = priceStock(f, key)) {
   if (key === "carparts" && pooled(f) && !groupHasCars(f)) return 0.7;
+  if (key === "propane") return 0.7; // #19: their cooking is coarse (no kitchen ranges to burn it): they sell it, never buy
   const per = Math.max(0, stock) / Math.max(1, f.pop);
   return clamp(2 - per / (REF[needKey(key)] || 1), 0.5, 2.2);
 }

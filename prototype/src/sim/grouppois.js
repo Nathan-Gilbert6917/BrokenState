@@ -275,9 +275,10 @@ const stats = (state) => { const st = /** @type {any} */ (state); return st.grou
  * caller turns `took` into goods its own way), left (the player's left supplies), gear (items the player left there,
  * and a tent bag found by the same loot as your search's: tents.js rollGroupTent; not with haul false or count false),
  * boxes (your containers gone through), stripped, strippedNow, pool }. opts.room: the kg the holder can carry off from
- * your containers (nomads.js bandRoom); what does not fit stays in them (poicont.js lootPoiAbstract).
+ * your containers (nomads.js bandRoom); what does not fit stays in them (poicont.js lootPoiAbstract). opts.vehicle: they
+ * came by vehicle (the result's `pieces`: a piece of furniture may be in the haul, furnicarry.js).
  * @param {State} state @param {any} who @param {Tile | number} tile @param {number} i @param {number} need
- * @param {{ eff?: number, hours?: number, heat?: number, floor?: number, news?: boolean | "left", name?: string, haul?: boolean, count?: boolean, room?: number }} [opts]
+ * @param {{ eff?: number, hours?: number, heat?: number, floor?: number, news?: boolean | "left", name?: string, haul?: boolean, count?: boolean, room?: number, vehicle?: boolean }} [opts]
  */
 export function raidPoiAsGroup(state, who, tile, i, need, opts = {}) {
   const t = tileOf(state, tile), p = poiAt(t, i);
@@ -302,7 +303,9 @@ export function raidPoiAsGroup(state, who, tile, i, need, opts = {}) {
     if (r.boxes) poiNews(state, who, t, i, "left", opts.name);
     else if (opts.news !== "left" && (strippedNow || poiBand(t, i) > band0 + 1)) poiNews(state, who, t, i, "stripped", opts.name);
   }
-  return { took: r.took, goods, left: r.left.sup, gear, boxes: r.boxes, stripped: r.stripped, strippedNow, pool: r.pool };
+  // furnicarry.js (issue #12, AI parity): a group that came by vehicle may take a one-person piece of furniture or an
+  // appliance as well: a flag on the haul only (what the pieces do at their base is the base-use tickets').
+  return { took: r.took, goods, left: r.left.sup, gear, boxes: r.boxes, stripped: r.stripped, strippedNow, pool: r.pool, ...(opts.vehicle && r.took > 0 ? { pieces: true } : {}) };
 }
 
 // Who they are in the log: a group you know by name, else nobody named ("Strangers", "someone").
