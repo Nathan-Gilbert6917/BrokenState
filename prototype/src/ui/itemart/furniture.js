@@ -371,7 +371,38 @@ function f_exambed(p) { // an exam bed: a padded teal top with a raised end, the
   line(p, 1, 3, 4, 6, "#4f7b88"); R(p, 4, 6, 15, 7, "#4f7b88"); H(p, 4, 15, 5, "#eef0f2"); box(p, 3, 8, 14, 15, "#c9b48a"); H(p, 4, 13, 11, "#957f58");
 }
 
+// ---------- the hotels' pieces (#29, sim/hotellayout.js) ----------
+function f_frontdesk(p) { // a reception desk: a panelled wood front, a pale marble top, a little brass bell on it
+  R(p, 0, 5, 15, 6, "#e2dcc8"); H(p, 0, 15, 5, "#f2ede0"); box(p, 1, 7, 14, 15, WOOD);
+  for (const x of [5, 10]) V(p, x, 8, 14, WOODD); disc(p, 12, 3, 1, "#d9b13b"); H(p, 11, 13, 4, "#a8862a");
+}
+function f_suitcase(p) { // a suitcase on its end: a navy shell with ribs, the telescopic handle up, two wheels
+  box(p, 3, 4, 12, 14, "#2f4a6a"); for (const y of [7, 10]) H(p, 4, 11, y, "#22384f"); H(p, 6, 9, 3, "#9aa1a8");
+  V(p, 6, 0, 3, "#9aa1a8"); V(p, 9, 0, 3, "#9aa1a8"); H(p, 6, 9, 0, "#383b41"); for (const x of [4, 11]) p.set(x, 15, "#1f1f22");
+}
+function f_minifridge(p) { // a minibar: a little dark cabinet, a glass door, cans and little bottles on its shelves
+  box(p, 2, 3, 13, 15, "#4a3424"); R(p, 4, 5, 11, 13, "#26303a"); H(p, 4, 11, 9, "#9aa1a8");
+  for (const [x, c] of [[5, "#c8402f"], [7, "#e6c23a"], [9, "#4f8a3a"]]) { V(p, x, 6, 8, c); V(p, x + 1, 10, 12, "#c9ced3"); } V(p, 12, 7, 10, "#c9ced3");
+}
+function f_luggagecart(p) { // a luggage cart: a brass arch over a red carpeted deck, a bag on it, castors
+  V(p, 2, 1, 13, "#d9b13b"); V(p, 13, 1, 13, "#d9b13b"); H(p, 2, 13, 1, "#d9b13b"); R(p, 1, 12, 14, 13, "#8e3028");
+  box(p, 4, 6, 11, 11, "#5a4a62"); H(p, 6, 9, 5, "#383b41"); for (const x of [2, 13]) R(p, x - 1, 14, x, 15, "#1f1f22");
+}
+function f_banquet(p) { // a round banquet table: a white cloth hanging to the floor, a centrepiece
+  oval(p, 0, 3, 15, 7, "#eae6da"); R(p, 1, 6, 14, 14, "#dcd6c6"); for (const x of [4, 8, 12]) V(p, x, 8, 14, "#c4bda9");
+  disc(p, 7, 3, 1, "#c8402f"); p.set(8, 2, "#4f8a3a");
+}
+function f_loungechair(p) { // a lounge chair: a deep plum seat, a tall back and rolled arms, short wooden feet
+  box(p, 3, 1, 12, 8, "#5a4a62"); R(p, 1, 6, 14, 12, "#6a5a72"); R(p, 1, 6, 2, 12, "#463a4e"); R(p, 13, 6, 14, 12, "#463a4e");
+  H(p, 3, 12, 9, "#7a6a82"); for (const x of [2, 13]) R(p, x, 13, x, 15, WOODD);
+}
+function f_lounger(p) { // a pool lounger, side on: white slats, the raised back, chrome legs
+  for (let x = 1; x <= 10; x += 2) R(p, x, 9, x, 10, "#e8e6de"); H(p, 1, 10, 11, "#c9c7bd");
+  line(p, 11, 10, 14, 3, "#e8e6de"); line(p, 12, 10, 15, 4, "#c9c7bd"); for (const x of [2, 9, 12]) V(p, x, 12, 15, "#b8bec4");
+}
+
 export const GEAR_ART = {
+  f_frontdesk, f_suitcase, f_minifridge, f_luggagecart, f_banquet, f_loungechair, f_lounger,
   f_medcart, f_drugsafe, f_instcab, f_morguelocker, f_autopsy, f_wheelchair, f_vettable, f_curtain, f_linencart, f_monitor, f_crib, f_exambed,
   f_bed, f_bunk, f_hospbed, f_gurney, f_ivstand, f_hay, f_barrel, f_range, f_dishwasher, f_washer, f_dryer, f_fryer, f_coldshelf,
   f_icemachine, f_watercooler, f_compressor, f_tank, f_jukebox, f_pooltable, f_clothesrack, f_pottingbench, f_palletrack, f_tirerack,

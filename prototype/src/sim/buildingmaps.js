@@ -46,11 +46,12 @@ import { armFromArsenal } from "./arsenal.js"; // a person given the weapon the 
 import { noiseAt, detectRange, isBehind, throwablesOf, THROWABLES } from "./stealth.js";
 import { FRANCHISES } from "./data-shops.js"; // a franchise's layout (plan): the floor, the front room's depth and name, the width, a flat above
 import { applyZType, siteList } from "./zombietypes.js";
-import { fitMargins, buildingTarget, densifyOutside, densify, coverTarget, buildingDeadScale, streetDeadScale, raidMaxDims, raidDims, SIZE_CLASSES } from "./battlesize.js";
+import { fitMargins, buildingTarget, densifyOutside, densify, coverTarget, buildingDeadScale, streetDeadScale, raidMaxDims, raidDims, SIZE_CLASSES, mapCap } from "./battlesize.js";
 import { legacyRaids, legacyRooms } from "./worldcfg.js"; // an older save: a neighbourhood's street laid out as it always was; its buildings furnished as they were
 import { roomLayout, homeStyle, medicalStyle, LAYOUT } from "./roomlayout.js"; // homes furnished room by room (the placement helpers); hospitals, clinics and vets too (#14)
 import { commercialStyle, styleName as shopStyleName } from "./shoplayout.js"; // shops, restaurants, bars, offices, motels, banks and big stores laid out for their kind (issue #16)
 import { civicStyle } from "./civiclayout.js"; // police stations, fire stations, schools and churches laid out for their kind (issue #15)
+import { hotelSpec } from "./hotellayout.js"; // hotels: their plans, rooms, grounds and scenes (issue #29)
 import { decorate, flipDecoY, placeDecorPieces } from "./decor.js"; // rugs, clutter, wall art, wall colours, light fixtures (cosmetic)
 import { rollWin, winMixOf, windowOpen } from "./windows.js"; // the windows' states (open, locked, fixed), a throw through an open one
 import { rollScenes, sceneRng } from "./interiorscenes.js"; // signs of survival: barricades, blood, bodies (dice of their own)
@@ -919,6 +920,13 @@ function vet(rng, o = {}) {
   };
 }
 
+// A hotel (issue #29, hotellayout.js): a roadside inn, a business hotel, a resort or a city tower by its franchise
+// (data-shops.js FRANCHISES.hotel plan.hotel; a sample plan's by the dice), its grounds round it; its map up to
+// battlesize.js MAP_CAP.hotel (200 × 200).
+function hotel(rng, o = {}) {
+  return hotelSpec(rng, { ...o, plan: planOf("hotel", o), maxStoreys: MAX_STOREYS });
+}
+
 function apartments(rng, o = {}) {
   const bw = rng.int(18, 22), bh = rng.int(14, 16);
   // 3–6 floors of flats (deeper city blocks taller: o.storeyBonus), a lobby and the maintenance room on the ground floor.
@@ -1010,6 +1018,7 @@ export const BUILDINGS = {
   church:      { name: "Church", make: (r, o) => church(r, o) },
   motel:       { name: "Motel", make: (r, o) => motel(r, o) },
   apartments:  { name: "Apartment block", make: (r, o) => apartments(r, o) },
+  hotel:       { name: "Hotel", make: (r, o) => hotel(r, o) },
   // A street of houses (the neighbourhood point of interest): buildingMap builds it with streetMap; make gives one of
   // its houses (the hint, the archetype tests).
   neighbourhood: { name: "Neighbourhood", make: (r, o) => house(r, "house", o), street: true },
@@ -1022,7 +1031,7 @@ export const STOREYS_BY_TYPE = {
   clinic: [1, 3], infirmary: [1, 3], hospital: [3, 5], police: [2, 3], school: [2, 3], offices: [3, 8], lab: [1, 3], barracks: [2, 2], armorybldg: [1, 1],
   cellblock: [1, 1], messhall: [2, 2], control: [1, 3], radio: [1, 1], terminal: [1, 3], firestation: [2, 2],
   warehouse: [1, 1], factory: [1, 1], hangar: [1, 1], motorpool: [1, 1], autoshop: [1, 1], garage: [1, 1], workshop: [1, 1], machineshed: [1, 1], barn: [1, 1],
-  church: [1, 1], motel: [2, 2], apartments: [3, 6], neighbourhood: [2, 2],
+  church: [1, 1], motel: [2, 2], apartments: [3, 6], neighbourhood: [2, 2], hotel: [2, 10], // a hotel: an inn 2–3, a resort 2–4, a business hotel 4–6, a tower 8–10 (within MAX_STOREYS)
   // the shops and services of data-shops.js (a franchise's plan can add a flat above or more floors)
   sportshop: [1, 2], electronics: [1, 2], radioshop: [1, 2], bookstore: [1, 2], petstore: [1, 2], garden: [1, 2], clothing: [1, 2], liquor: [1, 2],
   restaurant: [1, 2], bar: [1, 2], dealer: [1, 2], bank: [1, 3], library: [1, 3], vet: [1, 2], pizza: [1, 1],
@@ -1035,7 +1044,7 @@ export const SITES = {
   // One building.
   pharmacy: ["pharmacy"], gunstore: ["gunstore"], pawnshop: ["pawnshop"], hardware: ["hardware"], grocery: ["grocery"], diner: ["diner"], supermarket: ["supermarket"],
   police: ["police"], clinic: ["clinic"], hospital: ["hospital"], school: ["school"], office: ["offices"], firestation: ["firestation"],
-  church: ["church"], motel: ["motel"], apartments: ["apartments"], autoshop: ["autoshop"], feedstore: ["feedstore"], cabin: ["cabin"],
+  church: ["church"], motel: ["motel"], hotel: ["hotel"], apartments: ["apartments"], autoshop: ["autoshop"], feedstore: ["feedstore"], cabin: ["cabin"],
   lodge: ["lodge"], ranger: ["ranger"], radiotower: ["radio"], barn: ["barn"], truckstop: ["truckstop"], gas: ["gasstation"], quarry: ["workshop"],
   // A choice of buildings.
   town: ["house", "corner", "garage", "pharmacy", ["house", "House on the corner"]], city: ["grocery", "pharmacy", "offices", "apartments", "warehouse"],
@@ -1144,7 +1153,7 @@ export function buildingMap(state, tileId, option, withVehicle) {
   // battlesize.js: at least the site's raid map (more outside around a single-building site's plan, a city's or a
   // town's building the run's largest), the new ground topped up with cover. The floor plan itself is the archetype's.
   const tile = state.tiles[tileId], sb = siteBuildings(tile);
-  spec.margins = fitMargins(spec.bw, spec.bh, { ...BMAP.MARGIN, ...(spec.margins || {}) }, buildingTarget(tile, !!(sb && sb.single), state));
+  spec.margins = fitMargins(spec.bw, spec.bh, { ...BMAP.MARGIN, ...(spec.margins || {}) }, buildingTarget(tile, !!(sb && sb.single), state), mapCap(option.key)); // mapCap: a hotel's map at most 200 × 200
   const map = assemble(rng, spec, { key: option.key, id: option.id, name: option.name, withVehicle, legacy: legacyRooms(state) });
   densifyOutside(map, rng, tile ? tile.terrain : "plains");
   rollScenes(map, sceneRng(state, tileId, option), option.key, option.scenes || null); // interiorscenes.js: signs of survival (their own dice: the map is as it was); option.scenes: a city crawl place's say (citycrawl.js placeOption)
@@ -2081,6 +2090,10 @@ export function assemble(rng, spec, opts = {}) {
       outdoor.push(a);
     }
   }
+  // A building's own grounds (spec.yard: a hotel's drive, car park, pool deck, tennis courts and gardens, hotellayout.js),
+  // before the outside is dressed.
+  if (!upper && spec.yard) spec.yard({ rng, W, H, b: { x0: bx0, y0: by0, x1: bx1, y1: by1 }, front, exits, cell: (x, y) => cells[I(x, y)], outside: (x, y) => inside(x, y) && rid[I(x, y)] === -2,
+    free: outsideFree, block: (x, y, k) => block(x, y, k), car: (x, y, kind, test) => carAt(x, y, kind, test), area: (a) => outdoor.push({ id: rooms.length + outdoor.length, type: null, outdoor: true, ...a }) });
   switch (upper ? "none" : spec.ground) {
     case "none": break; // an upper floor: nothing outside its walls
     case "city": scatter("car", rng.int(2, 4), inStreet); scatter("truck", rng.int(0, 1), inStreet); scatter("crate", rng.int(2, 3), behind); break;

@@ -6932,6 +6932,14 @@ export const BOX_LOOT = {
   "nightstand@clinic": { rest: 0.25, loot: { water: [0.3, 1, 1] }, gear: [["flashlight", 0.03], ["knife", 0.02]] },
   "medcab@vet":        { rest: 0.5, loot: { meds: [0.75, 1, 4] }, gear: [["dewormer", 0.08]] },
   "crate@vet":         { rest: 0, loot: { food: [0.75, 1, 4] }, gear: [] }, // the food store's sacks of feed: food, at a low worth
+  // A hotel's (issue #29, hotellayout.js): a guest's suitcase (clothes as rags, toiletries, a phone or a laptop, now and
+  // then a pistol or meds), a room's minibar (snacks, drinks, the little bottles), the front desk's safe (the night's
+  // cash, guests' valuables), its desk drawers, housekeeping's shelves (soap, shampoo, the mini bottles).
+  suitcase:            { rest: 0.3, loot: { scrap: [0.6, 1, 3], meds: [0.12, 1, 2], water: [0.15, 1, 1] }, gear: [["soap", 0.12], ["shampoo", 0.1], ["toothpaste", 0.1], ["deodorant", 0.08], ["perfume", 0.04], ["makeup", 0.04], ["phone", 0.08], ["laptop", 0.03], ["camera", 0.03], ["watch", 0.03], ["pistol", 0.025], ["compact9", 0.02], ["slingbag", 0.03]] },
+  minifridge:          { rest: 0, loot: { food: [0.6, 1, 3], water: [0.7, 1, 4] }, gear: [["vodka", 0.12], ["whiskey", 0.1], ["wine", 0.06], ["chocolate", 0.2], ["candy", 0.15]] },
+  "safe@hotelfront":   { rest: 0, loot: { scrap: [0.2, 1, 2] }, gear: [["cashbox", 0.6], ["watch", 0.15], ["goldring", 0.12], ["goldchain", 0.1], ["phone", 0.1], ["pistol", 0.06]] },
+  frontdesk:           { rest: 0.6, loot: {}, gear: [["flashlight", 0.05], ["phone", 0.04]] },
+  "shelf@hotelhk":     { rest: 0.6, loot: {}, gear: [["soap", 0.35], ["shampoo", 0.3], ["toothpaste", 0.2], ["wetwipes", 0.15], ["deodorant", 0.1]] },
 };
 const boxDefs = new Map();
 // The table a container rolls: its room's (AREAS[type]), or its kind's (BOX_LOOT) with the room's rows at `rest` times

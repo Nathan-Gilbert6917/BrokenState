@@ -1022,6 +1022,45 @@ const FURN_DRAW = {
     return [run(ax, 0.24, 0.76, 0, 24, face, 0.16, 0.84)];
   } },
   stanchion: { top: 16, p: () => [{ cyl: [0.5, 0.5, 0.14], z0: 0, z1: 1, m: flatM(FURNC.chrome) }, { cyl: [0.5, 0.5, 0.04], z0: 1, z1: 15, m: flatM(FURNC.chrome) }, { cyl: [0.5, 0.5, 0.07], z0: 15, z1: 16, m: flatM(FURNC.gold) }, fbox(0.5, 1, 0.47, 0.53, 12, 13, flatM(FURNC.red))] },
+  // ---------- hotels (issue #29, sim/hotellayout.js) ----------
+  // The reception desk: a long panelled wood front with a pale marble top, a monitor on it; a suitcase standing on its
+  // end with its handle up; a minibar: a little brown fridge with a glass door; the luggage cart: a brass frame on a
+  // carpeted deck, a bag on it; a round banquet table in its white cloth; lift doors: brushed steel doors in a frame with
+  // the call button and the floor light; a lounge chair; a white pool lounger; a tennis net on its two posts.
+  frontdesk: { top: 16, p: (o) => {
+    const ax = along(o), panel = (f, s, t, X, Y) => (f === "top" ? PAL.woodDk : Math.floor(X) % 6 < 1 ? mul(PAL.woodDk, 0.8) : mul(PAL.wood, 0.9 + n2(Math.floor(X / 3), Y, 140) * 0.1));
+    return [run(ax, 0.24, 0.76, 0, 11, panel, 0.02, 0.98), run(ax, 0.2, 0.8, 11, 12.5, (f) => (f === "top" ? mul(FURNC.cream, 1.15) : FURNC.cream), 0, 1), run(ax, 0.42, 0.58, 12.5, 16, (f, s, t) => (f === "top" ? FURNC.black : t > 13.5 ? FURNC.screen : FURNC.black), 0.36, 0.56)];
+  } },
+  suitcase: { top: 14, p: (o) => {
+    const ax = along(o), shell = (f, s, t, X, Y) => (f === "top" ? mul(FURNC.fabricDk, 1.2) : Math.floor(t) % 4 < 1 ? mul(FURNC.fabricDk, 0.7) : mul(FURNC.fabricDk, 1 + n2(X, Y, 141) * 0.08));
+    return [run(ax, 0.38, 0.62, 0.5, 11, shell, 0.24, 0.76), run(ax, 0.48, 0.52, 11, 14, flatM(FURNC.chrome), 0.36, 0.4), run(ax, 0.48, 0.52, 11, 14, flatM(FURNC.chrome), 0.6, 0.64), run(ax, 0.48, 0.52, 13.5, 14, flatM(FURNC.black), 0.36, 0.64)];
+  } },
+  minifridge: { top: 12, p: (o) => {
+    const ax = along(o), face = (f, s, t, X, Y, sw) => (f === "top" ? mul(PAL.woodDk, 1.1) : s > 1.2 && s < (sw || 10) - 1.2 && t > 1.5 && t < 10.5 ? (Math.floor(t) % 3 < 1 ? FURNC.chrome : mul(fgoods(Math.floor(X / 2), Math.floor(t / 3), 142), 0.9)) : mul(PAL.woodDk, 0.95));
+    return [run(ax, 0.3, 0.7, 0, 12, face, 0.22, 0.78)];
+  } },
+  luggagecart: { top: 26, p: (o) => {
+    const ax = along(o), brass = flatM(FURNC.gold);
+    return [run(ax, 0.2, 0.8, 1, 3, flatM(FURNC.red), 0.12, 0.88), fcyl(ax, 0.22, 0.14, 0.06, 0, 1, flatM(FURNC.black)), fcyl(ax, 0.78, 0.86, 0.06, 0, 1, flatM(FURNC.black)),
+      run(ax, 0.2, 0.26, 3, 26, brass, 0.12, 0.18), run(ax, 0.2, 0.26, 3, 26, brass, 0.82, 0.88), run(ax, 0.2, 0.26, 24, 26, brass, 0.12, 0.88), run(ax, 0.3, 0.7, 3, 11, flatM(FURNC.fabricDk), 0.3, 0.7)];
+  } },
+  banquet: { top: 10, p: () => [{ cyl: [0.5, 0.5, 0.06], z0: 0, z1: 8, m: flatM(FURNC.steel) }, { cyl: [0.5, 0.5, 0.42], z0: 6, z1: 10, m: (f, s, t, X, Y) => mul(FURNC.cloth, (f === "top" ? 1.1 : 0.95) + n2(X, Y, 143) * 0.04) }] },
+  liftdoor: { top: 30, p: (o) => {
+    const ax = along(o), door = (f, s, t, X, Y, sw) => { if (f === "top") return FURNC.steel; const w = sw || 14; if (t > 26 || s < 1 || s > w - 1) return mul(FURNC.steel, 0.7); if (Math.abs(s - w / 2) < 0.4) return FURNC.black; if (t > 27.5) return FURNC.amber; return mul(FURNC.chrome, 0.9 + n2(Math.floor(X), Math.floor(t / 4), 144) * 0.08); };
+    return [run(ax, 0.42, 0.5, 0, 30, door, 0.06, 0.94)];
+  } },
+  loungechair: { top: 12, p: (o) => {
+    const ax = along(o), cloth = (f) => (f === "top" ? mul(FURNC.fabric, 1.15) : FURNC.fabric);
+    return [run(ax, 0.26, 0.38, 0, 12, flatM(FURNC.fabricDk), 0.24, 0.76), run(ax, 0.38, 0.76, 0, 6, cloth, 0.24, 0.76), run(ax, 0.38, 0.76, 6, 9, flatM(FURNC.fabricDk), 0.24, 0.3), run(ax, 0.38, 0.76, 6, 9, flatM(FURNC.fabricDk), 0.7, 0.76)];
+  } },
+  lounger: { top: 8, p: (o) => {
+    const ax = along(o), white = (f, s, t, X) => (f === "top" ? (Math.floor(X) % 3 < 1 ? mul(FURNC.white, 0.8) : mul(FURNC.white, 1.12)) : FURNC.white);
+    return [...flegs(0.3, 0.66, 0.06, 0.9, 3, flatM(FURNC.chrome), 0.04), run(ax, 0.3, 0.7, 3, 4, white, 0.04, 0.72), run(ax, 0.3, 0.7, 4, 8, white, 0.72, 0.96)];
+  } },
+  tennisnet: { top: 9, p: (o) => {
+    const ax = along(o), mesh = (f, s, t, X) => (f === "top" || t > 7.5 ? FURNC.cloth : (Math.floor(X) + Math.floor(t)) % 2 ? FURNC.black : mul(FURNC.black, 1.8));
+    return [run(ax, 0.47, 0.53, 1, 8, mesh, 0, 1), fcyl(ax, 0.5, 0.04, 0.04, 0, 9, flatM(FURNC.steel)), fcyl(ax, 0.5, 0.96, 0.04, 0, 9, flatM(FURNC.steel))];
+  } },
   // ---------- workshops and bays ----------
   workbench: { top: 14, p: (o) => {
     const ax = along(o), w = flatM(PAL.woodDk);
@@ -1899,6 +1938,9 @@ const FLOORC = {
   // The room-appropriate floors of 2026-10-25 (issue #13): kitchens' and wards' lino, a bathroom's checker, a home's
   // hardwood (narrow, warm) and a cabin's or a barn's planks (the old floorboards), a gym's rubber, the bays' steel plate.
   lino: hex("#8a8a76"), checkA: hex("#8e8a80"), checkB: hex("#34322e"), hardwood: hex("#7a5636"), rubber: hex("#3a3c3e"), steel: hex("#6a6e72"),
+  // A hotel's grounds (issue #29, sim/hotellayout.js): the pool deck's paving, the empty pool's pale tiles (leaves and
+  // a dark puddle at its deep end), a tennis court's green with its white lines.
+  paving: hex("#8a8478"), pool: hex("#7aa8b8"), court: hex("#3e6a4e"),
 };
 // Which way the roads run on a map (the user's request 2026-10-22: "In base view and raids fix road tiles to look
 // better"): every road cell painted a lane dash of its own laid a hatching of dashes over the whole asphalt. Now each
@@ -2005,6 +2047,9 @@ function floorColor(c, k, x, y, lx, ly, mud, R = null, lf = 0, pd = 0, pe = 0) {
       break;
     case "rubble": col = q > 0.82 ? mul(FLOORC.rubble, 1.35) : q < 0.1 ? mul(FLOORC.rubble, 0.6) : mul(FLOORC.rubble, 0.92 + v * 0.1); break;
     case "roof": col = mul(FLOORC.roof, 0.86 + q * 0.2); break;
+    case "paving": col = tx % 8 === 0 || ty % 8 === 0 ? mul(FLOORC.paving, 0.78) : mul(FLOORC.paving, 0.9 + q * 0.12); break;
+    case "pool": col = tx % 4 === 0 || ty % 4 === 0 ? mul(FLOORC.pool, 0.8) : q > 0.94 ? mul(FLOORC.dirt, 1.1) : c.deep && v > 0.5 && q > 0.6 ? mul(FLOORC.road, 0.9) : mul(FLOORC.pool, 0.92 + q * 0.1); break; // c.deep: the deep end, rain standing in it
+    case "court": col = c.line && ((c.line & 1 && ty < 2) || (c.line & 2 && ty > 13) || (c.line & 4 && tx < 2) || (c.line & 8 && tx > 13)) ? hex("#d8d8d0") : mul(FLOORC.court, 0.94 + q * 0.08); break; // c.line: the court's white lines on its sides (bits n, s, w, e)
     default: col = mul(FLOORC.grass, 0.92 + q * 0.12);
   }
   if (c.deco) col = decoTexel(col, c.deco, x, y, tx, ty); // rugs, clutter, a light's pool (sim/decor.js)
