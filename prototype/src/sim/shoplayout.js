@@ -42,6 +42,9 @@
 //   - a dealer's showroom (cars on the tiles, desks), service bays (a car on a lift, tool chests, a workbench, tyre
 //     racks, an air compressor), a parts counter; a warehouse's pallet racks in rows and a forklift; a factory floor of
 //     machine tools with tool chests between; a barn's stalls of fence and its tack room (saddle racks).
+// The shops' and services' layout variants (shopvariants.js, issue #35) use these styles room by room, plus a big
+// shop's service corridor (servicehall: staff lockers and shelving along its back wall); a narrow front the aisles or the
+// counter could not row still gets its rack, its cold case or the pawn counter's bars along a wall.
 // Density: every style tops its room up to the containers it held before (c.target, × SHOP.BOXES[style] where the old
 // furnishing held more), so a shop holds what it did within ±10% (tools/shopstest.js, 200 seeds a kind).
 import { hash01 } from "./skills.js";
