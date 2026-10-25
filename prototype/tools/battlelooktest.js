@@ -76,7 +76,13 @@ console.log("The edge skirt");
   const fc = (c, k) => (k === "water" ? [0, 0, 255] : c.f === "road" ? [200, 0, 0] : [0, 160, 0]);
   const day = EDGE.fogColour(b, { key: "clear", snow: 0 });
   const sk = EDGE.skirtFor(b, day, fc, "t1");
-  const px = (x, y) => { const d = sk.cv.img.data, i = ((y + sk.K * 16) * sk.tw + (x + sk.K * 16)) * 4; return [d[i], d[i + 1], d[i + 2], d[i + 3]]; };
+  // The skirt's picture is in tiles (issue #24); x, y in the map's texels (its corner at 0, 0); a texel in no tile is clear.
+  const px = (x, y) => {
+    const t = sk.tiles.find((q) => x >= q.x && y >= q.y && x < q.x + q.cv.width && y < q.y + q.cv.height);
+    if (!t) return [0, 0, 0, 0];
+    const d = t.cv.img.data, i = ((y - t.y) * t.cv.width + (x - t.x)) * 4;
+    return [d[i], d[i + 1], d[i + 2], d[i + 3]];
+  };
   const near = roadEdge >= 0 ? px(-6, roadEdge * 16 + 8) : null, far = px(-sk.K * 16 + 1, 8), mid = px(40, 40);
   check(roadEdge < 0 || (near[0] > 120 && near[1] < 60), `the road at the west edge runs on into the skirt (${roadEdge < 0 ? "no road on the west edge" : near.join(",")})`);
   check(Math.abs(far[0] - day[0]) < 12 && Math.abs(far[1] - day[1]) < 12 && Math.abs(far[2] - day[2]) < 12, `the outer skirt is the fog colour (${far.slice(0, 3)} vs ${day})`);

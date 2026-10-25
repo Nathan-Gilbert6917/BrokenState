@@ -257,9 +257,9 @@ Shops with richer gun, gear and building-material finds, as POIs and as places o
   - **Shop fronts**: aisles of shelving in rows a walk apart (a row shifts off the lanes between the doors), a shelf to search at each end and every few cells, a checkout with its register by the front door. A liquor store, a gas station and a truck stop's shop (a grocery and a corner store on an older save's plan): a cold case run along a side wall (drinks); a new save's grocery stores by size below. A gun store: the gun counter (display cases across the room) and gun racks along the wall behind it. A pawn shop: the pawn counter of display cases caged in bars at its ends. A bookstore: bookshelves in rows and a reading table. A pet store: fish tanks along a wall, cages of bars. A garden center: potting benches. Clothing: clothes racks in rows. Electronics and a radio shop: the workbench at the back with a counter in front of it, display cases. Hardware: tool aisles and a key-cutting counter (a workbench and a counter). A pharmacy, sporting goods (clothes racks too), a feed store: aisles.
   - **Shop back rooms**: the stockroom (shelves to search, crates stacked between), the manager's office (a desk and chair, filing, the safe always locked where the office locks a safe), the staff toilet (a toilet and a sink, two in a long restroom), the fitting rooms (cubicle partitions, a stool in each stall, clothes racks), the gun cage (gun racks, lockers, a crate), the dispensary (the pharmacist's counter, shelves), the repair bench (a workbench, a tool chest, shelves), a garden center's greenhouse (glass walls, potting benches) and a lumber or garden yard (pallet racks in rows, crates).
   - **Restaurants, diners, pizza places, bars**: a restaurant's dining room has the order counter along the back, the register, booths on the side walls and tables with chairs; a diner's (a pizza place's, a truck stop's) the long counter with bar stools, the pie case at its end, booths; a bar the long bar with stools, the liquor shelves and the beer fridge (a cold case) behind it when the room is deep enough, a jukebox, a pool table in a big room, a booth, tables, the till. The kitchen: a range of six rings, a deep fryer where the place fries, a pizza oven at a pizza place, stainless counters, a sink, a dishwasher, a prep island in a big kitchen, shelves. The walk-in cold room behind a steel door: cold-room shelving (tins among the spoiled food). A bar's keg room: kegs and shelves; its stage: a jukebox, tables.
-  - **Restaurants by kind of food, format and size** (issue #33, the user's request 2026-10-25: "there should be a few dozen varients, sizes layout and kind of food for resauraunts"; the rules in [combat.md](combat.md#raids-into-building-interiors)). A new save's restaurant, pizza place, diner or bar is a variant (`data-eateries.js VARIANTS`: a cuisine, a format and a size): the 27 franchises there were keep their names, looks and plans and gain one each (Burger Barn fast-food burgers, Taj Palace…), and 39 new ones join the four lists (`FRANCHISES.restaurant` 44, `pizza` 7, `diner` 6, `bar` 9: 66 in all, 63 distinct cuisine × format × size combinations). No new site kinds: a café, a fast-food place, a buffet, a banquet hall, a kiosk and a food truck are restaurant variants (decision recorded here: new kinds would need their own POI, loot and map rows for no gain). Each variant has its look (colours, sign, the painter's style, the booths' colour by its cuisine), its plan (floor, front room's name), its setting weights (city, suburb, town, as every franchise) and the places it suits (`at`: main street, strip-mall pad, highway exit, city block, mall, hotel, truck stop), which #29's hotels and #30's mall food court read through `eaterylayout.js eateryVariant({ format, cuisine, setting, size, avoid, r })`. An older save keeps its restaurants' one plan (the `roomsLegacy` rule).
-    - Sizes (`EAT_SIZE`, a cell about a metre; #24's size table was not on dev, so one const): tiny 8–10 × 9–10, small 11–14 × 10–12, medium 16–22 × 13–16, large 26–34 × 18–22, huge 40–46 × 26–30.
-    - Placement: unchanged weights (shops.js `PLACE_W`), but with 66 variants two restaurants on a map or a block are rarely the same one, and a tile or a block never holds two of one kind already.
+  - **Restaurants by kind of food, format and size** (issue #33, the user's request 2026-10-25: "there should be a few dozen varients, sizes layout and kind of food for resauraunts"; the rules in [combat.md](combat.md#raids-into-building-interiors)). A new save's restaurant, pizza place, diner or bar is a variant (`data-eateries.js VARIANTS`: a cuisine, a format and a size): the 27 franchises there were keep their names, looks and plans and gain one each (Burger Barn fast-food burgers, Taj Palace…), and 59 new ones join the four lists (`FRANCHISES.restaurant` 44, `pizza` 13, `diner` 13, `bar` 16: 86 in all, 79 distinct cuisine × format × size combinations; every variant its own plan, a dozen or more a kind: the user's request 2026-10-25, "for buildings with no to only a few varients create a dozen varients per building type", the variant's id hashed into its plan's dice). No new site kinds: a café, a fast-food place, a buffet, a banquet hall, a kiosk and a food truck are restaurant variants (decision recorded here: new kinds would need their own POI, loot and map rows for no gain). Each variant has its look (colours, sign, the painter's style, the booths' colour by its cuisine), its plan (floor, front room's name), its setting weights (city, suburb, town, as every franchise) and the places it suits (`at`: main street, strip-mall pad, highway exit, city block, mall, hotel, truck stop), which #29's hotels and #30's mall food court read through `eaterylayout.js eateryVariant({ format, cuisine, setting, size, avoid, r })`. An older save keeps its restaurants' one plan (the `roomsLegacy` rule).
+    - Sizes (`EAT_SIZE`, a cell about a metre; #24's size table was not on dev, so one const): tiny 8–10 × 9–10, small 11–14 × 10–12, medium 16–22 × 13–16, large 26–34 × 18–22, huge 50–54 × 36–40 (the shared rule's huge footprint, as the supermarket's).
+    - Placement: unchanged weights (shops.js `PLACE_W`), but with 86 variants two restaurants on a map or a block are rarely the same one, and a tile or a block never holds two of one kind already.
 
     | Cuisine | Format | Size | Place (kind:id) | Stands at |
     |---|---|---|---|---|
@@ -314,12 +314,25 @@ Shops with richer gun, gear and building-material finds, as POIs and as places o
     | Pizza | Takeaway kitchen | small | The Pie Hole (`pizza:piehole`) | main, strip |
     | Pizza | Fast food | medium | Pizza Pronto (`pizza:pizzapronto`) | highway, strip, truckstop, strip |
     | Pizza | Kiosk or food truck | tiny | Slice Cart (`pizza:slicecart`) | mall, city |
+    | Pizza | Fine dining | large | Nonna's Wood-Fired Trattoria (`pizza:nonnas`) | city, main, hotel |
+    | Pizza | Family sit-down | large | Windy City Deep Dish (`pizza:windycity`) | strip, main, city |
+    | Pizza | Buffet | huge | Galaxy Pizza & Arcade (`pizza:galaxypizza`) | strip, highway, mall |
+    | Pizza | Takeaway kitchen | medium | Rocco's Carry-Out (`pizza:roccos`) | strip, main |
+    | Pizza | Café | small | Joe's Slice Window (`pizza:joesslice`) | city, main |
+    | Pizza | Pub | medium | Hops & Pies Pizza Pub (`pizza:hopspies`) | main, city |
     | Burgers | Diner | medium | Starlite Diner (`diner:starlite`) | highway, main, truckstop |
     | Breakfast and pancakes | Diner | medium | Route 9 Diner (`diner:route9`) | highway, truckstop |
     | Sandwiches and deli | Diner | small | Lou's Lunch Counter (`diner:lous`) | main |
     | Southern and soul food | Diner | medium | Silver Spoon Diner (`diner:silverspoon`) | highway, main |
     | Breakfast and pancakes | Diner | small | Waffle Shack (`diner:waffleshack`) | highway, truckstop |
     | Steakhouse | Diner | large | Highway 40 Truckers' Diner (`diner:hwy40`) | highway, truckstop |
+    | Burgers | Diner | small | Silver Bullet Railcar Diner (`diner:silverbullet`) | highway, main |
+    | Steakhouse | Family sit-down | large | Big Rig Truck Stop Diner (`diner:bigrig`) | truckstop, highway |
+    | Breakfast and pancakes | Family sit-down | medium | All-Nite Family Diner (`diner:allnite`) | highway, strip, main |
+    | Ice cream | Diner | small | Sweet Sips Soda Fountain (`diner:sweetsips`) | main |
+    | Burgers | Fast food | medium | Dee's Drive-In (`diner:deesdrivein`) | highway, main |
+    | Cafeteria | Diner | medium | Main Street Lunch Counter (`diner:mainstlunch`) | main |
+    | Breakfast and pancakes | Buffet | large | Pancake Junction (`diner:pancakejct`) | highway, strip, truckstop |
     | Burgers | Pub | small | The Rusty Nail (`bar:rustynail`) | main, highway |
     | BBQ and smokehouse | Pub | large | Roadhouse 61 (`bar:roadhouse61`) | highway |
     | Burgers | Pub | medium | O'Malley's Pub (`bar:omalleys`) | city, main |
@@ -329,6 +342,13 @@ Shops with richer gun, gear and building-material finds, as POIs and as places o
     | Steakhouse | Pub | medium | Neon Moose Saloon (`bar:neonmoose`) | main, highway |
     | Burgers | Pub | large | Copper Kettle Brewpub (`bar:copperkettle`) | city, main |
     | BBQ and smokehouse | Pub | large | Iron Horse Brewing Co. (`bar:ironhorse`) | main, highway |
+    | Hot dogs | Pub | small | Lucky's Dive (`bar:luckysdive`) | city, main |
+    | BBQ and smokehouse | Banquet hall | large | Boot Scootin' Honky-Tonk (`bar:bootscootin`) | highway, main |
+    | Seafood | Fine dining | large | The Gilded Cocktail Lounge (`bar:gilded`) | city, hotel |
+    | Wings and sports bar | Pub | small | Iron Riders Biker Bar (`bar:ironriders`) | highway |
+    | Italian | Pub | small | The Grand Hotel Bar (`bar:grandhotelbar`) | hotel, city |
+    | Sandwiches and deli | Pub | large | Alpine Biergarten (`bar:alpinegarten`) | main, city |
+    | Wings and sports bar | Banquet hall | huge | Club Pulse (`bar:clubpulse`) | city |
 
     The loot by cuisine (foods.js `MIXES` "eat:<cuisine>" and its keeps, the rooms' `mix`):
 
@@ -454,7 +474,21 @@ Block-by-block roguelike extraction in a city or town, with multi-storey buildin
 - Multi-storey buildings with who lives on each floor (survivors barricaded upstairs, raiders holed up) [floorfolk].
 - **Stair runs** (the user's request 2026-10-25, issue #9: "Make the layouts make sense"): a stairwell is a straight
   flight against a wall with a landing at each end, drawn as steps rising toward the floor above. Details below.
-- Test `tools/citycrawltest.js`; the stairs `tools/storeytest.js`.
+- **Buildings at real size, towers to 10 storeys** (the user's request 2026-10-25, issue #24): a crawl's buildings are
+  their real size (a city's hospital 60–100 m across, its towers 6–10 storeys), each building's map as big as it needs
+  (up to 300 × 300); only the first 4 floors of a taller building are built (5 from the deeper blocks), its stairs up
+  from there collapsed or barricaded. Details below.
+- Test `tools/citycrawltest.js`; the stairs `tools/storeytest.js`; the sizes `tools/scaletest.js`.
+
+### Buildings at real size in the crawl (issue #24, 2026-10-25)
+The user's request 2026-10-25: "All buildings should scale based on how large buildings are in real life with unique layouts and 1 to 3 stories tall and city buildings can be 10 stories tall make the raid maps larger if needed up to 300x300", and "to prevent needing to make really tall cities just block off or have destroyed stairs to prevent going to higher stories though they dont actually exist". The rules are in [combat.md "Buildings at real size"](combat.md#buildings-at-real-size-issue-24-2026-10-25) and [docs/multi-storey-crawl.md](../multi-storey-crawl.md#up-to-10-storeys-the-floors-above-blocked-off-issue-24-2026-10-25).
+
+- **The setting**: a city crawl's buildings are "city" (buildingmaps.js `settingOf`: the crawl's tile is the city's), so offices, apartments and a hospital stand 6–10 storeys; a town's crawl "town" (2–4, 3–6). The depth bonus (`STOREY_BONUS`: +1 from block 4, +2 from block 7) adds to the height, within 10, and one more floor is built from block 4 (`openStoreys`).
+- **The block card**: the hint says the floors open and the height ("Office building: 4 floors open of 9, offices", citycrawl `placeHint`, `placeHeight`); the tip under it that the stairs above floor 4 have collapsed or been barricaded. `placeStoreys` stays the floors built (who lives on which floor: floorfolk, the Look around).
+- **The maps**: a place's building map is its footprint plus margins, at least the run's largest raid map dial, at most 300 × 300; the dead inside go by its floor area (`deadK`, at most 120 a group), its containers as full as a small building's (`R.natMap`), the quick search's the same (`placeProfile`).
+- **Snapshots** are packed floor by floor (citycrawl `packCells`: each distinct cell once, runs of them): five big buildings left as they were add about 100 KB to a gzipped save (`tools/bigmapbench.js --save5`).
+- **Other groups** strip the city's buildings no faster an hour, but they hold more (aiscav.js `siteSizeK`: a city 2.4 times what it did; docs/adr/0001-ai-parity.md).
+- **The balance gate** (`tools/crawlbalance.js city --depth 2,4 --squad early,solid,rifles --trials 20`, [docs/crawl-balance.md](../crawl-balance.md)): 6 of 6 rows inside their targets before and after (2026-10-25). Every squad still comes out (100%, none wiped); losses within 3 points of before (depth 4 rifles 17% → 21%); loot value within 10% (depth 2 solid 241 → 227, rifles 272 → 244; depth 4 rifles 377 → 376); hours the same (8–20).
 
 ### Parity with the raid tickets (issue #21, 2026-10-25)
 The user's request 2026-10-25 (the interiors epic #7, its last ticket): "I want the interiors of buildings during raids and crawls to make sense. […] Improve the building, furniture, appliances etc fidelity for raids and crawls." The crawl keeps up with what the raid tickets added (#8–#13, #18).

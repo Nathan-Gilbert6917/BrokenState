@@ -959,7 +959,7 @@ console.log("\nPolice stations, fire stations, schools and churches laid out for
   const sw = createWorld({ seed: 11, factionCount: 2 }), stiles = sw.tiles.filter((t) => t.loc).slice(0, 4);
   const seenKinds = new Set();
   let turnedOk = true;
-  for (const key of ["police", "school", "church"]) for (let i = 0; i < 30; i++) {
+  for (const key of ["police", "school", "church"]) for (let i = 0; i < (key === "church" ? 60 : 30); i++) { // a church's pewdoors comes up about one map in 14: 60 of them (issue #24's real-size churches drew a run of 30 without it)
     const m = buildingMap(sw, stiles[i % stiles.length].id, { key, id: `${key}-${i}`, name: key }, false);
     for (const sc of (m.scenes && m.scenes.list) || []) {
       seenKinds.add(sc.kind);
