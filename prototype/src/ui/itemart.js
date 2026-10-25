@@ -9,6 +9,7 @@
 //   valuables.js  trade goods and comforts: jewellery, smokes, liquor, treats, toiletries, gadgets, collectibles
 //   tents.js      the tent bags (sim/tents.js), a torn tent's canvas, the beds as furniture (sim/beds.js)
 //   power.js      the found generators, the mounted spotlight, the fridge (sim/data-power.js)
+//   furniture.js  the found storage, comfort and work pieces set at a base (sim/furniture.js, #20)
 // Each drawing is a 16 × 16 grid, outlined by toCanvas into an 18 × 18 picture, 3 canvas pixels a grid pixel; cached by
 // key. GEAR and SUPPLIES share some keys (a box of .223 and loose .223), so the two are asked for apart.
 // tools/itemarttest.js: every item has its drawing and no two look the same; tools/itemartpreview.html shows them all.
@@ -22,9 +23,10 @@ import * as tools from "./itemart/tools.js";
 import * as valuables from "./itemart/valuables.js";
 import * as tents from "./itemart/tents.js";
 import * as power from "./itemart/power.js";
+import * as furniture from "./itemart/furniture.js";
 
 export const ART_SIZE = 16, ICON_SIZE = ART_SIZE + 2, ICON_UP = 3;
-export const FAMILIES = { food, ammo, parts, wear, tools, valuables, tents, power };
+export const FAMILIES = { food, ammo, parts, wear, tools, valuables, tents, power, furniture };
 export const GEAR_ART = {}, SUPPLY_ART = {};
 for (const f of Object.values(FAMILIES)) { Object.assign(GEAR_ART, f.GEAR_ART || {}); Object.assign(SUPPLY_ART, f.SUPPLY_ART || {}); }
 // A supply held as an item (sim/supitems.js: s_<key>, a can of beans or a bottle of water out of the stores) looks

@@ -54,6 +54,7 @@ import { swapGun, bodyGunSource } from "./gundist.js";
 import { HOLSTERS, holsterOf, holsterReason, isSidearmKey } from "./holsters.js";
 import { ZTYPES } from "./hiveconst.js"; // the dead beasts and bosses (no survivor's kit on them: survivorDead) // the side arm and melee slots, the sling
 import { earSlotReason, isEarKey } from "./helmets.js"; // the Ear pro slot (call-time only: safe in the import cycle)
+import { FURN_SALVAGE } from "./data-basefurniture.js"; // a server rack taken apart (SALVAGE_ELECTRONICS)
 import { settleItems } from "./supitems.js"; // supplies held as items, back into a stock when stored (call-time only: safe in the import cycle) // the gun distribution: a body's spare gun
 
 export const POCKETS = 4;
@@ -821,6 +822,7 @@ export function breakDownAt(state, str) {
 // themselves (cells, not boards: a battery swap wants them whole) and the budget clones worth less than an electronics
 // (a toy laser diode and a dim LED: nothing worth taking, and no buy-and-strip loop at the traders).
 export const SALVAGE_ELECTRONICS = {
+  ...FURN_SALVAGE, // furniture at the base (#20, data-basefurniture.js): a server rack's boards
   // gadgets: a screen and a board
   phone: 1, camera: 1, console: 1, laptop: 2,
   // night vision and thermals: the sensor and the image tube

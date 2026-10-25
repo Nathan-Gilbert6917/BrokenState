@@ -6887,6 +6887,12 @@ export const BOX_LOOT = {
   nightstand: { rest: 0.35, loot: { ammo: [0.3, 4, 12], meds: [0.1, 1, 1] }, gear: [["pistol", 0.09], ["revolver", 0.035], ["compact9", 0.045], ["pistol22", 0.02], ["flashlight", 0.06], ["knife", 0.05]] },
   toolchest:  { rest: 0.3, loot: { scrap: [0.6, 2, 6], parts: [0.5, 1, 2] }, gear: [["hammer", 0.1], ["crowbar", 0.06], ["prybar", 0.06], ["sledge", 0.03], ["flashlight", 0.04]] },
   tvstand:    { rest: 0.8, loot: { scrap: [0.35, 1, 3], parts: [0.1, 1, 1] }, gear: [] },
+  // Shops, restaurants, offices and banks (issue #16, shoplayout.js): a shop's cold case its drinks (the dairy long gone),
+  // a walk-in's cold-room shelving its tins among the spoiled food, an ATM a cash box (a server rack's and a gun rack's
+  // tables are #15's, below). Tuned with tools/shopstest.js so each kind holds what it did within ±10%.
+  coldcase:   { rest: 0.7, loot: { water: [0.75, 3, 7], preserved: [0.15, 1, 2] }, gear: [["bottle", 0.06]] },
+  coldshelf:  { rest: 0.6, loot: { preserved: [0.6, 2, 5], food: [0.25, 1, 3] }, gear: [] },
+  atm:        { rest: 0, loot: {}, gear: [["cashbox", 0.4]] },
   // Police stations, fire stations, schools and churches (issue #15, civiclayout.js). An armory's gun racks hold the long
   // guns and its ammo cabinets the rounds (its lockers keep the armory's own table): about what the armory held before.
   // An evidence locker: drugs (meds), knives and pistols taken off people. A fire station's turnout lockers: coats,
