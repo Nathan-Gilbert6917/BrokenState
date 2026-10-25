@@ -724,7 +724,7 @@ const outAndBack = (state, p, c, pl) => { const b = state.combat; walkOut(state)
   const C0 = cellsOfF(b, 0);
   for (let i = 0; i < C0.length && !lifted; i++) {
     const d = liftDef(C0[i].k);
-    if (!d || d.carry !== "one" || !d.item || !b.reach[i] || C0[i].pc != null) continue;
+    if (!d || d.carry !== "one" || !d.item || C0[i].pc != null) continue; // a piece one carries; the cell beside it in reach (spot): a piece's own cell is never walked (it was in b.reach only when a scene put it down after the flood)
     const x = i % b.w, y = (i / b.w) | 0;
     const spot = [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dy]) => [x + dx, y + dy]).find(([sx, sy]) => C0[sy * b.w + sx] && C0[sy * b.w + sx].k === "open" && b.reach[sy * b.w + sx] && !b.units.some((o) => !o.dead && (o.f || 0) === 0 && o.x === sx && o.y === sy));
     if (!spot) continue;

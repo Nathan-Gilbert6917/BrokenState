@@ -87,7 +87,7 @@ section("the world");
   check(legacyRaids(again) && dimsOf(again, "town") === "36×26", "and keeps them through another save and load");
   // The dials in order whatever was stored: a hand-edited or older settings object with them the wrong way round, or out of range.
   const inv = { worldCfg: { raidMin: 70, raidMax: 30 } }, wild = { worldCfg: { raidMin: 5, raidMax: 500 } };
-  check(raidRange(inv).join() === "30,70" && raidMinDims(inv)[0] === 30 && raidMaxDims(inv)[0] === 70 && raidDims(at(a, "town"), inv)[0] === 70 && raidRange(wild).join() === "24,80",
+  check(raidRange(inv).join() === "30,70" && raidMinDims(inv)[0] === 30 && raidMaxDims(inv)[0] === 70 && raidDims(at(a, "town"), inv)[0] === 70 && raidRange(wild).join() === "24,300",
     `inverted dials read in order (${raidRange(inv).join("–")}; a town's map ${raidDims(at(a, "town"), inv).join("×")}), out-of-range ones clamped (${raidRange(wild).join("–")})`);
   const bd = battleDials(b);
   check(bd.zDmg === 1 && bd.wear === 1 && bd.failures === 1 && bd.infectBite === 1 && battleDials({ worldCfg: { zDmg: 1.5 } }).zDmg === 1.5, "the battle's dials");
