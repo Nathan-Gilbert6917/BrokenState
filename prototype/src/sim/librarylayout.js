@@ -68,7 +68,7 @@
 //              the computers beside the front.
 // Which variant (libraryVariant): o.variant names one ("carnegie", or "carnegie/fb" for a plan), else the place's
 // franchise (data-shops.js FRANCHISES.library: each maps to its variants, plan.libs), else LIBRARY.ANY's weights.
-// Loot (combat.js AREAS from data-shops.js AREA_DEFS and BOX_LOOT): the stacks books (the "books" rooms), reference and
+// Loot (combat.js AREAS from data-shops.js AREA_DEFS and BOX_LOOT; tuned so the value per 100 m² stays near the old library's: librarytest): the stacks books (the "books" rooms), reference and
 // technical rooms manuals and skill books ("libref"), the map room maps and survival books ("libmaps"), the rare-books
 // room valuables ("librare"), the staff room snacks and first aid ("libstaff"), the computer bank electronics
 // ("libtech"). Each room's containers are its area's share (roomlayout.js target: area / 10 up to its maxBoxes), so the
@@ -124,8 +124,8 @@ const stacks = (name = "Stacks", o = {}) => R("stock", "stacks", { name, type: "
 const reading = (name = "Reading room", o = {}) => R("dining", "readroom", { name, type: "books", fl: "carpet", hub: false, maxBoxes: 4, ...o });
 const children = (name = "Children's room", o = {}) => R("classroom", "children", { name, type: "books", fl: "carpet", maxBoxes: 4, ...o });
 const meeting = (name = "Meeting room") => R("dining", "meeting", { name, type: "office", fl: "carpet", hub: false, maxBoxes: 2 });
-const workroom = (name = "Workroom") => R("office", "workroom", { name, type: "office", maxBoxes: 3 });
-const office = (name = "Staff offices") => R("office", "liboffice", { name, type: "office", maxBoxes: 3 });
+const workroom = (name = "Workroom") => R("office", "workroom", { name, type: "office", maxBoxes: 1 });
+const office = (name = "Staff offices") => R("office", "liboffice", { name, type: "office", maxBoxes: 1 });
 const staffroom = (name = "Staff room") => R("breakroom", "staffroom", { name, type: "libstaff", maxBoxes: 3 });
 const refroom = (name = "Reference room", o = {}) => R("dining", "refroom", { name, type: "libref", fl: "carpet", hub: false, maxBoxes: 6, ...o });
 const compbank = (name = "Computer bank") => R("office", "compbank", { name, type: "libtech", fl: "carpet", maxBoxes: 4 });
@@ -227,7 +227,7 @@ const PLANS = {
   },
   bookmobile: {
     side(rng, d) {
-      const garage = [8, R("bays", "bmgarage", { name: "Bookmobile garage", type: "garage", maxBoxes: 3 })];
+      const garage = [8, R("bays", "bmgarage", { name: "Bookmobile garage", type: "garage", maxBoxes: 1 })];
       const rest2 = ["*", Y([5, X(["*", R("office", "bmoffice", { name: "Office", type: "office", entry: true, hub: true, maxBoxes: 2 })], rest(3))], ["*", R("storage", "sorting", { name: "Sorting room", type: "books", maxBoxes: 4 })])];
       return {
         program: flipX(X(garage, rest2), rng.chance(0.5)),
@@ -237,7 +237,7 @@ const PLANS = {
     back(rng, d) {
       return {
         program: Y([5, X(["*", R("office", "bmoffice", { name: "Office", type: "office", entry: true, hub: true, maxBoxes: 2 })], rest(3), ["*", R("storage", "sorting", { name: "Sorting room", type: "books", maxBoxes: 4 })])],
-          ["*", R("bays", "bmgarage", { name: "Bookmobile garage", type: "garage", maxBoxes: 3 })]),
+          ["*", R("bays", "bmgarage", { name: "Bookmobile garage", type: "garage", maxBoxes: 1 })]),
         exits: [{ side: "back", roles: ["bays"], chance: 1, roller: true, width: 3, lock: 0.3, name: "Garage door" }],
       };
     },
@@ -296,9 +296,9 @@ const PLANS = {
     // old reporters and the law librarian's office. Upstairs the treatises and more carrels.
     reading(rng, d) {
       return {
-        program: Y(["*", flipX(X(["*", R("dining", "lawread", { name: "Law reading room", type: "libref", fl: "carpet", hub: false, maxBoxes: 4 })], [7, R("lobby", "circdesk", { name: "Reference desk", type: "libref", entry: true, hub: true, fl: "carpet", maxBoxes: 2 })], ["*", stacks("Reporters and statutes", { type: "libref" })]), rng.chance(0.5))],
+        program: Y(["*", flipX(X(["*", R("dining", "lawread", { name: "Law reading room", type: "libref", fl: "carpet", hub: false, maxBoxes: 4 })], [7, R("lobby", "circdesk", { name: "Reference desk", type: "libref", entry: true, hub: true, fl: "carpet", maxBoxes: 2 })], ["*", stacks("Reporters and statutes", { maxBoxes: 8 })]), rng.chance(0.5))],
           [5, X(["*", meeting("Conference room")], ["*", R("storage", "genealogy", { name: "Compact stacks", type: "libref", fl: "conc", lock: ["door", 0.3], maxBoxes: 5 })], [4, office("Law librarian")], rest(2))]),
-        upper: () => Y(["*", X(["*", R("dining", "carrels", { name: "Carrels", type: "libref", fl: "carpet", hub: false, maxBoxes: 2 })], [7, R("hall", "upperhall", { name: "Upper hall", hub: true, fl: "carpet" })], ["*", stacks("Treatises", { type: "libref" })])],
+        upper: () => Y(["*", X(["*", R("dining", "carrels", { name: "Carrels", type: "libref", fl: "carpet", hub: false, maxBoxes: 2 })], [7, R("hall", "upperhall", { name: "Upper hall", hub: true, fl: "carpet" })], ["*", stacks("Treatises", { maxBoxes: 8 })])],
           [5, X(["*", office("Offices")], rest(2), ["*", study()])]),
         stairs: { roles: ["lobby", "hall"] },
         exits: [{ side: "back", roles: ["office", "restroom"], chance: 0.5, lock: 0.6 }],
@@ -308,8 +308,8 @@ const PLANS = {
     stacks(rng, d) {
       return {
         program: Y([6, flipX(X(["*", R("lobby", "circdesk", { name: "Reference desk", type: "libref", entry: true, hub: true, fl: "carpet", maxBoxes: 2 })], ["*", R("dining", "lawread", { name: "Law reading room", type: "libref", fl: "carpet", hub: false, maxBoxes: 4 })]), rng.chance(0.5))],
-          ["*", X(["*", stacks("Reporters", { type: "libref" })], [5, R("hall", "stackaisle", { name: "Stack aisle", hub: true, fl: "carpet" })], ["*", stacks("Statutes and codes", { type: "libref" })])]),
-        upper: () => Y([6, X(["*", meeting("Conference room")], ["*", office("Law librarian")])], ["*", X(["*", stacks("Treatises", { type: "libref" })], [5, R("hall", "stackaisle", { name: "Upper aisle", hub: true, fl: "carpet" })], ["*", R("dining", "carrels", { name: "Carrels", type: "libref", fl: "carpet", hub: false, maxBoxes: 2 })])]),
+          ["*", X(["*", stacks("Reporters", { maxBoxes: 8 })], [5, R("hall", "stackaisle", { name: "Stack aisle", hub: true, fl: "carpet" })], ["*", stacks("Statutes and codes", { maxBoxes: 8 })])]),
+        upper: () => Y([6, X(["*", meeting("Conference room")], ["*", office("Law librarian")])], ["*", X(["*", stacks("Treatises", { maxBoxes: 8 })], [5, R("hall", "stackaisle", { name: "Upper aisle", hub: true, fl: "carpet" })], ["*", R("dining", "carrels", { name: "Carrels", type: "libref", fl: "carpet", hub: false, maxBoxes: 2 })])]),
         stairs: { roles: ["hall"] },
         exits: [{ side: "back", roles: ["hall"], chance: 0.5, lock: 0.6 }],
       };
@@ -326,7 +326,7 @@ const PLANS = {
       return {
         program: Y(["*", flipX(X(["*", R("dining", "exhibit", { name: "Exhibit room", type: "books", entry: true, hub: true, fl: "hardwood", maxBoxes: 3 })], ["*", R("dining", "localhist", { name: "Research room", type: "books", fl: "hardwood", hub: false, maxBoxes: 3 })]), rng.chance(0.5))],
           [5, X(["*", R("office", "workroom", { name: "Processing room", type: "office", maxBoxes: 3 })], [4, office("Director's office")], rest(2))]),
-        upper: () => Y(["*", X(["*", R("storage", "closedstacks", { name: "Archive stacks", type: "libref", fl: "conc", lock: ["door", 0.5], maxBoxes: 8 })], ["*", R("storage", "genealogy", { name: "Map and photograph store", type: "libmaps", fl: "conc", maxBoxes: 4 })])],
+        upper: () => Y(["*", X(["*", R("storage", "closedstacks", { name: "Archive stacks", type: "libref", fl: "conc", lock: ["door", 0.5], maxBoxes: 5 })], ["*", R("storage", "genealogy", { name: "Map and photograph store", type: "libmaps", fl: "conc", maxBoxes: 3 })])],
           [5, X(["*", R("storage", "libstore", { name: "Accessions store", type: "books", maxBoxes: 2 })], [5, R("hall", "upperhall", { name: "Landing", hub: true, fl: "hardwood" })], rest(2))]),
         stairs: { roles: ["hall", "office"] },
         exits: [{ side: "back", roles: ["office", "restroom"], chance: 0.6, lock: 0.5 }],
@@ -337,8 +337,8 @@ const PLANS = {
     vault(rng, d) {
       return {
         program: Y([6, X(["*", R("foyer", "exhibit", { name: "Exhibit hall", type: "books", entry: true, hub: true, fl: "tile", maxBoxes: 3 })], ["*", R("dining", "localhist", { name: "Reading room", type: "books", fl: "carpet", hub: false, maxBoxes: 3 })])],
-          ["*", R("storage", "closedstacks", { name: "Archive vault", type: "libref", fl: "conc", dk: "steel", lock: ["door", 0.5], maxBoxes: 10 })]),
-        upper: () => Y([6, X(["*", R("office", "workroom", { name: "Processing room", type: "office", maxBoxes: 3 })], ["*", office("Offices")])], ["*", stacks("Collection stacks", { type: "libref" })]),
+          ["*", R("storage", "closedstacks", { name: "Archive vault", type: "libref", fl: "conc", dk: "steel", lock: ["door", 0.5], maxBoxes: 6 })]),
+        upper: () => Y([6, X(["*", R("office", "workroom", { name: "Processing room", type: "office", maxBoxes: 3 })], ["*", office("Offices")])], ["*", stacks("Collection stacks", { maxBoxes: 8 })]),
         stairs: { roles: ["foyer"] },
         exits: [{ side: "back", roles: ["storage"], chance: 0.5, lock: 0.7 }],
       };
@@ -382,7 +382,7 @@ function central(rng, d, kind) {
   const atriumCol = (top) => [12, Y(["*", top], [6, X(RR, RR)])];
   const stairCol = (low) => [6, Y(["*", R("hall", "stairwell", { name: "Stairwell", hub: true, fl: "conc" })], [8, low])];
   const ground = cols(atriumCol(R("foyer", "atrium", { name: "Atrium", type: "books", entry: true, hub: true, fl: "tile", maxBoxes: 3 })),
-    ["*", Y(["*", R("cafeteria", "cafe", { name: "Café", type: "kitchen", hub: false, maxBoxes: 3 })], ["*", R("dayroom", "auditorium", { name: "Auditorium", type: null, hub: false })])],
+    ["*", Y(["*", R("cafeteria", "cafe", { name: "Café", type: "kitchen", hub: false, maxBoxes: 2 })], ["*", R("dayroom", "auditorium", { name: "Auditorium", type: null, hub: false })])],
     ["*", Y(["*", R("dining", "periodicals", { name: "Periodicals room", type: "books", fl: "carpet", hub: false, maxBoxes: 5 })],
       ["*", R("storage", "closedstacks", { name: "Closed stacks", type: "books", fl: "conc", lock: ["door", 0.6], dk: "steel", maxBoxes: 12 })], [6, office()])],
     stairCol(R("storage", "libstore", { name: "Receiving", type: "books", maxBoxes: 2 })));
@@ -399,7 +399,7 @@ function central(rng, d, kind) {
       stairCol(R("storage", "libstore", { name: "Storeroom", type: "books", maxBoxes: 1 })));
     const s1 = subj[(2 * f) % subj.length], s2 = subj[(2 * f + 1) % subj.length];
     if (top) return cols(atriumCol(gallery()),
-      ["*", Y(["*", stacks(`Stacks: ${s1}`)], ["*", R("storage", "rarebooks", { name: "Rare books room", type: "librare", fl: "wood", lock: ["door", 0.85], dk: "steel", boxLock: ["case", 0.5], maxBoxes: 6 })])],
+      ["*", Y(["*", stacks(`Stacks: ${s1}`)], ["*", R("storage", "rarebooks", { name: "Rare books room", type: "librare", fl: "wood", lock: ["door", 0.85], dk: "steel", boxLock: ["case", 0.5], maxBoxes: 2 })])],
       ["*", Y(["*", office("Administration")], ["*", staffroom()], [6, office()])],
       stairCol(R("storage", "libstore", { name: "Storeroom", type: "books", maxBoxes: 1 })));
     return cols(atriumCol(gallery()),
@@ -427,11 +427,11 @@ function university(rng, d, kind) {
   const gallery = () => R("foyer", "atriumgal", { name: "Atrium gallery", hub: true, fl: "tile" });
   const groups = () => ["*", X(["*", study("Group study")], ["*", study("Group study")])];
   const ground = cols(atriumCol(R("foyer", "atrium", { name: "Learning commons", type: "books", entry: true, hub: true, fl: "tile", maxBoxes: 3 })),
-    ["*", Y(["*", compbank("Computer lab")], ["*", R("cafeteria", "cafe", { name: "Café", type: "kitchen", hub: false, maxBoxes: 3 })])],
+    ["*", Y(["*", compbank("Computer lab")], ["*", R("cafeteria", "cafe", { name: "Café", type: "kitchen", hub: false, maxBoxes: 2 })])],
     ["*", Y(["*", refroom("Research help")], groups(), [6, office()])], stairCol());
   const upper = (f, r, ctx) => {
     if (ctx && ctx.top) return cols(atriumCol(gallery()),
-      ["*", Y(["*", R("storage", "rarebooks", { name: "Special collections", type: "librare", fl: "wood", lock: ["door", 0.8], dk: "steel", boxLock: ["case", 0.5], maxBoxes: 6 })], ["*", reading("Special collections reading room", { fl: "wood" })])],
+      ["*", Y(["*", R("storage", "rarebooks", { name: "Special collections", type: "librare", fl: "wood", lock: ["door", 0.8], dk: "steel", boxLock: ["case", 0.5], maxBoxes: 2 })], ["*", reading("Special collections reading room", { fl: "wood" })])],
       ["*", Y(["*", office("Archives office")], ["*", staffroom()], [6, office()])], stairCol());
     if (f === 1) return cols(atriumCol(gallery()),
       ["*", R("dining", "grandread", { name: "Silent reading room", type: "books", fl: "carpet", hub: false, maxBoxes: 6 })],
@@ -451,7 +451,7 @@ function university(rng, d, kind) {
 function historic(rng, d, kind) {
   const flip = rng.chance(0.5);
   const panelled = (name, o = {}) => R("dining", "panelled", { name, type: "books", fl: "hardwood", hub: false, maxBoxes: 3, ...o });
-  const rare = R("storage", "rarebooks", { name: "Rare books room", type: "librare", fl: "hardwood", lock: ["door", 0.7], boxLock: ["case", 0.5], maxBoxes: 4 });
+  const rare = R("storage", "rarebooks", { name: "Rare books room", type: "librare", fl: "hardwood", lock: ["door", 0.7], boxLock: ["case", 0.5], maxBoxes: 2 });
   const hall = (inner) => [11, Y([5, R("foyer", "entryhall", { name: "Entrance hall", type: "books", entry: true, hub: true, fl: "tile", maxBoxes: 1 })], ["*", inner])];
   const upHall = (inner) => [11, Y([5, R("hall", "upperhall", { name: "Upper landing", hub: true, fl: "hardwood" })], ["*", inner])];
   const flat = (wing) => Y(["*", { role: "living", name: "Librarian's flat: living room", flat: true }], ["*", X(["*", { role: "kitchen", name: "Librarian's flat: kitchen", flat: true }], [3, { role: "bath", name: "Librarian's flat: bath", flat: true }])], ["*", { role: "bedroom", name: "Librarian's flat: bedroom", flat: true }]);

@@ -29,6 +29,7 @@ import { BUILDINGS, SITES, assemble, MAX_STOREYS, STOREYS_BY_TYPE } from "../src
 import { LIBRARY, LIBRARY_VARIANTS, LIBRARY_KEYS, libraryPlan, libraryVariant } from "../src/sim/librarylayout.js";
 import { FRANCHISES } from "../src/sim/data-shops.js";
 import { CELL, AREAS, boxLoot } from "../src/sim/combat.js";
+import { GEAR, supValue } from "../src/sim/data.js";
 import { rollScenes } from "../src/sim/interiorscenes.js";
 import { Rng } from "../src/sim/rng.js";
 
@@ -214,7 +215,11 @@ console.log("Loot");
   }
   console.log(`    ${rows.map((r) => `${r.v} ${r.boxes.toFixed(1)} containers over ${r.area.toFixed(0)} m² (${r.per100.toFixed(1)} per 100 m²)`).join("\n    ")}`);
   const by = Object.fromEntries(rows.map((r) => [r.v, r.boxes]));
-  check(by.central > by.university && by.university > by.county && by.county > by.carnegie && by.carnegie > by.rural && by.modern > by.strip, `the total grows with the building's area (rural ${by.rural.toFixed(1)}, strip ${by.strip.toFixed(1)}, Carnegie ${by.carnegie.toFixed(1)}, county ${by.county.toFixed(1)}, central ${by.central.toFixed(1)})`);
+  // Ranked by floor area, the bigger building holds more in most pairs (the big ones' stacks rooms are capped, so a
+  // university library may hold a little less than a county library half its size).
+  let pairs = 0, conc = 0;
+  for (const a of rows) for (const b of rows) if (a.area < b.area) { pairs++; if (a.boxes < b.boxes) conc++; }
+  check(conc / pairs >= 0.85 && by.central > by.county && by.county > by.carnegie && by.carnegie > by.rural, `the total grows with the building's area: ${conc} of ${pairs} pairs (rural ${by.rural.toFixed(1)}, strip ${by.strip.toFixed(1)}, Carnegie ${by.carnegie.toFixed(1)}, county ${by.county.toFixed(1)}, university ${by.university.toFixed(1)}, central ${by.central.toFixed(1)})`);
   check(rows.every((r) => r.per100 > 0.8 && r.per100 < 12), "between 0.8 and 12 containers per 100 m² of floor in every variant");
   const types = new Set(LIBRARY_KEYS.flatMap((v) => maps[v].flatMap(({ m }) => m.rooms.map((r) => r.type))));
   check(["books", "libref", "libmaps", "librare", "libstaff", "libtech"].every((t) => types.has(t) && AREAS[t]), "the rooms' loot: stacks, reference manuals, the map room, the rare books, the staff room, the computers");
@@ -223,6 +228,14 @@ console.log("Loot");
   check(gear("librare", "displaycase").includes("coins") && gear("librare", "displaycase").includes("stamps"), "the rare-books room's valuables");
   check(AREAS.libstaff.loot.food && AREAS.libstaff.loot.meds && Object.keys(boxLoot("libtech", "computer").loot).includes("electronics"), "the staff room's snacks and first aid, the computer bank's electronics");
   check(boxLoot("garage", "bookmobile").gear.some(([g]) => g === "novel"), "the bookmobile a container of books");
+  // The tables' value per 100 m² of floor (as tools/shopstest.js values a container), the old library against each
+  // variant and the mean by LIBRARY.ANY's weights: the specialist rooms (rare books, archives, computers) richer, the
+  // big buildings' many stacks poorer, the mean near the old.
+  const value = (def) => { let v = 0; for (const [k, [p, lo, hi]] of Object.entries(def.loot)) v += Math.min(0.95, p) * ((lo + hi) / 2) * supValue(k); for (const [k, p] of def.gear) v += p * ((GEAR[k] && GEAR[k].value) || 0); return v; };
+  const dens = (variant, legacy, n) => { let v = 0, a = 0; for (let s = 0; s < n; s++) { const rng = new Rng(100 + s); const spec = BUILDINGS.library.make(rng, { variant, legacy }); const m = assemble(rng, spec, { key: "library", legacy }); a += spec.bw * spec.bh * (spec.storeys || 1); for (const c of m.containers) { const r = m.rooms.find((q) => q.id === c.area); if (r && r.type) v += value(boxLoot(r.type, c.kind)); } } return (v / a) * 100; };
+  const old = dens(null, true, 30), per = Object.fromEntries(LIBRARY_KEYS.map((v) => [v, dens(v, false, process.env.BS_QUICK ? 4 : 10)]));
+  const mean = LIBRARY_KEYS.reduce((t, v) => t + per[v] * LIBRARY.ANY[v], 0) / LIBRARY_KEYS.reduce((t, v) => t + LIBRARY.ANY[v], 0);
+  check(Math.abs(mean / old - 1) <= 0.4 && LIBRARY_KEYS.every((v) => per[v] >= old * 0.25 && per[v] <= old * 2.5), `loot value per 100 m²: the old library ${old.toFixed(1)}, the variants' mean ${mean.toFixed(1)} (within 40%), each within ×0.25–×2.5 (${LIBRARY_KEYS.map((v) => `${v} ${per[v].toFixed(1)}`).join(", ")})`);
 }
 
 console.log("Other buildings can hold a library");

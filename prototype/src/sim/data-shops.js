@@ -164,15 +164,15 @@ export const AREA_DEFS = {
   // in a library rolls skills.js's book as before.
   libref: { tags: ["books", "office", "school", "tools"], def: { name: "Reference shelves", boxes: ["bookshelf", "cardcat"],
     loot: { scrap: [0.25, 1, 2], parts: [0.05, 1, 1] },
-    gear: [["medbook", 0.03], ["enginebook", 0.03], ["diybook", 0.025], ["forgebook", 0.02], ["surgerybook", 0.012], ["gardenbook", 0.025], ["survivalbook", 0.02], ["cookbook", 0.02], ["lockbook", 0.01], ["gunbook", 0.008], ["scavbook", 0.015], ["leadbook", 0.015], ["talkbook", 0.015]] } },
+    gear: [["medbook", 0.01], ["enginebook", 0.01], ["diybook", 0.008], ["forgebook", 0.007], ["surgerybook", 0.004], ["gardenbook", 0.008], ["survivalbook", 0.007], ["cookbook", 0.007], ["lockbook", 0.003], ["gunbook", 0.003], ["scavbook", 0.005], ["leadbook", 0.005], ["talkbook", 0.005]] } },
   libmaps: { tags: ["books", "travel", "outdoor"], def: { name: "Map cabinets", boxes: ["mapcase"],
     loot: { scrap: [0.3, 1, 2] }, gear: [["survivalbook", 0.08], ["bushcraftbook", 0.04], ["binoculars", 0.02], ["telescope", 0.01]] } },
   librare: { tags: ["books", "crime", "office"], def: { name: "Rare books", boxes: ["displaycase"],
-    loot: { scrap: [0.15, 1, 1] }, gear: [["stamps", 0.12], ["coins", 0.06], ["silverware", 0.04], ["cigars", 0.04], ["scotch", 0.03], ["tcards", 0.03], ["goldchain", 0.02], ["watch", 0.02], ["surgerybook", 0.03], ["armymanual", 0.015]] } },
+    loot: { scrap: [0.15, 1, 1] }, gear: [["stamps", 0.06], ["coins", 0.03], ["silverware", 0.02], ["cigars", 0.02], ["scotch", 0.015], ["tcards", 0.015], ["goldchain", 0.01], ["watch", 0.01], ["surgerybook", 0.015], ["armymanual", 0.007]] } },
   libstaff: { tags: ["kitchen", "office", "medical"], def: { name: "Staff room", boxes: ["cabinet", "counter"],
-    loot: { food: [0.7, 2, 5], water: [0.5, 1, 4], meds: [0.35, 1, 2] }, gear: [["bandagekit", 0.06], ["candy", 0.12], ["coffee", 0.08], ["tea", 0.08]] } },
+    loot: { food: [0.45, 1, 3], water: [0.35, 1, 2], meds: [0.2, 1, 1] }, gear: [["bandagekit", 0.03], ["candy", 0.06], ["coffee", 0.04], ["tea", 0.04]] } },
   libtech: { tags: ["tech", "office", "school"], def: { name: "Computers", boxes: ["computer", "printer"],
-    loot: { electronics: [0.6, 1, 2], parts: [0.4, 1, 2], scrap: [0.3, 1, 2] }, gear: [["laptop", 0.04], ["phone", 0.03], ["camera", 0.01], ["handradio", 0.01]] } },
+    loot: { electronics: [0.2, 1, 1], parts: [0.2, 1, 1], scrap: [0.3, 1, 2] }, gear: [["laptop", 0.01], ["phone", 0.01], ["camera", 0.005], ["handradio", 0.005]] } },
   ...OFFICE_AREAS,
 };
 

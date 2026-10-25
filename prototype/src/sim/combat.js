@@ -6984,11 +6984,11 @@ export const BOX_LOOT = {
   // reader hold electronics and parts wherever they stand; the bookmobile is a van of books (its fuel tank, a box of
   // returns: skills.js's book rolls on it as on any container, twice over through rest), the book return a few books
   // dropped in and someone's things.
-  computer:   { rest: 0.2, loot: { electronics: [0.55, 1, 2], parts: [0.35, 1, 2] }, gear: [["phone", 0.02], ["laptop", 0.02]] },
+  computer:   { rest: 0, loot: { electronics: [0.2, 1, 1], parts: [0.2, 1, 1] }, gear: [["phone", 0.01], ["laptop", 0.01]] },
   printer:    { rest: 0, loot: { parts: [0.5, 1, 2], scrap: [0.4, 1, 2] }, gear: [] },
-  microfilm:  { rest: 0, loot: { electronics: [0.4, 1, 1], parts: [0.4, 1, 2] }, gear: [] },
+  microfilm:  { rest: 0, loot: { electronics: [0.15, 1, 1], parts: [0.25, 1, 1] }, gear: [] },
   bookreturn: { rest: 0.5, loot: { scrap: [0.2, 1, 1] }, gear: [["photos", 0.04], ["novel", 0.06], ["comic", 0.04], ["magazines", 0.04]] },
-  bookmobile: { rest: 1, loot: { fuel: [0.6, 2, 6], parts: [0.3, 1, 2] }, gear: [["novel", 0.15], ["comic", 0.1], ["gardenbook", 0.06], ["cookbook", 0.06], ["survivalbook", 0.05], ["medbook", 0.04], ["diybook", 0.04]] },
+  bookmobile: { rest: 0.3, loot: { fuel: [0.5, 1, 4], parts: [0.2, 1, 1] }, gear: [["novel", 0.1], ["comic", 0.06], ["gardenbook", 0.03], ["cookbook", 0.03], ["survivalbook", 0.02], ["medbook", 0.02], ["diybook", 0.02]] },
   // Restaurants by kind of food (issue #33, eaterylayout.js): a dry store's shelving its sacks and tins (the cuisine's:
   // the room's mix), a pastry case stale biscuits and the sugar, a dipping cabinet ice cream long melted but in winter,
   // a wine rack wine, a food truck its stock, its propane bottles and a little fuel. Tuned with tools/restauranttest.js
