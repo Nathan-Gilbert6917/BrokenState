@@ -16,6 +16,14 @@
 //     legacy layout against the new); an older save keeps the old layout (save.js roomsLegacy);
 //   - commercial buildings laid out for their kind (shoplayout.js, issue #16: the rest in tools/shopstest.js): every
 //     room's doors and stairs reachable from each other, no piece of 2+ cells on a door's front.
+//   - civic buildings laid out for their kind (civiclayout.js, issue #15): a police station's rooms with their pieces
+//     (the front desk's counter, the squad room's desks, the armory's gun racks, the evidence room's lockers, cells each
+//     with bars, a cell door, a bunk, a toilet and a sink, a one-way window from an interview room, a police car in the
+//     sally port), a fire station's engine bay behind a roller door with the fire engine in it and turnout lockers, a
+//     school's classrooms with every desk facing the whiteboard wall, a corridor of lockers, a gym with bleachers and a
+//     storage cage, a walk-in behind a cold room door, a church's pews in two columns either side of a clear aisle to
+//     the altar; every room's doors reachable; the containers are exactly the lootable pieces and the vehicles; the
+//     armory, the evidence room and a school hold what they did within ±10%; an older save keeps the old layouts.
 // Usage: node tools/interiortest.js [seeds per archetype] [raids]
 import { createWorld, hub, atBase } from "../src/sim/world.js";
 import { launchExpedition } from "../src/sim/parties.js";
@@ -30,6 +38,7 @@ import { raidBuildings, buildingPickFor } from "../src/sim/poiraid.js"; // a sit
 import { BUILDINGS, SITES, assemble, siteBuildings, buildingMap, buildingOptions, placeOccupantGroups, windowsNear, BMAP } from "../src/sim/buildingmaps.js";
 import { HOME_STYLES, HOME_KEYS } from "../src/sim/roomlayout.js";
 import { COMMERCIAL_KEYS, styleName } from "../src/sim/shoplayout.js";
+import { CIVIC_STYLES } from "../src/sim/civiclayout.js";
 import { pieceDef } from "../src/sim/data-furniture.js";
 import { boxLoot } from "../src/sim/combat.js";
 import { GEAR, supValue } from "../src/sim/data.js";
@@ -642,6 +651,156 @@ console.log("\nCommercial buildings room by room (shoplayout.js)");
   for (const [what, label] of [["doors", "every room's doors reachable from each other"], ["stairs", "the stairs reachable from the rooms' doors"], ["doorway", "no piece of 2+ cells on a door's front"]]) {
     check(!errs[what], `${label} (${built} commercial buildings, ${styled} rooms styled)${errs[what] ? `: ${errs[what].length} bad, e.g. ${errs[what].slice(0, 3).join("; ")}` : ""}`);
   }
+}
+
+// ======================================================================================
+console.log("\nPolice stations, fire stations, schools and churches laid out for their kind (civiclayout.js)");
+{
+  const N = Math.max(SEEDS * 4, 24);
+  const errs = {};
+  const err = (k, msg) => { (errs[k] = errs[k] || []).push(msg); };
+  const D4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+  let classes = 0, desks = 0, facing = 0, cellsN = 0, naves = 0;
+  const value = (def) => { let v = 0; for (const [k, [p, lo, hi]] of Object.entries(def.loot)) v += Math.min(0.95, p) * ((lo + hi) / 2) * supValue(k); for (const [k, p] of def.gear) v += p * ((GEAR[k] && GEAR[k].value) || 0); return v; };
+  for (const key of ["police", "firestation", "school", "church"]) for (let s = 0; s < N; s++) {
+    const rng = new Rng(47000 + s * 7919 + key.length * 13);
+    const m = assemble(rng, BUILDINGS[key].make(rng, {}), { key, name: key });
+    const tag = `${key} ${s}`;
+    const grids = m.floors || [{ cells: m.cells }];
+    const rooms = m.rooms.filter((a) => !a.outdoor);
+    const at = (f, x, y) => (x >= 0 && y >= 0 && x < m.w && y < m.h ? grids[f].cells[y * m.w + x] : null);
+    const cellsIn = (a) => { const out = []; for (let y = a.y0 + 1; y < a.y0 + a.h - 1; y++) for (let x = a.x0 + 1; x < a.x0 + a.w - 1; x++) out.push([x, y, at(a.f, x, y)]); return out; };
+    const kinds = (a) => new Set(cellsIn(a).map(([, , c]) => c.k));
+    const civ = (c) => rooms.filter((a) => a.civic === c);
+    const need = (c, list, what) => { const rs = civ(c); if (!rs.length) err(`${c}-room`, tag); for (const a of rs) { const k = kinds(a); if (!list.every((q) => (Array.isArray(q) ? q.some((z) => k.has(z)) : k.has(q)))) err(what, `${tag} ${a.name}: ${[...k].join(",")}`); } };
+    if (!rooms.every((a) => !a.civic || CIVIC_STYLES[a.civic])) err("style", tag);
+    // Every room's doors (and the stairs) reachable from each other on its floor; the containers are the pieces.
+    for (const a of rooms) {
+      const g = grids[a.f].cells;
+      if ((a.doors || []).length) {
+        const seen = walkFrom(m, a.doors[0][0], a.doors[0][1], true, g);
+        for (const [x, y] of a.doors) if (!seen[y * m.w + x]) err("doors", `${tag} ${a.name} door ${x},${y}`);
+      }
+      if (!a.civic) continue;
+      const pieces = new Map();
+      for (const [x, y, c] of cellsIn(a)) { const d = pieceDef(c.k); if (!d || !d.loot) continue; const id = c.pc ? `p${c.pc}` : `${x},${y}`; if (!pieces.has(id)) pieces.set(id, { k: c.k, cells: [] }); pieces.get(id).cells.push([x, y]); }
+      const boxes = m.containers.filter((c) => c.area === a.id && !["engine", "ambulance", "policecar"].includes(c.kind));
+      const covered = (p) => boxes.some((b) => b.kind === p.k && p.cells.every(([x, y]) => x >= b.x && x < b.x + (b.w || 1) && y >= b.y && y < b.y + (b.h || 1)));
+      if (pieces.size !== boxes.length || ![...pieces.values()].every(covered)) err("containers", `${tag} ${a.name}: pieces ${[...pieces.values()].map((p) => p.k)} boxes ${boxes.map((b) => b.kind)}`);
+    }
+    if (key === "police") {
+      need("frontdesk", ["counter"], "front desk: a counter");
+      need("armory", ["gunrack", "locker"], "armory: gun racks and a locker");
+      need("evidence", ["evlocker"], "evidence room: evidence lockers");
+      need("chief", ["desk"], "chief's office: a desk");
+      if (!civ("squad").some((a) => kinds(a).has("desk"))) err("squad room: desks", tag);
+      // The cells: each cell door a cell door (DOOR_KINDS.cell) with bars beside it, a bunk, a toilet and a sink inside.
+      const cells = [];
+      for (const a of civ("cells")) for (const [x, y, c] of cellsIn(a)) if (c.cellDoor) cells.push([a, x, y, c]);
+      if (cells.length < 2) err("cells: at least two", `${tag}: ${cells.length}`);
+      for (const [a, x, y, c] of cells) {
+        cellsN++;
+        if (c.dk !== "cell") err("cell door", `${tag} ${x},${y} ${c.dk}`);
+        if (![[1, 0], [-1, 0]].some(([dx]) => (at(a.f, x + dx, y) || {}).k === "bars")) err("cell bars", `${tag} ${x},${y}`);
+        const [ix, iy] = c.cellIn, dy = iy - y, inner = [[ix, iy], [ix, iy + dy], [ix, iy + 2 * dy], [ix - 1, iy], [ix - 1, iy + dy], [ix - 1, iy + 2 * dy]].map(([px, py]) => (at(a.f, px, py) || {}).k);
+        if (!inner.includes("bunk") || !inner.includes("toilet") || !inner.includes("sink")) err("cell: a bunk, a toilet and a sink", `${tag} ${x},${y}: ${inner}`);
+      }
+      // An interview room's one-way window into its observation nook.
+      for (const a of civ("interview")) {
+        const win = []; for (let y = a.y0; y < a.y0 + a.h; y++) for (let x = a.x0; x < a.x0 + a.w; x++) { const c = at(a.f, x, y); if (c && c.oneway && c.k === "window") win.push([x, y]); }
+        if (!win.length) err("interview: a one-way window", `${tag} ${a.name}`);
+        if (!kinds(a).has("table") || cellsIn(a).filter(([, , c]) => c.k === "chair").length < 2) err("interview: a table and two chairs", `${tag} ${a.name}`);
+      }
+      if (!m.containers.some((c) => c.kind === "policecar" && c.w * c.h >= 6)) err("sally port: a police car", tag);
+    }
+    if (key === "firestation") {
+      for (const a of civ("enginebay")) {
+        const roller = (m.exits || []).some((e) => e.roller && e.name === "Bay door"); // a roller door (a locked one is a locked door)
+        const engine = m.containers.find((c) => c.area === a.id && c.kind === "engine");
+        if (!roller) err("engine bay: a roller door", tag);
+        if (!engine || engine.w * engine.h !== 10 || at(a.f, engine.x, engine.y).k !== "truck" || at(a.f, engine.x, engine.y).car.body !== "engine") err("engine bay: the fire engine (a truck of 2 × 5)", tag);
+        if (!kinds(a).has("turnout")) err("engine bay: turnout lockers", tag);
+      }
+      need("fdorm", ["bunk"], "dorm: bunks");
+      need("fkitchen", ["fridge", "stove", "sink"], "kitchen: fridge, stove, sink");
+    }
+    if (key === "school") {
+      for (const a of civ("classroom")) {
+        classes++;
+        const k = kinds(a);
+        if (!k.has("teacherdesk") || !k.has("schooldesk")) err("classroom: desks", `${tag} ${a.name}`);
+        // The whiteboard's wall: every school desk faces it.
+        const board = []; for (let y = a.y0; y < a.y0 + a.h; y++) for (let x = a.x0; x < a.x0 + a.w; x++) { const c = at(a.f, x, y); if (c && c.wart && c.wart.k === "whiteboard") board.push([x, y]); }
+        const side = board.map(([x, y]) => (y === a.y0 ? "n" : y === a.y0 + a.h - 1 ? "s" : x === a.x0 ? "w" : "e"));
+        for (const [, , c] of cellsIn(a)) if (c.k === "schooldesk") { desks++; if (side.includes(c.fc)) facing++; }
+        if (!board.length) err("classroom: a whiteboard", `${tag} ${a.name}`);
+      }
+      need("schoolhall", ["schoollocker"], "corridor: lockers");
+      need("gym", ["bleachers", "sportcage"], "gym: bleachers and a storage cage");
+      need("cafeteria", ["counter", "table"], "cafeteria: a counter and tables");
+      for (const a of civ("walkin")) if (!(a.doors || []).some(([x, y]) => (at(a.f, x, y) || {}).dk === "coldroom")) err("walk-in: a cold room door", `${tag}`);
+    }
+    if (key === "church") {
+      for (const a of civ("nave")) {
+        naves++;
+        const pews = cellsIn(a).filter(([, , c]) => c.k === "pew"), altar = cellsIn(a).filter(([, , c]) => c.k === "altar");
+        if (!altar.length || a.aisle == null) { err("nave: an altar", tag); continue; }
+        const left = pews.filter(([x]) => x < a.aisle), right = pews.filter(([x]) => x > a.aisle);
+        if (!left.length || !right.length) err("nave: pews in two columns", `${tag}: ${left.length} left, ${right.length} right`);
+        if (pews.some(([, , c]) => c.fc !== "n")) err("nave: the pews face the altar", tag);
+        const ay = Math.max(...altar.map(([, y]) => y));
+        for (let y = ay + 1; y < a.y0 + a.h - 1; y++) { const c = at(a.f, a.aisle, y); if (!c || !CELL[c.k].walk) err("nave: a clear centre aisle", `${tag} ${a.aisle},${y} ${c && c.k}`); }
+      }
+      if (!rooms.some((a) => a.civic === "belltower" && a.up)) err("bell tower raised", tag);
+    }
+  }
+  for (const [what, list] of Object.entries(errs)) check(false, `${what}: ${list.length} bad, e.g. ${list.slice(0, 3).join("; ")}`);
+  check(!Object.keys(errs).length, `every civic building's rooms have their signature pieces, doors reachable, containers the pieces (${N} of each; ${cellsN} cells, ${classes} classrooms, ${naves} naves)`);
+  check(desks > 0 && facing === desks, `every classroom's desks face its whiteboard wall (${facing} of ${desks})`);
+  // Loot: the armory and the evidence room of a police station, and a whole school, over 200 seeded buildings: the old
+  // layout (legacy) against the new, within ±10%.
+  const total = (key, legacy, pick) => {
+    let v = 0;
+    for (let s = 0; s < 200; s++) {
+      const rng = new Rng(9000 + s * 104729 + 5);
+      const m = assemble(rng, BUILDINGS[key].make(rng, { legacy }), { key, name: key, legacy });
+      for (const c of m.containers) { const a = m.rooms.find((r) => r.id === c.area); if (a && a.type && pick(a)) v += value(boxLoot(a.type, c.kind)); }
+    }
+    return v / 200;
+  };
+  for (const [key, label, pick] of [["police", "the armory", (a) => a.role === "armory"], ["police", "the evidence room", (a) => a.role === "evidence"], ["school", "a school", () => true]]) {
+    const before = total(key, true, pick), after = total(key, false, pick);
+    check(Math.abs(after / before - 1) <= 0.1, `${label} holds what it did within ±10%: ${after.toFixed(1)} against ${before.toFixed(1)}`);
+  }
+  // An older save keeps the old layouts: no civic marks, none of the new pieces.
+  let marks = 0, newKinds = 0;
+  const NEW = new Set(["gunrack", "ammocab", "evlocker", "turnout", "schoollocker", "sportcage", "pew", "altar", "schooldesk", "teacherdesk", "bleachers", "cot", "candles"]);
+  for (const key of ["police", "firestation", "school", "church"]) for (let s = 0; s < 6; s++) {
+    const rng = new Rng(700 + s);
+    const m = assemble(rng, BUILDINGS[key].make(rng, { legacy: true }), { key, name: key, legacy: true, noDecor: true });
+    marks += m.rooms.filter((a) => a.civic).length;
+    for (const F of m.floors || [{ cells: m.cells }]) for (const c of F.cells) if (NEW.has(c.k)) newKinds++;
+  }
+  check(!marks && !newKinds, `an older save's police station, fire station, school and church keep their old layouts (${marks} styled rooms, ${newKinds} new pieces)`);
+  // The civic scenes (interiorscenes.js, registered by civiclayout.js): each turns up; a turned prisoner is one of the
+  // dead that rises, behind a cell door that is a locked door of the map.
+  const sw = createWorld({ seed: 11, factionCount: 2 }), stiles = sw.tiles.filter((t) => t.loc).slice(0, 4);
+  const seenKinds = new Set();
+  let turnedOk = true;
+  for (const key of ["police", "school", "church"]) for (let i = 0; i < 30; i++) {
+    const m = buildingMap(sw, stiles[i % stiles.length].id, { key, id: `${key}-${i}`, name: key }, false);
+    for (const sc of (m.scenes && m.scenes.list) || []) {
+      seenKinds.add(sc.kind);
+      if (sc.kind !== "turned") continue;
+      const c = (m.floors ? m.floors[sc.f].cells : m.cells)[sc.y * m.w + sc.x];
+      const locked = m.lockedDoors.some((d) => d.x === sc.x && d.y === sc.y && (d.f || 0) === sc.f && d.dk === "cell");
+      const risen = m.scenes.bodies.some((b) => b.sleeper && !b.human && b.x === c.cellIn[0] && b.y === c.cellIn[1]);
+      if (c.k !== "door" || c.dk !== "cell" || !locked || !risen) turnedOk = false;
+    }
+  }
+  const want = ["frontstand", "turned", "classbar", "gymshelter", "naveshelter", "pewdoors"];
+  check(want.every((k) => seenKinds.has(k)), `the civic scenes turn up (${want.filter((k) => seenKinds.has(k)).join(", ")} of ${want.join(", ")})`);
+  check(turnedOk, "a turned prisoner: one of the dead that rises, behind a locked cell door");
 }
 
 console.log(`\n${passes} passed, ${fails} failed. (${Math.round(performance.now() - t0)} ms)`);

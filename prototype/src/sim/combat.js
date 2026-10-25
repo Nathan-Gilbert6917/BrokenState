@@ -6861,6 +6861,11 @@ export const AREAS = {
   // Army trucks (miltrucks.js): every truck is one container (kind "miltruck", its cargo is truckLoot, not this
   // table), placed by placeMilTrucks; its crew stands round it and some are still strapped in (truckCrewRises).
   miltrucks: { name: "Army trucks", outdoor: true, trucks: true, boxes: ["miltruck"], loot: {}, gear: [] },
+  // A fire station's engine bay (issue #15, civiclayout.js): the tools a crew rides with (axes, pry bars, the ladder),
+  // turnout gear (the nearest the stores have: a leather coat, a helmet, guards), fuel and parts for the engine.
+  // A school corridor lined with narrow lockers (issue #15): many small draws, a snack, a bat, a knife, a bag, a phone.
+  schoolhall: { name: "School lockers", boxes: ["schoollocker"],      loot: { food: [0.12, 1, 2], water: [0.08, 1, 1] }, gear: [["bat", 0.015], ["knife", 0.01], ["backpack", 0.015], ["slingbag", 0.015], ["sportspads", 0.01]] },
+  enginebay: { name: "Engine bay",     boxes: ["locker", "crate", "shelf"],    loot: { fuel: [0.75, 4, 10], parts: [0.55, 1, 3], scrap: [0.5, 2, 6] }, gear: [["fireaxe", 0.08], ["prybar", 0.06], ["crowbar", 0.04], ["sledge", 0.03], ["ladder", 0.04], ["hatchet", 0.03], ["leatherjacket", 0.04], ["bikehelmet", 0.03], ["kneeguards", 0.03], ["flashlight", 0.05]] },
   cargodrop: { name: "Scattered cargo",  outdoor: true, boxes: ["crate", "crate", "crate"], loot: { food: [0.6, 3, 8], water: [0.5, 2, 6], meds: [0.25, 1, 2], preserved: [0.35, 2, 6], ammo: [0.25, 5, 15] }, gear: [["assaultpack", 0.03], ["bandagekit", 0.05], ["rucksack", 0.03], ["stove", 0.03]] },
 };
 // What a piece of furniture holds (the user's request 2026-10-25, issue #10: homes furnished room by room,
@@ -6880,12 +6885,32 @@ export const BOX_LOOT = {
   toolchest:  { rest: 0.3, loot: { scrap: [0.6, 2, 6], parts: [0.5, 1, 2] }, gear: [["hammer", 0.1], ["crowbar", 0.06], ["prybar", 0.06], ["sledge", 0.03], ["flashlight", 0.04]] },
   tvstand:    { rest: 0.8, loot: { scrap: [0.35, 1, 3], parts: [0.1, 1, 1] }, gear: [] },
   // Shops, restaurants, offices and banks (issue #16, shoplayout.js): a shop's cold case its drinks (the dairy long gone),
-  // a walk-in's cold-room shelving its tins among the spoiled food, a server rack its electronics, an ATM a cash box.
-  // Tuned with tools/shopstest.js so each kind holds what it did within ±10%.
+  // a walk-in's cold-room shelving its tins among the spoiled food, an ATM a cash box (a server rack's and a gun rack's
+  // tables are #15's, below). Tuned with tools/shopstest.js so each kind holds what it did within ±10%.
   coldcase:   { rest: 0.7, loot: { water: [0.75, 3, 7], preserved: [0.15, 1, 2] }, gear: [["bottle", 0.06]] },
   coldshelf:  { rest: 0.6, loot: { preserved: [0.6, 2, 5], food: [0.25, 1, 3] }, gear: [] },
-  serverrack: { rest: 0.3, loot: { electronics: [0.3, 1, 2], parts: [0.2, 1, 2] }, gear: [] },
   atm:        { rest: 0, loot: {}, gear: [["cashbox", 0.4]] },
+  // Police stations, fire stations, schools and churches (issue #15, civiclayout.js). An armory's gun racks hold the long
+  // guns and its ammo cabinets the rounds (its lockers keep the armory's own table): about what the armory held before.
+  // An evidence locker: drugs (meds), knives and pistols taken off people. A fire station's turnout lockers: coats,
+  // helmets and boots; the engine itself (a container of 2 × 5 cells) the crew's tools, the ladder and the gear; an
+  // ambulance first aid; a police car a shotgun, flares, a first-aid kit and a radio. A school's desks hold next to
+  // nothing (its corridor's lockers are AREAS.schoolhall), a gym's storage cage the bats and sticks, a science lab's bench
+  // first aid. A church's candlesticks are silver. Tuned with tools/interiortest.js so the armory, the evidence room
+  // and the school hold what they did within ±10%.
+  gunrack:      { rest: 0.6, loot: { ammo: [0.3, 6, 18] }, gear: [["shotgun", 0.15], ["huntrifle", 0.06], ["carbine", 0.06], ["ar", 0.04], ["semishotgun", 0.04]] },
+  ammocab:      { rest: 0.6, loot: { ammo: [0.95, 30, 75] }, gear: [] },
+  evlocker:     { rest: 0, loot: { meds: [0.22, 1, 2] }, gear: [["knife", 0.06], ["pistol", 0.01], ["compact9", 0.01], ["cuffs", 0.04], ["phone", 0.04], ["watch", 0.005]] },
+  turnout:      { rest: 0.3, loot: {}, gear: [["leatherjacket", 0.15], ["bikehelmet", 0.1], ["kneeguards", 0.08], ["fireaxe", 0.03], ["flashlight", 0.04]] },
+  sportcage:    { rest: 0.2, loot: {}, gear: [["bat", 0.25], ["hockeystick", 0.15], ["golfclub", 0.06], ["sportspads", 0.1], ["footballhelmet", 0.08]] },
+  schooldesk:   { rest: 0, loot: { food: [0.04, 1, 1] }, gear: [["phone", 0.005]] },
+  teacherdesk:  { rest: 0.5, loot: { meds: [0.04, 1, 1] }, gear: [["phone", 0.02]] },
+  labbench:     { rest: 0.3, loot: { meds: [0.15, 1, 1], parts: [0.2, 1, 1] }, gear: [["bandagekit", 0.04]] },
+  serverrack:   { rest: 0.2, loot: { parts: [0.6, 1, 3], scrap: [0.5, 1, 3] }, gear: [["handradio", 0.06]] },
+  candles:      { rest: 0, loot: {}, gear: [["silverware", 0.35], ["candles", 0.5]] },
+  engine:       { rest: 0, loot: { fuel: [0.5, 2, 6], parts: [0.3, 1, 2] }, gear: [["fireaxe", 0.5], ["prybar", 0.35], ["crowbar", 0.2], ["ladder", 0.3], ["sledge", 0.15], ["leatherjacket", 0.2], ["bikehelmet", 0.15], ["bandagekit", 0.2], ["flashlight", 0.2]] },
+  ambulance:    { rest: 0, loot: { meds: [0.85, 2, 5], water: [0.4, 1, 3] }, gear: [["bandagekit", 0.25], ["surgkit", 0.08]] },
+  policecar:    { rest: 0, loot: { ammo: [0.5, 5, 15], meds: [0.3, 1, 1] }, gear: [["shotgun", 0.15], ["flare", 0.4], ["bandagekit", 0.15], ["handradio", 0.2], ["baton", 0.08]] },
 };
 const boxDefs = new Map();
 // The table a container rolls: its room's (AREAS[type]), or its kind's (BOX_LOOT) with the room's rows at `rest` times

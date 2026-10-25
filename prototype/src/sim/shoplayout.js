@@ -29,7 +29,7 @@
 //   - an office tower: the lobby (the reception counter, the security desk with its monitors, chairs), the open-plan
 //     floors (desks in pods between cubicle partitions, chairs, filing, a copier, a water cooler), meeting rooms (a long
 //     table, chairs, a whiteboard), the corner offices (a desk, a bookshelf, a sofa, sometimes a safe), the break room
-//     (a fridge, a microwave, a vending machine, a table), the server room (server racks: electronics), the restrooms;
+//     (a fridge, a microwave, a vending machine, a table), the server room (server racks), the restrooms;
 //   - a motel: each room a bed, a nightstand, a TV stand facing the bed and a chest of drawers (its bathroom is
 //     roomlayout.js's), the front desk (the counter, the key rack, the safe, a sofa, the vending machine and the ice
 //     machine), the manager's flat (a kitchenette, a bed, a table), the laundry (washers, dryers, linen shelves);
@@ -51,7 +51,7 @@ export const SHOP = {
   FRONT: 3,           // aisles: the rows kept clear at a shop's front for the checkout and the walk
   MEETING: 0.35,      // an office tower's room of 12+ cells is a meeting room on these dice (an open-plan floor at OPEN cells)
   OPEN: 24,
-  SERVER: 0.4,        // a tower's records room is its server room on these dice
+  SERVER: 0.2,        // a tower's records room is its server room on these dice
   OFFICE_SAFE: 0.3,   // a corner office's safe
   DESKS: 1.5,         // an open-plan floor's desks to search: up to its share of containers × this (the rest: tables)
   // The containers a style's room holds: the area's share (c.target, as roomlayout.js), × this where the old furnishing
@@ -431,14 +431,15 @@ export const COMMERCIAL_STYLES = {
     aisles(L, { box: "palletrack", every: 3, step: 3, front: 2, cap: "crate" });
     fill(L, ["crate", "palletrack"]);
   },
-  // A break room: a sink, a microwave, a vending machine, a table and chairs.
+  // A break room: the fridge, a sink, a microwave, a vending machine, a table and chairs.
   breakroom(L) {
     const ws = L.walls();
-    L.run(["sink", "microwave", "counter"], [ws[0] ? ws[0].side : "n"], { plain: () => full(L) });
+    L.c.target += 1; // the staff's fridge on top of the room's share (its table holds less: combat.js BOX_LOOT)
+    L.run(["fridge", "sink", "microwave", "counter"], [ws[0] ? ws[0].side : "n"], { plain: () => full(L) });
+    if (!L.has("fridge")) L.wall("fridge", P(L));
     L.wall("vending", P(L));
     tables(L, 1, 3);
     fill(L, ["counter", "cabinet"]);
-    L.wall("fridge", { sides: ws.slice(0, 2).map((w) => w.side) }) || L.wall("fridge"); // the staff's fridge on top of the share (its table holds less: combat.js BOX_LOOT)
   },
   // ---------- offices ----------
   // An office tower's lobby: the reception counter, the security desk with its monitors, chairs along the walls.

@@ -117,12 +117,10 @@ export const FURNITURE_KINDS = {
   jukebox:      P("Jukebox",            C(false, 1, false), 25, 110, "two", S1, false, ["bar"], "comfort:0.5", true),
   pooltable:    P("Pool table",         HALF, 50, 300, "two", S21, false, ["bar"], "comfort:0.5"),
   clothesrack:  P("Clothes rack",       HALF, 10, 18, "one", S1, true, ["shop"], "storage:20"),
-  gunrack:      P("Gun rack",           FULL, 40, 60, "two", S1, true, ["shop", "armory"], "storage:30", true),
   tank:         P("Fish tank",          C(false, 1, false), 15, 70, "two", S1, false, ["shop"], "none", true),
   pottingbench: P("Potting bench",      HALF, 20, 40, "two", S21, true, ["shop", "yard"], "work:table", true),
   palletrack:   P("Pallet rack",        FULL, 50, 160, "two", S1, true, ["bay", "shop"], "storage:200"),
   tirerack:     P("Tyre rack",          HALF, 30, 60, "two", S1, true, ["bay"], "storage:40", true),
-  compressor:   P("Air compressor",     HALF, 25, 45, "two", S1, false, ["bay"], "none", true),
   carlift:      P("Car lift",           C(false, 1, false), 80, 900, "fixed", S1, false, ["bay"], "none"),
   machine:      P("Machine tool",       STEEL, 80, 900, "fixed", S21, false, ["bay"], "none"), // a lathe, a press, a mill: bolted down
   forklift:     P("Forklift",           STEEL, 80, 3000, "fixed", S12, false, ["bay"], "none"),
@@ -148,6 +146,21 @@ export const FURNITURE_KINDS = {
   serverrack:  P("Server rack",    FULL, 50, 120, "two", S1, true, ["office"], "none", true),
   copier:      P("Photocopier",    HALF, 30, 80, "two", S1, false, ["office", "school"], "none", true),
   safe:        P("Safe",           STEEL, 80, 200, "fixed", S1, false, ["office", "bedroom", "shop"], "storage:20"), // the gun safe's rules (locks.js: its own lock, never shoved)
+  // ---------- police, fire stations, schools and churches laid out for their kind (issue #15: civiclayout.js) ----------
+  // The armory's gun racks and ammo cabinets, the evidence room's lockers, a fire station's turnout lockers, a school
+  // corridor's narrow lockers and a gym's storage cage are containers with their own tables (combat.js BOX_LOOT); a cot
+  // (a gym or a nave used as a shelter: interiorscenes.js) is data-beds.js's own Cot item (FURNITURE_ITEM_KEY).
+  gunrack:     P("Gun rack",          HALF, 35, 40, "two", S1, true, ["armory", "shop"], "storage:30", true), // a gun store's too (shoplayout.js, issue #16)
+  ammocab:     P("Ammo cabinet",      FULL, 45, 60, "two", S1, true, ["armory"], "storage:40", true),
+  evlocker:    P("Evidence locker",   FULL, 40, 45, "two", S1, true, ["evidence", "office"], "storage:40", true),
+  turnout:     P("Turnout locker",    FULL, 35, 40, "two", S1, true, ["bay"], "storage:40", true),
+  schoollocker: P("School lockers",   FULL, 30, 35, "two", S1, true, ["school"], "storage:20", true),
+  sportcage:   P("Storage cage",      HALF, 40, 50, "two", S1, true, ["school"], "storage:80", true),
+  labbench:    P("Lab bench",         HALF, 40, 70, "two", S21, true, ["school", "lab"], "work:workbench", true),
+  weightbench: P("Weight bench",      HALF, 25, 40, "two", S12, false, ["school", "bay"], "comfort:0.2"),
+  compressor:  P("Air compressor",    HALF, 30, 45, "two", S1, false, ["bay"], "none", true),
+  cot:         P("Cot",               HALF, 8, 7, "one", S12, false, ["school", "church", "ward"], "bed:cot"),
+  candles:     P("Candlesticks",      POLE, 5, 6, "one", S1, true, ["church"], "comfort:0.1"),
   // ---------- lootable decor (issue #13: decor.js places them; light comfort pieces for the base) ----------
   // The plant and the floor lamp stand on a room's floor cell; the painting and the wall clock hang on a wall (decor.js:
   // c.wart = { k, d, piece: true } on the wall cell, the wall's own kind unchanged) and stand on a cell only once set down.
@@ -185,15 +198,16 @@ export const pieceDef = (k) => FURNITURE_KINDS[k] || null;
 // The item form of every piece that can be lifted (not fixed), for the pick-up ticket (#12) to merge into data.js GEAR:
 // keyed f_<kind>, in both arms only (bulky, twoHands, the In arms slot, a cart or a vehicle, as data-beds.js BED_GEAR),
 // furniture: its cell kind (set down again as that cell), weight its kg. The fridge keeps its own item, data-power.js
-// POWER_GEAR.fridge (key "fridge"), so it has no f_fridge. Merged into GEAR by data.js (marked piece: kept out of the
-// starting kits and trunks, whose dice would change). itemKey(k): the item key for a cell kind (null when fixed).
-export const FURNITURE_ITEM_KEY = { fridge: "fridge" };
+// POWER_GEAR.fridge (key "fridge"), so it has no f_fridge; the cot is data-beds.js's BED_GEAR.cot (a base's camp bed),
+// so it has no f_cot. Merged into GEAR by data.js (marked piece: kept out of the starting kits and trunks, whose dice
+// would change). itemKey(k): the item key for a cell kind (null when fixed).
+export const FURNITURE_ITEM_KEY = { fridge: "fridge", cot: "cot" };
 export const itemKey = (k) => (!FURNITURE_KINDS[k] || FURNITURE_KINDS[k].carry === "fixed" ? null : FURNITURE_ITEM_KEY[k] || `f_${k}`);
 /** @type {Record<string, { name: string, slot: string, skill: null, power: number, req: number, value: number, noise: number, weight: number, cat: string, bulky: boolean, twoHands: boolean, furniture: string, desc: string }>} */
 export const FURNITURE_GEAR = {};
 for (const [k, d] of Object.entries(FURNITURE_KINDS)) {
   const key = itemKey(k);
-  if (!key || key === "fridge") continue;
+  if (!key || key !== `f_${k}`) continue; // the fridge's and the cot's items are their own
   FURNITURE_GEAR[key] = {
     name: d.name, slot: "pack", skill: null, power: 0, req: 0, value: Math.max(1, Math.round(d.kg / 4)), noise: 0, weight: d.kg, cat: "household", bulky: true, twoHands: true, furniture: k,
     desc: `${d.name}: ${d.kg} kg, ${d.carry === "two" ? "a two-person lift" : "one person can lift it, very slowly"}. Both arms, a cart or a vehicle.`,

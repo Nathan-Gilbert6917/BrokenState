@@ -269,7 +269,7 @@ function star(s, t) {
 function boxtruck(push, o, L) {
   const body = o.color, dark = shade(body, -0.3), x0 = -L * TILE / 2 + 2, x1 = L * TILE / 2 - 2, HW = 10, top = VEH_TOP + 2;
   const box0 = x0 + 0.5, box1 = x1 - 19, cab0 = box1 + 1.5, cab1 = x1 - 1;
-  const boxC = mixHex("#5a5a5e", body, 0.15);
+  const boxC = o.box || mixHex("#5a5a5e", body, 0.15); // o.box: the box in its own paint (a fire engine's, an ambulance's)
   shadow(push, x0, x1, HW);
   push(boxL([x0, 0, 8.5], [x1, 0, 8.5], 3, HW, body, { u: [0, 0, 1], group: G.body, tex: worn(o, 1, endTex(null, TAIL, dark, o)) })); // the chassis
   bumper(push, x1 + 0.4, 6, HW); bumper(push, x0 - 0.4, 6, HW);
@@ -291,18 +291,57 @@ function bicycle(push, o) {
   push(boxL([-10.5, 0, 11.5], [-4.5, 0, 11.5], 0.4, 2.2, METAL, { u: [0, 0, 1], group: G.rails })); push(limb([-9, 0, 5.2], [-8.5, 0, 11.2], 0.5, 0.5, METAL, T)); // the rack over the back wheel
   push(limb([0, 0, 5.2], [0, 0, 2.6], 0.6, 0.6, dark, T)); push(limb([0, -2.6, 5.2], [0, 2.6, 5.2], 0.9, 0.9, dark, { sides: 6, group: G.trim })); // the stand, the cranks
 }
-const MODELS = { pickup, sedan, suv, van, humvee, mrap, m35, boxtruck, bicycle };
+// The civic vehicles parked inside (sim/civiclayout.js, issue #15): a fire engine (2 × 5: a box truck's frame and cab in
+// red, its box red, a ladder on the roof between its rails, hose reels on the flanks, a light bar on the cab), an
+// ambulance (2 × 4: the box truck in white, a red stripe down the box, a light bar) and a police car (2 × 4: a sedan in
+// black with white doors and a red and blue light bar on the roof). Burnt out, the paint and the trim are gone.
+function truckFrame(L) {
+  const x0 = -L * TILE / 2 + 2, x1 = L * TILE / 2 - 2, box1 = x1 - 19, cab0 = box1 + 1.5;
+  return { x0, x1, HW: 10, top: VEH_TOP + 2, box0: x0 + 0.5, box1, cabX: (cab0 + x1 - 1) / 2 };
+}
+const lightBar = (push, x, z, half) => { push(boxL([x, -half, z], [x, 0, z], 0.7, 1.2, TAIL, { u: [0, 0, 1], group: G.trim })); push(boxL([x, 0, z], [x, half, z], 0.7, 1.2, "#3a5ad0", { u: [0, 0, 1], group: G.trim })); };
+function fireengine(push, o, L) {
+  boxtruck(push, { ...o, box: o.burnt ? null : o.color }, L);
+  const { x0, x1, HW, top, box0, box1, cabX } = truckFrame(L);
+  if (!o.burnt) {
+    for (const y of [-4, 4]) push(boxL([box0 + 1, y, top + 0.8], [box1 - 1, y, top + 0.8], 0.5, 0.5, STEEL, { u: [0, 0, 1], group: G.rails })); // the ladder's rails
+    for (let f = box0 + 3; f < box1 - 1; f += 4) push(boxL([f, -4, top + 0.8], [f, 4, top + 0.8], 0.3, 0.3, STEEL, { u: [0, 0, 1], group: G.rails })); // its rungs
+    for (const sd of [-1, 1]) for (const f of [box0 + 6, box0 + 14]) push(limb([f, sd * (HW - 0.4), 12], [f, sd * (HW + 1.2), 12], 2.6, 2.6, METAL, { sides: 8, group: G.trim })); // the hose reels
+    lightBar(push, cabX, top - 1, 6);
+  }
+  armour(push, o, x0, x1, HW, 6, 11.5, top, [cabX, top]);
+}
+function ambulance(push, o, L) {
+  boxtruck(push, { ...o, box: o.burnt ? null : o.color }, L);
+  const { x0, x1, HW, top, box0, box1, cabX } = truckFrame(L);
+  if (!o.burnt) {
+    for (const sd of [-1, 1]) push(boxL([box0 + 0.5, sd * (HW - 0.05), 15], [box1 - 0.5, sd * (HW - 0.05), 15], 1.1, 0.3, TAIL, { u: [0, 0, 1], group: G.trim })); // the stripe
+    lightBar(push, cabX, top - 1, 5);
+  }
+  armour(push, o, x0, x1, HW, 6, 11.5, top, [cabX, top]);
+}
+function police(push, o, L) {
+  sedan(push, o, L);
+  const x0 = -L * TILE / 2 + 2, x1 = L * TILE / 2 - 2, HW = 9, xc = x0 + (x1 - x0) * 0.44;
+  if (o.burnt) return;
+  for (const sd of [-1, 1]) push(boxL([xc - 6, sd * (HW + 0.05), 9], [xc + 6, sd * (HW + 0.05), 9], 3, 0.25, WHITE, { u: [0, 0, 1], group: G.trim })); // the white doors
+  lightBar(push, xc, 23.6, 5);
+}
+const MODELS = { pickup, sedan, suv, van, humvee, mrap, m35, boxtruck, bicycle, fireengine, ambulance, police };
 export const MODEL_NAMES = Object.keys(MODELS);
 
 // ---------- which model, in what colour ----------
 // A cell's car (sim/combat.js placeCar: c.car { i, j, L, ax, kind, v, body, type, up, mil, wrecked }) → its model: the
 // team's own vehicle ("vehicle") by its type (placeVehicle: VEHICLE_TYPES), else by its body: the Army trucks, the map's
 // box trucks, and a parked car a sedan at 2 × 3, a van or a pickup at 2 × 4 by its dice (as the prisms drew them).
+const CIVIC_MODEL = { engine: "fireengine", ambulance: "ambulance", police: "police" };
+const CIVIC_PAINT = { fireengine: "#a8241c", ambulance: "#dcdad2", police: "#22252a" };
 const BY_TYPE = { truck: "pickup", sedan: "sedan", suv: "suv", hummer: "humvee", van: "van", miltruck: "m35", bike: "bicycle" };
 export function modelOf(car) {
   const b = car.body || car.kind;
   if (b === "bike") return "bicycle";
   if (b === "m35" || b === "humvee" || b === "mrap") return b;
+  if (CIVIC_MODEL[b]) return CIVIC_MODEL[b]; // a fire station's engine and ambulance, a police car (sim/civiclayout.js)
   if (car.kind === "vehicle") return BY_TYPE[car.type] || (b === "truck" ? "pickup" : "sedan");
   if (b === "truck" || car.kind === "truck") return "boxtruck";
   return car.L === 3 ? "sedan" : (car.v || 0) % 2 ? "van" : "pickup";
@@ -319,6 +358,7 @@ export function lookOf(car) {
   else if (model === "m35" || model === "humvee" || model === "mrap") { o.color = cond === "wrecked" ? MIL_WRECK : own && model === "humvee" ? mixHex(OLIVE_DARK, TEAM_BLUE, 0.5) : MIL_OLIVE; if (own && model === "m35") o.tint = TEAM_BLUE; }
   else if (own) o.color = TEAM_BLUE;
   else if (model === "boxtruck") o.color = BOX_RUST;
+  else if (CIVIC_PAINT[model]) o.color = CIVIC_PAINT[model];
   else o.color = CAR_COLORS[(car.v || 0) % CAR_COLORS.length];
   if (!own && mil && mil.enemy) o.gun = true;
   return o;

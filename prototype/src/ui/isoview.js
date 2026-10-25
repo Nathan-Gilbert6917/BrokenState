@@ -62,7 +62,7 @@ const UNIT_H = 30;              // a standing unit in art px
 // Cars and trucks stand about head high on a survivor (the user's ask): their roofs at VEH_TOP art px. The bodies are
 // drawn in their old proportions (roof at VEH_ROOF of the kind) and stretched up by VEH_TOP / roof, wheels from the ground.
 const VEH_TOP = 28;
-const VEH_ROOF = { m35: 20, humvee: 19, mrap: 21, truck: 17, car: 15, one: 16, oneTruck: 23 };
+const VEH_ROOF = { m35: 20, humvee: 19, mrap: 21, truck: 17, car: 15, one: 16, oneTruck: 23, engine: 16.5, ambulance: 16, police: 15.5 };
 const vehZ = (roof) => VEH_TOP / roof;
 export const ISO_ZOOMS = [0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4, 5]; // CSS px per art px
 
@@ -427,6 +427,17 @@ const MIL_TOPS = {
   mrap: (L) => [[0.05, L - 0.05, 0.05, 1.95, 4, 20, "body"], [0.05, 0.4, 0.4, 1.6, 13, 18, "#1c2016"], [1.4, L - 0.4, 0.3, 1.7, 20, 21, "#55603a"]],
 };
 const MIL_WHEELS = { m35: (L) => [0.7, L - 1.5, L - 0.6], humvee: (L) => [0.6, L - 0.6], mrap: (L) => [0.7, L - 0.7] };
+// The civic vehicles parked inside (sim/civiclayout.js, issue #15): a fire engine (red, a ladder on its roof, hose reels
+// on its flanks, a light bar on the cab), an ambulance (a white box with a red stripe), a police car (black and white, a
+// light bar on its roof). [a0, a1, c0, c1, z0, z1, colour] along its length and across it, as MIL_TOPS; "body" its paint.
+const CIV_TOPS = {
+  engine: (L) => [[0.1, 1.5, 0.1, 1.9, 3, 14, "body"], [0.15, 0.45, 0.3, 1.7, 9, 14, "#2a3a44"], [0.4, 1.2, 0.5, 1.5, 14, 15.5, "#d04030"], [1.6, L - 0.1, 0.05, 1.95, 3, 15, "body"],
+    [2.0, 2.8, 0, 0.08, 6, 12, "#b8bec4"], [3.2, 4.0, 0, 0.08, 6, 12, "#b8bec4"], [2.0, 2.8, 1.92, 2, 6, 12, "#b8bec4"], [3.2, 4.0, 1.92, 2, 6, 12, "#b8bec4"],
+    [1.7, L - 0.2, 0.6, 0.72, 15, 16.5, "#b8bec4"], [1.7, L - 0.2, 1.28, 1.4, 15, 16.5, "#b8bec4"]],
+  ambulance: (L) => [[0.1, 1.3, 0.15, 1.85, 3, 11, "body"], [0.2, 0.5, 0.3, 1.7, 8, 11, "#2a3a44"], [1.35, L - 0.1, 0.1, 1.9, 3, 16, "body"], [1.35, L - 0.1, 0.06, 0.1, 8, 10, "#b02a20"], [1.35, L - 0.1, 1.9, 1.94, 8, 10, "#b02a20"], [0.5, 1.1, 0.6, 1.4, 11, 12.5, "#d04030"]],
+  police: (L) => [[0.1, L - 0.1, 0.15, 1.85, 3, 9, "body"], [0.1, L - 0.1, 0.12, 0.16, 5, 8, "#e8e8e0"], [0.1, L - 0.1, 1.84, 1.88, 5, 8, "#e8e8e0"], [0.9, L - 1.1, 0.3, 1.7, 9, 14, "#2a3a44"], [1.3, 1.9, 0.4, 1.0, 14, 15.5, "#d04030"], [1.3, 1.9, 1.0, 1.6, 14, 15.5, "#3050c0"]],
+};
+const CIV_PAINT = { engine: "#a8241c", ambulance: "#dcdad2", police: "#22252a" };
 // behind), wheels at the corners; a truck is a tall cab and a box. The cell's local x/y then turn with the view (r).
 // A vehicle's upgrades (sim/combat.js fitMapVehicle: car.up { p plating, s scrap plating, g glass, m mesh, t turret }):
 // steel plates along both sides (two rows at level 2; patchy scrap plates), a grille over the cab's glass, a thick green
@@ -468,6 +479,11 @@ function carPieces(car, r) {
     const m = (f, s, t, X, Y) => { const q = n2(X, Y, 13); return q > 0.94 ? mul(PAL.rust, car.mil && car.mil.cond === "burnt" ? 0.6 : 1) : mul(col, f === "top" ? 1 : 0.92); };
     for (const [a0, a1, c0, c1, z0, z1, k] of mil(L)) parts.push([a0, a1, c0, c1, z0, z1, k === "body" ? m : flatM(hex(k))]);
     for (const a of MIL_WHEELS[car.body](L)) { wheel(a, 0.2); wheel(a, 1.8); }
+  } else if (CIV_TOPS[car.body]) {
+    const col = car.wrecked ? hex("#2b2723") : hex(CIV_PAINT[car.body]);
+    const m = (f, s, t, X, Y) => (n2(X, Y, 13) > 0.95 ? mul(PAL.rust, 1.1) : mul(col, f === "top" ? 1 : 0.92));
+    for (const [a0, a1, c0, c1, z0, z1, k] of CIV_TOPS[car.body](L)) parts.push([a0, a1, c0, c1, z0, z1, k === "body" ? m : flatM(hex(k))]);
+    for (const a of car.body === "engine" ? [0.7, L - 1.5, L - 0.6] : [0.6, L - 0.6]) { wheel(a, 0.2); wheel(a, 1.8); }
   } else if (car.body === "bike") { // a bike or a motorcycle: 2 x 1 cells, wheels at each end, a low frame, a seat and the bars
     const frame = flatM(kind === "vehicle" ? PAL.blue : mul(PAL.metal, 1.1)), dark = flatM(PAL.tire);
     parts.push([0.15, 0.65, 0.4, 0.6, 0, 6, dark], [1.35, 1.85, 0.4, 0.6, 0, 6, dark], [0.45, 1.55, 0.44, 0.56, 4, 7, frame], [0.75, 1.15, 0.38, 0.62, 7, 9, flatM(PAL.cloth)], [1.45, 1.55, 0.2, 0.8, 9, 11, frame]);
@@ -484,7 +500,7 @@ function carPieces(car, r) {
   }
   if (car.up) carUpParts(car, L, parts); // its upgrades (sim/vehicles.js): plating, grilles, the gun on its roof
   // Head high (VEH_TOP): every piece stretched up from the ground by the kind's factor (a bike stays as it is).
-  const zk = car.body === "bike" ? 1 : vehZ(mil ? VEH_ROOF[car.body] : big ? VEH_ROOF.truck : VEH_ROOF.car);
+  const zk = car.body === "bike" ? 1 : vehZ(mil || CIV_TOPS[car.body] ? VEH_ROOF[car.body] : big ? VEH_ROOF.truck : VEH_ROOF.car);
   if (zk !== 1) for (const q of parts) { q[4] *= zk; q[5] *= zk; }
   // Clip to this cell, to local 0..1 along the world axes, then into the view's frame.
   const loc = (fx, fy) => (r & 3) === 0 ? [fx, fy] : (r & 3) === 1 ? [1 - fy, fx] : (r & 3) === 2 ? [1 - fx, 1 - fy] : [fy, 1 - fx];
@@ -894,10 +910,6 @@ const FURN_DRAW = {
     const ax = along(o), clothes = (f, s, t, X) => mul(fgoods(Math.floor(X / 2), v, 98), 1.1);
     return [run(ax, 0.48, 0.52, 0, 20, flatM(FURNC.chrome), 0.1, 0.14), run(ax, 0.48, 0.52, 0, 20, flatM(FURNC.chrome), 0.86, 0.9), run(ax, 0.48, 0.52, 19, 20, flatM(FURNC.chrome), 0.1, 0.9), run(ax, 0.34, 0.66, 7, 19, clothes, 0.16, 0.84)];
   } },
-  gunrack: { top: 24, p: (o) => {
-    const ax = along(o), guns = (f, s, t, X) => (f === "top" ? PAL.woodDk : Math.floor(X) % 3 < 1 ? FURNC.black : t > 6 ? mul(PAL.woodLt, 0.9) : PAL.woodDk);
-    return [run(ax, 0.2, 0.28, 0, 24, fwood(PAL.woodDk), 0.06, 0.94), run(ax, 0.28, 0.5, 2, 22, guns, 0.1, 0.9), run(ax, 0.28, 0.56, 0, 3, flatM(PAL.woodDk), 0.06, 0.94)];
-  } },
   tank: { top: 18, p: (o) => {
     const ax = along(o), glass = (f, s, t, X, Y) => (f === "top" ? FURNC.black : t > 16 ? FURNC.black : n2(Math.floor(X / 2), Math.floor(t / 3), 99) > 0.85 ? FURNC.amber : t < 3 ? mul(FURNC.sheet, 0.8) : mul(FURNC.water, 1.1 + n2(X, Y, 100) * 0.1));
     return [run(ax, 0.26, 0.74, 0, 8, fwood(PAL.woodDk), 0.1, 0.9), run(ax, 0.28, 0.72, 8, 18, glass, 0.12, 0.88)];
@@ -914,10 +926,6 @@ const FURN_DRAW = {
     const ax = along(o), out = [run(ax, 0.22, 0.26, 0, 20, flatM(FURNC.steel), 0.06, 0.94)];
     for (const z of [2, 11]) for (const a of [0.28, 0.72]) out.push(fcyl(ax, 0.5, a, 0.2, z, z + 7, (f) => (f === "top" ? mul(PAL.tire, 1.6) : PAL.tire)));
     return out;
-  } },
-  compressor: { top: 14, p: (o) => {
-    const ax = along(o);
-    return [fcyl(ax, 0.55, 0.5, 0.24, 0, 9, (f) => (f === "top" ? mul(FURNC.red, 1.1) : FURNC.red)), run(ax, 0.4, 0.7, 9, 14, flatM(FURNC.black), 0.35, 0.65)];
   } },
   carlift: { top: 22, p: (o) => {
     const ax = along(o), post = flatM(hex("#c8402f"));
@@ -999,6 +1007,49 @@ const FURN_DRAW = {
     return [run(ax, 0.22, 0.78, 0, 12, fdrawers(FURNC.beige, 4, FURNC.black), 0.18, 0.82), run(ax, 0.26, 0.74, 12, 15, flatM(mul(FURNC.beige, 1.1)), 0.22, 0.78), run(ax, 0.26, 0.74, 15, 16, flatM(FURNC.black), 0.26, 0.74)];
   } },
   safe: { top: 18, p: () => [fbox(0.24, 0.76, 0.24, 0.76, 0, 18, fsafe(18))] },
+  // ---------- police, fire stations, schools and churches (issue #15, sim/civiclayout.js) ----------
+  // A gun rack: a wooden back board with long guns standing in it; an ammo cabinet and an evidence locker steel doors
+  // (the evidence locker's tagged in yellow); a turnout locker open-fronted with a coat and a helmet; a school's narrow
+  // lockers in a row of painted doors; a storage cage of mesh with balls in it; a lab bench with a sink and a black top;
+  // a weight bench with its bar; an air compressor's tank; a canvas cot; candlesticks on a stand.
+  gunrack: { top: 24, p: (o) => {
+    const ax = along(o), guns = (f, s, t, X) => (f === "top" ? FURNC.black : Math.floor(X) % 3 < 1 ? mul(PAL.wood, 0.8) : FURNC.black);
+    return [run(ax, 0.22, 0.32, 0, 24, fwood(PAL.woodDk, 55), 0.06, 0.94), run(ax, 0.32, 0.5, 0, 4, fwood(PAL.wood, 56), 0.06, 0.94), run(ax, 0.34, 0.42, 4, 22, guns, 0.12, 0.88)];
+  } },
+  ammocab: { top: 24, p: (o) => { const ax = along(o); return [run(ax, 0.26, 0.74, 0, 24, fdrawers(mul(FURNC.steel, 0.75), 6, FURNC.chrome), 0.12, 0.88)]; } },
+  evlocker: { top: 26, p: (o) => {
+    const ax = along(o), face = (f, s, t, X, Y, sw) => { if (f === "top") return FURNC.steel; const w = sw || 16; if (Math.abs(s - w / 2) < 0.4 || Math.floor(t) % 9 < 1) return mul(FURNC.steel, 0.6); if (t > 18 && t < 21 && s > 1 && s < 4) return FURNC.amber; return mul(FURNC.steel, 0.92 + n2(X, Y, 57) * 0.08); };
+    return [run(ax, 0.26, 0.74, 0, 26, face, 0.08, 0.92)];
+  } },
+  turnout: { top: 26, p: (o) => {
+    const ax = along(o), coat = (f) => (f === "top" ? mul(FURNC.amber, 0.8) : mul(hex("#c8b048"), 0.85));
+    return [run(ax, 0.22, 0.3, 0, 26, flatM(mul(FURNC.red, 0.8)), 0.06, 0.94), run(ax, 0.3, 0.7, 0, 2, flatM(mul(FURNC.red, 0.8)), 0.06, 0.94), run(ax, 0.32, 0.56, 6, 20, coat, 0.2, 0.8), run(ax, 0.34, 0.6, 21, 25, flatM(FURNC.black), 0.3, 0.7)];
+  } },
+  schoollocker: { top: 26, p: (o) => {
+    const ax = along(o), face = (f, s, t, X) => (f === "top" ? mul(FURNC.scrubs, 0.8) : Math.floor(X) % 5 < 1 || t < 1 ? mul(FURNC.scrubs, 0.55) : t > 22 && t < 24 ? mul(FURNC.scrubs, 0.7) : FURNC.scrubs);
+    return [run(ax, 0.28, 0.7, 0, 26, face, 0.02, 0.98)];
+  } },
+  sportcage: { top: 22, p: (o) => {
+    const ax = along(o), mesh = (f, s, t, X) => ((Math.floor(X) + Math.floor(t)) % 3 < 1 ? FURNC.chrome : f === "top" ? mul(FURNC.steel, 0.5) : mul(PAL.metalDk, 0.9));
+    return [fcyl(ax, 0.5, 0.35, 0.14, 0, 6, flatM(FURNC.amber)), fcyl(ax, 0.55, 0.68, 0.12, 0, 5, flatM(FURNC.red)), run(ax, 0.2, 0.8, 0, 22, mesh, 0.04, 0.96)];
+  } },
+  labbench: { top: 13, p: (o) => {
+    const ax = along(o);
+    return [run(ax, 0.22, 0.78, 0, 11, fdrawers(PAL.woodLt, 5), 0.04, 0.96), run(ax, 0.18, 0.82, 11, 12, flatM(FURNC.black), 0.02, 0.98), run(ax, 0.3, 0.6, 11.5, 12, flatM(FURNC.chrome), 0.4, 0.6), run(ax, 0.22, 0.26, 12, 13, flatM(FURNC.chrome), 0.48, 0.52)];
+  } },
+  weightbench: { top: 16, p: (o) => {
+    const ax = along(o), s0 = flatM(FURNC.black);
+    return [run(ax, 0.44, 0.56, 0, 6, flatM(FURNC.steel), 0.1, 0.9), run(ax, 0.38, 0.62, 6, 8, flatM(FURNC.leather), 0.06, 0.94), run(ax, 0.06, 0.94, 12, 13, flatM(FURNC.chrome), 0.18, 0.22), run(ax, 0.04, 0.14, 9, 16, s0, 0.14, 0.26), run(ax, 0.86, 0.96, 9, 16, s0, 0.14, 0.26)];
+  } },
+  compressor: { top: 14, p: (o) => {
+    const ax = along(o);
+    return [fcyl(ax, 0.5, 0.5, 0.26, 0, 10, (f) => (f === "top" ? mul(FURNC.red, 1.1) : FURNC.red)), run(ax, 0.4, 0.6, 10, 14, flatM(FURNC.black), 0.32, 0.62)];
+  } },
+  cot: { top: 7, p: (o) => {
+    const ax = along(o), s0 = flatM(FURNC.steel), canvas = (f, s, t, X, Y) => (f === "top" ? mul(FURNC.felt, 0.95 + n2(X, Y, 58) * 0.1) : mul(FURNC.felt, 0.8));
+    return [...flegs(0.24, 0.72, 0.06, 0.9, 5, s0, 0.04), run(ax, 0.22, 0.78, 5, 7, canvas, 0.04, 0.96)];
+  } },
+  candles: { top: 18, p: () => [{ cyl: [0.5, 0.5, 0.12], z0: 0, z1: 1, m: flatM(FURNC.gold) }, fbox(0.48, 0.52, 0.48, 0.52, 1, 12, flatM(FURNC.gold)), fbox(0.3, 0.7, 0.47, 0.53, 12, 13, flatM(FURNC.gold)), fbox(0.3, 0.36, 0.47, 0.53, 13, 18, flatM(FURNC.cream)), fbox(0.64, 0.7, 0.47, 0.53, 13, 18, flatM(FURNC.cream)), fbox(0.47, 0.53, 0.47, 0.53, 13, 18, flatM(FURNC.cream))] },
   // ---------- lootable decor (issue #13, sim/decor.js) ----------
   // A plant in a clay pot, a floor lamp with its shade; a painting and a wall clock as they stand once set down (on a
   // wall they are drawn on its face: wartTexel).
