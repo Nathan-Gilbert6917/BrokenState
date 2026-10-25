@@ -30,10 +30,13 @@ import { hash01, gainXpAll, USE } from "./skills.js";
 import { GEAR, SUPPLIES, supWeight } from "./data.js";
 import { log, hurt, isNight, tickHour, day } from "./world.js";
 import {
-  partyMembers, partyTile, bestSkill, cargoRoom, unitsThatFit, carryCapacity, poolLoad, wipeParty, awaitOrders, tileLabel, teamName, giveOrder,
+  partyMembers, partyTile, bestSkill, cargoRoom, unitsThatFit, carryCapacity, poolLoad, wipeParty, awaitOrders, tileLabel, teamName, giveOrder, addGearToCargo,
 } from "./parties.js";
 import { registerCombatHandler, createBattle, startCombat, autoResolveCombat, finishCombat, byNumbersOdds, AREAS, floodReach, say, setFloor, makeLosCache } from "./combat.js";
 import { BUILDINGS, buildingHint, buildingSpec } from "./buildingmaps.js";
+import { breakBoarded, breakPiece } from "./barricade.js"; // a place picked over: a scene's barricade broken through (pickedOver)
+import { LIFT, liftDef, pieceKindOf, dropPiece, reweigh, partnerOf } from "./furnicarry.js"; // a piece of furniture carried block to block (issue #21)
+import { weighPlayer, CARRY as KIT } from "./carrykit.js"; // its pace: the carrier's band
 import { raidEnemies } from "./scavenge.js";
 import { applyZType, battleTypes, eraKinds } from "./zombietypes.js";
 import { eraTier } from "./hivetech.js";
@@ -127,6 +130,14 @@ export const CRAWL = {
   RUN: { hurt: 0.2, perBlock: 0.06, load: 0.3, patrol: 0.1, max: 0.9, dmg: [10, 25], dmgPerBlock: 3 },
   // Searching a place by the numbers (no map; the autopilot's crawl too): hours, the chance of a fight, rolls of loot.
   // (Fewer finds than playing the building's map, which is where the rewards are.)
+  // A piece of furniture carried through the crawl (issue #21 rule 3: crawlPieces, carryPace): walking a block takes
+  // MOVE_HOURS × the slow factor (the unladen pace, carrykit.js CARRY.BANDS[0].mob, over the slowest carrier's: the
+  // band and LIFT.CRUSH as on a battle map), rounded up, at most maxHours; going into a place with the dead or
+  // raiders within fightRange of the door the piece is set down there first (enterPlace).
+  CARRY: { maxHours: 4, fightRange: 8 },
+  // A place picked over (place.looted) laid out for the first time this crawl (pickedOver, issue #21): each container
+  // stripped at looted × strip; from `broken` looted one barricade of its scenes broken through.
+  LOOTED: { strip: 0.6, broken: 0.3 },
   QUICK: { hours: 2, fight: 0.22, perBlock: 0.07, rolls: 3, rollsPerBlock: 0.75, looted: 0.5, alert: 4 }, // rollsPerBlock: more rolls a block deeper
   // The autopilot's crawl: how deep (depth), when it leaves (hurt, full), when it fights (sureOdds, fightOdds), what it
   // searches (searchOdds: the odds of the fight a search could bring, searchOdds below; 2026-10-13: was a place's
@@ -482,6 +493,7 @@ export function genBlock(state, c, cell = c.cell) {
     events.push(ev);
   }
   c.blocks[cell] = { n, key: cell, street: streetA, places, events, threat: threatOf(state, c, cell).level };
+  if (mem.left && mem.left[cell] && mem.left[cell].length) c.blocks[cell].left = mem.left[cell]; // pieces of furniture left here (issue #21: takeLeft)
   return c.blocks[cell];
 }
 export const blockOf = (c) => c.blocks[c.cell];
@@ -554,15 +566,37 @@ function placeGroups(state, c, place, n = c.block) {
 export const STOREY_BONUS = { from1: 4, at1: 1, from2: 7, at2: 2 };
 export const storeyBonus = (n) => (n >= STOREY_BONUS.from2 ? STOREY_BONUS.at2 : n >= STOREY_BONUS.from1 ? STOREY_BONUS.at1 : 0);
 // variant: the place's franchise (shops.js), or the one its building was left with (a building left before franchises: none).
+// scenes (issue #21): the place's own say in its signs of survival (interiorscenes.js sceneBias: its dead, raiders,
+// how picked over and rich it is, people upstairs), rolled once with the building's own dice and kept by the snapshot.
 export const placeOption = (c, place, n = c.block) => {
   const snap = c.buildings && c.buildings[place.id];
   const variant = (snap ? snap.v : place.v) || null;
-  return { id: `cc${n}-${place.slot}`, key: place.key, name: place.name, storeyBonus: storeyBonus(n), ...(variant ? { variant } : {}) };
+  const scenes = { dead: place.dead ?? 1, raiders: !!place.raiders, looted: place.looted || 0, rich: place.rich ?? 1, survivors: !!(place.folk && place.folk.survivors) };
+  return { id: `cc${n}-${place.slot}`, key: place.key, name: place.name, storeyBonus: storeyBonus(n), ...(variant ? { variant } : {}), scenes };
 };
 // How many storeys a place has (the block card): the archetype's dice for this place, without building its map.
 export function placeStoreys(state, c, place, n = c.block) {
   const spec = buildingSpec(state, c.tile, placeOption(c, place, n));
   return typeof spec.storeys === "number" ? Math.max(1, spec.storeys) : 1;
+}
+
+// The block card's hint line (issue #21 rule 4): the kind, its storeys (this place's own, placeStoreys) and the kind's
+// signature rooms from its archetype (buildingmaps.js buildingHint: a sample plan's rooms), the most numerous first, then
+// the first of the rest, the plain ones (HINT_PLAIN: corridors, restrooms, storage...) left out: "Hospital: 4 floors,
+// wards, a pharmacy". At most HINT_ROOMS rooms.
+const HINT_PLAIN = new Set(["Corridor", "Restroom", "Bathroom", "Bath", "Storage", "Lobby", "Office", "Landing", "Walkway", "Stockroom", "Storeroom", "Back room", "Linen room",
+  "Utility room", "Maintenance", "Supply room", "Reception", "Front desk", "Waiting room", "Break room", "Flat", "Restrooms"]);
+const HINT_ROOMS = 2;
+const plural = (w) => (/s$/.test(w) ? w : /[^aeiou]y$/.test(w) ? `${w.slice(0, -1)}ies` : `${w}s`);
+export function placeHint(state, c, place, n = c.block) {
+  const st = placeStoreys(state, c, place, n);
+  const sig = (buildingHint(place.key).sig || []).filter((r) => !HINT_PLAIN.has(r.name) || r.n >= 4); // a plain room the kind is made of counts (an office tower's offices)
+  const many = sig.filter((r) => r.n > 1).sort((a, b) => b.n - a.n).slice(0, 1);
+  const rest = sig.filter((r) => !many.includes(r));
+  const rooms = [...many, ...rest.filter((r) => r.n === 1), ...rest.filter((r) => r.n > 1)].slice(0, HINT_ROOMS);
+  const one = (w) => (/s$| and /.test(w) ? w : aWord(w)); // "sporting goods", "lumber and stock": no article
+  const words = rooms.map((r) => (r.n > 1 ? plural(r.name.toLowerCase()) : one(r.name.toLowerCase())));
+  return `${place.kind}: ${st} ${st === 1 ? "floor" : "floors"}${words.length ? `, ${words.join(", ")}` : ""}`;
 }
 
 // ---------- the team ----------
@@ -675,6 +709,166 @@ const addAlert = (c, v) => {
   if (v > 0) { const tr = c.trail || (c.trail = {}); const k = c.cell ?? c.block; tr[k] = clamp((tr[k] || 0) + v * (c.trailMult ?? 1), 0, 100); c.fresh = false; } // the block's own heat (CRAWL.TRAIL); noise: no slipping away unseen
 };
 
+// ---------- a piece of furniture carried through the crawl (issue #21 rule 3) ----------
+// A team that comes out of a place with a piece in someone's arms (furnicarry.js: an f_<kind> item, the fridge, in
+// s.gear.carry) carries it block to block. Who had the other end is kept on the crawl (c.mates: { carrier's id: the
+// other's id }, from the battle's tether when the team comes out: notePieces), since the tether lives on the battle's
+// units. A pair must both be on the team: one of them gone, a "two" piece is left on the block (leavePiece: the city
+// remembers it, mem.left) and a "one" piece goes on in the carrier's arms alone (keepPairs).
+// The team's pieces: [{ s (the carrier), item, kind, def (furnicarry.js liftDef), mate (the other end's survivor or null) }].
+export function crawlPieces(state, p) {
+  const c = p.crawl, mates = (c && c.mates) || {}, members = partyMembers(state, p);
+  const out = [];
+  for (const s of members) {
+    const item = s.gear && s.gear.carry, kind = item ? pieceKindOf(item) : "";
+    if (!kind) continue;
+    out.push({ s, item, kind, def: liftDef(kind), mate: mates[s.id] != null ? members.find((x) => x.id === mates[s.id]) || null : null });
+  }
+  return out;
+}
+const first = (s) => String(s.name).split(" ")[0];
+const aWord = (w) => `${/^[aeiou]/i.test(w) ? "an" : "a"} ${w}`;
+// The block card's line: "Carrying: a refrigerator (Dana, Lee)" ("" with none).
+export function carryLine(state, p) {
+  const list = crawlPieces(state, p);
+  return list.length ? `Carrying: ${list.map((P) => `${aWord(P.def.name.toLowerCase())} (${[P.s, P.mate].filter(Boolean).map(first).join(", ")})`).join("; ")}` : "";
+}
+// The pace a block with the pieces (CRAWL.CARRY): each carrier weighed as on a battle map (carrykit.js weighPlayer with
+// the piece: its full kg alone, its half each of a pair, LIFT.CRUSH past 40 kg), the slowest one's mob against the
+// unladen pace. { mob, slow, hours } (mob null and hours MOVE_HOURS with no piece).
+export function carryPace(state, p) {
+  const full = KIT.BANDS[0].mob;
+  let mob = null;
+  for (const P of crawlPieces(state, p)) {
+    const share = P.mate ? Math.round(P.def.kg * LIFT.SHARE * 100) / 100 : null;
+    for (const [s, u] of [[P.s, { piece: P.kind, bag: P.item, shareKg: share }], ...(P.mate ? [[P.mate, { piece: P.kind, shareKg: share }]] : [])]) {
+      weighPlayer(u, s);
+      mob = mob == null ? u.mob : Math.min(mob, u.mob);
+    }
+  }
+  if (mob == null) return { mob: null, slow: 1, hours: CRAWL.MOVE_HOURS };
+  const slow = Math.max(1, full / Math.max(1, mob));
+  return { mob, slow, hours: Math.min(CRAWL.CARRY.maxHours, Math.ceil(CRAWL.MOVE_HOURS * slow - 1e-9)) };
+}
+// The pairs checked (on every move, going into a place, walking out): the other end gone from the team (dead, left),
+// a "two" piece is left on this block, a "one" piece carried on alone. Returns the lines said.
+function keepPairs(state, p) {
+  const c = p.crawl, lines = [];
+  if (!c || !c.mates) return lines;
+  const members = partyMembers(state, p);
+  for (const [sid, mid] of Object.entries(c.mates)) {
+    const s = members.find((x) => x.id === Number(sid));
+    const kind = s && s.gear && s.gear.carry ? pieceKindOf(s.gear.carry) : "";
+    if (!kind) { delete c.mates[sid]; continue; }
+    if (members.some((x) => x.id === mid)) continue;
+    delete c.mates[sid];
+    const def = liftDef(kind);
+    if (def.carry === "two") lines.push(leavePiece(state, p, s, `With nobody on the other end ${first(s)} cannot carry the ${def.name.toLowerCase()} alone:`));
+    else lines.push(`${first(s)} carries the ${def.name.toLowerCase()} on alone (slower).`);
+  }
+  for (const l of lines) say2(c, l, "info", state.hour);
+  return lines;
+}
+// A piece left on the block the team stands on (or the rim block it walked out from): out of the carrier's arms, into
+// the city's memory (mem.left[cell]: { key, kind, item, day }) for a later crawl to find on the block card and take up
+// again (takeLeft). why: the words before. Returns the line.
+function leavePiece(state, p, s, why = "") {
+  const c = p.crawl, item = s.gear.carry, def = liftDef(pieceKindOf(item));
+  s.gear.carry = null;
+  if (c.mates) delete c.mates[s.id];
+  const cell = c.cell, mem = memOf(state.tiles[c.tile]);
+  (mem.left = mem.left || {})[cell] = [...(mem.left[cell] || []), { key: item.key, kind: def.kind, item, day: day(state) }];
+  const blk = c.blocks[cell];
+  if (blk) blk.left = mem.left[cell];
+  return `${why ? `${why} ` : ""}the ${def.name.toLowerCase()} is left on ${blk ? blk.street : "the street"}.`.replace(/^the/, "The");
+}
+// Take up a piece left on this block (the block card's pieces: mem.left): the first of the team with free arms (and
+// a second for a "two" piece, the other end). Returns "" or why not.
+export function takeLeft(state, p, i = 0) {
+  const c = crawlOf(state, p);
+  if (!c) return "The team is not in a city.";
+  const busy = notReady(c); if (busy) return busy;
+  const blk = blockOf(c), list = blk && blk.left;
+  const o = list && list[i];
+  if (!o) return "Nothing left here to take up.";
+  const def = liftDef(o.kind);
+  const free = partyMembers(state, p).filter((s) => !(s.gear && s.gear.carry) && !Object.values(c.mates || {}).includes(s.id));
+  const need = def.carry === "two" ? 2 : 1;
+  if (free.length < need) return `The ${def.name.toLowerCase()} takes ${need === 2 ? "two people" : "someone"} with free arms.`;
+  list.splice(i, 1);
+  free[0].gear.carry = o.item;
+  if (need === 2) (c.mates = c.mates || {})[free[0].id] = free[1].id;
+  say2(c, `${free.slice(0, need).map(first).join(" and ")} take${need === 2 ? "" : "s"} up the ${def.name.toLowerCase()} left here.`, "info", state.hour);
+  return "";
+}
+// Out of a place (afterPlace): who holds a piece and who has its other end, from the battle's units (furnicarry.js
+// u.piece, u.tether), for the walk to the next block.
+function notePieces(state, p, b) {
+  const c = p.crawl;
+  c.mates = {};
+  for (const u of b.units) {
+    if (u.side !== "player" || u.sid == null || !u.piece || !u.bag || !pieceKindOf(u.bag)) continue;
+    const o = partnerOf(b, u);
+    if (o && o.sid != null) c.mates[u.sid] = o.sid;
+  }
+}
+// Going into a place (enterPlace) with a piece: it stays in the carrier's arms at the entry (the battle's staging would
+// set it down with the other loads: the pieces are kept out of it, then given back), the other end on the one beside
+// them (the tether, both at half the kg). With the dead or raiders within CARRY.fightRange of the door, it is set down
+// there first (furnicarry.js dropPiece), a line in the log. hide: before createBattle; back: after.
+function piecesHide(state, p) {
+  const list = crawlPieces(state, p);
+  for (const P of list) P.s.gear.carry = null;
+  return list;
+}
+function piecesBack(state, p, b, list) {
+  const c = p.crawl, lines = [];
+  const at = (sid) => b.units.find((u) => u.side === "player" && u.sid === sid) || null;
+  for (const P of list) {
+    P.s.gear.carry = P.item;
+    const u = at(P.s.id);
+    if (!u) continue;
+    u.bag = P.item; u.piece = P.kind;
+    const m = P.mate ? at(P.mate.id) : null;
+    if (m) {
+      if (Math.max(Math.abs(m.x - u.x), Math.abs(m.y - u.y)) > 1) { // side by side at the door
+        const spot = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]].map(([dx, dy]) => [u.x + dx, u.y + dy])
+          .find(([x, y]) => x >= 0 && y >= 0 && x < b.w && y < b.h && b.cells[y * b.w + x] && b.reach[y * b.w + x] && !b.units.some((o) => !o.dead && !o.left && (o.f || 0) === (u.f || 0) && o.x === x && o.y === y));
+        if (spot) { m.x = spot[0]; m.y = spot[1]; }
+      }
+      if (Math.max(Math.abs(m.x - u.x), Math.abs(m.y - u.y)) <= 1) {
+        m.piece = P.kind; u.tether = m.id; m.tether = u.id;
+        u.shareKg = m.shareKg = Math.round(P.def.kg * LIFT.SHARE * 100) / 100;
+      }
+    }
+    reweigh(state, b, u);
+    const R2 = CRAWL.CARRY.fightRange;
+    const foe = b.units.some((e) => e.side === "enemy" && !e.dead && !e.left && !e.fled && (e.f || 0) === (u.f || 0) && Math.max(Math.abs(e.x - u.x), Math.abs(e.y - u.y)) <= R2);
+    if (foe) {
+      const line = dropPiece(state, b, u, `Trouble right inside the door: ${first(P.s)} sets the ${P.def.name.toLowerCase()} down at the door to fight.`);
+      lines.push(line);
+    }
+  }
+  for (const l of lines) say2(c, l, "danger", state.hour);
+  return lines;
+}
+// Out of the city at a rim block with pieces still carried (finishCrawl): the one place the crawl's rim exit meets
+// issue #18's extraction rule (vehicles wait at the entry block: a team out at the block it came in by, with its
+// vehicles, loads them; at any other rim block the piece is dropped from exhaustion there and the block remembers it).
+function rimExitPieces(state, p) {
+  const c = p.crawl, lines = [];
+  keepPairs(state, p);
+  const atVehicles = c.cell === c.entry && !!p.vehicleId;
+  for (const P of crawlPieces(state, p)) {
+    const name = P.def.name.toLowerCase();
+    if (atVehicles && addGearToCargo(state, p, P.item)) { P.s.gear.carry = null; lines.push(`${[P.s, P.mate].filter(Boolean).map(first).join(" and ")} load${P.mate ? "" : "s"} the ${name} into the vehicle.`); continue; }
+    lines.push(leavePiece(state, p, P.s, `${first(P.s)} drops the ${name} from exhaustion at the edge of the city:`.replace(/:$/, ";")));
+  }
+  c.mates = {};
+  for (const l of lines) say2(c, l, "info", state.hour);
+  return lines;
+}
+
 // ---------- going into a place ----------
 // A building's map: the raid on its interior (combat.js createRaid with setup.raid.place), tuned for the depth, with
 // the building as it was left if the team was in it before on this crawl. opts.map false: searched by the numbers.
@@ -702,11 +896,14 @@ export function enterPlace(state, p, placeId, opts = {}) {
     raid: { heat0, place: placeOption(c, place, n), gunSite: place.key }, // gundist.js: a police station's armoury draws police guns (as the quick search's)
     context: { factionIds: groups.filter((g) => g.factionId && !g.parley).map((g) => g.factionId), crawl: { kind: "place", place: place.id, block: n, heat0 } }, // parley.js: a party in the place is not their land
   };
-  // The vehicle waits at the city's edge: not on the building's map.
+  // The vehicle waits at the city's edge: not on the building's map. A piece of furniture carried in stays in the arms
+  // (issue #21: kept out of the battle's staging, given back at the entry: piecesBack).
+  keepPairs(state, p);
   const veh = p.vehicle;
+  const pieces = piecesHide(state, p);
   let b;
   p.vehicle = null;
-  try { b = createBattle(state, setup); } finally { p.vehicle = veh; }
+  try { b = createBattle(state, setup); } finally { p.vehicle = veh; for (const P of pieces) P.s.gear.carry = P.item; }
   const R = b.raid;
   R.richness = placeRichness(state, c, place);
   R.deep = n; // combat.js searchBox: deeploot.js deepShift (the block's finds dearer by the kilo)
@@ -719,11 +916,43 @@ export function enterPlace(state, p, placeId, opts = {}) {
     if (sp > 0) for (const u of b.units) if (u.side === "enemy" && u.kind === "zombie" && !u.ztype && state.rng.chance(sp)) applyZType(u, crawlKind(state, state.rng, c.tile), false, groups.find((g) => g.kind === "zombies")?.power || 3);
     // Who holds the upper floors (floorfolk.js): survivors barricaded in, the raiders holed up with a watcher, a nest on top.
     placeFolk(state, b, place, n, { kind: (rng) => crawlKind(state, rng, c.tile) });
+    pickedOver(state, b, place); // a place picked over before: containers stripped, a barricade broken through (issue #21)
   }
   say(b, `City crawl, block ${n} (${DEPTHS[Math.min(n, DEPTHS.length - 1)]}). The city's Alert is ${alertName(c.alert)}: you start at Heat ${heat0}. Extract to come back out to the street.`, c.alert >= 60 ? "danger" : "info");
+  if (pieces.length) piecesBack(state, p, b, pieces);
   c.inside = place.id;
   state.combat = b;
   return "";
+}
+// A place picked over before (place.looted, an earlier crawl's or other groups'), the first time its building is laid
+// out on this crawl (issue #21): each container but the bodies, the raiders' stash and the survivors' own is found
+// already stripped at looted × LOOTED.strip (opened: nothing left, box.stripped), and from LOOTED.broken one barricade
+// of its scenes is broken through (boards torn off: barricade.js breakBoarded; a piece in a doorway smashed:
+// breakPiece). The richness is lower too (placeRichness). Returns { stripped, broken }.
+function pickedOver(state, b, place) {
+  const L = CRAWL.LOOTED, looted = place.looted || 0, R = b.raid;
+  const out = { stripped: 0, broken: false };
+  if (!R || looted <= 0) return out;
+  for (const box of R.containers) {
+    if (box.kind === "body" || box.kind === "ground" || box.stash || box.barred || box.contents || box.truck) continue;
+    if (!state.rng.chance(looted * L.strip)) continue;
+    box.contents = { sup: {}, gear: [] }; box.stripped = true; out.stripped++;
+  }
+  if (looted >= L.broken && R.scenes && R.scenes.pieces) {
+    const f0 = b.floor || 0;
+    for (const pc of R.scenes.pieces) {
+      const cells = b.floors ? b.floors[pc.f] && b.floors[pc.f].cells : b.cells;
+      const cell = cells && cells[pc.y * b.w + pc.x];
+      if (!cell || !(cell.k === "boarded" || (cell.moved && cell.frame))) continue;
+      if (b.floors) setFloor(b, pc.f);
+      if (cell.k === "boarded") breakBoarded(b, cell, pc.x, pc.y); else breakPiece(b, cell);
+      out.broken = true;
+      break;
+    }
+    if (b.floors) setFloor(b, f0);
+    if (out.broken) b.losCache && b.losCache.fill(0);
+  }
+  return out;
 }
 // A street event's small map (a crashed ambulance, a checkpoint): the street raid with these areas.
 // gunSite: the place its rooms' guns come from (gundist.js areaSourceName: "military" for an Army checkpoint's).
@@ -753,7 +982,13 @@ function enterStreet(state, p, ev, areas, groups, gunSite = "city") {
 // ---------- a building as you left it ----------
 // What stays: the cells (doors opened or broken, windows smashed), the containers (searched, half-emptied, locks
 // opened), the locked doors, and everyone still there where they stood (unaware again: they have calmed down), the
-// dead you killed as bodies.
+// dead you killed as bodies. Issue #21: every cell is copied whole, so what the raid tickets put on a cell comes back
+// as it was left: blood (c.blood) and spent brass (c.brass, interiorscenes.js), decor and wall art (c.deco, c.wart,
+// c.wc: decor.js), a piece shoved, battered or set down (c.moved, c.hp, c.frame: barricade.js, furnicarry.js), boards
+// (c.under, c.boards), a cell a piece was lifted off (open floor again: furnicarry.js liftAct) and the stair cells
+// (R.stairs too); the containers with their contents (ground piles, a lifted piece's emptied record: box.lifted) and
+// the bodies by floor (b.corpses with f) likewise. Nothing is shared with the battle (structuredClone both ways).
+const deep = (x) => (x == null ? x : structuredClone(x));
 export function snapshotBuilding(b) {
   const R = b.raid;
   const units = b.units.filter((u) => u.side !== "player" && !u.left && !u.fled).map((u) => {
@@ -767,11 +1002,11 @@ export function snapshotBuilding(b) {
   // Storeys (buildingmaps.js): every floor's cells are kept (the ground floor's are `cells`, as before).
   const ground = b.floors ? b.floors[0].cells : b.cells;
   return {
-    w: b.w, h: b.h, cells: ground.map((x) => ({ ...x })), containers: R.containers.map((x) => ({ ...x })),
-    floors: b.floors ? b.floors.map((F) => ({ cells: F.cells.map((x) => ({ ...x })), name: F.name })) : null,
-    doors: R.doors ? R.doors.map((d) => ({ ...d, lock: d.lock ? { ...d.lock } : d.lock })) : null,
-    units, occupants: R.occupants || null, heat: Math.round(R.heat), folk: R.folk || null, // floorfolk.js: who held the upper floors, and how it went
-    corpses: b.corpses ? b.corpses.map((x) => ({ ...x, tried: undefined })) : null, scenes: R.scenes ? JSON.parse(JSON.stringify(R.scenes)) : null, // sleepers.js bodies (a split Sleeper stays split); interiorscenes.js: the scenes seen
+    w: b.w, h: b.h, cells: deep(ground), containers: deep(R.containers),
+    floors: b.floors ? b.floors.map((F) => ({ cells: deep(F.cells), name: F.name })) : null,
+    doors: R.doors ? deep(R.doors) : null, stairs: R.stairs ? deep(R.stairs) : null, // the stair cells (the stair runs, #9)
+    units: deep(units), occupants: R.occupants || null, heat: Math.round(R.heat), folk: R.folk ? deep(R.folk) : null, // floorfolk.js: who held the upper floors, and how it went
+    corpses: b.corpses ? b.corpses.map((x) => ({ ...deep(x), tried: undefined })) : null, scenes: R.scenes ? deep(R.scenes) : null, // sleepers.js bodies (a split Sleeper stays split; f: their floor); interiorscenes.js: the scenes seen
     searched: boxes.filter((x) => x.searched).length, total: boxes.length,
   };
 }
@@ -784,19 +1019,20 @@ export function restoreBuilding(state, b, snap) {
   const ids = new Map();
   const back = [];
   for (const u of snap.units) {
-    const o = { ...u, id: b.nextId++ };
+    const o = { ...deep(u), id: b.nextId++ };
     ids.set(u.id, o.id);
     if (o.dead) { o.reinforcement = true; o.restored = true; } // a body from before: not counted as killed again
     if (!o.dead && players.some((q) => q.x === o.x && q.y === o.y && (q.f || 0) === (o.f || 0))) continue;
     back.push(o);
   }
   b.units = [...players, ...back];
-  R.containers = snap.containers.map((x) => ({ ...x, uid: x.uid != null && ids.has(x.uid) ? ids.get(x.uid) : x.uid }));
-  if (snap.doors) R.doors = snap.doors.map((d) => ({ ...d, lock: d.lock ? { ...d.lock } : d.lock }));
+  R.containers = deep(snap.containers).map((x) => ({ ...x, uid: x.uid != null && ids.has(x.uid) ? ids.get(x.uid) : x.uid }));
+  if (snap.doors) R.doors = deep(snap.doors);
+  if (snap.stairs) R.stairs = deep(snap.stairs);
   if (snap.occupants) R.occupants = snap.occupants;
   R.folk = snap.folk ? JSON.parse(JSON.stringify(snap.folk)) : null; // floorfolk.js (a met group stays met: no second card)
   // The bodies as they lay (sleepers.js, interiorscenes.js); a snapshot from before the scenes keeps the ground's bodies rolled now, none of a scene's.
-  if (snap.corpses) b.corpses = snap.corpses.map((x) => ({ ...x, ...(x.unit != null && ids.has(x.unit) ? { unit: ids.get(x.unit) } : {}) }));
+  if (snap.corpses) b.corpses = snap.corpses.map((x) => ({ ...deep(x), ...(x.unit != null && ids.has(x.unit) ? { unit: ids.get(x.unit) } : {}) }));
   else if (b.corpses) b.corpses = b.corpses.filter((x) => !x.scene);
   if (snap.scenes) R.scenes = JSON.parse(JSON.stringify(snap.scenes));
   else if (R.scenes) delete R.scenes;
@@ -806,14 +1042,14 @@ export function restoreBuilding(state, b, snap) {
     const [sx, sy] = R.stairs[0];
     for (let f = 0; f < b.floors.length; f++) {
       const F = b.floors[f];
-      F.cells = snap.floors[f].cells.map((x) => ({ ...x }));
+      F.cells = deep(snap.floors[f].cells);
       F.losCache = null;
       setFloor(b, f);
       floodReach(b, f ? sx : z.x0 + 1, f ? sy : z.y0 + 1);
     }
     setFloor(b, 0);
   } else {
-    b.cells = snap.cells.map((x) => ({ ...x }));
+    b.cells = deep(snap.cells);
     b.losCache = makeLosCache(b.w, b.h);
     floodReach(b, z.x0 + 1, z.y0 + 1);
   }
@@ -859,6 +1095,7 @@ function afterPlace(state, result, setup, battle) {
   if (!p || !state.parties.includes(p)) return;
   if (!partyMembers(state, p).length) { crawlWiped(state, p, line); return; }
   if (!c) { awaitOrders(state, p, "The team is out of the building."); return; }
+  if (battle) notePieces(state, p, battle); // a piece carried out: who has its other end (issue #21)
   // Loot, kills and the noise you made.
   for (const [k, v] of Object.entries(result.loot.supplies || {})) c.tally.supplies[k] = (c.tally.supplies[k] || 0) + v;
   for (const g of result.loot.gear || []) c.tally.gear.push(g.name);
@@ -1010,9 +1247,12 @@ export function nextBlock(state, p, way = "straight") {
   if (!opt) return "No such way.";
   if (!opt.cell) return `${opt.way[0].toUpperCase() + opt.way.slice(1)} is the edge of the city: walk out from here.`;
   if (opt.wall) return `${EVENTS[opt.wall.key].title}: the way ${opt.way} is blocked until you clear it or find a way around.`;
+  keepPairs(state, p); // a piece's other end gone from the team (issue #21)
   const risk = moveRisk(state, c, opt.cell, undefined, crawlLoad(state, p).over);
   addAlert(c, CRAWL.ALERT.move);
-  if (!passHours(state, p, CRAWL.MOVE_HOURS)) return crawlGoneText(state, p);
+  const pace = carryPace(state, p); // a piece of furniture in the arms: the carrier's band (issue #21)
+  if (pace.mob != null) say2(c, `Carrying ${crawlPieces(state, p).map((P) => `the ${P.def.name.toLowerCase()}`).join(" and ")}, the walk ${opt.way} takes ${pace.hours} h.`, "info", state.hour);
+  if (!passHours(state, p, pace.hours)) return crawlGoneText(state, p);
   if (c.enc) return ""; // one of you turned on the way (crawlTurned): that first
   const from = { cell: c.cell, heading: c.heading };
   if (state.rng.chance(risk)) {
@@ -1153,6 +1393,7 @@ export function autoWayOut(state, p, c = p.crawl, way = CRAWL.AUTO.way) {
 function finishCrawl(state, p) {
   const c = p.crawl;
   if (!c) return "";
+  if (!c.choosing && c.cell) rimExitPieces(state, p); // a piece still carried: loaded at the vehicles, or dropped here (issue #21, #18)
   const t = state.tiles[c.tile];
   const mem = memOf(t);
   mem.alert = c.alert;

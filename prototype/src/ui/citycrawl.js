@@ -8,9 +8,11 @@ import { keyWord } from "../sim/water.js"; // supplies as words: "9mm FMJ", "rou
 import { partyMembers, carried } from "../sim/parties.js";
 import { hourOfDay, day, isNight } from "../sim/world.js";
 import { buildingHint } from "../sim/buildingmaps.js";
+import { GEAR } from "../sim/data.js"; // a piece left on a block: its name
 import {
   CRAWL, EVENTS, activeCrawl, blockOf, placeLooks, placeRichness, moveRisk, crawlLoad, encounterOptions, alertName,
   threatOf, enterPlace, quickSearch, nextBlock, walkOut, pickStart, autoWayOut, lieLow, resolveEncounter, resolveEvent, eventChoices, specialChance, placeStoreys, STOREY_BONUS,
+  carryLine, carryPace, takeLeft, placeHint,
   lookAround, lookChance, waysOn, onEdge, slipAway, slipChance, crawlMemOf,
 } from "../sim/citycrawl.js";
 import { cellsOf, isEdge, keyOf, DIR_NAMES } from "../sim/citygrid.js";
@@ -57,6 +59,7 @@ function hud(state, p, c) {
     <div>
       ${members.map((m) => `<div class="row small" style="gap:0.4rem"><span style="width:6.5rem;overflow:hidden;white-space:nowrap">${esc(m.name.split(" ")[0])}</span><div style="flex:1">${bar(m.health, m.health < 40 ? "var(--danger)" : m.health < 70 ? "#c9a24a" : "var(--good)")}</div><span class="muted" style="width:2rem;text-align:right">${Math.round(m.health)}</span></div>`).join("")}
       <div class="small" style="margin-top:0.25rem"><span${tip(`Every round and arrow the team has, by calibre: ${breakdownText(teamAmmoBreakdown(state, p), "; ")}`)}>Ammo ${teamAmmoBreakdown(state, p).total}</span> · Meds ${Math.floor(carried(p, "meds"))} · <span class="${ld.over > 0 ? "danger" : ""}"${tip(`What the team carries against what its people can carry on foot (the vehicle${c.hadVehicle ? " waits at the city's edge" : ""}). Over it: slower to hide and run, and every block you walk is riskier.`)}>Load ${Math.round(ld.load)}/${Math.round(ld.cap)} kg on foot</span></div>
+      ${carryLine(state, p) ? `<div class="small" style="margin-top:0.2rem"${tip(`A piece of furniture in the arms, block to block (one alone, or two side by side at half the weight each): a block's walk takes ${carryPace(state, p).hours} h at the slowest carrier's pace. Going into a place it stays in their arms at the door, set down there first when the dead or raiders are right inside. Out at the block you came in by, it goes into the vehicle; out at any other block of the rim it is dropped there from exhaustion (the block remembers it).`)}>${esc(carryLine(state, p))}</div>` : ""}
       <div class="small" style="margin-top:0.2rem">${found.length ? found.slice(0, 14).map((f) => `<span class="chip">${esc(f)}</span>`).join("") + (found.length > 14 ? ` <span class="muted">+${found.length - 14} more</span>` : "") : "<span class='muted'>Nothing found yet this run.</span>"}</div>
     </div>
   </div>`;
@@ -81,7 +84,7 @@ function blockCard(state, p, c) {
     const r = moveRisk(state, c, w.cell, known ? known.mult : 1, crawlLoad(state, p).over);
     const deeper = w.level > c.block ? `deeper in (level ${w.level})` : w.level < c.block ? `back toward the edge (level ${w.level})` : `level ${w.level}`;
     const heat = Math.round((c.trail || {})[w.cell] || 0);
-    return `<button data-action="cc-next" data-id="${p.id}" data-way="${w.way}"${tip(`${cap(w.way)}${w.back ? ", the way you came" : ""}, ${deeper}: ${CRAWL.MOVE_HOURS} h on foot; about ${pct(r)} chance of trouble on the way${known ? ` (you know it: ${known.name.toLowerCase()} streets${heat ? `, heat ${heat}: the noise you made there is still on its streets` : ""})` : " (its zombie activity unknown till you are there)"}.${w.level > c.block && sp > 0 ? ` The special dead there: ${pct(sp)} of them.` : ""}`)}>${arrow[w.dir]} ${cap(w.way)}${w.back ? " (back)" : w.level > c.block ? " (deeper)" : ""}</button>`;
+    return `<button data-action="cc-next" data-id="${p.id}" data-way="${w.way}"${tip(`${cap(w.way)}${w.back ? ", the way you came" : ""}, ${deeper}: ${carryPace(state, p).hours} h on foot; about ${pct(r)} chance of trouble on the way${known ? ` (you know it: ${known.name.toLowerCase()} streets${heat ? `, heat ${heat}: the noise you made there is still on its streets` : ""})` : " (its zombie activity unknown till you are there)"}.${w.level > c.block && sp > 0 ? ` The special dead there: ${pct(sp)} of them.` : ""}`)}>${arrow[w.dir]} ${cap(w.way)}${w.back ? " (back)" : w.level > c.block ? " (deeper)" : ""}</button>`;
   }).join("");
   const slip = c.fresh && c.prev ? `<button data-action="cc-slip" data-id="${p.id}"${tip(`Back out the way you came onto the block before, before anything here notices you: about ${pct(slipChance(state, p, c))} (Stealth against the dead here: its activity and heat; a bigger team is harder to hide). ${CRAWL.SLIP.hours} h. Fail and they have seen you.`)}>Slip away unseen</button>` : "";
   const edge = onEdge(c);
@@ -91,6 +94,7 @@ function blockCard(state, p, c) {
     : near ? `<span class="small muted"${tip("No way out is walked for you: walk block by block to any block on the rim (the lighter edge of the map) and walk out there. Every block is a roll: its activity, the city's Alert, the heat you left on it (going back the way you came, through your own noise), your load and the night.")}>The edge: ${near.path.length} block${near.path.length === 1 ? "" : "s"} away at the nearest${safe && safe.path.length !== near.path.length ? `; the quieter way as you know it ${safe.path.length}` : ""} (about ${pct((safe || near).risk)} chance of trouble on the way)</span>` : "";
   return `<div class="small muted" style="margin-bottom:0.4rem">${esc(blk.street)}.${edge ? " The edge of the city: you can walk out from here." : ""}</div>
     <div class="small" style="margin-bottom:0.4rem"><span style="color:${thColor}"${tip(`How many of the dead move on this block's streets (the city's own: the same every visit). It scales the block's danger and multiplies the heat here (the city's Alert and the noise you have made on this block): ×${th.mult}. A little noise on a crawling block is worse than a lot on a quiet one. Too much? Slip away unseen before you do anything here.`)}>Zombie activity: <b>${esc(th.name)}</b> (×${th.mult})</span> · <span${tip("The noise you have made on this block (fights, shots, searches, walking in), still on its streets: it fades slowly, and it is what you walk back through if you go out the way you came. A bigger team leaves more, a stealthy one less.")}>Heat on this block: <b>${heatHere}</b></span></div>
+    ${(blk.left || []).length ? `<div class="small" style="margin-bottom:0.4rem">Left here: ${blk.left.map((o, i) => `<span class="chip">${esc(GEAR[o.key] ? GEAR[o.key].name : o.kind)}</span> <button data-action="cc-take" data-id="${p.id}" data-i="${i}"${tip("Take it up again: someone with free arms (two for a piece that takes two). It slows every block you walk.")}>Take up</button>`).join(" ")}</div>` : ""}
     <h3>Places</h3><div class="crawl-places" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(15rem,1fr));gap:0.5rem">${places}</div>
     ${events ? `<h3 style="margin-top:0.6rem">On the street</h3>${events}` : `<div class="small muted" style="margin-top:0.4rem">The street is quiet.</div>`}
     <div class="row" style="margin-top:0.8rem;gap:0.5rem;flex-wrap:wrap;justify-content:flex-end">
@@ -158,7 +162,7 @@ function placeCard(state, p, c, pl) {
   const upstairs = storeys > 1 ? `<div class="small ${up && up !== "nothing stirs upstairs" ? "" : "muted"}"${tip(up ? "What the team saw or heard of the upper floors: lights (survivors barricaded in: talk, trade, recruit, or they shoot), voices and a watcher on the stairs (raiders holed up above, their stash with them), something nesting (the special dead on the top floor, still until woken; richer pickings there)." : "Unknown until you look around this block (an hour) or go in.")}>Upstairs: ${esc(up || "unknown")}</div>` : "";
   return `<div class="card" style="margin:0">
     <div class="spread"><b>${esc(pl.name)}</b>${pl.rare ? `<span class="chip on"${tip("A rare find in a city: worth a look.")}>rare</span>` : ""}</div>
-    <div class="small muted">${esc(pl.kind)} · ${esc(hint.size)}, ${hint.rooms} rooms · <span${tip(storeyTip)}>${storeys} ${storeys === 1 ? "storey" : "storeys"}</span>${picked}</div>
+    <div class="small muted"><span${tip(storeyTip)}>${esc(placeHint(state, c, pl))}</span> · ${esc(hint.size)}, ${hint.rooms} rooms${picked}</div>
     ${upstairs}
     <div class="small" style="margin:0.2rem 0">${esc(hint.hint)}</div>
     <div class="small"><span style="color:${LOOK_COLOR[looks.level]}"${tip(looks.sure ? "Your scout reads it right (Scouting 5+)." : "A guess from the street; a scout with Scouting 5+ would know.")}>Looks: ${esc(looks.text)}</span>${looks.people ? ` · <span class="danger"${tip("Someone moved behind the windows: people inside, likely armed.")}>movement inside</span>` : ""} · <span class="muted"${tip("How well stocked its shelves are likely to be (the depth, the place, how picked over it is).")}>richness ${rich.toFixed(2)}</span></div>
@@ -208,4 +212,5 @@ export const CRAWL_ACTIONS = {
   "cc-slip": run((state, p) => slipAway(state, p)),
   "cc-low": run((state, p) => lieLow(state, p)),
   "cc-look": run((state, p) => lookAround(state, p)),
+  "cc-take": run((state, p, d) => takeLeft(state, p, Number(d.i) || 0)),
 };

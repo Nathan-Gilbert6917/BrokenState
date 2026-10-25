@@ -40,7 +40,7 @@
 // The intro line (sceneSeen): the first time one of your people sees a scene's room, its sentence in the log.
 // AI parity: nobody places these in play; the AI's own barricading is barricade.js aiBarricade as before.
 // API: SCENES, SCENE_KINDS, registerScene(name, def), sceneRng(state, tileId, option), scenePieces(room, rng, n, opts),
-//      rollScenes(map, rng, key), sceneBattle(b, map), sceneSeen(b, u), sceneLedger(b), applySceneLedger(b, list),
+//      rollScenes(map, rng, key, place), sceneBias(key, place), sceneBattle(b, map), sceneSeen(b, u), sceneLedger(b), applySceneLedger(b, list),
 //      bloodAt(c).
 import { CELL, KITS, enemyUnit, say, los } from "./combat.js"; // call-time only (combat.js and buildingmaps.js import this)
 import { FURNITURE, setPiece, boardCell } from "./barricade.js";
@@ -64,6 +64,10 @@ export const SCENES = {
   STAND_DEAD: [2, 4],    // the dead on the stairs of a last stand (part of them on the floor below)
   BRASS: [3, 8],         // spent cases behind a last stand's furniture, a cell
   TRAIL: [4, 8],         // the cells of a blood trail
+  // A city crawl place's say (sceneBias, issue #21): odds × (1 + dead × (place.dead − 1)), at least survivorsOdds with
+  // people upstairs, at most maxOdds; weights: overrun and stand × (1 + deadWeight × (dead − 1)), barricade × raiders
+  // with raiders in the place, × survivors with people upstairs; quiet × (1 + rich × (rich − 1)) × (1 − looted × looted).
+  PLACE: { dead: 0.5, deadWeight: 1.5, maxOdds: 0.95, survivorsOdds: 0.85, raiders: 1.6, survivors: 2, rich: 0.5, looted: 0.5 },
 };
 // The scenes and their weights; by: the building kinds that weigh one more (× the factor).
 export const SCENE_KINDS = {
@@ -333,14 +337,18 @@ function quiet(ctx) {
  * The scenes of a building's map (buildingmaps.js buildingMap, after assemble): the cells changed in place (pieces,
  * boards, broken doors, blood, brass), the rooms marked (area.scene), and map.scenes = { list, bodies, piles, pieces }
  * for the battle (sceneBattle). key: the building's kind (BUILDINGS key). Returns map.scenes, or null with none.
+ * place: a city crawl place's own say (citycrawl.js placeOption → option.scenes, issue #21; null elsewhere, and the
+ * dice are as they were): { dead, raiders, looted, rich, survivors } bend the odds and the weights (sceneBias).
  */
-export function rollScenes(map, rng, key) {
+export function rollScenes(map, rng, key, place = null) {
   if (!map || !map.rooms) return null;
-  const odds = SCENES.ODDS[key] ?? SCENES.DEFAULT;
+  const bias = sceneBias(key, place);
+  const odds = bias ? bias.odds : SCENES.ODDS[key] ?? SCENES.DEFAULT;
   if (!rng.chance(odds)) return null;
   const want = 1 + (rng.chance(SCENES.COUNT[0]) ? 1 + (rng.chance(SCENES.COUNT[1]) ? 1 : 0) : 0);
   const ctx = context(map, rng, key);
-  const by = BY_KIND[key] || {};
+  const by0 = BY_KIND[key] || {};
+  const by = bias ? Object.fromEntries(Object.keys(SCENE_KINDS).map((k) => [k, (by0[k] ?? 1) * (bias.w[k] ?? 1)])) : by0;
   for (let i = 0; i < want; i++) {
     const kinds = Object.keys(SCENE_KINDS).filter((k) => !SCENE_KINDS[k].kinds || SCENE_KINDS[k].kinds.includes(key));
     // By weight, the ones that fit nowhere giving way to the next.
@@ -357,6 +365,23 @@ export function rollScenes(map, rng, key) {
   ctx.out.seed = rng.int(1, 2147483646); // the battle's own dice for the bodies (sceneBattle)
   map.scenes = ctx.out;
   return map.scenes;
+}
+
+// A city crawl place's say in its scenes (issue #21, SCENES.PLACE): more of the dead (place.dead, about 0.8–1.6) make
+// a scene likelier and an overrun room or a last stand more so; raiders in the place a barricaded room; people
+// upstairs (floorfolk.js: survivors) a barricade and a scene at all (they lived here); a rich place a quiet death; a
+// place picked over (looted) has been walked through: fewer quiet rooms left. Returns { odds, w: { scene: × } } or null.
+export function sceneBias(key, place) {
+  if (!place) return null;
+  const P = SCENES.PLACE, dead = place.dead ?? 1;
+  let odds = (SCENES.ODDS[key] ?? SCENES.DEFAULT) * (1 + P.dead * (dead - 1));
+  if (place.survivors) odds = Math.max(odds, P.survivorsOdds);
+  const w = {
+    overrun: Math.max(0.3, 1 + P.deadWeight * (dead - 1)), stand: Math.max(0.3, 1 + P.deadWeight * (dead - 1)),
+    barricade: (place.raiders ? P.raiders : 1) * (place.survivors ? P.survivors : 1),
+    quiet: Math.max(0.3, (1 + P.rich * ((place.rich ?? 1) - 1)) * (1 - P.looted * (place.looted || 0))),
+  };
+  return { odds: Math.min(P.maxOdds, Math.max(0.05, odds)), w };
 }
 
 // ---------- the battle ----------
