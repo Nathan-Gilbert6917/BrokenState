@@ -137,6 +137,7 @@ import { WINDOW, windowOpen, windowAct, smashWindow, glassNoise, rollWin, winMix
 import { wireStep, cutAct, kitCutter, cutterKeyOf, WIRE } from "./wire.js";
 import { FENCE } from "./data-power.js"; // the fence charger's bite (electric.js)
 import { rollAreaPower } from "./electric.js"; // a generator, a spotlight, a fridge in a raid's container (its own dice)
+import { rollAreaPropane } from "./appliances.js"; // a grill's propane bottle (#19; its own dice)
 import { mineStep, settleMines } from "./mines.js"; // land mines: set off underfoot, the rest kept by the base when it is over // barbed wire snags the living unless they cut it (the user's request 2026-10-19)
 import { CRAWL, FURNITURE, crawlable, overCost, shoveAct, boardAct, tearAct, breakBoarded, breakPiece, boardedName, aiBarricade, kitBoards } from "./barricade.js"; // furniture shoved in the way, doors and windows boarded up, the dead crawling over half cover (the user's request 2026-10-18)
 import { poiFull } from "./pois.js"; // a raid on a point of interest: what that place held untouched (setup.raid.poi)
@@ -7618,6 +7619,9 @@ export function searchBox(state, b, u, box, open = false, quick = false) {
       // Arrows: a quiver in a cabin's locker, bolts on a shop shelf (loot.js AREA_ARROWS; its own dice too).
       const arrows = rollAreaArrows(state, b.tileId, R.areas[box.area].type, box.kind, `box${bid}`);
       if (arrows > 0) sup.arrows = (sup.arrows || 0) + arrows;
+      // Propane: a grill's bottle by a house, a hardware store's cage (appliances.js AREA_PROPANE; its own dice too).
+      const gas = rollAreaPropane(state, b.tileId, R.areas[box.area].type, `box${bid}`);
+      if (gas > 0) sup.propane = (sup.propane || 0) + gas;
       // A tent bag: a campsite's, a garage's shelf, barracks stores (tents.js AREA_TENTS; its own dice too).
       const tent = rollAreaTent(state, b.tileId, R.areas[box.area].type, site, `box${bid}`);
       if (tent) gear.push(tent);

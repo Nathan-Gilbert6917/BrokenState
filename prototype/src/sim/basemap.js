@@ -2854,7 +2854,8 @@ export function buildMenu(state, base) {
   for (const [type, d] of Object.entries(BUILDINGS)) {
     const f = FOOT[type];
     if (!f || d.upgradeOnly) continue; // an upgrade in place (the reloading bench) is queued from the building it upgrades
-    const group = type === "tent" ? "Tents" : d.general ? "General buildings" : d.grid ? "Power" : d.furniture ? "Furniture" : d.fit ? "Fittings" : f.kind === "defence" || WALL_KINDS.has(f.kind) ? "Defences" : f.kind === "prop" || f.kind === "pen" ? "Yard things" : "Buildings";
+    // d.menu: a group of its own choosing (data-appliances.js: the kitchen range and the oven are Fittings).
+    const group = d.menu ? d.menu : type === "tent" ? "Tents" : d.general ? "General buildings" : d.grid ? "Power" : d.furniture ? "Furniture" : d.fit ? "Fittings" : f.kind === "defence" || WALL_KINDS.has(f.kind) ? "Defences" : f.kind === "prop" || f.kind === "pen" ? "Yard things" : "Buildings";
     const opts = pieceOpts(base, type);
     /** @type {any} */
     const chk = canBuild(state, base, type, opts);

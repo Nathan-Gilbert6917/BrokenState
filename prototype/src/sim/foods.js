@@ -470,15 +470,20 @@ export function ageLots(h, days, factor, state = null) {
 // years). Returns days of food lost.
 export const COARSE = { factor: 0.8, frozen: 0.05 };
 // frozen: days of food in a running walk-in freezer (groupworks.js groupFreezerOn: MACH.room): the soonest to spoil
-// goes in, aging at COARSE.frozen of the factor.
-export function ageCoarse(stock, days = 1, factor = COARSE.factor, { frozen = 0 } = {}) {
-  let lost = 0, room = Math.max(0, frozen);
+// goes in, aging at COARSE.frozen of the factor. cold: the appliances on today ([{ room, factor }]: appliances.js
+// groupColdRooms, your storage.js factors: a fridge 0.25, a chest freezer 0.05, a cold case 0.3), filled coldest first
+// after the walk-in.
+export function ageCoarse(stock, days = 1, factor = COARSE.factor, { frozen = 0, cold = [] } = {}) {
+  let lost = 0;
+  const rooms = [{ room: Math.max(0, frozen), factor: COARSE.frozen }, ...cold.map((c) => ({ room: Math.max(0, c.room), factor: c.factor }))].filter((r) => r.room > 0).sort((a, b) => a.factor - b.factor);
   const keys = Object.keys(stock || {}).filter((k) => FOODS[k] && stock[k] > 0).sort((a, b) => FOODS[a].shelf - FOODS[b].shelf);
   for (const k of keys) {
     const f = FOODS[k];
-    const u = unitsOf(k, stock[k]), inside = f.stable ? 0 : Math.min(u, room);
-    room -= inside;
-    const fac = u > 0 ? factor * ((u - inside) + inside * COARSE.frozen) / u : factor;
+    const u = unitsOf(k, stock[k]);
+    let left = f.stable ? 0 : u, w = 0;
+    for (const r of rooms) { if (left <= 1e-9) break; const inside = Math.min(left, r.room); r.room -= inside; left -= inside; w += inside * r.factor; }
+    const inside = (f.stable ? 0 : u) - left;
+    const fac = u > 0 ? factor * ((u - inside) + w) / u : factor;
     const share = Math.min(1, (fac * days) / Math.max(0.5, f.shelf));
     const q = stock[k] * share;
     stock[k] -= q;

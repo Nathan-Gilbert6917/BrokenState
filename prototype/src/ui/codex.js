@@ -14,6 +14,8 @@
 import { MEET } from "../sim/trademeet.js"; // meeting to trade: the wait, the groups' halfway rule
 import { FOODS, FOOD_GROUPS } from "../sim/foods.js"; // food by type in the codex
 import { STORE, FACTOR } from "../sim/storage.js"; // the food chain entries: food rooms and spoilage
+import { COLD } from "../sim/appliances.js"; // the appliances' cold rooms (#19)
+import { FRIDGE } from "../sim/data-power.js";
 import { WOOD } from "../sim/woodcutting.js"; // a camp's fire a day
 import { COOK } from "../sim/cooking.js"; // a cook fire's wood
 import { EAT } from "../sim/eating.js"; // "No hot food"
@@ -254,6 +256,7 @@ const SUPPLY_HOW = {
   primers: "A reloading bench needs one for every round. Rare: gun stores, the military; arms dealers and trading groups sell them.",
   blackpowder: "Made at a reloading bench from wood, scrap and food (crafting): used when the smokeless powder runs out. Its loads jam more (×1.5) and are louder.",
   matchprimers: "Made at a reloading bench (crafting, Mechanics 8): used when the factory primers run out. They fail three times as often.",
+  propane: "Bottled gas: a kitchen range off the grid burns 0.1 a batch it cooks (no wood, no power). Grills by houses, hardware stores, gas stations, campgrounds.",
 };
 function supplyEntries() {
   return Object.entries(SUPPLIES).map(([k, v]) => (FOODS[k] ? {
@@ -505,7 +508,7 @@ function foodChainEntries() {
     how: "Open the Food tab when the food chip turns yellow: the verdict names the biggest drain and one or two things to do (a root cellar, cooking the meat before it turns, more people on Farm, Hunt, Fish or Forage, Lean rations).", sprite: null,
   }, {
     key: "k:spoilage", cat: "supplies", name: "🗑️ Spoilage", sub: "How food works",
-    stats: [["Outside", `×${FACTOR.outside} a day, worse in heat and rain`], ["Pantry, storehouse", `×${FACTOR.dry}`], ["Root cellar", `×${FACTOR.cellar} (+${STORE.rootCellar} days of room)`], ["Cold store", "×0.15–0.9 by the season"], ["Walk-in freezer", `×${FACTOR.freezer} while powered`]],
+    stats: [["Outside", `×${FACTOR.outside} a day, worse in heat and rain`], ["Pantry, storehouse", `×${FACTOR.dry}`], ["Root cellar", `×${FACTOR.cellar} (+${STORE.rootCellar} days of room)`], ["Cold store", "×0.15–0.9 by the season"], ["Walk-in freezer", `×${FACTOR.freezer} while powered`], ["Fridge", `×${FACTOR.fridge} while powered (${FRIDGE.room} days a fridge)`], ["Chest freezer", `×${COLD.chest_freezer.factor} while powered (${COLD.chest_freezer.room} days)`], ["Cold case", `×${COLD.cold_case.factor} while powered (${COLD.cold_case.room} days)`]],
     text: "Every food keeps its own time at room temperature (bread days, raw meat two or three, potatoes a month, cans years). Fresh food fills the base's food rooms, the food that spoils fastest in the coldest room first; what does not fit sits outside and spoils fastest. Canned, dry and preserved food needs no room. A lot whose time runs out is thrown out (a line in the log). The soonest to spoil is eaten first.",
     how: "Build a root cellar (or a storehouse, a cold store, a freezer) before the harvest, dry the surplus on drying racks, cook raw meat into meals, and do not hunt more than the base eats in a few days.", sprite: null,
   }, {
