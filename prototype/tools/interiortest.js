@@ -1104,7 +1104,7 @@ console.log("\nFootprint shapes: buildings that are not boxes (issue #23)");
     const m = buildingMap(st, st.tiles[i * 7].id, { id: `poi${i}:neighbourhood`, key: "neighbourhood", name: "Elm Street" }, false);
     streets++; houses += m.plan.houses.length; shapedHouses += m.buildings.filter((b) => b.parts).length;
     if (m.plan.houses.length < 3 || m.plan.houses.length > 5) streetBad++;
-    const G = m.floors[0].cells.map((c) => (c.moved ? { ...c, k: "open" } : c)), seen = walkFrom(m, m.zones[0].x0 + 1, m.zones[0].y0 + 1, true, G); // the ground: the yards, the street and every house's ground floor (a scene's piece shoved into a doorway is a way through: shoved aside)
+    const G = m.floors[0].cells.map((c) => (c.moved || c.k === "boarded" ? { ...c, k: "open" } : c)), seen = walkFrom(m, m.zones[0].x0 + 1, m.zones[0].y0 + 1, true, G); // the ground: the yards, the street and every house's ground floor (a scene's piece shoved into a doorway or its boards are a way through: shoved aside, torn down)
     for (let j = 0; j < m.w * m.h; j++) if (CELL[G[j].k] && CELL[G[j].k].walk && G[j].k !== "vehicle" && !seen[j]) { streetBad++; break; }
   }
   check(!streetBad && shapedHouses > 0, `a neighbourhood's street still holds 3–5 houses, every cell reached (${streets} streets, ${houses} houses, ${shapedHouses} of them shaped)`);
