@@ -155,7 +155,7 @@ function stairsOf(b, u) {
   const onStairs = b.cells[u.y * W + u.x].k === "stairs" && onFloor(b, u);
   return { up: onStairs && floorNo(b) < F.length - 1, down: onStairs && floorNo(b) > 0 };
 }
-const floorLabel = (b, f) => `Floor ${f + 1} of ${floorsOf(b).length}`;
+const floorLabel = (b, f) => { const nm = (floorsOf(b)[f] || {}).name || ""; return /^(Entrance level|Level \u2212)/.test(nm) ? `${nm} (${f + 1} of ${floorsOf(b).length})` : `Floor ${f + 1} of ${floorsOf(b).length}`; }; // a bunker's levels go down (sim/bunkerlayout.js levelName)
 // Still in the fight, whatever floor they are on (sim/combat.js active() counts a unit on another floor as off the
 // map for the active floor; the team list, Tab and the number keys must still reach them).
 const alive = (u) => !u.dead && !u.down && !u.left && !u.fled && (!u.off || u.aboard); // aboard the vehicle: off the map but still yours to order
