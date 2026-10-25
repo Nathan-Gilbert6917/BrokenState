@@ -3,7 +3,8 @@
 // layouts make sense and filled with appliances, furniture and decor that makes it feel lived in. [...] I want all
 // reasonable appliances, furniture and some decor to be lootable and taken to your base for use [...] some will
 // require two survivors to carry"). Plain data that imports nothing: the one source of truth for every piece of
-// furniture that stands on a battle map's cell. Merged by: combat.js (furnitureCells into CELL, at load), barricade.js
+// furniture that stands on a battle map's cell. Merged by: data.js (FURNITURE_GEAR into GEAR: the item forms, issue #12's
+// furnicarry.js lifts them), combat.js (furnitureCells into CELL, at load), barricade.js
 // (furnitureHp into FURNITURE: what can be shoved and battered), ui/isoview.js (FURNITURE_KINDS: the furniture set,
 // the floored set, the outlines, the wall-standing pieces; a sprite and a height for each kind), ui/codex.js (the
 // Barricades entry's names). Placing the pieces in rooms (buildingmaps.js FURNISH), picking them up, base use: the
@@ -154,8 +155,8 @@ export const pieceDef = (k) => FURNITURE_KINDS[k] || null;
 // The item form of every piece that can be lifted (not fixed), for the pick-up ticket (#12) to merge into data.js GEAR:
 // keyed f_<kind>, in both arms only (bulky, twoHands, the In arms slot, a cart or a vehicle, as data-beds.js BED_GEAR),
 // furniture: its cell kind (set down again as that cell), weight its kg. The fridge keeps its own item, data-power.js
-// POWER_GEAR.fridge (key "fridge"), so it has no f_fridge. Not merged into GEAR here: nothing can lift a piece yet, and
-// a GEAR row would put it in the loot pools and the shops. itemKey(k): the item key for a cell kind (null when fixed).
+// POWER_GEAR.fridge (key "fridge"), so it has no f_fridge. Merged into GEAR by data.js (marked piece: kept out of the
+// starting kits and trunks, whose dice would change). itemKey(k): the item key for a cell kind (null when fixed).
 export const FURNITURE_ITEM_KEY = { fridge: "fridge" };
 export const itemKey = (k) => (!FURNITURE_KINDS[k] || FURNITURE_KINDS[k].carry === "fixed" ? null : FURNITURE_ITEM_KEY[k] || `f_${k}`);
 /** @type {Record<string, { name: string, slot: string, skill: null, power: number, req: number, value: number, noise: number, weight: number, cat: string, bulky: boolean, twoHands: boolean, furniture: string, desc: string }>} */

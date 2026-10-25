@@ -33,6 +33,9 @@ import { kitSource, siteSource, areaSource, traderSource } from "./itemcond.js";
 import { armourSpec, armourBroken } from "./armour.js";
 import { itemDur, itemDurMax } from "./crafting.js";
 import { ROWS, mergeRows } from "./data-shops.js";
+import { pieceAdjKg, pieceKg, crushMob } from "./furnicarry.js"; // a piece of furniture in the arms (call-time only)
+import { kgOf } from "./carry.js"; // the kg of the supplies in the hands (call-time only)
+import { haulLoad } from "./raidloot.js"; // the finds carried loose (call-time only)
 
 export const CARRY = {
   // Battle mob by kg (light / medium / heavy / overloaded: load.js LOAD_BANDS' limits): Medium keeps 5 tiles an action
@@ -87,15 +90,21 @@ export function bandFor(kg) {
 }
 // combat.js playerUnit: the unit's kg (u.armLoad), mob and dash by its felt load. u.fieldKg: an AI person's field
 // load by kit (BASE_KG: water, food, a ruck, odds and ends; fighters.js build), weight they carry that is no item to loot.
+// What is held in the arms besides the bag counts too (issue #12, "very slow due to weight"): the team's supplies in the
+// hands (u.hands) and the finds carried loose (u.haul); a piece of furniture its full kg alone, its half each of two
+// (furnicarry.js pieceAdjKg), and past MAX_LOAD it crushes the pace (crushMob: a 60 kg fridge alone 2 tiles an action).
 export function weighPlayer(u, s) {
-  const kg = battleKg(s) + num(u.fieldKg);
+  const kg = battleKg(s) + num(u.fieldKg) + armsKg(u) + pieceAdjKg(u, s);
   const B = bandFor(kg * feelFactor(s));
   u.armLoad = r2(kg);
   u.mob = B.mob + fleetMob(s); // Fleet-Footed (traits.js): a tile more a move at any load
   u.dash = B.dash;
   u.loadBand = B.band;
+  if (u.piece) { u.mob = crushMob(u.mob, pieceKg(u, s)); u.dash = Math.min(0, u.dash); } // furnicarry.js LIFT.CRUSH
   if (cartOf(s) && u.cartHelped == null) u.mob = Math.max(2, u.mob - CART_FIGHT.mob); // carts.js: pushing a cart alone, a tile less a move (a helper: full pace)
 }
+// The supplies in the hands and the finds carried loose (a bag in the arms is an item: battleKg has it).
+const armsKg = (u) => (u && u.hands ? kgOf(u.hands) : 0) + (u && u.haul ? haulLoad(u) : 0);
 // An enemy's kg: its gun and parts, armour (a carrier's plates), rig, magazines with their rounds, throwables, a medic's
 // kit, and what its kind carries besides (BASE_KG).
 export function kitKg(u, kind) {
