@@ -92,8 +92,18 @@ const NUM = ["no one", "one", "two", "three", "four", "five", "six"];
 const UPSTAIRS_TYPES = new Set(["offices", "apartments", "police"]); // interiorOccupants: squatters prefer an upper floor here
 // interiorOccupants: the rooms a building's people make for, by its kind and their side (the rooms' styles,
 // civiclayout.js: the new saves' plans): a police station's armed squatters the squad room or the armory, a school's
-// survivors the gym, a church's the nave. Unchanged where a building or a side has none.
-const KIND_ROOMS = { police: { hostile: ["squad", "armory"] }, school: { neutral: ["gym"] }, church: { neutral: ["nave"] } };
+// survivors the gym, a church's the nave. Unchanged where a building or a side has none. Issue #25 (militarylayout.js):
+// the soldiers holding a base (side military) its ops room, comms, bays, the guard post and the vehicle bays, the bunker's
+// command room; armed squatters the same rooms, a prison's control room, a terminal's security; survivors a barracks'
+// day room, a prison's day room, a terminal's gates and lounges, a mess hall.
+const KIND_ROOMS = {
+  police: { hostile: ["squad", "armory"] }, school: { neutral: ["gym"] }, church: { neutral: ["nave"] },
+  hq: { military: ["ops", "comms", "mlobby"], hostile: ["ops", "comms"] }, barracks: { military: ["bay", "dutydesk"], hostile: ["bay", "mdayroom"], neutral: ["mdayroom", "bay"] },
+  armorybldg: { military: ["issue"], hostile: ["issue", "armorer"] }, gatehouse: { military: ["guardpost"], hostile: ["guardpost"] }, motorpool: { military: ["vbays", "dispatchm"], hostile: ["dispatchm"] },
+  messhall: { neutral: ["mess"], hostile: ["mess"] }, aidstation: { neutral: ["aidward"] }, hangar: { military: ["hfloor"], hostile: ["hoffice", "hfloor"] }, tower: { military: ["cab"], hostile: ["cab"] },
+  flightops: { military: ["opsdesk", "crewroom"], hostile: ["crewroom"] }, terminal: { neutral: ["gates", "lounge"], hostile: ["security", "airline"] },
+  cellblock: { hostile: ["pcontrol", "guardroom"], neutral: ["pdayroom"] }, bunker: { military: ["command", "bbunks"], hostile: ["command", "bbunks"], neutral: ["bbunks"] },
+};
 
 // ---------- state ----------
 export function wanderers(state) {

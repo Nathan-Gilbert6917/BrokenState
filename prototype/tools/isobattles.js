@@ -48,9 +48,10 @@ const field = (st, tile, enemy, extra = {}) => {
 // showroom(b, x0?, y0?) → [{ k, x, y }] (each piece's first cell; from (1, 1) by default: 101 kinds since issues #15 and #16).
 export function showroom(b, x0 = 1, y0 = 1) {
   const placed = [];
-  const kinds = Object.keys(FURNITURE_KINDS);
+  const kinds = Object.keys(FURNITURE_KINDS).sort((a, c) => FURNITURE_KINDS[a].size[1] - FURNITURE_KINDS[c].size[1]);
   // Packed in rows, each piece at its own width with a free cell after it, a row as tall as its tallest piece and a free
-  // row under it (the catalogue outgrew a grid of 3 × 3 slots on the field map: issue #15).
+  // row under it (the catalogue outgrew a grid of 3 × 3 slots on the field map: issue #15); since issue #25 the rows run
+  // a cell narrower (two cells into the map's margin) to hold the military pieces too.
   const spots = [];
   let x = x0, y = y0, rowH = 1;
   for (const k of kinds) {

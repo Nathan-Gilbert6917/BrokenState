@@ -26,6 +26,7 @@
 // autopilot.js idleTeams (crawlAutoStep every hour), aiscav.js (mem.aiLoot), main.js / ui.js (the crawl window and
 // its map, ui/citycrawl.js).
 import { crashSiphon } from "./crashstart.js"; // Crashlanding (2026-10-24): limited fuel can be siphoned
+import { legacyRooms } from "./worldcfg.js"; // an older save: the checkpoint as it always was (issue #25)
 import { typeFind } from "./foods.js"; // a crawl's food finds as items
 import { keyWord } from "./water.js"; // supplies as words: "9mm FMJ", "rounds"
 import { Rng } from "./rng.js";
@@ -978,7 +979,7 @@ function enterStreet(state, p, ev, areas, groups, gunSite = "city") {
   const setup = {
     mode: "raid", tile: c.tile, partyId: p.id, canRetreat: true, ambush: null, handler: "crawl",
     enemy: { kind: groups.length > 1 ? "mixed" : groups[0]?.kind || "zombies", count: total, power: 3, name: groups.map((g) => g.name).join(" and ") || "nobody", groups },
-    raid: { heat0, building: "street", areas, gunSite },
+    raid: { heat0, building: "street", areas, gunSite, ...(ev.key === "checkpoint" && !legacyRooms(state) ? { checkpoint: true } : {}) }, // checkpoint: its guard shack, arms store and truck get the military pieces (militarylayout.js dressCheckpoint, issue #25; an older save's as it was)
     context: { factionIds: [], crawl: { kind: "street", event: ev.id, block: n, heat0 } },
   };
   const veh = p.vehicle;

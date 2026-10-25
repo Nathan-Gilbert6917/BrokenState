@@ -1501,6 +1501,23 @@ function paintAirport() {
   return p;
 }
 
+// An air base (sim/data.js LOCATIONS airbase, issue #25): an olive arched hangar, a grey fighter on the apron, a
+// control tower, the runway's edge.
+function paintAirBase() {
+  const p = painter(26, 21);
+  // Control tower.
+  p.rect(21, 8, 23, 18, CONCRETE); p.rect(21, 8, 21, 18, shade(CONCRETE, 0.2));
+  p.rect(19, 4, 25, 7, shade(CONCRETE, -0.15)); p.rect(20, 5, 24, 6, GLASS_BLUE); p.rect(20, 5, 24, 5, GLASS_LIT);
+  p.rect(22, 2, 22, 3, METAL); p.set(22, 1, SIREN_RED);
+  // Hangar with an arched olive roof, the doors open.
+  for (let r = 0; r < 4; r++) p.rect(1 + [3, 1, 0, 0][r], 5 + r, 17 - [3, 1, 0, 0][r], 5 + r, r === 0 ? shade(OLIVE, 0.3) : OLIVE);
+  p.rect(1, 9, 17, 16, shade(OLIVE, 0.1)); p.rect(3, 10, 15, 16, "#22262a"); star(p, 8, 6, WHITE);
+  // A grey fighter on the apron: swept wings, twin fins.
+  p.rect(4, 15, 16, 16, "#8a9098"); p.rect(16, 15, 17, 15, GLASS); p.rect(8, 13, 11, 18, shade("#8a9098", -0.15)); p.rect(4, 13, 5, 14, "#8a9098");
+  p.rect(0, 19, 25, 20, ASPHALT); for (let x = 1; x <= 24; x += 4) p.rect(x, 20, x + 1, 20, "#d8c040");
+  return p;
+}
+
 function paintFactory() {
   const p = painter(26, 21);
   // Smokestacks with red bands, smoking.
@@ -2342,7 +2359,7 @@ const POI_PAINT = {
   grocery: paintGrocery, clinic: paintClinic, gas: paintGas, diner: paintDiner, motel: paintMotel, church: paintChurch, feedstore: paintFeedStore,
   farm: paintFarm, barn: paintBarn, ranch: paintRanch, cabin: paintCabin, lodge: paintLodge, campground: paintCampground, ranger: paintRanger,
   radiotower: paintRadioTower, truckstop: paintTruckStop, quarry: paintQuarry, crashsite: paintCrashSite,
-  dam: paintDam, airport: paintAirport, factory: paintFactory, prison: paintPrison, military: paintMilitarySite,
+  dam: paintDam, airport: paintAirport, airbase: paintAirBase, factory: paintFactory, prison: paintPrison, military: paintMilitarySite,
   crash_mil: () => paintHeliWreck(OLIVE, shade(OLIVE, -0.3), "star"), crash_med: () => paintHeliWreck(WHITE, RED, "cross"),
   crash_news: () => paintHeliWreck("#3d6fb0", "#e8c04a", "stripe"), crash_cargo: paintCargoWreck, airdrop: paintAirDrop,
   convoy: paintConvoySite, // sim/miltrucks.js: the abandoned Army convoy

@@ -371,7 +371,41 @@ function f_exambed(p) { // an exam bed: a padded teal top with a raised end, the
   line(p, 1, 3, 4, 6, "#4f7b88"); R(p, 4, 6, 15, 7, "#4f7b88"); H(p, 4, 15, 5, "#eef0f2"); box(p, 3, 8, 14, 15, "#c9b48a"); H(p, 4, 13, 11, "#957f58");
 }
 
+// ---------- military bases, air bases, airports and prisons (issue #25) ----------
+function f_footlocker(p) { // an olive footlocker: brass corners, a hasp, a stencilled name band
+  box(p, 1, 5, 14, 14, "#55623a"); H(p, 1, 14, 8, "#3f4a28"); for (const [x, y] of [[1, 5], [14, 5], [1, 14], [14, 14]]) p.set(x, y, "#d9b13b");
+  R(p, 7, 7, 8, 9, "#c9ced3"); H(p, 3, 6, 11, "#e8e0c8");
+}
+function f_maptable(p) { // a map table: a sheet with green ground, roads and red marks on a wooden table
+  R(p, 0, 4, 15, 8, "#d8cfa0"); R(p, 2, 5, 6, 7, "#6a8a4a"); line(p, 0, 8, 15, 4, "#8a7a5a"); p.set(10, 6, "#c8402f"); p.set(12, 5, "#c8402f");
+  legs(p, 1, 14, 9, 15, WOODD); H(p, 0, 15, 9, WOOD);
+}
+function f_radioconsole(p) { // a radio console: two grey-green sets stacked, dials lit green and amber, a handset
+  box(p, 1, 1, 14, 7, "#5a6450"); box(p, 1, 8, 14, 14, "#4a5244"); for (const x of [3, 6, 9]) disc(p, x, 4, 1, "#202226");
+  p.set(12, 3, "#5ad06a"); p.set(12, 5, "#e0a030"); H(p, 3, 11, 11, "#202226"); R(p, 12, 10, 13, 12, "#26272a");
+}
+function f_ammocrate(p) { // a green ammo crate: rope handles, yellow stencil band, latches
+  box(p, 1, 4, 14, 14, "#4d5a32"); H(p, 2, 13, 8, "#e6c23a"); V(p, 7, 5, 13, "#3a4426");
+  H(p, 0, 1, 9, "#b8a27a"); H(p, 14, 15, 9, "#b8a27a"); p.set(4, 5, "#9aa1a8"); p.set(11, 5, "#9aa1a8");
+}
+function f_fuelbladder(p) { // a fuel bladder: a black rubber pillow, its valve and hose
+  oval(p, 0, 7, 15, 14, "#26272a"); H(p, 2, 13, 8, "#3a3b40"); R(p, 7, 5, 8, 7, "#9aa1a8"); line(p, 8, 5, 13, 2, "#1f1f22");
+}
+function f_gateseat(p) { // gate seating: three linked blue seats on a chrome beam
+  for (const x of [0, 5, 10]) { R(p, x, 4, x + 4, 9, "#2f5d8a"); R(p, x, 10, x + 4, 11, "#3b6fa0"); }
+  H(p, 0, 15, 12, "#b8bec4"); V(p, 2, 12, 15, "#b8bec4"); V(p, 13, 12, 15, "#b8bec4");
+}
+function f_intakelocker(p) { // a property locker: a steel bank of small numbered doors, amber tags
+  box(p, 0, 0, 15, 15, "#8a949c");
+  for (const y of [5, 10]) H(p, 1, 14, y, "#5e666d"); for (const x of [5, 10]) V(p, x, 1, 14, "#5e666d");
+  for (const y of [2, 7, 12]) for (const x of [2, 7, 12]) p.set(x, y, "#e0a030");
+}
+function f_luggage(p) { // a suitcase: a hard red shell, its handle, two wheels, a tag
+  box(p, 3, 3, 12, 14, "#a8443a"); V(p, 7, 4, 13, "#7a2e28"); R(p, 6, 1, 9, 2, "#26272a"); p.set(4, 15, "#1f1f22"); p.set(11, 15, "#1f1f22"); R(p, 10, 5, 11, 7, "#e8e0c8");
+}
+
 export const GEAR_ART = {
+  f_luggage, f_footlocker, f_maptable, f_radioconsole, f_ammocrate, f_fuelbladder, f_gateseat, f_intakelocker,
   f_medcart, f_drugsafe, f_instcab, f_morguelocker, f_autopsy, f_wheelchair, f_vettable, f_curtain, f_linencart, f_monitor, f_crib, f_exambed,
   f_bed, f_bunk, f_hospbed, f_gurney, f_ivstand, f_hay, f_barrel, f_range, f_dishwasher, f_washer, f_dryer, f_fryer, f_coldshelf,
   f_icemachine, f_watercooler, f_compressor, f_tank, f_jukebox, f_pooltable, f_clothesrack, f_pottingbench, f_palletrack, f_tirerack,
