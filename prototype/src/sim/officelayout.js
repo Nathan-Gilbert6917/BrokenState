@@ -28,7 +28,7 @@
 //   - city hall: the rotunda lobby, the clerk's counter with queue posts in front of it, the permits office, the
 //     council chambers (the council's dais at the back with their chairs behind it, the podium, rows of seats facing
 //     them either side of an aisle), the mayor's office;
-//   - the courthouse: the security screening entrance (a walk-through scanner, an X-ray belt, queue posts, the
+//   - the courthouse: the security screening entrance (a walk-through scanner, the X-ray tunnel, queue posts, the
 //     security desk), the clerks' offices, the courtroom (the judge's bench on the back wall, the witness stand beside
 //     it, the jury box on a side wall, the two counsel tables, the gallery's benches in rows facing the bench either
 //     side of an aisle), the evidence room (evidence lockers: confiscated guns and knives), the judges' chambers, the
@@ -357,11 +357,11 @@ export const OFFICE_STYLES = {
   mayor(L) { OFFICE_STYLES.execoffice(L); },
   records(L) { COMMERCIAL_STYLES.records(L); },
   // ---------- the courthouse ----------
-  // The security screening entrance: the X-ray belt and the walk-through scanner beside the way through, queue posts
+  // The security screening entrance: the X-ray tunnel (#25's scanner) and the walk-through scanner beside the way through, queue posts
   // before them, the security desk, chairs.
   screening(L) {
     const c = L.c, d = doorOf(L), near = d ? [d[0], d[1] - 1] : [c.x0, c.y1];
-    L.wall("xraybelt", { sides: ["w", "e"], near }) || L.centre("xraybelt", { near });
+    L.wall("scanner", { sides: ["w", "e"], near }) || L.centre("scanner", { near }); // #25's security scanner: the X-ray tunnel
     L.wall("screener", { sides: ["w", "e"], near }) || L.centre("screener", { near });
     for (let x = c.x0 + 1; x <= c.x1 - 1; x += 2) if (L.ok(x, c.y1 - 1)) L.place("stanchion", [[x, c.y1 - 1]]);
     L.wall("secdesk", P(L, { sides: ["n", "w", "e"] }));

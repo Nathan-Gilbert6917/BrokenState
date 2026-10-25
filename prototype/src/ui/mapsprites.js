@@ -1503,6 +1503,23 @@ function paintAirport() {
   return p;
 }
 
+// An air base (sim/data.js LOCATIONS airbase, issue #25): an olive arched hangar, a grey fighter on the apron, a
+// control tower, the runway's edge.
+function paintAirBase() {
+  const p = painter(26, 21);
+  // Control tower.
+  p.rect(21, 8, 23, 18, CONCRETE); p.rect(21, 8, 21, 18, shade(CONCRETE, 0.2));
+  p.rect(19, 4, 25, 7, shade(CONCRETE, -0.15)); p.rect(20, 5, 24, 6, GLASS_BLUE); p.rect(20, 5, 24, 5, GLASS_LIT);
+  p.rect(22, 2, 22, 3, METAL); p.set(22, 1, SIREN_RED);
+  // Hangar with an arched olive roof, the doors open.
+  for (let r = 0; r < 4; r++) p.rect(1 + [3, 1, 0, 0][r], 5 + r, 17 - [3, 1, 0, 0][r], 5 + r, r === 0 ? shade(OLIVE, 0.3) : OLIVE);
+  p.rect(1, 9, 17, 16, shade(OLIVE, 0.1)); p.rect(3, 10, 15, 16, "#22262a"); star(p, 8, 6, WHITE);
+  // A grey fighter on the apron: swept wings, twin fins.
+  p.rect(4, 15, 16, 16, "#8a9098"); p.rect(16, 15, 17, 15, GLASS); p.rect(8, 13, 11, 18, shade("#8a9098", -0.15)); p.rect(4, 13, 5, 14, "#8a9098");
+  p.rect(0, 19, 25, 20, ASPHALT); for (let x = 1; x <= 24; x += 4) p.rect(x, 20, x + 1, 20, "#d8c040");
+  return p;
+}
+
 function paintFactory() {
   const p = painter(26, 21);
   // Smokestacks with red bands, smoking.
@@ -1920,6 +1937,40 @@ function paintMineshack() {
   p.rect(14, 11, 15, 13, shade(METAL, -0.55)); p.set(12, 11, LIT_WIN);
   p.rect(1, 12, 4, 13, "#4a4a4e"); p.rect(2, 11, 3, 11, "#7a6a4a"); p.set(1, 14, TIRE); p.set(4, 14, TIRE); // the ore cart
   p.rect(0, 14, 17, 14, shade(DIRT, 0.1)); for (let x = 0; x <= 17; x += 2) p.set(x, 14, shade(METAL, -0.3));
+  return p;
+}
+
+// ---- bunkers (sim/bunkerlayout.js, issue #26) ----
+// A bunker's portal cut into the hillside: the rock, a concrete face with the blast door (hazard bands round it), a vent
+// stack on the rock above; the military's with a wire fence and a guard hut, the government's with a flag on a pole.
+function paintBunkerPortal(gov) {
+  const p = painter(20, 17);
+  for (let y = 1; y <= 14; y++) p.rect(Math.max(0, 6 - y), y, Math.min(19, 13 + y), y, y % 3 ? "#6e6a60" : "#7a766c"); // the hill
+  p.rect(5, 7, 14, 14, OUTLINE); p.rect(6, 8, 13, 14, "#9c9e98"); p.rect(6, 8, 13, 8, "#b8bab4"); // the concrete face
+  p.rect(8, 10, 11, 14, "#4d5258"); for (let x = 8; x <= 11; x++) p.set(x, 9, x % 2 ? "#e0b020" : "#1c1c1e"); p.set(10, 12, "#8a8a8a"); // the blast door
+  p.rect(14, 2, 15, 5, "#4d5258"); p.rect(13, 1, 16, 1, "#6f757c");               // the vent stack
+  p.rect(0, 15, 19, 16, "#5a5648");
+  if (gov) { p.rect(3, 3, 3, 14, "#c9ced3"); p.rect(4, 3, 6, 4, "#3a6fb0"); p.set(4, 5, "#c8402f"); p.set(5, 5, "#eef0f2"); } // a flag on its pole
+  else { for (let x = 0; x <= 19; x += 2) p.set(x, 15, "#9aa1a8"); p.rect(16, 11, 18, 14, OLIVE); p.set(17, 12, LIT_WIN); } // the wire fence, the guard hut
+  return p;
+}
+function paintFalloutShelter() {
+  const p = painter(20, 17);
+  // A public fallout shelter: a grassy mound, a concrete stair kiosk, the yellow and black shelter sign on a post.
+  for (let y = 6; y <= 14; y++) p.rect(Math.max(0, 9 - y), y, Math.min(19, 10 + y), y, y % 2 ? "#5d7a3e" : "#678446");
+  p.rect(6, 8, 13, 14, OUTLINE); p.rect(7, 9, 12, 14, "#a8a8a0"); p.rect(7, 9, 12, 9, "#c4c4bc"); p.rect(9, 11, 11, 14, "#1c1c1e"); // the kiosk, its stairway
+  p.rect(15, 4, 15, 14, "#8a8a8a"); p.rect(14, 2, 18, 5, "#e0b020"); p.rect(15, 3, 17, 4, "#1c1c1e"); p.set(16, 3, "#e0b020"); // the sign
+  p.rect(0, 15, 19, 16, "#4b4b50");
+  return p;
+}
+function paintPrepper() {
+  const p = painter(18, 15);
+  // A prepper's place: a plank shed in the yard, a solar panel on its roof, the steel hatch in the ground beside it.
+  p.rect(0, 12, 17, 14, "#5d7a3e");
+  p.rect(2, 5, 10, 12, OUTLINE); p.rect(3, 6, 9, 12, WOOD); for (let x = 3; x <= 9; x += 2) p.rect(x, 6, x, 12, shade(WOOD, -0.2)); // the shed
+  p.rect(1, 4, 11, 4, shade(WOOD, -0.35)); p.rect(3, 2, 8, 3, "#2a3a5a"); p.set(4, 2, "#5a7ab0"); p.set(7, 3, "#5a7ab0"); // the roof, the panel
+  p.rect(5, 9, 7, 12, shade(WOOD, -0.45));
+  p.rect(12, 10, 16, 12, "#4d5258"); p.rect(13, 11, 15, 11, "#6f757c"); p.set(14, 10, "#c9ced3"); // the hatch
   return p;
 }
 
@@ -2468,14 +2519,14 @@ const POI_PAINT = {
   grocery: paintGrocery, clinic: paintClinic, gas: paintGas, diner: paintDiner, motel: paintMotel, church: paintChurch, feedstore: paintFeedStore,
   farm: paintFarm, barn: paintBarn, ranch: paintRanch, cabin: paintCabin, lodge: paintLodge, campground: paintCampground, ranger: paintRanger,
   radiotower: paintRadioTower, truckstop: paintTruckStop, quarry: paintQuarry, crashsite: paintCrashSite,
-  dam: paintDam, airport: paintAirport, factory: paintFactory, prison: paintPrison, military: paintMilitarySite,
+  dam: paintDam, airport: paintAirport, airbase: paintAirBase, factory: paintFactory, prison: paintPrison, military: paintMilitarySite,
   crash_mil: () => paintHeliWreck(OLIVE, shade(OLIVE, -0.3), "star"), crash_med: () => paintHeliWreck(WHITE, RED, "cross"),
   crash_news: () => paintHeliWreck("#3d6fb0", "#e8c04a", "stripe"), crash_cargo: paintCargoWreck, airdrop: paintAirDrop,
   convoy: paintConvoySite, // sim/miltrucks.js: the abandoned Army convoy
   military_hive: paintInfestedBase, bunker_mil: () => paintMilitarySite(true), // sim/crashstart.js: Crashlanding's overrun Guard base (loc.look "hivebase", ui/render.js siteLook) and the unit's mountain bunker
   // Points of interest (sim/pois.js): the small places a tile holds besides its site.
   house: paintHouse, neighbourhood: paintNeighbourhood, garage: paintGarage, corner: paintCorner, pizza: paintPizza,
-  farmstand: paintFarmstand, shed: paintShed, blind: paintBlind, campsite: paintCampsite, hikercamp: paintHikercamp, mineshack: paintMineshack,
+  farmstand: paintFarmstand, shed: paintShed, blind: paintBlind, campsite: paintCampsite, hikercamp: paintHikercamp, mineshack: paintMineshack, bunker: () => paintBunkerPortal(false), govbunker: () => paintBunkerPortal(true), shelter: paintFalloutShelter, prepper: paintPrepper, // bunkers (issue #26)
   pawnshop: paintPawnShop, // sim/shops.js
   // The shops and services (sim/data-shops.js NEW_KINDS), each painted in its franchise's look.
   sportshop: paintSportShop, electronics: paintElectronics, radioshop: paintRadioShop, bookstore: paintBookstore, library: paintLibrary,

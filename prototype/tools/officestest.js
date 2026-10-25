@@ -41,7 +41,7 @@ const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FA
 const section = (t) => console.log(`\n${t}`);
 const KEYS = ["storefront", "bizpark", "offices", "cityhall", "courthouse", "callcenter", "techoffice", "station"];
 const FIRM_OF = (key) => (key === "offices" ? "office" : key);
-const NEW_PIECES = ["dentalchair", "turnstile", "liftdoor", "judgebench", "jurybox", "witnessstand", "dais", "podium", "headsetdesk", "beanbag", "camera", "studiolight", "newsdesk", "sorter", "plotter", "screener", "xraybelt", "liquorcab", "phonebooth"];
+const NEW_PIECES = ["dentalchair", "turnstile", "liftdoor", "judgebench", "jurybox", "witnessstand", "dais", "podium", "headsetdesk", "beanbag", "camera", "studiolight", "newsdesk", "sorter", "plotter", "screener", "liquorcab", "phonebooth"];
 const make = (key, s, o = {}) => {
   const fr = FRANCHISES[FIRM_OF(key)], rng = new Rng(7000 + s * 104729 + key.length * 31);
   const variant = o.variant === undefined ? fr[s % fr.length].id : o.variant;
@@ -154,7 +154,7 @@ for (const key of KEYS) for (let s = 0; s < N; s++) {
     else saw("courtrooms", cts.length);
     if (!has(/^Holding cell/, "bars")) err("holdingcell", tag);
     const scr = R.find((a) => a.entry);
-    if (!scr || !kinds(m, scr).has("screener") || !kinds(m, scr).has("xraybelt")) err("screening", tag);
+    if (!scr || !kinds(m, scr).has("screener") || !kinds(m, scr).has("scanner")) err("screening", tag);
     if (!has(/^Evidence room/, "evlocker")) err("evidence", tag);
     if (!has(/^Law library/, "bookshelf")) err("lawlibrary", tag);
   }
@@ -188,7 +188,7 @@ const LABEL = {
   turnstiles: "a tower's lobby turnstiles", liftbank: "its lift bank", liftlobbies: "every floor's lift lobby", loadingbay: "its loading bay", tworuns: "two stair runs on every floor of a tower of 6+",
   execsuite: "the executive suite's safe and liquor cabinet", roofplant: "the roof plant", floorsvary: "a tall tower's floors vary",
   council: "city hall's council chambers: the dais, the podium, the seats", councilfacing: "the seats face the dais", clerk: "the clerk's counter and queue posts", mayor: "the mayor's office", records: "records",
-  courtroom: "every courtroom: the bench, the jury box, the witness stand, the gallery", holdingcell: "the holding cell's bars", screening: "the screening entrance's scanner and X-ray belt", evidence: "the evidence room's lockers", lawlibrary: "the law library",
+  courtroom: "every courtroom: the bench, the jury box, the witness stand, the gallery", holdingcell: "the holding cell's bars", screening: "the screening entrance's walk-through scanner and X-ray tunnel", evidence: "the evidence room's lockers", lawlibrary: "the law library",
   headsetdesks: "a call center's headset desks", bigbreak: "its break room's vending machines", supervisors: "its supervisors' platform",
   benches: "a tech office's benches", beanbags: "beanbags", pooltable: "the games corner's pool table", phonebooths: "phone booths", serverroom: "a server room", drinks: "a kitchen of fridges",
   tvstudio: "a TV studio's cameras, news desk and lights", radiobooth: "a radio booth's console", press: "a paper's press", newsroom: "a newsroom", control: "a control room",
