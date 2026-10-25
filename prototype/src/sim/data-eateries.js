@@ -27,17 +27,13 @@
 //   size), with its look (colours, sign, style 0–3 for the map painter, booth tint) and its plan (the floor, the front
 //   room's name), where it stands (w: city, suburb, town, as every franchise) and the places it suits (at: main street,
 //   strip mall pad, highway exit, city block, mall, hotel, truck stop: eateryVariant's setting).
+import { REAL_SIZE } from "./data-buildingsize.js"; // the sizes (issue #24 took over EAT_SIZE)
 
 /** @typedef {"tiny" | "small" | "medium" | "large" | "huge"} EatSize */
 /** @typedef {{ id: string, name: string, kind: string, cuisine: string, format: string, size: EatSize, w: { city: number, suburb: number, town: number }, at: string[], look?: any, plan?: any, tint?: string, brew?: boolean, old?: boolean }} EatVariant */
 
-export const EAT_SIZE = {
-  tiny:   { w: [8, 10],  h: [9, 10] },
-  small:  { w: [11, 14], h: [10, 12] },
-  medium: { w: [16, 22], h: [13, 16] },
-  large:  { w: [26, 34], h: [18, 22] },
-  huge:   { w: [50, 54], h: [36, 40] }, // the shared rule (tools/storeytest.js): a huge footprint at least 50 wide and 1800 cells, as the supermarket
-};
+// #24's real-world size table holds these now (data-buildingsize.js REAL_SIZE eattiny…eathuge, planned; "h" its "d").
+export const EAT_SIZE = Object.fromEntries(["tiny", "small", "medium", "large", "huge"].map((k) => [k, { w: REAL_SIZE[`eat${k}`].w, h: REAL_SIZE[`eat${k}`].d }]));
 export const EAT_SIZES = Object.keys(EAT_SIZE);
 
 // The formats: name, the sizes they come in, the front room's default name.
