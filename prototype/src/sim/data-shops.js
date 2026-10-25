@@ -42,7 +42,7 @@ export const NEW_KINDS = {
   // stripmall, outlet: compound.js); placed on their own dice (pois.js mallExtra), never by PLACE_W.
   stripmall: {
     site: { name: "Strip mall", glyph: "Sm", cat: "town", danger: 1, gearRate: 1.2, loot: { food: 2, water: 1, scrap: 2, meds: 0.3, parts: 1 },
-      gear: ["knife", "backpack", "slingbag", "duffle", "flashlight", "bat", "golfclub", "hikingpack", "handradio", "stove"], richness: 0.7, known: "public" },
+      gear: ["knife", "backpack", "slingbag", "duffle", "flashlight", "bat", "golfclub", "hikingpack", "handradio", "stove"], richness: 0.6, known: "public" }, // never above a town's (pois.js: a place never out-ranks its tile's site)
     tags: ["shop", "mall", "home", "kitchen"],
     areas: ["store", "store", "clothes", "kitchen", "office", "wreck"], size: 1, storeys: [1, 1],
   },

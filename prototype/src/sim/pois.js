@@ -183,13 +183,13 @@ export function generatePois(state, t) {
   // Bunkers (issue #26): now and then one, on their own dice after everything above (bunkerExtra).
   const bunker = bunkerExtra(state, t, out, inKnownZone(state, t));
   if (bunker) out.push(bunker);
+  // Shopping malls (issue #30): now and then a strip mall in a town or a suburb, an outlet centre by a highway, on their
+  // own dice after everything above but the hotel (mallExtra; a hotel stays last).
+  const mall = mallExtra(state, t, out, inKnownZone(state, t));
+  if (mall) out.push(mall);
   // hotels.js: now and then a hotel (a town's inn, a city's tower, a resort in scenic land), on its own dice after all.
   const hotel = hotelExtra(state, t, out, inKnownZone(state, t));
   if (hotel) out.push(hotel);
-  // Shopping malls (issue #30): now and then a strip mall in a town or a suburb, an outlet centre by a highway, on their
-  // own dice after everything above (mallExtra).
-  const mall = mallExtra(state, t, out, inKnownZone(state, t));
-  if (mall) out.push(mall);
   return out;
 }
 
@@ -240,6 +240,7 @@ export function mallExtra(state, t, list, knownZone) {
     let p = (t.loc && t.loc.type === "town" ? T.town : 0) || (!t.loc || t.loc.type !== "town" ? T[t.terrain] || 0 : 0);
     if (kind === "outlet" && !t.road) p = 0;
     if (!p || list.some((q) => q.kind === kind) || (t.loc && t.loc.type === kind)) continue;
+    if (permanentSite(t) && LOCATIONS[t.loc.type] && LOCATIONS[kind].richness > LOCATIONS[t.loc.type].richness) continue; // never out-ranks the tile's site
     if (hash01(state.seed, "mallpoi", t.id, kind) >= p) continue;
     const spread = MALL_POI.POOL[0] + (MALL_POI.POOL[1] - MALL_POI.POOL[0]) * hash01(state.seed, "mallpool", t.id);
     const hidden = !(knownZone && hash01(state.seed, "mallknown", t.id) < MALL_POI.KNOWN);

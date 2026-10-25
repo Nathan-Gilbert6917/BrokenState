@@ -33,7 +33,7 @@ import {
   POI, POI_KINDS, COUNTS, poiKinds, allPoiKinds, ensurePois, generatePois, poisOf, topPoi, poiAt, isSitePoi, poiName, inKnownZone, poiEligible,
   poiPool, poiTake, poiLedger, poiThreat, tileHeat, addTileHeat, poiKnown, poiKnownTo, knownPois, morePoisHidden, revealPois, learnPois,
   mergePoiFinds, poiSnapshot, poiKnowledge, setPoiReveal, packPois, clearPois, permanentSite,
-  BUNKER_POI,
+  BUNKER_POI, MALL_POI,
 } from "../src/sim/pois.js";
 import { SHOP, SHOP_KINDS, settingOf } from "../src/sim/shops.js";
 
@@ -177,7 +177,7 @@ section("The top POI and the pools");
 // ---------- 4b. the extras on their own dice ----------
 section("Extras on their own dice: a campsite, a gun store, a pawn shop or a hardware store after the list");
 {
-  let shops = 0, wrong = 0, twice = 0, outranks = 0, badPool = 0, shownOut = 0, notLast = 0, camps = 0, campWrong = 0, bunkers = 0, bunkerWrong = 0;
+  let shops = 0, wrong = 0, twice = 0, outranks = 0, badPool = 0, shownOut = 0, notLast = 0, camps = 0, campWrong = 0, bunkers = 0, bunkerWrong = 0, malls = 0, mallWrong = 0;
   const byKind = {};
   for (const size of SIZE_KEYS) {
     const st = W(seed, size);
@@ -187,6 +187,7 @@ section("Extras on their own dice: a campsite, a gun store, a pawn shop or a har
       if (t.pois.findIndex((p) => p.extra) !== t.pois.length - ex.length) notLast++; // the extras come after the list
       for (const p of ex) {
         if (p.extra === "campsite") { camps++; if (p.kind !== "campsite" || t.terrain === "suburb" || t.terrain === "city") campWrong++; continue; }
+        if (p.extra === "mall") { malls++; if (!MALL_POI[p.kind] || t.terrain === "city" || (p.kind === "outlet" && !t.road) || (permanentSite(t) && rich(p.kind) > rich(t.loc.type)) || t.pois.filter((q) => q.kind === p.kind).length > 1) mallWrong++; continue; } // pois.js mallExtra (issue #30)
         if (p.extra === "bunker") { bunkers++; if (!BUNKER_POI[p.kind] || !BUNKER_POI[p.kind][t.terrain] || (permanentSite(t) && rich(p.kind) > rich(t.loc.type))) bunkerWrong++; continue; } // pois.js bunkerExtra (issue #26)
         shops++;
         byKind[p.kind] = (byKind[p.kind] || 0) + 1;
@@ -201,6 +202,7 @@ section("Extras on their own dice: a campsite, a gun store, a pawn shop or a har
   }
   check(shops > 0 && Object.keys(byKind).length >= 20, `the shops and services stand on the suburbs and city blocks (${Object.entries(byKind).map(([k, n]) => `${k} ${n}`).join(", ")})`);
   check(!wrong, `a shop extra is a shop or a service on a suburb or city block, never the tile's own site's kind (${wrong})`);
+  check(malls > 0 && !mallWrong, `strip malls and outlet centres (${malls}) on their own ground (suburbs and towns, an outlet on a road), never a city block, one a tile, never above the site (${mallWrong})`);
   check(!twice, `never two of a kind on a tile (${twice})`);
   check(!outranks, `a shop never out-ranks the site it stands by (${outranks})`);
   check(!badPool, `a shop's pool comes from its kind's richness (${badPool} off)`);

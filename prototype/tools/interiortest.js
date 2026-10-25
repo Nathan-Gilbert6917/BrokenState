@@ -1058,7 +1058,7 @@ console.log("\nHotels room by room (hotellayout.js): an inn, a business hotel, a
   }
   const want = ["hotelbarricade", "evaccentre", "lobbyoverrun", "penthouse"];
   check(want.every((k) => seenKinds.has(k)), `the hotel's scenes turn up (${want.filter((k) => seenKinds.has(k)).join(", ")} of ${want.join(", ")}; also ${[...seenKinds].filter((k) => !want.includes(k)).join(", ")})`);
-=======
+}
 
 console.log("\nBunkers (bunkerlayout.js)");
 {

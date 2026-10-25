@@ -506,7 +506,7 @@ export function genBlock(state, c, cell = c.cell) {
   if (BUILDINGS.hotel && hotelPlace(state, c.tile, cell, places, CRAWL.PLACES[1], n, setting)) addPlace(new Rng(seedOf(state.seed, "crawlhotel", c.tile, cell)), "hotel", HOTELS.PLACE, places.length);
   // A strip mall now and then (issue #30, mall.js: its whole row of shops one place; never a regional mall, too big for a
   // block), on its own dice after everything above.
-  if (places.length < CRAWL.PLACES[1] + 2 && hash01(state.seed, "crawlmall", c.tile, cell) < CRAWL.STRIPMALL[setting]) addPlace(new Rng(seedOf(state.seed, "crawlmall", c.tile, cell)), "stripmall", { dead: 1.2, rich: 1.1, w: 0, deep: 0, from: 1 }, places.length);
+  if (places.length < CRAWL.PLACES[1] && hash01(state.seed, "crawlmall", c.tile, cell) < CRAWL.STRIPMALL[setting]) addPlace(new Rng(seedOf(state.seed, "crawlmall", c.tile, cell)), "stripmall", { dead: 1.2, rich: 1.1, w: 0, deep: 0, from: 1 }, places.length);
   // This visit: a place may be shut.
   if (places.length > 2 && vr.chance(CRAWL.BLOCKED)) {
     const pl = vr.pick(places);
