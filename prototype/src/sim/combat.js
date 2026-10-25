@@ -157,7 +157,7 @@ import { groundAct, groundEnd, groundLeftovers, fieldFinds, searchedInBattle, ai
 import { assaultStoresEnd, forceStoreAct } from "./assaultstores.js"; // a group's stores on the map of an assault: what you took leaves them
 import { gunOut, gunIn, enemyGunLoaded, carriedWithBag } from "./gunload.js";
 import { aiLights, aiFlashlight, aiRoomLights, wakeLights } from "./ailights.js"; // the AI's flashlights and room lights (the user's request 2026-10-12)
-import { indoorSetup, lightAt, indoorSees, lightsAct } from "./indoorlight.js"; // light inside a raid's buildings: dark rooms, lit rooms, switches (the user's request 2026-10-12)
+import { indoorSetup, lightAt, indoorSees, lightsAct, gensetAct, GEN } from "./indoorlight.js"; // light inside a raid's buildings: dark rooms, lit rooms, switches (the user's request 2026-10-12)
 import { VISION, hasFront, inArc, coned, nightSees, nightEyes, faceToward, setFacing, sneakMob, stepNoise, glance, facesBox, faceRefusal, turnToBox, activeLight, nvgOn, nvgSight } from "./vision.js"; // facing, view cones, sneaking (the user's request 2026-10-12) // the rounds in a gun kept on the item when it changes hands // bodies searched where they fell, things on the ground
 import { swapGun, kitGunSource, bodyGunSource, areaSourceName } from "./gundist.js"; // the gun distribution: which gun a kit, a body or a room yields
 import { planStart, closePlan } from "./raidplan.js"; // choices before a raid: the side, a scout, the night (docs/suggestions-5.md #23)
@@ -5223,6 +5223,20 @@ export function combatAct(state, act) {
       for (const p of b.units) if (p.side === "player" && active(p)) detect(b, p);
       break;
     }
+    case "genset": { // indoorlight.js: a bunker's generator (or battery rack) next to the unit started or shut down (1 action): every room lit or dark; a genset is loud
+      const r = gensetAct(b, u);
+      if (r.err) return r.err;
+      u.ap -= GEN.AP;
+      u.hunker = false;
+      if (r.on && r.loud) {
+        b.raid.heat = Math.min(100, (b.raid.heat || 0) + GEN.HEAT);
+        b.noise = (b.noise || 0) + 1;
+        say(b, `${u.name} starts the generator: it coughs and roars, and the bunker's lights come on (Heat +${GEN.HEAT}).`, "info");
+        alertNear(b, u.x, u.y, GEN.RADIUS, "A generator roars into life somewhere in the bunker.");
+      } else say(b, r.on ? `${u.name} throws the battery switch: the bunker's lights come on.` : `${u.name} shuts the ${r.kind === "genset" ? "generator" : "batteries"} down: the bunker goes dark.`, "info");
+      for (const p of b.units) if (p.side === "player" && active(p)) detect(b, p);
+      break;
+    }
     case "climb": { // buildingmaps.js: through a window next to the unit (not diagonally); a closed one is smashed (loud), an open or broken one is quiet (windows.js)
       if (!b.raid) return "Nothing to climb.";
       const opts = windowsNear(b, u);
@@ -6928,6 +6942,19 @@ export const BOX_LOOT = {
   engine:       { rest: 0, loot: { fuel: [0.5, 2, 6], parts: [0.3, 1, 2] }, gear: [["fireaxe", 0.5], ["prybar", 0.35], ["crowbar", 0.2], ["ladder", 0.3], ["sledge", 0.15], ["leatherjacket", 0.2], ["bikehelmet", 0.15], ["bandagekit", 0.2], ["flashlight", 0.2]] },
   ambulance:    { rest: 0, loot: { meds: [0.85, 2, 5], water: [0.4, 1, 3] }, gear: [["bandagekit", 0.25], ["surgkit", 0.08]] },
   policecar:    { rest: 0, loot: { ammo: [0.5, 5, 15], meds: [0.3, 1, 1] }, gear: [["shotgun", 0.15], ["flare", 0.4], ["bandagekit", 0.15], ["handradio", 0.2], ["baton", 0.08]] },
+  // Bunkers (issue #26, bunkerlayout.js). A garage's Humvee: fuel, parts, a box of rounds and its crew's kit; a hazmat
+  // rack the suits; a ration shelf MREs and tins by the room's mix (a military pantry's are the Army's: foods.js AREA_MIX
+  // barracks; a prepper's pantry the richest food per area in the game, cabin@: their own); a radio console electronics
+  // and a radio now and then; a footlocker a soldier's things (a dormitory's or a shelter's a little less); a prepper's gun
+  // rack their rifles.
+  humvee:       { rest: 0, loot: { fuel: [0.7, 3, 8], parts: [0.4, 1, 3], ammo: [0.5, 20, 60] }, gear: [["milradio", 0.15], ["rucksack", 0.15], ["etool", 0.2], ["sandbags", 0.1], ["traumakit", 0.1]] },
+  hazmatrack:   { rest: 0, loot: {}, gear: [["hazmat", 0.75], ["hazmat", 0.35]] },
+  rationshelf:  { rest: 0, loot: { preserved: [0.95, 3, 7], water: [0.55, 2, 5] }, gear: [["puritabs", 0.1]] },
+  "rationshelf@cabin": { rest: 0, loot: { preserved: [1, 6, 12], food: [0.7, 3, 6], water: [0.8, 4, 9], meds: [0.3, 1, 2] }, gear: [["puritabs", 0.25]] },
+  radioconsole: { rest: 0.3, loot: { electronics: [0.7, 1, 3], parts: [0.4, 1, 2] }, gear: [["milradio", 0.2], ["handradio", 0.15]] },
+  footlocker:   { rest: 0.6, loot: { ammo: [0.3, 5, 15] }, gear: [["combatknife", 0.04], ["flashlight", 0.05], ["pistol", 0.03]] },
+  "footlocker@house": { rest: 0.6, loot: { water: [0.2, 1, 2] }, gear: [["flashlight", 0.05]] },
+  "gunrack@cabin": { rest: 0.4, loot: { ammo: [0.7, 10, 30] }, gear: [["huntrifle", 0.2], ["ar", 0.12], ["shotgun", 0.15], ["leverrifle", 0.08]] },
   // The hospitals, clinics and vets room by room (issue #14, roomlayout.js MEDICAL_STYLES): the pharmacy's drug safe and
   // the theatre's instrument cabinets the richest (a surgical kit for the medics), the ER's medicine cabinets and the
   // supply room's shelves next, a ward's nightstands the poorest (a patient's things); the morgue's drawers a body's
@@ -7360,9 +7387,9 @@ export function createRaid(state, setup) {
   // reach floods from the first stairwell (a street of houses: from every one). b.cells / b.reach / b.losCache alias
   // the active floor's (setFloor).
   if (pick && map.floors && map.floors.length > 1) {
-    // Each house's upper floor on a street is its own, void between them.
+    // Each house's upper floor on a street is its own, void between them (a compound's buildings likewise: compound.js).
     const upReach = (F) => { const r = new Uint8Array(W * H); for (const [sx, sy] of map.stairs) if (CELL[F.cells[sy * W + sx].k].walk && !r[sy * W + sx]) { const f = flood(F.cells, sx, sy); for (let j = 0; j < r.length; j++) r[j] |= f[j]; } return r; };
-    b.floors = map.floors.map((F, i) => ({ cells: F.cells, reach: i === 0 ? map.reach : map.street ? upReach(F) : flood(F.cells, map.stairs[0][0], map.stairs[0][1]), losCache: i === 0 ? b.losCache : null, name: F.name }));
+    b.floors = map.floors.map((F, i) => ({ cells: F.cells, reach: i === 0 ? map.reach : map.street || map.compound ? upReach(F) : flood(F.cells, map.stairs[0][0], map.stairs[0][1]), losCache: i === 0 ? b.losCache : null, name: F.name }));
     b.floor = 0;
     b.raid.storeys = map.floors.length;
     b.raid.stairs = map.stairs.map((s) => s.slice()); // the cells that change floor: each stair run's top step
