@@ -128,6 +128,47 @@ export const DECOR_CIVIC = {
   parishhall: { ...WORK, clutter: [["tins", 0.06], ["trash", 0.04]], art: [["notice", "crucifix", "clock"], 2] },
   cpantry:    { ...WORK, clutter: [["tins", 0.12]], art: [["notice"], 1] },
 };
+// The office buildings' rooms by their style (officelayout.js, issue #27: a leaf's office mark): open plan's papers and
+// whiteboards, an executive's pictures and a rug, the courtroom's and the council chambers' clock and notices, a
+// studio's posters, a server room bare.
+export const DECOR_OFFICE = {
+  reception:   { ...WORK, clutter: [["papers", 0.05]], art: [["picture", "notice", "clock"], 2] },
+  waiting:     { ...WORK, clutter: [["papers", 0.06], ["trash", 0.03]], art: [["poster", "picture", "clock"], 3] },
+  privoffice:  { ...WORK, clutter: [["papers", 0.12]], art: [["picture", "whiteboard", "clock"], 2] },
+  operatory:   { ...WORK, clutter: [["papers", 0.02]], art: [["poster", "notice"], 1] },
+  openplan:    { ...WORK, clutter: [["papers", 0.16], ["trash", 0.04]], art: [["whiteboard", "notice", "clock", "poster"], 3] },
+  meeting:     { ...WORK, clutter: [["papers", 0.08]], art: [["whiteboard", "picture", "clock"], 2] },
+  training:    { ...WORK, clutter: [["papers", 0.08]], art: [["notice", "clock", "poster"], 2] },
+  mailroom:    { ...WORK, clutter: [["papers", 0.22], ["trash", 0.05]], art: [["notice", "clock"], 1] },
+  serverroom:  { ...WORK },
+  itcloset:    { ...WORK, clutter: [["trash", 0.04]] },
+  towerlobby:  { ...WORK, art: [["picture", "clock", "sign"], 3] },
+  glasslobby:  { ...WORK, art: [["picture", "clock"], 2] },
+  liftlobby:   { ...WORK, art: [["sign", "picture"], 2] },
+  execoffice:  { ...HOME, rug: 0.6, clutter: [["papers", 0.06]], art: [["picture", "picture", "clock"], 3] },
+  execsuite:   { ...HOME, rug: 0.85, clutter: [["papers", 0.04]], art: [["picture", "picture", "mirror", "clock"], 3] },
+  boardroom:   { ...WORK, rug: 0.3, clutter: [["papers", 0.06]], art: [["picture", "whiteboard", "clock"], 3] },
+  canteen:     { ...WORK, clutter: [["trash", 0.06], ["tins", 0.03]], art: [["notice", "poster", "clock"], 2] },
+  fitness:     { ...WORK, clutter: [["trash", 0.02]], art: [["mirror", "poster", "clock"], 3] },
+  rotunda:     { ...WORK, art: [["picture", "notice", "clock"], 3] },
+  clerk:       { ...WORK, clutter: [["papers", 0.12]], art: [["notice", "notice", "clock"], 3] },
+  permits:     { ...WORK, clutter: [["papers", 0.14]], art: [["notice", "notice"], 2] },
+  council:     { ...WORK, clutter: [["papers", 0.04]], art: [["picture", "clock", "notice"], 3] },
+  mayor:       { ...HOME, rug: 0.7, clutter: [["papers", 0.08]], art: [["picture", "picture", "clock"], 3] },
+  screening:   { ...WORK, clutter: [["trash", 0.03]], art: [["sign", "notice", "clock"], 3] },
+  courtroom:   { ...WORK, clutter: [["papers", 0.03]], art: [["clock", "picture"], 2] },
+  chambers:    { ...HOME, rug: 0.6, clutter: [["papers", 0.08], ["books", 0.06]], art: [["picture", "picture", "clock"], 2] },
+  lawlibrary:  { ...WORK, clutter: [["books", 0.1], ["papers", 0.05]], art: [["clock"], 1] },
+  callfloor:   { ...WORK, clutter: [["papers", 0.12], ["trash", 0.06]], art: [["whiteboard", "notice", "poster", "clock"], 3] },
+  bigbreak:    { ...WORK, clutter: [["trash", 0.08], ["tins", 0.05]], art: [["notice", "poster", "clock"], 2] },
+  benches:     { ...WORK, clutter: [["papers", 0.08], ["trash", 0.05]], art: [["whiteboard", "poster", "poster"], 3] },
+  lounge:      { ...HOME, rug: 0.5, clutter: [["trash", 0.06]], art: [["poster", "poster", "picture"], 3] },
+  techkitchen: { ...WORK, clutter: [["trash", 0.06], ["tins", 0.04]], art: [["notice", "poster"], 2] },
+  newsroom:    { ...WORK, clutter: [["papers", 0.2], ["trash", 0.04]], art: [["whiteboard", "clock", "notice", "poster"], 3] },
+  studio:      { ...WORK, art: [["poster", "clock"], 1] },
+  control:     { ...WORK, clutter: [["papers", 0.06]], art: [["clock", "notice"], 2] },
+  archive:     { ...WORK, clutter: [["papers", 0.2]], art: [["notice"], 1] },
+};
 // The medical buildings' corridors and waiting rooms carry signs among their notices (decorate: opts.key).
 export const MED_ART = { corridor: [["sign", "sign", "notice"], 3], lobby: [["sign", "notice", "clock", "picture"], 3] };
 const MED_KEYS = new Set(["hospital", "clinic", "infirmary", "vet"]);
@@ -190,7 +231,7 @@ export function decorate(cells, W, H, rooms, rid, o) {
   const at = (x, y) => (x >= 0 && y >= 0 && x < W && y < H ? cells[y * W + x] : null);
   const ridAt = (x, y) => (x >= 0 && y >= 0 && x < W && y < H ? rid[y * W + x] : -2);
   for (const room of rooms) {
-    const D0 = (room.civic && DECOR_CIVIC[room.civic]) || DECOR[room.role] || {}; // a civic room's decor by its style
+    const D0 = (room.office && DECOR_OFFICE[room.office]) || (room.civic && DECOR_CIVIC[room.civic]) || DECOR[room.role] || {}; // an office building's or a civic room's decor by its style
     const D = o.kind && MED_KEYS.has(o.kind) && MED_ART[room.role] ? { ...D0, art: MED_ART[room.role] } : D0; // o.kind: the building's key (new saves: buildingmaps.js); a medical building's signs
     const wc = wallColour(seed, room);
     room.wallc = wc || undefined;
