@@ -51,6 +51,9 @@ const add = (st, ui, key) => SG_CHANGE["sg-item-add"](st, ui, { value: key, data
 const tadd = (st, ui, key) => SG_CHANGE["sg-trunk-add"](st, ui, { value: key, dataset: {} });
 const limit = (st, ui, n, i = 0) => SG_CHANGE["fleet-limit"](st, ui, { value: String(n), dataset: { i: String(i) } }); // a starting vehicle's point limit
 const backWin = (ui, i = 0) => { ui.fleetEdit = { i, msg: "", tsel: null }; return ui; }; // its back's window (Edit…)
+// Emptied first: a vehicle's back as rolled holds what the dice put in it (every mode since 2026-10-25: hardcore-start.js
+// rollBack), and these checks price only what is put in by hand.
+const emptyBack = (st, ui, i = 0) => SG_ACTIONS["fleet-empty"](st, ui, { i: String(i) });
 const AMMO = Object.keys(GEAR).find((k) => GEAR[k].count && GEAR[k].small && GEAR[k].cat === "ammo" && !GEAR[k].reload);
 
 section("N of a thing at once: what they carry");
@@ -100,6 +103,7 @@ section("N of a thing at once: the vehicle's back");
   const st = blankWorld(42);
   const ui = backWin(UI());
   limit(st, ui, 1000);
+  emptyBack(st, ui);
   qty(st, ui, "tqty", 5);
   check(tadd(st, ui, "bandagekit") === "fleet", "five in the back");
   check(ui.fleet[0].load.items.filter((k) => k === "bandagekit").length === 5 && vehiclePoints(ui.fleet[0].load) === 5 * loosePoints("bandagekit"), "five things of their own, priced five times (against the vehicle's limit)");
@@ -118,6 +122,7 @@ section("N of a thing at once: the vehicle's back");
   const p = blankWorld(42);
   const up = backWin(UI());
   limit(p, up, 20);
+  emptyBack(p, up);
   const each = loosePoints("ar");
   qty(p, up, "tqty", 10);
   tadd(p, up, "ar");
@@ -159,6 +164,7 @@ section("The vehicles' backs: on nobody's points (the car pool retired)");
   const lead = st.survivors.find((s) => s.leader);
   lead.skills.shooting = 15; lead.skills.medicine = 15; lead.skills.scouting = 10; lead.skills.farming = 10; // 60
   const before = st.survivors.map((s) => pricePerson(st, s).total).join();
+  emptyBack(st, ui);
   SG_CHANGE["sg-trunk-sup"](st, ui, { value: "60", dataset: { k: "food" } });
   SG_CHANGE["sg-trunk-sup"](st, ui, { value: "20", dataset: { k: "meds" } });
   const cost = suppliesPoints({ food: 60, meds: 20 });
@@ -396,6 +402,7 @@ section("Parts on a carried gun and on a gun in the vehicle's back");
   ui.gearEdit = null;
   backWin(ui);
   limit(st, ui, 1000);
+  emptyBack(st, ui);
   tadd(st, ui, "ar");
   const back = () => ui.fleet[0].load;
   const j = back().items.indexOf("ar");
