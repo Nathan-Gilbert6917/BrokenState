@@ -26,6 +26,16 @@
 //                behind it (c.brass, seeded for ui/battlemarks.js), the dead on the stairs and at their foot on the
 //                floor below, a survivor body behind the pieces, blood.
 //     quiet      a body by a bed (or anywhere in a quiet room), a pill bottle (a ground pile: meds), no blood.
+//   A hospital's own (issue #14; kinds: hospital):
+//     eroverrun  the emergency room overrun: its gurneys, IV stands and curtains knocked over (moved pieces), blood,
+//                4–8 of the dead on the floor, a doctor's body with their bag beside them (a ground pile: meds and a
+//                bandage kit).
+//     sealedward a ward with one door sealed from inside: a hospital bed shoved into the doorway and one dragged
+//                against it, the patients dead in the room (no blood); upstairs ALIVE of the time nobody died there
+//                (area.scene.alive: floorfolk.js's survivors hold it first, as a barricaded room).
+//     morgue     the morgue's drawers emptied: 2–4 bodies on the floor by them (patients: nothing on them but their
+//                pockets), RISE of them with the worm in them (wormed: they get up at the next turn of the dead,
+//                carriers.js).
 //   Blood (c.blood = { kind: "human" | "zombie", amount: 1–3 }): on floor cells of the building only (never a wall, a
 //   piece, "void", outdoors), in splatters round a body and trails (a short random walk toward the door). ui/
 //   battlemarks.js draws it with the marks of the fight, by floor.
@@ -47,6 +57,7 @@ import { CELL, KITS, enemyUnit, say, los } from "./combat.js"; // call-time only
 import { FURNITURE, setPiece, boardCell } from "./barricade.js";
 import { FURNITURE_KINDS } from "./data-furniture.js"; // the catalogue (#8): the pieces a scene shoves into place
 import { SLEEPER } from "./hiveconst.js";
+import { lootItem } from "./inventory.js"; // a pile's gear (a doctor's bag: issue #14); call-time only
 import { hash01 } from "./skills.js";
 import { Rng } from "./rng.js";
 
@@ -65,6 +76,10 @@ export const SCENES = {
   STAND_DEAD: [2, 4],    // the dead on the stairs of a last stand (part of them on the floor below)
   BRASS: [3, 8],         // spent cases behind a last stand's furniture, a cell
   TRAIL: [4, 8],         // the cells of a blood trail
+  // The hospital's own (issue #14): an emergency room overrun (ER_DEAD of the dead, ER_TIPPED of its gurneys and stands
+  // knocked over), a ward sealed from inside (beds shoved into the doorway, WARD_BODIES patients in it), the morgue's
+  // drawers emptied onto the floor (MORGUE bodies, RISE of them with the worm in them: they get up, carriers.js).
+  ER_DEAD: [4, 8], ER_TIPPED: [1, 3], WARD_BODIES: [1, 3], MORGUE: [2, 4], RISE: 0.5,
   // A city crawl place's say (sceneBias, issue #21): odds × (1 + dead × (place.dead − 1)), at least survivorsOdds with
   // people upstairs, at most maxOdds; weights: overrun and stand × (1 + deadWeight × (dead − 1)), barricade × raiders
   // with raiders in the place, × survivors with people upstairs; quiet × (1 + rich × (rich − 1)) × (1 − looted × looted).
@@ -77,6 +92,10 @@ export const SCENE_KINDS = {
   choke: { w: 2, place: choke },
   stand: { w: 2, place: stand },
   quiet: { w: 2, place: quiet },
+  // The hospital's (issue #14: roomlayout.js MEDICAL_STYLES lays out the rooms they need).
+  eroverrun: { w: 3, place: erOverrun, kinds: ["hospital"] },
+  sealedward: { w: 2, place: sealedWard, kinds: ["hospital"] },
+  morgue: { w: 2, place: morgueRise, kinds: ["hospital"] },
 };
 export const BY_KIND = {
   hospital: { quiet: 2.5, barricade: 1.5 }, clinic: { quiet: 2 }, infirmary: { quiet: 2 },
@@ -105,6 +124,7 @@ const ROLE_TAG = {
   office: "office", vestry: "office", control: "office", lobby: "office", reception: "office", foyer: "office", corridor: "office", evidence: "office",
   ward: "ward", exam: "ward", nurse: "ward", cells: "cells", sales: "shop", stock: "shop", pharmroom: "shop", dispensary: "shop", terminal: "shop",
   nave: "church", classroom: "school", gym: "school", lockerroom: "school", bays: "bay", parts: "bay", workshop: "bay", motor: "bay", storage: "cellar", pantry: "cellar",
+  er: "ward", icu: "ward", theatre: "ward", morgue: "ward", nursestation: "office", staffroom: "kitchen", ambbay: "bay", laundry: "laundry", // the hospital's rooms (#14)
 };
 const LIKED = { chair: 3, sofa: 2, armchair: 2, bookshelf: 2, wardrobe: 2, table: 2, desk: 2, dresser: 2 }; // the user's "chairs, shelves and other movable furniture": the usual pieces weigh more
 export function scenePieces(room, rng, n, opts = {}) {
@@ -152,9 +172,10 @@ function context(map, rng, key) {
   ctx.floorCell = (f, x, y) => { const c = ctx.at(f, x, y); return !!c && c.f === "floor" && !!CELL[c.k] && CELL[c.k].walk && c.k !== "void"; };
   ctx.piece = (f, x, y, k) => { const c = ctx.at(f, x, y); setPiece(c, k); delete c.blood; delete c.brass; /* blood lies on the floor, not on a piece */ ctx.take(f, x, y); ctx.out.pieces.push({ f, x, y, k }); };
   // o.kit, o.name: a body of another kit (a police officer in uniform: civiclayout.js); o.sleeper: one of the dead that
-  // will rise (a prisoner turned in a locked cell).
-  ctx.body = (f, x, y, o = {}) => { ctx.take(f, x, y); ctx.out.bodies.push({ f, x, y, human: !!o.human, quiet: !!o.quiet, r: rng.next(), weapon: o.human ? rng.pick((KITS[o.kit] || KITS.survivors).weapons) : null, ...(o.kit ? { kit: o.kit } : {}), ...(o.name ? { name: o.name } : {}), ...(o.sleeper ? { sleeper: true } : {}) }); };
-  ctx.pile = (f, x, y, label, sup, area) => { ctx.take(f, x, y); ctx.out.piles.push({ f, x, y, label, sup, area }); };
+  // will rise (a prisoner turned in a locked cell); o.patient: a morgue's or a ward's (no kit, issue #14); o.wormed: gets
+  // up at the next turn of the dead (carriers.js).
+  ctx.body = (f, x, y, o = {}) => { ctx.take(f, x, y); ctx.out.bodies.push({ f, x, y, human: !!o.human, quiet: !!o.quiet, r: rng.next(), weapon: o.human && !o.patient ? rng.pick((KITS[o.kit] || KITS.survivors).weapons) : null, ...(o.kit ? { kit: o.kit } : {}), ...(o.name ? { name: o.name } : {}), ...(o.sleeper ? { sleeper: true } : {}), ...(o.patient ? { patient: true } : {}), ...(o.wormed ? { wormed: true } : {}) }); };
+  ctx.pile = (f, x, y, label, sup, area, gear = []) => { ctx.take(f, x, y); ctx.out.piles.push({ f, x, y, label, sup, area, ...(gear.length ? { gear } : {}) }); }; // gear: item keys (a doctor's bag's bandage kit)
   ctx.blood = (f, x, y, kind, amount) => {
     if (!ctx.floorCell(f, x, y)) return false;
     const c = ctx.at(f, x, y);
@@ -336,6 +357,81 @@ function quiet(ctx) {
   return null;
 }
 
+// ---------- a hospital's own (issue #14) ----------
+const roleRooms = (ctx, role) => ctx.rng.shuffle(ctx.rooms.filter((r) => r.role === role && !r.scene && !r.locked));
+const nextTo = (ctx, f, x, y, kinds) => NEXT4.some(([dx, dy]) => kinds.includes((ctx.at(f, x + dx, y + dy) || {}).k));
+function erOverrun(ctx) {
+  const { rng } = ctx;
+  for (const r of roleRooms(ctx, "er")) {
+    const f = r.f || 0, free = ctx.freeIn(r);
+    if (free.length < 4) continue;
+    // Gurneys, IV stands and curtains knocked over (each cell of a gurney: moved, as a shoved piece).
+    const knock = rng.shuffle(ctx.inner(r).filter(([x, y]) => ["gurney", "ivstand", "curtain"].includes((ctx.at(f, x, y) || {}).k) && !ctx.used(f, x, y)));
+    const n = rng.int(SCENES.ER_TIPPED[0], SCENES.ER_TIPPED[1]);
+    let tipped = 0;
+    for (const [x, y] of knock) {
+      if (tipped >= n) break;
+      const c = ctx.at(f, x, y), k = c.k;
+      const cells = c.pc ? ctx.inner(r).filter(([px, py]) => (ctx.at(f, px, py) || {}).pc === c.pc) : [[x, y]];
+      for (const [px, py] of cells) ctx.piece(f, px, py, k);
+      tipped++;
+    }
+    // The doctor who held it, their bag beside them; the dead round the room.
+    const [bx, by] = rng.pick(free);
+    ctx.body(f, bx, by, { human: true });
+    ctx.splatter(f, bx, by, "human", 3);
+    const bag = free.filter(([x, y]) => (x !== bx || y !== by) && Math.abs(x - bx) + Math.abs(y - by) <= 2);
+    if (bag.length) { const [px, py] = rng.pick(bag); ctx.pile(f, px, py, "A doctor's bag", { meds: rng.int(2, 4) }, r.id, ["bandagekit"]); }
+    const dead = rng.int(SCENES.ER_DEAD[0], SCENES.ER_DEAD[1]);
+    let placed = 0;
+    for (const [x, y] of rng.shuffle(free)) {
+      if (placed >= dead) break;
+      if (!ctx.free(f, x, y)) continue;
+      ctx.body(f, x, y, {});
+      ctx.splatter(f, x, y, "zombie", rng.int(1, 2));
+      placed++;
+    }
+    return ctx.done("eroverrun", r, bx, by, `The emergency room was overrun: gurneys knocked over, ${placed} of the dead on the floor, a doctor among them with their bag still beside them.`);
+  }
+  return null;
+}
+function sealedWard(ctx) {
+  const { rng } = ctx;
+  for (const r of deadEnds(ctx).filter((q) => q.role === "ward")) {
+    const f = r.f || 0, [dx, dy] = r.doors[0], s = sides(ctx, r, r.doors[0]);
+    const free = ctx.freeIn(r).filter(([x, y]) => x !== s.inn[0] || y !== s.inn[1]);
+    if (free.length < 2) continue;
+    const door = ctx.at(f, dx, dy);
+    delete door.blood;
+    door.k = "odoor";
+    ctx.piece(f, dx, dy, "hospbed"); // a bed shoved into the doorway
+    const ic = ctx.at(f, s.inn[0], s.inn[1]);
+    if (ic && ic.k === "open" && !ctx.stair(s.inn[0], s.inn[1])) ctx.piece(f, s.inn[0], s.inn[1], rng.chance(0.5) ? "gurney" : "hospbed");
+    if (f > 0 && rng.chance(SCENES.ALIVE)) return ctx.done("sealedward", r, dx, dy, `Someone sealed the ${lower(r)} from inside: hospital beds shoved against the door.`, { alive: true });
+    // The patients, dead where they lay (by the beds where there is room).
+    const byBed = free.filter(([x, y]) => nextTo(ctx, f, x, y, ["hospbed", "crib", "cot"]));
+    const spots = rng.shuffle(byBed.length ? byBed : free);
+    const n = Math.min(spots.length, rng.int(SCENES.WARD_BODIES[0], SCENES.WARD_BODIES[1]));
+    for (let i = 0; i < n; i++) ctx.body(f, spots[i][0], spots[i][1], { human: true, quiet: true, patient: true });
+    return ctx.done("sealedward", r, dx, dy, `The ${lower(r)} was sealed from inside, hospital beds against the door. The patients never left it.`);
+  }
+  return null;
+}
+function morgueRise(ctx) {
+  const { rng } = ctx;
+  for (const r of rng.shuffle(ctx.rooms.filter((q) => q.role === "morgue" && !q.scene))) {
+    const f = r.f || 0, free = ctx.freeIn(r);
+    if (free.length < 2) continue;
+    const byDrawers = free.filter(([x, y]) => nextTo(ctx, f, x, y, ["morguelocker", "autopsy"]));
+    const spots = rng.shuffle(byDrawers.length >= 2 ? byDrawers : free);
+    const n = Math.min(spots.length, rng.int(SCENES.MORGUE[0], SCENES.MORGUE[1]));
+    let rise = 0;
+    for (let i = 0; i < n; i++) { const w = rng.chance(SCENES.RISE); if (w) rise++; ctx.body(f, spots[i][0], spots[i][1], { human: true, quiet: true, patient: true, wormed: w }); }
+    return ctx.done("morgue", r, spots[0][0], spots[0][1], `The morgue's drawers hang open and their bodies lie on the floor.${rise ? " One of them twitches." : ""}`, { rise });
+  }
+  return null;
+}
+
 // ---------- rolling a building's scenes ----------
 /**
  * The scenes of a building's map (buildingmaps.js buildingMap, after assemble): the cells changed in place (pieces,
@@ -407,11 +503,13 @@ export function sceneBattle(b, map) {
     const u = enemyUnit(b, rng, kit, 2, ++n);
     Object.assign(u, { side: "neutral", name: o.name || "A survivor", short: "S", x: o.x, y: o.y, f: o.f, away: o.f !== (b.floor || 0), dead: true, hp: 0, aware: false, reinforcement: true, restored: true, scene: true, face: [0, 1] });
     if (o.weapon) u.weapon = o.weapon;
+    if (o.patient) { u.name = "A patient"; u.weapon = "fists"; }
+    if (o.wormed) u.wormed = true; // carriers.js: it gets up at the next turn of the dead
     if (o.quiet) u.noPool = true; // ui/battlemarks.js: no pool of blood under a quiet death
     b.units.push(u);
-    b.raid.containers.push({ id: b.nextId++, x: o.x, y: o.y, f: o.f, kind: "body", area: null, searched: false, kit, weapon: u.weapon, label: o.name ? `${o.name}'s body` : "A survivor's body", uid: u.id, full: true });
+    b.raid.containers.push({ id: b.nextId++, x: o.x, y: o.y, f: o.f, kind: "body", area: null, searched: false, kit, weapon: u.weapon, label: o.patient ? "A patient's body" : o.name ? `${o.name}'s body` : "A survivor's body", uid: u.id, ...(o.patient ? { bare: true } : { full: true }) }); // bare: nothing on them but their pockets (combat.js searchBox)
   }
-  for (const p of S.piles) b.raid.containers.push({ id: b.nextId++, x: p.x, y: p.y, f: p.f, kind: "ground", drop: false, area: p.area ?? null, searched: true, partial: false, label: p.label, scene: true, contents: { sup: { ...p.sup }, gear: [] } });
+  for (const p of S.piles) b.raid.containers.push({ id: b.nextId++, x: p.x, y: p.y, f: p.f, kind: "ground", drop: false, area: p.area ?? null, searched: true, partial: false, label: p.label, scene: true, contents: { sup: { ...p.sup }, gear: (p.gear || []).map((k) => lootItem(k, "home", rng)) } });
   b.raid.scenes = { list: S.list.map((s) => ({ ...s })), pieces: S.pieces.map((p) => ({ ...p })) };
 }
 

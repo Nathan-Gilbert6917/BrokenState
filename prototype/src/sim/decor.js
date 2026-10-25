@@ -90,6 +90,16 @@ export const DECOR = {
   hayloft:    { clutter: [["straw", 0.4]] },
   tack:       { clutter: [["straw", 0.15]], art: [["shelf"], 1] },
   gunroom:    { ...HOME, rug: 0.3, art: [["picture", "shelf"], 1] },
+  // The hospitals, clinics and vets room by room (issue #14): signs on the corridors' walls, notice boards in the
+  // waiting room and at the nurses' station, nothing but tiles in the theatre and the morgue.
+  er:         { ...WORK, clutter: [["papers", 0.05], ["trash", 0.05]], art: [["sign", "notice", "clock"], 2] },
+  icu:        { ...WORK, clutter: [["papers", 0.03]], art: [["clock"], 1] },
+  theatre:    { ...WORK },
+  morgue:     { ...WORK, clutter: [["stain", 0.06]], art: [["clock"], 1] },
+  ambbay:     { ...WORK, clutter: [["oil", 0.06], ["trash", 0.03]], art: [["sign"], 1] },
+  nursestation: { ...WORK, clutter: [["papers", 0.12]], art: [["notice", "whiteboard", "clock"], 2] },
+  laundry:    { ...WORK, clutter: [["clothes", 0.08]] },
+  staffroom:  { ...WORK, clutter: [["trash", 0.06], ["tins", 0.04], ["papers", 0.03]], art: [["notice", "poster", "clock"], 1] },
 };
 // The civic rooms by their style (civiclayout.js, issue #15: a room's leaf's civic mark, the new saves' plans): the
 // decor of their kind in place of their role's. A classroom's or a briefing room's whiteboard is put by its style on the
@@ -118,6 +128,9 @@ export const DECOR_CIVIC = {
   parishhall: { ...WORK, clutter: [["tins", 0.06], ["trash", 0.04]], art: [["notice", "crucifix", "clock"], 2] },
   cpantry:    { ...WORK, clutter: [["tins", 0.12]], art: [["notice"], 1] },
 };
+// The medical buildings' corridors and waiting rooms carry signs among their notices (decorate: opts.key).
+export const MED_ART = { corridor: [["sign", "sign", "notice"], 3], lobby: [["sign", "notice", "clock", "picture"], 3] };
+const MED_KEYS = new Set(["hospital", "clinic", "infirmary", "vet"]);
 // Named rooms that are something else under the same role (a library's stacks are a stockroom, a child's bedroom).
 const BOOKISH = /stacks|reading|library/i;
 // Wall art kinds: their names (ui/isoview.js WARTC draws each).
@@ -125,6 +138,7 @@ export const WALL_ART = {
   painting: "a painting (lootable)", wallclock: "a wall clock (lootable)", // the catalogue's pieces (data-furniture.js), c.wart.piece
   picture: "a picture", clock: "a clock", mirror: "a mirror", whiteboard: "a whiteboard", poster: "a poster",
   crucifix: "a crucifix", notice: "a notice board", shelf: "a shelf of knick-knacks",
+  sign: "a sign (the ward's name, an arrow to the way out)", // a hospital's, a clinic's corridors (#14)
 };
 // Wall colours by role (the inside faces only): homes in a few soft paints by the room's dice, the institutions their
 // pale institutional ones; the bare rooms (storerooms, bays, barns, cells) none (the building's own wall shows).
@@ -137,6 +151,7 @@ export const WALLC = {
   classroom: ["#e0d8a8", "#c8d8b8"], corridor: ["#d0ccb8", "#c8d4c0"], foyer: ["#d0ccb8"], lobby: ["#d0ccb8"], reception: ["#d0ccb8"],
   ward: ["#c8dcc8", "#d0e0d8"], exam: ["#c8dcc8", "#e0e4e0"], nurse: ["#d8e4d8"], pharmroom: ["#e0e4e0"], dispensary: ["#e0e4e0"],
   sales: ["#d8d8d0"], terminal: ["#d0d0c8"], gym: ["#c8c0a8"], control: ["#b8bcc0"], lab: ["#e4e8e8"], gunroom: ["#a88a64"],
+  er: ["#c8dcc8", "#d8e4e4"], icu: ["#d0e0d8"], theatre: ["#b8d8d0"], morgue: ["#d0d4d4"], nursestation: ["#d8e4d8"], staffroom: ["#d0d0c0"], laundry: ["#d8dcd8"],
 };
 export const DECO_CFG = {
   RUG: { w: [2, 3], h: [3, 4] },  // a rug's sides in cells (turned either way)
@@ -152,6 +167,7 @@ export const DECO_CFG = {
 const PIECE_TAG = {
   living: "living", greatroom: "living", dayroom: "living", apt: "living", dining: "dining", bedroom: "bedroom", motelroom: "bedroom",
   office: "office", vestry: "office", reception: "office", foyer: "office", lobby: "office", ward: "ward", sales: "shop",
+  er: "ward", icu: "ward", nursestation: "office", staffroom: "office",
 };
 const PIECE_TAGS = { plant: ["living", "office", "dining", "ward", "shop"], floorlamp: ["living", "bedroom", "office"] }; // as their rows' tags
 const D4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
@@ -174,7 +190,8 @@ export function decorate(cells, W, H, rooms, rid, o) {
   const at = (x, y) => (x >= 0 && y >= 0 && x < W && y < H ? cells[y * W + x] : null);
   const ridAt = (x, y) => (x >= 0 && y >= 0 && x < W && y < H ? rid[y * W + x] : -2);
   for (const room of rooms) {
-    const D = (room.civic && DECOR_CIVIC[room.civic]) || DECOR[room.role] || {}; // a civic room's decor by its style
+    const D0 = (room.civic && DECOR_CIVIC[room.civic]) || DECOR[room.role] || {}; // a civic room's decor by its style
+    const D = o.kind && MED_KEYS.has(o.kind) && MED_ART[room.role] ? { ...D0, art: MED_ART[room.role] } : D0; // o.kind: the building's key (new saves: buildingmaps.js); a medical building's signs
     const wc = wallColour(seed, room);
     room.wallc = wc || undefined;
     const x0 = room.ix0, y0 = room.iy0, x1 = x0 + room.iw - 1, y1 = y0 + room.ih - 1;

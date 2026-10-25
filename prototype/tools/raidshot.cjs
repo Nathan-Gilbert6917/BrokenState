@@ -1,6 +1,6 @@
 // A raid on a big map in the real game (World… Raid map dials), saved as PNGs and measured: the Before you go in window
 // with the map's size, then the battle screen as the team goes in, and the camera (zoom, whether your people are on
-// screen, how much of the map shows). Usage: NODE_PATH=$(npm root -g) node tools/raidshot.cjs [outdir] [raidMin raidMax] [site] [noon] [scene]
+// screen, how much of the map shows). Usage: NODE_PATH=$(npm root -g) node tools/raidshot.cjs [outdir] [raidMin raidMax] [site] [noon] [scene] [floors]
 // e.g. raidshot.cjs /tmp/shots 80 80 farm (a street map 80 × 60) or 80 80 hospital (a building's map; house, hospital:
 // the decor inside, battle-<n>-inside.png with the roofs off). Starts the
 // prototype's server on a free port and drives headless Chromium; prints one JSON line a shot.
@@ -21,6 +21,7 @@ const show = process.argv[5] === "furniture"; // the furniture showroom on a tow
 const carryShow = process.argv[5] === "carry"; // carrying furniture (issue #17): one carrier alone and a pair (tools/isobattles.js carryScene)
 const site = show || carryShow ? "town" : process.argv[5] || "farm";
 const noon = process.argv.slice(6).includes("noon"); // the raid at midday (the decor shots: the inside in daylight)
+const wantFloors = process.argv.slice(6).includes("floors"); // every storey of a building in turn (floor-<n>.png: the team on that floor, as PageUp shows it)
 const wantScene = process.argv.slice(6).includes("scene"); // a building's signs of survival (sim/interiorscenes.js): the team set in a scene's room, the view on it (scene.png)
 const port = 5300 + Math.floor(Math.random() * 600);
 
@@ -187,6 +188,32 @@ const port = 5300 + Math.floor(Math.random() * 600);
       const ins = path.join(outDir, `battle-${rawMax}-inside.png`);
       await page.screenshot({ path: ins });
       console.log(ins, JSON.stringify(inner));
+    }
+    if (wantFloors) {
+      const n = await page.evaluate(() => { const b = game.state.combat; return b.floors ? b.floors.length : 1; });
+      for (let f = 1; f < n; f++) {
+        const fl = await page.evaluate(async (f) => {
+          const C = await import("/src/sim/combat.js"), I = await import("/src/ui/isoview.js"), b = game.state.combat;
+          C.setFloor(b, f);
+          // The team in the floor's biggest rooms, so what they see is drawn.
+          const rooms = b.raid.areas.filter((r) => !r.outdoor && (r.f || 0) === f).sort((p, q) => q.w * q.h - p.w * p.h);
+          b.units.filter((u) => u.side === "player").forEach((u, i) => {
+            const r = rooms[i % Math.max(1, rooms.length)];
+            if (!r) return;
+            for (let y = r.y0 + 1; y < r.y0 + r.h - 1; y++) for (let x = r.x0 + 1; x < r.x0 + r.w - 1; x++) if (b.cells[y * b.w + x].k === "open" && !b.units.some((q) => q !== u && (q.f || 0) === f && q.x === x && q.y === y)) { u.x = x; u.y = y; u.f = f; u.away = false; return; }
+          });
+          if (b.losCache) b.losCache.fill(0);
+          b.rev = (b.rev || 0) + 1;
+          const B = b.raid.plan.building;
+          I.isoCenterOn(b, B.x0 + Math.floor(B.w / 2), B.y0 + Math.floor(B.h / 2), false);
+          game.refresh();
+          return { f, name: b.floors[f].name, rooms: rooms.map((r) => r.name).slice(0, 12) };
+        }, f);
+        await page.waitForTimeout(500);
+        const shot = path.join(outDir, `floor-${f}.png`);
+        await page.screenshot({ path: shot });
+        console.log(shot, JSON.stringify(fl));
+      }
     }
     if (wantScene) {
       const scene = await page.evaluate(async () => {

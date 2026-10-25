@@ -54,6 +54,7 @@ export const FOLK = {
     // Asking them to join: base + perLead × the team's best Leadership + their mood + talked (after a good talk), at most max.
     join: { base: 0.2, perLead: 0.03, talked: 0.2, refused: -0.1, max: 0.9, mood: { desperate: 0.15, friendly: 0.1, wary: 0 } },
     gift: { food: [2, 4], water: [2, 4] }, // what a good talk brings out through the barricade (not from the desperate)
+    prefer: { hospital: ["ward", "icu"] }, // the rooms they hold first, by the building's kind (a hospital's wards: #14)
   },
   RAIDERS: {
     types: ["offices", "apartments", "police"],
@@ -154,7 +155,7 @@ export function placeFolk(state, b, place, n, deps = {}) {
   const folk = place.folk || {};
   R.folk = { survivors: null, raiders: null, nest: null, place: place.id, block: n };
   if (folk.nest) R.folk.nest = makeNest(state, b, n, deps.kind);
-  if (folk.survivors) R.folk.survivors = barricadeSurvivors(state, b);
+  if (folk.survivors) R.folk.survivors = barricadeSurvivors(state, b, place.key);
   R.folk.raiders = holeUpRaiders(state, b, n, !!folk.raidersUp);
   return R.folk;
 }
@@ -205,7 +206,7 @@ export function wakeNest(b, why) {
 }
 
 // Survivors barricaded in an upper-floor room with one door (not the nest's floor).
-function barricadeSurvivors(state, b) {
+function barricadeSurvivors(state, b, key = null) {
   const rng = state.rng, R = b.raid, S = FOLK.SURVIVORS;
   const nestF = R.folk.nest ? R.folk.nest.f : -1;
   const cand = [];
@@ -215,8 +216,10 @@ function barricadeSurvivors(state, b) {
   }
   // A room a scene left barricaded with nobody dead inside first (interiorscenes.js: area.scene.alive), then an empty
   // room, then the higher one (people fled upward).
+  // In a hospital a ward (or the ICU) before any other room (issue #14: the survivors live on a ward floor).
   const held = (r) => (r.scene && r.scene.alive ? 1 : 0);
-  cand.sort((a, c) => held(c) - held(a) || unitsIn(b, a).length - unitsIn(b, c).length || (c.f || 0) - (a.f || 0));
+  const kind = S.prefer[key || ""] || null, liked = (r) => (kind && kind.includes(r.role) ? 1 : 0);
+  cand.sort((a, c) => held(c) - held(a) || liked(c) - liked(a) || unitsIn(b, a).length - unitsIn(b, c).length || (c.f || 0) - (a.f || 0));
   const room = cand[0];
   if (!room) return null;
   const f = room.f || 0;

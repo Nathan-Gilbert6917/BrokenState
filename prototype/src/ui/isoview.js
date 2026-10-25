@@ -853,6 +853,54 @@ const FURN_DRAW = {
     const ax = along(o);
     return [run(ax, 0.38, 0.62, 0, 8, flatM(FURNC.steel), 0.3, 0.7), run(ax, 0.24, 0.76, 8, 10, flatM(FURNC.chrome), 0.04, 0.96), run(ax, 0.26, 0.74, 10, 11, flatM(FURNC.felt), 0.06, 0.94)];
   } },
+  medcart: { top: 14, p: (o) => {
+    const ax = along(o), s0 = flatM(FURNC.chrome);
+    return [...flegs(0.26, 0.7, 0.26, 0.7, 2, s0), run(ax, 0.26, 0.74, 2, 14, fdrawers(FURNC.water, 3, FURNC.chrome), 0.24, 0.76)];
+  } },
+  // The rooms room by room (sim/roomlayout.js MEDICAL_STYLES, issue #14): a curtain on its rail, the drug safe, the
+  // instrument cabinet's glass front, the morgue's steel drawers, the autopsy table, a wheelchair, a linen cart, a
+  // monitor on its stand, an infant cot, an exam bed, a vet's steel table.
+  curtain: { top: 22, p: (o) => {
+    const ax = along(o), folds = (f, s, t, X) => (f === "top" ? FURNC.chrome : mul(FURNC.scrubs, 1.1 + (Math.floor(X) % 3 === 0 ? -0.15 : 0.05)));
+    return [run(ax, 0.47, 0.53, 21, 22, flatM(FURNC.chrome), 0, 1), run(ax, 0.46, 0.54, 2, 21, folds, 0.02, 0.98)];
+  } },
+  drugsafe: { top: 18, p: (o) => {
+    const ax = along(o), face = (f, s, t, X, Y, sw) => (f === "top" ? mul(FURNC.steel, 1.1) : Math.abs(s - (sw || 8) / 2) < 1.2 && Math.abs(t - 10) < 1.2 ? FURNC.chrome : t < 1 || t > 17 ? mul(FURNC.steel, 0.7) : mul(FURNC.steel, 0.95 + n2(X, Y, 49) * 0.05));
+    return [run(ax, 0.24, 0.76, 0, 18, face, 0.16, 0.84)];
+  } },
+  instcab: { top: 26, p: (o) => {
+    const ax = along(o), face = (f, s, t, X, Y, sw) => { if (f === "top") return FURNC.white; const w = sw || 8; if (t > 2 && t < 25 && s > 1 && s < w - 1) return Math.floor(t) % 6 < 1 ? FURNC.chrome : n2(Math.floor(X), Math.floor(t / 6), 50) > 0.6 ? FURNC.chrome : mul(FURNC.water, 1.25); return mul(FURNC.white, 0.94); };
+    return [run(ax, 0.3, 0.7, 0, 26, face, 0.12, 0.88)];
+  } },
+  morguelocker: { top: 26, p: (o) => {
+    const ax = along(o), face = (f, s, t, X, Y, sw) => { if (f === "top") return FURNC.chrome; if (Math.floor(t) % 9 < 1) return mul(FURNC.steel, 0.6); if (Math.abs(s - (sw || 8) / 2) < 1.5 && Math.floor(t) % 9 === 5) return FURNC.chrome; return mul(FURNC.steel, 1.05 + n2(X, Y, 51) * 0.05); };
+    return [run(ax, 0.2, 0.8, 0, 26, face, 0.02, 0.98)];
+  } },
+  autopsy: { top: 10, p: (o) => {
+    const ax = along(o);
+    return [run(ax, 0.42, 0.58, 0, 8, flatM(FURNC.steel), 0.3, 0.7), run(ax, 0.22, 0.78, 8, 10, (f) => (f === "top" ? mul(FURNC.chrome, 1.1) : FURNC.chrome), 0.04, 0.96)];
+  } },
+  wheelchair: { top: 12, p: (o) => {
+    const ax = along(o), s0 = flatM(FURNC.chrome);
+    return [fcyl(ax, 0.22, 0.5, 0.2, 0, 1, s0), fcyl(ax, 0.78, 0.5, 0.2, 0, 1, s0), fbox(0.25, 0.75, 0.25, 0.75, 5, 7, flatM(FURNC.black)), run(ax, 0.28, 0.72, 7, 12, flatM(FURNC.black), 0.22, 0.3)];
+  } },
+  linencart: { top: 13, p: (o) => {
+    const ax = along(o), s0 = flatM(FURNC.chrome);
+    return [...flegs(0.25, 0.72, 0.25, 0.72, 3, s0), fbox(0.24, 0.76, 0.24, 0.76, 3, 13, (f, s, t, X, Y) => (f === "top" ? mul(FURNC.cloth, 1.05 + n2(X, Y, 52) * 0.05) : FURNC.scrubs))];
+  } },
+  monitor: { top: 22, p: () => [{ cyl: [0.5, 0.5, 0.14], z0: 0, z1: 1, m: flatM(FURNC.steel) }, fbox(0.48, 0.52, 0.48, 0.52, 1, 15, flatM(FURNC.chrome)), fbox(0.34, 0.66, 0.42, 0.58, 15, 22, (f, s, t) => (f === "top" ? FURNC.black : t > 16 && t < 21 && s > 1 ? (Math.abs(t - 18.5 - Math.sin(s * 1.7)) < 0.6 ? FURNC.led : FURNC.screen) : FURNC.black))] },
+  crib: { top: 10, p: (o) => {
+    const ax = along(o), bars = (f, s, t, X) => (f === "top" ? PAL.woodLt : Math.floor(X) % 2 ? PAL.wood : mul(PAL.woodLt, 1.1));
+    return [...flegs(0.2, 0.76, 0.2, 0.76, 4, flatM(PAL.wood)), fbox(0.2, 0.8, 0.2, 0.8, 4, 5, flatM(FURNC.cloth)), run(ax, 0.2, 0.8, 5, 10, bars, 0.18, 0.82)];
+  } },
+  exambed: { top: 9, p: (o) => {
+    const ax = along(o);
+    return [run(ax, 0.24, 0.76, 0, 6, flatM(FURNC.beige), 0.08, 0.92), run(ax, 0.22, 0.78, 6, 8, flatM(FURNC.scrubs), 0.04, 0.96), run(ax, 0.24, 0.76, 8, 9, flatM(FURNC.cloth), 0.06, 0.94)];
+  } },
+  vettable: { top: 10, p: (o) => {
+    const ax = along(o);
+    return [run(ax, 0.42, 0.58, 0, 8, flatM(FURNC.steel), 0.4, 0.6), run(ax, 0.2, 0.8, 8, 10, (f) => (f === "top" ? mul(FURNC.chrome, 1.12) : FURNC.chrome), 0.12, 0.88)];
+  } },
   // ---------- shops, restaurants and bars ----------
   vending: { top: 30, p: (o) => {
     const ax = along(o), face = (f, s, t, X, Y, sw) => { if (f === "top") return mul(FURNC.red, 0.8); const w = sw || 16; if (s > 1.2 && s < w * 0.64 && t > 7 && t < 27) return Math.floor(t) % 5 < 1 ? FURNC.black : mul(fgoods(Math.floor(X / 2), Math.floor(t / 5), 43), 1.15); if (s > w * 0.72 && s < w * 0.86 && t > 17 && t < 21) return FURNC.chrome; return mul(FURNC.red, 0.95 + n2(X, Y, 44) * 0.08); };
@@ -1989,7 +2037,7 @@ function decoTexel(col, d, x, y, tx, ty) {
 const wcCache = new Map();
 const wcRgb = (h) => { let c = wcCache.get(h); if (!c) wcCache.set(h, (c = mul(hex(h), 0.74))); return c; }; // dimmed to the battle view's palette
 const innerFace = (wc) => (f, s, t, X, Y) => (t < 2 ? mul(PAL.woodDk, 0.95 + n2(X, Y, 3) * 0.1) : mul(wcRgb(wc), 0.92 + n2(X, Y, 5) * 0.08 - (t < 7 ? 0.08 * (1 - t / 7) : 0)));
-const WARTC = { frame: hex("#4a3424"), sky: hex("#7a98a8"), hill: hex("#5a6a3a"), white: hex("#e0e0d8"), rim: hex("#2a2a2a"), mirror: hex("#a8b8c0"), cork: hex("#8a6a44"), poster: ["#c8402f", "#3a6fb0", "#e8c04a", "#5a3a7a"].map(hex), shelf: hex("#6a4a2e"), knick: ["#b0a080", "#7a8a9a", "#9a5a4a"].map(hex) };
+const WARTC = { frame: hex("#4a3424"), sky: hex("#7a98a8"), hill: hex("#5a6a3a"), white: hex("#e0e0d8"), rim: hex("#2a2a2a"), mirror: hex("#a8b8c0"), cork: hex("#8a6a44"), poster: ["#c8402f", "#3a6fb0", "#e8c04a", "#5a3a7a"].map(hex), shelf: hex("#6a4a2e"), knick: ["#b0a080", "#7a8a9a", "#9a5a4a"].map(hex), sign: hex("#2f6a4a") };
 function wartTexel(k, s, t, sw, v) {
   const m = sw / 2; // the middle of the face
   switch (k) {
@@ -2002,6 +2050,7 @@ function wartTexel(k, s, t, sw, v) {
     case "poster": if (Math.abs(s - m) < 3 && t >= 14 && t < 24) return t >= 21 ? WARTC.white : mul(WARTC.poster[v % 4], 0.85 + ((t | 0) % 3) * 0.06); return null;
     case "crucifix": if ((Math.abs(s - m) < 0.8 && t >= 14 && t < 26) || (Math.abs(t - 22) < 0.8 && Math.abs(s - m) < 3)) return WARTC.frame; return null;
     case "notice": if (Math.abs(s - m) < 5 && t >= 14 && t < 23) { if (Math.abs(s - m) >= 4.4 || t < 14.6 || t >= 22.4) return WARTC.frame; const cell = Math.floor((s - m + 5) / 3) * 3 + Math.floor((t - 14) / 3); return hash3(cell, v, 71) > 0.5 && (s | 0) % 3 && (t | 0) % 3 ? (hash3(cell, v, 72) > 0.7 ? WARTC.poster[2] : WARTC.white) : WARTC.cork; } return null;
+    case "sign": if (Math.abs(s - m) < 6 && t >= 22 && t < 26) { if (Math.abs(s - m) >= 5.4 || t < 22.5 || t >= 25.5) return WARTC.white; return (s | 0) % 3 && t >= 23.4 && t < 24.6 && Math.abs(s - m) < 4 ? WARTC.white : WARTC.sign; } return null; // a hospital's corridor sign (sim/decor.js MED_ART): white letters on green
     case "shelf": if (Math.abs(s - m) < 6 && t >= 19 && t < 20.5) return WARTC.shelf; if (Math.abs(s - m) < 5.5 && t >= 20.5 && t < 23.5) { const i = Math.floor((s - m + 6) / 2.4); return hash3(i, v, 73) > 0.4 ? WARTC.knick[i % 3] : null; } return null;
   }
   return null;

@@ -14,8 +14,17 @@
 //     2+ cells takes a door's front; the containers are exactly the lootable pieces of the home rooms; two houses lay a
 //     room out differently; a sofa faces its TV; a house holds what it did before within ±10% (200 seeded houses, the
 //     legacy layout against the new); an older save keeps the old layout (save.js roomsLegacy);
+//   - hospitals, clinics, infirmaries and vets room by room (roomlayout.js MEDICAL_STYLES, issue #14): the rooms by
+//     name on their floors (the ER, the waiting room, the pharmacy, the ambulance bay, the morgue and the cafeteria on a
+//     hospital's ground floor; the theatre, the ICU and the supply room on the first floor up; the maternity ward, the
+//     staff room and the laundry on the top floor; wards and a nurses' station on every floor up), each with its
+//     signature pieces; every bed has a nightstand or an IV stand beside it (and every ER gurney its IV stand); the
+//     corridors 2 wide, their parked pieces on one wall only; the pharmacy's steel door locked and its drug safe
+//     locked; every room's doors reachable from the stairs on every floor; the containers exactly the lootable pieces
+//     (and the ambulance); the meds per building within ±10% of the old layout (200 seeded buildings); the hospital's
+//     scenes (an ER overrun, a sealed ward, the morgue's dead) roll; an older save keeps the old plan;
 //   - commercial buildings laid out for their kind (shoplayout.js, issue #16: the rest in tools/shopstest.js): every
-//     room's doors and stairs reachable from each other, no piece of 2+ cells on a door's front.
+//     room's doors and stairs reachable from each other, no piece of 2+ cells on a door's front;
 //   - civic buildings laid out for their kind (civiclayout.js, issue #15): a police station's rooms with their pieces
 //     (the front desk's counter, the squad room's desks, the armory's gun racks, the evidence room's lockers, cells each
 //     with bars, a cell door, a bunk, a toilet and a sink, a one-way window from an interview room, a police car in the
@@ -36,11 +45,12 @@ import { newItem, stow } from "../src/sim/inventory.js";
 import { raidEnemies } from "../src/sim/scavenge.js";
 import { raidBuildings, buildingPickFor } from "../src/sim/poiraid.js"; // a site's building, picked before the map
 import { BUILDINGS, SITES, assemble, siteBuildings, buildingMap, buildingOptions, placeOccupantGroups, windowsNear, BMAP } from "../src/sim/buildingmaps.js";
-import { HOME_STYLES, HOME_KEYS } from "../src/sim/roomlayout.js";
+import { HOME_STYLES, HOME_KEYS, MEDICAL_STYLES, MED_KEYS } from "../src/sim/roomlayout.js";
+import { rollScenes } from "../src/sim/interiorscenes.js";
 import { COMMERCIAL_KEYS, styleName } from "../src/sim/shoplayout.js";
 import { CIVIC_STYLES } from "../src/sim/civiclayout.js";
 import { pieceDef } from "../src/sim/data-furniture.js";
-import { boxLoot } from "../src/sim/combat.js";
+import { boxLoot, FLOOR_RICH } from "../src/sim/combat.js";
 import { GEAR, supValue } from "../src/sim/data.js";
 import { Rng } from "../src/sim/rng.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
@@ -619,6 +629,135 @@ console.log("\nHomes room by room (roomlayout.js)");
   const back = deserializeState(old);
   const fresh = deserializeState(JSON.parse(JSON.stringify(serializeState(st))));
   check(back.roomsLegacy === true && !fresh.roomsLegacy, "save.js: a save from before is marked roomsLegacy, a new world is not");
+}
+
+// ======================================================================================
+console.log("\nHospitals, clinics, infirmaries and vets room by room (roomlayout.js MEDICAL_STYLES)");
+{
+  const N = Math.max(SEEDS * 4, 24);
+  const errs = {};
+  const err = (k, msg) => { (errs[k] = errs[k] || []).push(msg); };
+  const NEAR4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+  // The pieces a room must have, by role (any one of a list; a vet's or a clinic's where they differ).
+  const SIG = {
+    er: [["gurney"], ["ivstand"], ["desk"]], ward: [["hospbed", "bars"]], icu: [["hospbed"], ["monitor"]], theatre: [["optable", "vettable"], ["instcab"]],
+    pharmroom: [["drugsafe", "medcab"], ["counter"]], morgue: [["morguelocker"], ["autopsy"]], lobby: [["counter"], ["chair"]], nursestation: [["counter"], ["desk"], ["medcart"]],
+    cafeteria: [["counter"], ["table"], ["chair"]], kitchen: [["fridge"], ["stove"], ["sink"]], staffroom: [["fridge"]], breakroom: [["fridge"]], laundry: [["washer"]],
+    storage: [["rack", "shelf", "crate"]], office: [["desk"]], restroom: [["toilet"]], exam: [["exambed", "vettable"], ["medcab"]], cells: [["bars"]],
+  };
+  // Where a hospital's rooms are: [floor test, role, name pattern].
+  const FLOORS = [
+    [(f) => f === 0, "er", /Emergency/], [(f) => f === 0, "lobby", /Waiting room/], [(f) => f === 0, "pharmroom", /Pharmacy/], [(f) => f === 0, "ambbay", /Ambulance bay/],
+    [(f) => f === 0, "morgue", /Morgue/], [(f) => f === 0, "cafeteria", /Cafeteria/], [(f) => f === 0, "kitchen", /Kitchen/], [(f) => f === 0, "restroom", /Restroom/],
+    [(f) => f === 1, "theatre", /Operating theatre/], [(f) => f === 1, "icu", /ICU/], [(f) => f === 1, "storage", /Supply room/],
+    [(f, top) => f === top, "ward", /Maternity ward/], [(f, top) => f === top, "staffroom", /Staff room/], [(f, top) => f === top, "laundry", /Laundry/],
+    [(f) => f >= 1, "ward", /^Ward/], [(f) => f >= 1, "nursestation", /Nurses' station/], [(f) => f >= 1, "office", /Doctors' office/],
+  ];
+  let built = 0, beds = 0, gurneys = 0, scenes = {}, rise = 0, safes = 0;
+  for (const key of ["hospital", "clinic", "infirmary", "vet"]) for (let s = 0; s < N; s++) {
+    const rng = new Rng(52000 + s * 7919 + key.length * 31);
+    const m = assemble(rng, BUILDINGS[key].make(rng, {}), { key, name: key });
+    const grids = m.floors || [{ cells: m.cells }];
+    const rooms = m.rooms.filter((a) => !a.outdoor);
+    const tag = `${key} ${s}`;
+    built++;
+    const cellsIn = (a) => { const out = []; for (let y = a.y0 + 1; y < a.y0 + a.h - 1; y++) for (let x = a.x0 + 1; x < a.x0 + a.w - 1; x++) out.push([x, y, grids[a.f].cells[y * m.w + x]]); return out; };
+    const kindsIn = (a) => new Set(cellsIn(a).map(([, , c]) => c.k));
+    // The rooms by name on their floors (a hospital).
+    if (key === "hospital") {
+      const top = m.storeys - 1;
+      for (const [onF, role, re] of FLOORS) for (let f = 0; f <= top; f++) if (onF(f, top) && !rooms.some((a) => a.f === f && a.role === role && re.test(a.name))) err("rooms", `${tag} floor ${f}: no ${role} ${re}`);
+      const ph = rooms.find((a) => a.role === "pharmroom");
+      if (!ph || ph.locked !== "vault" || !m.lockedDoors.some((d) => d.area === ph.id)) err("pharmacy", `${tag} ${ph ? ph.locked : "none"}`);
+      const safe = m.containers.find((c) => c.kind === "drugsafe");
+      if (!safe || safe.lockKind !== "drugs") err("pharmacy", `${tag} drug safe ${safe ? safe.lockKind : "none"}`); else safes++;
+      if (!m.containers.some((c) => c.kind === "ambulance" && c.w && c.h)) err("ambulance", tag);
+    }
+    for (const a of rooms) {
+      const ks = kindsIn(a), g = grids[a.f].cells;
+      if (key === "vet" && a.role === "storage" && /stalls/i.test(a.name)) continue; // a country vet's barn: the old furnishing
+      for (const any of SIG[a.role] || []) if (!any.some((k) => ks.has(k))) err("signature", `${tag} ${a.name} (${a.role}) has no ${any.join(" or ")}`);
+      // Every bed with its stand beside it (a hospital bed: a nightstand or an IV stand; an ER gurney: its IV stand).
+      const pieces = new Map();
+      for (const [x, y, c] of cellsIn(a)) {
+        const d = pieceDef(c.k);
+        if (!d) continue;
+        const id = c.pc ? `p${c.pc}` : `${x},${y}`;
+        if (!pieces.has(id)) pieces.set(id, { k: c.k, cells: [] });
+        pieces.get(id).cells.push([x, y]);
+      }
+      for (const p of pieces.values()) {
+        const want = p.k === "hospbed" ? ["nightstand", "ivstand"] : p.k === "gurney" && a.role === "er" ? ["ivstand"] : null;
+        if (!want) continue;
+        if (p.k === "hospbed") beds++; else gurneys++;
+        const by = p.cells.some(([x, y]) => NEAR4.some(([dx, dy]) => want.includes(g[(y + dy) * m.w + x + dx].k)));
+        if (!by) err("stand", `${tag} ${a.name} ${p.k} at ${p.cells[0]}`);
+      }
+      // The containers are exactly the lootable pieces (the ambulance its own).
+      const loot = [...pieces.values()].filter((p) => pieceDef(p.k).loot);
+      const boxes = m.containers.filter((c) => c.area === a.id && c.kind !== "ambulance");
+      const covered = (p) => boxes.some((b) => b.kind === p.k && p.cells.every(([x, y]) => x >= b.x && x < b.x + (b.w || 1) && y >= b.y && y < b.y + (b.h || 1)));
+      if (MEDICAL_STYLES[a.role] && (loot.length !== boxes.length || !loot.every(covered))) err("containers", `${tag} ${a.name}: pieces ${loot.map((p) => p.k)} boxes ${boxes.map((b) => b.kind)}`);
+      // A hospital's corridors 2 wide, their parked pieces along one wall only.
+      if (key === "hospital" && a.role === "corridor") {
+        const iw = a.w - 2, ih = a.h - 2;
+        if (Math.min(iw, ih) < 2) err("corridor", `${tag} ${a.name} ${iw}x${ih}`);
+        const rows = new Set(cellsIn(a).filter(([, , c]) => pieceDef(c.k)).map(([x, y]) => (iw >= ih ? y : x)));
+        if (rows.size > 1) err("corridor", `${tag} ${a.name}: pieces along ${rows.size} walls`);
+      }
+    }
+    // Every room's doors reachable from the stairs on every floor (or from the front door on a one-storey building).
+    grids.forEach((F, f) => {
+      const st = (m.stairs || []).find(([x, y]) => F.cells[y * m.w + x].k === "stairs");
+      const from = st || (f === 0 ? [m.front.x, m.front.y] : null);
+      if (!from) return;
+      const seen = walkFrom(m, from[0], from[1], true, F.cells);
+      for (const a of rooms.filter((r) => r.f === f)) for (const [x, y] of a.doors || []) if (!seen[y * m.w + x]) err("reach", `${tag} floor ${f} ${a.name} door ${x},${y}`);
+    });
+  }
+  // The hospital's scenes (interiorscenes.js) over 60 hospitals of their own (they shove pieces and seal doors).
+  for (let s = 0; s < 60; s++) {
+    const rng = new Rng(61000 + s * 7919);
+    const m = assemble(rng, BUILDINGS.hospital.make(rng, {}), { key: "hospital", name: "hospital" });
+    const sc = rollScenes(m, new Rng(700 + s), "hospital");
+    for (const x of (sc && sc.list) || []) { scenes[x.kind] = (scenes[x.kind] || 0) + 1; if (x.kind === "morgue") rise += x.rise || 0; }
+  }
+  for (const [what, label] of [["rooms", "a hospital's rooms by name on their floors"], ["signature", "every room has its signature pieces"], ["stand", "every bed has a nightstand or an IV stand beside it, every ER gurney its IV stand"], ["corridor", "a hospital's corridors 2 wide, the parked pieces on one wall"], ["pharmacy", "the pharmacy's steel door locked, its drug safe locked"], ["ambulance", "the ambulance in its bay, a container of its own"], ["reach", "every room's doors reachable from the stairs on every floor"], ["containers", "the containers are exactly the lootable pieces"]]) {
+    check(!errs[what], `${label} (${built} buildings, ${beds} beds, ${gurneys} gurneys, ${safes} drug safes)${errs[what] ? `: ${errs[what].length} bad, e.g. ${errs[what].slice(0, 3).join("; ")}` : ""}`);
+  }
+  check(scenes.eroverrun > 0 && scenes.sealedward > 0 && scenes.morgue > 0 && rise > 0, `a hospital's scenes roll: ER overrun ${scenes.eroverrun || 0}, sealed ward ${scenes.sealedward || 0}, the morgue's dead ${scenes.morgue || 0} (${rise} rising)`);
+  // The meds per building: the old layout (legacy) against the new over 200 seeded buildings (the expected meds of each
+  // container's table, by its floor's richness), within ±10%.
+  const meds = (def) => { const r = def.loot.meds; return r ? Math.min(0.95, r[0]) * ((r[1] + r[2]) / 2) : 0; };
+  for (const key of ["hospital", "clinic", "vet"]) {
+    const total = (legacy) => {
+      let v = 0;
+      const by = {};
+      for (let s = 0; s < 200; s++) {
+        const rng = new Rng(9000 + s * 104729 + 5);
+        const m = assemble(rng, BUILDINGS[key].make(rng, { legacy }), { key, name: key, legacy, noDecor: true });
+        for (const c of m.containers) { const a = m.rooms.find((r) => r.id === c.area); if (!a || !a.type) continue; const x = meds(boxLoot(a.type, c.kind)) * Math.min(FLOOR_RICH.cap, Math.pow(FLOOR_RICH.perFloor, c.f || 0)); v += x; by[a.role] = (by[a.role] || 0) + x; }
+      }
+      return { v: v / 200, by };
+    };
+    const before = total(true), after = total(false);
+    check(Math.abs(after.v / before.v - 1) <= 0.1, `a ${key} holds the meds it did within ±10%: ${after.v.toFixed(1)} against ${before.v.toFixed(1)}`);
+    if (key === "hospital") {
+      const per = (role) => { const n = 200 * 1; return (after.by[role] || 0) / n; };
+      const wardBox = (after.by.ward || 0) / Math.max(1, 200), pharm = per("pharmroom"), theatre = per("theatre");
+      check(pharm > per("er") && theatre > per("er") && pharm > wardBox && theatre > wardBox, `the pharmacy (${pharm.toFixed(1)}) and the theatre (${theatre.toFixed(1)}) the richest rooms, the ER ${per("er").toFixed(1)}, all the wards together ${wardBox.toFixed(1)}`);
+    }
+  }
+  // An older save keeps the old plan: no room of the new roles, no catalogue piece beyond the old kinds.
+  const OLD = new Set(["shelf", "locker", "cabinet", "counter", "crate", "rack", "table", "bed", "bars", "hay", "barrel", "gunsafe"]);
+  let newer = 0;
+  for (const key of ["hospital", "clinic", "vet"]) for (let s = 0; s < 6; s++) {
+    const rng = new Rng(800 + s);
+    const m = assemble(rng, BUILDINGS[key].make(rng, { legacy: true }), { key, name: key, legacy: true, noDecor: true });
+    for (const F of m.floors || [{ cells: m.cells }]) for (const c of F.cells) if (pieceDef(c.k) && !OLD.has(c.k)) newer++;
+    for (const a of m.rooms) if (["er", "icu", "theatre", "morgue", "ambbay", "nursestation", "laundry", "staffroom"].includes(a.role)) newer++;
+  }
+  check(!newer, `an older save's hospital, clinic and vet keep the old plan (${newer} new rooms or pieces)`);
 }
 
 // ======================================================================================

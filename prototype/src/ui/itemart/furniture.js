@@ -324,7 +324,55 @@ function f_copier(p) { // a photocopier: a big beige body, the lid, the control 
   for (const y of [8, 11, 14]) H(p, 2, 13, y, "#a89f8a"); R(p, 3, 5, 10, 6, "#eef0f2");
 }
 
+// ---------- the hospitals', clinics' and vets' pieces (#14, sim/roomlayout.js MEDICAL_STYLES) ----------
+function f_medcart(p) { // a medication cart: blue drawers on a steel frame, a pull on each, castors
+  box(p, 2, 2, 13, 13, "#3a6fb0"); for (const y of [5, 8, 11]) H(p, 3, 12, y, "#284f80");
+  for (const y of [3, 6, 9, 12]) H(p, 7, 8, y, "#c9ced3"); H(p, 1, 14, 1, STEEL); for (const x of [3, 12]) R(p, x - 1, 14, x, 15, "#1f1f22");
+}
+function f_drugsafe(p) { // a drug safe: a squat steel box, the dial and the handle, a red cross
+  box(p, 1, 2, 14, 15, STEEL); R(p, 3, 4, 12, 13, STEELD); disc(p, 9, 8, 2, "#c9ced3"); p.set(9, 8, "#383b41");
+  H(p, 5, 7, 11, "#c9ced3"); V(p, 4, 5, 7, "#c8402f"); H(p, 3, 5, 6, "#c8402f");
+}
+function f_instcab(p) { // an instrument cabinet: a tall white case, glass doors, steel trays and tools behind them
+  box(p, 2, 0, 13, 15, "#e4e6e2"); R(p, 3, 1, 12, 12, "#bcd8e2"); V(p, 7, 1, 12, "#9aa1a8");
+  for (const y of [4, 8]) H(p, 3, 12, y, STEEL); for (const [x, y] of [[4, 2], [9, 6], [5, 10], [11, 2]]) H(p, x, x + 1, y, STEELD); R(p, 3, 13, 12, 14, "#c9c7bd");
+}
+function f_morguelocker(p) { // morgue drawers: a steel wall of square doors, a latch on each
+  box(p, 0, 0, 15, 15, "#a8b0b6"); for (const x of [5, 10]) V(p, x, 0, 15, "#6f777e"); H(p, 0, 15, 7, "#6f777e");
+  for (const x of [2, 7, 12]) for (const y of [3, 11]) H(p, x, x + 1, y, "#e8eaec");
+}
+function f_autopsy(p) { // an autopsy table: a steel slab with a raised lip, a drain, on a single column
+  R(p, 0, 5, 15, 7, "#c9ced3"); H(p, 0, 15, 4, "#e8eaec"); p.set(13, 6, "#383b41"); R(p, 6, 8, 9, 13, STEEL); R(p, 3, 14, 12, 15, STEELD);
+}
+function f_wheelchair(p) { // a wheelchair, side on: the big wheel, the black seat and back, the push handle, a footrest
+  ring(p, 6, 10, 4, STEELD); p.set(6, 10, STEEL); R(p, 4, 7, 11, 8, "#26272a"); R(p, 10, 1, 11, 8, "#26272a"); H(p, 10, 13, 1, STEEL);
+  line(p, 4, 8, 2, 13, STEEL); H(p, 1, 3, 13, STEEL); disc(p, 12, 14, 1, "#1f1f22");
+}
+function f_vettable(p) { // a vet's steel exam table: a bright top on a pedestal
+  R(p, 0, 5, 15, 6, "#e8eaec"); H(p, 0, 15, 7, STEEL); R(p, 6, 8, 9, 13, STEEL); R(p, 3, 14, 12, 15, STEELD);
+}
+function f_curtain(p) { // a privacy curtain: a rail, rings, folds of pale green cloth
+  H(p, 0, 15, 0, STEEL); for (let x = 1; x < 15; x += 2) p.set(x, 1, "#c9ced3");
+  for (let x = 0; x < 16; x++) V(p, x, 2, 14, x % 3 === 0 ? "#6f9a8c" : "#8fc2b0");
+}
+function f_linencart(p) { // a linen cart: a blue canvas bag full of folded sheets on a steel frame
+  R(p, 1, 3, 14, 4, "#eef0f2"); R(p, 2, 2, 7, 3, "#e8e0c8"); box(p, 1, 5, 14, 12, "#4f7b88"); H(p, 0, 15, 13, STEEL);
+  for (const x of [2, 13]) R(p, x - 1, 14, x, 15, "#1f1f22");
+}
+function f_monitor(p) { // a patient monitor on its stand: a dark screen with a green trace, a pole, a star foot
+  box(p, 2, 0, 13, 7, "#26272a"); R(p, 3, 1, 12, 6, "#1c2a30"); line(p, 3, 4, 6, 4, "#5ad06a"); line(p, 6, 4, 7, 2, "#5ad06a"); line(p, 7, 2, 8, 6, "#5ad06a"); line(p, 8, 6, 12, 4, "#5ad06a");
+  V(p, 7, 8, 13, STEEL); line(p, 7, 13, 3, 15, STEELD); line(p, 7, 13, 12, 15, STEELD);
+}
+function f_crib(p) { // an infant cot: wooden bars round a little mattress, a folded blanket
+  H(p, 1, 14, 3, WOODL); H(p, 1, 14, 12, WOOD); for (let x = 1; x <= 14; x += 2) V(p, x, 3, 12, WOOD);
+  R(p, 2, 9, 13, 11, "#eef0f2"); R(p, 8, 9, 12, 10, "#e8a0b0"); legs(p, 1, 14, 13, 15, WOODD);
+}
+function f_exambed(p) { // an exam bed: a padded teal top with a raised end, the paper roll, a cabinet base
+  line(p, 1, 3, 4, 6, "#4f7b88"); R(p, 4, 6, 15, 7, "#4f7b88"); H(p, 4, 15, 5, "#eef0f2"); box(p, 3, 8, 14, 15, "#c9b48a"); H(p, 4, 13, 11, "#957f58");
+}
+
 export const GEAR_ART = {
+  f_medcart, f_drugsafe, f_instcab, f_morguelocker, f_autopsy, f_wheelchair, f_vettable, f_curtain, f_linencart, f_monitor, f_crib, f_exambed,
   f_bed, f_bunk, f_hospbed, f_gurney, f_ivstand, f_hay, f_barrel, f_range, f_dishwasher, f_washer, f_dryer, f_fryer, f_coldshelf,
   f_icemachine, f_watercooler, f_compressor, f_tank, f_jukebox, f_pooltable, f_clothesrack, f_pottingbench, f_palletrack, f_tirerack,
   f_saddlerack, f_secdesk, f_deposit, f_ammocab, f_evlocker, f_turnout, f_schoollocker, f_sportcage, f_labbench, f_weightbench,

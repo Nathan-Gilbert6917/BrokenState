@@ -15,7 +15,8 @@
 //   have them in a given week (a hash of the seed, the tile and the week: no world dice, the same tile the same
 //   beasts). In a raid the pets are in the rooms with the rest (buildingmaps.js placeInterior takes the mix), and a
 //   city crawl's streets have the city's (citycrawl.js). None on a base's tile, on a mountain or on water.
-//   A raid's locked house (locks.js lockRaid: a locked room of a kind in LOCKED.ROOMS on a tile that has dead pets)
+//   A raid's locked house (locks.js lockRaid: a locked room of a kind in LOCKED.ROOMS, or a vet's locked kennels, on a
+//   tile that has dead pets)
 //   holds some of them LOCKED.ODDS of the time (shutInPets: area.pets, rolled with the raid's lock dice), shut in
 //   with nobody to bite; the moment its door is opened (locks.js openLock: a key, the picks or a boot) they come out
 //   at whoever opened it (releasePets: units inside the room by the door, aware, acting in the enemy turn).
@@ -92,7 +93,7 @@ const PET_KINDS = ["deadhound", "deadcat"];
 // has dead pets holds some of them LOCKED.ODDS of the time. roll(...keys): the raid's lock dice (a hash: the same raid
 // the same pets). area.pets = { kind, n }; null when none.
 export function shutInPets(state, b, area, roll) {
-  if (!area || area.outdoor || !BEASTS.LOCKED.ROOMS.includes(area.type) || area.pets) return null;
+  if (!area || area.outdoor || !(BEASTS.LOCKED.ROOMS.includes(area.type) || area.kennel) || area.pets) return null; // kennel: a vet's kennels (buildingmaps.js, #14)
   const mix = beastMix(state, b.tileId);
   const kinds = PET_KINDS.filter((k) => mix && mix[k] > 0);
   if (!kinds.length || roll("pets", area.id) >= BEASTS.LOCKED.ODDS) return null;

@@ -98,7 +98,23 @@ export const FURNITURE_KINDS = {
   gurney:  P("Gurney",           HALF, 15, 35, "two", S12, false, ["ward", "bay"], "bed:cot"),
   ivstand: P("IV stand",         POLE, 5, 5, "one", S1, false, ["ward"], "none"),
   medcab:  P("Medicine cabinet", HALF, 20, 20, "one", S1, true, ["ward", "bath", "office"], "storage:15", true),
+  medcart: P("Medication cart",  HALF, 15, 30, "one", S1, true, ["ward"], "storage:20"),
   optable: P("Operating table",  HALF, 30, 90, "two", S12, false, ["ward"], "work:surgery"),
+  // The hospital, clinic and vet rooms room by room (issue #14, roomlayout.js MEDICAL_STYLES): an ER bay's curtain (the
+  // dead push through it: 5 hp), the pharmacy's drug safe (its container always locked: locks.js "drugs"), the
+  // theatre's instrument cabinet, the morgue's body drawers and table, the corridor's wheelchairs, the laundry's carts,
+  // the ICU's monitor on its stand, the maternity ward's cots (crib), an exam bed, a vet's steel table.
+  curtain:      P("Privacy curtain",    HALF, 5, 5, "one", S1, false, ["ward"], "none"),
+  drugsafe:     P("Drug safe",          STEEL, 80, 120, "two", S1, true, ["ward", "shop"], "storage:20", true),
+  instcab:      P("Instrument cabinet", FULL, 25, 40, "two", S1, true, ["ward"], "storage:20", true),
+  morguelocker: P("Morgue drawers",     STEEL, 60, 150, "two", S1, true, ["ward"], "storage:40", true),
+  autopsy:      P("Autopsy table",      HALF, 30, 80, "two", S12, false, ["ward"], "work:table"),
+  wheelchair:   P("Wheelchair",         HALF, 10, 15, "one", S1, false, ["ward"], "comfort:0.1"),
+  linencart:    P("Linen cart",         HALF, 10, 20, "one", S1, false, ["ward", "laundry"], "none"),
+  monitor:      P("Patient monitor",    POLE, 5, 12, "one", S1, false, ["ward"], "none"),
+  crib:         P("Infant cot",         HALF, 10, 15, "one", S1, false, ["ward", "bedroom"], "none"), // "crib": #15's cot is a camp cot
+  exambed:      P("Exam bed",           HALF, 15, 40, "two", S12, false, ["ward"], "bed:cot"),
+  vettable:     P("Steel exam table",   HALF, 20, 40, "two", S1, false, ["ward"], "work:table"),
   // ---------- shops, restaurants and bars ----------
   vending:     P("Vending machine", FULL, 60, 200, "two", S1, true, ["shop", "office", "school", "ward"], "storage:60", true),
   checkout:    P("Checkout",        HALF, 30, 40, "two", S1, true, ["shop", "bar"], "storage:20"),
