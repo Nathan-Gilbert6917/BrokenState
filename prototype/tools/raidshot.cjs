@@ -8,6 +8,8 @@
 // on it (scene.png; sim/interiorscenes.js).
 // Site "furniture" (issue #8): a town raid with one of every kind of the furniture catalogue laid out on its map
 // (tools/isobattles.js showroom), shot close up in two turns of the view as well (furniture-*.png).
+// Site "carry" (issue #17): a town raid with the team carrying furniture (tools/isobattles.js carryScene: alone with a
+// fridge and a table, a pair with a sofa), shot close up in the four diagonal turns and a straight one (carry-*.png).
 const { chromium } = require("playwright");
 const { spawn } = require("child_process");
 const path = require("path");
@@ -16,7 +18,8 @@ const fs = require("fs");
 const outDir = path.resolve(process.argv[2] || path.join(__dirname, "..", "..", "docs", "shots"));
 const [rawMin, rawMax] = [Number(process.argv[3] || 80), Number(process.argv[4] || 80)];
 const show = process.argv[5] === "furniture"; // the furniture showroom on a town's raid map
-const site = show ? "town" : process.argv[5] || "farm";
+const carryShow = process.argv[5] === "carry"; // carrying furniture (issue #17): one carrier alone and a pair (tools/isobattles.js carryScene)
+const site = show || carryShow ? "town" : process.argv[5] || "farm";
 const noon = process.argv.slice(6).includes("noon"); // the raid at midday (the decor shots: the inside in daylight)
 const wantScene = process.argv.slice(6).includes("scene"); // a building's signs of survival (sim/interiorscenes.js): the team set in a scene's room, the view on it (scene.png)
 const port = 5300 + Math.floor(Math.random() * 600);
@@ -99,6 +102,35 @@ const port = 5300 + Math.floor(Math.random() * 600);
           await page.screenshot({ path: f });
           console.log(f);
         }
+      }
+    }
+    if (carryShow) {
+      // Carrying furniture (issue #17): the team on a cleared floor with pieces in their arms (alone: a fridge in the low
+      // pose, a table; a pair: a sofa between them), close up in every diagonal turn of the view and one straight one.
+      const set = await page.evaluate(async () => {
+        const T = await import("/tools/isobattles.js"), I = await import("/src/ui/isoview.js"), b = game.state.combat;
+        const at = T.carryScene(game.state, b, Math.floor(b.w / 2) - 6, Math.floor(b.h / 2) - 3);
+        I.setRoofs(false);
+        I.clearIsoCache();
+        game.refresh();
+        return at;
+      });
+      console.log("carry:", JSON.stringify(set));
+      for (const [turn, straight] of [[0, false], [1, false], [2, false], [3, false], [0, true]]) {
+        const drawn = await page.evaluate(async ({ turn, straight }) => {
+          const I = await import("/src/ui/isoview.js"), b = game.state.combat;
+          for (let g = 0; g < 8 && (I.iso.rot !== turn || I.iso.straight !== straight); g++) I.isoRotate(b, 1);
+          while (I.iso.zoom < 6) I.isoZoom(b, 1);
+          I.isoCenterOn(b, Math.floor(b.w / 2) - 2, Math.floor(b.h / 2) - 1, false);
+          document.querySelectorAll(".tipbox, .coach, [data-action='coach-close']").forEach((e) => e.remove && e.remove());
+          b.rev = (b.rev || 0) + 1;
+          game.refresh();
+          return { pair: I.carryFrame.pair, shown: [...I.carryFrame.shown] };
+        }, { turn, straight });
+        await page.waitForTimeout(500);
+        const f = path.join(outDir, `carry-view${turn}${straight ? "s" : ""}.png`);
+        await page.screenshot({ path: f });
+        console.log(f, JSON.stringify(drawn));
       }
     }
     const info = await page.evaluate(async () => {

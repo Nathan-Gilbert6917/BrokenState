@@ -29,6 +29,7 @@ import { shade } from "./itemart/kit.js";
 import { onForgetPictures } from "./pictures.js";
 
 const TILE = 16;              // art px along an axis of a cell (isoview.js HW)
+const SW = 22, SH = 11;       // a cell in the straight view (isoview.js SW, SH): its top-left corner the origin, u right, v down
 const SS = 2;                 // the painting's grid px an art px (supersampled: finer wheels, windows and rims than the figures' 1)
 const UP = 4;                 // canvas px an art px of a cell's picture (the figures' toCanvas UP: crisp at the view's zooms)
 const HH = 8;                 // half a tile's height on screen (isoview.js HH): a cell's centre is HH below its top vertex
@@ -268,7 +269,7 @@ function star(s, t) {
 function boxtruck(push, o, L) {
   const body = o.color, dark = shade(body, -0.3), x0 = -L * TILE / 2 + 2, x1 = L * TILE / 2 - 2, HW = 10, top = VEH_TOP + 2;
   const box0 = x0 + 0.5, box1 = x1 - 19, cab0 = box1 + 1.5, cab1 = x1 - 1;
-  const boxC = mixHex("#5a5a5e", body, 0.15);
+  const boxC = o.box || mixHex("#5a5a5e", body, 0.15); // o.box: the box in its own paint (a fire engine's, an ambulance's)
   shadow(push, x0, x1, HW);
   push(boxL([x0, 0, 8.5], [x1, 0, 8.5], 3, HW, body, { u: [0, 0, 1], group: G.body, tex: worn(o, 1, endTex(null, TAIL, dark, o)) })); // the chassis
   bumper(push, x1 + 0.4, 6, HW); bumper(push, x0 - 0.4, 6, HW);
@@ -290,18 +291,57 @@ function bicycle(push, o) {
   push(boxL([-10.5, 0, 11.5], [-4.5, 0, 11.5], 0.4, 2.2, METAL, { u: [0, 0, 1], group: G.rails })); push(limb([-9, 0, 5.2], [-8.5, 0, 11.2], 0.5, 0.5, METAL, T)); // the rack over the back wheel
   push(limb([0, 0, 5.2], [0, 0, 2.6], 0.6, 0.6, dark, T)); push(limb([0, -2.6, 5.2], [0, 2.6, 5.2], 0.9, 0.9, dark, { sides: 6, group: G.trim })); // the stand, the cranks
 }
-const MODELS = { pickup, sedan, suv, van, humvee, mrap, m35, boxtruck, bicycle };
+// The civic vehicles parked inside (sim/civiclayout.js, issue #15): a fire engine (2 × 5: a box truck's frame and cab in
+// red, its box red, a ladder on the roof between its rails, hose reels on the flanks, a light bar on the cab), an
+// ambulance (2 × 4: the box truck in white, a red stripe down the box, a light bar) and a police car (2 × 4: a sedan in
+// black with white doors and a red and blue light bar on the roof). Burnt out, the paint and the trim are gone.
+function truckFrame(L) {
+  const x0 = -L * TILE / 2 + 2, x1 = L * TILE / 2 - 2, box1 = x1 - 19, cab0 = box1 + 1.5;
+  return { x0, x1, HW: 10, top: VEH_TOP + 2, box0: x0 + 0.5, box1, cabX: (cab0 + x1 - 1) / 2 };
+}
+const lightBar = (push, x, z, half) => { push(boxL([x, -half, z], [x, 0, z], 0.7, 1.2, TAIL, { u: [0, 0, 1], group: G.trim })); push(boxL([x, 0, z], [x, half, z], 0.7, 1.2, "#3a5ad0", { u: [0, 0, 1], group: G.trim })); };
+function fireengine(push, o, L) {
+  boxtruck(push, { ...o, box: o.burnt ? null : o.color }, L);
+  const { x0, x1, HW, top, box0, box1, cabX } = truckFrame(L);
+  if (!o.burnt) {
+    for (const y of [-4, 4]) push(boxL([box0 + 1, y, top + 0.8], [box1 - 1, y, top + 0.8], 0.5, 0.5, STEEL, { u: [0, 0, 1], group: G.rails })); // the ladder's rails
+    for (let f = box0 + 3; f < box1 - 1; f += 4) push(boxL([f, -4, top + 0.8], [f, 4, top + 0.8], 0.3, 0.3, STEEL, { u: [0, 0, 1], group: G.rails })); // its rungs
+    for (const sd of [-1, 1]) for (const f of [box0 + 6, box0 + 14]) push(limb([f, sd * (HW - 0.4), 12], [f, sd * (HW + 1.2), 12], 2.6, 2.6, METAL, { sides: 8, group: G.trim })); // the hose reels
+    lightBar(push, cabX, top - 1, 6);
+  }
+  armour(push, o, x0, x1, HW, 6, 11.5, top, [cabX, top]);
+}
+function ambulance(push, o, L) {
+  boxtruck(push, { ...o, box: o.burnt ? null : o.color }, L);
+  const { x0, x1, HW, top, box0, box1, cabX } = truckFrame(L);
+  if (!o.burnt) {
+    for (const sd of [-1, 1]) push(boxL([box0 + 0.5, sd * (HW - 0.05), 15], [box1 - 0.5, sd * (HW - 0.05), 15], 1.1, 0.3, TAIL, { u: [0, 0, 1], group: G.trim })); // the stripe
+    lightBar(push, cabX, top - 1, 5);
+  }
+  armour(push, o, x0, x1, HW, 6, 11.5, top, [cabX, top]);
+}
+function police(push, o, L) {
+  sedan(push, o, L);
+  const x0 = -L * TILE / 2 + 2, x1 = L * TILE / 2 - 2, HW = 9, xc = x0 + (x1 - x0) * 0.44;
+  if (o.burnt) return;
+  for (const sd of [-1, 1]) push(boxL([xc - 6, sd * (HW + 0.05), 9], [xc + 6, sd * (HW + 0.05), 9], 3, 0.25, WHITE, { u: [0, 0, 1], group: G.trim })); // the white doors
+  lightBar(push, xc, 23.6, 5);
+}
+const MODELS = { pickup, sedan, suv, van, humvee, mrap, m35, boxtruck, bicycle, fireengine, ambulance, police };
 export const MODEL_NAMES = Object.keys(MODELS);
 
 // ---------- which model, in what colour ----------
 // A cell's car (sim/combat.js placeCar: c.car { i, j, L, ax, kind, v, body, type, up, mil, wrecked }) → its model: the
 // team's own vehicle ("vehicle") by its type (placeVehicle: VEHICLE_TYPES), else by its body: the Army trucks, the map's
 // box trucks, and a parked car a sedan at 2 × 3, a van or a pickup at 2 × 4 by its dice (as the prisms drew them).
+const CIVIC_MODEL = { engine: "fireengine", ambulance: "ambulance", police: "police" };
+const CIVIC_PAINT = { fireengine: "#a8241c", ambulance: "#dcdad2", police: "#22252a" };
 const BY_TYPE = { truck: "pickup", sedan: "sedan", suv: "suv", hummer: "humvee", van: "van", miltruck: "m35", bike: "bicycle" };
 export function modelOf(car) {
   const b = car.body || car.kind;
   if (b === "bike") return "bicycle";
   if (b === "m35" || b === "humvee" || b === "mrap") return b;
+  if (CIVIC_MODEL[b]) return CIVIC_MODEL[b]; // a fire station's engine and ambulance, a police car (sim/civiclayout.js)
   if (car.kind === "vehicle") return BY_TYPE[car.type] || (b === "truck" ? "pickup" : "sedan");
   if (b === "truck" || car.kind === "truck") return "boxtruck";
   return car.L === 3 ? "sedan" : (car.v || 0) % 2 ? "van" : "pickup";
@@ -318,6 +358,7 @@ export function lookOf(car) {
   else if (model === "m35" || model === "humvee" || model === "mrap") { o.color = cond === "wrecked" ? MIL_WRECK : own && model === "humvee" ? mixHex(OLIVE_DARK, TEAM_BLUE, 0.5) : MIL_OLIVE; if (own && model === "m35") o.tint = TEAM_BLUE; }
   else if (own) o.color = TEAM_BLUE;
   else if (model === "boxtruck") o.color = BOX_RUST;
+  else if (CIVIC_PAINT[model]) o.color = CIVIC_PAINT[model];
   else o.color = CAR_COLORS[(car.v || 0) % CAR_COLORS.length];
   if (!own && mil && mil.enemy) o.gun = true;
   return o;
@@ -340,19 +381,22 @@ function snowed(F, sn) {
 
 // ---------- the painting ----------
 // The whole car painted once at a heading (yaw), every pixel tagged with the cell under its point: { px, zb, cb, g,
-// w, h } with the grid g (ox, oy: the model origin). wide: cells across (2; a bicycle 1).
-const GRID = { w: 176 * SS, h: 120 * SS, ox: 88 * SS, oy: 84 * SS }; // room for 2 × 5 cells at any heading, the MRAP's turret on top (art px × SS)
+// w, h } with the grid g (ox, oy: the model origin). wide: cells across (2; a bicycle 1). straight: the straight view's
+// projection (isoview.js iso.straight: u right SW px a cell, v down SH px a cell, z up 1:1, the +v and the top faces
+// seen) instead of the 2:1 one; scale: the model shrunk (a car on one cell).
+const GRID = { w: 240 * SS, h: 140 * SS, ox: 120 * SS, oy: 100 * SS }; // room for 2 × 5 cells at any heading in either view, the MRAP's turret on top (art px × SS)
 const whole = new Map(), WHOLE_MAX = 24; // key -> the painting (a few cars a map; the cells' canvases are the view's)
-function paintWhole(key, model, o, L, wide, ax, yaw, sn) {
+function paintWhole(key, model, o, L, wide, ax, yaw, sn, straight = false, scale = 1) {
   const e = whole.get(key);
   if (e) { whole.delete(key); whole.set(key, e); return e; }
   let F = vehicleLimbs(model, o, L);
   if (sn) F = snowed(F, sn);
-  const a = (yaw * Math.PI) / 180, c = Math.cos(a), s = Math.sin(a);
-  const W = (q) => [(q[0] * c - q[1] * s) * SS, (q[0] * s + q[1] * c) * SS, q[2] * SS]; // turned by the heading, SS grid px an art px
+  const a = (yaw * Math.PI) / 180, c = Math.cos(a), s = Math.sin(a), k = SS * scale;
+  const W = (q) => [(q[0] * c - q[1] * s) * k, (q[0] * s + q[1] * c) * k, q[2] * k]; // turned by the heading, SS grid px an art px
   W.n = (q) => [q[0] * c - q[1] * s, q[0] * s + q[1] * c, q[2]]; // the normals turn, unscaled
   W.light = LIGHT;
-  W.step = 0.45 / SS; // the sampling step, in model units (art px): 0.45 grid px once scaled, about the figures' 0.4, no holes
+  W.step = 0.45 / k; // the sampling step, in model units (art px): 0.45 grid px once scaled, about the figures' 0.4, no holes
+  if (straight) { W.proj = (w) => [(w[0] * SW) / TILE, (w[1] * SH) / TILE - w[2], w[1] + 0.8 * w[2]]; W.view = [0, 1, 0.8]; }
   // The cell a model point stands over: i along the length, j across it (ax "x": +y is +j; "y": +y is −j: the car's
   // left is the map's −x there); what sticks out of the footprint (a wheel's tread, the gun) goes to the nearest cell.
   const sg = ax === "y" ? -1 : 1, i0 = L / 2, j0 = wide / 2;
@@ -375,7 +419,7 @@ function paintWhole(key, model, o, L, wide, ax, yaw, sn) {
     if ((x > 0 && near(i - 1)) || (x < g.w - 1 && near(i + 1)) || (y > 0 && near(i - g.w)) || (y < g.h - 1 && near(i + g.w))) rim[i] = k;
   }
   for (let i = 0; i < rim.length; i++) if (rim[i]) px[i] = OUTLINE;
-  const out = { px, cb, g, W };
+  const out = { px, cb, g, W, straight };
   whole.set(key, out);
   while (whole.size > WHOLE_MAX) whole.delete(whole.keys().next().value);
   vehicleArtStats.painted++;
@@ -394,19 +438,35 @@ let mkCanvas = (w, h) => { if (typeof document === "undefined") return null; con
 export function setVehicleCanvas(fn) { mkCanvas = fn; whole.clear(); }
 onForgetPictures(() => whole.clear());
 
-// One cell's share of a car's picture, as the view's sprites are ({ cv, ox, oy, w, h }: the canvas, 1 px an art px,
-// and its top-left from the cell's top vertex); null without a canvas (the tools) or in a straight view. car: the cell's
-// (sim/combat.js c.car); yaw: the car's heading in the view (degrees, the figures'); o: { fog, sn (snow lying 0..1) }.
+// One cell's share of a car's picture, as the view's sprites are ({ cv, ox, oy, w, h }: the canvas, UP px an art px,
+// w × h art px, and its top-left from the cell's origin: its top vertex, in a straight view its top-left corner); null
+// without a canvas (the tools). car: the cell's (sim/combat.js c.car); yaw: the car's heading in the view (degrees, the
+// figures': the angle in the view's u, v); o: { fog, sn (snow lying 0..1), straight (the straight view) }.
 export function vehicleCellSprite(car, yaw, o = {}) {
   const look = lookOf(car), L = car.L || 3, wide = car.body === "bike" ? 1 : 2;
   const y = (((Math.round(yaw / 15) * 15) % 360) + 360) % 360;
-  const key = `${look.model}|${look.color}|${look.tint || ""}|${look.cond}|${look.rust ? look.seed : 0}|${look.plating}${look.scrap}${look.glass}${look.mesh}${look.turret || ""}${look.manned ? "*" : ""}${look.gun ? "g" : ""}|${L}|${wide}|${car.ax}|${y}|${o.sn || 0}`;
-  const w = paintWhole(key, look.model, look, L, wide, car.ax, y, o.sn || 0);
-  const { px, cb, g } = w, i = car.i || 0, j = car.j || 0, k = i * wide + j;
-  // Its pixels, and the whole's outline (an art px wide: SS grid px out from the car) where it touches them.
+  const key = `${look.model}|${look.color}|${look.tint || ""}|${look.cond}|${look.rust ? look.seed : 0}|${look.plating}${look.scrap}${look.glass}${look.mesh}${look.turret || ""}${look.manned ? "*" : ""}${look.gun ? "g" : ""}|${L}|${wide}|${car.ax}|${y}|${o.sn || 0}|${o.straight ? "s" : ""}`;
+  const w = paintWhole(key, look.model, look, L, wide, car.ax, y, o.sn || 0, !!o.straight);
+  const i = car.i || 0, j = car.j || 0, sg = car.ax === "y" ? -1 : 1;
+  return cutSprite(w, i * wide + j, [(i + 0.5 - L / 2) * TILE, sg * (j + 0.5 - wide / 2) * TILE, 0], o.fog);
+}
+// A car on one cell (the maps' decorative cars without a footprint of cells: isoview.js's "car", "truck" and
+// "vehicle" cells with no c.car): the model shrunk onto the cell, along the view's u (ax "u") or v. kind: the cell's;
+// v: its variant (the colour); o as vehicleCellSprite's.
+export function vehicleOneSprite(kind, v, ax, o = {}) {
+  const car = { kind, body: kind === "truck" ? "truck" : "car", L: kind === "truck" ? 4 : 3, ax: "x", v: v || 0 };
+  const look = lookOf(car), scale = kind === "truck" ? 0.3 : 0.42, yaw = ax === "v" ? 90 : 0;
+  const key = `one|${look.model}|${look.color}|${look.seed}|${yaw}|${o.sn || 0}|${o.straight ? "s" : ""}`;
+  const w = paintWhole(key, look.model, look, car.L, 2, "x", yaw, o.sn || 0, !!o.straight, scale);
+  return cutSprite(w, -1, [0, 0, 0], o.fog, scale);
+}
+// A share of a painting w: the pixels tagged k (every pixel for -1) and the whole's outline (an art px wide: SS grid
+// px out from the car) where it touches them, on a canvas placed from the cell whose centre is the model point `centre`.
+function cutSprite(w, k, centre, fog, scale = 1) {
+  const { px, cb, g } = w;
   const mine = new Uint8Array(g.w * g.h);
   let x0 = g.w, y0 = g.h, x1 = -1, y1 = -1;
-  const own = (q) => q >= 0 && q < mine.length && px[q] && cb[q] === k;
+  const own = (q) => q >= 0 && q < mine.length && px[q] && (k < 0 || cb[q] === k);
   const mark = (xx, yy, v) => { mine[yy * g.w + xx] = v; if (xx < x0) x0 = xx; if (xx > x1) x1 = xx; if (yy < y0) y0 = yy; if (yy > y1) y1 = yy; };
   for (let yy = 0; yy < g.h; yy++) for (let xx = 0; xx < g.w; xx++) {
     const q = yy * g.w + xx;
@@ -434,22 +494,22 @@ export function vehicleCellSprite(car, yaw, o = {}) {
     if (!v) continue;
     if (v >= 2) { put(xx - x0, yy - y0, [11, 12, 14], 230); continue; }
     let rgb = rgbOf(px[q]);
-    if (o.fog) rgb = fogged(rgb);
+    if (fog) rgb = fogged(rgb);
     put(xx - x0, yy - y0, rgb, 255);
   }
   if (img && img.data && typeof c.putImageData === "function") c.putImageData(img, 0, 0);
-  // The cell's top vertex on the grid: its centre (the model point under it, through the heading) less half a tile's
-  // height; the picture's corner from it, in art px (the view scales the canvas to w × h art px).
-  const sg = car.ax === "y" ? -1 : 1;
-  const wc = w.W([(i + 0.5 - L / 2) * TILE, sg * (j + 0.5 - wide / 2) * TILE, 0]);
-  const cx = g.ox + SX(wc), cy = g.oy + SY(wc) - HH * SS;
+  // The cell's origin on the grid: its centre (the model point under it, through the heading and the projection) less
+  // half a tile (its height to the top vertex; in a straight view half its width and height to the top-left corner);
+  // the picture's corner from it, in art px (the view scales the canvas to w × h art px).
+  const wc = w.W([centre[0] / scale, centre[1] / scale, 0]), pr = w.W.proj ? w.W.proj(wc) : [SX(wc), SY(wc)];
+  const cx = g.ox + pr[0] - (w.straight ? (SW / 2) * SS : 0), cy = g.oy + pr[1] - (w.straight ? SH / 2 : HH) * SS;
   vehicleArtStats.cells++;
   return { cv, ox: (x0 - cx) / SS, oy: (y0 - cy) / SS, w: cw / SS, h: ch / SS };
 }
 // The whole car's painting, for a look at it (the tools, the dev page): { px, w, h, ox, oy } on the SS grid (ss: grid px an art px).
-export function vehiclePainting(car, yaw = 330) {
+export function vehiclePainting(car, yaw = 330, straight = false) {
   const look = lookOf(car), L = car.L || 3, wide = car.body === "bike" ? 1 : 2;
   const y = (((Math.round(yaw / 15) * 15) % 360) + 360) % 360;
-  const w = paintWhole(`look|${JSON.stringify(look)}|${L}|${wide}|${car.ax}|${y}`, look.model, look, L, wide, car.ax, y, 0);
+  const w = paintWhole(`look|${JSON.stringify(look)}|${L}|${wide}|${car.ax}|${y}|${straight ? "s" : ""}`, look.model, look, L, wide, car.ax, y, 0, straight);
   return { px: w.px, w: w.g.w, h: w.g.h, ox: w.g.ox, oy: w.g.oy, ss: SS };
 }
