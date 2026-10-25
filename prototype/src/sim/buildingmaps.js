@@ -48,6 +48,7 @@ import { FRANCHISES } from "./data-shops.js"; // a franchise's layout (plan): th
 import { applyZType, siteList } from "./zombietypes.js";
 import { fitMargins, buildingTarget, densifyOutside, densify, coverTarget, buildingDeadScale, streetDeadScale, raidMaxDims, raidDims, SIZE_CLASSES } from "./battlesize.js";
 import { legacyRaids } from "./worldcfg.js"; // an older save: a neighbourhood's street laid out as it always was
+import { decorate, flipDecoY, placeDecorPieces } from "./decor.js"; // rugs, clutter, wall art, wall colours, light fixtures (cosmetic)
 import { rollWin, winMixOf, windowOpen } from "./windows.js"; // the windows' states (open, locked, fixed), a throw through an open one
 
 export const BMAP = {
@@ -134,52 +135,53 @@ export function rewardMult(tile) {
 // ---------- room roles ----------
 // name, type (combat.js AREAS: what its containers hold; null: nothing to search), furnish (FURNISH), hub (rooms open
 // onto it: halls, corridors, the sales floor), label (its name on the map), windows (on its outer walls), fl (the floor:
-// wood, tile, conc, carpet, dirt), maxBoxes.
+// wood, tile, conc, carpet, dirt; since 2026-10-25 also hardwood, plank, lino, checker, rubber, steel: issue #13, drawn
+// by ui/isoview.js floorColor), maxBoxes. Decor by role (rugs, clutter, wall art, wall colours, lights): decor.js DECOR.
 const role = (name, type, furnish, extra = {}) => ({ name, type, furnish, ...extra });
 export const ROLES = {
-  hall:        role("Hallway", null, "none", { hub: true, label: false, fl: "wood" }),
-  corridor:    role("Corridor", null, "none", { hub: true, label: false, fl: "tile" }),
+  hall:        role("Hallway", null, "none", { hub: true, label: false, fl: "hardwood" }),
+  corridor:    role("Corridor", null, "none", { hub: true, label: false, fl: "lino" }),
   foyer:       role("Entry hall", "office", "lobby", { hub: true, fl: "tile", maxBoxes: 1 }),
-  living:      role("Living room", "house", "living", { hub: true, fl: "wood" }),
-  dining:      role("Dining room", "house", "dining", { fl: "wood" }),
-  kitchen:     role("Kitchen", "kitchen", "kitchen", { fl: "tile" }),
-  bedroom:     role("Bedroom", "house", "bedroom", { fl: "wood", maxBoxes: 2 }),
-  bath:        role("Bathroom", "house", "bath", { fl: "tile", maxBoxes: 1 }),
+  living:      role("Living room", "house", "living", { hub: true, fl: "hardwood" }),
+  dining:      role("Dining room", "house", "dining", { fl: "hardwood" }),
+  kitchen:     role("Kitchen", "kitchen", "kitchen", { fl: "lino" }),
+  bedroom:     role("Bedroom", "house", "bedroom", { fl: "hardwood", maxBoxes: 2 }),
+  bath:        role("Bathroom", "house", "bath", { fl: "checker", maxBoxes: 1 }),
   restroom:    role("Restroom", null, "none", { fl: "tile", label: false, windows: false }),
-  pantry:      role("Pantry", "kitchen", "shelves", { fl: "wood", maxBoxes: 2, windows: false }),
+  pantry:      role("Pantry", "kitchen", "shelves", { fl: "plank", maxBoxes: 2, windows: false }),
   hgarage:     role("Garage", "garage", "bays", { fl: "conc", maxBoxes: 3 }),
-  greatroom:   role("Great room", "cabin", "living", { hub: true, fl: "wood" }),
-  bunk:        role("Bunk room", "cabin", "beds", { fl: "wood", maxBoxes: 2 }),
-  gunroom:     role("Gun room", "cabin", "armory", { fl: "wood", windows: false, maxBoxes: 3 }),
+  greatroom:   role("Great room", "cabin", "living", { hub: true, fl: "plank" }),
+  bunk:        role("Bunk room", "cabin", "beds", { fl: "plank", maxBoxes: 2 }),
+  gunroom:     role("Gun room", "cabin", "armory", { fl: "plank", windows: false, maxBoxes: 3 }),
   storage:     role("Storage", "warehouse", "shelves", { fl: "conc", maxBoxes: 3 }),
   sales:       role("Sales floor", "store", "aisles", { hub: true, fl: "tile", maxBoxes: 7 }),
   stock:       role("Stockroom", "store", "shelves", { fl: "conc", maxBoxes: 4 }),
   office:      role("Office", "office", "office", { fl: "carpet", maxBoxes: 2 }),
   dispensary:  role("Dispensary", "pharmacy", "shelves", { fl: "tile", windows: false, maxBoxes: 3 }),
   lobby:       role("Lobby", "office", "lobby", { hub: true, fl: "tile", maxBoxes: 1 }),
-  ward:        role("Ward", "clinic", "beds", { fl: "tile", maxBoxes: 3 }),
-  exam:        role("Exam room", "clinic", "exam", { fl: "tile", maxBoxes: 2 }),
+  ward:        role("Ward", "clinic", "beds", { fl: "lino", maxBoxes: 3 }),
+  exam:        role("Exam room", "clinic", "exam", { fl: "lino", maxBoxes: 2 }),
   pharmroom:   role("Pharmacy", "pharmacy", "shelves", { fl: "tile", windows: false, maxBoxes: 3 }),
   armory:      role("Armory", "armory", "armory", { fl: "conc", windows: false, maxBoxes: 4 }),
   evidence:    role("Evidence room", "office", "shelves", { fl: "conc", windows: false, maxBoxes: 3 }),
   cells:       role("Cell block", "cellblock", "cells", { fl: "conc", maxBoxes: 3 }),
-  bays:        role("Service bays", "garage", "bays", { hub: true, fl: "conc", maxBoxes: 5 }),
+  bays:        role("Service bays", "garage", "bays", { hub: true, fl: "steel", maxBoxes: 5 }),
   parts:       role("Parts room", "workshop", "shelves", { fl: "conc", maxBoxes: 3 }),
-  classroom:   role("Classroom", "office", "classroom", { fl: "tile", maxBoxes: 2 }),
-  gym:         role("Gym", "lockers", "gym", { fl: "wood", maxBoxes: 2 }),
+  classroom:   role("Classroom", "office", "classroom", { fl: "lino", maxBoxes: 2 }),
+  gym:         role("Gym", "lockers", "gym", { fl: "rubber", maxBoxes: 2 }),
   lockerroom:  role("Locker room", "lockers", "lockers", { fl: "tile", maxBoxes: 3 }),
-  nurse:       role("Nurse's office", "nurse", "exam", { fl: "tile", maxBoxes: 2 }), // first aid only (medfinds.js)
-  cafeteria:   role("Cafeteria", "kitchen", "dining", { hub: true, fl: "tile", maxBoxes: 3 }),
-  breakroom:   role("Break room", "kitchen", "kitchen", { fl: "tile", maxBoxes: 2 }),
+  nurse:       role("Nurse's office", "nurse", "exam", { fl: "lino", maxBoxes: 2 }), // first aid only (medfinds.js)
+  cafeteria:   role("Cafeteria", "kitchen", "dining", { hub: true, fl: "checker", maxBoxes: 3 }),
+  breakroom:   role("Break room", "kitchen", "kitchen", { fl: "lino", maxBoxes: 2 }),
   warefloor:   role("Warehouse floor", "warehouse", "racks", { hub: true, fl: "conc", maxBoxes: 8 }),
   factoryfloor: role("Factory floor", "workshop", "machines", { hub: true, fl: "conc", maxBoxes: 7 }),
   barnfloor:   role("Barn floor", "barn", "barn", { hub: true, fl: "dirt", maxBoxes: 4 }),
-  tack:        role("Tack room", "barn", "shelves", { fl: "wood", maxBoxes: 2 }),
-  hayloft:     role("Hayloft", "barn", "hay", { fl: "wood", maxBoxes: 2 }),
+  tack:        role("Tack room", "barn", "shelves", { fl: "plank", maxBoxes: 2 }),
+  hayloft:     role("Hayloft", "barn", "hay", { fl: "plank", maxBoxes: 2 }),
   nave:        role("Nave", "chapel", "pews", { hub: true, fl: "wood", maxBoxes: 2 }),
   vestry:      role("Vestry", "chapel", "office", { fl: "carpet", maxBoxes: 2 }),
   dorm:        role("Dormitory", "barracks", "beds", { fl: "tile", maxBoxes: 3 }),
-  mess:        role("Mess hall", "kitchen", "dining", { hub: true, fl: "tile", maxBoxes: 3 }),
+  mess:        role("Mess hall", "kitchen", "dining", { hub: true, fl: "lino", maxBoxes: 3 }),
   motor:       role("Motor pool", "motorpool", "bays", { hub: true, fl: "conc", maxBoxes: 6 }),
   hangarfloor: role("Hangar floor", "hangar", "hangar", { hub: true, fl: "conc", maxBoxes: 6 }),
   terminal:    role("Terminal hall", "store", "benches", { hub: true, fl: "tile", maxBoxes: 4 }),
@@ -188,8 +190,8 @@ export const ROLES = {
   lab:         role("Lab", "lab", "lab", { fl: "tile", maxBoxes: 3 }),
   motelroom:   role("Room", "house", "bedroom", { fl: "carpet", maxBoxes: 2 }),
   reception:   role("Front desk", "office", "lobby", { hub: true, fl: "tile", maxBoxes: 1 }),
-  apt:         role("Apartment", "house", "apartment", { fl: "wood", maxBoxes: 3 }),
-  dayroom:     role("Day room", "house", "living", { hub: true, fl: "wood" }),
+  apt:         role("Apartment", "house", "apartment", { fl: "hardwood", maxBoxes: 3 }),
+  dayroom:     role("Day room", "house", "living", { hub: true, fl: "hardwood" }),
 };
 
 // ---------- the outside ----------
@@ -221,9 +223,9 @@ const clampN = (v, a, b) => Math.max(a, Math.min(b, v));
 // A franchise's layout (data-shops.js FRANCHISES plan) by the building's kind and the place's franchise (opts.variant:
 // shops.js poi.v, a crawl place's v); {} for none (the building as it always was).
 /** @param {string} kind @param {any} [o] @returns {import("./data-shops.js").Plan} */
-const planOf = (kind, o) => { const id = o && o.variant; const f = id ? (FRANCHISES[(o && o.kind) || kind] || []).find((x) => x.id === id) : null; return (f && f.plan) || {}; }; // o.kind: the place's kind when its building is another's archetype (a pizza place is a diner)
+const planOf = (kind, o) => { const id = o && o.variant; const f = id ? (FRANCHISES[(o && o.kind) || kind] || []).find((x) => x.id === id) : null; return f ? { ...(f.plan || {}), look: f.look } : {}; }; // o.kind: the place's kind when its building is another's archetype (a pizza place is a diner)
 /** The front room with the franchise's floor and name over it. @param {any} leaf @param {any} plan */
-const withPlan = (leaf, plan) => (leaf && leaf.role ? { ...leaf, ...(plan.fl ? { fl: plan.fl } : {}), ...(plan.room ? { name: plan.room } : {}) } : leaf);
+const withPlan = (leaf, plan) => (leaf && leaf.role ? { ...leaf, ...(plan.fl ? { fl: plan.fl } : {}), ...(plan.room ? { name: plan.room } : {}), ...(plan.look ? { wallc: plan.look.wall } : {}) } : leaf); // wallc: its inside walls in the franchise's colour (decor.js)
 export const MAX_STOREYS = 8;
 
 function house(rng, v) {
@@ -1056,6 +1058,7 @@ export function streetMap(state, tileId, option, withVehicle) {
       const dst = floors[g].cells, cars = new Map(); // a car in the garage: its cells take the id of their new top-left cell
       for (let y = B.y0; y < B.y0 + B.h; y++) for (let x = B.x0; x < B.x0 + B.w; x++) {
         const c = { ...F.cells[y * m.w + x] }, X = tx(x), Y = ty(y);
+        if (h.flip) flipDecoY(c); // a rug's sides, wall art's face turned with the house (decor.js)
         if (c.car) {
           c.car = { ...c.car };
           if (h.flip) { if (c.car.ax === "y") c.car.i = c.car.L - 1 - c.car.i; else c.car.j = 1 - c.car.j; }
@@ -1616,6 +1619,14 @@ export function assemble(rng, spec, opts = {}) {
       }
     }
   }
+  // The lootable decor (decor.js placeDecorPieces): a plant, a floor lamp by a room's wall, by hash dice (no roll used).
+  if (!opts.noDecor) {
+    const pseed = rng.state;
+    for (const room of rooms) {
+      const ctx = furnishCtx(room);
+      placeDecorPieces(room, { seed: pseed, f }, (x, y) => ctx.free(x, y) && [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => rid[I(x + dx, y + dy)] === -1), (x, y, k) => block(x, y, k, room));
+    }
+  }
   function furnishCtx(room) {
     const x0 = room.ix0, y0 = room.iy0, x1 = room.ix0 + room.iw - 1, y1 = room.iy0 + room.ih - 1;
     const free = (x, y) => x >= x0 && x <= x1 && y >= y0 && y <= y1 && FLOOR_KINDS.has(cells[I(x, y)].k) && !keep[I(x, y)];
@@ -1729,6 +1740,11 @@ export function assemble(rng, spec, opts = {}) {
     if (K.see) delete c.t; // seen through from the ground, however tall the building
     if (lockedOne) lockedOne.dk = dk; // locks.js openOdds: the lock's difficulty, whether it can be kicked
   }
+
+  // ---------- decor (decor.js) ----------
+  // Rugs, clutter, wall art, wall colours and light fixtures: cosmetic, no cell's kind changes. Hash dice of the map's
+  // seed as it stands (rng.state read, not consumed: the upper floors roll the same as before).
+  if (!opts.noDecor) decorate(cells, W, H, rooms, rid, { seed: rng.state, f, key: opts.id || opts.key }); // noDecor: the same map bare (tools/decortest.js)
 
   // ---------- the result ----------
   // Room ids run on across the floors (opts._idBase: the ids used so far), so areas[id] is the room with that id.
