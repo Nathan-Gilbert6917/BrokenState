@@ -60,7 +60,7 @@ export const SHOP = {
   // stands plain (not searched: roomlayout.js place's plain).
   BOXES: {
     superfloor: 1.6, deptfloor: 1.75, pallets: 1.3, "pallets:warehouse": 1.1, "pallets:deptstore": 1, machines: 1.1, stacks: 1.05, bookfront: 1.2,
-    aislefront: "full", "aislefront:deptstore": 1.3, guncounter: 1.25, guncage: 1.7, "stock:electronics": 1.25,
+    aislefront: "full", "aislefront:deptstore": 1.3, guncounter: 1.25, guncage: 1.7, "stock:electronics": 1.25, walkin: 2,
   },
 };
 // The buildings whose rooms take these styles (buildingmaps.js BUILDINGS keys).
@@ -135,6 +135,7 @@ function aisles(L, o = {}) {
     flush();
     rows++;
   }
+  if (!rows && o.fallback !== false) some(L, k, 2, { prefer: "corner" }); // a shallow room the lanes cross: shelving along a wall
   return rows;
 }
 /** The cells of row y between x0 and x1 that take a piece (off the lanes). @param {Lay} L */
@@ -357,7 +358,7 @@ export const COMMERCIAL_STYLES = {
     fill(L, ["shelf", "counter"]);
   },
   // The walk-in cold room behind its steel door: cold-room shelving round the walls (spoiled food, some tins).
-  walkin(L) { fill(L, ["coldshelf"]); if (!L.has("coldshelf")) L.need("coldshelf"); },
+  walkin(L) { share(L, "walkin"); fill(L, ["coldshelf"]); if (!L.has("coldshelf")) L.need("coldshelf"); },
   // A bar's keg room: kegs (barrels) and shelves.
   kegroom(L) { some(L, "barrel", 2, { prefer: "corner" }); fill(L, ["shelf", "coldcase"]); },
   // ---------- back rooms ----------
