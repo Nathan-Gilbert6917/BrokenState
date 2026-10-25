@@ -2,8 +2,9 @@
 // building loaded straight onto a raid's map (setup.raid.place = { id, key, name, layout }: the variant pinned), the
 // team in its entry zone, the fog lifted (ui/combat.js cui.cache.vis and .known.cells filled after a refresh), the
 // view zoomed to fit the building (a map of several buildings: the whole map). After tools/milshot.cjs (#25).
-// Usage: node tools/variantshot.cjs [outdir] [key:layout ...]   (default: every motel layout and three each of the
-// house, barn, apartment block, gas station and warehouse). Prints one JSON line a shot.
+// Usage: node tools/variantshot.cjs [outdir] [key:layout ...]   (default: every motel layout, three each of the house,
+// barn and apartment block, two neighbourhoods; the gas station's and the warehouse's are #35's and #37's now). Prints
+// one JSON line a shot.
 const { chromium } = require("playwright");
 const { spawn } = require("child_process");
 const path = require("path");
@@ -11,7 +12,7 @@ const fs = require("fs");
 
 const outDir = path.resolve(process.argv[2] || path.join(__dirname, "..", "..", "docs", "shots", "issue-32"));
 const want = process.argv.slice(3).length ? process.argv.slice(3) : ["motel:court", "motel:strip", "motel:chain", "motel:cabins", "motel:extended", "house:ranch", "house:mobile", "house:duplex", "barn:dairy", "barn:horse", "barn:bank",
-  "apartments:walkup", "apartments:garden", "apartments:lofts", "gasstation:kiosk", "gasstation:carwash", "gasstation:service", "warehouse:distribution", "warehouse:cold", "warehouse:storage"];
+  "apartments:walkup", "apartments:garden", "apartments:lofts", "neighbourhood:culdesac", "neighbourhood:rural"];
 const port = 5300 + Math.floor(Math.random() * 600);
 
 (async () => {

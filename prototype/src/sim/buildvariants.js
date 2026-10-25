@@ -122,11 +122,11 @@ export function layoutFor(key, setting, r, allow = null) {
   return list[list.length - 1].id;
 }
 
-// A POI's kind as the building type its layout is of (buildingmaps.js SITES: a shed is a machine shed's, a mine shack
-// a cabin's).
-const POI_KEY = { shed: "machineshed", mineshack: "cabin" };
+// A POI's kind as the building type its layout is of: a kind with layouts of its own (a house, a barn, a motel...); a
+// kind on another's building under its own name (a shed on a machine shed's, a mine shack on a cabin's: buildingmaps.js
+// SITES) keeps its name, its building's layout by the dice.
 /** @param {string} kind */
-export const poiLayoutKey = (kind) => POI_KEY[kind] || kind;
+export const poiLayoutKey = (kind) => kind;
 
 // The setting a building stands in, from its tile: a city's tiles and urban sites "city", a town's and the suburbs
 // "town", everything else (farms, open land, the countryside's sites, crash sites, bases) "rural".
