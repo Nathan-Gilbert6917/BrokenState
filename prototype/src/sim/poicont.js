@@ -11,7 +11,9 @@
 // The ledger, made on first use (pois.js poiLedger), plain data saved with the POI (pois.js packPois):
 //   poi.cont = { n, looted: { key: by }, mine: { key: { contents, hidden, quick, lock, searched, partial } },
 //                maps: { mapId: [container ids in the seeded order] }, took, opened: { mapId: n }, last: { by, day } | null,
-//                scenes: { mapId: [{ f, x, y, cell }] } (interiorscenes.js: a scene's pieces as your side left them) }
+//                scenes: { mapId: [{ f, x, y, cell }] } (interiorscenes.js: a scene's pieces as your side left them),
+//                pieces: { mapId: [{ f, x, y, cell }] } (furnihome.js: the cells pieces of furniture were lifted off or set
+//                on, a piece dropped at the door from exhaustion among them) }
 //   key      `${mapId}#${containerId}`: mapId "street" or the building's option id (a farm's "farmhouse", a POI's
 //            "poi2:house"), so a site with several buildings keeps one ledger.
 //   looted   emptied by someone (by: a group's id, "player" for your own headless crews, "gone" for what was missing
@@ -56,6 +58,7 @@ import { localId } from "./world.js"; // dice keyed by a group's world-local id 
 import { supWeight } from "./data.js";
 import { itemLoad } from "./inventory.js"; // what a raider can carry off (opts.room): a pack counts what is in it
 import { sceneLedger, applySceneLedger } from "./interiorscenes.js"; // a scene's pieces as they were left (a smashed one stays smashed)
+import { pieceLedger, applyPieceLedger, mergePieceLedger } from "./furnihome.js"; // furniture lifted and set down (issue #18: a piece left at the door is there next time)
 
 export const CONT = {
   FLOOR: 0.03, // the floor a raid leaves under a pool (scavenge.js takePoi's)
@@ -167,6 +170,7 @@ export function poiRaidStart(state, b) {
   R.poiFresh = [];
   R.poiMap = mapId;
   if (c.scenes && c.scenes[mapId]) applySceneLedger(b, c.scenes[mapId]); // interiorscenes.js: the scenes' pieces as your side left them
+  if (c.pieces && c.pieces[mapId]) { applyPieceLedger(b, c.pieces[mapId]); R.pieceCells = c.pieces[mapId].map((o) => `${o.f},${o.x},${o.y}`); } // furnihome.js: the furniture lifted and set down as your side left it (kept again at the end)
   for (const box of boxes) {
     const k = contKey(mapId, box.id);
     const m = c.mine[k], by = c.looted[k];
@@ -177,6 +181,7 @@ export function poiRaidStart(state, b) {
       if (m.lock) box.lock = clone(m.lock);
       box.searched = !!m.searched; box.partial = !!m.partial;
       box.mine = true;
+      if (m.at) { box.x = m.at.x; box.y = m.at.y; box.f = m.at.f; delete box.w; delete box.h; if (m.at.w) { box.w = m.at.w; box.h = m.at.h; } box.shifted = true; } // furnicarry.js: set down elsewhere with its piece
     }
     if (by != null) {
       if (!m) { box.contents = { sup: {}, gear: [] }; box.hidden = null; box.quick = false; box.searched = true; box.partial = false; }
@@ -207,12 +212,15 @@ export function poiRaidEnd(state, b) {
   let opened = 0;
   const sc = sceneLedger(b); // interiorscenes.js: the scenes' pieces smashed, shoved or torn down
   if (sc && sc.length) { if (!c.scenes) c.scenes = {}; c.scenes[mapId] = sc; }
+  const pc = pieceLedger(b); // furnihome.js: the cells pieces of furniture left or were set on
+  if (pc.length) { if (!c.pieces) c.pieces = {}; c.pieces[mapId] = mergePieceLedger(c.pieces[mapId], pc); }
   for (const box of R.containers.filter(ledgerBox)) {
     if (!box.contents) continue; // never opened: untouched
     if (box.ransacked && !box.mine && !itemsIn(box)) continue; // spawned ransacked and still empty: nothing of yours there
     if (fresh.has(box.id)) opened++;
     c.mine[contKey(mapId, box.id)] = {
       contents: clone(box.contents), hidden: clone(box.hidden) || null, quick: !!box.quick, lock: box.lock ? clone(box.lock) : null, searched: !!box.searched, partial: !!box.partial,
+      ...(box.shifted ? { at: { x: box.x, y: box.y, f: box.f || 0, ...(box.w ? { w: box.w, h: box.h } : {}) } } : {}), // furnicarry.js: moved with its piece
     };
   }
   if (opened) {
