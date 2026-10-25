@@ -35,9 +35,9 @@
 //
 // The helpers (roomLayout(c) → L):
 //   L.place(k, cells, { face, force, size })   puts piece k on exactly these cells (all or nothing); the record or null
-//   L.wall(k, { sides, prefer, near, far, face, force, size })   the best spot with its back to a wall: sides limits
-//                                              the walls ("n", "s", "e", "w"), prefer "corner" | "middle", near / far
-//                                              a point to be close to / away from
+//   L.wall(k, { sides, prefer, near, far, face, force, size, avoid })   the best spot with its back to a wall: sides
+//                                              limits the walls ("n", "s", "e", "w"), prefer "corner" | "middle", near /
+//                                              far a point to be close to / away from, avoid(cells) a spot not to take
 //   L.centre(k, { near, face, force })        a spot off the walls (a table, a coffee table), nearest the room's middle
 //   L.around(p, k, n)                          up to n of k beside piece p, facing it (chairs round a table)
 //   L.beside(p, k)                             one k against the same wall next to piece p (a nightstand by the bed)
@@ -48,7 +48,8 @@
 //   L.fill(kinds)                              lootable pieces of these kinds against the walls up to target()
 //   L.need(k, opts)                            a piece the room must have: L.wall, then L.centre, then both with force
 //   L.walls()                                  the room's walls by how much free run each has (longest first, dice ties)
-//   L.variant(n, salt), L.target(), L.boxes(), L.lane(x, y), L.has(k)
+//   L.remove(p)                                a piece taken back up (not a container)
+//   L.variant(n, salt), L.target(), L.boxes(), L.lane(x, y), L.has(k), L.inRoom(x, y)
 //
 // The home styles (HOME_STYLES, by room role): kitchen (a counter run on one wall, two in an L or a galley, by the
 // dice: the fridge, the sink and the stove always, cabinets as the containers, a dishwasher or a microwave sometimes, a
@@ -205,7 +206,7 @@ export function roomLayout(c) {
       const line = wallLine(side);
       line.forEach(([x, y], li) => {
         const cells = footprint(side, x, y, w, h);
-        if (!cells.every(([cx, cy]) => ok(cx, cy, opts.force))) return;
+        if (!cells.every(([cx, cy]) => ok(cx, cy, opts.force)) || (opts.avoid && opts.avoid(cells))) return;
         // The back row (the cells against the wall) is solid wall behind.
         const back = cells.filter(([cx, cy]) => (side === "n" ? cy === y0 : side === "s" ? cy === y1 : side === "w" ? cx === x0 : cx === x1));
         if (back.length < Math.min(w, cells.length) || !back.every(([cx, cy]) => solid(cx + D4[side][0], cy + D4[side][1]))) return;
@@ -324,7 +325,14 @@ export function roomLayout(c) {
     return wall(k, opts) || centre(k, { ...opts, walls: true }) || wall(k, { ...opts, force: true }) || centre(k, { ...opts, walls: true, force: true });
   }
   const has = (k) => placed.some((p) => p.k === k);
-  return { place, wall, centre, around, beside, facing, run, fill, need, walls, variant, target, boxes, has, placed, lane: onLane, ok, room, c };
+  // A piece taken back up (not a container: its record stays with the room's loot): false when it cannot be.
+  function remove(p) {
+    if (!p || p.box || !placed.includes(p)) return false;
+    for (const [x, y] of p.cells) c.unblock(x, y);
+    placed.splice(placed.indexOf(p), 1);
+    return true;
+  }
+  return { place, wall, centre, around, beside, facing, run, fill, need, walls, variant, target, boxes, has, remove, placed, lane: onLane, ok, inRoom: inR, room, c };
 }
 
 // ======================================================================================
@@ -465,4 +473,265 @@ export const HOME_STYLES = {
 export function homeStyle(room, key) {
   if (!HOME_STYLES[room.role]) return null;
   return HOME_KEYS.has(key || "") || room.flat ? HOME_STYLES[room.role] : null;
+}
+
+// ======================================================================================
+// The hospitals, clinics and vets room by room (the user's request 2026-10-25, issue #14 of the interiors epic #7:
+// "Special buildings like hospitals, police stations etc should have furniture, appliances, decor, rooms and layouts
+// that make sense for the type of building."). The rooms of a hospital, a clinic, an infirmary and a vet (MED_KEYS),
+// by role, on the same helpers as the homes; buildingmaps.js institution / vet lay the rooms out floor by floor (the
+// emergency room, the ambulance bay, the morgue, the cafeteria on the ground; wards, the theatre, the ICU above).
+//   er          the emergency room: a medication cart, bays of a gurney with an IV stand by it, a medicine cabinet
+//               while the room has containers to give, a curtain between the bays (the dead push through it), the
+//               triage desk
+//   ward        hospital beds, each with its nightstand (a patient's things: the containers, the poorest of the
+//               building) or its IV stand by it (a bed with room for neither is taken back up); a maternity ward
+//               (room.cots) a cot by each bed. icu: fewer beds, an IV stand and a monitor on its stand by each, a
+//               medication cart
+//   theatre     the operating table (a vet's surgery: the steel table) with a lamp and a monitor by it, instrument
+//               cabinets (the richest: surgical kits), a sink
+//   pharmroom   the counter by the door, the drug safe (a clinic's, a vet's: a medicine cabinet; always locked:
+//               locks.js "drugs") away from it, shelves
+//   morgue      a run of body drawers along a wall (their effects), the autopsy table, a sink
+//   lobby       the waiting room: the reception counter, a vending machine, chairs along the walls and a row of them
+//               down the middle when the room is 5 deep
+//   nursestation  a counter, a desk with its chair, a filing cabinet and a medication cart
+//   exam        an exam bed (a vet's: the steel table), a sink, a medicine cabinet, a desk
+//   ambbay      the ambulance in its bay (combat.js placeCar, a container of its own: BOX_LOOT.ambulance), a parked
+//               gurney, shelves
+//   corridor    wheelchairs and gurneys parked along one wall only (every few cells: MED.PARK_EVERY), so the other
+//               row stays clear
+//   cafeteria, kitchen, staffroom (breakroom), laundry, storage (the supply room; a vet's food store: crates of feed),
+//   office (a doctor's: a desk, a chair, a bookshelf, filing), restroom (toilets in a row, a sink), cells (a vet's
+//   kennels: bars every other cell along the walls, a pen between each two)
+export const MED = {
+  BEDS: [2, 8],       // a ward's beds: area / 6 within these
+  BED_AREA: 6,
+  ICU: [2, 4],        // an ICU's beds: area / 10 within these
+  BAYS: [2, 8],       // an ER's bays: area / 6 within these
+  TABLES: [1, 5],     // a cafeteria's tables: area / 12
+  CHAIRS: [4, 14],    // a waiting room's chairs along its walls: area / 4
+  PARK_EVERY: 7,      // a corridor: one wheelchair or gurney parked for every so many cells of its length
+};
+export const MED_KEYS = new Set(["hospital", "clinic", "infirmary", "vet"]);
+/** @param {number} v @param {number[]} r */
+const clampM = (v, r) => Math.max(r[0], Math.min(r[1], v));
+const D4L = Object.values(D4);
+/** The cell inside the room in front of its first door. @param {ReturnType<typeof roomLayout>} L */
+function doorFront(L) {
+  for (const [dx, dy] of L.room.doors || []) for (const [ex, ey] of D4L) if (L.inRoom(dx + ex, dy + ey)) return [dx + ex, dy + ey];
+  return undefined;
+}
+// A stand by a bed (the first of kinds that goes, a lootable one only while the room has containers to give): against
+// the wall beside its head, else any free cell next to it.
+/** @param {ReturnType<typeof roomLayout>} L @param {Placed} bed @param {string[]} kinds */
+function standBy(L, bed, kinds) {
+  const can = (k) => !pieceDef(k).loot || L.boxes() < L.target();
+  for (const k of kinds) if (can(k)) { const r = L.beside(bed, k); if (r) return r; }
+  for (const k of kinds) {
+    if (!can(k)) continue;
+    for (const [x, y] of bed.cells) for (const [dx, dy] of D4L) {
+      const nx = x + dx, ny = y + dy;
+      if (bed.cells.some((q) => q[0] === nx && q[1] === ny)) continue;
+      const r = L.place(k, [[nx, ny]], { face: bed.face });
+      if (r) return r;
+    }
+  }
+  return null;
+}
+// Up to n beds of kind k against the walls, each with a stand by it (kinds); a bed with no room for one is taken back up
+// and its spot skipped. Returns the beds.
+/** @param {ReturnType<typeof roomLayout>} L @param {string} k @param {number} n @param {string[]} kinds */
+function bedsWithStands(L, k, n, kinds, opts = {}) {
+  const beds = [], skip = new Set();
+  const avoid = (cells) => skip.has(`${cells[0]}`);
+  for (let t = 0; t < n * 3 && beds.length < n; t++) {
+    const bed = L.wall(k, { ...opts, avoid });
+    if (!bed) break;
+    if (standBy(L, bed, kinds)) beds.push(bed);
+    else { skip.add(`${bed.cells[0]}`); L.remove(bed); }
+  }
+  if (!beds.length) { // a room that must have one: with force
+    const bed = L.need(k);
+    if (bed && !standBy(L, bed, kinds)) L.remove(bed); else if (bed) beds.push(bed);
+  }
+  return beds;
+}
+/** A row of chairs down the room's middle, along its length, facing f. @param {ReturnType<typeof roomLayout>} L */
+function chairRow(L, face) {
+  const { x0, y0, x1, y1, w, h } = L.c;
+  let n = 0;
+  if (w >= h) { const y = Math.floor((y0 + y1) / 2); for (let x = x0 + 1; x < x1; x++) if (L.place("chair", [[x, y]], { face })) n++; }
+  else { const x = Math.floor((x0 + x1) / 2); for (let y = y0 + 1; y < y1; y++) if (L.place("chair", [[x, y]], { face })) n++; }
+  return n;
+}
+export const MEDICAL_STYLES = {
+  /** @param {ReturnType<typeof roomLayout>} L */
+  er(L) {
+    const n = clampM(Math.floor((L.c.w * L.c.h) / MED.BED_AREA), MED.BAYS);
+    L.wall("medcart", { prefer: "corner" });
+    for (const g of bedsWithStands(L, "gurney", n, ["ivstand"])) {
+      if (L.boxes() < L.target()) L.beside(g, "medcab");
+      const iv = L.placed.find((p) => p.k === "ivstand" && p.cells.some(([x, y]) => g.cells.some(([gx, gy]) => Math.abs(gx - x) + Math.abs(gy - y) === 1)));
+      L.beside(iv && iv.side ? iv : g, "curtain");
+    }
+    const desk = L.need("desk", { prefer: "corner", near: doorFront(L) });
+    if (desk) L.around(desk, "chair", 1);
+    L.fill(["medcab"]);
+  },
+  /** @param {ReturnType<typeof roomLayout>} L */
+  ward(L) {
+    if (L.c.key === "vet") return MEDICAL_STYLES.cells(L); // a vet's recovery ward: pens
+    const n = clampM(Math.floor((L.c.w * L.c.h) / MED.BED_AREA), MED.BEDS);
+    const beds = bedsWithStands(L, "hospbed", n, ["nightstand", "ivstand"], { prefer: L.variant(2, "ward") ? "corner" : undefined });
+    if (L.room.cots) for (const b of beds) L.beside(b, "cot") || L.wall("cot", { near: b.cells[0] });
+    if (L.variant(3, "wheelchair") === 0) L.wall("wheelchair", { prefer: "corner" });
+  },
+  /** @param {ReturnType<typeof roomLayout>} L */
+  icu(L) {
+    const n = clampM(Math.floor((L.c.w * L.c.h) / 10), MED.ICU);
+    for (const b of bedsWithStands(L, "hospbed", n, ["ivstand"])) standBy(L, b, ["monitor"]);
+    L.fill(["medcart", "medcab"]);
+  },
+  /** @param {ReturnType<typeof roomLayout>} L */
+  theatre(L) {
+    const k = L.c.key === "vet" ? "vettable" : "optable";
+    const t = L.centre(k) || L.need(k);
+    if (t) { L.around(t, "floorlamp", 1); if (k === "optable") { L.around(t, "monitor", 1); L.around(t, "ivstand", 1); } }
+    L.need("instcab", { prefer: "corner" });
+    L.wall("sink", { prefer: "middle" });
+    L.fill(["instcab"]);
+  },
+  /** @param {ReturnType<typeof roomLayout>} L */
+  pharmroom(L) {
+    const front = doorFront(L);
+    L.wall("counter", { near: front });
+    // A hospital's drug safe; a clinic's drug cupboard or a vet's drug room a locked medicine cabinet. Always locked.
+    const safe = L.need(L.c.key === "hospital" ? "drugsafe" : "medcab", { prefer: "corner", far: front });
+    if (safe && safe.box) safe.box.lockKind = "drugs"; // locks.js
+    L.fill(["shelf"]);
+  },
+  /** @param {ReturnType<typeof roomLayout>} L */
+  morgue(L) {
+    const ws = L.walls();
+    if (ws.length) L.run(Array(Math.max(2, L.target())).fill("morguelocker"), [ws[0].side]);
+    if (!L.has("morguelocker")) L.need("morguelocker");
+    L.centre("autopsy") || L.need("autopsy");
+    L.wall("sink");
+  },
+  /** @param {ReturnType<typeof roomLayout>} L */
+  lobby(L) {
+    const desk = L.need("counter", { prefer: "middle" }); // reception
+    if (desk) L.around(desk, "chair", 1);
+    if (L.c.key === "hospital" || L.variant(2, "vending")) L.wall("vending", { prefer: "corner" });
+    const n = clampM(Math.floor((L.c.w * L.c.h) / 4), MED.CHAIRS);
+    let made = Math.min(L.c.w, L.c.h) >= 5 ? chairRow(L, desk ? desk.side : null) : 0;
+    for (let i = 0; made < n && i < n * 2; i++) if (L.wall("chair")) made++;
+  },
+  /** @param {ReturnType<typeof roomLayout>} L */
+  nursestation(L) {
+    const ctr = L.need("counter", { prefer: "middle", near: doorFront(L) });
+    if (ctr) L.beside(ctr, "counter");
+    const desk = L.wall("desk");
+    if (desk) L.around(desk, "chair", 1);
+    L.wall("filing", { prefer: "corner" });
+    L.wall("medcart", { prefer: "corner" }) || L.need("medcart");
+  },
+  /** @param {ReturnType<typeof roomLayout>} L */
+  exam(L) {
+    if (L.c.key === "vet") L.centre("vettable") || L.need("vettable");
+    else L.wall("exambed", { prefer: "corner" }) || L.need("exambed");
+    L.wall("sink");
+    L.wall("medcab") || L.need("medcab");
+    const desk = L.c.key === "vet" ? null : L.wall("desk");
+    if (desk) L.around(desk, "chair", 1);
+    L.fill(["cabinet"]);
+  },
+  /** @param {ReturnType<typeof roomLayout>} L */
+  ambbay(L) {
+    const c = L.c;
+    // The ambulance in its bay (a truck's 2 × 4 cells, combat.js placeCar), its run bag a container of its own.
+    if (Math.min(c.w, c.h) >= 3 && Math.max(c.w, c.h) >= 5) {
+      for (const [x, y] of c.innerSpots().slice(0, 10)) { if (L.lane(x, y)) continue; const rect = c.car(x, y, "truck"); if (rect) { c.carBox(rect, "ambulance"); break; } }
+    }
+    L.wall("gurney", { size: [2, 1] });
+    L.fill(["shelf"]);
+  },
+  /** @param {ReturnType<typeof roomLayout>} L */
+  corridor(L) {
+    if (Math.min(L.c.w, L.c.h) < 2) return;
+    const sides = L.c.w >= L.c.h ? ["n", "s"] : ["w", "e"];
+    const side = sides[L.variant(2, "park")];
+    const n = Math.floor(Math.max(L.c.w, L.c.h) / MED.PARK_EVERY);
+    for (let i = 0; i < n; i++) if (i % 2) L.wall("gurney", { sides: [side], size: [2, 1] }); else L.wall("wheelchair", { sides: [side] });
+  },
+  /** @param {ReturnType<typeof roomLayout>} L */
+  cafeteria(L) {
+    const ws = L.walls();
+    if (ws.length) L.run(["counter", "counter", "counter"], [ws[0].side]); // the serving counter
+    const n = clampM(Math.floor((L.c.w * L.c.h) / 12), MED.TABLES);
+    for (let i = 0; i < n; i++) { const t = L.centre("table"); if (!t) break; L.around(t, "chair", 4); }
+    L.fill(["counter"]);
+  },
+  /** @param {ReturnType<typeof roomLayout>} L */
+  kitchen(L) {
+    const ws = L.walls();
+    if (ws.length) L.run(["fridge", "stove", "oven", "sink", "counter"], [ws[0].side, ...(ws[1] ? [ws[1].side] : [])]);
+    for (const k of ["fridge", "stove", "sink"]) if (!L.has(k)) L.need(k);
+    L.wall("freezer");
+    L.fill(["counter", "shelf"]);
+  },
+  /** @param {ReturnType<typeof roomLayout>} L */
+  staffroom(L) {
+    L.wall("fridge", { prefer: "corner" }) || L.need("fridge");
+    L.wall("microwave");
+    L.wall("sink");
+    L.wall("sofa", { prefer: "middle" });
+    if (Math.min(L.c.w, L.c.h) >= 3) { const t = L.centre("table"); if (t) L.around(t, "chair", 2); }
+    L.fill(["cabinet"]);
+  },
+  /** @param {ReturnType<typeof roomLayout>} L */
+  laundry(L) {
+    const ws = L.walls();
+    if (ws.length) L.run(L.variant(2, "laundry") ? ["washer", "dryer", "washer", "dryer"] : ["washer", "washer", "dryer", "dryer"], [ws[0].side]);
+    if (!L.has("washer")) L.need("washer");
+    for (let i = 0; i < 2; i++) L.wall("linencart", { prefer: "corner" }) || L.centre("linencart");
+  },
+  /** @param {ReturnType<typeof roomLayout>} L */
+  storage(L) {
+    L.fill(L.room.food ? ["crate"] : L.c.key === "hospital" && L.room.type === "clinic" ? ["rack"] : ["shelf"]); // a vet's food store: sacks of feed in crates (BOX_LOOT "crate@vet"); a hospital's supply room's shelving (rack@clinic)
+    if (!L.room.food && L.room.type === "clinic") L.wall("linencart");
+  },
+  /** @param {ReturnType<typeof roomLayout>} L */
+  office(L) {
+    const desk = L.wall("desk", { prefer: "middle" }) || L.need("desk");
+    if (desk) L.around(desk, "chair", 1);
+    L.wall("bookshelf", { prefer: "corner" });
+    L.fill(["filing", "bookshelf"]);
+  },
+  /** @param {ReturnType<typeof roomLayout>} L */
+  restroom(L) {
+    const ws = L.walls();
+    const n = ws.length ? Math.max(1, Math.floor(ws[0].free / 2)) : 1;
+    if (ws.length) L.run(Array(n).fill("toilet"), [ws[0].side]);
+    if (!L.has("toilet")) L.need("toilet");
+    L.wall("sink") || L.need("sink");
+  },
+  /** @param {ReturnType<typeof roomLayout>} L */
+  cells(L) {
+    // A vet's kennels: bars every other cell along the two longest walls (a pen between each two).
+    const { x0, y0, x1, y1 } = L.c;
+    const ws = L.walls().slice(0, 2);
+    for (const { side } of ws) {
+      const line = side === "n" || side === "s" ? Array.from({ length: x1 - x0 + 1 }, (_, i) => [x0 + i, side === "n" ? y0 : y1]) : Array.from({ length: y1 - y0 + 1 }, (_, i) => [side === "w" ? x0 : x1, y0 + i]);
+      line.forEach(([x, y], i) => { if (i % 2 === 1) L.place("bars", [[x, y]], { face: OPP[side] }); });
+    }
+  },
+};
+MEDICAL_STYLES.breakroom = MEDICAL_STYLES.staffroom;
+// The medical style for a room (buildingmaps.js assemble): a hospital's, a clinic's, an infirmary's or a vet's rooms
+// by role; null for a role with none (the room keeps buildingmaps.js FURNISH).
+/** @param {any} room @param {string | undefined} key */
+export function medicalStyle(room, key) {
+  return MED_KEYS.has(key || "") ? MEDICAL_STYLES[room.role] || null : null;
 }
