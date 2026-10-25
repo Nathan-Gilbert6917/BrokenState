@@ -45,8 +45,8 @@ const field = (st, tile, enemy, extra = {}) => {
 // map in rows, each at its own size (a sofa two cells, bleachers two by two) with a free cell round it, on a floor of
 // floorboards; the cells under it cleared first, anyone standing there moved off, any raid container there dropped.
 // Used by the "furniture" layout below and by tools/raidshot.cjs (site "furniture": the same on a real raid's map).
-// showroom(b, x0?, y0?) → [{ k, x, y }] (each piece's first cell).
-export function showroom(b, x0 = 2, y0 = 2) {
+// showroom(b, x0?, y0?) → [{ k, x, y }] (each piece's first cell; from (1, 1) by default: 101 kinds since issues #15 and #16).
+export function showroom(b, x0 = 1, y0 = 1) {
   const placed = [];
   const kinds = Object.keys(FURNITURE_KINDS);
   // Packed in rows, each piece at its own width with a free cell after it, a row as tall as its tallest piece and a free
