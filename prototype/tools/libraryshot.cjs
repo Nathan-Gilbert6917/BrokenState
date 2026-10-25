@@ -9,8 +9,9 @@ const path = require("path");
 const fs = require("fs");
 
 const outDir = path.resolve(process.argv[2] || path.join(__dirname, "..", "..", "docs", "shots", "libraries"));
-const ALL = ["rural/storefront", "rural/house", "carnegie/lr", "carnegie/fb", "modern/left", "modern/right", "county/corridor", "county/hall",
-  "central/centre", "central/side", "historic/centre", "historic/side", "bookmobile/side", "bookmobile/back", "strip/deep", "strip/split"];
+const ALL = ["rural/storefront", "rural/schoolhouse", "carnegie/lr", "carnegie/fb", "modern/left", "modern/right", "county/corridor", "county/hall",
+  "central/centre", "central/side", "historic/centre", "historic/side", "bookmobile/side", "bookmobile/back", "strip/deep", "strip/split",
+  "house/foursquare", "house/cottage", "children/pods", "children/hall", "law/reading", "law/stacks", "university/commons", "university/tower", "archive/house", "archive/vault"];
 const want = process.argv.slice(3).length ? process.argv.slice(3) : ALL;
 const port = 5900 + Math.floor(Math.random() * 600);
 
@@ -21,7 +22,7 @@ const port = 5900 + Math.floor(Math.random() * 600);
   try {
     await new Promise((r) => setTimeout(r, 700));
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined });
-    for (const variant of want) {
+    for (const variant of want) for (let attempt = 0; attempt < 2; attempt++) try {
       const page = await browser.newPage({ viewport: { width: 1500, height: 1000 }, deviceScaleFactor: 1 });
       const errs = [];
       page.on("pageerror", (e) => errs.push(String(e)));
@@ -90,7 +91,8 @@ const port = 5900 + Math.floor(Math.random() * 600);
       }
       if (errs.length) { bad++; console.log(variant, "page errors:", errs.slice(0, 3).join(" | ")); }
       await page.close();
-    }
+      break;
+    } catch (e) { console.log(variant, attempt ? "FAILED" : "retrying", String(e).split("\n")[0]); if (attempt) bad++; }
     await browser.close();
   } finally {
     srv.kill();

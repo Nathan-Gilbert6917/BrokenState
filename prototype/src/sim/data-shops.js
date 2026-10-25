@@ -248,17 +248,24 @@ export const FRANCHISES = {
   // Libraries (issue #34): each name lays its building out as one of librarylayout.js's variants (plan.libs: their
   // weights; the five first names' ids as before, so a saved place keeps its name): a Carnegie Library is always a
   // Carnegie, a Branch Library a modern branch or a strip-mall library, the Central Library the city's main one (only
-  // downtown, and rare there: about 1 in 15 of the downtown libraries), the reading rooms in the towns' villages, the Athenaeum and
-  // Harmon Hall the rare historic ones.
+  // downtown, and rare there: about 1 in 15 of the downtown libraries), the reading rooms and house libraries in the towns'
+  // villages, the Athenaeum and Harmon Hall the rare historic ones; a children's library in the suburbs, a historical
+  // society in the towns, the county law library and the college library rare downtown (the courthouse's and the
+  // campus's own come from #27 and #28 through libraryPlan).
   library: [
     { id: "central", name: "Central Library", w: G(0.25, 0, 0), look: L("#c9c2b0", "#7d786c", "#5d6168", "#ffffff", "#8a8780", 1), plan: { storeys: [2, 3], wide: true, libs: { central: 1 } } },
     { id: "carnegie", name: "Carnegie Library", w: G(0.5, 0.4, 1), look: L("#8e4f3c", "#d9d0b8", "#3c3a36", "#e8e4d8", "#d9d0b8", 0), plan: { storeys: [1, 2], libs: { carnegie: 1 } } },
     { id: "branch", name: "Branch Library", w: G(0.6, 1, 0.5), look: L("#b9a98a", "#5d6168", "#3a6fb0", "#ffffff", "#9cc46e", 2), plan: { storeys: [1, 1], libs: { modern: 0.7, strip: 0.3 } } },
     { id: "county", name: "County Library", w: G(0.2, 0.7, 1), look: L("#a7adb3", "#5d6168", "#2d4a3c", "#e8e4d8", "#c9873c", 3), plan: { storeys: [1, 2], libs: { county: 0.85, bookmobile: 0.15 } } },
-    { id: "memorial", name: "Memorial Library", w: G(0.8, 0.6, 0.8), look: L("#d9d4c8", "#8a8780", "#5b3a7a", "#ffffff", "#d9a520", 0), plan: { storeys: [1, 2], libs: { carnegie: 0.5, county: 0.3, historic: 0.2 } } },
+    { id: "memorial", name: "Memorial Library", w: G(0.8, 0.6, 0.8), look: L("#d9d4c8", "#8a8780", "#5b3a7a", "#ffffff", "#d9a520", 0), plan: { storeys: [1, 2], libs: { carnegie: 0.45, county: 0.25, historic: 0.15, archive: 0.15 } } },
     { id: "calderfree", name: "Calder Free Public Library", w: G(0.6, 0.4, 0.6), look: L("#9a5a44", "#e2d8c0", "#2d4a3c", "#f0e6c8", "#d9d0b8", 0), plan: { libs: { carnegie: 0.6, county: 0.4 } } },
     { id: "pinecrest", name: "Pinecrest Reading Room", w: G(0, 0.1, 1), look: L("#8b6a48", "#4a3424", "#3f6b3a", "#f0e6c8", "#c9873c", 0), plan: { libs: { rural: 1 } } },
-    { id: "millbrook", name: "Millbrook Village Library", w: G(0, 0, 0.8), look: L("#c9b28a", "#6b5434", "#7a3b32", "#ffffff", "#e8e4d8", 2), plan: { libs: { rural: 1 } } },
+    { id: "millbrook", name: "Millbrook Village Library", w: G(0, 0, 0.8), look: L("#c9b28a", "#6b5434", "#7a3b32", "#ffffff", "#e8e4d8", 2), plan: { libs: { rural: 0.6, house: 0.4 } } },
+    { id: "elmstreet", name: "Elm Street House Library", w: G(0, 0.4, 0.6), look: L("#e2ddcc", "#6b5434", "#3f6b3a", "#ffffff", "#c9873c", 0), plan: { libs: { house: 1 } } },
+    { id: "juniper", name: "Juniper Children's Library", w: G(0.3, 0.5, 0.3), look: L("#e8c04a", "#a8842a", "#3a6fb0", "#ffffff", "#e2412f", 3), plan: { libs: { children: 1 } } },
+    { id: "countylaw", name: "Calder County Law Library", w: G(0.12, 0, 0.05), look: L("#c9c2b0", "#5d6168", "#2a2a2e", "#e8d8a8", "#8a6a3a", 1), plan: { libs: { law: 1 } } },
+    { id: "college", name: "Calder College Library", w: G(0.06, 0.03, 0), look: L("#9a5a44", "#e2d8c0", "#5b2a2a", "#f0e6c8", "#d9a520", 1), plan: { libs: { university: 1 } } },
+    { id: "historical", name: "Harlan County Historical Society", w: G(0.1, 0.2, 0.5), look: L("#d9d0b8", "#6b5434", "#4a2a20", "#f0d070", "#7a5a3a", 0), plan: { libs: { archive: 1 } } },
     { id: "lakeside", name: "Lakeside Branch Library", w: G(0.3, 1, 0.3), look: L("#d9e0e4", "#5d6168", "#2a7090", "#ffffff", "#9cc46e", 3), plan: { libs: { modern: 1 } } },
     { id: "westgate", name: "Westgate Library Express", w: G(0.3, 0.8, 0.2), look: L("#e8e4d8", "#3c3a36", "#c8402f", "#ffffff", "#3a6fb0", 3), plan: { libs: { strip: 1 } } },
     { id: "bookmobile", name: "County Bookmobile Depot", w: G(0, 0.3, 0.6), look: L("#a7adb3", "#4d4741", "#2d5a8a", "#ffffff", "#e8c04a", 2), plan: { libs: { bookmobile: 1 } } },

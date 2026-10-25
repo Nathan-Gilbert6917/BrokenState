@@ -1,6 +1,7 @@
 // @ts-check
 // Library variants (the user's request 2026-10-25, issue #34 of the interiors epic #7: "add library variants with several
-// layouts and sizes"): eight kinds of library, each with plans of its own, from a one-room rural reading room to a city's
+// layouts and sizes"; and later that day "for buildings with no to only a few varients create a dozen varients per
+// building type"): thirteen kinds of library, each with plans of its own, from a one-room rural reading room to a city's
 // central library of up to eight storeys. Their plans (LIBRARY_VARIANTS; libraryPlan: buildingmaps.js BUILDINGS.library
 // calls it for a new save, and any other building can call it for a library of a size and a setting: #28's university
 // library, #27's courthouse law library, #30's strip mall), their rooms furnished for their kind on roomlayout.js's
@@ -12,7 +13,8 @@
 // the building's dice):
 //   rural      a one-room reading room in a village (10–12 × 10–12 m, 1 storey): a desk by the door, shelves round the
 //              walls, a reading table, a wood stove, a small kids' shelf. storefront: the room and a back strip (a back
-//              room, a toilet); house: a converted house, the children's corner and the librarian's office behind the parlour.
+//              room, a toilet); schoolhouse: an old one-room schoolhouse, its cloakroom porch at the front, the children's corner
+//              (a story rug) in the schoolroom.
 //   carnegie   a Carnegie library (19–25 × 17–20, 1–2 storeys): the circulation rotunda under its dome (a ring of counters,
 //              the card catalogue, a globe), two wings of tall stacks. lr: the wings left and right of the rotunda; fb:
 //              the rotunda at the front between the reading room and the reference room, the stacks behind. The
@@ -43,6 +45,24 @@
 //   bookmobile a bookmobile depot (14–18 × 12–14, 1 storey): the garage with the bookmobile (a van that is a container
 //              of books: BOX_LOOT bookmobile) behind its roller door, the sorting room, the office. side: the garage to one
 //              side; back: the garage behind the office.
+//   house      a library in a converted house (12–15 × 11–13, 1–2 storeys): the front parlour the reading room, the
+//              children's room, the kitchen workroom, the local-history room; upstairs the bedrooms as stacks, the
+//              librarian's office. foursquare: two rooms either side of the stair hall; cottage: a side hall down its length.
+//   children   a children's library (18–24 × 14–18, 1 storey): pods: the welcome desk between the picture-book room and the
+//              story room (story rugs, beanbags, low shelves), the craft room, the family computers, the parents' corner;
+//              hall: one big children's hall with the craft room, a puppet theatre (beanbags before its booth) and the
+//              workroom behind.
+//   law        a law library (16–22 × 14–18, 1–2 storeys: a county's, a courthouse's: #27): the reference desk, the law
+//              reading room (carrels, tables, terminals), the reporters' and statutes' stacks, compact shelving, a
+//              conference room, the law librarian; upstairs the treatises and carrels. reading: the reading room at the
+//              front beside the stacks; stacks: the stacks behind a front band.
+//   university a university research library (36–44 × 26–32, 3–5 storeys: a campus's, #28): the learning commons under the
+//              atrium (the lift bank, the circulation desk), the computer lab, the café, research help and group study
+//              rooms; the silent reading room; floors of stacks by subject and carrels; special collections behind a
+//              locked door and its reading room on the top floor. commons: the atrium between the wings; tower: at one side.
+//   archive    a historical society or archive (14–20 × 13–16, 2 storeys): the exhibit room's display cases, the research
+//              room, the processing room, the director's office; the archive stacks of compact shelving behind a locked
+//              door, the map and photograph store. house: an old house's rooms; vault: the exhibit hall in front of a vault.
 //   strip      a library in a strip mall (9–12 × 20–25, 1 storey, a long narrow storefront): the front counter, self-check,
 //              the stacks of low shelving, the children's corner, the workroom. deep: the children at the back; split:
 //              the computers beside the front.
@@ -72,9 +92,14 @@ export const LIBRARY = {
     historic:   { w: [23, 28], h: [20, 25], storeys: [2, 3] },   // 20–30
     bookmobile: { w: [14, 18], h: [12, 14], storeys: [1, 1] },
     strip:      { w: [9, 12],  h: [20, 25], storeys: [1, 1] },   // a strip mall's unit: narrow and deep
+    house:      { w: [12, 15], h: [11, 13], storeys: [1, 2] },   // a converted house
+    children:   { w: [18, 24], h: [14, 18], storeys: [1, 1] },
+    law:        { w: [16, 22], h: [14, 18], storeys: [1, 2] },   // a courthouse's, a county's
+    university: { w: [36, 44], h: [26, 32], storeys: [3, 5] },   // a campus's research library
+    archive:    { w: [14, 20], h: [13, 16], storeys: [2, 2] },   // a historical society, an archive
   },
   // A library with no franchise (a test's, a site's from before franchises): its variant by these weights.
-  ANY: { rural: 1, carnegie: 1, modern: 1, county: 1, central: 0.5, historic: 0.5, bookmobile: 0.5, strip: 0.7 },
+  ANY: { rural: 1, carnegie: 1, modern: 1, county: 1, central: 0.5, historic: 0.5, bookmobile: 0.5, strip: 0.7, house: 0.8, children: 0.6, law: 0.2, university: 0.15, archive: 0.4 },
   WELL: 2,          // a gallery's walkway round the well: this many cells from the walls (the railing on the next)
   STACK_GAP: 9,     // a run of stacks breaks for a cross aisle every this many cells
   SUBJECTS: ["History", "Science", "Literature", "Arts", "Social sciences", "Technology", "Philosophy and religion", "Languages"],
@@ -118,12 +143,13 @@ const PLANS = {
         exits: [{ side: "back", roles: ["storage"], chance: 0.5, lock: 0.5 }],
       };
     },
-    house(rng, d) {
-      const kids = ["*", R("classroom", "kidsnook", { name: "Children's corner", type: "books", fl: "wood", maxBoxes: 2 })];
+    // A one-room schoolhouse turned reading room: the cloakroom porch at the front (the entry, a coat rack's worth of
+    // pegs, the toilet beside it), the old classroom behind, the children's corner by the stove.
+    schoolhouse(rng, d) {
       return {
-        program: Y(["*", R("dining", "oneroom", { name: "Reading room", type: "books", entry: true, hub: true, fl: "wood", maxBoxes: 5 })],
-          [3, flipX(X(kids, [4, R("office", "liboffice", { name: "Librarian's office", type: "office", maxBoxes: 2 })], rest(2)), rng.chance(0.5))]),
-        exits: [{ side: "back", roles: ["office"], chance: 0.6, lock: 0.4 }],
+        program: Y([3, flipX(X(["*", R("hall", "porch", { name: "Cloakroom", entry: true, hub: true, fl: "wood" })], rest(2)), rng.chance(0.5))],
+          ["*", R("dining", "oneroom", { name: "Old schoolroom", type: "books", hub: true, fl: "wood", maxBoxes: 6, kids: true })]),
+        exits: [{ side: "back", roles: ["dining"], chance: 0.4, lock: 0.5 }],
       };
     },
   },
@@ -216,6 +242,108 @@ const PLANS = {
       };
     },
   },
+  house: {
+    // A converted house, two-up two-down round its stair hall: the front parlour the reading room, the dining room the
+    // children's room, the kitchen the workroom, the back sitting room the local-history room; upstairs the bedrooms as
+    // stacks and the librarian's office.
+    foursquare(rng, d) {
+      const flip = rng.chance(0.5);
+      return {
+        program: flipX(X(["*", Y(["*", R("dining", "oneroom", { name: "Front parlour", type: "books", entry: true, hub: true, fl: "hardwood", maxBoxes: 5 })], ["*", R("office", "workroom", { name: "Kitchen workroom", type: "office", fl: "lino", maxBoxes: 2 })])],
+          [3, Y(["*", R("hall", "porch", { name: "Stair hall", hub: true, fl: "hardwood" })], [3, { role: "restroom" }])],
+          ["*", Y(["*", children("Children's room", { fl: "hardwood" })], ["*", R("dining", "localhist", { name: "Local history room", type: "books", fl: "hardwood", hub: false, maxBoxes: 3 })])]), flip),
+        upper: () => flipX(X(["*", Y(["*", stacks("Upstairs stacks", { fl: "hardwood", maxBoxes: 6 })], ["*", office("Librarian's office")])], [3, Y(["*", R("hall", "porch", { name: "Landing", hub: true, fl: "hardwood" })], [3, { role: "restroom" }])],
+          ["*", Y(["*", stacks("Fiction stacks", { fl: "hardwood", maxBoxes: 6 })], ["*", study("Quiet room")])]), flip),
+        stairs: { roles: ["hall"] },
+        exits: [{ side: "back", roles: ["office"], chance: 0.7, lock: 0.4, name: "Kitchen door" }],
+      };
+    },
+    // A cottage with a side hall down its length: the rooms in a row off it, front to back.
+    cottage(rng, d) {
+      const flip = rng.chance(0.5);
+      return {
+        program: flipX(X([3, R("hall", "porch", { name: "Side hall", entry: true, hub: true, fl: "hardwood" })],
+          ["*", Y(["*", R("dining", "oneroom", { name: "Parlour reading room", type: "books", fl: "hardwood", maxBoxes: 5 })], ["*", children("Children's room", { fl: "hardwood" })], ["*", X(["*", R("office", "workroom", { name: "Kitchen workroom", type: "office", fl: "lino", maxBoxes: 2 })], rest(2))])]), flip),
+        upper: () => flipX(X([3, R("hall", "porch", { name: "Upper hall", hub: true, fl: "hardwood" })], ["*", Y(["*", stacks("Attic stacks", { fl: "wood", maxBoxes: 6 })], ["*", office("Librarian's office")])]), flip),
+        stairs: { roles: ["hall"] },
+        exits: [{ side: "back", roles: ["office", "restroom"], chance: 0.7, lock: 0.4, name: "Back door" }],
+      };
+    },
+  },
+  children: {
+    // A children's library: the welcome desk between the picture-book room and the story room, the craft room, the
+    // family computers, the parents' corner and the family restroom behind.
+    pods(rng, d) {
+      return {
+        program: Y(["*", X(["*", children("Picture-book room", { lib: "kidsarea", maxBoxes: 5 })], [7, R("lobby", "circdesk", { name: "Welcome desk", type: "books", entry: true, hub: true, fl: "carpet", maxBoxes: 2 })], ["*", children("Story room", { lib: "kidsarea", maxBoxes: 3 })])],
+          [6, X(["*", R("classroom", "craft", { name: "Craft room", type: "books", fl: "lino", maxBoxes: 3 })], ["*", compbank("Family computers")], ["*", reading("Parents' corner", { maxBoxes: 2 })], rest(3))]),
+        exits: [{ side: "back", roles: ["classroom", "restroom"], chance: 0.6, lock: 0.4 }],
+      };
+    },
+    // One big children's hall (low shelving, the story rug, the desk) with the craft room, the puppet theatre and the
+    // workroom behind.
+    hall(rng, d) {
+      return {
+        program: Y(["*", R("lobby", "kidshall", { name: "Children's hall", type: "books", entry: true, hub: true, fl: "carpet", maxBoxes: 8 })],
+          [6, flipX(X(["*", R("classroom", "craft", { name: "Craft room", type: "books", fl: "lino", maxBoxes: 3 })], ["*", R("dayroom", "puppet", { name: "Puppet theatre", type: null, fl: "carpet", hub: false })], [5, workroom()], rest(3)), rng.chance(0.5))]),
+        exits: [{ side: "back", roles: ["office", "restroom"], chance: 0.6, lock: 0.4 }],
+      };
+    },
+  },
+  law: {
+    // A law library (a courthouse's, a law school's, a county's): the reference desk between the reading room (carrels,
+    // tables, the terminals) and the reporters' and statutes' stacks; behind, the conference room, compact shelving of
+    // old reporters and the law librarian's office. Upstairs the treatises and more carrels.
+    reading(rng, d) {
+      return {
+        program: Y(["*", flipX(X(["*", R("dining", "lawread", { name: "Law reading room", type: "libref", fl: "carpet", hub: false, maxBoxes: 4 })], [7, R("lobby", "circdesk", { name: "Reference desk", type: "libref", entry: true, hub: true, fl: "carpet", maxBoxes: 2 })], ["*", stacks("Reporters and statutes", { type: "libref" })]), rng.chance(0.5))],
+          [5, X(["*", meeting("Conference room")], ["*", R("storage", "genealogy", { name: "Compact stacks", type: "libref", fl: "conc", lock: ["door", 0.3], maxBoxes: 5 })], [4, office("Law librarian")], rest(2))]),
+        upper: () => Y(["*", X(["*", R("dining", "carrels", { name: "Carrels", type: "libref", fl: "carpet", hub: false, maxBoxes: 2 })], [7, R("hall", "upperhall", { name: "Upper hall", hub: true, fl: "carpet" })], ["*", stacks("Treatises", { type: "libref" })])],
+          [5, X(["*", office("Offices")], rest(2), ["*", study()])]),
+        stairs: { roles: ["lobby", "hall"] },
+        exits: [{ side: "back", roles: ["office", "restroom"], chance: 0.5, lock: 0.6 }],
+      };
+    },
+    // The stacks behind a front band of the desk and the reading room.
+    stacks(rng, d) {
+      return {
+        program: Y([6, flipX(X(["*", R("lobby", "circdesk", { name: "Reference desk", type: "libref", entry: true, hub: true, fl: "carpet", maxBoxes: 2 })], ["*", R("dining", "lawread", { name: "Law reading room", type: "libref", fl: "carpet", hub: false, maxBoxes: 4 })]), rng.chance(0.5))],
+          ["*", X(["*", stacks("Reporters", { type: "libref" })], [5, R("hall", "stackaisle", { name: "Stack aisle", hub: true, fl: "carpet" })], ["*", stacks("Statutes and codes", { type: "libref" })])]),
+        upper: () => Y([6, X(["*", meeting("Conference room")], ["*", office("Law librarian")])], ["*", X(["*", stacks("Treatises", { type: "libref" })], [5, R("hall", "stackaisle", { name: "Upper aisle", hub: true, fl: "carpet" })], ["*", R("dining", "carrels", { name: "Carrels", type: "libref", fl: "carpet", hub: false, maxBoxes: 2 })])]),
+        stairs: { roles: ["hall"] },
+        exits: [{ side: "back", roles: ["hall"], chance: 0.5, lock: 0.6 }],
+      };
+    },
+  },
+  university: {
+    commons(rng, d) { return university(rng, d, "commons"); },
+    tower(rng, d) { return university(rng, d, "tower"); },
+  },
+  archive: {
+    // A historical society in an old house: the exhibit room and the research room at the front, the processing room
+    // and the director's office behind; upstairs the archive stacks behind a locked door and the accessions store.
+    house(rng, d) {
+      return {
+        program: Y(["*", flipX(X(["*", R("dining", "exhibit", { name: "Exhibit room", type: "books", entry: true, hub: true, fl: "hardwood", maxBoxes: 3 })], ["*", R("dining", "localhist", { name: "Research room", type: "books", fl: "hardwood", hub: false, maxBoxes: 3 })]), rng.chance(0.5))],
+          [5, X(["*", R("office", "workroom", { name: "Processing room", type: "office", maxBoxes: 3 })], [4, office("Director's office")], rest(2))]),
+        upper: () => Y(["*", X(["*", R("storage", "closedstacks", { name: "Archive stacks", type: "libref", fl: "conc", lock: ["door", 0.5], maxBoxes: 8 })], ["*", R("storage", "genealogy", { name: "Map and photograph store", type: "libmaps", fl: "conc", maxBoxes: 4 })])],
+          [5, X(["*", R("storage", "libstore", { name: "Accessions store", type: "books", maxBoxes: 2 })], [5, R("hall", "upperhall", { name: "Landing", hub: true, fl: "hardwood" })], rest(2))]),
+        stairs: { roles: ["hall", "office"] },
+        exits: [{ side: "back", roles: ["office", "restroom"], chance: 0.6, lock: 0.5 }],
+      };
+    },
+    // An archive building: the exhibit hall and the reading room across the front, the vault of compact shelving behind
+    // a steel door; upstairs the processing room, offices and the collection stacks.
+    vault(rng, d) {
+      return {
+        program: Y([6, X(["*", R("foyer", "exhibit", { name: "Exhibit hall", type: "books", entry: true, hub: true, fl: "tile", maxBoxes: 3 })], ["*", R("dining", "localhist", { name: "Reading room", type: "books", fl: "carpet", hub: false, maxBoxes: 3 })])],
+          ["*", R("storage", "closedstacks", { name: "Archive vault", type: "libref", fl: "conc", dk: "steel", lock: ["door", 0.5], maxBoxes: 10 })]),
+        upper: () => Y([6, X(["*", R("office", "workroom", { name: "Processing room", type: "office", maxBoxes: 3 })], ["*", office("Offices")])], ["*", stacks("Collection stacks", { type: "libref" })]),
+        stairs: { roles: ["foyer"] },
+        exits: [{ side: "back", roles: ["storage"], chance: 0.5, lock: 0.7 }],
+      };
+    },
+  },
   strip: {
     deep(rng, d) {
       return {
@@ -283,6 +411,38 @@ function central(rng, d, kind) {
     program: ground, upper,
     stairs: { roles: ["foyer", "hall"], n: 2 },
     exits: [{ side: "back", roles: ["storage"], chance: 1, roller: true, width: 2, lock: 0.4, name: "Loading bay" }, { side: kind === "centre" ? "right" : "left", roles: ["hall"], chance: 0.8, lock: 0.5, name: "Fire exit" }],
+  };
+}
+
+// A university research library: the learning commons (the circulation and help desks under the atrium's stair, the
+// lift bank) between two wings, a stairwell at the side, as the central library's columns; the computer lab and the
+// café, the research help desk and group study rooms on the ground floor; the silent reading room; floors of stacks by
+// subject and carrels; special collections (behind a locked door) and their reading room on the top floor. commons:
+// the atrium between the wings; tower: at one side, the lab and the café the other way round.
+function university(rng, d, kind) {
+  const subj = rng.shuffle(LIBRARY.SUBJECTS.slice());
+  const cols = (atrium, a, b, stair) => (kind === "commons" ? X(a, atrium, b, stair) : X(stair, b, a, atrium));
+  const atriumCol = (top) => [10, Y(["*", top], [5, X(RR, RR)])];
+  const stairCol = () => [5, Y(["*", R("hall", "stairwell", { name: "Stairwell", hub: true, fl: "conc" })], [6, R("storage", "libstore", { name: "Storeroom", type: "books", maxBoxes: 1 })])];
+  const gallery = () => R("foyer", "atriumgal", { name: "Atrium gallery", hub: true, fl: "tile" });
+  const groups = () => ["*", X(["*", study("Group study")], ["*", study("Group study")])];
+  const ground = cols(atriumCol(R("foyer", "atrium", { name: "Learning commons", type: "books", entry: true, hub: true, fl: "tile", maxBoxes: 3 })),
+    ["*", Y(["*", compbank("Computer lab")], ["*", R("cafeteria", "cafe", { name: "Café", type: "kitchen", hub: false, maxBoxes: 3 })])],
+    ["*", Y(["*", refroom("Research help")], groups(), [6, office()])], stairCol());
+  const upper = (f, r, ctx) => {
+    if (ctx && ctx.top) return cols(atriumCol(gallery()),
+      ["*", Y(["*", R("storage", "rarebooks", { name: "Special collections", type: "librare", fl: "wood", lock: ["door", 0.8], dk: "steel", boxLock: ["case", 0.5], maxBoxes: 6 })], ["*", reading("Special collections reading room", { fl: "wood" })])],
+      ["*", Y(["*", office("Archives office")], ["*", staffroom()], [6, office()])], stairCol());
+    if (f === 1) return cols(atriumCol(gallery()),
+      ["*", R("dining", "grandread", { name: "Silent reading room", type: "books", fl: "carpet", hub: false, maxBoxes: 6 })],
+      ["*", Y(["*", R("dining", "carrels", { name: "Study carrels", type: "books", fl: "carpet", hub: false, maxBoxes: 2 })], groups(), [6, office()])], stairCol());
+    const s1 = subj[(2 * f) % subj.length], s2 = subj[(2 * f + 1) % subj.length];
+    return cols(atriumCol(gallery()), ["*", stacks(`Stacks: ${s1}`)], ["*", Y(["*", stacks(`Stacks: ${s2}`)], ["*", R("dining", "carrels", { name: "Study carrels", type: "books", fl: "carpet", hub: false, maxBoxes: 2 })], [6, office()])], stairCol());
+  };
+  return {
+    program: ground, upper,
+    stairs: { roles: ["foyer", "hall"], n: 2 },
+    exits: [{ side: "back", roles: ["storage"], chance: 0.8, lock: 0.5, name: "Loading door" }, { side: kind === "commons" ? "right" : "left", roles: ["hall"], chance: 0.8, lock: 0.5, name: "Fire exit" }],
   };
 }
 
@@ -523,7 +683,40 @@ export const LIBRARY_STYLES = {
     L.wall("woodstove", { prefer: "corner" }) || L.need("woodstove");
     readTables(L, 1, 4) || tableSet(L, 4);
     some(L, "lowshelf", 2, { prefer: "corner" });
+    if (L.room.kids) storyRug(L, 2); // the schoolroom's children's corner
     wallRound(L, "bookshelf", 30);
+  },
+  porch(L) { L.wall("cardcat", P(L, { prefer: "corner" })); },
+  craft(L) {
+    for (let i = 0; i < 3; i++) if (!tableSet(L, 4)) break;
+    L.wall("sink", { prefer: "corner" });
+    L.fill(["cabinet", "shelf"]);
+  },
+  puppet(L) {
+    // The puppet stage (a lectern as its booth) on the far wall, beanbags in rows before it.
+    const c = L.c, d = doorFronts(L)[0], side = !d ? "n" : d[1] > (c.y0 + c.y1) / 2 ? "n" : "s";
+    L.wall("lectern", { sides: [side], prefer: "middle" }) || L.need("lectern");
+    for (let r = 2; r < c.h - 1; r += 2) for (let a = 1; a < c.w - 1; a += 2) L.place("beanbag", [[c.x0 + a, side === "n" ? c.y0 + r : c.y1 - r]], { face: side });
+  },
+  kidshall(L) {
+    circDesk(L, 2);
+    bookDrop(L);
+    storyRug(L, 4);
+    for (let i = 0; i < 2; i++) tableSet(L, 3);
+    stackRows(L, { k: "lowshelf", every: 3 });
+  },
+  lawread(L) {
+    for (let i = 0; i < 10; i++) { const p = L.wall("carrel"); if (!p) break; L.around(p, "chair", 1); }
+    readTables(L, Math.max(1, Math.floor((L.c.w * L.c.h) / 24)), 4);
+    for (let i = 0; i < 2; i++) { const p = L.wall("computer", P(L)); if (p) L.around(p, "chair", 1); }
+    wallRound(L, "bookshelf", 12);
+  },
+  exhibit(L) {
+    for (let i = 0; i < 6; i++) if (!L.wall("displaycase", { prefer: "middle" })) break;
+    for (let i = 0; i < 2; i++) L.centre("displaycase", { plain: true });
+    if (!L.has("displaycase")) L.need("displaycase", { plain: true });
+    L.wall("cardcat", P(L, { prefer: "corner" }));
+    L.fill(["bookshelf"]);
   },
   libstore(L) { L.wall("booktruck", P(L)); L.fill(["shelf", "crate", "bookshelf"]); },
   kidsnook(L) { storyRug(L, 2); wallRound(L, "lowshelf", 10); tableSet(L, 2); },
@@ -556,7 +749,7 @@ export const LIBRARY_STYLES = {
     for (let i = 0; i < 2; i++) tableSet(L, 3);
     wallRound(L, "lowshelf", 16);
   },
-  kidsarea(L) { LIBRARY_STYLES.children(L); L.wall("computer", P(L, { prefer: "corner" })); },
+  kidsarea(L) { LIBRARY_STYLES.children(L); L.wall("computer", P(L, { prefer: "corner", avoid: noStrand(L) })); },
   meeting(L) {
     const t = L.centre("readtable") || L.centre("table");
     if (t) L.around(t, "chair", 6);
