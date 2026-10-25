@@ -2,7 +2,11 @@
 
 Detail for section 9 of [docs/agents/features.md](../agents/features.md). `[name]` is `prototype/src/sim/name.js`; `ui/name` is `prototype/src/ui/name.js`. Screenshots: [docs/base-defence/](../base-defence/) (the siege shots and their report are removed).
 
+Contents: [Defenses tab](#defenses-tab) · [Raids on the base map](#raids-on-the-base-map) · [Perimeter alarm](#perimeter-alarm)
+
 ## Defenses tab
+Construction's Defenses list: defenses open by base size, from barricades and wire at a camp to the minefield at the main hub.
+
 The user's requests 2026-10-19. Modules: [buildings, defences, wire, fort, interior, deploy, combat moveAlong / "cutwire"; ui/ui baseConstruction defensesPane / wallCard (the pieces), ui/defence builtDefenses, ui/combat barricadeButtons "cutwire", ui/battlebar]; test `tools/defensestest.js`.
 
 - Construction has a Buildings and a Defenses list. Every base builds the first defenses and more open as it grows (camp → shelter → outpost → main hub: BUILDINGS `tab: "defenses"`, `size`, DEF_SIZE, placeProblem "Opens at …").
@@ -60,6 +64,7 @@ The user's requests 2026-10-19. Modules: [buildings, defences, wire, fort, inter
 - Modules: [mines minesKill / spendMines / layMines / mineStep / settleMines / raidMines; combat moveAlong, closeCombat; ui/isoview, ui/combat hover].
 
 ## Raids on the base map
+A raid on your base is fought on its own map, with its stores as containers to steal from.
 - The attack from any side (N, E, S, W); the stores on the map as the base's containers holding the real stock and armory where it is kept (what lies outside on piles; look into any at any time); raiders stealing from them and from parked cars and getting away with it; the dead and raiders battering doors, windows, walls, barricades and parked cars; the wear afterwards [basemap, containers, fort]. Storage rules: [bases.md, Base storage limits](bases.md#base-storage-limits).
 
 ### The Armory
@@ -76,6 +81,7 @@ The user's requests 2026-10-19. Modules: [buildings, defences, wire, fort, inter
 - Modules: [basemap `keyOptions`, `keyTargets`, `keyAct`, `holdsKeys`, `KEY_AP`, cell `keyed`; combat combatAct `keylock` / `keyunlock`; ui/combat `keyButtons`, `keyNote`].
 
 ## Perimeter alarm
+A powered Defenses build: nobody is surprised over the wall, and at night its sensors spot anything a tile out.
 - The user's request 2026-10-24 (building recipes that use electronics). A utility-plot build on the Defenses tab from a shelter up (`data-power.js POWER_BUILDINGS.perimeter_alarm`): scrap 8, 1 machine part, 3 electronics, 10 work-hours, max 1, Mechanics 2, a drill and pliers; no blueprint. Draws 1 power from dusk to dawn (20:00–06:00), so it needs the grid (a generator, a solar array or a battery bank).
 - **While powered** (`electric.js alarmOn`, from the hourly power cache): defences.js `armoryDefence` sets alarm = max(tripwire 0.5, ALARM.wake 0.6), so the people unwarned hold the walls at 60% of their combat power and watch.js `surpriseAt` returns null (a raid never gets over the wall before anyone woke, a horde never finds the defences unmanned or half-manned); and `lookoutsSpot` spots anything within ALARM.tiles = 1 tile of the base at night even with nobody on watch, the horde or raid warning card adding "The perimeter alarm's sensors picked them up on the approaches."
 - Wears by use (0.3 a powered day, 0.05 idle, +2 an attack); repair 3 hours for 1 scrap and 1 electronics (Mechanics 2), a jury-rig 1 hour for 1 scrap; broken or unpowered it does nothing. Pulled down it gives 1 scrap and 1 electronics back.
