@@ -23,7 +23,9 @@
 //   - Meals keep their catalogue fields (foods.js: tier, moodLift, diet) for the eating branch's mood ladder.
 //
 // STATIONS AND BILLS (RimWorld's bills). A station is the Kitchen (buildings.js "canteen", kitchen.js) or a cook fire
-// ("cookhouse"; at a shelter or camp its own fire is the station, "Camp fire", while it is lit). Each keeps base.cooking
+// ("cookhouse"; at a shelter or camp its own fire is the station, "Camp fire", while it is lit), or a kitchen range set
+// from the stores ("range", #19 appliances.js: no wood; on the grid or on propane; its cooks rangeCrew; an oven here lets
+// it bake, beside it ×1.25; a powered microwave ×1.1 on the meals anywhere: cookBoost). Each keeps base.cooking
 // [key] = { bills, dirt, clean }. A bill: { id, recipe, mode, n, done, auto, paused, flt, prog, by, why }:
 //   mode   "count" Do N times · "until" Do until you have N (auto: N is COOK.autoDays of the residents' eating, kept in
 //          step with the head count) · "forever" Do forever (while there are ingredients and time);
@@ -116,6 +118,7 @@ import { worksAt, groupKitchenShare, groupSealer, groupTech, groupKnows, groupsB
 import { FIXTURES, WEAR } from "./breakdowns.js";
 import { GROUP_ILL } from "./groupcare.js"; // their ill and how fast they mend
 import { baseCooks } from "./worm.js";
+import { rangesUp, rangeFuel, ovenAt, ovenBoost, cookBoost, RANGE, OVEN, MICROWAVE } from "./appliances.js"; // the kitchen range, the oven, the microwave (#19; call-time only)
 import { WOOD } from "./woodcutting.js"; // what a camp fire burns (the help)
 
 export const COOK = {
@@ -129,7 +132,7 @@ export const COOK_AI = { fine: 0.3, dirt: 20, days: 1.5, skill: { commune: 7, tr
   seal: { surplus: 20, share: 0.1 }, bread: 0.15, sausage: { keep: 0.5, max: 4 }, millGrain: 10, grinderMeat: 4 };
 
 // The stations (base.cooking keys).
-export const STATIONS = { canteen: { name: "Kitchen", icon: "🍳" }, cookhouse: { name: "Cook fire", icon: "🔥" } };
+export const STATIONS = { canteen: { name: "Kitchen", icon: "🍳" }, cookhouse: { name: "Cook fire", icon: "🔥" }, range: { name: "Kitchen range", icon: "♨️" } }; // range: a kitchen range set from the stores (#19, appliances.js)
 export const stationName = (base, key) => (key === "cookhouse" && !count(base, "cookhouse") ? "Camp fire" : (STATIONS[key] || { name: key }).name);
 // A camp cook pot at the base: in its armory or carried by someone there.
 export const hasPot = (state, base) => !!base && ((base.armory || []).some((it) => it && it.key === POT.item) || (!!state && atBase(state, base.id).some((s) => s.alive && carriedAll(s).some((it) => it && it.key === POT.item))));
@@ -170,11 +173,14 @@ export const COOK_RECIPES = {
   pemmican: { name: "Pemmican",        out: "f_pemmican",     n: 2, gain: 1,    in: [{ cls: "drymeat", share: 0.67 }, { cls: "fat", share: 0.33 }], water: 0.5, hours: 2, skill: 3, at: ["canteen", "cookhouse"], desc: "Dried meat pounded with fat and berries or nuts: light travelling food that keeps a year." },
   survival: { name: "Survival meal",   out: "f_survivalmeal", n: 4, gain: 1,    in: [{ cls: "meat", share: 0.5 }, { cls: "veg", share: 0.5 }], water: 2, hours: 2, skill: 4, at: ["canteen"], needs: "sealer", desc: "A cooked meal dried and vacuum packed in a pouch: ten years on the shelf and almost no weight. Needs a working, powered vacuum sealer here." },
   flour:    { name: "Flour",           out: "f_flour",        n: 4, gain: 0.98, in: [{ cls: "grain", share: 1 }], water: 0, hours: 1.5, skill: 0, at: ["canteen", "cookhouse"], needs: "grainmill", desc: "Grain ground on the mill: hand-cranked, or ×1.5 as fast a cook's hour with 1 power on its motor (Power card). Needs a grain mill here." },
-  bread:    { name: "Bread",           out: "f_bread",        n: 4, gain: 1.1,  in: [{ cls: "flour", share: 1 }], water: 2, hours: 2, skill: 2, at: ["canteen"], desc: "Loaves from flour and water in the Kitchen's oven. Stale in days." },
+  bread:    { name: "Bread",           out: "f_bread",        n: 4, gain: 1.1,  in: [{ cls: "flour", share: 1 }], water: 2, hours: 2, skill: 2, at: ["canteen"], oven: true, desc: "Loaves from flour and water in the Kitchen's oven (at a kitchen range: an oven set here). Stale in days." },
   ground:   { name: "Ground meat",     out: "f_groundmeat",   n: 4, gain: 1,    in: [{ cls: "game", share: 1 }],  water: 0.5, hours: 1, skill: 0, at: ["canteen", "cookhouse"], needs: "meatgrinder", desc: "Tough cuts of game run through the grinder: hand-cranked, or ×1.5 as fast a cook's hour with 1 power on its motor (Power card). Needs a meat grinder here." },
   sausage:  { name: "Smoked sausage",  out: "f_sausage",      n: 2, gain: 1,    in: [{ cls: "ground", share: 1 }], water: 1, hours: 2, skill: 3, at: ["canteen", "cookhouse"], needs: "meatgrinder", wood: 4, desc: "Ground meat salted, stuffed and smoked: keeps months. Needs a meat grinder here (×1.5 as fast with power on it) and 4 wood a batch for the smoke." },
   roast:    { name: "Camp roast",      out: "f_simplemeal",   n: 2, gain: 1.1,  in: [{ cls: "raw", share: 1 }],  water: 0.25, hours: 0.5, skill: 0, at: ["cookhouse"], team: true, desc: "Raw meat or fish roasted over the fire: little water, a little more filling than raw, and safe." },
 };
+// A kitchen range (#19, appliances.js) cooks everything the Kitchen does; a recipe with oven: true (baking) only with an
+// oven set here (batchWhy).
+for (const R of Object.values(COOK_RECIPES)) if (R.at.includes("canteen")) R.at.push("range");
 for (const [k, R] of Object.entries(COOK_RECIPES)) { R.key = k; R.kcalOut = R.n * FOODS[R.out].kcal; R.units = R.kcalOut / R.gain / DAY_KCAL; } // units: days of food in a batch
 export const RECIPE_KEYS = Object.keys(COOK_RECIPES);
 // The camp cook pot on a team's fire: every fresh ingredient into simple meals.
@@ -218,12 +224,13 @@ export function stationState(base, key) {
   return c[key] || (c[key] = { bills: [], dirt: 0, clean: true });
 }
 // state: for the cook pot (a Camp fire at a base with no Kitchen or cook fire); without it only buildings and a shelter's fire count.
-export const hasStation = (base, key, state = null) => (key === "canteen" ? hasKitchen(base) : key === "cookhouse" ? count(base, "cookhouse") > 0 || isShelter(base) || (!hasKitchen(base) && hasPot(state, base)) : false);
+export const hasStation = (base, key, state = null) => (key === "canteen" ? hasKitchen(base) : key === "cookhouse" ? count(base, "cookhouse") > 0 || isShelter(base) || (!hasKitchen(base) && hasPot(state, base)) : key === "range" ? rangesUp(base).length > 0 : false);
 export const stationsAt = (base, state = null) => Object.keys(STATIONS).filter((k) => hasStation(base, k, state));
 // Can it cook today? "" when it can, else why not.
 export function stationWhy(state, base, key) {
-  if (!hasStation(base, key, state)) return key === "canteen" ? "no Kitchen" : "no cook fire (build one, or craft a camp cook pot)";
+  if (!hasStation(base, key, state)) return key === "canteen" ? "no Kitchen" : key === "range" ? "no kitchen range (set one from the stores)" : "no cook fire (build one, or craft a camp cook pot)";
   if (key === "canteen" && kitchenCold(base)) return "the stove is cold (no wood)";
+  if (key === "range" && !rangeFuel(state, base)) return `no power and no propane (${RANGE.need} power, or ${RANGE.propane} propane a batch)`; // appliances.js: idle
   if (key === "cookhouse" && isShelter(base) && !count(base, "cookhouse") && !fireBurned(state, base)) return "the fire is out (it burns wood: light it again once some comes in)";
   return "";
 }
@@ -260,7 +267,7 @@ export function ensureStations(state, base) {
     const S = stationState(base, key);
     if (S.init) continue;
     S.init = true;
-    if (key === "canteen" && !S.bills.length) S.bills.push(newBill(base, "simple", { mode: "until", auto: true, by: "player" }));
+    if ((key === "canteen" || key === "range") && !S.bills.length) S.bills.push(newBill(base, "simple", { mode: "until", auto: true, by: "player" })); // a range set from the stores starts as a new Kitchen does
   }
 }
 export function newBill(base, recipe, o = {}) {
@@ -290,6 +297,8 @@ export function batchWhy(state, base, key, b, wood = Infinity) {
   if (!R) return "an unknown recipe";
   if (!madeAt(state, base, key, b.recipe)) return R.at.includes(key) ? "a cook pot over a fire makes only small meals (simple meal, stew)" : `not made at a ${stationName(base, key).toLowerCase()}`;
   if (R.needs && !machineAt(state, base, R.needs)) return `needs ${NEEDS_NAME[R.needs]}`;
+  if (key === "range" && R.oven && !ovenAt(base)) return "needs an oven set here (from the stores) to bake at the range";
+  if (key === "range" && !rangeFuel(state, base)) return `out of propane (${RANGE.propane} a batch off the grid) and no power`;
   for (const inp of R.in) {
     const need = R.units * inp.share, have = foodUnits(base, inputTest(inp, b.flt));
     if (have + 1e-9 < need) return `short of ${CLASSES[inp.cls].name} (${r1(have)} of ${r1(need)} days of food)`;
@@ -317,6 +326,15 @@ export function kitchenCrew(state, base) {
     return { s, lvl, hours: hrs * Math.min(1, workFactor(s)), left: hrs * Math.min(1, workFactor(s)) * speedOf(lvl) };
   }).filter((c) => c.left > 1e-6).sort((a, b) => b.lvl - a.lvl || a.s.id - b.s.id);
 }
+// The kitchen ranges' cooks (#19, appliances.js): one a range in use (one for every RANGE.per people living here), the
+// best Cooking at home who is not on the Kitchen's crew, RANGE.hours each.
+export function rangeCrew(state, base) {
+  if (stationWhy(state, base, "range")) return [];
+  const n = Math.min(rangesUp(base).length, Math.max(1, Math.ceil(residents(state, base.id).length / RANGE.per)));
+  const busy = new Set(kitchenCrew(state, base).map((c) => c.s.id));
+  const ppl = atBase(state, base.id).filter((s) => s.alive && !s.inBed && workFactor(s) >= 0.35 && !busy.has(s.id)).sort((a, b) => skill(b, "cooking") - skill(a, "cooking") || a.id - b.id);
+  return ppl.slice(0, n).map((s) => { const lvl = skill(s, "cooking"), wf = Math.min(1, workFactor(s)); return { s, lvl, hours: RANGE.hours * wf, left: RANGE.hours * wf * speedOf(lvl) }; });
+}
 // The cook fire's (or a shelter's fire's) tender: the best cook at home, COOK.fireHours.
 export function fireCrew(state, base) {
   if (stationWhy(state, base, "cookhouse")) return [];
@@ -326,7 +344,7 @@ export function fireCrew(state, base) {
   const lvl = skill(s, "cooking");
   return [{ s, lvl, hours: COOK.fireHours * Math.min(1, workFactor(s)), left: COOK.fireHours * Math.min(1, workFactor(s)) * speedOf(lvl) }];
 }
-const crewOf = (state, base, key) => (key === "canteen" ? kitchenCrew(state, base) : fireCrew(state, base));
+export const crewOf = (state, base, key) => (key === "canteen" ? kitchenCrew(state, base) : key === "range" ? rangeCrew(state, base) : fireCrew(state, base));
 
 // ---------- the day ----------
 // Midnight, before the eating (storage.js cookDaily): every station works its bills. Returns the days of food that went
@@ -350,7 +368,7 @@ function runStation(state, base, key, rec) {
   if (!live.length) return;
   const why = stationWhy(state, base, key);
   const crew = why ? [] : crewOf(state, base, key);
-  if (!crew.length) { sr.why = why || (key === "canteen" ? "no cook on duty" : "nobody home to tend it"); for (const b of live) b.why = sr.why; return; }
+  if (!crew.length) { sr.why = why || (key === "canteen" ? "no cook on duty" : key === "range" ? "nobody free to cook at it" : "nobody home to tend it"); for (const b of live) b.why = sr.why; return; }
   // A cook fire burns wood a work-hour (not a shelter's own fire): the crew's day is cut to what the woodpile pays.
   const perHour = key === "cookhouse" && !freeFire(state, base) ? COOK.fireWood : 0;
   if (perHour > 0) {
@@ -372,7 +390,7 @@ function runStation(state, base, key, rec) {
   for (const b of live) {
     const R = COOK_RECIPES[b.recipe];
     const M = recipeMin(b.recipe, knows);
-    const batchHours = R.hours / (M.covered ? 1 + COOK.bookSpeed : 1) / machineBoost(state, base, R.needs); // a powered mill or grinder: ×1.5 a cook's hour (power.js POWER_BOOST)
+    const batchHours = R.hours / (M.covered ? 1 + COOK.bookSpeed : 1) / machineBoost(state, base, R.needs) / cookBoost(state, base, key, R); // a powered mill or grinder: ×1.5 a cook's hour (power.js POWER_BOOST); an oven beside the range, a powered microwave (appliances.js)
     for (let guard = 0; guard < 400; guard++) {
       if (!billWants(state, base, b)) { b.why = b.mode === "count" ? "done" : "enough in store"; break; }
       const cook = crew.find((c) => c.left > 1e-6 && c.lvl >= M.min);
@@ -408,6 +426,11 @@ function makeBatch(state, base, key, b, cook, below, rec) {
   rec.water += R.water;
   if (R.needs && R.needs !== "sealer") { const m = base.buildings.find((x) => x.type === R.needs && !x.broken); if (m) m.ran = day(state); } // breakdowns.js: worn on the days it turned
   if (R.needs === "sealer") { const m = base.buildings.find((x) => x.type === "sealer" && !x.broken); if (m) m.ran = day(state); }
+  if (key === "range") { // appliances.js (#19): the ranges' wear day (and the oven's when it baked or sped them); off the grid, the batch's propane
+    for (const m of rangesUp(base)) m.ran = day(state);
+    if (R.oven || ovenBoost(state, base) > 1) for (const m of base.buildings) if (m.type === "oven" && !m.broken) m.ran = day(state);
+    if (rangeFuel(state, base) === "propane") { base.stock.propane = r2(Math.max(0, (base.stock.propane || 0) - RANGE.propane)); rec.propane = r2((rec.propane || 0) + RANGE.propane); }
+  }
   const pz = poisonChance(cook.lvl, S.dirt, below);
   addFood(base, R.out, R.n, { left: FOODS[R.out].shelf, state, pz, by: cook.s.id });
   b.done = (b.done || 0) + 1;
@@ -493,6 +516,9 @@ export function govCookBills(state, base) {
     if ((base.stock.f_flour || 0) >= 2 && recipeSkillOk(state, base, "canteen", "bread").ok) want.push(["canteen", "bread", "until", Math.ceil(eaters / 2)]);
     if (machineAt(state, base, "meatgrinder") && units("game") >= eaters * 2) { want.push(["canteen", "ground", "until", 4]); if (recipeSkillOk(state, base, "canteen", "sausage").ok) want.push(["canteen", "sausage", "until", 10]); }
     if (hasSealer(state, base) && foodUnits(base) >= eaters * 30 && recipeSkillOk(state, base, "canteen", "survival").ok) want.push(["canteen", "survival", "until", 20]);
+  } else if (hasStation(base, "range")) { // a kitchen range and no Kitchen (#19): the everyday meals, and bread with an oven
+    want.push(["range", "simple", "until", Math.ceil((eaters * DAY_KCAL) / FOODS.f_simplemeal.kcal)]);
+    if (ovenAt(base) && (base.stock.f_flour || 0) >= 2 && recipeSkillOk(state, base, "range", "bread").ok) want.push(["range", "bread", "until", Math.ceil(eaters / 2)]);
   } else if (hasStation(base, "cookhouse", state)) want.push(["cookhouse", "simple", "until", Math.ceil((eaters * DAY_KCAL) / FOODS.f_simplemeal.kcal)]);
   for (const key of stationsAt(base, state)) {
     const S = stationState(base, key);
@@ -721,6 +747,7 @@ export function cookingHelp() {
 <b>A clean kitchen.</b> Every hour of cooking dirties a station (+${COOK.dirt.perHour}); with <i>Clean first</i> on the cooks spend up to ${Math.round(COOK.dirt.share * 100)}% of their day scrubbing before they cook. Dirt makes food poisoning up to ${1 + POISON.dirt} times as likely.<br><br>
 <b>Food poisoning.</b> Vomiting and cramps: off work about a day (an illness: the sick rest), a low mood, now and then a bad case for a few days. A day of a meal's food gives it at ${Math.round(skillPz(0) * 1000) / 10}% from a Cooking 0 cook, ${Math.round(skillPz(5) * 1000) / 10}% at 5, ${Math.round(skillPz(10) * 1000) / 10}% at 10, × the dirt, more below a recipe's level with a cookbook; raw meat or fish eaten uncooked ${Math.round(POISON.raw * 100)}% a day of it, and game or greens with the worm's eggs eaten raw too. Iron Stomach halves it. 1 meds ends it at once; automatic care lets it pass.<br><br>
 <b>Machines.</b> The grain mill (flour from grain) and the meat grinder (ground meat and sausage) are hand-cranked machines on a utility plot: no power, a machine part to build, and they wear on the days they turn. The vacuum sealer packs survival meals while it has power.<br><br>
+<b>Kitchen range.</b> A range found and carried home (set from the stores on a general building's floor: the base map's Build list, Fittings) is a cooking station of its own with the Kitchen's recipes and no wood: ${RANGE.need} power while its bills cook, or ${RANGE.propane} propane a batch off the grid (propane: grills, hardware stores, campgrounds); with neither it is idle. One cook at a range, ${RANGE.hours} hours a day, the best at home who is not cooking in the Kitchen; a range for every ${RANGE.per} people. An oven set here lets it bake bread; an oven in the same building ×${OVEN.boost} on its cooking. A powered microwave: ×${MICROWAVE.boost} on every meal's time here.<br><br>
 <b>Camp fires.</b> Every lit fire burns wood (a camp's or shelter's ${WOOD.fire.shelter} a day from its store, a team's ${WOOD.fire.camp} a day from what it carries; deadfall about × ${WOOD.fire.deadfall}) and goes out when there is none left; a camp or shelter cooks on its own fire only on days it burned. Days with no hot food sour the mood.<br><br>
 <b>Camp cook pot.</b> Crafted from 3 scrap by anyone (Cooking 0, anywhere, a team too). Kept at a base with no Kitchen and no cook fire (in its armory or carried by someone there) it is a Camp fire station for the small meals (simple meal, stew), tended ${COOK.fireHours} hours a day and burning ${COOK.fireWood} wood an hour.<br><br>
 <b>On the road.</b> A team at a lit, fed camp fire roasts its raw meat and fish into simple meals (a little purified water each); with a camp cook pot it cooks any fresh food it carries (forage, vegetables, eggs, meat, fish) into simple meals. <b>Other groups</b> cook in their kitchens by the same recipes, coarsely: simple and fine meals, survival meals with a sealer, bread with a mill, sausage with a grinder; their cooks' poisonings make people ill.`;

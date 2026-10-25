@@ -74,6 +74,7 @@ import { WOODWORK, queueChop, queuedChopWood, clearAhead } from "./woodwork.js";
 import { fittingRoom } from "./basemap.js"; // base building: a general building with floor for a fitting (bedWishes, storageWish, stoveWish)
 import { governBeds } from "./beds.js"; // beds as furniture: set from the stores, crafted when beds are short (call-time only)
 import { governPower } from "./electric.js"; // the power grid: found generators, spotlights and fridges set from the stores (call-time only)
+import { rangeWaits } from "./appliances.js"; // a stored kitchen range is set before a Kitchen is wished for (#19; call-time only)
 import { autoStore } from "./containers.js"; // the stores tidied daily (tidyStores)
 import { BUILDINGS, RECIPES, plotSize, canDemolish, demolish, canBuild, queueBuild, count, countAll, stations, baseBeds, baseWalls, farmSlots, assignStations, isShelter, plotsFree, plotCap, BEDS, queuedBeds, BARRACKS_UP, canExpandBunkhouse, queueBunkhouseExpand, benchTier, tierUpType, tierUpJob, gatherRows, gatherStalled, isCamp, CAMP as CAMP_TIER, WATER_BARREL, canUpgradeBarrel, queueBarrelUpgrade, barrelTier, barrels, barrelName } from "./buildings.js";
 import { fireWanted } from "./fieldheat.js";
@@ -3146,7 +3147,7 @@ function buildWishes(state, base) {
   // calls for and the defences, before the relay, the benches, the jails, the infirmary and the workshops.
   // eaters: the people who live here, teams out included (at the hub everyone not living at an outpost).
   const eaters = isHub ? Math.max(people, alive(state).filter((s) => s.location.kind !== "base" || s.location.baseId === base.id).length) : people;
-  if (BUILDINGS.canteen && !countAll(base, "canteen") && !queued("canteen") && eaters >= KITCHEN.govFrom && plotsFree(base, "building") >= (isHub ? 2 : 1)) add("canteen", `hot meals for ${eaters} people (−10% food a day, mood)`, !plotsShort(state, base)); // ap-food: not saved for (nor its scrap held: kitchenKeep) ahead of the farm plot the farmers are short of (seed 5058, hardcore: the Kitchen took the scrap, 2 plots for 13 people, starved)
+  if (BUILDINGS.canteen && !countAll(base, "canteen") && !queued("canteen") && !rangeWaits(state, base) && eaters >= KITCHEN.govFrom && plotsFree(base, "building") >= (isHub ? 2 : 1)) add("canteen", `hot meals for ${eaters} people (−10% food a day, mood)`, !plotsShort(state, base)); // ap-food: not saved for (nor its scrap held: kitchenKeep) ahead of the farm plot the farmers are short of (seed 5058, hardcore: the Kitchen took the scrap, 2 plots for 13 people, starved)
   // Crafting benches (buildings.js BENCH): all but the simple field recipes need one, and crafters work faster and
   // better at one. A crafting bench where someone is on the Craft role or a job is queued, after the essentials above.
   const benchQueued = base.construction.some((c) => BUILDINGS[c.type] && BUILDINGS[c.type].family === "bench");
@@ -3391,7 +3392,7 @@ function foodStoreWishes(state, base, people, queued) {
 // campYard's). The AI groups' side is theirs (groupworks.js).
 const GRID_SPARE = { parts: 2, electronics: 1 };
 const SOLAR_WISH = { fuelLow: 15, richEl: 4 };
-const NIGHT_USERS = ["freezer", "fridge", "spotlamp", "perimeter_alarm", "radio"]; // what draws after dark (a battery bank's reason)
+const NIGHT_USERS = ["freezer", "fridge", "chest_freezer", "cold_case", "spotlamp", "perimeter_alarm", "radio"]; // what draws after dark (a battery bank's reason)
 const NIGHT_HOURS = 10; // the hours the banks carry (20:00 to 06:00: data-power.js SOLAR.to to SOLAR.from)
 const gridSpare = (state, base, season = 1) => genCapacity(base) + solarArrays(base).length * SOLAR.out * season - powerWanted(state, base, () => true);
 export function gridWishes(state, base, people, queued) { // exported for the tests (tools/powergridtest.js can call it as foodStoreWishes is called)

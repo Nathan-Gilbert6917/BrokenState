@@ -102,6 +102,7 @@ Base detail: [bases.md](../features/bases.md). Economy detail: [economy.md](../f
 - **Building materials and metal sheets**: two-handed heavy supplies every build needs by size; made from scrap on site [buildmats, buildings, data-supitems, carry]. [details](../features/economy.md#building-materials-and-metal-sheets)
 - **Power grid**: found generators, spotlights, a breaker panel, ammo press, fridges, pumps, fence chargers [power, electric, data-power, ui/production] `tools/powergridtest.js`. [details](../features/economy.md#the-power-grid)
 - **More of the grid: electronics builds**: solar arrays, battery banks, perimeter alarm, electric heaters, charging station [data-power, power, electric] `tools/powergridtest.js`. [details](../features/economy.md#more-of-the-grid-electronics-builds)
+- **Appliances**: found freezers, cold cases, ranges, ovens, microwaves set on the grid; a range cooks on power or propane [appliances, data-appliances, storage, cooking] `tools/appliancestest.js`. [details](../features/economy.md#appliances)
 - **The governor builds the grid**: it queues grid builds behind manual, Mechanics and reserve; powered mill, grinder ×1.5 [autopilot, electric, power] `tools/powergridtest.js`. [details](../features/economy.md#the-governor-builds-the-grid)
 - **Breakdowns**: fixtures wear and need a named survivor to repair; repair orders from the Repairs tab [breakdowns, ui/explore]. [details](../features/bases.md#repair-orders)
 - **Blueprints and manuals** that unlock top tiers [blueprints].

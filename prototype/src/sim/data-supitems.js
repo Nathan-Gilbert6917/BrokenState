@@ -32,6 +32,7 @@ export const SUP_ITEM = {
   carparts:     { stack: 2,   bulky: true, word: "car parts" },
   gunparts:     { stack: 10,  small: true, word: "gun parts" },
   electronics:  { stack: 10,  small: true, word: "electronics" },
+  propane:      { stack: 5,   word: "kilos of propane" },        // a grill's bottle (#19)
   buildmat:     { stack: 4,   bulky: true, twoHands: true, word: "building materials" },
   metalsheet:   { stack: 4,   bulky: true, twoHands: true, word: "metal sheets" },
   blackpowder:  { stack: 100, small: true, word: "charges of black powder" },

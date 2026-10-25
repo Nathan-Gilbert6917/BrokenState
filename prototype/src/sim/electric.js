@@ -3,8 +3,8 @@
 // supply and the demand (the generators, found ones too: isGen / genDef; the users and the circuits in powerStatus);
 // this module is everything else:
 //
-// SETTING A PIECE FROM THE STORES (setPlaced, pickUpPlaced). A found generator, a mounted spotlight or a fridge is an
-//   item in the base's armory (carried home in both arms, a cart or a vehicle). It becomes a placed thing when it is
+// SETTING A PIECE FROM THE STORES (setPlaced, pickUpPlaced). A found generator, a mounted spotlight, a fridge or another
+//   appliance (#19: appliances.js, its item placedItemKey: f_<kind>) is an item in the base's armory (carried home in both arms, a cart or a vehicle). It becomes a placed thing when it is
 //   SET: from the base map's Build list (group Power: basemap.js buildMenu / layoutAct build -> setPlacedAt; its
 //   footprint follows the mouse, R turns it, a click sets it there), or from the Construction tab and the governor with
 //   no spot (the auto layout places it: a generator in the yard, a spotlight on a free wall stand else by the walls,
@@ -34,8 +34,9 @@
 //
 // THE GOVERNOR (governPower, autopilot.js governBase): sets the generators lying in the stores while the base wants more
 //   power than its generators give, every spotlight once there is a generator OR a solar array / battery bank (2026-10-24,
-//   the user's "setting up power grids for the base": sources count, power.js isSource), the fridges while a building
-//   has room. The grid's BUILDS (the breaker panel, the well pump, the fence charger, the ammo press, the solar array,
+//   the user's "setting up power grids for the base": sources count, power.js isSource), then the appliances while a
+//   building has room (appliances.js govAppliances: fridges before freezers before ranges; the range and the oven
+//   without a source too, the range cooks on propane). The grid's BUILDS (the breaker panel, the well pump, the fence charger, the ammo press, the solar array,
 //   the battery bank, the alarm, the heaters, the charging station) are the governor's build wishes: autopilot.js
 //   gridWishes, each gated on its blueprint, a Mechanics hand, its plot, its parts and electronics with a reserve kept.
 //
@@ -72,13 +73,16 @@ import { hash01 } from "./skills.js";
 import { lootItem } from "./inventory.js";
 import { GEAR } from "./data.js"; // the rechargeable gear (recharge: true)
 import { siteSource, areaSource } from "./itemcond.js";
+import { applianceLine, govAppliances } from "./appliances.js"; // the appliances (#19; call-time only)
 
 const nameOf = (type) => (POWER_BUILDINGS[type] ? POWER_BUILDINGS[type].name : BUILDINGS[type] ? BUILDINGS[type].name : type);
 const lower = (type) => nameOf(type).toLowerCase();
 /** A piece set from the stores (a found generator, a mounted spotlight, a fridge). @param {string} type */
 export const isSetPiece = (type) => !!(POWER_BUILDINGS[type] && POWER_BUILDINGS[type].set);
+/** The stores' item key of a set piece (an appliance's f_<kind>, data-appliances.js; else the type itself). @param {string} type */
+export const placedItemKey = (type) => (POWER_BUILDINGS[type] && POWER_BUILDINGS[type].item) || type;
 /** Pieces of this kind in a base's stores (its armory). @param {any} base @param {string} type */
-export const placedInStores = (base, type) => ((base && base.armory) || []).filter((it) => it && it.key === type).length;
+export const placedInStores = (base, type) => ((base && base.armory) || []).filter((it) => it && it.key === placedItemKey(type)).length;
 /** The found generators set at a base. @param {any} base */
 export const gensetsAt = (base) => ((base && base.buildings) || []).filter((b) => GENSETS[b.type]);
 
@@ -105,7 +109,7 @@ export function canSetPlaced(state, base, type) {
 export function setPlaced(state, base, type, at = null) {
   const chk = canSetPlaced(state, base, type);
   if (!chk.ok) return { err: chk.reason || "It cannot be set here now." };
-  const list = base.armory.map((it, i) => [it, i]).filter(([it]) => it && it.key === type).sort(([a], [b]) => (b.quality || 0) - (a.quality || 0));
+  const list = base.armory.map((it, i) => [it, i]).filter(([it]) => it && it.key === placedItemKey(type)).sort(([a], [b]) => (b.quality || 0) - (a.quality || 0));
   const [item, idx] = list[0];
   base.armory.splice(idx, 1);
   delete item.store; // containers.js: an assignment to a container goes with it out of the stores
@@ -117,7 +121,7 @@ export function setPlaced(state, base, type, at = null) {
     if (err) { base.buildings.splice(base.buildings.indexOf(rec), 1); base.armory.splice(idx, 0, item); return { err }; }
   }
   const g = GENSETS[type];
-  const what = g ? `${g.out} power once it is fuelled (the morning's refuelling), +${g.heat} Heat while it runs` : type === "spotlamp" ? `it lights the ground round it in a night fight while it has power` : `${FRIDGE.room} days of cold food room while it has power`;
+  const what = g ? `${g.out} power once it is fuelled (the morning's refuelling), +${g.heat} Heat while it runs` : type === "spotlamp" ? `it lights the ground round it in a night fight while it has power` : applianceLine(type) || `${FRIDGE.room} days of cold food room while it has power`; // appliances.js: the chest freezer, the cold case, the range, the oven, the microwave
   return { rec, key, msg: `${nameOf(type)} set ${at ? "there" : "where the game found room for it"} at ${base.name}: ${what}.` };
 }
 // The base map's Build on a set piece (basemap.js layoutAct build): set where the ghost is. Returns an error or "".
@@ -138,7 +142,7 @@ export function pickUpPlaced(state, base, rec) {
   if (i >= 0) base.buildings.splice(i, 1);
   if (GENSETS[rec.type] && rec.tank > 0) base.stock.fuel = (base.stock.fuel || 0) + rec.tank;
   if (base.powerOff) delete base.powerOff[rec.id];
-  const item = rec.item && typeof rec.item === "object" ? rec.item : makeItem(rec.type, 0.8);
+  const item = rec.item && typeof rec.item === "object" ? rec.item : makeItem(placedItemKey(rec.type), 0.8);
   base.armory.push(item);
   return `${nameOf(rec.type)} picked up and put back in the stores at ${base.name}${GENSETS[rec.type] && rec.tank > 0 ? " (its tank drained into the fuel)" : ""}.`;
 }
@@ -227,7 +231,7 @@ export function pumpServes(base, b) {
 export const pumpWater = (base) => base.buildings.filter((b) => b.type === "elec_pump" && !b.broken && isPowered(base, b) && pumpServes(base, b)).length * PUMP.water;
 /** The fence charger powered and a wire to charge (defences.js, basemap.js). @param {any} base */
 export const fenceCharged = (base) => !!base && poweredType(base, "fence_charger") && (count(base, "barbed_wire") > 0 || count(base, "razor_wire") > 0);
-/** Fridges with power (storage.js storeSpaces). @param {any} base */
+/** Fridges with power (storage.js storeSpaces; the other appliances: appliances.js appliancesOn). @param {any} base */
 export const fridgesOn = (base) => base.buildings.filter((b) => b.type === "fridge" && !b.broken && isPowered(base, b)).length;
 /** The mounted spotlights with power now (basemap.js: lit in a night fight). @param {any} base @param {any} b */
 export const spotOn = (base, b) => !!b && b.type === "spotlamp" && !b.broken && isPowered(base, b);
@@ -329,7 +333,7 @@ export function rollAreaPower(state, tileId, areaType, site, salt = "") {
 // ---------- the governor ----------
 // Once a day (autopilot.js governBase): the biggest generator in the stores set while the base wants more power than
 // its generators give; every spotlight in the stores once a generator OR a source that burns nothing (a solar array, a
-// battery bank: power.js isSource; 2026-10-24) stands; a fridge while a building has room and one of those stands.
+// battery bank: power.js isSource; 2026-10-24) stands; then the appliances (appliances.js govAppliances, #19).
 // Returns the log lines.
 export function governPower(state, base) {
   const out = [];
@@ -341,13 +345,13 @@ export function governPower(state, base) {
     if (r.err) break;
     out.push(r.msg);
   }
-  if (!generators(base).length && !base.buildings.some(isSource)) return out; // nothing here makes power: the spotlights and fridges wait in the stores
-  for (const t of ["spotlamp", "fridge"]) {
-    while (placedInStores(base, t) && canSetPlaced(state, base, t).ok) {
-      const r = setPlaced(state, base, t);
-      if (r.err) break;
-      out.push(r.msg);
-    }
+  if (generatorsOrSources(base)) while (placedInStores(base, "spotlamp") && canSetPlaced(state, base, "spotlamp").ok) { // with no source here the spotlights wait in the stores
+    const r = setPlaced(state, base, "spotlamp");
+    if (r.err) break;
+    out.push(r.msg);
   }
+  out.push(...govAppliances(state, base)); // appliances.js: the fridges, freezers, cold cases, ranges, ovens, microwaves (the powered ones once a source stands)
   return out;
 }
+/** Something here makes power: a generator, a solar array or a battery bank (power.js isSource). @param {any} base */
+export const generatorsOrSources = (base) => !!base && (generators(base).length > 0 || base.buildings.some(isSource));
