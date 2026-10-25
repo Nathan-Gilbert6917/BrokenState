@@ -159,7 +159,7 @@ function kitchen(L, kinds) {
   for (const k of ["fridge", "sink", "stove"]) if (kinds.includes(k) && !L.has(k)) L.need(k);
 }
 // A vehicle in the room by its door (the roller door's when it has one): a rect off the lanes, else anywhere it fits.
-function vehicleIn(L, o) {
+export function vehicleIn(L, o) {
   const c = L.c, doors = L.room.doors || [];
   const roll = doors.filter(([x, y]) => c.cell(x, y) && c.cell(x, y).roll);
   const at = roll.length ? roll : doors;
