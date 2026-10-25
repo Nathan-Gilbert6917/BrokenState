@@ -13,6 +13,7 @@ import { heldUp } from "../sim/roadblocks.js"; // "Road blocked" over a team hel
 import { MARKER_TYPES, LAYER_OF } from "../sim/markers.js";
 import { vehicleById, partyVehicles, raidHumvees } from "../sim/vehicles.js";
 import { conditionsOf, CONDITIONS } from "../sim/health.js"; // a lone walker's limp
+import { isPieceItem } from "../sim/furnicarry.js"; // a piece of furniture carried home: on the shoulders (ui/mapfigures.js)
 import { BUILDINGS, count, tierUpJob, gatherCap, isCamp, CAMP, wallTier } from "../sim/buildings.js";
 import { weatherTint, iceRow } from "../sim/weather.js";
 import { mapSeasonOf, FOREST_FLAT } from "./seasontrees.js"; // the trees by the season: the decals' look, the forests' flat colour
@@ -2138,7 +2139,8 @@ function partyLook(state, p) {
   const count = (p.members || []).length;
   // A team of one: a lone walker, or a rider on a bike (a car keeps its vehicle sprite).
   const solo = p.kind === "convoy" || count !== 1 ? "" : p.vehicle === "bike" ? "cyclist" : !p.vehicle && soloKind(kind) ? "walker" : "";
-  return { color, kind, count, solo, ups: v && p.kind !== "convoy" ? upsCode(v.upgrades) : "" }; // ups: its upgrades (mapsprites.js upsCode)
+  const furn = p.vehicle || p.kind === "convoy" ? 0 : partyMembers(state, p).filter((s) => s && s.gear && isPieceItem(s.gear.carry)).length; // on foot with a piece of furniture in the arms (sim/furnicarry.js): on the shoulders (ui/mapfigures.js)
+  return { color, kind, count, solo, furn, ups: v && p.kind !== "convoy" ? upsCode(v.upgrades) : "" }; // ups: its upgrades (mapsprites.js upsCode)
 }
 
 // The piece for one of your teams this frame, at its heading: a team of one gets its own figure (walking or standing,
@@ -2148,14 +2150,14 @@ function teamCanvas(state, p, look, moving, yaw, night = false) {
   const sz = zoomBoost();
   if (!look.solo) {
     const motor = MOTOR.has(look.kind), ms = motor ? 240 : look.kind.includes("cart") ? 520 : 380;
-    return [mapPartyCanvas(look.kind, look.color, look.count, look.ups, yaw, cycleFrame(p.id, moving, ms)), PIECE_PX * sz, !moving ? 0 : motor ? rumble(p.id, 0.35 * sz) : stepBob(p.id, (look.kind.includes("cart") ? 0.6 : 0.8) * sz, ms)];
+    return [mapPartyCanvas(look.kind, look.color, look.count, look.ups, yaw, cycleFrame(p.id, moving, ms), look.furn || 0), PIECE_PX * sz, !moving ? 0 : motor ? rumble(p.id, 0.35 * sz) : stepBob(p.id, (look.kind.includes("cart") ? 0.6 : 0.8) * sz, ms)];
   }
   const s = partyMembers(state, p)[0], light = night && s ? lightOf(s) || "" : "";
   if (look.solo === "cyclist") return [mapCyclistCanvas(look.color, yaw, cycleFrame(p.id, moving, 240)), SOLO_PX * sz, moving ? stepBob(p.id, 0.3 * sz, 480) : 0];
   const gait = soloGait(p, s), ms = GAIT_MS[gait];
   // A heavy load bobs less; a limp dips on the hurt leg (every other step).
   const bob = !moving ? 0 : stepBob(p.id, (gait === "heavy" ? 0.5 : 0.8) * sz, ms) + (gait === "limp" && animOn() && Math.floor(animNow / ms + phaseOf(p.id)) % 2 ? 0.8 * sz : 0);
-  return [mapSoloCanvas(look.kind, look.color, yaw, cycleFrame(p.id, moving, ms), light, gait), SOLO_PX * sz, bob];
+  return [mapSoloCanvas(look.kind, look.color, yaw, cycleFrame(p.id, moving, ms), light, gait, !!look.furn), SOLO_PX * sz, bob];
 }
 const MOTOR = new Set(["truck", "sedan", "suv", "van", "hummer", "miltruck", "convoy", "supply"]);
 // How a lone walker goes: "limp" when hurt (under 60% health, an infected wound, or a cut or sprain: health.js injuries),
