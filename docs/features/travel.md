@@ -351,7 +351,7 @@ The user's request 2026-10-25: "All buildings should scale based on how large bu
 - **The maps**: a place's building map is its footprint plus margins, at least the run's largest raid map dial, at most 300 × 300; the dead inside go by its floor area (`deadK`, at most 120 a group), its containers as full as a small building's (`R.natMap`), the quick search's the same (`placeProfile`).
 - **Snapshots** are packed floor by floor (citycrawl `packCells`: each distinct cell once, runs of them): five big buildings left as they were add about 100 KB to a gzipped save (`tools/bigmapbench.js --save5`).
 - **Other groups** strip the city's buildings no faster an hour, but they hold more (aiscav.js `siteSizeK`: a city 2.4 times what it did; docs/adr/0001-ai-parity.md).
-- **The balance gate** (`tools/crawlbalance.js city`, [docs/crawl-balance.md](../crawl-balance.md)): BALANCE_LINE
+- **The balance gate** (`tools/crawlbalance.js city --depth 2,4 --squad early,solid,rifles --trials 20`, [docs/crawl-balance.md](../crawl-balance.md)): 6 of 6 rows inside their targets before and after (2026-10-25). Every squad still comes out (100%, none wiped); losses within 3 points of before (depth 4 rifles 17% → 21%); loot value within 10% (depth 2 solid 241 → 227, rifles 272 → 244; depth 4 rifles 377 → 376); hours the same (8–20).
 
 ### Parity with the raid tickets (issue #21, 2026-10-25)
 The user's request 2026-10-25 (the interiors epic #7, its last ticket): "I want the interiors of buildings during raids and crawls to make sense. […] Improve the building, furniture, appliances etc fidelity for raids and crawls." The crawl keeps up with what the raid tickets added (#8–#13, #18).

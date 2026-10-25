@@ -763,7 +763,8 @@ const outAndBack = (state, p, c, pl) => { const b = state.combat; walkOut(state)
   check(JSON.stringify(b2.raid.stairs) === stairs, "the stair cells (R.stairs) stay");
   check(JSON.stringify(b2.raid.scenes.list) === sceneText, "the same scenes (rolled once, kept)");
   C02[id].deco.k = "papers";
-  check(c.buildings[pl.id].cells[id].deco.k === "trash", "the snapshot shares nothing with the battle (a change in play leaves it as left)");
+  const kept = c.buildings[pl.id]; // its floors packed (citycrawl.js packCells, issue #24): the ground floor floors[0]
+  check(CC.unpackCells(kept.floors ? kept.floors[0].cells : kept.cells)[id].deco.k === "trash", "the snapshot shares nothing with the battle (a change in play leaves it as left)");
   walkOut(state); finishCombat(state, b2.setup, b2.result);
 }
 {
@@ -922,7 +923,7 @@ const outAndBack = (state, p, c, pl) => { const b = state.combat; walkOut(state)
       // (combat.js boxFinds: the table's loot; the extras searchBox rolls on dice of their own are the map's alone).
       CC.enterPlace(state, p, pl.id, { map: true });
       const b = state.combat, R = b.raid, site = state.tiles[b.tileId].loc.type;
-      const reward = (R.reward ?? 1) * (R.big ? raidLootShare(b.w, b.h) : 1);
+      const reward = (R.reward ?? 1) * (R.big ? (R.natMap ? raidLootShare(R.natMap[0], R.natMap[1]) : raidLootShare(b.w, b.h)) : 1); // as searchBox: a building at real size by its plan's map (R.natMap, issue #24)
       for (let k = 0; k < REPS; k++) for (const box of R.containers.filter((x) => x.kind !== "body" && x.kind !== "ground" && !x.stash)) {
         const type = R.areas[box.area].type;
         const got = boxFinds(state, state.rng, { def: boxLoot(type, box.kind), type, rich: R.richness * Math.min(FLOOR_RICH.cap, Math.pow(FLOOR_RICH.perFloor, box.f || 0)) * (box.rich || 1), scav: 3, reward, site, gunSite: b.setup.raid.gunSite, deep: R.deep, tileId: b.tileId, bid: box.id });
