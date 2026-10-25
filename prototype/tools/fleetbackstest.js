@@ -159,5 +159,29 @@ section("6. Normal and Custom: the hub's vehicles rolled the same way");
   }
 }
 
+section("7. 🎲 Reroll back: the back alone");
+{
+  // The user's request 2026-10-25: "ADD A BUTTON TO REROLL WHAT IS IN THE BACK PER VEHICLE".
+  const same = (x, y, i) => { const a = fleetVehicle(x, i), b = fleetVehicle(y, i); return a.type === b.type && Math.abs(a.fuel - b.fuel) < 1e-9 && a.condition === b.condition && x.fleet[i].ownerId != null === (y.fleet[i].ownerId != null); };
+  for (const [tag, mk] of [["Hardcore", (fl) => HC(fl)], ["Normal", (fl) => createWorld({ seed: 7, factionCount: 5, startPeople: 4, fleet: fl })]]) {
+    const fleet = tag === "Hardcore" ? FLEET : [{}, {}];
+    const a = mk(fleet);
+    for (const i of [0, 1]) {
+      const b = mk(fleet.map((f, j) => (j === i ? { ...f, backRoll: 5150 } : f)));
+      const backOf = (st) => (tag === "Hardcore" && i === 0 ? owner(st).diceTrunk : st.fleet[i].diceTrunk);
+      check(J(backOf(b)) !== J(backOf(a)) && same(a, b, i) && J(b.fleet[1 - i].diceTrunk || owner(b).diceTrunk) === J(a.fleet[1 - i].diceTrunk || owner(a).diceTrunk), `${tag} vehicle ${i}: a new back, its kind, tank and condition kept, the other vehicle as it was`);
+    }
+  }
+  const st = HC(FLEET), ui = UI({ mode: "hardcore", fleet: cleanFleet(st.fleet.map((f) => ({ ...f, type: f.rolledType ? null : f.type })), "hardcore") }); // the screen's list: a slot a survivor
+  ui.fleet[1].type = "van"; ui.fleet[1].roll = 77;
+  check(SG_ACTIONS["fleet-reroll-back"](st, ui, { i: "1" }) === "fleet" && Number.isInteger(ui.fleet[1].backRoll) && ui.fleet[1].type === "van" && ui.fleet[1].roll === 77 && ui.fleet[1].load === null && st.fleet[1].backRoll === ui.fleet[1].backRoll, "the button: new dice for the back alone (the kind picked and the vehicle's dice kept)");
+  check(SG_ACTIONS["fleet-reroll"](st, ui, { i: "1" }) === "fleet" && ui.fleet[1].backRoll === null, "🎲 Reroll vehicle: a new vehicle, its back from its own dice again");
+  const h = newRunScreen(st, UI({ mode: "hardcore" }));
+  check((h.match(/data-action="fleet-reroll-back"/g) || []).length === 3 && /🎲 Reroll vehicle/.test(h) && /🎲 Reroll back/.test(h), "every row: 🎲 Reroll vehicle and 🎲 Reroll back");
+  ui.fleetView = { i: 2 };
+  check(/data-action="fleet-reroll-back" data-i="2"/.test(fleetViewer(st, ui)), "the Back window has it too");
+  check(SG_ACTIONS["fleet-reroll-back"](st, UI({ started: true, fleet: ui.fleet }), { i: "1" }) === false, "not once started");
+}
+
 console.log(`\n${passes} passed, ${fails} failed`);
 process.exit(fails ? 1 : 0);
