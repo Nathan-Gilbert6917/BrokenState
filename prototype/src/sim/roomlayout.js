@@ -571,7 +571,7 @@ function chairRow(L, face) {
 export const MEDICAL_STYLES = {
   /** @param {ReturnType<typeof roomLayout>} L */
   er(L) {
-    const n = clampM(Math.floor((L.c.w * L.c.h) / MED.BED_AREA), MED.BAYS);
+    const n = Math.min(L.room.bays || Infinity, clampM(Math.floor((L.c.w * L.c.h) / MED.BED_AREA), MED.BAYS)); // bays: a plan's own most (civicvariants.js: a small ER keeps room for its triage desk)
     L.wall("medcart", { prefer: "corner" });
     for (const g of bedsWithStands(L, "gurney", n, ["ivstand"])) {
       if (L.boxes() < L.target()) L.beside(g, "medcab");
@@ -738,5 +738,6 @@ MEDICAL_STYLES.breakroom = MEDICAL_STYLES.staffroom;
 // by role; null for a role with none (the room keeps buildingmaps.js FURNISH).
 /** @param {any} room @param {string | undefined} key */
 export function medicalStyle(room, key) {
+  if (room.civic) return null; // a room marked with a civic style keeps it (civiclayout.js: a prison infirmary's cells, issue #36)
   return MED_KEYS.has(key || "") ? MEDICAL_STYLES[room.role] || null : null;
 }

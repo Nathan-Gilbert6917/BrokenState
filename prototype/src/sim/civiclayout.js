@@ -16,7 +16,8 @@
 //   locker for the gun safe), evidence (evidence lockers, shelves), cells (2–6 cells along the back wall, each a bunk, a
 //   toilet and a sink behind bars with a cell door: DOOR_KINDS.cell), sallyport (one or two police cars: combat.js
 //   placeCar with a light bar, each a container), dispatch (desks, a server rack), records (filing cabinets), briefing
-//   (chairs in rows facing a lectern and the whiteboard), breakroom (a fridge, a microwave, a sink, a table and chairs).
+//   (chairs in rows facing a lectern and the whiteboard), breakroom (a fridge, a microwave, a sink, a table and chairs),
+//   kennels (a K-9 unit's: bars every other cell along the walls, issue #36).
 //   Fire station: enginebay (the fire engine: a truck of 2 × 5 cells, a container; an ambulance in the second bay or
 //   an empty one; turnout lockers along a wall, an air compressor), fdayroom (a TV, sofas facing it, armchairs, a table
 //   and chairs), fkitchen (two fridges, the stoves, a sink, a long table), fdorm (bunks, a locker by each), fgym (weight
@@ -326,6 +327,10 @@ export const CIVIC_STYLES = {
     kitchen(L, ["fridge", "sink", "microwave"]);
     tableSet(L, 4);
     L.fill(["cabinet"]);
+  },
+  kennels(L) { // a K-9 unit's kennels (issue #36): bars every other cell along the two longest walls, a pen between each two (as a vet's: roomlayout.js MEDICAL_STYLES cells)
+    for (const { side } of L.walls().slice(0, 2)) line(L, side).forEach(([x, y], i) => { if (i % 2 === 1) L.place("bars", [[x, y]], { face: OPP[side] }); });
+    L.fill(["shelf"]);
   },
   // ---------- fire station ----------
   enginebay(L) {

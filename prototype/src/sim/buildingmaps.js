@@ -55,6 +55,8 @@ import { decorate, flipDecoY, placeDecorPieces } from "./decor.js"; // rugs, clu
 import { rollWin, winMixOf, windowOpen } from "./windows.js"; // the windows' states (open, locked, fixed), a throw through an open one
 import { rollScenes, sceneRng } from "./interiorscenes.js"; // signs of survival: barricades, blood, bodies (dice of their own)
 import { BUNKER_PLANS, bunkerStyle, levelName } from "./bunkerlayout.js"; // bunkers: the plans, their rooms, their levels below ground (issue #26)
+import { variantSpec } from "./civicvariants.js"; // a dozen plans each for the hospital, infirmary, clinic, vet, church, police and fire station (issue #36)
+import { settingOf } from "./shops.js"; // a site's setting (city, suburb, town) picks among a kind's plans
 
 export const BMAP = {
   MARGIN: { front: 5, back: 4, left: 4, right: 4 }, // cells of outside around the building
@@ -554,6 +556,7 @@ function institution(rng, v, o = {}) {
   const S = (bw, bh) => ({ bw, bh });
   switch (v) {
     case "clinic": case "infirmary": {
+      if (!o.legacy && !o._classic) return variantSpec(v, rng, o, { classic: () => institution(rng, v, { ...o, _classic: true }) }); // one of a dozen plans (civicvariants.js, issue #36); #14's below is one of them
       const bw = rng.int(16, 18), bh = rng.int(11, 13) + (o.legacy ? 0 : 2); // 2 deeper since #14: the back rooms take an exam bed
       const pl = planOf(v, o), n = clampN(rng.int(1, 3), ...(pl.storeys || [1, 3])); // exam rooms and offices above (a franchise's: plan.storeys)
       // Since #14 (new saves): exam rooms either side of the waiting room and one behind, the drug cupboard, the staff
@@ -568,6 +571,7 @@ function institution(rng, v, o = {}) {
       };
     }
     case "hospital": {
+      if (!o.legacy && !o._classic) return variantSpec("hospital", rng, o, { classic: () => institution(rng, v, { ...o, _classic: true }) }); // civicvariants.js (issue #36)
       const bw = rng.int(26, 30), bh = rng.int(17, 19);
       const n = rng.int(3, 5); // reception and the pharmacy low, wards above
       if (!o.legacy) return hospital(rng, bw, bh, n, fire); // room by room since #14 (an older save: the plan below, as it was)
@@ -582,7 +586,7 @@ function institution(rng, v, o = {}) {
       };
     }
     case "police": {
-      if (!o.legacy) return policeStation(rng); // laid out for its kind (civiclayout.js); an older save as below
+      if (!o.legacy) return variantSpec("police", rng, o, { classic: () => policeStation(rng) }); // laid out for its kind (civiclayout.js), one of a dozen plans (civicvariants.js, issue #36); an older save as below
       const bw = rng.int(23, 26), bh = rng.int(14, 16);
       const main = corridorPlan([["*", { role: "office", name: "Detectives' office", boxLock: ["evidence", 0.25] }], [rng.int(5, 6), L({ name: "Front desk", type: "office" })], [4, { role: "lockerroom", type: "barracks" }], ["*", { role: "office", name: "Chief's office", gunSafe: ["gunsafe2", 0.3] }]], // locks.js: a gun safe, not a plain safe
         [[4, { role: "armory", lock: ["vault", 0.85], boxLock: ["cage", 0.5], gunSafe: ["gunsafe3", 0.3] }], [4, { role: "evidence", lock: ["door", 0.7], boxLock: ["evidence", 0.6] }], ["*", "cells"]], 5);
@@ -705,7 +709,7 @@ function institution(rng, v, o = {}) {
     }
     default: // firestation
     {
-      if (!o.legacy) return fireStation(rng);
+      if (!o.legacy) return variantSpec("firestation", rng, o, { classic: () => fireStation(rng) }); // one of a dozen plans (civicvariants.js, issue #36)
       const bw = rng.int(18, 22), bh = rng.int(12, 14);
       const living = { split: "y", parts: [["*", { role: "dayroom", entry: true }], ["*", { split: "x", parts: leaves([["*", { role: "dorm", type: "barracks" }], [4, { role: "storage", name: "Medical store", type: "nurse", lock: ["door", 0.3] }], [4, "kitchen"]]) }]] };
       const bays = [0.48, { role: "bays", name: "Engine bay", type: "motorpool", maxBoxes: 5 }];
@@ -783,7 +787,7 @@ function openfloor(rng, v) {
 }
 
 function church(rng, o = {}) {
-  if (!o.legacy) return churchPlan(rng);
+  if (!o.legacy) return variantSpec("church", rng, o, { classic: () => churchPlan(rng) }); // one of a dozen plans (civicvariants.js, issue #36)
   const bw = rng.int(13, 16), bh = rng.int(16, 19);
   return {
     bw, bh, front: { width: 2 }, ground: "town", storeys: 1, foot: "medium",
@@ -967,6 +971,7 @@ function hospital(rng, bw, bh, n, fire) {
 // "crate@vet") in place of the ground floor's restroom, the kennels pens of bars (sometimes locked: dead pets shut in,
 // deadbeasts.js).
 function vet(rng, o = {}) {
+  if (!o.legacy && !o._classic) return variantSpec("vet", rng, o, { classic: () => vet(rng, { ...o, _classic: true }) }); // one of a dozen plans (civicvariants.js, issue #36); the one below is one of them
   const plan = planOf("vet", o);
   const bw = rng.int(15, 18) + (plan.wide ? 3 : 0) + (o.legacy ? 0 : 3), bh = rng.int(11, 13) + (o.legacy ? 0 : 2);
   const n = plan.storeys ? rng.int(plan.storeys[0], plan.storeys[1]) : 1;
@@ -1094,10 +1099,10 @@ export const STOREYS_BY_TYPE = {
   house: [2, 2], farmhouse: [2, 2], cabin: [1, 1], lodge: [2, 2], ranger: [1, 1],
   grocery: [1, 2], corner: [1, 2], pharmacy: [1, 1], gunstore: [1, 1], pawnshop: [1, 1], hardware: [1, 1], feedstore: [1, 1], diner: [1, 1], gasstation: [1, 1], truckstop: [1, 1],
   supermarket: [1, 2], deptstore: [1, 2],
-  clinic: [1, 3], infirmary: [1, 3], hospital: [3, 5], police: [2, 3], school: [2, 3], offices: [3, 8], lab: [1, 3], barracks: [2, 2], armorybldg: [1, 1],
-  cellblock: [1, 1], messhall: [2, 2], control: [1, 3], radio: [1, 1], terminal: [1, 3], firestation: [2, 2],
+  clinic: [1, 3], infirmary: [1, 3], hospital: [1, 7], police: [1, 5], school: [2, 3], offices: [3, 8], lab: [1, 3], barracks: [2, 2], armorybldg: [1, 1],
+  cellblock: [1, 1], messhall: [2, 2], control: [1, 3], radio: [1, 1], terminal: [1, 3], firestation: [1, 3],
   warehouse: [1, 1], factory: [1, 1], hangar: [1, 1], motorpool: [1, 1], autoshop: [1, 1], garage: [1, 1], workshop: [1, 1], machineshed: [1, 1], barn: [1, 1],
-  church: [1, 1], motel: [2, 2], apartments: [3, 6], neighbourhood: [2, 2],
+  church: [1, 2], motel: [2, 2], apartments: [3, 6], neighbourhood: [2, 2],
   // the shops and services of data-shops.js (a franchise's plan can add a flat above or more floors)
   sportshop: [1, 2], electronics: [1, 2], radioshop: [1, 2], bookstore: [1, 2], petstore: [1, 2], garden: [1, 2], clothing: [1, 2], liquor: [1, 2],
   restaurant: [1, 2], bar: [1, 2], dealer: [1, 2], bank: [1, 3], library: [1, 3], vet: [1, 2], pizza: [1, 1],
@@ -1210,16 +1215,24 @@ export function buildingHint(key) {
 // The map for a raid on a building: the site's own layout (its dice from the world seed, the tile and the building).
 // option.storeyBonus: extra storeys (the city crawl's deeper blocks, offices and apartments).
 const specSeed = (state, tileId, option) => Math.floor(hash01(state.seed, "bmap", tileId, option.id) * 4294967296);
-const makeSpec = (rng, option, legacy = false) => BUILDINGS[option.key].make(rng, { storeyBonus: option.storeyBonus || 0, variant: option.variant || null, kind: option.kind || null, legacy }); // variant, kind: the place's franchise and kind (data-shops.js plans); legacy: an older save's plan (worldcfg.js legacyRooms: an apartment's flats one room each)
+const makeSpec = (rng, option, legacy = false, where = null) => BUILDINGS[option.key].make(rng, { storeyBonus: option.storeyBonus || 0, variant: option.variant || null, kind: option.kind || null, legacy, ...(where || {}), ...(option.layout ? { layout: option.layout } : {}) }); // option.layout: a place that pins one of its kind's plans (civicvariants.js: #25's airport crash station, #28's health centre, #31's county jail)
+// Where a building stands, for the kinds with a dozen plans (civicvariants.js pickVariant, issue #36): the setting (city,
+// suburb or town by shops.js settingOf; a town's own tile a town; else rural) and the site's type (a prison's infirmary).
+export function siteWhere(state, tileId) {
+  const t = state && state.tiles ? state.tiles[tileId] : null;
+  if (!t) return null;
+  const setting = settingOf(state, t) || (t.loc && (t.loc.type === "town" || t.loc.type === "city") ? t.loc.type : "rural");
+  return { setting, site: t.loc ? t.loc.type : null };
+} // variant, kind: the place's franchise and kind (data-shops.js plans); legacy: an older save's plan (worldcfg.js legacyRooms: an apartment's flats one room each)
 // The archetype's spec for a building at a site (its storeys and footprint) without building the map: the same dice
 // buildingMap rolls, so the block card can say how many storeys a place has.
 export function buildingSpec(state, tileId, option) {
-  return makeSpec(new Rng(specSeed(state, tileId, option)), option, legacyRooms(state));
+  return makeSpec(new Rng(specSeed(state, tileId, option)), option, legacyRooms(state), siteWhere(state, tileId));
 }
 export function buildingMap(state, tileId, option, withVehicle) {
   if (BUILDINGS[option.key] && BUILDINGS[option.key].street) { const m = streetMap(state, tileId, option, withVehicle); rollScenes(m, sceneRng(state, tileId, option), option.key); return m; } // a street of houses (the neighbourhood); its scenes (interiorscenes.js) through the houses
   const rng = new Rng(specSeed(state, tileId, option));
-  const spec = makeSpec(rng, option, legacyRooms(state));
+  const spec = makeSpec(rng, option, legacyRooms(state), siteWhere(state, tileId));
   // battlesize.js: at least the site's raid map (more outside around a single-building site's plan, a city's or a
   // town's building the run's largest), the new ground topped up with cover. The floor plan itself is the archetype's.
   const tile = state.tiles[tileId], sb = siteBuildings(tile);
@@ -2288,6 +2301,7 @@ export function assemble(rng, spec, opts = {}) {
   }
   const plan = {
     key: opts.key, id: opts.id || opts.key, name: opts.name, w: W, h: H, building: { x0: bx0, y0: by0, w: bw, h: bh }, tall, storeys, stairs: stairCells.map((s) => s.slice()), runs: runs.map((r) => ({ ...r })),
+    ...(spec.variant ? { variant: { ...spec.variant } } : {}), // the plan's name (civicvariants.js, issue #36)
     rooms: areas.filter((a) => !a.outdoor).map((a) => ({ id: a.id, f: a.f, name: a.name, role: a.role, type: a.type, x0: a.x0, y0: a.y0, w: a.w, h: a.h, locked: a.locked, up: a.up, hub: a.hub, entry: a.entry, ...(a.civic ? { civic: a.civic } : {}), ...(a.bunker ? { bunker: a.bunker } : {}) })), // civic, bunker: wanderers.js interiorOccupants' rooms by kind
     front: { x: front.x, y: front.y },
     exits: exits.map((e) => ({ side: e.side, name: e.name, x: e.x, y: e.y, cells: e.cells, locked: e.locked, roller: e.roller, zone: e.zone })),
@@ -2847,7 +2861,8 @@ export function interiorIntro(b) {
   const lockedEx = (R.plan.exits || []).filter((e) => e.locked).length;
   const names = ["the front", ...ex.map((e) => e.name.toLowerCase())];
   const st = R.storeys > 1 ? ` ${R.storeys} storeys: ${stairsText(R)}; the ways out are on the ground floor.` : "";
-  return `Ways out: ${names.join(", ")}${lockedEx ? ` (${lockedEx} locked)` : ""}.${st} Rooms, walls and closed doors block sight (a glass or a screen door is seen through): peek through a door (K) before you go in, shut doors behind you (Shift+E): the dead have to batter them down. Windows: check one from next to it (free), open it if it is unlocked (or from inside if it is locked: 1 action, quiet), then climb or vault through; a fixed one only breaks (loud).`;
+  const vn = R.plan.variant ? `${R.plan.variant.name}. ` : ""; // the plan's name (civicvariants.js)
+  return `${vn}Ways out: ${names.join(", ")}${lockedEx ? ` (${lockedEx} locked)` : ""}.${st} Rooms, walls and closed doors block sight (a glass or a screen door is seen through): peek through a door (K) before you go in, shut doors behind you (Shift+E): the dead have to batter them down. Windows: check one from next to it (free), open it if it is unlocked (or from inside if it is locked: 1 action, quiet), then climb or vault through; a fixed one only breaks (loud).`;
 }
 // A street of houses (streetMap): the houses, the ways out, and the houses your side has been into before (the
 // containers the POI's ledger brought back as you left them: poicont.js poiRaidStart marks them mine).
