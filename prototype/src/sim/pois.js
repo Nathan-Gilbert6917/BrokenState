@@ -56,7 +56,7 @@ import { isPublicSite, siteKnown, nearRoad } from "./discovery.js";
 import { localId } from "./world.js";
 import { zombieToughness } from "./hives.js"; // hive land: the dead are more and tougher there (the threat's hive bonus)
 import { campsiteExtra, campDanger, noteCampSeen } from "./campsite.js"; // call-time only: the extra campsite a tile may hold, its state in the threat, a look at it
-import { shopExtras, franchiseFor, franchisesOf, franchiseName, settingOf } from "./shops.js"; // call-time only: the shops a suburb or city block may hold, a place's franchise
+import { shopExtras, franchiseFor, franchisesOf, franchiseName, settingOf, noFirm } from "./shops.js"; // call-time only: the shops a suburb or city block may hold, a place's franchise
 import { hotelExtra } from "./hotels.js"; // call-time only: a hotel a tile may hold (issue #29)
 
 export const POI = {
@@ -129,7 +129,7 @@ export function inKnownZone(state, tile) {
 function makePoi(state, t, kind, site, slot, before = []) {
   const def = LOCATIONS[kind];
   const pool = site ? null : def.richness * (t.terrain === "city" ? POI.URBAN_RICH : 1) * (POI.POOL[0] + (POI.POOL[1] - POI.POOL[0]) * hash01(state.seed, "poipool", t.id, slot));
-  let v = franchiseFor(kind, settingOf(state, t), hash01(state.seed, "poifr", t.id, slot)); // shops.js: the franchise (a kind with none: null)
+  let v = noFirm(state, kind) ? null : franchiseFor(kind, settingOf(state, t), hash01(state.seed, "poifr", t.id, slot)); // shops.js: the franchise (a kind with none: null; an office tower in a save from before its firms: none)
   if (v) { // the same chain twice on a tile (a second corner store): the next franchise of the kind not on it yet, in the list's order
     const onTile = new Set(before.filter((p) => p.kind === kind && p.v).map((p) => p.v));
     if (onTile.has(v)) { const ids = franchisesOf(kind).map((f) => f.id), at = ids.indexOf(v); v = ids.map((_, i) => ids[(at + 1 + i) % ids.length]).find((id) => !onTile.has(id)) || v; }
@@ -180,10 +180,44 @@ export function generatePois(state, t) {
   if (camp) out.push(camp);
   // shops.js: up to two shops or services on a suburb or a city block, on their own dice after everything above.
   out.push(...shopExtras(state, t, out, inKnownZone(state, t), POI.MAX));
+  // Bunkers (issue #26): now and then one, on their own dice after everything above (bunkerExtra).
+  const bunker = bunkerExtra(state, t, out, inKnownZone(state, t));
+  if (bunker) out.push(bunker);
   // hotels.js: now and then a hotel (a town's inn, a city's tower, a resort in scenic land), on its own dice after all.
   const hotel = hotelExtra(state, t, out, inKnownZone(state, t));
   if (hotel) out.push(hotel);
   return out;
+}
+
+// ---------- bunkers (issue #26, bunkerlayout.js) ----------
+// The chance a tile holds one, by kind and terrain (tried in this order, the first that rolls is the tile's one bunker):
+// the military command bunker in the hills and mountains, NEAR × as often within NEAR_HEX hexes of a military site
+// (state.militaryIds); the government bunker under a mountain or a city block; a public fallout shelter in a suburb (a
+// town's ring) or a city block; a prepper's bunker in the countryside. Hash dice of the seed and the tile (never the
+// world's dice: every map is as it was; an older save's lists gain the bunker at their end, as the shops did). A
+// shelter is found like a roadside place (known in the known zone SHELTER_KNOWN of the time); the rest are secret
+// (hidden until a survey finds them). At most POI.MAX on a tile, as always.
+export const BUNKER_POI = {
+  bunker: { hills: 0.0005, mountain: 0.0008 }, NEAR: 20, NEAR_HEX: 8,
+  govbunker: { mountain: 0.0006, city: 0.002 },
+  shelter: { suburb: 0.05, city: 0.04 },
+  prepper: { plains: 0.006, forest: 0.01, hills: 0.012, mountain: 0.008 },
+  SHELTER_KNOWN: 0.5, POOL: [0.8, 1.1],
+};
+/** @param {State} state @param {Tile} t @param {any[]} list @param {boolean} knownZone */
+export function bunkerExtra(state, t, list, knownZone) {
+  if (!t || list.length >= POI.MAX || t.terrain === "water") return null;
+  const near = () => { const g = /** @type {any} */ (state).grid, ids = /** @type {any} */ (state).militaryIds || []; return !!(g && g.distance && ids.some((m) => g.distance(t.id, m) <= BUNKER_POI.NEAR_HEX)); };
+  for (const kind of ["bunker", "govbunker", "shelter", "prepper"]) {
+    let p = /** @type {Record<string, number>} */ (BUNKER_POI[kind])[t.terrain] || 0;
+    if (!p || list.some((q) => q.kind === kind) || (t.loc && LOCATIONS[t.loc.type] && LOCATIONS[kind].richness > LOCATIONS[t.loc.type].richness)) continue; // an extra never out-ranks the site
+    if (kind === "bunker" && near()) p *= BUNKER_POI.NEAR;
+    if (hash01(state.seed, "bunkerpoi", t.id, kind) >= p) continue;
+    const spread = BUNKER_POI.POOL[0] + (BUNKER_POI.POOL[1] - BUNKER_POI.POOL[0]) * hash01(state.seed, "bunkerpool", t.id);
+    const hidden = !(kind === "shelter" && knownZone && hash01(state.seed, "bunkerknown", t.id) < BUNKER_POI.SHELTER_KNOWN);
+    return { kind, hidden, pool: Math.min(1, LOCATIONS[kind].richness * spread), visits: 0, lastDay: null, cont: null, threatStamp: null, stripped: false, extra: "bunker" };
+  }
+  return null;
 }
 
 // Every tile has its list (a world made before POIs existed gets them on load, save.js), and the hub's record. A

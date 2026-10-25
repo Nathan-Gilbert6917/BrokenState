@@ -321,8 +321,8 @@ function holeUpRaiders(state, b, n, up) {
       for (const r of roomsOn(b, f)) if (!r.locked && !r.hub && !r.entry && area(r) >= 6 && !roomUsed(b, r) && !stairsIn(b, r) && freeCells(b, r).length >= raiders.length + 1) cand.push(r);
     }
     // The biggest room on the lowest upper floor: they want the stairs near. A police station's squad room first
-    // (civiclayout.js: the room's style, the new saves' plans).
-    const squad = (r) => (r.civic === "squad" || r.shop === "penthouse" ? 1 : 0); // a hotel's penthouse (#29) as a police station's squad room
+    // (civiclayout.js, militarylayout.js: the room's style, the new saves' plans; a hotel's penthouse, #29, by its style).
+    const squad = (r) => (r.civic === "squad" || r.civic === "ops" || r.civic === "pcontrol" || r.shop === "penthouse" ? 1 : 0); // issue #25: an HQ's ops room, a prison's control room
     cand.sort((a, c) => squad(c) - squad(a) || (a.f || 0) - (c.f || 0) || area(c) - area(a));
     room = cand[0] || null;
   }

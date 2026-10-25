@@ -154,14 +154,13 @@ export const FURNITURE_KINDS = {
   // ---------- hotels (issue #29: hotellayout.js lays them) ----------
   // The reception desk (its drawers searched; the key rack stands behind it), a guest's suitcase (a luggage room's or a
   // room's: clothes, toiletries, a phone, now and then a pistol or meds: combat.js BOX_LOOT), a room's minibar (snacks,
-  // drinks, little bottles), the luggage cart, the ballroom's round banquet tables, the lift doors on a lift lobby's wall
-  // (the shaft behind them: no way through), the lobby's lounge chairs, the pool deck's loungers and a tennis court's net.
+  // drinks, little bottles), the luggage cart, the ballroom's round banquet tables (the lift lobby's lift doors are
+  // #27's liftdoor below), the lobby's lounge chairs, the pool deck's loungers and a tennis court's net.
   frontdesk:   P("Reception desk",    HALF, 35, 80, "two", S21, true, ["office"], "storage:40"),
   suitcase:    P("Suitcase",          HALF, 8, 12, "one", S1, true, ["bedroom", "office"], "storage:30"),
   minifridge:  P("Mini fridge",       HALF, 15, 20, "one", S1, true, ["bedroom", "office"], "storage:15", true),
   luggagecart: P("Luggage cart",      HALF, 15, 25, "one", S1, false, ["office", "bedroom"], "storage:60"),
   banquet:     P("Banquet table",     HALF, 20, 30, "one", S1, false, ["dining"], "work:table"),
-  liftdoor:    P("Lift doors",        C(false, 2, true), 80, 400, "fixed", S1, false, ["office"], "none", true),
   loungechair: P("Lounge chair",      HALF, 15, 25, "one", S1, false, ["living", "office"], "comfort:0.5"),
   lounger:     P("Pool lounger",      HALF, 8, 12, "one", S1, false, ["yard"], "comfort:0.3"),
   tennisnet:   P("Tennis net",        POLE, 5, 15, "fixed", S1, false, ["yard"], "none"),
@@ -207,6 +206,71 @@ export const FURNITURE_KINDS = {
   compressor:  P("Air compressor",    HALF, 30, 45, "two", S1, false, ["bay"], "none", true),
   cot:         P("Cot",               HALF, 8, 7, "one", S12, false, ["school", "church", "ward"], "bed:cot"),
   candles:     P("Candlesticks",      POLE, 5, 6, "one", S1, true, ["church"], "comfort:0.1"),
+  // ---------- bunkers (issue #26: bunkerlayout.js lays them) ----------
+  // The fixed fittings: the steel frame round a blast door, the air filtration plant, the water and fuel tanks, a
+  // decontamination shower, the escape shaft's ladder and the vent stack up on the hillside. The hazmat suit rack and the
+  // ration shelf hold loot (the suits, the MREs and tins), so by the rule above (nothing lootable is fixed) they lift as
+  // two-person pieces. Liftable: a hand-cranked air filter, a wall of screens, a map table, a radio console, a footlocker
+  // (named to be reused: a barracks' bunks, issue #25), a solar battery rack, and the generator (data-power.js's own
+  // Military tactical generator item: FURNITURE_ITEM_KEY, set at a base like any found set).
+  blastframe:   P("Blast door frame",       STEEL, 120, 600, "fixed", S1, false, ["bunker"], "none"),
+  airfilter:    P("Air filtration unit",    FULL, 60, 250, "fixed", S21, false, ["bunker"], "none", true),
+  watertank:    P("Water tank",             FULL, 60, 300, "fixed", S1, false, ["bunker", "cellar"], "none"),
+  fueltank:     P("Fuel tank",              FULL, 70, 400, "fixed", S21, false, ["bunker", "bay"], "none", true),
+  deconshower:  P("Decontamination shower", FULL, 30, 60, "fixed", S1, false, ["bunker"], "none", true),
+  escapeladder: P("Escape ladder",          POLE, 40, 60, "fixed", S1, false, ["bunker"], "none", true),
+  ventstack:    P("Vent stack",             STEEL, 80, 300, "fixed", S1, false, ["bunker", "yard"], "none"),
+  hazmatrack:   P("Hazmat suit rack",       HALF, 20, 40, "two", S1, true, ["bunker"], "storage:30", true),
+  rationshelf:  P("Ration shelf",           FULL, 35, 50, "two", S1, true, ["bunker", "cellar"], "storage:150", true),
+  handfilter:   P("Hand-cranked air filter", HALF, 20, 28, "one", S1, false, ["bunker"], "none", true),
+  screens:      P("Wall of screens",        FULL, 30, 60, "two", S21, false, ["bunker", "office"], "none", true),
+  maptable:     P("Map table",              HALF, 30, 70, "two", S21, false, ["bunker", "office"], "work:table"),
+  radioconsole: P("Radio console",          HALF, 30, 45, "two", S21, true, ["bunker", "office"], "storage:10", true),
+  footlocker:   P("Footlocker",             HALF, 20, 18, "one", S1, true, ["bunker", "bedroom", "cells"], "storage:40"),
+  batteries:    P("Solar battery rack",     HALF, 30, 80, "two", S1, false, ["bunker", "cellar"], "none", true),
+  genset:       P("Military generator",     STEEL, 80, 140, "two", S22, false, ["bunker", "bay"], "none"),
+  // ---------- military bases, air bases, airports and prisons laid out like the real thing (issue #25: militarylayout.js) ----------
+  // A suitcase in an airport's baggage hall, an ammo crate (rounds and grenades), a fuel bladder (fuel) and an inmate's
+  // property locker (what was taken off them at intake) hold their own tables (combat.js BOX_LOOT). The barrier gate, the
+  // guard booth, the jet engine stand, the baggage belt, the security scanner and the gate seating are furniture only.
+  // The footlocker at a bunk's foot, the map table and the radio console are #26's rows (above). The field cot is #15's
+  // cot, the vehicle lift #16's car lift and the sandbag wall the sandbag cell; the aircraft and helicopter wrecks are
+  // vehicles (combat.js placeCar with a body: ui/vehiclemodel.js jet, cargoplane, helo), each one container.
+  ammocrate:    P("Ammo crate",        HALF, 25, 28, "one", S1, true, ["armory", "bay"], "storage:40"),
+  barrier:      P("Barrier gate",      HALF, 30, 80, "fixed", S1, false, ["yard"], "none"),
+  guardbooth:   P("Guard booth",       FULL, 60, 300, "fixed", S1, false, ["yard"], "none"),
+  fuelbladder:  P("Fuel bladder",      HALF, 30, 90, "two", S22, true, ["yard", "bay"], "storage:200"),
+  enginestand:  P("Jet engine stand",  STEEL, 60, 900, "fixed", S21, false, ["bay"], "none"),
+  baggagebelt:  P("Baggage belt",      HALF, 40, 200, "fixed", S1, false, ["shop"], "none"),
+  scanner:      P("Security scanner",  C(false, 1, false), 50, 300, "fixed", S21, false, ["shop"], "none"),
+  gateseat:     P("Gate seating",      HALF, 20, 40, "two", S21, false, ["shop", "office"], "comfort:0.3"),
+  intakelocker: P("Property locker",   FULL, 40, 45, "two", S1, true, ["cells"], "storage:40", true),
+  luggage:      P("Luggage",           HALF, 10, 16, "one", S1, true, ["shop", "yard"], "storage:30"), // an airport's baggage hall and its belts: suitcases, a container each
+  // ---------- the office buildings of every kind (issue #27: officelayout.js lays them) ----------
+  // A dentist's chair; the tower lobby's turnstiles and lift doors (fixed: the doors are decor on a shaft that is not
+  // there); a courtroom's bench, jury box and witness stand, city hall's dais, a podium; a call center's headset desk; a
+  // tech office's beanbags and phone booths; a TV studio's camera on its tripod, its lights and the news desk; a mail
+  // room's sorter, a plotter; the courthouse's walk-through scanner (its X-ray tunnel is #25's security scanner,
+  // above); an executive's liquor cabinet. The headset desk, the news desk, the sorter and the liquor cabinet hold their
+  // own tables (combat.js BOX_LOOT, data-offices.js OFFICE_BOX).
+  dentalchair:  P("Dental chair",         HALF, 30, 120, "two", S12, false, ["ward", "office"], "comfort:0.3"),
+  turnstile:    P("Turnstile",            C(false, 1, false), 40, 150, "fixed", S1, false, ["office"], "none"),
+  liftdoor:     P("Lift doors",           FULL, 80, 300, "fixed", S1, false, ["office"], "none", true),
+  judgebench:   P("Judge's bench",        STEEL, 60, 400, "fixed", S21, false, ["office"], "none"),
+  jurybox:      P("Jury box",             HALF, 50, 300, "fixed", S21, false, ["office"], "none"),
+  witnessstand: P("Witness stand",        HALF, 40, 150, "fixed", S1, false, ["office"], "none"),
+  dais:         P("Council dais",         HALF, 50, 300, "fixed", S21, false, ["office"], "none"),
+  podium:       P("Podium",               HALF, 15, 35, "two", S1, false, ["office", "school", "church"], "none"),
+  headsetdesk:  P("Headset desk",         HALF, 15, 25, "one", S1, true, ["office"], "work:desk"),
+  beanbag:      P("Beanbag",              HALF, 8, 5, "one", S1, false, ["living", "office"], "comfort:0.4"),
+  camera:       P("TV camera",            POLE, 15, 25, "one", S1, false, ["office"], "none"),
+  studiolight:  P("Studio light",         POLE, 5, 8, "one", S1, false, ["office"], "comfort:0.1"),
+  newsdesk:     P("News desk",            HALF, 35, 90, "two", S21, true, ["office"], "work:desk"),
+  sorter:       P("Mail sorter",          HALF, 30, 50, "two", S1, true, ["office"], "storage:40", true),
+  plotter:      P("Plotter",              HALF, 30, 90, "two", S21, false, ["office"], "none", true),
+  screener:     P("Walk-through scanner", POLE, 30, 120, "fixed", S1, false, ["office"], "none"),
+  liquorcab:    P("Liquor cabinet",       HALF, 25, 30, "one", S1, true, ["office", "living", "bar"], "storage:30", true),
+  phonebooth:   P("Phone booth",          C(false, 1, false), 30, 200, "fixed", S1, false, ["office"], "none", true),
   // ---------- lootable decor (issue #13: decor.js places them; light comfort pieces for the base) ----------
   // The plant and the floor lamp stand on a room's floor cell; the painting and the wall clock hang on a wall (decor.js:
   // c.wart = { k, d, piece: true } on the wall cell, the wall's own kind unchanged) and stand on a cell only once set down.
@@ -245,9 +309,9 @@ export const pieceDef = (k) => FURNITURE_KINDS[k] || null;
 // keyed f_<kind>, in both arms only (bulky, twoHands, the In arms slot, a cart or a vehicle, as data-beds.js BED_GEAR),
 // furniture: its cell kind (set down again as that cell), weight its kg. The fridge keeps its own item, data-power.js
 // POWER_GEAR.fridge (key "fridge"), so it has no f_fridge; the cot is data-beds.js's BED_GEAR.cot (a base's camp bed),
-// so it has no f_cot. Merged into GEAR by data.js (marked piece: kept out of the starting kits and trunks, whose dice
+// so it has no f_cot; a bunker's generator is data-power.js's genset_military, so it has no f_genset. Merged into GEAR by data.js (marked piece: kept out of the starting kits and trunks, whose dice
 // would change). itemKey(k): the item key for a cell kind (null when fixed).
-export const FURNITURE_ITEM_KEY = { fridge: "fridge", cot: "cot" };
+export const FURNITURE_ITEM_KEY = { fridge: "fridge", cot: "cot", genset: "genset_military" }; // a bunker's generator is the found Military tactical generator (data-power.js GENSETS, issue #26)
 export const itemKey = (k) => (!FURNITURE_KINDS[k] || FURNITURE_KINDS[k].carry === "fixed" ? null : FURNITURE_ITEM_KEY[k] || `f_${k}`);
 /** @type {Record<string, { name: string, slot: string, skill: null, power: number, req: number, value: number, noise: number, weight: number, cat: string, bulky: boolean, twoHands: boolean, furniture: string, desc: string }>} */
 export const FURNITURE_GEAR = {};
