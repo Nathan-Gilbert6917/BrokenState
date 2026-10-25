@@ -288,11 +288,11 @@ export const FRANCHISES = {
     { id: "sals", name: "Sal's Italian Kitchen", w: G(0.8, 0.8, 0.6), look: L("#d9c9a8", "#3f6b3a", "#c8402f", "#ffffff", "#3f6b3a", 1), plan: { room: "Dining room", fl: "wood", depth: 0.62, back: "sitdown", flat: 0.4 } },
   ],
   bank: [
-    { id: "firstcalder", name: "First Calder Bank", w: G(1, 0.8, 0.6), look: L("#d9d4c8", "#7d786c", "#1f3550", "#e8e4d8", "#d9a520", 1), plan: { storeys: [1, 3], wide: true, variants: ["marble", "corner", "drivethru", "headquarters"] } },
-    { id: "mercantile", name: "Mercantile Trust", w: G(1, 0.5, 0.1), look: L("#c9c2b0", "#5d6168", "#2a2a2e", "#d9a520", "#d9a520", 3), plan: { storeys: [2, 3], wide: true, variants: ["tower", "grand", "headquarters", "trust"] } },
+    { id: "firstcalder", name: "First Calder Bank", w: G(1, 0.8, 0.6), look: L("#d9d4c8", "#7d786c", "#1f3550", "#e8e4d8", "#d9a520", 1), plan: { storeys: [1, 3], wide: true, variants: ["marble", "corner", "drivethru", "headquarters", "trust"] } },
+    { id: "mercantile", name: "Mercantile Trust", w: G(1, 0.5, 0.1), look: L("#c9c2b0", "#5d6168", "#2a2a2e", "#d9a520", "#d9a520", 3), plan: { storeys: [2, 3], wide: true, variants: ["tower", "grand", "headquarters", "marble"] } },
     { id: "farmersmerch", name: "Farmers & Merchants Bank", w: G(0.1, 0.5, 1), look: L("#8e4f3c", "#d9d0b8", "#3f6b3a", "#e8e4d8", "#d9d0b8", 0), plan: { storeys: [1, 2], variants: ["farmers", "smalltown", "grand"] } },
     { id: "libertysl", name: "Liberty Savings & Loan", w: G(0.3, 0.8, 1), look: L("#e8e4d8", "#3a5f8e", "#c8402f", "#ffffff", "#3a5f8e", 2), plan: { storeys: [1, 1], variants: ["savings", "drivethru", "driveup"] } },
-    { id: "granite", name: "Granite National Bank", w: G(1, 0.6, 0.2), look: L("#8a8780", "#4d4741", "#e8e4d8", "#2a2a2e", "#c9ced3", 3), plan: { storeys: [2, 3], variants: ["marble", "trust", "tower"] } },
+    { id: "granite", name: "Granite National Bank", w: G(1, 0.6, 0.2), look: L("#8a8780", "#4d4741", "#e8e4d8", "#2a2a2e", "#c9ced3", 3), plan: { storeys: [2, 3], variants: ["marble", "tower", "grand"] } },
     { id: "unioncu", name: "Union Credit Union", w: G(0.6, 1, 0.6), look: L("#b9a98a", "#5d6168", "#2aa0a0", "#ffffff", "#e8c04a", 2), plan: { storeys: [1, 1], variants: ["creditunion", "driveup", "savings", "corner"] } },
   ],
   bar: [
@@ -314,8 +314,8 @@ export const FRANCHISES = {
   ],
   // ---------- the old kinds, as franchises (their own painters take the look, buildingmaps.js the plan) ----------
   grocery: [
-    { id: "freshway", name: "FreshWay Market", w: G(1, 1, 0.5), look: L("#e8e4d8", "#3f6b3a", "#3f6b3a", "#ffffff", "#e8c04a", 3), plan: { depth: 0.68, wide: true, variants: ["dock", "corridor", "twostorey", "pharmacy"] } },
-    { id: "valuebasket", name: "Value Basket", w: G(0.8, 1, 0.8), look: L("#d9c9a8", "#c8402f", "#c8402f", "#ffffff", "#e8c04a", 1), plan: { depth: 0.62, variants: ["neighbourhood", "bakery", "international"] } },
+    { id: "freshway", name: "FreshWay Market", w: G(1, 1, 0.5), look: L("#e8e4d8", "#3f6b3a", "#3f6b3a", "#ffffff", "#e8c04a", 3), plan: { depth: 0.68, wide: true, variants: ["dock", "corridor", "pharmacy"] } },
+    { id: "valuebasket", name: "Value Basket", w: G(0.8, 1, 0.8), look: L("#d9c9a8", "#c8402f", "#c8402f", "#ffffff", "#e8c04a", 1), plan: { depth: 0.62, variants: ["neighbourhood", "bakery", "international", "twostorey"] } },
     { id: "hilltop", name: "Hilltop Grocers", w: G(0.3, 0.8, 1), look: L("#8e4f3c", "#4a2a20", "#2d4a3c", "#e8e4d8", "#9cc46e", 0), plan: { depth: 0.6, fl: "wood", variants: ["butcher", "florist", "country"] } },
     { id: "generalstore", name: "Mercer's General Store", w: G(0, 0.3, 1), look: L("#a2713f", "#5a3a20", "#e8e4d8", "#5a3a20", "#c8402f", 2), plan: { depth: 0.55, fl: "wood", flat: 0.6, variants: ["country", "coop", "butcher"] } },
     { id: "bodega", name: "Corner Bodega", w: G(1, 0.4, 0), look: L("#e8a020", "#8a4b32", "#2a2a2a", "#e8c04a", "#c8402f", 0), plan: { depth: 0.6, flat: 0.8, variants: ["international", "annex", "coop"] } },

@@ -138,7 +138,7 @@ const SHOP12 = (n, sigS = [3, 4]) => [
   { id: "wrap", name: n.wrap, w: W(0.5, 0.8, 0.5, 0.5, 0.5), size: "M", lay: "wrap", sideW: 4, side: [[3, "office"], ["*", "wc"]], back: [[sigS, "sig"], ["*", "stock"]], ex: ["back"] },
   { id: "counter", name: n.counter, w: W(0.6, 0.8, 0.6, 0.3, 0.3), size: "M", lay: "deep", depth: 0.5, midD: [3, 4], mid: [["*", "sig2"], [sigS, "sig"]], back: [["*", "stock"], [3, "office"]], ex: ["back"] },
   { id: "twin", name: n.twin, w: W(0.3, 0.7, 1, 0.3, 0.6), size: "L", lay: "strip", front: [[0.6, S], ["*", "extra"]], back: [["*", "stock"], [sigS, "sig"], [3, "mgr"], [2, "wc"]], ex: ["front2", "back"], fw: 2 },
-  { id: "roadside", name: n.roadside, w: W(1, 0.6, 0, 1, 0), size: "M", lay: "side", sideW: [5, 6], side: [["*", "stock"], [sigS, "sig"]], ex: ["side", "back"], st: [1, 2], up: "flat", ground: "rural" },
+  { id: "roadside", name: n.roadside, w: W(1, 0.6, 0, 1, 0), size: "L", lay: "side", sideW: [5, 6], side: [["*", "stock"], [sigS, "sig"]], ex: ["side", "back"], st: [1, 2], up: "flat", ground: "rural" },
   { id: "flagship", name: n.flagship, w: W(0, 0.3, 1, 0.2, 0.3), size: "XL", lay: "corridor", front: [[0.3, "extra"], ["*", S]], back: [["*", "stock"], [[4, 5], "sig"], [4, "sig2"], [4, "office"], [2, "wc"]], ex: ["front2", "back", "dock"], st: 2, up: "offices", fw: 2 },
 ];
 
@@ -154,7 +154,7 @@ export const VARIANT_TYPES = {
       photo: { role: "office", name: "Photo counter", type: "store" },
       fountain: { role: "dining", name: "Soda fountain", type: "store", lay: "diner", hub: false },
       compound: { role: "dispensary", name: "Compounding lab", type: "pharmacy", lock: ["door", 0.5], boxLock: ["drugs", 0.4] },
-      consult: { role: "exam", name: "Consultation room", type: "pharmacy", maxBoxes: 1 },
+      consult: { role: "office", name: "Consultation room", type: "pharmacy", maxBoxes: 1 },
       waiting: { role: "lobby", name: "Waiting area", type: "office", hub: true, maxBoxes: 1 },
       vaccine: { role: "pantry", name: "Vaccine fridge room", type: "pharmacy", cold: true, dk: "steel", windows: false, fl: "steel", maxBoxes: 1 },
       recv: { role: "warefloor", name: "Receiving", type: "pharmacy", hub: false, maxBoxes: 4 },
@@ -175,7 +175,7 @@ export const VARIANT_TYPES = {
       feed: { role: "storage", name: "Feed and seed", type: "barn" },
       bait: { role: "storage", name: "Bait room", type: "sportshop" },
       attend: { role: "office", name: "Attendant's office" },
-      showers: { role: "lockerroom", name: "Showers", type: "lockers" },
+      showers: { role: "restroom", name: "Showers" },
       cooler: { role: "pantry", name: "Walk-in cooler", type: "kitchen", cold: true, dk: "steel", windows: false, fl: "steel", maxBoxes: 1 },
       parts: { role: "parts", name: "Parts room" },
     },
@@ -188,7 +188,7 @@ export const VARIANT_TYPES = {
       kit: { role: "kitchen", fry: true },
       tstock: { role: "stock", name: "Storeroom" },
       toff: { role: "office", lock: ["door", 0.3], boxLock: ["safe", 0.3] },
-      showers: { role: "lockerroom", name: "Showers", type: "lockers" },
+      showers: { role: "restroom", name: "Showers" },
       lounge: { role: "lobby", name: "Drivers' lounge", type: "office", hub: false, maxBoxes: 1 },
       chapel: { role: "nave", name: "Chapel", hub: false, maxBoxes: 1 },
       scale: { role: "office", name: "CAT scale house" },
@@ -314,7 +314,7 @@ export const VARIANT_TYPES = {
     variants: SHOP12({ main: "Clothing store", narrow: "Boutique with a flat above", corner: "Corner clothing shop", strip: "Strip-mall clothing store", superstore: "Clothing superstore", outlet: "Factory outlet", twofloor: "Two-floor fashion store", wrap: "Clothing store with an L of back rooms", counter: "Tailor and clothier", twin: "Clothes and shoes, two shopfronts", roadside: "Western and work wear barn", flagship: "Flagship fashion store" }),
   },
   liquor: {
-    boxes: 0.75,
+    boxes: 0.55,
     base: { name: "Liquor shelves", type: "liquor", furnish: "aisles" }, depth: 0.62,
     rooms: {
       sig: { role: "pantry", name: "Walk-in beer cooler", type: "liquor", cold: true, dk: "steel", windows: false, fl: "steel", maxBoxes: 1 },
@@ -399,6 +399,7 @@ export const VARIANT_TYPES = {
     },
   },
   garage: {
+    boxes: 1.08,
     base: { role: "bays", name: "Service bays", maxBoxes: 5, hub: true, entry: false }, depth: 0.65, ground: "town", main: "bays",
     rooms: {
       off: { role: "office", entry: true, hub: true, name: "Office" },
@@ -438,6 +439,7 @@ export const VARIANT_TYPES = {
     },
   },
   grocery: {
+    boxes: 0.9,
     base: { name: "Sales floor", type: "store", lay: "grocerfloor", maxBoxes: 6 }, depthBack: 5, fw: 2,
     rooms: {
       stock: { role: "stock", maxBoxes: 2 },
@@ -461,12 +463,12 @@ VARIANT_TYPES.supermarket = { base: { name: "Sales floor", type: "store" }, room
 const V = VARIANT_TYPES;
 V.pharmacy.variants = [
   { id: "drivethru", name: "Chain drugstore with a drive-through", w: W(0.6, 1, 1, 0.8, 0.6), size: "M", lay: "side", sideW: [4, 5], side: [[3, "drive"], ["*", "disp"]], back: [["*", "pstock"], [3, "office"], [2, "wc"]], ex: ["back", "drive"] },
-  { id: "fountain", name: "Independent pharmacy with a soda fountain", w: W(0.8, 1, 0.4, 0.3, 0.2), size: "M", lay: "strip", front: [["*", S], [0.38, "fountain"]], back: [[[4, 5], "disp"], ["*", "pstock"], [3, "office"]], ex: ["back"], st: [1, 2], up: "flat" },
+  { id: "fountain", name: "Independent pharmacy with a soda fountain", w: W(0.8, 1, 0.4, 0.3, 0.2), size: "M", lay: "strip", front: [["*", S], [0.3, "fountain"]], back: [[[4, 5], "disp"], ["*", "pstock"], [3, "office"]], ex: ["back"], st: [1, 2], up: "flat" },
   { id: "compounding", name: "Compounding pharmacy", w: W(0.3, 0.6, 0.8, 0, 0.4), size: "S", lay: "deep", depth: 0.45, midD: 3, mid: [["*", "disp"], ["*", "compound"]], back: [["*", "pstock"], [2, "wc"]], ex: ["back!"] },
-  { id: "outpatient", name: "Hospital outpatient pharmacy", w: W(0, 0.3, 1, 0, 0), size: "M", lay: "corridor", front: [[0.4, "waiting"], ["*", S]], back: [["*", "disp"], [3, "vaccine"], ["*", "pstock"], [3, "office"]], ex: ["front2", "back"], fw: 2 },
+  { id: "outpatient", name: "Hospital outpatient pharmacy", w: W(0, 0.3, 1, 0, 0), size: "L", lay: "corridor", front: [[0.3, "waiting"], ["*", S]], back: [["*", "disp"], [3, "vaccine"], ["*", "pstock"], [3, "office"]], ex: ["front2", "fire"], fw: 2 },
   { id: "stripmall", name: "Strip-mall pharmacy", w: W(0.2, 0.6, 0.4, 0.4, 1), size: "S", lay: "strip", depth: 0.7, back: [[4, "disp"], ["*", "pstock"], [2, "wc"]], ex: ["back!"] },
   { id: "allnight", name: "24-hour pharmacy with a photo counter", w: W(0, 0.6, 1, 0.6, 0.5), size: "L", lay: "strip", front: [[4, "photo"], ["*", S]], back: [[5, "disp"], ["*", "pstock"], [4, "brk"], [3, "mgr"], [2, "wc"]], ex: ["back", "side"], fw: 2 },
-  { id: "country", name: "Country drugstore", w: W(1, 0.5, 0, 0.4, 0), size: "S", lay: "side", sideW: [4, 5], side: [["*", "pstock"], [4, "disp"]], ex: ["back"], st: [1, 2], up: "flat", ground: "rural" },
+  { id: "country", name: "Country drugstore", w: W(1, 0.5, 0, 0.4, 0), size: "M", lay: "side", sideW: [4, 5], side: [["*", "pstock"], [4, "disp"]], ex: ["back"], st: [1, 2], up: "flat", ground: "rural" },
   { id: "clinic", name: "Pharmacy with a walk-in clinic", w: W(0.2, 0.8, 0.8, 0.3, 0.6), size: "L", lay: "corridor", back: [[5, "disp"], [4, "consult"], [4, "consult"], ["*", "pstock"], [2, "wc"]], ex: ["back", "front2"], fw: 2 },
   { id: "apothecary", name: "Two-storey main street apothecary", w: W(0.6, 1, 0.6, 0, 0), size: "M", lay: "strip", back: [[[4, 5], "disp"], ["*", "pstock"], [3, "office"]], ex: ["back", "side"], st: 2, up: "offices" },
   { id: "discount", name: "Discount pharmacy warehouse", w: W(0, 0.4, 0.6, 0.6, 0.8), size: "XL", lay: "wrap", sideW: [5, 6], side: [[6, "disp"], ["*", "pstock"]], back: [["*", "recv"], [4, "office"], [2, "wc"]], ex: ["dock", "back", "front2"], fw: 2 },
@@ -481,10 +483,10 @@ V.gasstation.variants = [
   { id: "general", name: "Rural general store with pumps", w: W(1, 0.4, 0, 0.4, 0), size: "M", lay: "strip", back: [["*", "gstock"], [4, "feed"]], ex: ["back", "side"], st: [1, 2], up: "flat", pumps: 1, ground: "rural" },
   { id: "citycorner", name: "City corner gas station", w: W(0, 0.6, 1, 0.2, 0.4), size: "S", lay: "side", sideW: 3, side: [["*", "office"]], back: [["*", "gstock"]], ex: ["side"] },
   { id: "tyres", name: "Gas station with a tyre shop", w: W(0.4, 0.8, 0.4, 0.8, 0.4), size: "L", lay: "strip", back: [["*", "gstock"], [4, "tyrestore"], [2, "wc"]], bays: { w: [5, 6], leaf: "tyre" }, ex: ["back"], pumps: 3 },
-  { id: "bait", name: "Lakeside gas and bait", w: W(1, 0.4, 0, 0.6, 0), size: "S", lay: "strip", back: [["*", "gstock"], [3, "bait"]], ex: ["back", "side"], pumps: 1, ground: "rural" },
+  { id: "bait", name: "Lakeside gas and bait", w: W(1, 0.4, 0, 0.6, 0), size: "S", lay: "strip", depth: 0.65, back: [["*", "gstock"], [3, "bait"]], ex: ["back", "side"], pumps: 1, ground: "rural" },
   { id: "towing", name: "Two-bay garage with a towing yard", w: W(0.6, 0.6, 0.2, 0.8, 0), size: "L", lay: "strip", back: [["*", "gstock"], [3, "office"], [3, "parts"]], bays: { w: [6, 7], leaf: "bay", width: 3 }, ex: ["back!", "dock"] },
   { id: "deli", name: "Modern convenience station with a deli counter", w: W(0, 0.8, 1, 0.8, 0.8), size: "L", lay: "corridor", front: [["*", S], [0.3, "deli"]], back: [["*", "gstock"], [3, "cooler"], [3, "brk"], [2, "wc"]], ex: ["back", "front2"], pumps: 4, fw: 2 },
-  { id: "filling", name: "1950s filling station with an attendant's office", w: W(0.8, 0.6, 0.2, 0.6, 0), size: "S", lay: "side", sideW: 3, side: [["*", "attend"]], bays: { w: 4, leaf: "bay" }, ex: [] },
+  { id: "filling", name: "1950s filling station with an attendant's office", w: W(0.8, 0.6, 0.2, 0.6, 0), size: "L", lay: "side", sideW: 3, side: [["*", "attend"]], bays: { w: 4, leaf: "bay" }, ex: [] },
   { id: "fuelstop", name: "Fuel stop with a lunch counter and showers", w: W(0.4, 0.2, 0, 1, 0), size: "L", lay: "strip", front: [["*", S], [0.38, "lunch"]], back: [["*", "gstock"], [4, "showers"], [2, "wc"]], ex: ["back", "side"], pumps: 3 },
 ];
 V.truckstop.variants = [
@@ -574,7 +576,7 @@ V.corner.variants = [
   { id: "sidestock", name: "Corner market with its stock on the side", w: W(0.4, 0.8, 0.6, 0.4, 0.6), size: "L", lay: "side", sideW: 4, side: [["*", "stock"]], ex: ["back"] },
   { id: "booth", name: "Late-night store with a cashier's booth", w: W(0, 0.6, 1, 0.8, 0.6), size: "M", lay: "strip", front: [["*", S], [3, "booth"]], back: [["*", "stock"]], ex: ["side"] },
   { id: "laundro", name: "Corner store and laundromat", w: W(0.2, 0.8, 1, 0.2, 0.8), size: "L", lay: "strip", front: [[0.6, S], ["*", "laundro"]], back: [["*", "stock"], [2, "wc"]], ex: ["front2"] },
-  { id: "general", name: "Long narrow general store", w: W(1, 0.8, 0.2, 0.6, 0), size: "M", lay: "deep", depth: 0.5, midD: 2, mid: [["*", "backstore"]], back: [["*", "stock"], [3, "office"]], ex: ["back"] },
+  { id: "general", name: "General store with a back storeroom", w: W(1, 0.8, 0.2, 0.6, 0), size: "M", lay: "wrap", sideW: 3, side: [[3, "office"], ["*", "backstore"]], back: [["*", "stock"]], ex: ["back", "side"], ground: "rural" },
   { id: "wrap", name: "Corner store with an L of back rooms", w: W(0.4, 0.8, 0.8, 0.2, 0.2), size: "L", lay: "wrap", sideW: 3, side: [[3, "office"], ["*", "wc"]], back: [["*", "stock"]], ex: ["back"], st: 2, up: "flat" },
 ];
 V.grocery.variants = [
@@ -654,6 +656,9 @@ export function shopVariant(key, rng, o = {}) {
 // Building a variant's spec (buildingmaps.js assemble's input)
 // ======================================================================================
 const sz = (s, rng) => (Array.isArray(s) ? rng.int(s[0], s[1]) : s);
+const MIN_FRONT = 8; // the cells across a sales floor keeps beside a side column
+const DEEP_MIN = 15; // a deep plan's depth at least (the front, the middle band and the back strip)
+const TIERS = new Set(["corner", "grocery", "supermarket"]); // #22's tiers: their footprints as #22 set them
 // The containers a room holds are its area's share up to its maxBoxes (buildingmaps.js assemble): a bigger plan's rooms
 // get maxBoxes × its area over the type's usual (its M size's middle), × the type's boxes (tuned with
 // tools/shopvarianttest.js: every kind's loot a 100 cells within ±10% of today's), so a superstore holds as a shop
@@ -681,8 +686,8 @@ export function shopVariantSpec(key, rng, o = {}, withPlan = (l) => l, plan = {}
   const T = VARIANT_TYPES[key], v = shopVariant(key, rng, o);
   if (key === "supermarket") return superSpec(rng, v, o);
   const size = (o.size && SIZES[key][o.size]) || SIZES[key][v.size] || SIZES[key].M;
-  const wide = plan.wide && !["corner", "grocery"].includes(key) ? 2 : 0;
-  const bw = rng.int(size[0], size[1]) + wide, bh = rng.int(size[2], size[3]);
+  const wide = plan.wide && !TIERS.has(key) ? 2 : 0;
+  const bw = rng.int(size[0], size[1]) + wide, bh = Math.max(rng.int(size[2], size[3]), v.lay === "deep" && !TIERS.has(key) ? DEEP_MIN : 0); // a deep plan's three bands: at least DEEP_MIN deep
   const ih = bh - 2;
   const flip = rng.chance(0.5); // the side column's side (side, wrap) and the bays' end
   const colSide = flip ? "left" : "right", other = flip ? "right" : "left";
@@ -697,16 +702,16 @@ export function shopVariantSpec(key, rng, o = {}, withPlan = (l) => l, plan = {}
   const front = v.front ? band(v.front) : R(S);
   const depth = v.depth ?? T.depth ?? 0.62;
   const midD = v.lay === "deep" ? sz(v.midD ?? 3, rng) : 0;
-  const sd = T.depthBack ? Math.max(4, ih - T.depthBack - (v.lay === "corridor" ? 2 : 0) - (midD ? midD + 1 : 0)) : Math.max(4, Math.round(ih * depth)); // a grocery's: all but its back strip (#22)
+  const sd = T.depthBack ? Math.max(4, ih - T.depthBack - (v.lay === "corridor" ? 3 : 0) - (midD ? midD + 1 : 0)) : Math.max(4, Math.round(ih * depth)); // a grocery's: all but its back strip (#22)
   let program;
   const back = v.back ? band(v.back) : null;
   switch (v.lay || "strip") {
     case "strip": program = Ys([[sd, front], ["*", back]]); break;
-    case "corridor": program = Ys([[sd, front], [1, { role: "corridor" }], ["*", back]]); break;
+    case "corridor": program = Ys([[sd, front], [2, { role: "corridor", name: "Service corridor", type: T.base.type || "store", maxBoxes: 1 }], ["*", back]]); break; // shoplayout.js servicehall
     case "deep": program = Ys([[sd, front], [midD, band(v.mid)], ["*", back]]); break;
     case "side": case "wrap": {
       const main = back ? Ys([[Math.max(4, sd), front], ["*", back]]) : front;
-      const col = [sz(v.sideW ?? 4, rng), Ys(P(v.side))];
+      const col = [Math.max(3, Math.min(sz(v.sideW ?? 4, rng), bw - 3 - MIN_FRONT)), Ys(P(v.side))]; // the front keeps MIN_FRONT across (its counter, its aisles)
       program = Xs(flip ? [col, ["*", main]] : [["*", main], col]);
       break;
     }
@@ -726,8 +731,9 @@ export function shopVariantSpec(key, rng, o = {}, withPlan = (l) => l, plan = {}
     else if (t === "bayback3") exits.push({ ...exitOf("bayback", s), width: 3 });
     else exits.push(exitOf(t, s));
   }
-  const n = Array.isArray(v.st) ? rng.int(v.st[0], v.st[1]) : v.st || 1;
-  const up = n > 1 ? UPPER[v.up || "stock"] : null;
+  let n = Array.isArray(v.st) ? rng.int(v.st[0], v.st[1]) : v.st || 1, upName = v.up || "stock";
+  if (n === 1 && !v.st && plan.flat && rng.chance(plan.flat)) { n = 2; upName = "flat"; } // a franchise's flat above (data-shops.js plan.flat: a bodega, a used bookshop)
+  const up = n > 1 ? UPPER[upName] : null;
   const type = T.base.type;
   const bk = Math.max(1, (bw * bh) / midArea(key)) * (T.boxes ?? 1);
   scaleBoxes(program, bk);
