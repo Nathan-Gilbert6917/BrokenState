@@ -328,7 +328,54 @@ function police(push, o, L) {
   for (const sd of [-1, 1]) push(boxL([xc - 6, sd * (HW + 0.05), 9], [xc + 6, sd * (HW + 0.05), 9], 3, 0.25, WHITE, { u: [0, 0, 1], group: G.trim })); // the white doors
   lightBar(push, xc, 23.6, 5);
 }
-const MODELS = { pickup, sedan, suv, van, humvee, mrap, m35, boxtruck, bicycle, fireengine, ambulance, police };
+// The aircraft of the air bases and airports (sim/militarylayout.js, issue #25), each one container lying across more
+// cells than a car (combat.js placeCar's wide; car.wide on its cells): a fighter (6 × 4: a slim fuselage, the canopy,
+// swept wings and twin fins, grey), a helicopter (5 × 2: a stubby cabin, the tail boom and its rotor, the main rotor's
+// blades out past its cells, olive), a transport plane (9 × 6: a fat fuselage, a high wing with four engines, the tail
+// high, olive grey) and an airliner (the transport's frame, low-winged, white with a blue cheat line). Wrecked, as they
+// stand by the hangar doors: soot on them (o.burnt drawn as the cars' burnt).
+const SOOTED = (o, base) => (face, s, t) => (o.burnt || hash(Math.floor(s * 9), Math.floor(t * 9), o.seed || 1) > 0.86 ? SOOT : face === "top" ? shade(base, 0.15) : null);
+function jet(push, o, L) {
+  const body = o.color, x0 = -L * TILE / 2 + 3, x1 = L * TILE / 2 - 3, len = x1 - x0, span = 2 * TILE - 3;
+  shadow(push, x0, x1, 8);
+  push(limb([x0, 0, 10], [x1, 0, 10], 5, 2.5, body, { sides: 8, group: G.body, tex: SOOTED(o, body) })); // the fuselage, the nose at +x
+  push(limb([x1 - len * 0.35, 0, 15], [x1 - len * 0.12, 0, 13.5], 2.6, 1.6, GLASS, { sides: 6, group: G.cab })); // the canopy
+  for (const sd of [-1, 1]) {
+    push(boxL([x0 + len * 0.3, sd * 4, 9], [x0 + len * 0.42, sd * span, 9], 0.8, len * 0.16, body, { u: [0, 0, 1], group: G.rails, tex: SOOTED(o, body) })); // a swept wing
+    push(boxL([x0 + 2, sd * 3, 14], [x0 + 5, sd * 4, 23], 0.6, 3, shade(body, -0.1), { u: [0, 1, 0], group: G.trim })); // a fin
+  }
+  push(limb([x0 - 1, 0, 10], [x0 + 3, 0, 10], 3, 3.4, TRIM, { sides: 8, group: G.trim })); // the exhaust
+  for (const f of [x1 - 6, x0 + len * 0.4]) push(limb([f, 0, 4], [f, 0, 0], 0.6, 0.6, TIRE, { sides: 4, group: G.wheels })); // the gear
+}
+function helo(push, o, L) {
+  const body = o.color, x0 = -L * TILE / 2 + 2, x1 = L * TILE / 2 - 2, len = x1 - x0;
+  shadow(push, x0, x1, 7);
+  push(boxL([x1 - len * 0.55, 0, 12], [x1 - 3, 0, 12], 7, 8, body, { u: [0, 0, 1], group: G.body, tex: SOOTED(o, body) })); // the cabin
+  push(limb([x1 - 3, 0, 12], [x1, 0, 11], 6, 3, GLASS, { sides: 6, group: G.cab })); // the nose glass
+  push(limb([x0, 0, 15], [x1 - len * 0.55, 0, 13], 1.4, 3.5, body, { sides: 6, group: G.rails, tex: SOOTED(o, body) })); // the tail boom
+  push(boxL([x0 + 1, 0, 17], [x0 + 3, 0, 23], 0.5, 2, shade(body, -0.1), { u: [0, 1, 0], group: G.trim })); // the tail fin
+  const hub = x1 - len * 0.3;
+  push(limb([hub, 0, 19], [hub, 0, 22], 1.2, 1.2, TRIM, { sides: 6, group: G.trim })); // the mast
+  for (const a of [0.4, 2]) push(boxL([hub - Math.cos(a) * 34, -Math.sin(a) * 34, 22.5], [hub + Math.cos(a) * 34, Math.sin(a) * 34, 22.5], 0.3, 1.2, GUN, { u: [0, 0, 1], group: G.weapon })); // the main rotor's blades
+  for (const sd of [-1, 1]) push(boxL([x1 - len * 0.6, sd * 7, 1], [x1 - 4, sd * 7, 1], 0.6, 0.6, TRIM, { u: [0, 0, 1], group: G.wheels })); // the skids
+}
+function cargoplane(push, o, L, low = false) {
+  const body = o.color, x0 = -L * TILE / 2 + 2, x1 = L * TILE / 2 - 2, len = x1 - x0, span = 3 * TILE - 3, wz = low ? 8 : 25;
+  shadow(push, x0, x1, 12);
+  push(limb([x0 + len * 0.18, 0, 14], [x1 - 6, 0, 14], 11, 11, body, { sides: 8, group: G.body, tex: low ? (face, s, t) => (Math.abs(t - 0.5) < 0.04 ? "#2f5d8a" : SOOTED(o, body)(face, s, t)) : SOOTED(o, body) })); // the fuselage
+  push(limb([x1 - 6, 0, 14], [x1, 0, 12], 11, 5, body, { sides: 8, group: G.body, tex: SOOTED(o, body) })); // the nose
+  push(limb([x1 - 7, 0, 21], [x1 - 2, 0, 18], 3, 2, GLASS, { sides: 6, group: G.cab })); // the cockpit glass
+  push(limb([x0, 0, 20], [x0 + len * 0.18, 0, 14], 3, 11, body, { sides: 8, group: G.body, tex: SOOTED(o, body) })); // the tail cone
+  push(boxL([x0 + 2, 0, 24], [x0 + 6, 0, 38], 0.8, 5, shade(body, -0.08), { u: [0, 1, 0], group: G.trim })); // the fin
+  for (const sd of [-1, 1]) {
+    push(boxL([x0 + len * 0.45, sd * 9, wz], [x0 + len * 0.5, sd * span, wz], 1, len * 0.09, body, { u: [0, 0, 1], group: G.rails, tex: SOOTED(o, body) })); // a wing
+    push(boxL([x0 + 1, sd * 2, low ? 20 : 34], [x0 + 3, sd * 18, low ? 20 : 34], 0.6, 3, body, { u: [0, 0, 1], group: G.trim })); // the tailplane
+    for (const e of low ? [0.55] : [0.4, 0.75]) push(limb([x0 + len * 0.5 + 6, sd * span * e, wz - 4], [x0 + len * 0.5 - 6, sd * span * e, wz - 4], 3, 3, METAL, { sides: 8, group: G.plate })); // the engines
+  }
+  for (const f of [x1 - 10, x0 + len * 0.45]) for (const sd of [-1, 1]) push(limb([f, sd * 5, 4], [f, sd * 5, 0], 1.6, 1.6, TIRE, { sides: 6, group: G.wheels })); // the gear
+}
+const airliner = (push, o, L) => cargoplane(push, o, L, true);
+const MODELS = { pickup, sedan, suv, van, humvee, mrap, m35, boxtruck, bicycle, fireengine, ambulance, police, jet, helo, cargoplane, airliner };
 export const MODEL_NAMES = Object.keys(MODELS);
 
 // ---------- which model, in what colour ----------
@@ -338,11 +385,13 @@ export const MODEL_NAMES = Object.keys(MODELS);
 const CIVIC_MODEL = { engine: "fireengine", ambulance: "ambulance", police: "police", bookmobile: "van" }; // bookmobile: a bookmobile depot's van (sim/librarylayout.js, issue #34)
 const BODY_PAINT = { bookmobile: "#2d5a8a" }; // a body's own livery (the county library's blue)
 const CIVIC_PAINT = { fireengine: "#a8241c", ambulance: "#dcdad2", police: "#22252a" };
+const AIR_PAINT = { jet: "#7d848c", helo: "#4d5a32", cargoplane: "#6b7058", airliner: "#d8d8d0" };
 const BY_TYPE = { truck: "pickup", sedan: "sedan", suv: "suv", hummer: "humvee", van: "van", miltruck: "m35", bike: "bicycle" };
 export function modelOf(car) {
   const b = car.body || car.kind;
   if (b === "bike") return "bicycle";
   if (b === "m35" || b === "humvee" || b === "mrap") return b;
+  if (AIR_PAINT[b]) return b; // an air base's or an airport's aircraft (sim/militarylayout.js)
   if (CIVIC_MODEL[b]) return CIVIC_MODEL[b]; // a fire station's engine and ambulance, a police car (sim/civiclayout.js)
   if (car.kind === "vehicle") return BY_TYPE[car.type] || (b === "truck" ? "pickup" : "sedan");
   if (b === "truck" || car.kind === "truck") return "boxtruck";
@@ -363,6 +412,7 @@ export function lookOf(car) {
   else if (model === "boxtruck") o.color = BOX_RUST;
   else if (BODY_PAINT[car.body]) o.color = BODY_PAINT[car.body];
   else if (CIVIC_PAINT[model]) o.color = CIVIC_PAINT[model];
+  else if (AIR_PAINT[model]) o.color = AIR_PAINT[model];
   else o.color = CAR_COLORS[(car.v || 0) % CAR_COLORS.length];
   if (!own && mil && mil.enemy) o.gun = true;
   return o;
@@ -389,6 +439,9 @@ function snowed(F, sn) {
 // projection (isoview.js iso.straight: u right SW px a cell, v down SH px a cell, z up 1:1, the +v and the top faces
 // seen) instead of the 2:1 one; scale: the model shrunk (a car on one cell).
 const GRID = { w: 240 * SS, h: 140 * SS, ox: 120 * SS, oy: 100 * SS }; // room for 2 × 5 cells at any heading in either view, the MRAP's turret on top (art px × SS)
+// An aircraft's (issue #25: up to 9 × 6 cells, a rotor past them): a grid grown with its footprint.
+const gridFor = (L, wide) => (L + wide <= 7 ? GRID : { w: (L + wide) * 40 * SS, h: (L + wide) * 26 * SS, ox: (L + wide) * 20 * SS, oy: (L + wide) * 17 * SS });
+const wideOf = (car) => car.wide || (car.body === "bike" ? 1 : 2);
 const whole = new Map(), WHOLE_MAX = 24; // key -> the painting (a few cars a map; the cells' canvases are the view's)
 function paintWhole(key, model, o, L, wide, ax, yaw, sn, straight = false, scale = 1) {
   const e = whole.get(key);
@@ -405,7 +458,7 @@ function paintWhole(key, model, o, L, wide, ax, yaw, sn, straight = false, scale
   // left is the map's −x there); what sticks out of the footprint (a wheel's tread, the gun) goes to the nearest cell.
   const sg = ax === "y" ? -1 : 1, i0 = L / 2, j0 = wide / 2;
   W.cell = (P) => Math.max(0, Math.min(L - 1, Math.floor(i0 + P[0] / TILE))) * wide + Math.max(0, Math.min(wide - 1, Math.floor(j0 + (sg * P[1]) / TILE)));
-  const g = GRID, p = painter(g.w, g.h);
+  const g = gridFor(L, wide), p = painter(g.w, g.h);
   const { zb, gb, cb } = paintLimbs(p, F, W, g, null);
   // The rim: where two parts meet, the one behind gets the dark edge; at one depth the part with the higher group does.
   // An art px wide (SS grid px): the first ring found, then the rings inside it within the same part.
@@ -447,7 +500,7 @@ onForgetPictures(() => { whole.clear(); urls.clear(); });
 // without a canvas (the tools). car: the cell's (sim/combat.js c.car); yaw: the car's heading in the view (degrees, the
 // figures': the angle in the view's u, v); o: { fog, sn (snow lying 0..1), straight (the straight view) }.
 export function vehicleCellSprite(car, yaw, o = {}) {
-  const look = lookOf(car), L = car.L || 3, wide = car.body === "bike" ? 1 : 2;
+  const look = lookOf(car), L = car.L || 3, wide = wideOf(car);
   const y = (((Math.round(yaw / 15) * 15) % 360) + 360) % 360;
   const key = `${look.model}|${look.color}|${look.tint || ""}|${look.cond}|${look.rust ? look.seed : 0}|${look.plating}${look.scrap}${look.glass}${look.mesh}${look.turret || ""}${look.manned ? "*" : ""}${look.gun ? "g" : ""}|${L}|${wide}|${car.ax}|${y}|${o.sn || 0}|${o.straight ? "s" : ""}`;
   const w = paintWhole(key, look.model, look, L, wide, car.ax, y, o.sn || 0, !!o.straight);
@@ -517,7 +570,7 @@ function cutSprite(w, k, centre, fog, scale = 1) {
 // in art px; "" without a canvas (the tools' stub gives "data:,"). Kept by its key, URLS at most.
 const urls = new Map(), URLS = 64;
 export function carImgURL(car, yaw = 330) {
-  const look = lookOf(car), L = car.L || 3, wide = car.body === "bike" ? 1 : 2;
+  const look = lookOf(car), L = car.L || 3, wide = wideOf(car);
   const y = (((Math.round(yaw / 15) * 15) % 360) + 360) % 360;
   const key = `img|${look.model}|${look.color}|${look.tint || ""}|${look.cond}|${look.rust ? look.seed : 0}|${look.plating}${look.scrap}${look.glass}${look.mesh}${look.turret || ""}${look.gun ? "g" : ""}|${L}|${y}`;
   const e = urls.get(key);
@@ -547,7 +600,7 @@ export function carImg(car, size = 2.5, yaw = 330) {
 }
 // The whole car's painting, for a look at it (the tools, the dev page): { px, w, h, ox, oy } on the SS grid (ss: grid px an art px).
 export function vehiclePainting(car, yaw = 330, straight = false) {
-  const look = lookOf(car), L = car.L || 3, wide = car.body === "bike" ? 1 : 2;
+  const look = lookOf(car), L = car.L || 3, wide = wideOf(car);
   const y = (((Math.round(yaw / 15) * 15) % 360) + 360) % 360;
   const w = paintWhole(`look|${JSON.stringify(look)}|${L}|${wide}|${car.ax}|${y}|${straight ? "s" : ""}`, look.model, look, L, wide, car.ax, y, 0, straight);
   return { px: w.px, w: w.g.w, h: w.g.h, ox: w.g.ox, oy: w.g.oy, ss: SS };

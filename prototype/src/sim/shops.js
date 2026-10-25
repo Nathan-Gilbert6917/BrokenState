@@ -30,6 +30,14 @@
 // planOf: a POI's or a crawl place's building option carries variant). A place saved before it had a franchise
 // keeps its old building (the containers it remembers line up).
 //
+// THE OFFICE BUILDINGS (data-offices.js, issue #27): a storefront office, a business park, a call center, a tech office,
+// a TV or radio station or the paper are places too (PLACE_W, their own firms), rolled on dice of their own after the
+// shops (officeExtras: one more POI a tile at SHOP.OFFICE by the setting; officePlaces: one more crawl place a block at
+// SHOP.CRAWL.office), so the shops' rolls and everything before them are as they were. City hall and the courthouse
+// stand once a town or a city, on its crawl's civic block (civicPlaces). The office tower's firms (site type "office";
+// the crawl's "offices" reads the same list) name it and lay it out as a corporate tower. A save from before them
+// (worldcfg.js legacyOffices) gets none of it: its lists, its blocks and its towers stay as they were.
+//
 // THE SHELVES OF A SHOP POI (shopshelves.js, from scavenge.js searchHour): a site's own tables roll by the tile's site
 // type; a shop or a service that is a POI beside another site (or on a bare block) rolls its own kind's rows on dice
 // of its own, × what is left of it. (This module stays light: pois.js and citycrawl.js import it.)
@@ -37,6 +45,8 @@
 import { LOCATIONS } from "./data.js";
 import { hash01 } from "./skills.js";
 import { PLACE_W, FRANCHISES } from "./data-shops.js";
+import { OFFICE_W, COUNTY_SEAT } from "./data-offices.js"; // the office buildings: their own rolls (issue #27)
+import { legacyOffices } from "./worldcfg.js"; // a save from before them: none of the office places, its towers without firms
 
 export const SHOP = {
   // POIs: the chance of a first and a second shop on a tile, by the setting; KNOWN: the share of them known from the
@@ -47,10 +57,14 @@ export const SHOP = {
   URBAN_RICH: 1.15,   // pois.js POI.URBAN_RICH
   CITY_R: [4, 3],     // pois.js POI.CITY_R: a city's footprint (Calder City, the others): its suburbs
   // The crawl: the chance of a first and a second place besides a block's own, by a city's or a town's crawl.
-  CRAWL: { city: [0.45, 0.12], town: [0.5, 0.12] },
+  CRAWL: { city: [0.45, 0.12], town: [0.5, 0.12], office: { city: 0.35, town: 0.3 } }, // office: one office building more, its own roll (officePlaces)
+  OFFICE: { city: 0.3, suburb: 0.3, town: 0.25 }, // a POI tile's chance of an office building besides its shops (officeExtras)
   OUTER: 2, // a city crawl's blocks up to this level are its suburbs (their franchises)
 };
 export const SHOP_KINDS = Object.keys(PLACE_W);
+// The office kinds (rolled on their own dice) and the shops' (the old rolls pick among these only, as they always did).
+export const OFFICE_KINDS = SHOP_KINDS.filter((k) => !!OFFICE_W[k]);
+const BASE_KINDS = SHOP_KINDS.filter((k) => !OFFICE_W[k]);
 /** @param {string} k */
 export const isShopKind = (k) => !!PLACE_W[k];
 
@@ -77,7 +91,12 @@ function pickW(keys, w, r) {
 
 // ---------- franchises ----------
 /** The kind's franchises (data-shops.js), [] for none. @param {string} kind */
-export const franchisesOf = (kind) => FRANCHISES[kind] || [];
+export const franchisesOf = (kind) => FRANCHISES[FIRM_KIND[kind] || kind] || [];
+// A building key whose firms are a site type's (the crawl's office tower is "offices", its site type "office").
+const FIRM_KIND = { offices: "office" };
+// Kinds whose firms came later than the place (the office tower's, issue #27): none in a save from before them, so a
+// tower there keeps its old plan. @param {State} state @param {string} kind
+export const noFirm = (state, kind) => (kind === "office" || kind === "offices") && legacyOffices(state);
 /** A franchise by its id, or null. @param {string} kind @param {string | null | undefined} id */
 export const franchiseById = (kind, id) => (id ? franchisesOf(kind).find((f) => f.id === id) || null : null);
 /** The franchise a place of this kind is in this setting, by its dice r (0–1): its id, or null for a kind without. @param {string} kind @param {string | null} setting @param {number} r */
@@ -101,18 +120,24 @@ export function shopExtras(state, t, list, knownZone, max) {
   const out = [];
   const site = list.find((p) => p.site);
   const cap = site && LOCATIONS[site.kind] ? LOCATIONS[site.kind].richness : Infinity; // never out-ranks the site
-  SHOP.POI[set].forEach((chance, j) => {
-    if (list.length + out.length >= max || hash01(state.seed, "shoppoi", t.id, j) >= chance) return;
+  // One more place of the kinds, by its dice (salts: the roll's own names).
+  const roll = (kinds, salt, j) => {
     const have = new Set([...list, ...out].map((p) => p.kind));
     if (t.loc) have.add(t.loc.type);
-    const kind = pickW(SHOP_KINDS.filter((k) => !have.has(k) && LOCATIONS[k] && LOCATIONS[k].richness <= cap), (k) => PLACE_W[k][set], hash01(state.seed, "shopkind", t.id, j));
+    const kind = pickW(kinds.filter((k) => !have.has(k) && LOCATIONS[k] && LOCATIONS[k].richness <= cap), (k) => PLACE_W[k][set], hash01(state.seed, `${salt}kind`, t.id, j));
     if (!kind) return;
-    const spread = SHOP.POOL[0] + (SHOP.POOL[1] - SHOP.POOL[0]) * hash01(state.seed, "shoppool", t.id, j);
+    const spread = SHOP.POOL[0] + (SHOP.POOL[1] - SHOP.POOL[0]) * hash01(state.seed, `${salt}pool`, t.id, j);
     const pool = Math.min(1, LOCATIONS[kind].richness * (t.terrain === "city" ? SHOP.URBAN_RICH : 1) * spread);
-    const hidden = !(knownZone && hash01(state.seed, "shopknown", t.id, j) < SHOP.KNOWN);
-    const v = franchiseFor(kind, set, hash01(state.seed, "shopfr", t.id, j));
+    const hidden = !(knownZone && hash01(state.seed, `${salt}known`, t.id, j) < SHOP.KNOWN);
+    const v = franchiseFor(kind, set, hash01(state.seed, `${salt}fr`, t.id, j));
     out.push({ kind, hidden, pool, visits: 0, lastDay: null, cont: null, threatStamp: null, stripped: false, extra: "shop", ...(v ? { v } : {}) });
+  };
+  SHOP.POI[set].forEach((chance, j) => {
+    if (list.length + out.length >= max || hash01(state.seed, "shoppoi", t.id, j) >= chance) return;
+    roll(BASE_KINDS, "shop", j);
   });
+  // An office building (data-offices.js), on its own dice after the shops (theirs as they were).
+  if (!legacyOffices(state) && list.length + out.length < max && hash01(state.seed, "officepoi", t.id) < SHOP.OFFICE[set]) roll(OFFICE_KINDS, "office", 0);
   return out;
 }
 
@@ -124,14 +149,33 @@ export function shopExtras(state, t, list, knownZone, max) {
  */
 export function shopPlaces(state, tileId, cell, places, max, n, setting, has) {
   const out = [];
+  const pick = (kinds, w, r) => {
+    const taken = new Set([...places.map((p) => p.key), ...out]);
+    return pickW(kinds.filter((k) => has(k) && !taken.has(k) && n >= PLACE_W[k].crawl.from), (k) => { const c = PLACE_W[k].crawl; return Math.max(w, (c[setting] ?? c.city) + c.deep * (n - 1)); }, r);
+  };
   (SHOP.CRAWL[setting] || SHOP.CRAWL.city).forEach((chance, j) => {
     if (places.length + out.length >= max || hash01(state.seed, "crawlshop", tileId, cell, j) >= chance) return;
-    const taken = new Set([...places.map((p) => p.key), ...out]);
-    const keys = SHOP_KINDS.filter((k) => has(k) && !taken.has(k) && n >= PLACE_W[k].crawl.from);
-    const kind = pickW(keys, (k) => { const c = PLACE_W[k].crawl; return Math.max(0.02, (c[setting] ?? c.city) + c.deep * (n - 1)); }, hash01(state.seed, "crawlshopkind", tileId, cell, j));
+    const kind = pick(BASE_KINDS, 0.02, hash01(state.seed, "crawlshopkind", tileId, cell, j));
     if (kind) out.push(kind);
   });
+  // An office building (data-offices.js), on its own dice after the shops.
+  const oc = SHOP.CRAWL.office ? SHOP.CRAWL.office[setting] ?? SHOP.CRAWL.office.city : 0;
+  if (!legacyOffices(state) && places.length + out.length < max && hash01(state.seed, "crawloffice", tileId, cell) < oc) {
+    const kind = pick(OFFICE_KINDS, 0, hash01(state.seed, "crawlofficekind", tileId, cell));
+    if (kind) out.push(kind);
+  }
   return out;
+}
+/**
+ * City hall and the courthouse on a crawl's civic block (citycrawl.js genBlock: the block at its heart, civic true):
+ * city hall in every town and city, the courthouse in every city and a county seat (COUNTY_SEAT of the towns). [] on
+ * any other block, and in a save from before them.
+ * @param {State} state @param {number} tileId @param {boolean} civic @param {string} setting @param {(k: string) => boolean} has
+ */
+export function civicPlaces(state, tileId, civic, setting, has) {
+  if (!civic || legacyOffices(state)) return [];
+  const seat = setting !== "town" || hash01(state.seed, "countyseat", tileId) < COUNTY_SEAT;
+  return ["cityhall", ...(seat ? ["courthouse"] : [])].filter(has);
 }
 /**
  * A crawl place's franchise (its own dice: the city's, the block's and the slot's): a town's by the town's weights, a
@@ -139,4 +183,4 @@ export function shopPlaces(state, tileId, cell, places, max, n, setting, has) {
  * @param {State} state @param {number} tileId @param {string} cell @param {number} slot @param {string} key @param {string} setting @param {number} n
  */
 export const crawlFranchise = (state, tileId, cell, slot, key, setting, n) =>
-  franchiseFor(key, setting === "town" ? "town" : n <= SHOP.OUTER ? "suburb" : "city", hash01(state.seed, "crawlfr", tileId, cell, slot, key));
+  noFirm(state, key) ? null : franchiseFor(key, setting === "town" ? "town" : n <= SHOP.OUTER ? "suburb" : "city", hash01(state.seed, "crawlfr", tileId, cell, slot, key));

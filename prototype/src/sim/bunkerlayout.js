@@ -52,7 +52,7 @@ export const BUNKER = {
   // Footprints in cells (a cell is about a metre: data-furniture.js sizes), [min, max], outer walls included; levels.
   SIZE: {
     milbunker: { w: [60, 72], h: [30, 34], levels: [2, 3] },   // the issue's 60–120 × 30–60 m, 1–3 levels (2 at least: the galleries need them)
-    govbunker: { w: [50, 60], h: [28, 32], levels: [2, 2] },
+    govbunker: { w: [60, 66], h: [30, 32], levels: [2, 2] },  // the "huge" footprint class (1800 cells or more), as the military's
     shelter:   { w: [18, 26], h: [12, 16], levels: [2, 2] },   // 15–30 × 10–20 m
     prepper:   { w: [11, 14], h: [8, 9],   levels: [2, 2] },   // 6–15 × 4–8 m
   },
@@ -103,7 +103,7 @@ function milbunker(rng, o = {}) {
       X([left, Y(armory(9), quarters)], tunnel, ["*", Y(mess, kitchen, rations, supply)])];
   return {
     bw, bh, front: { width: 2 }, ground: "rock", storeys: n, foot: "huge", below: true, windows: false, extraDoors: 0.05, rockFill: true, fence: true, vent: true,
-    stairs: { roles: ["checkpoint", "hatch"], n: 2, len: 3 }, margins: { front: 8 },
+    stairs: { roles: ["checkpoint", "hatch"], n: 2, len: 2 }, margins: { front: 8 },
     program: entrance, upper: (f) => lower[f - 1] || lower[lower.length - 1],
     exits: [{ side: "front", roles: ["bays"], chance: 1, roller: true, width: 3, lock: 0.2, name: "Vehicle ramp" }, { side: "back", roles: ["hatch"], chance: 1, lock: 0, name: "Escape hatch" }],
   };
@@ -122,7 +122,7 @@ function govbunker(rng) {
   const level = X([left, Y(sit, offices, dorm)], [6, R("tunnel", "tunnel", { hub: true, name: "Main corridor" })], ["*", X(colA, colB)]);
   return {
     bw, bh, front: { width: 2 }, ground: "rock", storeys: 2, foot: "huge", below: true, windows: false, extraDoors: 0.05, rockFill: true, fence: true, vent: true,
-    stairs: { roles: ["checkpoint", "hatch"], n: 2, len: 3 }, margins: { front: 8 },
+    stairs: { roles: ["checkpoint", "hatch"], n: 2, len: 2 }, margins: { front: 8 },
     program: entrance, upper: () => level,
     exits: [{ side: "back", roles: ["hatch"], chance: 1, lock: 0, name: "Escape hatch" }],
   };
@@ -136,8 +136,8 @@ function shelter(rng) {
     [6, R("tunnel", "tunnel", { hub: true, name: "Entry hall" })],
     ["*", Y([4, R("medbay", "firstaid", { name: "First aid", type: "nurse", maxBoxes: 1 })], [4, R("genroom", "genroom", { name: "Plant room", type: "motorpool", maxBoxes: 1 })], ["*", R("pantry", "rations", { name: "Ration store", type: "kitchen", maxBoxes: 4 })])]);
   return {
-    bw, bh, front: { width: 1 }, ground: "town", storeys: 2, foot: "medium", below: true, windows: false, extraDoors: 0, vent: true,
-    stairs: { roles: ["stairhead", "hatch"], n: 2, len: 3 },
+    bw, bh, front: { width: 1 }, ground: "town", storeys: 2, foot: bw * bh > 360 ? "large" : "medium", // the footprint class by its area (tools/storeytest.js) below: true, windows: false, extraDoors: 0, vent: true,
+    stairs: { roles: ["stairhead", "hatch"], n: 2, len: 2 },
     program: entrance, upper: () => level,
     exits: [{ side: "back", roles: ["hatch"], chance: 1, lock: 0.3, name: "Emergency hatch" }],
   };
