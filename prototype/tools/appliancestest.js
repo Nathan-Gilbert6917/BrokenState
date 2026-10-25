@@ -53,7 +53,7 @@ const raw = (h, n = 20) => { addFood(h, "f_potatoes", n * 8); addFood(h, "f_veni
 
 section("The pieces");
 {
-  check(APPLIANCE_TYPES.join(",") === "chest_freezer,cold_case,range,oven,microwave", `five new kinds beside the fridge (${APPLIANCE_TYPES.join(", ")})`);
+  check(APPLIANCE_TYPES.join(",") === "chest_freezer,cold_case,range,oven,microwave,freezer_case,island_freezer,meat_case", `five new kinds beside the fridge, and a grocery store's three (issue #22: ${APPLIANCE_TYPES.join(", ")})`);
   for (const t of APPLIANCE_TYPES) {
     const key = placedItemKey(t), g = GEAR[key], b = BUILDINGS[t];
     const it = newItem(key);

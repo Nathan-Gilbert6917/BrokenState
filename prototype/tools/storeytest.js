@@ -1,5 +1,6 @@
 // Storeys (docs/multi-storey-crawl.md, src/sim/buildingmaps.js + combat.js): buildings with several floors.
-//   - every BUILDINGS type assembles with its storey range (STOREYS_BY_TYPE), a footprint of its class (spec.foot) and a
+//   - every BUILDINGS type assembles with its storey range (STOREYS_BY_TYPE), a footprint of its class (spec.foot; "huge":
+//     the supermarket since issue #22, its map its footprint and margins, past the largest class) and a
 //     map that fits it; towers shrink as they grow; every floor is the ground map's size, "void" outside the footprint,
 //     has the stairwell cells, and every walkable cell of it is reachable from the stairwell (the ground floor's
 //     stairwell from the front zone);
@@ -60,6 +61,7 @@ console.log(`Generation: every type (${Object.keys(BUILDINGS).length}), ${SEEDS}
 {
   const FOOT = { // footprint area (cells) by class, and the biggest width a tower has
     small: (a) => a <= 190, medium: (a) => a >= 90 && a <= 360, large: (a) => a >= 290, wide: (a, bw) => a >= 280 && bw >= 20, tower: (a, bw) => a <= 330 && bw <= 22,
+    huge: (a, bw) => a >= 1800 && bw >= 50, // the supermarket (issue #22): past the largest size class, its map its footprint and margins
   };
   let bad = 0, multi = 0, floorsSeen = 0;
   const towers = [];
@@ -83,7 +85,8 @@ console.log(`Generation: every type (${Object.keys(BUILDINGS).length}), ${SEEDS}
       try { m = assemble(rng, spec, { key, name: BUILDINGS[key].name, withVehicle: s % 2 === 1 }); } catch (e) { bad++; console.log(`  ${key} seed ${s}: ${e.stack}`); continue; }
       const W = m.w, H = m.h;
       // The map fits the footprint and its margins, and is one of the size classes.
-      if (W < spec.bw + 8 || H < spec.bh + 9 || W > 48 || H > 36) errs.push(`map ${W}x${H} for a ${spec.bw}x${spec.bh} footprint`);
+      const [maxW, maxH] = spec.foot === "huge" ? [spec.bw + 12, spec.bh + 16] : [48, 36]; // a huge footprint: the map no bigger than it needs
+      if (W < spec.bw + 8 || H < spec.bh + 9 || W > maxW || H > maxH) errs.push(`map ${W}x${H} for a ${spec.bw}x${spec.bh} footprint`);
       const cls = sizeClass(W, H);
       if (spec.foot === "tower" && !["S", "M"].includes(cls)) errs.push(`a tower on a ${cls} map`);
       if ((spec.foot === "large" || spec.foot === "wide") && cls === "S") errs.push(`a ${spec.foot} building on a Small map`);

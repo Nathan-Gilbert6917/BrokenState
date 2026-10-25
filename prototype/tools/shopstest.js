@@ -424,7 +424,7 @@ section("Laid out for their kind (shoplayout.js, issue #16)");
       if (R.some((a) => a.name === "Banking hall" && kinds(m, a).has("teller"))) saw("teller");
     }
     if (key === "offices") for (const a of R) for (const k of kinds(m, a)) if (["desk", "cubicle", "whiteboard", "serverrack", "secdesk", "copier", "sofa", "safe", "fridge"].includes(k)) saw(`office ${k}`);
-    if (key === "supermarket") { if (R.filter((a) => a.role === "sales").reduce((n, a) => n + inside(m, a).filter(([, , c]) => c.k === "checkout").length, 0) < 2) err("lanes", tag); if (R.some((a) => a.name === "Deli" && kinds(m, a).has("oven"))) saw("deli oven"); if (R.some((a) => a.name === "Pharmacy counter")) saw("pharmacy counter"); }
+    if (key === "supermarket") { if (R.filter((a) => a.role === "sales").reduce((n, a) => n + inside(m, a).filter(([, , c]) => c.k === "checkout").length, 0) < 2) err("lanes", tag); if (R.some((a) => /^(Deli|Bakery)$/.test(a.name) && kinds(m, a).has("oven"))) saw("deli oven"); if (R.some((a) => /^Pharmacy/.test(a.name))) saw("pharmacy counter"); } // issue #22: the bakery's ovens, the pharmacy (the old store's deli and pharmacy counter on an older save)
     for (const [k, test] of [["pallet racks", key === "warehouse" && R.some((a) => kinds(m, a).has("palletrack"))], ["machine tools", key === "factory" && R.some((a) => kinds(m, a).has("machine"))], ["car lift", ["autoshop", "garage", "dealer"].includes(key) && R.some((a) => kinds(m, a).has("carlift"))], ["saddle rack", key === "barn" && R.some((a) => kinds(m, a).has("saddlerack"))], ["greenhouse", key === "garden" && R.some((a) => a.name === "Greenhouse")], ["jukebox", key === "bar" && R.some((a) => kinds(m, a).has("jukebox"))], ["fryer", R.some((a) => kinds(m, a).has("fryer"))]]) if (test) saw(k);
     // Every container on a piece of its kind and searched from a cell its room's first door reaches; every room's
     // floor one walk (the aisles leave a 1-cell walk).
@@ -456,10 +456,11 @@ section("Laid out for their kind (shoplayout.js, issue #16)");
   const value = (def) => { let v = 0; for (const [k, [p, lo, hi]] of Object.entries(def.loot)) v += Math.min(0.95, p) * ((lo + hi) / 2) * supValue(k); for (const [k, p] of def.gear) v += p * ((GEAR[k] && GEAR[k].value) || 0); return v; };
   const total = (key, legacy) => { let v = 0; for (let s = 0; s < 200; s++) { const m = make(key, s, legacy); for (const c of m.containers) { const a = m.rooms.find((r) => r.id === c.area); if (a && a.type) v += value(boxLoot(a.type, c.kind)); } } return v / 200; };
   const off = [], rows = [];
-  for (const key of KEYS) { const b = total(key, true), a = total(key, false), r = a / b - 1; rows.push(`${key} ${(r * 100).toFixed(0)}%`); if (Math.abs(r) > 0.1) off.push(`${key} ${a.toFixed(0)} against ${b.toFixed(0)}`); }
+  // The supermarket is twice the store it was each way since issue #22: its own check below (by the area), not this one.
+  for (const key of KEYS.filter((k) => k !== "supermarket")) { const b = total(key, true), a = total(key, false), r = a / b - 1; rows.push(`${key} ${(r * 100).toFixed(0)}%`); if (Math.abs(r) > 0.1) off.push(`${key} ${a.toFixed(0)} against ${b.toFixed(0)}`); }
   check(!off.length, `every kind holds what it did within ±10% (200 seeds each: ${off.join("; ") || rows.join(", ")})`);
   // An older save: furnished the old way (none of the new pieces, no style's marks).
-  const NEWK = new Set(["range", "fryer", "pizzaoven", "coldshelf", "jukebox", "pooltable", "clothesrack", "gunrack", "tank", "pottingbench", "palletrack", "tirerack", "compressor", "carlift", "machine", "forklift", "saddlerack", "cubicle", "whiteboard", "watercooler", "secdesk", "keyrack", "icemachine", "teller", "deposit", "atm", "stanchion", "checkout", "displaycase", "coldcase", "barcounter", "barstool", "desk", "filing", "bookshelf"]);
+  const NEWK = new Set(["freezercase", "islandfreezer", "meatcase", "freezershelf", "producebin", "breadrack", "selfcheckout", "cartcorral", "baler", "aislesign", "range", "fryer", "pizzaoven", "coldshelf", "jukebox", "pooltable", "clothesrack", "gunrack", "tank", "pottingbench", "palletrack", "tirerack", "compressor", "carlift", "machine", "forklift", "saddlerack", "cubicle", "whiteboard", "watercooler", "secdesk", "keyrack", "icemachine", "teller", "deposit", "atm", "stanchion", "checkout", "displaycase", "coldcase", "barcounter", "barstool", "desk", "filing", "bookshelf"]);
   let newer = 0;
   for (const key of KEYS) for (let s = 0; s < 3; s++) { const m = make(key, s, true, true); for (const F of m.floors || [{ cells: m.cells }]) for (const c of F.cells) if (NEWK.has(c.k)) newer++; if (m.rooms.some((a) => /Walk-in cold|ATM lobby|Safe-deposit|Pharmacy counter|Greenhouse/.test(a.name) && !/^Walk-in$/.test(a.name))) newer++; }
   check(!newer, `an older save's shops are furnished and planned the old way (${newer} new pieces or rooms)`);
@@ -472,6 +473,137 @@ section("Laid out for their kind (shoplayout.js, issue #16)");
     if (S && S.list.some((x) => x.kind === kind)) (legacy ? old : got)[key] = ((legacy ? old : got)[key] || 0) + 1;
   }
   check(Object.keys(SC).every((k) => got[k] > 0) && !Object.keys(old).length, `their scenes turn up on the new layouts, none on an older save's (${Object.entries(SC).map(([k, v]) => `${k} ${v} ${got[k] || 0}`).join(", ")})`);
+}
+
+// ---------- 7. grocery stores by size ----------
+section("Grocery stores by size: a corner store, a neighbourhood grocery, a really big supermarket (issue #22)");
+{
+  const N = process.env.BS_QUICK ? 8 : 24;
+  const make = (key, s, legacy = false) => {
+    const fr = FRANCHISES[key] || [], rng = new Rng(9000 + s * 104729 + key.length);
+    return assemble(rng, BUILDINGS[key].make(rng, { variant: fr.length ? fr[s % fr.length].id : null, legacy }), { key, name: key, legacy });
+  };
+  const spec = (key, s, legacy = false) => { const fr = FRANCHISES[key] || []; return BUILDINGS[key].make(new Rng(9000 + s * 104729 + key.length), { variant: fr.length ? fr[s % fr.length].id : null, legacy }); };
+  const grid = (m, f) => (m.floors ? m.floors[f].cells : m.cells);
+  const inside = (m, a) => { const out = []; for (let y = a.y0 + 1; y < a.y0 + a.h - 1; y++) for (let x = a.x0 + 1; x < a.x0 + a.w - 1; x++) out.push([x, y, grid(m, a.f || 0)[y * m.w + x]]); return out; };
+  const count = (m, a, k) => inside(m, a).filter(([, , c]) => c.k === k).length;
+  const room = (m, re) => m.rooms.find((a) => !a.outdoor && (a.f || 0) === 0 && re.test(a.name));
+  // Aisles: the columns of shelving 3+ long in a room (front to back), each counted once.
+  const aisles = (m, a) => { const by = {}; for (const [x, , c] of inside(m, a)) if (["rack", "shelf", "aislesign"].includes(c.k)) by[x] = (by[x] || 0) + 1; return Object.values(by).filter((n) => n >= 3).length; };
+  const walk = (m, f, sx, sy) => {
+    const g = grid(m, f), seen = new Uint8Array(m.w * m.h), q = [sy * m.w + sx];
+    seen[q[0]] = 1;
+    while (q.length) { const i = q.pop(), x = i % m.w, y = (i / m.w) | 0; for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = x + dx, ny = y + dy; if (nx < 0 || ny < 0 || nx >= m.w || ny >= m.h) continue; const j = ny * m.w + nx; if (!seen[j] && (CELL[g[j].k].walk || g[j].k === "door")) { seen[j] = 1; q.push(j); } } }
+    return seen;
+  };
+  const errs = {}, stat = { lanes: [], aisles: [], fc: [], gaisles: [], docks: [], truck: 0 };
+  const err = (k, msg) => { (errs[k] = errs[k] || []).push(msg); };
+  // The footprints: the corner store 10–14 across, the grocery 20–26 × 15–19, the supermarket 54–58 × 36–40 (twice the
+  // old store's 26–30 × 18–21 each way), the department store as it was; an older save's as they were.
+  for (let s = 0; s < 60; s++) {
+    const c = spec("corner", s), g = spec("grocery", s), m = spec("supermarket", s), d = spec("deptstore", s);
+    if (c.bw < 10 || c.bw > 14 || c.bh < 10 || c.bh > 12) err("foot", `corner ${c.bw}x${c.bh}`);
+    if (g.bw < 20 || g.bw > 26 || g.bh < 17 || g.bh > 20) err("foot", `grocery ${g.bw}x${g.bh}`);
+    if (m.bw < 54 || m.bw > 58 || m.bh < 36 || m.bh > 40) err("foot", `supermarket ${m.bw}x${m.bh}`);
+    if (d.bw < 26 || d.bw > 30 || d.bh < 18 || d.bh > 21) err("dept", `${d.bw}x${d.bh}`);
+    for (const k of ["corner", "grocery"]) { const o = spec(k, s, true); if (o.bw < 14 || o.bw > 21 || o.bh < 11 || o.bh > 14) err("old", `${k} ${o.bw}x${o.bh}`); }
+    const o = spec("supermarket", s, true); if (o.bw < 26 || o.bw > 30 || o.bh < 18 || o.bh > 21) err("old", `supermarket ${o.bw}x${o.bh}`);
+  }
+  for (let s = 0; s < N; s++) {
+    // The supermarket: the front end, the sales floor's departments, the side rooms, the back of house.
+    const m = make("supermarket", s), tag = `supermarket ${s}`;
+    const fl = room(m, /^Sales floor$/);
+    if (!fl) { err("sm", `${tag}: no sales floor`); continue; }
+    const lanes = count(m, fl, "checkout"), ai = aisles(m, fl), fc = count(m, fl, "freezercase");
+    stat.lanes.push(lanes); stat.aisles.push(ai); stat.fc.push(fc);
+    if (lanes < 6) err("lanes", `${tag}: ${lanes}`);
+    if (count(m, fl, "selfcheckout") < 3) err("self", tag);
+    if (ai < 10) err("aisles", `${tag}: ${ai}`);
+    if (count(m, fl, "aislesign") < 5) err("signs", tag);
+    if (count(m, fl, "coldcase") < 10) err("dairy", `${tag}: ${count(m, fl, "coldcase")}`);
+    if (fc < 6 || !count(m, fl, "islandfreezer")) err("frozen", `${tag}: ${fc} cases, ${count(m, fl, "islandfreezer")} island`);
+    if (count(m, fl, "producebin") < 6) err("produce", tag);
+    if (!count(m, fl, "cartcorral")) err("corral", tag);
+    const bak = room(m, /^Bakery/), deli = room(m, /^Deli and butcher/), ph = room(m, /^Pharmacy/), cafe = room(m, /^Café/);
+    if (!bak || !count(m, bak, "oven") || !count(m, bak, "breadrack")) err("bakery", tag);
+    if (!deli || !count(m, deli, "meatcase") || !count(m, deli, "displaycase")) err("deli", tag);
+    if (!ph || !cafe || m.rooms.filter((a) => /restroom/i.test(a.name)).length < 2) err("rooms", tag);
+    const wh = room(m, /^Warehouse$/);
+    if (!wh || count(m, wh, "palletrack") < 8) err("warehouse", `${tag}: ${wh ? count(m, wh, "palletrack") : 0} racks`);
+    for (const re of [/^Walk-in cooler/, /^Walk-in freezer/]) { const a = room(m, re); if (!a || !a.doors.some(([x, y]) => grid(m, 0)[y * m.w + x].dk === "steel")) err("walkins", `${tag} ${re}`); }
+    if (!count(m, room(m, /^Walk-in freezer/) || fl, "freezershelf")) err("walkins", `${tag}: no freezer shelving`);
+    if (!room(m, /^Compactor and baler/) || !count(m, room(m, /^Compactor and baler/), "baler")) err("baler", tag);
+    if (!room(m, /^Cash office/) || !m.containers.some((c) => c.kind === "safe")) err("cash", tag);
+    const docks = m.exits.filter((e) => e.roller && e.side === "back").length;
+    stat.docks.push(docks);
+    if (docks < 2) err("docks", `${tag}: ${docks}`);
+    if (m.containers.some((c) => c.kind === "boxtruck")) stat.truck++;
+    // Everything connected: every room's floor one walk from the front, every container searched from a cell it reaches.
+    for (let f = 0; f < (m.floors ? m.floors.length : 1); f++) {
+      const start = f === 0 ? [m.zones[0].x0 + 1, m.zones[0].y0 + 1] : m.stairs[0];
+      const w = walk(m, f, start[0], start[1]), g = grid(m, f);
+      let cut = 0;
+      for (let i = 0; i < g.length; i++) if (CELL[g[i].k].walk && g[i].f === "floor" && !w[i]) cut++;
+      if (cut) err("walk", `${tag} floor ${f}: ${cut} cells cut off`);
+      for (const c of m.containers.filter((q) => (q.f || 0) === f)) { let ok = false; for (let yy = c.y - 1; yy <= c.y + (c.h || 1); yy++) for (let xx = c.x - 1; xx <= c.x + (c.w || 1); xx++) if (xx >= 0 && yy >= 0 && xx < m.w && yy < m.h && w[yy * m.w + xx]) ok = true; if (!ok) err("reach", `${tag} ${c.label}`); }
+    }
+    // The grocery: checkouts, the dairy wall, the frozen section and its chest freezer, produce, the deli counter, the
+    // aisles, the stockroom and its walk-in cooler; the corner store: the till, the drinks fridges, the chest freezer, the stockroom.
+    const g = make("grocery", s), gf = room(g, /^Sales floor/), gt = `grocery ${s}`;
+    if (!gf) { err("grocery", `${gt}: no sales floor`); continue; }
+    const gl = count(g, gf, "checkout"), ga = aisles(g, gf);
+    stat.gaisles.push(ga);
+    if (gl < 2 || gl > 3) err("grocery", `${gt}: ${gl} checkouts`);
+    if (count(g, gf, "coldcase") < 4 || count(g, gf, "freezercase") < 3 || !count(g, gf, "freezer") || !count(g, gf, "producebin") || !count(g, gf, "meatcase")) err("grocery", `${gt}: cold ${count(g, gf, "coldcase")}, frozen ${count(g, gf, "freezercase")}, chest ${count(g, gf, "freezer")}, produce ${count(g, gf, "producebin")}, deli ${count(g, gf, "meatcase")}`);
+    if (ga < 5) err("grocery", `${gt}: ${ga} aisles`);
+    if (!room(g, /^Stockroom/) || !room(g, /^Walk-in cooler/)) err("grocery", `${gt}: no stockroom or cooler`);
+    const c = make("corner", s), cf = room(c, /^Store$/), ct = `corner ${s}`;
+    if (!cf || !count(c, cf, "checkout") || count(c, cf, "coldcase") < 2 || !count(c, cf, "freezer")) err("corner", `${ct}: till ${cf && count(c, cf, "checkout")}, fridges ${cf && count(c, cf, "coldcase")}, chest ${cf && count(c, cf, "freezer")}`);
+    if (!room(c, /^Stockroom/)) err("corner", `${ct}: no stockroom`);
+    for (const [mm, t] of [[g, gt], [c, ct]]) for (const a of mm.rooms.filter((q) => !q.outdoor && q.doors && q.doors.length)) {
+      const w = walk(mm, a.f || 0, a.doors[0][0], a.doors[0][1]);
+      for (const [x, y, cc] of inside(mm, a)) if (CELL[cc.k].walk && !w[y * mm.w + x]) { err("walk", `${t} ${a.name} ${x},${y}`); break; }
+    }
+  }
+  const avg = (a) => (a.length ? (a.reduce((p, q) => p + q, 0) / a.length).toFixed(1) : "0");
+  const label = {
+    foot: "the footprints: a corner store 10–14 across, a grocery 20–26 × 17–20, a supermarket 54–58 × 36–40", dept: "the department store as it was (26–30 × 18–21)", old: "an older save's corner store, grocery and supermarket as they were",
+    sm: "the supermarket's sales floor", lanes: `6+ checkout lanes (${avg(stat.lanes)} on average)`, self: "a self-checkout block", aisles: `10+ aisles (${avg(stat.aisles)})`, signs: "aisle markers", dairy: "the dairy wall of cold cases",
+    frozen: `the frozen section: 6+ freezer cases (${avg(stat.fc)}) and island freezers`, produce: "produce", corral: "cart corrals by the doors", bakery: "the bakery's ovens and bread racks", deli: "the deli and butcher's cases",
+    rooms: "the pharmacy, the café and the restrooms", warehouse: "the warehouse's pallet racks", walkins: "the walk-in cooler and freezer behind steel doors (freezer shelving)", baler: "the baler", cash: "the cash office and a safe",
+    docks: `2+ roller doors on the loading dock (${avg(stat.docks)})`, walk: "every floor one walk, the aisles leave a walkable lane", reach: "every container searched from a cell the front reaches",
+    grocery: `the grocery: 2–3 checkouts, the dairy wall, the freezer section and a chest freezer, produce, a deli counter, 5+ aisles (${avg(stat.gaisles)}), a stockroom and a walk-in cooler`, corner: "the corner store: the till, the drinks fridges, a chest freezer, a stockroom",
+  };
+  for (const [k, msg] of Object.entries(label)) check(!errs[k], `${msg}${errs[k] ? `: ${errs[k].length} bad, e.g. ${errs[k].slice(0, 3).join("; ")}` : ""}`);
+  check(stat.truck >= N * 0.75, `a box truck at the loading dock most of the time (${stat.truck} of ${N})`);
+  // Loot: the supermarket by the area (the old store's value a cell, within 0.6–1.4×: a rich, long raid, not an absurd
+  // one), the warehouse its richest room; the corner store and the grocery are in "every kind holds what it did" above.
+  const value = (def) => { let v = 0; for (const [k, [p, lo, hi]] of Object.entries(def.loot)) v += Math.min(0.95, p) * ((lo + hi) / 2) * supValue(k); for (const [k, p] of def.gear) v += p * ((GEAR[k] && GEAR[k].value) || 0); return v; };
+  const tally = (legacy) => {
+    let v = 0, area = 0;
+    const by = {};
+    for (let s = 0; s < 100; s++) {
+      const m = make("supermarket", s, legacy);
+      area += m.building.w * m.building.h;
+      for (const c of m.containers) { const a = m.rooms.find((r) => r.id === c.area); if (!a || !a.type) continue; const x = value(boxLoot(a.type, c.kind)); v += x; const n = a.name.replace(/ \d+$/, ""); by[n] = (by[n] || 0) + x; }
+    }
+    return { v: v / 100, dens: v / area, by };
+  };
+  const was = tally(true), now = tally(false), top = Object.entries(now.by).sort((a, b) => b[1] - a[1]);
+  const r = now.dens / was.dens;
+  console.log(`  the supermarket's loot: ${now.v.toFixed(0)} against ${was.v.toFixed(0)} before (×${(now.v / was.v).toFixed(2)}), ${(now.dens * 100).toFixed(1)} a 100 cells against ${(was.dens * 100).toFixed(1)}; by room: ${top.slice(0, 6).map(([k, x]) => `${k} ${(x / 100).toFixed(0)}`).join(", ")}`);
+  check(r >= 0.6 && r <= 1.4 && now.v > was.v * 2, `the supermarket holds by its area: ×${r.toFixed(2)} the old store's loot a cell, ×${(now.v / was.v).toFixed(2)} in all`);
+  check(top[0][0] === "Warehouse", `the warehouse is its richest room (${top[0][0]})`);
+  // A store's freezers brought home are #19's appliances (the same use keys).
+  check(["freezercase", "islandfreezer", "meatcase"].every((k) => GEAR[`f_${k}`] && GEAR[`f_${k}`].placed && pieceDef(k).use === (k === "meatcase" ? "fridge" : "freezer")), "a store's freezer case, island freezer and butcher's case set at a base as appliances");
+  // Their signs of survival: a barricaded checkout line, the warehouse a shelter, someone shut in the walk-in freezer, the
+  // dead piled at the front doors; on the new layouts only.
+  const SC = ["checkoutline", "stockshelter", "freezershut", "frontdoors"], got = {}, old = {};
+  for (let s = 0; s < 60; s++) for (const legacy of [false, true]) {
+    const m = make("supermarket", s, legacy), S = rollScenes(m, new Rng(700 + s), "supermarket");
+    for (const x of (S && S.list) || []) if (SC.includes(x.kind) && (x.kind !== "stockshelter" || /Warehouse/.test((m.rooms[x.room] || {}).name || ""))) (legacy ? old : got)[x.kind] = ((legacy ? old : got)[x.kind] || 0) + 1;
+  }
+  check(SC.every((k) => got[k] > 0) && !["checkoutline", "freezershut", "frontdoors"].some((k) => old[k]), `the supermarket's scenes on the new layouts, none on an older save's (${SC.map((k) => `${k} ${got[k] || 0}`).join(", ")})`);
 }
 
 console.log(`\n${passes} passed, ${fails} failed.`);

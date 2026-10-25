@@ -113,7 +113,8 @@ console.log(`Every archetype (${Object.keys(BUILDINGS).length}), ${SEEDS} seeds 
       const W = m.w, H = m.h;
       sizes[key].push(`${W}x${H}`);
       const errs = [];
-      if (W < 14 || H < 14 || (MIL_KEYS.has(key) ? W > 300 || H > 300 : W > 44 || H > 34)) errs.push(`size ${W}x${H}`); // issue #25: the military buildings at their real size (the maps up to 300 × 300, #24)
+      const huge = m.building && m.building.w >= 50; // the supermarket since issue #22: past the largest size class, its map its footprint and margins
+      if (W < 14 || H < 14 || (MIL_KEYS.has(key) ? W > 300 || H > 300 : W > (huge ? m.building.w + 12 : 44) || H > (huge ? m.building.h + 16 : 34))) errs.push(`size ${W}x${H}`); // issue #25: the military buildings at their real size (the maps up to 300 × 300, #24)
       const z0 = m.zones[0];
       const start = [z0.x0 + 1, z0.y0 + (s % 2 === 1 ? 0 : 1)];
       if (!CELL[m.cells[start[1] * W + start[0]].k].walk) errs.push("the front zone is blocked");
