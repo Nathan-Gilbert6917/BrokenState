@@ -17,6 +17,7 @@
 // A neighbourhood (a street of 3-5 houses on one map: buildingmaps.js streetMap) is one POI with a larger pool: the
 // hour-by-hour search goes through it a house at a time, so its pool falls poiHouses times slower (as on its map, where
 // each container opened takes its share of the one pool across the whole street).
+import { siteSizeK } from "./buildingmaps.js"; // buildings at real size (issue #24): a site's share searched an hour
 import { addFoodFind, foodText, typeFind, siteMix } from "./foods.js"; // a food find: the items a place like this holds
 import { keyWord } from "./water.js"; // supplies as words: "9mm FMJ", "rounds"
 import { LOCATIONS, GEAR, SUPPLIES, siteDanger as locDanger, supValue, supWeight } from "./data.js";
@@ -417,7 +418,7 @@ export function searchHour(state) {
   const locked = lockedSearchHour(state, e, p, members) + truckSearchHour(state, e, p, members) + gunSearchHour(state, e, p, members); // miltrucks.js: an Army truck's cargo (its own dice)
   // Salvager: picked over 40% slower. A point of interest's pool goes through its ledger (poicont.js): the containers
   // follow, and what you left in the ones you opened comes away with the team.
-  const take = (0.05 * ap.loot * (perk("salvager") ? 0.6 : 1)) / (e.poi != null ? poiHouses(state, t, e.poi) : 1); // a street of houses: one house at a time (poicont.js poiHouses)
+  const take = (0.05 * ap.loot * (perk("salvager") ? 0.6 : 1)) / (e.poi != null ? poiHouses(state, t, e.poi) : siteSizeK(state, t)); // a street of houses: one house at a time (poicont.js poiHouses); a site's buildings at real size: a smaller share an hour of more (buildingmaps.js siteSizeK, the groups' the same: aiscav.js)
   let leftLine = "";
   if (e.poi != null) {
     const got = lootPoiAbstract(state, "player", t, e.poi, take, { floor: CONT.FLOOR });

@@ -56,17 +56,14 @@ import { registerScene, scenePieces, SCENES } from "./interiorscenes.js";
 import { COMMERCIAL_STYLES, COMMERCIAL_KEYS } from "./shoplayout.js";
 import { HOME_STYLES } from "./roomlayout.js";
 import { mapCap } from "./battlesize.js";
+import { REAL_SIZE } from "./data-buildingsize.js"; // the sizes (issue #24 took over HOTEL.SIZE)
 
 export const HOTEL = {
   KINDS: ["inn", "business", "resort", "tower"],
   ANY: { inn: 0.3, business: 0.35, resort: 0.15, tower: 0.2 }, // a hotel with no franchise (a sample plan): its kind
   // Footprints in cells (≈ 1 m: #24's CELL_M), [min, max]: w the width, d the depth, the storeys.
-  SIZE: {
-    inn: { w: [21, 25], d: [19, 19], storeys: [2, 3] },
-    business: { w: [40, 60], d: [21, 23], storeys: [4, 6] },
-    resort: { w: [64, 90], d: [21, 23], storeys: [2, 4] },
-    tower: { w: [36, 44], d: [21, 23], storeys: [8, 10] },
-  },
+  // #24's real-world size table holds them now (data-buildingsize.js REAL_SIZE hotelinn…hoteltower, planned).
+  SIZE: Object.fromEntries(["inn", "business", "resort", "tower"].map((k) => [k, REAL_SIZE[`hotel${k}`]])),
   UNIT: { inn: 3, big: 4 },     // a standard room's width inside its walls
   SUITE: 7,                     // a room this wide or wider is a suite (a sitting room beside the bedroom)
   FRONT: { inn: 7, big: 8 },    // the front band's depth: the bathroom (2), its wall, the bedroom
