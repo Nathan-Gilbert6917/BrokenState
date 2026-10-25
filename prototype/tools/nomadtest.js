@@ -525,6 +525,7 @@ section("Save and load");
 {
   const st = W();
   for (let i = 0; i < 30 * 24; i++) { st.cards.length = 0; tickHour(st); }
+  st.cards.length = 0; // a card the last hour raised (a save holds none)
   const save = serializeState(st);
   const back = deserializeState(JSON.parse(JSON.stringify(save)));
   check(summary(back) === summary(st), "the bands, their stock, wares, tallies and generator come back as they were");
