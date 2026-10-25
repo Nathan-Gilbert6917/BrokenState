@@ -71,7 +71,7 @@ import { conflictView, captivesOf, isCaptive, fightOdds } from "../sim/conflicts
 import { dealFor, talksOf, returnsOf } from "../sim/ransom.js"; // ransoms: the deal, the envoy, the way home
 import { RETREAT_POLICIES, POLICY_ORDER, teamPolicy, policySource, fightForecast, forecastText } from "../sim/breakoff.js";
 import { AT_DEST, supplyRuns, supplyRunById, jobParty, jobName, linesText, supplyStatus, supplyEstimate, escortFor } from "../sim/supply.js";
-import { newRunScreen, zombieLookModal, appearanceEditor } from "./newgame.js";
+import { newRunScreen, zombieLookModal, appearanceEditor, crewInvViewer } from "./newgame.js"; // crewInvViewer: a crew card's 👁 Inventory window
 import { worldConfigModal } from "./worldcfg.js"; // the new-run screen's World… window (the run's dials, sim/worldcfg.js)
 import { survivorURL, spriteImg } from "./sprites.js";
 import { renderExpedition, startsWhenUnpaused, renderOrdersTab } from "./expedition.js"; // the Orders tab: every team out, one row each
@@ -875,6 +875,7 @@ function pickModal(state, ui) {
   if (ui.gearEdit && !ui.started) return ["gearedit", () => startGearEditor(state, ui)]; // ui/startgear.js, over the new-run screen
   if (ui.fleetEdit && !ui.started) return ["fleetedit", () => fleetEditor(state, ui)]; // ui/startgear.js: a starting vehicle's back (Edit…), over the new-run screen
   if (ui.fleetView && !ui.started) return ["fleetview", () => fleetViewer(state, ui)]; // ui/startgear.js: a starting vehicle's back as rolled (👁 Back), over the new-run screen
+  if (ui.crewInv && !ui.started) return ["crewinv", () => crewInvViewer(state, ui)]; // ui/newgame.js: a crew card's 👁 Inventory, over the new-run screen
   if (ui.settings) return ["settings", () => settingsModal(state, ui)]; // ui/settings.js: over everything, a battle included
   if (ui.hall) return ["hall", () => hallModal(state, ui)]; // ui/halloffame.js: over the title, the new-run screen and the end screens
   if (ui.title) return null; // the title screen (ui/title.js) is up: the new-run screen waits for New game

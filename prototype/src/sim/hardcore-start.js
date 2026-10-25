@@ -15,6 +15,9 @@
 //   few things in it, or with only their clothes and pockets (0–4 small things). Maybe a weapon from the house: a kitchen
 //   knife, a bat, a crowbar, a pistol with a few rounds. The team's food and water (pooled, like any team's) come from
 //   what they carried: 1–3 days' worth for three. Almost no ammo, no fuel, no vehicle.
+//   The crew card's 👁 Inventory (the user's request 2026-10-25: "add a way to see each survivors inventory view with a
+//   button to reroll the gear inside pockets packs rigs etc"): its 🎲 Reroll draws the pocket and bag things again on
+//   dice of their own (s.stuffRoll: regrabStuff), the bag, weapon, armor and every other die as they were.
 // - Who they were (HC_START.ARCHETYPES, 2026-10-06): each of the three is drawn, no two alike, from a set of
 //   backgrounds (a prepper, a veteran, a college student, an office worker, a blue-collar worker, a nurse, a farmer, a
 //   hunter, a mechanic, a cop, a trucker, a teacher; weighted). A background bumps two or three skills, often brings a
@@ -428,9 +431,22 @@ export function rollGrab(state, s, A = null) {
   // Worn from the start (a cop's vest, a veteran's).
   if (A && A.armor) for (const [k, odds] of Object.entries(A.armor)) if (GEAR[k] && !s.gear.armor && rng.chance(odds)) { s.gear.armor = startItem(rng, k, Math.round(rng.range(0.5, 0.9) * 100) / 100); got.armor = s.gear.armor; }
   if (A && A.meds) got.meds += rng.int(A.meds[0], A.meds[1]);
+  grabStuff(rng, s, got, bag, A); // pockets first (small things), then the bag
+  if (bag && rng.chance(C.MEDS.pack)) got.meds += 1;
+  const F = (A && A.food) || C.FOOD; // what they grabbed to eat by background (ARCHETYPES food), else the common
+  const f = bag ? F.pack : F.pockets, w = bag ? C.WATER.pack : C.WATER.pockets;
+  got.food += rng.int(f[0], f[1]);
+  got.water += rng.int(w[0], w[1]);
+  if (Number.isFinite(s.stuffRoll)) regrabStuff(s, got, bag, A); // 👁 Inventory's 🎲 Reroll: the pocket and bag things on dice of their own
+  return got;
+}
+// The pocket and bag things of a grab (rollGrab), on rng: small things into the free pockets (POCKET_STUFF, a
+// background's small stuff over it), then, with a bag, its things (PACK_STUFF, the background's stuff over it), a tool
+// to the off hand while it is free (hand false: to the bag). Each goes on got.items.
+function grabStuff(rng, s, got, bag, A, hand = true) {
+  const C = HC_START;
   const stuff = A && A.stuff ? { ...C.PACK_STUFF, ...A.stuff } : C.PACK_STUFF;
   const pocketStuff = A && A.stuff ? { ...C.POCKET_STUFF, ...Object.fromEntries(Object.entries(A.stuff).filter(([k]) => GEAR[k] && GEAR[k].small)) } : C.POCKET_STUFF;
-  // Pockets first (small things), then the bag.
   const nPockets = Math.min(POCKETS, rng.int(C.POCKET_ITEMS[0], C.POCKET_ITEMS[1]));
   for (let i = 0; i < nPockets; i++) {
     const key = pickW(rng, pocketStuff);
@@ -440,27 +456,32 @@ export function rollGrab(state, s, A = null) {
     s.pockets[at] = item;
     got.items.push(item);
   }
-  if (bag) {
-    const n = rng.int(C.PACK_ITEMS[0], C.PACK_ITEMS[1]);
-    for (let i = 0; i < n; i++) {
-      const key = pickW(rng, stuff);
-      const item = startItem(rng, key, 1);
-      // A tool goes in the off hand if it is free (a flashlight, a bandage kit), else in the bag.
-      if (GEAR[key].slot === "tool" && !s.gear.tool) s.gear.tool = item;
-      else {
-        const at = packOf(s).indexOf(null);
-        if (at < 0) break;
-        packOf(s)[at] = item;
-      }
-      got.items.push(item);
+  if (!bag) return;
+  const n = rng.int(C.PACK_ITEMS[0], C.PACK_ITEMS[1]);
+  for (let i = 0; i < n; i++) {
+    const key = pickW(rng, stuff);
+    const item = startItem(rng, key, 1);
+    // A tool goes in the off hand if it is free (a flashlight, a bandage kit), else in the bag.
+    if (hand && GEAR[key].slot === "tool" && !s.gear.tool) s.gear.tool = item;
+    else {
+      const at = packOf(s).indexOf(null);
+      if (at < 0) break;
+      packOf(s)[at] = item;
     }
-    if (rng.chance(C.MEDS.pack)) got.meds += 1;
+    got.items.push(item);
   }
-  const F = (A && A.food) || C.FOOD; // what they grabbed to eat by background (ARCHETYPES food), else the common
-  const f = bag ? F.pack : F.pockets, w = bag ? C.WATER.pack : C.WATER.pockets;
-  got.food += rng.int(f[0], f[1]);
-  got.water += rng.int(w[0], w[1]);
-  return got;
+}
+// What is in their pockets and bag drawn again (the user's request 2026-10-25: "add a way to see each survivors
+// inventory view with a button to reroll the gear inside pockets packs rigs etc"; ui/newgame.js rerollCarried): the
+// things the grab put there come out (a box of rounds ammo.js pocketBox stowed, and a tool in the off hand, stay),
+// then the pockets and the bag are filled again from the same tables on s.stuffRoll's own dice, the off hand left as
+// it is. The bag, weapon, armor, food, water and every other die are the grab's, so nothing else moves. got.items
+// holds the new things (grabLine names them).
+function regrabStuff(s, got, bag, A) {
+  const out = new Set(), pk = packOf(s) || [];
+  for (const list of [s.pockets, pk]) list.forEach((it, i) => { if (it && got.items.includes(it)) { list[i] = null; out.add(it); } });
+  got.items = got.items.filter((it) => !out.has(it));
+  grabStuff(new Rng(s.stuffRoll), s, got, bag, A, false);
 }
 
 // The prepper's flight: the packed duffle bag, its kit, the water filter in hand, a knife or a gun with rounds, the
@@ -898,6 +919,8 @@ export function setupHardcoreStart(state, crew, crewRoll = null, n = HC_START.CR
     const s = people[i];
     const A = archetypeOf(state, s.background);
     const roll = () => (s.background === "prepper" ? rollPrepper(state, s) : A && A.custom ? rollCustom(state, s, A) : rollGrab(state, s, A));
+    const stuffRoll = crew && crew[i] && crew[i].stuffRoll; // 👁 Inventory's 🎲 Reroll: the pocket and bag things on dice of their own (rollGrab)
+    if (Number.isFinite(stuffRoll)) s.stuffRoll = stuffRoll; else delete s.stuffRoll;
     const got = ownGrab(state, s, crew && crew[i] && crew[i].grabRoll, !!(crew && crew[i] && crew[i].grabPick), roll);
     const picked = grabStartGear(state, s, got); // startgear.js: what was picked on the new-run screen, in place of the grab
     if (picked) pickedSup.push(picked);

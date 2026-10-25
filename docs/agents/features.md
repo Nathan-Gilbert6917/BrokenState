@@ -41,6 +41,7 @@ Older design docs: [docs/base-building/plan.md](../base-building/plan.md), [docs
   - Up to one vehicle a survivor (＋ Add, ✕ Remove, kind), each with a point limit and back set under Customize only, on nobody's points [startfleet, startgear, ui/startgear] `tools/startfleettest.js`.
   - Every mode: each vehicle rolled by whose it is (kind, tank, back; 👁 Back, 🎲 Reroll) and named so; Hardcore's account splits the crew between them [hardcore-start, startfleet, ui/startgear] `tools/fleetbackstest.js`.
   - Each has a driver, at its wheel on the team and in battle; every vehicle on raid maps; too few drivers after a raid, you pick which go on [vehicles, combat, walkers] `tools/fleetdrivertest.js`.
+- **Crew inventory**: 👁 Inventory on each crew card lists what they wear and carry; 🎲 rerolls what is inside [ui/newgame, hardcore-start, main] `tools/crewinvtest.js`. [details](../features/campaign.md#a-survivors-inventory-on-the-new-run-screen)
 - **Crashlanding**: 3 years on, 300 × 200, lone survivor of a downed Guard heli, no base or car; the unit's base turns hive, then a secret bunker [crashmode, crashstart] `tools/crashlandingtest.js`. [details](../features/campaign.md#crashlanding)
 - **New-run shortcuts**: Random run, New start position and Pick start on map [ui/newgame, startpick, main] `tools/startpicktest.js`. [details](../features/campaign.md#new-run-shortcuts)
 - **World configuration**: the new-run *World…* window's dials and presets, kept in `state.worldCfg` [worldcfg, ui/worldcfg]. [details](../features/campaign.md#world-configuration)
