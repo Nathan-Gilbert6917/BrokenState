@@ -47,7 +47,9 @@ const LIGHT = (n) => 0.18 * n[2] - 0.3 * Math.max(0, n[0]) + 0.04 * Math.max(0, 
 // for a vertical limb, else across the limb; v the other). o: sides (8), phase (the section's turn), taper (the
 // section's scale at B), tex(face, s, t) → colour (face by the figure-space normal: front, back, left, right, top,
 // bottom; s across the face 0..1, t along the limb 0..1 from A), u (the u axis to use).
-export const limb = (A, B, ra, rb, col, o = {}) => ({ A, B, ra, rb, col, sides: o.sides ?? 8, phase: o.phase ?? 0, taper: o.taper ?? 1, tex: o.tex || null, u: o.u || null, group: o.group || 0 });
+// flat: the sides run straight between the section's corners (a true prism: a car's body, a cabin) instead of round
+// along the ellipse through them (a limb's cushion of a side).
+export const limb = (A, B, ra, rb, col, o = {}) => ({ A, B, ra, rb, col, sides: o.sides ?? 8, phase: o.phase ?? 0, taper: o.taper ?? 1, tex: o.tex || null, u: o.u || null, group: o.group || 0, flat: !!o.flat });
 const OUTLINE = "#0b0c0e";
 // A box from A to B: half-height ha (along u) and half-width hb.
 export const boxL = (A, B, ha, hb, col, o = {}) => limb(A, B, ha * Math.SQRT2, hb * Math.SQRT2, col, { sides: 4, phase: Math.PI / 4, ...o });
@@ -58,8 +60,10 @@ function faceOf(n) { // a figure-space normal's face
   if (ax >= ay) return n[0] > 0 ? "front" : "back";
   return n[1] > 0 ? "left" : "right";
 }
-// Paints one limb: p the painter, zb the depth buffer, W the yaw (figure → world) for points and normals.
-function paintLimb(p, zb, gb, L, W, g) {
+// Paints one limb: p the painter, zb the depth buffer, W the yaw (figure → world) for points and normals; cb, when the
+// transform tags its points (W.cell(P): ui/vehiclemodel.js, the cell of a car a surface point stands over), the tag of
+// the point each pixel shows.
+function paintLimb(p, zb, gb, L, W, g, cb = null) {
   const d = sub(L.B, L.A), length = len(d), axis = norm(d);
   let u = L.u ? norm(L.u) : Math.abs(axis[2]) > 0.9 ? [1, 0, 0] : norm(cross([0, 0, 1], axis));
   u = norm(sub(u, mul(axis, dot(u, axis))));
@@ -68,7 +72,7 @@ function paintLimb(p, zb, gb, L, W, g) {
     const w = W(P), x = Math.round(g.ox + SX(w)), y = Math.round(g.oy + SY(w));
     if (x < 0 || y < 0 || x >= g.w || y >= g.h) return;
     const dep = DEPTH(w), i = y * g.w + x;
-    if (dep > zb[i]) { zb[i] = dep; p.px[i] = col; gb[i] = L.group; }
+    if (dep > zb[i]) { zb[i] = dep; p.px[i] = col; gb[i] = L.group; if (cb) cb[i] = W.cell(P); }
   };
   const N = (nf) => norm(W.n ? W.n(nf) : W(nf)); // a normal through the transform (its own, when the transform is not a rotation)
   const light = W.light || LIGHT; // the transform may bring its own light rule (ui/mapfigures.js: harder shade on the map's small pieces)
@@ -76,7 +80,7 @@ function paintLimb(p, zb, gb, L, W, g) {
   // kept, since the texture gives runs of one colour: the same shade(col, light) as a point at a time, a few times.
   const litOf = (nf) => { const f = light(N(nf)); let lc = litOf, ls = null; return (col) => (col === lc ? ls : (ls = shade((lc = col), f))); };
   const seen = (nf) => dot(N(nf), VIEW) > 0.02;
-  const n = L.sides, ST = 0.4, ra = L.ra, rb = L.rb, tex = L.tex;
+  const n = L.sides, ST = W.step || 0.4, ra = L.ra, rb = L.rb, tex = L.tex; // the sampling step (grid px; a transform that paints big parts on a fine grid may take a coarser one: ui/vehiclemodel.js)
   const radial = (th, sc) => add(mul(u, ra * Math.cos(th) * sc), mul(v, rb * Math.sin(th) * sc));
   const [u0, u1, u2] = u, [v0, v1, v2] = v;
   // the sides (each point is C + radial(th, sc), written out: the same products and sums in the same order)
@@ -87,11 +91,12 @@ function paintLimb(p, zb, gb, L, W, g) {
     const face = faceOf(nf), lit = litOf(nf);
     const chord = len(sub(radial(th1, 1), radial(th0, 1)));
     const qs = Math.max(1, Math.ceil(chord / ST)), ts = Math.max(1, Math.ceil(length / ST));
+    const ca0 = Math.cos(th0), sa0 = Math.sin(th0), ca1 = Math.cos(th1), sa1 = Math.sin(th1); // flat: the corners, the side straight between them
     for (let ti = 0; ti <= ts; ti++) {
       const t = ti / ts, sc = 1 + (L.taper - 1) * t, C = lerp(L.A, L.B, t), [c0, c1, c2] = C;
       for (let qi = 0; qi <= qs; qi++) {
         const q = qi / qs, th = th0 + (th1 - th0) * q;
-        const ka = ra * Math.cos(th) * sc, kb = rb * Math.sin(th) * sc;
+        const ka = (L.flat ? ca0 + (ca1 - ca0) * q : Math.cos(th)) * ra * sc, kb = (L.flat ? sa0 + (sa1 - sa0) * q : Math.sin(th)) * rb * sc;
         const P = [c0 + (u0 * ka + v0 * kb), c1 + (u1 * ka + v1 * kb), c2 + (u2 * ka + v2 * kb)];
         let tc = null;
         if (tex) {
@@ -103,14 +108,15 @@ function paintLimb(p, zb, gb, L, W, g) {
       }
     }
   }
-  // the ends
+  // the ends: the limb's polygon (a box's cap a rectangle, an eight-sided limb's an octagon), filled in rings
+  const SEG = (2 * Math.PI) / n, cosH = Math.cos(SEG / 2), poly = (th) => cosH / Math.cos((((th - L.phase) % SEG) + SEG) % SEG - SEG / 2); // the edge's distance at th, the vertices' 1
   for (const [C, nf, sc] of [[L.A, mul(axis, -1), 1], [L.B, axis, L.taper]]) {
     if (!seen(nf)) continue;
     const f = faceOf(nf), lit = litOf(nf), rs = Math.max(1, Math.ceil(Math.max(ra, rb) * sc / ST)), [c0, c1, c2] = C;
     for (let ri = 0; ri <= rs; ri++) {
       const r = ri / rs, steps = Math.max(4, Math.ceil((2 * Math.PI * Math.max(ra, rb) * r * sc) / ST)), rsc = r * sc;
       for (let k = 0; k <= steps; k++) {
-        const th = (2 * Math.PI * k) / steps, cos = Math.cos(th), sin = Math.sin(th);
+        const th = (2 * Math.PI * k) / steps, pr = poly(th), cos = Math.cos(th) * pr, sin = Math.sin(th) * pr;
         const ka = ra * cos * rsc, kb = rb * sin * rsc;
         const P = [c0 + (u0 * ka + v0 * kb), c1 + (u1 * ka + v1 * kb), c2 + (u2 * ka + v2 * kb)];
         const tc = tex ? tex(f, (cos * r + 1) / 2, (sin * r + 1) / 2) : null;
@@ -129,12 +135,14 @@ function transformOf(yaw, lie = false, height = 30) {
   W.n = (n) => rot([n[2], n[1], n[0]]); // the normals turn with it, unsquashed
   return W;
 }
-// Paints limbs through a transform onto the grid g, into the depth and group buffers (shared by a figure's parts).
+// Paints limbs through a transform onto the grid g, into the depth and group buffers (shared by a figure's parts); with
+// W.cell, a buffer of the cell tag each pixel shows too (cb, -1 where nothing is drawn).
 export function paintLimbs(p, limbs, W, g, buf) {
   const zb = buf ? buf.zb : new Float32Array(g.w * g.h).fill(-1e9), gb = buf ? buf.gb : new Uint8Array(g.w * g.h);
-  for (const L of limbs) paintLimb(p, zb, gb, L, W, g);
+  const cb = W.cell ? (buf && buf.cb) || new Int16Array(g.w * g.h).fill(-1) : null;
+  for (const L of limbs) paintLimb(p, zb, gb, L, W, g, cb);
   if (limbs.muzzle) { const m = W(limbs.muzzle); p.muzzle = { mx: g.ox + SX(m), my: g.oy + SY(m) }; } // where a shot starts (isoview.js muzzlePoint), grid px
-  return { zb, gb };
+  return { zb, gb, cb };
 }
 // A dark rim where a weapon (group 1) meets the body, so it reads against clothes of its own colour.
 function rim(p, g, gb) {

@@ -36,6 +36,7 @@ import { INDOOR } from "../sim/indoorlight.js";
 import { BMAP } from "../sim/buildingmaps.js";
 import { WINDOW } from "../sim/windows.js"; // the window orders' costs
 import { SHOVE, BOARD } from "../sim/barricade.js"; // Shove, Board up, Tear down (sim/barricade.js)
+import { LIFT } from "../sim/furnicarry.js"; // Lift, Set down, Load into vehicle (sim/furnicarry.js)
 import { WIRE } from "../sim/wire.js"; // Cut wire (sim/wire.js)
 import { TENT_TAKE } from "../sim/data-tents.js"; // Take down, Slash at a tent (sim/tentfight.js)
 import { MEDIC } from "../sim/medics.js";
@@ -57,7 +58,7 @@ export const ICON = {
   throw: "🧨", throwspear: "🔱", pickspear: "✊", hunker: "🛡️",
   meds: "💊", heal: "🩹", revive: "💉", selfStab: "🩸", dragAlly: "🛷", dropVehicle: "🚑", drag: "🛷", tie: "🪢", finish: "💀", execute: "☠️", plate: "🦺",
   search: "🔍", searchBody: "🔍", quick: "🔎", ground: "🧺", dropCarried: "📤", dropAllCarried: "📤", pickCarried: "📦", crush: "🥾", doubletap: "💥", pickup: "🏋️", stowbody: "📦",
-  peek: "🚪", close: "🚪", brace: "🧱", climb: "🧗", checkwindow: "🪟", openwindow: "🪟", closewindow: "🪟", breakwindow: "🪟", shove: "🪑", boardup: "🔨", teardown: "🪓", cutwire: "✂️", strike: "⛺", slashtent: "🔪", lights: "💡", light: "🔦", nvg: "🥽", visor: "⛑️",
+  peek: "🚪", close: "🚪", brace: "🧱", climb: "🧗", checkwindow: "🪟", openwindow: "🪟", closewindow: "🪟", breakwindow: "🪟", shove: "🪑", liftPiece: "📦", setPiece: "⬇️", stowPiece: "🚚", boardup: "🔨", teardown: "🪓", cutwire: "✂️", strike: "⛺", slashtent: "🔪", lights: "💡", light: "🔦", nvg: "🥽", visor: "⛑️",
   vehicle: "🧳", board: "🚙", disembark: "🚶", drive: "🏎️", turn: "↪️", gunner: "🪖", pullOut: "🆘",
   surrender: "🙌", takeAlive: "🤝", ladder: "🪜", push: "✋", ram: "🐏", dropRam: "⬇️", loadRam: "🐏", unloadRam: "🐏", takeRam: "🐏", drop: "🪨",
   drawside: "🔫", drawmelee: "🔪", drawmain: "🎽", // sim/holsters.js
@@ -72,7 +73,7 @@ export const COST = {
   dropCarried: 0, dropAllCarried: 0, evac: "all", evacStop: 0, dragAlly: 0, dropVehicle: 0, inventory: 0, cones: 0, selfStab: 0, takeRam: 0, dropRam: 0,
   shoot: "end", cab: "end", overwatch: "end", melee: "end", hunker: "end", subdue: "end", taser: "end", launch: "end", brace: "end", ram: "end", drop: "end", surrender: "end",
   reload: 1, getshells: 1, suppress: 1, throwspear: 1, pickspear: 1, throw: 1, tie: 1, drag: 1, meds: 1, heal: 1, revive: 2, finish: 1, crush: 1, doubletap: 1, pickup: 1,
-  stowbody: 1, pickCarried: 1, close: 1, climb: BMAP.CLIMB.ap, checkwindow: 0, openwindow: WINDOW.OPEN_AP, closewindow: WINDOW.OPEN_AP, breakwindow: WINDOW.BREAK.ap, shove: SHOVE.AP, boardup: BOARD.AP, teardown: BOARD.TEAR.ap, cutwire: WIRE.AP, strike: TENT_TAKE.AP, slashtent: TENT_TAKE.SLASH_AP, lights: INDOOR.AP, search: SEARCH.ap, searchBody: SEARCH.ap, extract: 1, retreat: 1, board: 1, disembark: 1,
+  stowbody: 1, pickCarried: 1, close: 1, climb: BMAP.CLIMB.ap, checkwindow: 0, openwindow: WINDOW.OPEN_AP, closewindow: WINDOW.OPEN_AP, breakwindow: WINDOW.BREAK.ap, shove: SHOVE.AP, liftPiece: LIFT.AP, setPiece: LIFT.SET_AP, stowPiece: LIFT.STOW_AP, boardup: BOARD.AP, teardown: BOARD.TEAR.ap, cutwire: WIRE.AP, strike: TENT_TAKE.AP, slashtent: TENT_TAKE.SLASH_AP, lights: INDOOR.AP, search: SEARCH.ap, searchBody: SEARCH.ap, extract: 1, retreat: 1, board: 1, disembark: 1,
   turn: 1, gunner: 1, drive: 2, pullOut: MEDIC.PULL.AP, goup: 1, godown: 1, unjam: 1, plate: PLATE_AP, reloadTaser: 1, pepper: 1, execute: 1, glreload: 1, ladder: 1,
   drawside: 1, drawmelee: 1, drawmain: 1, // sim/holsters.js DRAW_AP
   push: 1, shoveFoe: 1, loadRam: 1, unloadRam: 1, handover: 1, callout: 1, allyorder: 1, // handover: unitOrders' ap wins (a free Face toward the mate out of the cone)
@@ -94,7 +95,7 @@ const GROUPS = [
   ["shoot", "cab", "overwatch", "reload", "ammocycle", "getshells", "drawside", "drawmelee", "drawmain", "firemode", "unjam", "suppress", "launch", "glround", "glreload", "melee", "shoveFoe", "pull", "subdue", "taser", "reloadTaser", "pepper", "throw", "throwspear", "pickspear", "hunker"],
   ["meds", "heal", "revive", "selfStab", "dragAlly", "dropVehicle", "drag", "tie", "finish", "execute", "plate"],
   ["search", "searchBody", "quick", "ground", "handover", "dropCarried", "dropAllCarried", "pickCarried", "crush", "doubletap", "pickup", "stowbody"],
-  ["peek", "close", "brace", "climb", "checkwindow", "openwindow", "closewindow", "breakwindow", "shove", "boardup", "teardown", "cutwire", "strike", "slashtent", "lights", "light", "nvg", "visor"], // doors, windows (sim/windows.js), barricades (sim/barricade.js), wire (sim/wire.js) and lights
+  ["peek", "close", "brace", "climb", "checkwindow", "openwindow", "closewindow", "breakwindow", "shove", "liftPiece", "setPiece", "stowPiece", "boardup", "teardown", "cutwire", "strike", "slashtent", "lights", "light", "nvg", "visor"], // doors, windows (sim/windows.js), barricades (sim/barricade.js), wire (sim/wire.js) and lights
   ["vehicle", "board", "disembark", "drive", "turn", "gunner", "pullOut"],
   ["callout", "allyorder"], // the rest: Call out (sim/parley.js), Ally orders (sim/allyorders.js), a rescue's ropes and locks, the siege kit, Surrender, Take them alive
   ["inventory", "cones"],
@@ -132,6 +133,7 @@ const WHEN = {
   pickspear: "No thrown spear of theirs to pick up.", ammocycle: "Only one kind of round for this gun to hand.", visor: "No helmet with a visor.",
   launch: "No grenade launcher or rocket carried.", meds: "No meds left.", face: "Nobody to turn.", sneak: "Nobody to keep low.", hunker: "Nobody to hunker.",
   handover: "Nobody of yours right next to them in their view cone to trade with.",
+  liftPiece: "Right next to a piece of furniture or an appliance, both hands free, both actions left.", setPiece: "Lift a piece first.", stowPiece: "Carry a piece to the vehicle first.", // sim/furnicarry.js
   drawside: "No side arm in the side arm slot: a handgun goes there (the Inventory, Shift+B).", drawmelee: "No melee weapon in the melee slot: a small one (a knife, a hatchet, a machete, a bat) goes there.",
   drawmain: "Nothing slung: the main weapon is in the hands.",
   callout: "Raids only: someone of another group in sight (survivors, soldiers, a hostile group's people).",

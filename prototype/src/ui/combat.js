@@ -40,6 +40,7 @@ import { TENT_TAKE, tentsNear, strikeRefusal, slashTargets, slashRefusal, goesLe
 import { clearEnough } from "../sim/battlesize.js";
 import { SUPPLIES, GEAR } from "../sim/data.js";
 import { rescueOptions } from "../sim/rescueraid.js"; // a rescue raid on a group's base: captives, the cell, the armory
+import { LIFT, liftTargets, liftRefusal as pieceLiftRefusal, liftPlan, liftHelpers, setTargets, setRefusal, stowRefusal, carriedPiece } from "../sim/furnicarry.js"; // furniture and appliances lifted, carried, set down, loaded into the vehicle (issue #12)
 import { PUSH, pushTargets, pushRefusal, pushOdds, pushHazard } from "../sim/shoving.js"; // a foe shoved back a tile or flat on their back (the user's request 2026-10-20)
 import { subdueOdds, canSubdue, throwablesOf, THROWABLES, THROW_KEYS, dragable, heldDown, STEALTH } from "../sim/stealth.js";
 import { flashCells, flashReach, stunLabel, FRAG, BLAST, SMOKE } from "../sim/throwables.js"; // a flashbang's reach and stun; the throw preview
@@ -107,7 +108,7 @@ const ENEMY_STEP_MS = 420;
 // horde does not file past one at a time), never later than WALK_WAIT_MAX ms after it set off.
 const WALK_WAIT = 0.6, WALK_WAIT_MAX = 2000;
 
-export const cui = { battle: null, sel: null, mode: "move", hover: null, msg: "", lastStep: 0, anim: new Map(), movesSeen: 0, walkUntil: 0, cache: { key: "" }, autoPlay: false, pickedDown: null, facePick: null, cones: false, handAsk: null, handReq: null, shoveAsk: null, selChip: null }; // selChip: the base map's selected thing, its orders on the map (ui/basemap.js selChip); handAsk: the Hand over chooser open for this unit; handReq: { sid, mate } the two-doll window asked for (ui/inventory.js takeLootReq); shoveAsk: { uid, x, y } the piece picked for Shove, its destinations offered (sim/barricade.js)
+export const cui = { battle: null, sel: null, mode: "move", hover: null, msg: "", lastStep: 0, anim: new Map(), movesSeen: 0, walkUntil: 0, cache: { key: "" }, autoPlay: false, pickedDown: null, facePick: null, cones: false, handAsk: null, handReq: null, shoveAsk: null, pieceAsk: null, selChip: null }; // selChip: the base map's selected thing, its orders on the map (ui/basemap.js selChip); handAsk: the Hand over chooser open for this unit; handReq: { sid, mate } the two-doll window asked for (ui/inventory.js takeLootReq); shoveAsk: { uid, x, y } the piece picked for Shove, its destinations offered (sim/barricade.js); pieceAsk: { uid, what: "lift" | "set" } the Lift or Set down chooser open (sim/furnicarry.js)
 // The view cones of everyone (yours and the enemies you see), on or off (Alt+C, the view bar), kept per machine.
 const CONES_KEY = "bs.battle.cones";
 try { cui.cones = typeof localStorage !== "undefined" && localStorage.getItem(CONES_KEY) === "1"; } catch { cui.cones = false; }
@@ -787,9 +788,10 @@ function act(state, a) {
   if (!err && a.type !== "end") {
     const u = unitById(b, a.unit);
     if (u && u.side === "player") followFloor(b, u); // Go up / Go down: the view goes with them
-    if (!u || !active(u) || u.ap < 1 || ["throw", "drag", "tie", "subdue", "shoveFoe", "taser", "pepper", "execute", "surrender", "peek", "close", "brace", "checkwindow", "openwindow", "closewindow", "breakwindow", "shove", "boardup", "teardown", "cutwire", "strike", "slashtent", "keylock", "keyunlock", "doubletap", "pickup", "crush", "goup", "godown", "drive", "loadRam", "unloadRam", "board", "disembark", "turn", "heal", "revive", "dragAlly", "dropAlly", "finish", "pullOut", "suppress", "throwspear", "unjam", "launch", "glreload", "face", "overwatch", "callout", "allyorder"].includes(a.type)) cui.mode = "move";
+    if (!u || !active(u) || u.ap < 1 || ["throw", "drag", "tie", "subdue", "shoveFoe", "taser", "pepper", "execute", "surrender", "peek", "close", "brace", "checkwindow", "openwindow", "closewindow", "breakwindow", "shove", "boardup", "teardown", "cutwire", "strike", "slashtent", "keylock", "keyunlock", "doubletap", "pickup", "crush", "goup", "godown", "drive", "loadRam", "unloadRam", "board", "disembark", "turn", "heal", "revive", "dragAlly", "dropAlly", "finish", "pullOut", "suppress", "throwspear", "unjam", "launch", "glreload", "face", "overwatch", "callout", "allyorder", "liftPiece", "setPiece", "stowPiece"].includes(a.type)) cui.mode = "move";
     cui.ammoAsk = null;
     cui.shoveAsk = null; // the Shove chooser (sim/barricade.js) closes once anything is done
+    cui.pieceAsk = null; // the Lift and Set down choosers (sim/furnicarry.js) too
     if (a.type !== "face") cui.handAsk = null; // the Hand over chooser stays open across the free Face toward the mate
   }
   autoSelect(b);
@@ -940,6 +942,8 @@ export function combatClick(state, px, py) {
   if (u && active(u) && ["peek", "close", "brace", "checkwindow", "openwindow", "closewindow", "breakwindow", "boardup", "teardown", "cutwire", "strike", "slashtent"].includes(cui.mode)) return void act(state, { type: cui.mode, unit: u.id, x: c.x, y: c.y });
   // Shove (sim/barricade.js): the piece clicked opens its destinations; with a piece picked, a destination clicked shoves it there.
   if (u && active(u) && (cui.mode === "shove" || (cui.shoveAsk && cui.shoveAsk.uid === u.id))) return void shoveClick(state, b, u, c);
+  // Lift and Set down (sim/furnicarry.js): the piece clicked is lifted (its chooser when there is a choice); the cell clicked is where it goes.
+  if (u && active(u) && (cui.mode === "liftPiece" || cui.mode === "setPiece")) return void pieceClick(state, b, u, c);
   // A window right next to the selected unit (sim/windows.js): the next thing to do with it (check it, open it, climb through).
   if (isWindow(b.cells[c.y * W + c.x]) && windowsBy(b, u).some((o) => o.x === c.x && o.y === c.y)) return void windowClick(state, b, u, c);
   // A locked door (sim/locks.js: a raid's, a field map's houses'): a click tries it. A closed door is walked through
@@ -1276,6 +1280,90 @@ function barricadeButtons(state, b, u, btn) {
   const tears = tearTargets(b, u);
   if (tears.length) btn("teardown", "Tear down", `${BOARD.TEAR.ap} actions: ${first} pries the boards off the ${[...new Set(tears.map((t) => boardedName(t.c).toLowerCase()))].join(", ")} next to them, from either side: the door or window as it was, shut. About half the bundles come off whole (into the kit, or on the ground at their feet); the rest are splintered. Quieter than nailing them up (heard ${BOARD.TEAR.radius} tiles off).${tears.length > 1 ? " Several next to them: click the one." : ""}`,
     ap >= BOARD.TEAR.ap, "", { why: NO_AP, ap: BOARD.TEAR.ap, on: cui.mode === "teardown" });
+}
+// ---------- furniture and appliances (sim/furnicarry.js, issue #12) ----------
+// Lift (both actions; a teammate taking the other end both too), Set down (1 action, each of two), Load into vehicle (1 action).
+function pieceButtons(state, b, u, btn) {
+  const first = u.name.split(" ")[0];
+  const open = (what) => !!(cui.pieceAsk && cui.pieceAsk.uid === u.id && cui.pieceAsk.what === what);
+  if (u.piece) {
+    const P = carriedPiece(b, u);
+    const name = P ? P.def.name.toLowerCase() : "piece";
+    const pair = !!(P && P.partner);
+    const sWhy = setRefusal(b, u);
+    btn("setPiece", "Set down", pair ? `${LIFT.SET_AP} action each: the two set the ${name} down to their left or right, parallel to them (you choose the side), on free open floor or a door frame they can see.` : `${LIFT.SET_AP} action: ${first} sets the ${name} down on a free cell right next to them that they can see (open floor or a door frame: it plugs the doorway as a barricade).${P && Math.max(P.def.size[0], P.def.size[1]) > 1 ? " It takes two cells: the second straight on from them." : ""} Drop carried (free) lets it down on any free cell next to them, or at their feet.`,
+      !sWhy, "", { why: sWhy, ap: LIFT.SET_AP, on: cui.mode === "setPiece" || open("set") });
+    const tWhy = stowRefusal(state, b, u);
+    if (b.raid || b.vehicle || b.evacCols) btn("stowPiece", "Load into vehicle", `${LIFT.STOW_AP} action, at the vehicle: the ${name} (${P ? P.def.kg : "?"} kg, its full weight) into the team's cargo, if it has the room (the bicycles' racks take little); the hands free again${pair ? " and the tether ends" : ""}.`, !tWhy, "", { why: tWhy, ap: LIFT.STOW_AP });
+    return;
+  }
+  const list = liftTargets(b, u);
+  if (!list.length) return;
+  const why = pieceLiftRefusal(b, u);
+  const names = [...new Set(list.map((t) => `${t.def.name.toLowerCase()} (${t.def.carry === "fixed" ? "fixed" : `${t.def.kg} kg${t.def.carry === "two" ? ", two people" : ""}`})`))].join(", ");
+  btn("liftPiece", "Lift", `${LIFT.AP} actions (and ${LIFT.HELP_AP} from a teammate who takes the other end): ${first} lifts the ${names} next to them into their arms. Alone it weighs on them in full (past 40 kg crushingly slow: a 60 kg fridge is 2 tiles an action); shared, each carries half and both move faster, tethered: they stay right next to each other until it is set down or loaded into the vehicle. No shooting, doors, searching, vaulting, sneaking or dashing with it; the stairs take both actions. A container's contents are tipped onto the floor first.`,
+    !why, "", { why, ap: LIFT.AP, on: cui.mode === "liftPiece" || open("lift") });
+}
+// The chooser over the orders: Lift (each piece alone or with each helper), Set down (each place it can go; a pair's sides).
+function pieceChooser(state, b, u) {
+  if (!u || !cui.pieceAsk || cui.pieceAsk.uid !== u.id || !active(u)) return "";
+  const close = ` <button class="mini" data-action="cb-act" data-v="piececlose" data-tip="Close">✕</button>`;
+  if (cui.pieceAsk.what === "set") {
+    const list = setTargets(b, u);
+    const why = setRefusal(b, u);
+    if (why) return `<div class="small cbmsg cbammo">Set down: <span class="muted">${esc(why)}</span>${close}</div>`;
+    return `<div class="small cbmsg cbammo" data-tip="${esc("Where it goes (or click the cell on the map).")}">Set down (${LIFT.SET_AP} action${carriedPiece(b, u) && carriedPiece(b, u).partner ? " each" : ""}): ${list.map((t) => `<button class="mini" data-action="cb-act" data-v="setPiece" data-k="${t.side || `${t.x},${t.y}`}">${esc(t.word[0].toUpperCase() + t.word.slice(1))}</button>`).join(" ")}${close}</div>`;
+  }
+  const parts = [];
+  for (const t of liftTargets(b, u)) {
+    const idx = t.pile ? t.pile.contents.gear.indexOf(t.item) : -1;
+    const k = (h) => `${t.x},${t.y},${h},${idx}`;
+    const what = `${t.def.name}${t.pile ? " (on the ground)" : ""}`;
+    if (t.def.carry === "fixed") { parts.push(`${esc(what)}: <span class="muted">fixed in place</span>`); continue; }
+    const helpers = liftHelpers(b, u, t);
+    const btns = [];
+    if (t.def.carry !== "two") btns.push(`<button class="mini" data-action="cb-act" data-v="liftPiece" data-k="${k(-1)}" data-tip="${esc(`${LIFT.AP} actions: ${t.def.kg} kg on ${u.name.split(" ")[0]} alone.`)}">Alone</button>`);
+    for (const h of helpers) btns.push(`<button class="mini" data-action="cb-act" data-v="liftPiece" data-k="${k(h.id)}" data-tip="${esc(`${LIFT.AP} actions each: ${t.def.kg * LIFT.SHARE} kg each, tethered.`)}">With ${esc(h.name.split(" ")[0])}</button>`);
+    parts.push(`${esc(what)} (${t.def.kg} kg): ${btns.length ? btns.join(" ") : `<span class="muted">${esc(liftPlan(b, u, t).why || "nobody free to take the other end")}</span>`}`);
+  }
+  return `<div class="small cbmsg cbammo">Lift: ${parts.join(" · ")}${close}</div>`;
+}
+// The Lift and Set down orders (combatAction "cb-act"; d.k: "x,y,helper,item" from the Lift chooser, "x,y" or a side
+// from the Set down one). With one way to do it, at once; else the chooser.
+function pieceCbAct(state, b, u, v, d) {
+  const k = d && d.k != null ? String(d.k) : "";
+  if (v === "setPiece") {
+    if (k) return void act(state, /^(left|right)$/.test(k) ? { type: "setPiece", unit: u.id, side: k } : { type: "setPiece", unit: u.id, x: Number(k.split(",")[0]), y: Number(k.split(",")[1]) });
+    const why = setRefusal(b, u);
+    if (why) { cui.msg = why; return; }
+    const list = setTargets(b, u);
+    if (list.length === 1) return void act(state, list[0].side ? { type: "setPiece", unit: u.id, side: list[0].side } : { type: "setPiece", unit: u.id, x: list[0].x, y: list[0].y });
+    cui.pieceAsk = { uid: u.id, what: "set" };
+    cui.mode = "setPiece";
+    cui.msg = carriedPiece(b, u) && carriedPiece(b, u).partner ? "Which side of the two? Pick above the orders, or click a cell on that side." : "Where does it go? Click a free cell next to them, or pick above the orders.";
+    return;
+  }
+  if (k) { const [x, y, h, i] = k.split(",").map(Number); return void act(state, { type: "liftPiece", unit: u.id, x, y, helper: h, ...(i >= 0 ? { item: i } : {}) }); }
+  const why = pieceLiftRefusal(b, u);
+  if (why) { cui.msg = why; return; }
+  const list = liftTargets(b, u).filter((t) => t.def.carry !== "fixed");
+  if (list.length === 1 && !liftHelpers(b, u, list[0]).length && list[0].def.carry === "one") return void act(state, { type: "liftPiece", unit: u.id, x: list[0].x, y: list[0].y, helper: -1, ...(list[0].pile ? { item: list[0].pile.contents.gear.indexOf(list[0].item) } : {}) });
+  cui.pieceAsk = { uid: u.id, what: "lift" };
+  cui.mode = "liftPiece";
+  cui.msg = "Lift alone or with whom? Pick above the orders, or click the piece on the map.";
+}
+// A map click in Lift or Set down mode: the piece to lift (alone, or the chooser), or where the piece carried goes.
+function pieceClick(state, b, u, c) {
+  if (cui.mode === "setPiece") {
+    const t = setTargets(b, u).find((o) => o.cells.some(([x, y]) => x === c.x && y === c.y));
+    if (t) return void act(state, t.side ? { type: "setPiece", unit: u.id, side: t.side } : { type: "setPiece", unit: u.id, x: t.x, y: t.y });
+    cui.msg = setRefusal(b, u) || "Not there: a free cell right next to them that they can see (a pair: beside the two).";
+    return;
+  }
+  const t = liftTargets(b, u).find((o) => o.x === c.x && o.y === c.y && o.def.carry !== "fixed");
+  if (!t) { cui.msg = "Click a piece of furniture or an appliance right next to them."; return; }
+  if (!liftHelpers(b, u, t).length && t.def.carry === "one") return void act(state, { type: "liftPiece", unit: u.id, x: t.x, y: t.y, helper: -1, ...(t.pile ? { item: t.pile.contents.gear.indexOf(t.item) } : {}) });
+  cui.pieceAsk = { uid: u.id, what: "lift" };
 }
 // ---------- tents (sim/tentfight.js) ----------
 // Take down (both actions a go, a couple of turns: the bag into the arms) and Slash (one action), shown next to a tent.
@@ -1653,9 +1741,10 @@ export function unitOrders(state, b, u) {
   else { doorButtons(b, u, btn, true); windowButtons(b, u, btn); } // a field map's houses (sim/combat.js genMap): with a door or a window next to them
   keyButtons(b, u, btn); // sim/basemap.js: the defenders' keys on their base's map
   barricadeButtons(state, b, u, btn); // sim/barricade.js: Shove, Board up, Tear down
+  pieceButtons(state, b, u, btn); // sim/furnicarry.js: Lift, Set down, Load into vehicle
   tentButtons(state, b, u, btn); // sim/tentfight.js: Take down, Slash
   if (b.rescue) rescueButtons(state, b, u, btn);
-  out.extra = lockPanel(state, b, u) + carPanel(state, b, u) + reloadPicker(state, b, u) + handChooser(state, b, u) + shoveChooser(state, b, u) + nlAskHtml(b, cui); // Execute / Surrender: asked first (ui/nonlethal.js)
+  out.extra = lockPanel(state, b, u) + carPanel(state, b, u) + reloadPicker(state, b, u) + handChooser(state, b, u) + shoveChooser(state, b, u) + pieceChooser(state, b, u) + nlAskHtml(b, cui); // Execute / Surrender: asked first (ui/nonlethal.js)
   return out;
 }
 
@@ -1845,7 +1934,7 @@ function layoutEsc(state, b) {
 function battleEsc() {
   if (cui.barTray != null) { cui.barTray = null; return true; }
   if (allyBack()) return true;
-  cui.allyAsk = null; cui.mode = "move"; cui.msg = ""; cui.endAsk = null; cui.retreatAsk = null; cui.fallAsk = null; cui.dragId = null; cui.handAsk = null; cui.shoveAsk = null;
+  cui.allyAsk = null; cui.mode = "move"; cui.msg = ""; cui.endAsk = null; cui.retreatAsk = null; cui.fallAsk = null; cui.dragId = null; cui.handAsk = null; cui.shoveAsk = null; cui.pieceAsk = null;
   return true;
 }
 
@@ -2014,6 +2103,10 @@ export function combatAction(state, key, d, ui = null) { // ui: main.js's screen
   // sim/barricade.js: Shove (the piece, then where), Board up and Tear down (the door or window next to them).
   if (v === "shove") return void shoveCbAct(state, b, u, d);
   if (v === "shoveclose") { cui.shoveAsk = null; if (cui.mode === "shove") cui.mode = "move"; cui.msg = ""; return; }
+  // sim/furnicarry.js: Lift (the piece, then alone or with whom), Set down (where; a pair: which side), Load into vehicle.
+  if (v === "liftPiece" || v === "setPiece") return void pieceCbAct(state, b, u, v, d);
+  if (v === "piececlose") { cui.pieceAsk = null; if (cui.mode === "liftPiece" || cui.mode === "setPiece") cui.mode = "move"; cui.msg = ""; return; }
+  if (v === "stowPiece") return void act(state, { type: "stowPiece", unit: u.id });
   if (v === "boardup" || v === "teardown") {
     const list = v === "boardup" ? boardTargets(b, u) : tearTargets(b, u);
     const why = v === "boardup" ? boardRefusal(state, b, u) : "";
