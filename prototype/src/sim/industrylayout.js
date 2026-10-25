@@ -79,7 +79,7 @@ export const INDUSTRY = {
   },
   EMPTY_UNIT: 0.45,   // a self-storage unit cleared out (nothing to search) on these dice
   UNIT_LOCK: 0.55,    // a unit's roller door locked
-  YARD: { tanks: [6, 9], bins: [4, 6], stacks: [5, 8], settling: [2, 3], drums: [2, 4] }, // the pieces outside (spec.yard)
+  YARD: { tanks: [6, 9], bins: [4, 6], stacks: [5, 8], settling: [2, 3], drums: [2, 4] }, // the pieces outside (spec.yardPieces)
 };
 
 // The setting a building stands in, from its site (buildingmaps.js siteBuildings: the location's type, else the
@@ -173,7 +173,7 @@ export const INDUSTRY_PLANS = {
     { id: "lumber", name: "Lumber yard", at: { urban: 0.5, industrial: 2, rural: 2 }, sig: ["palletrack"], make: (rng) => {
       const s = size(rng, "lumber");
       return {
-        ...s, storeys: 1, front: { width: 1 }, ground: "lot", foot: "wide", yard: { name: "Lumber stacks", type: "hardware", pieces: [["palletrack", INDUSTRY.YARD.stacks]], loot: true },
+        ...s, storeys: 1, front: { width: 1 }, ground: "lot", foot: "wide", yardPieces: { name: "Lumber stacks", type: "hardware", pieces: [["palletrack", INDUSTRY.YARD.stacks]], loot: true },
         program: X([7, Y([5, OFFICE("Yard office")], ["*", R("workshop", "sawshop", { name: "Saw shop" })])], ["*", R("warefloor", "lumber", { name: "Lumber shed", type: "hardware", maxBoxes: 9 })]),
         exits: [roller("left", ["workshop"], { width: 2, chance: 0.6 }), roller("right", ["warefloor"], { name: "Drive-through" }), roller("back", ["warefloor"], { name: "Drive-through" })],
       };
@@ -181,7 +181,7 @@ export const INDUSTRY_PLANS = {
     { id: "grain", name: "Grain elevator", at: { urban: 0.1, industrial: 0.5, rural: 4 }, sig: ["grainbin", "conveyor"], make: (rng) => {
       const s = size(rng, "grain");
       return {
-        ...s, front: { width: 1 }, ground: "farm", foot: footOf(s, "medium"), stairs: { roles: ["workshop"], n: 1 }, yard: { name: "Grain bins", pieces: [["grainbin", INDUSTRY.YARD.bins]] },
+        ...s, front: { width: 1 }, ground: "farm", foot: footOf(s, "medium"), stairs: { roles: ["workshop"], n: 1 }, yardPieces: { name: "Grain bins", pieces: [["grainbin", INDUSTRY.YARD.bins]] },
         program: Y([4, X([6, OFFICE("Scale house")], ["*", R("storage", "seedstore", { name: "Seed and chemical store", type: "barn", lock: ["door", 0.3] })])], ["*", R("workshop", "leg", { name: "Elevator leg", type: "barn", hub: true })]),
         upper: () => X(["*", R("workshop", "leg", { name: "Headhouse", type: "workshop", hub: true })], [5, R("control", "instruments", { name: "Dryer control", type: "control" })]),
         exits: [roller("back", ["workshop"], { width: 2, name: "Grain pit" })],
@@ -217,7 +217,7 @@ export const INDUSTRY_PLANS = {
     { id: "fueldepot", name: "Fuel depot", at: { urban: 0.5, industrial: 2, rural: 1.5 }, sig: ["vat", "fueltank"], make: (rng) => {
       const s = size(rng, "fueldepot");
       return {
-        ...s, front: { width: 1 }, ground: "lot", foot: footOf(s, "small"), yard: { name: "Tank farm", type: "garage", pieces: [["vat", INDUSTRY.YARD.tanks], ["drum", INDUSTRY.YARD.drums]], loot: true },
+        ...s, front: { width: 1 }, ground: "lot", foot: footOf(s, "small"), yardPieces: { name: "Tank farm", type: "garage", pieces: [["vat", INDUSTRY.YARD.tanks], ["drum", INDUSTRY.YARD.drums]], loot: true },
         program: Y([4, X([6, OFFICE("Depot office")], ["*", R("storage", "drums", { name: "Drum store", type: "garage" })], [4, R("breakroom", null, { name: "Drivers' room" })])], ["*", R("workshop", "pumphouse", { name: "Pump house", type: "garage", hub: true })]),
         exits: [door("back", ["workshop"], 1, 0.4), roller("left", ["workshop"], { width: 2, chance: 0.5 })],
       };
@@ -277,7 +277,7 @@ export const INDUSTRY_PLANS = {
       const side = [7, Y([5, OFFICE("Works office")], [5, R("workshop", "welding", { name: "Welding bay" })], ["*", R("parts", null, { name: "Steel store", type: "workshop" })])];
       const left = rng.chance(0.5);
       return {
-        ...s, front: { width: 1 }, ground: "lot", foot: "wide", yard: { name: "Steel stock", type: "workshop", pieces: [["crate", INDUSTRY.YARD.stacks]], loot: true },
+        ...s, front: { width: 1 }, ground: "lot", foot: "wide", yardPieces: { name: "Steel stock", type: "workshop", pieces: [["crate", INDUSTRY.YARD.stacks]], loot: true },
         program: X(...(left ? [side, ["*", R("factoryfloor", null, { name: "Fabrication shop" })]] : [["*", R("factoryfloor", null, { name: "Fabrication shop" })], side])),
         exits: [roller("front", ["factoryfloor"], { name: "Shop door" }), roller("back", ["factoryfloor"], { name: "Yard door" })],
       };
@@ -295,7 +295,7 @@ export const INDUSTRY_PLANS = {
     { id: "chemical", name: "Chemical plant", at: { urban: 0.3, industrial: 3, rural: 1 }, sig: ["vat", "fumehood"], make: (rng) => {
       const s = size(rng, "chemical");
       return {
-        ...s, front: { width: 1 }, ground: "lot", foot: "wide", yard: { name: "Tank farm", pieces: [["vat", INDUSTRY.YARD.tanks]] },
+        ...s, front: { width: 1 }, ground: "lot", foot: "wide", yardPieces: { name: "Tank farm", pieces: [["vat", INDUSTRY.YARD.tanks]] },
         program: X([9, Y([5, OFFICE("Plant office")], [5, R("control", "control", { name: "Control room" })], ["*", lab("QA lab", "chem")])],
           ["*", Y([4, R("lockerroom", null, { name: "Change room", type: "workshop" })], ["*", R("process", "tanks", { name: "Process hall", hub: true, tanks: "chem" })])]),
         exits: [roller("right", ["process"], { name: "Tanker door" }), door("back", ["process"], 0.7, 0.4)],
@@ -304,7 +304,7 @@ export const INDUSTRY_PLANS = {
     { id: "sawmill", name: "Sawmill", at: { urban: 0.2, industrial: 1, rural: 4 }, sig: ["machine", "palletrack"], make: (rng) => {
       const s = size(rng, "sawmill");
       return {
-        ...s, front: { width: 1 }, ground: "rural", foot: "wide", yard: { name: "Log deck", type: "hardware", pieces: [["palletrack", INDUSTRY.YARD.stacks]], loot: true },
+        ...s, front: { width: 1 }, ground: "rural", foot: "wide", yardPieces: { name: "Log deck", type: "hardware", pieces: [["palletrack", INDUSTRY.YARD.stacks]], loot: true },
         program: X([6, Y([5, OFFICE("Mill office")], ["*", R("workshop", "filing", { name: "Saw-filing room" })])], ["*", R("factoryfloor", null, { name: "Saw hall" })], [8, R("warefloor", "lumber", { name: "Planer shed", type: "hardware", maxBoxes: 5 })]),
         exits: [roller("left", ["workshop", "office"], { width: 2, chance: 0.5 }), roller("right", ["warefloor"], { name: "Drive-through" }), roller("back", ["factoryfloor"], { name: "Log door" })],
       };
@@ -339,7 +339,7 @@ export const INDUSTRY_PLANS = {
     { id: "brickworks", name: "Brickworks", at: { urban: 0.3, industrial: 2, rural: 3 }, sig: ["kiln"], make: (rng) => {
       const s = size(rng, "brickworks");
       return {
-        ...s, front: { width: 1 }, ground: "rural", foot: "wide", yard: { name: "Brick yard", type: "warehouse", pieces: [["crate", INDUSTRY.YARD.stacks]], loot: true },
+        ...s, front: { width: 1 }, ground: "rural", foot: "wide", yardPieces: { name: "Brick yard", type: "warehouse", pieces: [["crate", INDUSTRY.YARD.stacks]], loot: true },
         program: X([7, Y([5, OFFICE("Works office")], ["*", R("storage", "drying", { name: "Drying shed", type: "warehouse" })])], ["*", R("kiln", "kiln", { name: "Kiln hall", hub: true })], [9, R("factoryfloor", null, { name: "Moulding shed" })]),
         exits: [roller("back", ["kiln"], { name: "Kiln door" }), roller("right", ["factoryfloor"], { chance: 0.7 })],
       };
@@ -410,7 +410,7 @@ export const INDUSTRY_PLANS = {
     { id: "waterlab", name: "Water-testing lab", at: { urban: 1, industrial: 2, rural: 2 }, sig: ["labbench", "vat"], make: (rng) => {
       const s = size(rng, "waterlab");
       return {
-        ...s, front: { width: 1 }, ground: "rural", foot: footOf(s, "small"), yard: { name: "Settling tanks", pieces: [["vat", INDUSTRY.YARD.settling]] },
+        ...s, front: { width: 1 }, ground: "rural", foot: footOf(s, "small"), yardPieces: { name: "Settling tanks", pieces: [["vat", INDUSTRY.YARD.settling]] },
         program: Y([4, X([5, OFFICE("Office")], ["*", lab("Sample lab", "water")])], ["*", X(["*", R("workshop", "pumproom", { name: "Pump room", type: "control" })], [4, R("storage", "chemstore", { name: "Reagent store", type: "lab" })])]),
         exits: [door("back", ["workshop"], 0.8, 0.4)],
       };

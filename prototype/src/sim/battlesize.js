@@ -222,6 +222,8 @@ const PROPS = {
   grass: ["tree", "rock", "rock", "tree", "fence", "boulder"], field: ["hay", "hay", "fence", "tree"], dirt: ["rock", "rock", "boulder", "crate"],
   gravel: ["boulder", "rock", "rock"], rubble: ["crate", "rock", "barrel", "crate", "rock"], road: ["crate", "barrel"], // no single-cell cars: cars are 2 × 3–4 cells (combat.js placeCar)
   floor: ["crate", "counter", "cabinet"],
+  // A hotel's grounds (hotellayout.js): a planter on the paving, never a rock in the empty pool or on a court.
+  paving: ["plant"], pool: [], court: [],
 };
 // Tops a map up with props until COVER's share of its open ground has cover within R tiles (opts.target), placing
 // each one where cover is furthest, on a cell whose eight neighbours are all open ground (so a prop never closes a
@@ -258,6 +260,7 @@ export function densify(cells, W, H, rng, opts = {}) {
     if (!spot) { d[i0] = 0; continue; } // no room for a prop here: leave it be
     const [x, y] = spot, c = cells[y * W + x];
     const list = (opts.props && opts.props(c.f)) || PROPS[c.f] || PROPS.grass;
+    if (!list.length) { d[i0] = 0; continue; } // ground that takes no prop (an empty pool, a court)
     const was = c.k;
     c.k = list[rng.int(0, list.length - 1)];
     if (!coverK(c)) { c.k = was; d[i0] = 0; continue; }
@@ -321,13 +324,22 @@ export function fledFarEnough(b, u) {
 // round the back) and densify covers the new ground. At a site with several buildings each is at least the run's
 // smallest raid map; in a city or a town (a crawl's buildings) the largest.
 // margins: the archetype's own; returns the grown margins.
-export function fitMargins(bw, bh, margins, [tw, th]) {
+// cap: the biggest map the building may have (mapCap), the target cut down to it (never below the building and its own
+// margins: those are the archetype's, sized to it).
+export function fitMargins(bw, bh, margins, [tw, th], cap = null) {
   const m = { ...margins };
+  if (cap) { tw = Math.min(tw, cap); th = Math.min(th, cap); }
   const ew = Math.max(0, tw - (bw + m.left + m.right)), eh = Math.max(0, th - (bh + m.front + m.back));
   m.left += Math.floor(ew / 2); m.right += Math.ceil(ew / 2);
   m.front += Math.ceil(eh / 2); m.back += Math.floor(eh / 2);
   return m;
 }
+// The biggest raid map a building may have, by its kind (buildingmaps.js BUILDINGS key), W and H: MAP_CAP's, else none
+// (the run's raid map dials and the building's own size decide). A hotel's 200 × 200 (issue #29, the user's request
+// 2026-10-25: "add hotel 200x200 max"): the hotel and its grounds (parking, the drive, the pool, the gardens) within it
+// (hotellayout.js sizes its grounds to fit).
+export const MAP_CAP = { hotel: 200 };
+export const mapCap = (key) => MAP_CAP[key] || null;
 export function buildingTarget(tile, single, state = null) {
   if (legacyRaids(state)) return single ? raidDims(tile, state) : dimsAt(S); // an older save: the old targets
   return single || largestRaid(tile) ? raidDims(tile, state) : raidMinDims(state);

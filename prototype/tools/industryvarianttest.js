@@ -188,7 +188,7 @@ for (const key of INDUSTRY_KEYS) {
   for (let s = 0; s < 6; s++) {
     const a = make(key, 5000 + s, { legacy: true }), b = make(key, 5000 + s, { legacy: true });
     if (JSON.stringify(a.m.cells) !== JSON.stringify(b.m.cells) || JSON.stringify(a.m.containers) !== JSON.stringify(b.m.containers)) same = false;
-    if (a.spec.vid || a.m.plan.variant || a.m.rooms.some((r) => r.ind) || a.spec.yard) plain = false;
+    if (a.spec.vid || a.m.plan.variant || a.m.rooms.some((r) => r.ind) || a.spec.yardPieces) plain = false;
   }
   check(same && plain, `${key}: an older save's building is today's plan (no plan name, no industrial room), the same every time`);
 }
