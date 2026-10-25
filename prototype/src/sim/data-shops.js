@@ -27,8 +27,10 @@
 import { OFFICE_KINDS, OFFICE_AREAS, OFFICE_W, OFFICE_FIRMS, OFFICE_ROWS } from "./data-offices.js"; // the office buildings of every kind, with their firms (issue #27)
 
 /** @typedef {{ wall: string, trim: string, sign: string, text: string, accent: string, roof?: string, style: number }} Look */
-/** @typedef {{ fl?: string, depth?: number, wide?: boolean, flat?: number, storeys?: [number, number], room?: string, back?: string, office?: string, media?: string, hotel?: string }} Plan */
-/** @typedef {{ id: string, name: string, w: { city: number, suburb: number, town: number, scenic?: number }, look: Look, plan?: Plan }} Franchise */
+/** @typedef {{ fl?: string, depth?: number, wide?: boolean, flat?: number, storeys?: [number, number], room?: string, back?: string, office?: string, media?: string, truck?: boolean, hotel?: string }} Plan */
+/** @typedef {{ id: string, name: string, w: { city: number, suburb: number, town: number, scenic?: number }, look: Look, plan?: Plan, eat?: { cuisine: string, format: string, size: string, brew?: boolean, truck?: boolean } }} Franchise */
+
+import { VARIANTS } from "./data-eateries.js"; // the restaurant variants (issue #33): pure data too
 
 const G = (city, suburb, town) => ({ city, suburb, town });
 const L = (wall, trim, sign, text, accent, style = 0, roof = undefined) => ({ wall, trim, sign, text, accent, style, ...(roof ? { roof } : {}) });
@@ -170,6 +172,8 @@ export const AREA_DEFS = {
     loot: { scrap: [0.5, 1, 3] }, gear: [["backpack", 0.04], ["duffle", 0.04], ["slingbag", 0.04]] } },
   hotelhk: { tags: ["home", "shop"], def: { name: "Housekeeping", boxes: ["shelf", "cabinet"],
     loot: { scrap: [0.55, 1, 4], water: [0.2, 1, 2], meds: [0.05, 1, 1] }, gear: [] } },
+  pitroom: { tags: ["kitchen", "shop", "travel"], def: { name: "Pit room", boxes: ["shelf", "counter", "shelf"], // a BBQ's smokers (issue #33)
+    loot: { food: [0.6, 2, 6], preserved: [0.4, 1, 3], wood: [0.5, 10, 30] }, gear: [["knife", 0.06], ["cleaver", 0.04]] } },
   liquor: { tags: ["shop", "crime", "travel", "kitchen", "home"], def: { name: "Liquor shelves", boxes: ["shelf", "shelf", "counter"],
     loot: { water: [0.6, 2, 6], food: [0.25, 1, 3] }, gear: [["bottle", 0.15], ["revolver", 0.02], ["pistol", 0.02], ["bat", 0.02]] } },
   ...OFFICE_AREAS,
@@ -437,6 +441,14 @@ export const FRANCHISES = {
   // them: shops.js franchisesOf)
   ...OFFICE_FIRMS,
 };
+// Restaurants by kind of food, format and size (issue #33, data-eateries.js VARIANTS): every food kind's franchise has
+// its cuisine, format and size (eat); the variants new with it join the lists, with their own look and plan.
+for (const v of VARIANTS) {
+  const list = FRANCHISES[v.kind], eat = { cuisine: v.cuisine, format: v.format, size: v.size, ...(v.brew ? { brew: true } : {}), ...(v.plan && v.plan.truck ? { truck: true } : {}) };
+  const have = list.find((f) => f.id === v.id);
+  if (have) { have.eat = eat; continue; }
+  list.push({ id: v.id, name: v.name, w: v.w, look: v.look, plan: { ...(v.plan || {}) }, eat });
+}
 
 // ---------- the new kinds' rows in the find tables ----------
 const P = (p, items) => ({ p, items });

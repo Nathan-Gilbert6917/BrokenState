@@ -58,7 +58,8 @@ import { militaryStyle, militaryOutside, MIL_SIZE } from "./militarylayout.js"; 
 import { decorate, flipDecoY, placeDecorPieces } from "./decor.js"; // rugs, clutter, wall art, wall colours, light fixtures (cosmetic)
 import { rollWin, winMixOf, windowOpen } from "./windows.js"; // the windows' states (open, locked, fixed), a throw through an open one
 import { rollScenes, sceneRng } from "./interiorscenes.js"; // signs of survival: barricades, blood, bodies (dice of their own)
-import { BUNKER_PLANS, bunkerStyle, levelName } from "./bunkerlayout.js"; // bunkers: the plans, their rooms, their levels below ground (issue #26)
+import { BUNKER_PLANS, bunkerStyle, levelName } from "./bunkerlayout.js";
+import { eateryPlan, eateryOf } from "./eaterylayout.js"; // restaurants by kind of food, format and size (issue #33) // bunkers: the plans, their rooms, their levels below ground (issue #26)
 
 export const BMAP = {
   MARGIN: { front: 5, back: 4, left: 4, right: 4 }, // cells of outside around the building
@@ -335,6 +336,12 @@ function house(rng, v, o = {}) {
 // the frozen section, a small deli counter; a stockroom with a walk-in cooler behind it). The supermarket is bigstore's
 // (supermarket below). The dice are rolled in the same order either way.
 function shop(rng, v, o = {}) {
+  // Issue #33: a new save's restaurant, pizza place, diner or bar is its variant's plan (eaterylayout.js: by its cuisine,
+  // format and size; a place with no franchise one by the building's dice, read not consumed). An older save as below.
+  if (!o.legacy && (v === "restaurant" || v === "diner" || v === "bar")) {
+    const kind = v === "diner" && o.kind === "pizza" ? "pizza" : v;
+    return eateryPlan(rng, eateryOf(kind, o.variant, hash01(rng.state, "eatery")), planOf(v, o));
+  }
   const gas = v === "gasstation", truck = v === "truckstop";
   const plan = planOf(v === "gasstation" ? "gas" : v, o); // data-shops.js: the franchise's layout
   const tier = !o.legacy && (v === "corner" || v === "grocery") ? v : null; // issue #22: the corner store and the grocery by size
@@ -2434,6 +2441,24 @@ export function assemble(rng, spec, opts = {}) {
   // before the outside is dressed.
   if (!upper && spec.yard) spec.yard({ rng, W, H, b: { x0: bx0, y0: by0, x1: bx1, y1: by1 }, front, exits, cell: (x, y) => cells[I(x, y)], outside: (x, y) => inside(x, y) && rid[I(x, y)] === -2,
     free: outsideFree, block: (x, y, k) => block(x, y, k), car: (x, y, kind, test) => carAt(x, y, kind, test), area: (a) => outdoor.push({ id: rooms.length + outdoor.length, type: null, outdoor: true, ...a }) });
+  // What stands outside a restaurant (issue #33, eaterylayout.js eateryOutside: the drive-through lane and its cars, a
+  // patio, a BBQ's smokers, a food truck, the grease trap by the back door), every piece keeping the lot one walk.
+  if (!upper && spec.outside) spec.outside({
+    rng, bx0, bx1, by0, by1, exits,
+    free: outsideFree,
+    block: (x, y, k) => outsideFree(x, y) && block(x, y, k),
+    unblock: (x, y) => { const i = I(x, y), was = pass[i]; cells[i].k = "open"; passAt(i); if (!was && pass[i]) total++; },
+    area: (o) => { const a = { id: rooms.length + outdoor.length, outdoor: true, ...o }; outdoor.push(a); return a; },
+    car: (x, y, ax, len, kind, body = null) => {
+      const rect = placeCar(cells, W, H, x, y, ax, len, kind, (cx, cy) => outsideFree(cx, cy), rng.int(0, 1e6), { ring: false, ...(body ? { body } : {}) });
+      if (!rect) return null;
+      passRect(rect);
+      total -= rect.w * rect.h;
+      if (!connected()) { removeCar(cells, W, rect); passRect(rect); total += rect.w * rect.h; return null; }
+      return rect;
+    },
+    container: (rect, a, kind, label) => containers.push({ id: cid++, x: rect.x0, y: rect.y0, w: rect.w, h: rect.h, f, area: a.id, kind, searched: false, label: `${a.name}: ${label}` }),
+  });
   // The outside of a base, an airfield or a prison (issue #25: militarylayout.js militaryOutside): its tools.
   let milGround = null;
   const milApi = () => ({
@@ -2509,6 +2534,7 @@ export function assemble(rng, spec, opts = {}) {
   rooms.forEach((r, i) => { if (r.kennel) areas[i].kennel = true; });
   rooms.forEach((r, i) => { if (r.bunker) areas[i].bunker = r.bunker; }); // bunkerlayout.js: a bunker's room (its scenes, its dark, who holds it) // deadbeasts.js shutInPets: a vet's locked kennels hold dead pets
   if (!opts.legacy) rooms.forEach((r, i) => { if (r.flat) areas[i].flat = true; if (r.unit) areas[i].unit = r.unit; if (r.civic) areas[i].civic = r.civic; if (r.office) areas[i].office = r.office; if (r.aisle != null) areas[i].aisle = r.aisle; const sn = shopStyleName(r, opts.key); if (sn) areas[i].shop = sn; }); // shoplayout.js: a room's style (its scenes' when); roomlayout.js: a shop's flat above, an apartment's rooms; civiclayout.js: a room's style, a nave's aisle
+  rooms.forEach((r, i) => { if (r.mix) areas[i].mix = r.mix; if (r.eat) areas[i].eat = r.eat; }); // eaterylayout.js: a restaurant's rooms hold its cuisine's food (combat.js boxFinds)
   for (const a of outdoor) areas.push({ ...a, id: idBase + a.id, f: 0 });
   for (const c of containers) c.area += idBase;
   for (const d of lockedDoors) { d.f = f; if (d.area != null) d.area += idBase; }
