@@ -379,7 +379,7 @@ export function scavSearchHour(state, p) {
     const who = partyEyes(f, p);
     const take = Math.min(Math.max(0, poiPool(t, i) - AISCAV.floor), AISCAV.take * crew);
     if (take > 0) {
-      const r = raidPoiAsGroup(state, who, t, i, take, { eff: AISCAV.eff * hands / crew, heat: AISCAV.AI_HEAT / AISCAV.searchHours, news: isSitePoi(t, i) ? "left" : true });
+      const r = raidPoiAsGroup(state, who, t, i, take, { eff: AISCAV.eff * hands / crew, heat: AISCAV.AI_HEAT / AISCAV.searchHours, news: isSitePoi(t, i) ? "left" : true, vehicle: !!p.vehicle }); // furnihome.js (issue #18, AI parity): a piece of furniture in the haul only when they came by vehicle
       if (r) {
         note(state, "scavenged", roundsIn(r.goods)); // ledger.js (a test switch)
         addTo(p.scav.got, r.goods);
