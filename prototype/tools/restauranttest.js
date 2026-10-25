@@ -43,7 +43,7 @@ section("The variant table: cuisine × format × size");
   check(combos.length >= 30, `at least 30 distinct cuisine × format × size combinations in the table (${combos.length}, ${VARIANTS.length} variants)`);
   check(new Set(VARIANTS.map((v) => v.cuisine)).size === Object.keys(CUISINES).length, `every cuisine has a place (${new Set(VARIANTS.map((v) => v.cuisine)).size} of ${Object.keys(CUISINES).length})`);
   check(new Set(VARIANTS.map((v) => v.format)).size === 11 && new Set(VARIANTS.map((v) => v.size)).size === 5, "every format (11) and every size (5) has a place");
-  check(FOOD.reduce((n, k) => n + FRANCHISES[k].length, 0) >= 57 && FOOD.every((k) => FRANCHISES[k].every((f) => f.eat && CUISINES[f.eat.cuisine])), `the four food kinds' franchises, every one a variant (${FOOD.map((k) => `${k} ${FRANCHISES[k].length}`).join(", ")})`);
+  check(FOOD.reduce((n, k) => n + FRANCHISES[k].length, 0) >= 77 && FOOD.every((k) => FRANCHISES[k].every((f) => f.eat && CUISINES[f.eat.cuisine])), `the four food kinds' franchises, every one a variant (${FOOD.map((k) => `${k} ${FRANCHISES[k].length}`).join(", ")})`);
   const ids = VARIANTS.map((v) => `${v.kind}:${v.id}`), names = VARIANTS.map((v) => v.name);
   check(new Set(ids).size === ids.length && new Set(names).size === names.length, "no two variants share an id or a name");
   // Built over the seeds: the franchises the places draw, by setting.
@@ -117,8 +117,10 @@ const built = [];
   const sig = (m) => m.cells.map((c) => c.k).join(",");
   const a = make("restaurant", "taj palace" && "tajpalace", 3).m, a2 = make("restaurant", "tajpalace", 3).m;
   check(sig(a) === sig(a2), "the same building lays out the same every visit");
-  const diff = new Set(VARIANTS.filter((v) => v.kind === "restaurant").map((v) => sig(make("restaurant", v.id, 1).m)));
-  check(diff.size === VARIANTS.filter((v) => v.kind === "restaurant").length, `every restaurant variant lays out its own way (${diff.size} plans)`);
+  // Every variant its own plan, at least a dozen a kind (the user's request 2026-10-25: "a dozen varients per building
+  // type"; #32's varianttest MIN_PLANS): pizza places, diners and bars too.
+  const plans = FOOD.map((k) => { const vs = VARIANTS.filter((v) => v.kind === k); return [k, vs.length, new Set(vs.map((v) => sig(make(keyOf(v), v.id, 1).m))).size]; });
+  check(plans.every(([, n, d]) => n === d && d >= 12), `every variant lays out its own way, a dozen plans or more a kind (${plans.map(([k, n, d]) => `${k} ${d} of ${n}`).join(", ")})`);
 }
 
 // ---------- 3. loot ----------

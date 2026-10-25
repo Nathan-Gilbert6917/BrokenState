@@ -179,7 +179,7 @@ Detail: [combat.md](../features/combat.md).
 - **Grocery stores by size**: corner store, grocery, a supermarket twice the old each way, its warehouse and dock [shoplayout, buildingmaps, data-furniture] `tools/shopstest.js`. [details](../features/combat.md#raids-into-building-interiors)
 - **Industrial plans**: 12 named plans each for the warehouse, factory and lab, by dice and setting [industrylayout, buildingmaps] `tools/industryvarianttest.js`. [details](../features/combat.md#raids-into-building-interiors)
 - **Hotels**: inns, business hotels, resorts, city towers; named chains, maps up to 200 × 200 [hotellayout, hotels, buildingmaps, data-shops] `tools/hoteltest.js`. [details](../features/travel.md#hotels-and-their-chains)
-- **Restaurants by food, format and size**: 66 variants, cuisine kitchens and loot, drive-throughs to banquet halls [data-eateries, eaterylayout, buildingmaps] `tools/restauranttest.js`. [details](../features/combat.md#raids-into-building-interiors)
+- **Restaurants by food, format and size**: 86 variants (12+ a kind), cuisine kitchens and loot, drive-throughs to dance halls [data-eateries, eaterylayout] `tools/restauranttest.js`. [details](../features/combat.md#raids-into-building-interiors)
 - **Office buildings by kind**: storefronts, parks, towers, city hall, courts, call centers, stations, firms [officeplans, officelayout, data-offices] `tools/officestest.js`. [details](../features/travel.md#shops-and-services-as-places-as-franchises)
 - **Stealth**: takedowns, facing and view cones, sneaking, lights and darkness, indoor light switches [stealth, vision, indoorlight, ailights].
 - **Vaulting half cover**: over waist-high cells at extra cost, landing winded [combat]. [details](../features/combat.md#vaulting-half-cover)
