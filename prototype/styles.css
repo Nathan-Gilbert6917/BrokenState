@@ -2153,3 +2153,8 @@ button.ppl-idle.on { background: #45380f; color: #ffd166; }
 .pm-poi.still { cursor: default; }
 .pm-bar { height: 0.6rem; background: #22262d; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; margin: 6px 0; }
 .pm-bar > div { height: 100%; background: var(--accent); }
+
+/* The vehicles' pictures in the windows (ui/vehiclemodel.js vehicleImg): their low-poly models, pixel-crisp, beside the name. */
+img.vehimg { image-rendering: pixelated; vertical-align: middle; margin-right: 0.35rem; }
+.vehpics { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: flex-end; margin-bottom: 0.3rem; }
+.chip img.vehimg, button img.vehimg { margin-right: 0.25rem; }

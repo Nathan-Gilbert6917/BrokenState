@@ -60,6 +60,7 @@ import {
 import { isPowered, POWER_USERS, freezerLine, generatorRunning, generatorLine, GEN_TIERS, genTier, genName } from "../sim/power.js"; // freezer-parts: the machines' chips; gen-tiers: the generator's tier
 import { isMachine, machineText, machineState } from "../sim/breakdowns.js"; // freezer-parts: machine parts on the cards
 import { CAR_SPARES, carSpares, VEHICLE_TYPES, tank, vehiclesAtBase, carsAtBase, bikesAtBase, partyVehicle, partyFleet, canRepair, partyFuel, isBike, isCar, travelMode, vehicleLabel, RIDER_KG, payloadOf, upgradeText, upgradeEffects, upgradeOptions, garageQueue, garageJobStatus, vehicleValue, costText, vehicleById, SHOP_TEXT, carPartsCost, carPartsText, stripYield } from "../sim/vehicles.js";
+import { vehicleImg } from "./vehiclemodel.js"; // a vehicle's picture, its low-poly model (the Vehicles tab)
 import { teamLoad, wornLoad, maxLoad } from "../sim/load.js";
 import { loadRows, carLine, paceLine, loadWarnings, BANDS_HELP } from "./loadview.js";
 import { MARKER_TYPES, LAYERS } from "../sim/markers.js";
@@ -2499,10 +2500,10 @@ function baseVehicles(state, b) {
   return `
     <h3>Parked here</h3>
     ${here.length ? here.map((v) => isBike(v) ? `<div class="card small"${tip("Bikes: one each for a team (pick them in the trip planner). No fuel; faster than walking on roads, walking pace off-road; each rack carries 15 kg and riding takes 55% of the load's slow-down and extra rations away. Bicycles found on searches join them when a team brings them home; a workshop can build more.")}>
-      <div class="spread"><b>🚲 ${esc(vehicleLabel(v))}</b><span class="muted">${VEHICLE_TYPES.bike.rack} kg rack each</span></div>
+      <div class="spread"><b>${vehicleImg(v, 2) || "🚲 "}${esc(vehicleLabel(v))}</b><span class="muted">${VEHICLE_TYPES.bike.rack} kg rack each</span></div>
       <div class="row"><span style="width:5.5rem" class="muted">Condition</span><div style="flex:1">${bar(v.condition, v.condition < 35 ? "var(--danger)" : "var(--good)")}</div><span style="width:3rem">${Math.round(v.condition)}%</span></div>
       <div class="row" style="margin-top:0.3rem"><button class="mini" data-action="repairv" data-base="${b.id}" data-id="${v.id}" ${(b.stock.scrap || 0) >= Math.ceil((v.count || 1) / 2) && v.condition < 100 ? "" : "disabled"}${tip("Patches, chain links, spokes: anyone can do it")}>Patch up (${Math.ceil((v.count || 1) / 2)} scrap)</button></div></div>` : `<div class="card small">
-      <div class="spread"><b>${esc(v.name)}</b><span class="muted"${tip(`Riders (${RIDER_KG} kg each), what they wear and the cargo; loaded past 60% it burns more fuel (×1.3 at 100%, up to ×1.6 at 125%, the most it takes).${upgradeText(v) ? ` Its upgrades weigh ${VEHICLE_TYPES[v.type].payload - payloadOf(v)} kg of the ${VEHICLE_TYPES[v.type].payload}.` : ""} Worth about ${vehicleValue(v)} in trade.`)}>${payloadOf(v)} kg payload</span></div>
+      <div class="spread"><b>${vehicleImg(v, 2.6)}${esc(v.name)}</b><span class="muted"${tip(`Riders (${RIDER_KG} kg each), what they wear and the cargo; loaded past 60% it burns more fuel (×1.3 at 100%, up to ×1.6 at 125%, the most it takes).${upgradeText(v) ? ` Its upgrades weigh ${VEHICLE_TYPES[v.type].payload - payloadOf(v)} kg of the ${VEHICLE_TYPES[v.type].payload}.` : ""} Worth about ${vehicleValue(v)} in trade.`)}>${payloadOf(v)} kg payload</span></div>
       ${upgradeText(v) ? `<div class="small"${tip(upgradeEffects(v))}>🛡 ${esc(upgradeText(v))}</div>` : ""}
       ${vehicleStoreKg(v) ? `<div class="small"${tip("Base storage: a car parked here is a storage unit for the base's goods (its load space) until better storage is built. A team that drives off in it takes the room with it, and what it held then lies outside.")}>📦 Storage: ${vehicleStoreKg(v)} kg while parked here</div>` : ""}
       <div class="row"><span style="width:5.5rem" class="muted"${tip("Low condition means more breakdowns on the road")}>Condition</span><div style="flex:1">${bar(v.condition, v.condition < 35 ? "var(--danger)" : "var(--good)")}</div><span style="width:3rem">${Math.round(v.condition)}%</span></div>
@@ -2514,7 +2515,7 @@ function baseVehicles(state, b) {
         <button class="mini" data-action="stripv" data-base="${b.id}" data-id="${v.id}"${tip(`Take it apart for good: ${stripYield(v).carparts} car parts (by its condition), ${stripYield(v).scrap} scrap, ${stripYield(v).metalsheet} metal sheets (its panels and roof, and half its plating's), ${stripYield(v).electronics} electronics (its engine control unit, wiring, radio and sensors, by its condition and type) and the fuel in its tank. The vehicle is gone.`)}>Strip for parts</button>
       </div>${garageRow(state, b, v)}</div>`).join("") : `<div class="muted small">No vehicles parked here.</div>`}
     ${garageJobs(state, b)}
-    ${elsewhere.length ? `<h3>Elsewhere</h3>${elsewhere.map((v) => `<div class="card small"><b>${esc(vehicleLabel(v))}</b> · ${where(v)}</div>`).join("")}` : ""}`;
+    ${elsewhere.length ? `<h3>Elsewhere</h3>${elsewhere.map((v) => `<div class="card small"><b>${vehicleImg(v, 1.6)}${esc(vehicleLabel(v))}</b> · ${where(v)}</div>`).join("")}` : ""}`;
 }
 
 // Upgrades in the garage (sim/vehicles.js): fit or strip glass, mesh grilles, armour plate, scrap plating.

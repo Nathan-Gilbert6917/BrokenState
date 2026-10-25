@@ -32,6 +32,7 @@ import { itemLoad } from "../sim/inventory.js";
 import { modLabel } from "../sim/gunmods.js";
 import { gunIconHtml } from "./gunart.js"; // a gun's picture by its name
 import { vehiclesAtBase, carsAtBase, vehicleById, tank } from "../sim/vehicles.js";
+import { vehicleImg } from "./vehiclemodel.js"; // a vehicle's picture, its low-poly model, in the Vehicles rows
 import { radioDiploBlock } from "./diplomacy.js";
 import { vehicleOffers, buyVehicle, sellVehicle } from "../sim/vehicletrade.js"; // the Vehicles section
 import { visitorTradeHead, visitorTradeButtons } from "./visitors.js";
@@ -119,12 +120,14 @@ function intelBlock(state, ctx) {
 function vehicleBlock(state, ctx) {
   const o = vehicleOffers(state, ctx);
   if (!o.theirs.length && !o.mine.length) return "";
-  const row = (name, sub, price, act, i, label, hint) => `<tr${tip(hint)}><td>${esc(name)} <span class="muted">${esc(sub)}</span></td><td class="muted">${price}</td><td><button class="mini" data-action="${act}" data-i="${i}">${label}</button></td></tr>`;
+  const row = (pic, name, sub, price, act, i, label, hint) => `<tr${tip(hint)}><td>${pic}${esc(name)} <span class="muted">${esc(sub)}</span></td><td class="muted">${price}</td><td><button class="mini" data-action="${act}" data-i="${i}">${label}</button></td></tr>`;
   const sub = (v) => `${Math.round(v.condition)}% · fuel ${Math.round(v.fuel || 0)}${v.upgrades && Object.values(v.upgrades).some(Boolean) ? " · upgraded" : ""}`;
   return `<h3${tip("A vehicle changes hands on its own, paid in goods at their worth (scrap, fuel, ammo, parts, then food and meds): its type, condition and upgrades, how much they want one, and your Speech and goodwill set the price. A vehicle you sell leaves its cargo with you.")}>Vehicles</h3>
-    <div class="grid2"><div>${o.mine.length ? `<table class="t">${o.mine.map((x, i) => row(x.v.name, sub(x.v), x.price, "tw-vsell", i, "Sell", `They pay goods worth ${x.price}`)).join("")}</table>` : `<div class="small muted">${ctx.visitor ? "Merchants do not buy vehicles." : "No vehicle of yours here to sell."}</div>`}</div>
-    <div>${o.theirs.length ? `<table class="t">${o.theirs.map((x, i) => row(x.rec.name, sub(x.rec), x.price, "tw-vbuy", i, "Buy", ctx.kind === "radio" ? `Goods worth ${x.price} from ${ctx.base.name}; they drive it over (a day)` : `Goods worth ${x.price}`)).join("")}</table>` : `<div class="small muted">No vehicles for sale.</div>`}</div></div>`;
+    <div class="grid2"><div>${o.mine.length ? `<table class="t">${o.mine.map((x, i) => row(vehicleImg(x.v, 1.8), x.v.name, sub(x.v), x.price, "tw-vsell", i, "Sell", `They pay goods worth ${x.price}`)).join("")}</table>` : `<div class="small muted">${ctx.visitor ? "Merchants do not buy vehicles." : "No vehicle of yours here to sell."}</div>`}</div>
+    <div>${o.theirs.length ? `<table class="t">${o.theirs.map((x, i) => row(vehicleImg(x.rec, 1.8, { color: theirColour(ctx) }), x.rec.name, sub(x.rec), x.price, "tw-vbuy", i, "Buy", ctx.kind === "radio" ? `Goods worth ${x.price} from ${ctx.base.name}; they drive it over (a day)` : `Goods worth ${x.price}`)).join("")}</table>` : `<div class="small muted">No vehicles for sale.</div>`}</div></div>`;
 }
+// Their vehicles' colour in the pictures: the group's own (sim/factions.js f.color), a merchant's gold.
+const theirColour = (ctx) => (ctx.f && ctx.f.color) || "#d9a520";
 // What moves this group's prices right now, and what their kind prizes and shuns (no numbers).
 const marginOf = (f) => margin(f);
 export function moodBlock(state, f) {

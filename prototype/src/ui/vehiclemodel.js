@@ -27,6 +27,7 @@ import { limb as limbR, boxL as boxR, paintLimbs } from "./figures.js";
 import { painter } from "./sprites.js";
 import { shade } from "./itemart/kit.js";
 import { onForgetPictures } from "./pictures.js";
+import { upgradesOf, isBike } from "../sim/vehicles.js"; // a vehicle record's upgrades and kind, for its picture in the windows
 
 const TILE = 16;              // art px along an axis of a cell (isoview.js HW)
 const SW = 22, SH = 11;       // a cell in the straight view (isoview.js SW, SH): its top-left corner the origin, u right, v down
@@ -355,7 +356,8 @@ export function lookOf(car) {
   const u = car.up || null;
   const o = { model, cond, burnt: cond === "burnt", rust: !own && !mil && cond !== "burnt", seed: ((car.v || 0) % 97) + 1, plating: u ? u.p || 0 : 0, scrap: u ? u.s || 0 : 0, glass: u ? u.g || 0 : 0, mesh: u ? u.m || 0 : 0, turret: u && u.t ? u.t : null, manned: !!(u && u.manned), gun: !own && (model === "humvee" || model === "mrap") };
   if (cond === "burnt") o.color = BURNT;
-  else if (model === "m35" || model === "humvee" || model === "mrap") { o.color = cond === "wrecked" ? MIL_WRECK : own && model === "humvee" ? mixHex(OLIVE_DARK, TEAM_BLUE, 0.5) : MIL_OLIVE; if (own && model === "m35") o.tint = TEAM_BLUE; }
+  else if (model === "m35" || model === "humvee" || model === "mrap") { o.color = cond === "wrecked" ? MIL_WRECK : own && model === "humvee" ? mixHex(OLIVE_DARK, car.color || TEAM_BLUE, 0.5) : MIL_OLIVE; if (own && model === "m35") o.tint = car.color || TEAM_BLUE; }
+  else if (car.color) { o.color = car.color; o.rust = false; } // a colour of its own (another group's vehicle in the trade window)
   else if (own) o.color = TEAM_BLUE;
   else if (model === "boxtruck") o.color = BOX_RUST;
   else if (CIVIC_PAINT[model]) o.color = CIVIC_PAINT[model];
@@ -435,8 +437,8 @@ function rgbOf(c) {
 // Fog of war on a pixel (isoview.js fogPixels): darker, greyer, a little blue.
 const fogged = ([r, g, b]) => { const l = r * 0.3 + g * 0.59 + b * 0.11; return [(r * 0.35 + l * 0.65) * 0.42 + 6, (g * 0.35 + l * 0.65) * 0.42 + 8, (b * 0.35 + l * 0.65) * 0.42 + 14]; };
 let mkCanvas = (w, h) => { if (typeof document === "undefined") return null; const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
-export function setVehicleCanvas(fn) { mkCanvas = fn; whole.clear(); }
-onForgetPictures(() => whole.clear());
+export function setVehicleCanvas(fn) { mkCanvas = fn; whole.clear(); urls.clear(); }
+onForgetPictures(() => { whole.clear(); urls.clear(); });
 
 // One cell's share of a car's picture, as the view's sprites are ({ cv, ox, oy, w, h }: the canvas, UP px an art px,
 // w × h art px, and its top-left from the cell's origin: its top vertex, in a straight view its top-left corner); null
@@ -505,6 +507,41 @@ function cutSprite(w, k, centre, fog, scale = 1) {
   const cx = g.ox + pr[0] - (w.straight ? (SW / 2) * SS : 0), cy = g.oy + pr[1] - (w.straight ? SH / 2 : HH) * SS;
   vehicleArtStats.cells++;
   return { cv, ox: (x0 - cx) / SS, oy: (y0 - cy) / SS, w: cw / SS, h: ch / SS };
+}
+// ---------- the windows' pictures ----------
+// A car's whole picture as a data URL (the inventory and vehicle windows: the base's Vehicles tab, the team's cargo and
+// its trunk on a raid, the trip planner's vehicle pick, the new run's Starting vehicles, the car row in a battle, the
+// trade window; the user's request 2026-10-25), from a cell's car (sim/combat.js c.car) at a heading, with { w, h }
+// in art px; "" without a canvas (the tools' stub gives "data:,"). Kept by its key, URLS at most.
+const urls = new Map(), URLS = 64;
+export function carImgURL(car, yaw = 330) {
+  const look = lookOf(car), L = car.L || 3, wide = car.body === "bike" ? 1 : 2;
+  const y = (((Math.round(yaw / 15) * 15) % 360) + 360) % 360;
+  const key = `img|${look.model}|${look.color}|${look.tint || ""}|${look.cond}|${look.rust ? look.seed : 0}|${look.plating}${look.scrap}${look.glass}${look.mesh}${look.turret || ""}${look.gun ? "g" : ""}|${L}|${y}`;
+  const e = urls.get(key);
+  if (e) { urls.delete(key); urls.set(key, e); return e; }
+  const w = paintWhole(key, look.model, look, L, wide, "x", y, 0);
+  const s = cutSprite(w, -1, [0, 0, 0], false);
+  const out = { url: s && s.cv && typeof s.cv.toDataURL === "function" ? s.cv.toDataURL("image/png") : "", w: s ? s.w : 0, h: s ? s.h : 0 };
+  urls.set(key, out);
+  while (urls.size > URLS) urls.delete(urls.keys().next().value);
+  return out;
+}
+// A vehicle record's (sim/vehicles.js: type, upgrades, destroyed; a bike stack) car for its picture: the team's own in
+// the team's blue, or in a colour of its own (o.color: another group's); a blown-up one a wreck.
+export function vehicleCar(v, o = {}) {
+  const t = v && VEHICLE_L[v.type] ? v.type : "truck", bike = isBike(v) || t === "bike";
+  const u = bike ? null : upgradesOf(v);
+  const up = u && (u.plating || u.scrapPlate || u.glass || u.mesh || u.turret) ? { p: u.plating || 0, s: u.scrapPlate || 0, g: u.glass || 0, m: u.mesh || 0, t: u.turret ? u.turret.gun : null } : null;
+  return { kind: "vehicle", body: bike ? "bike" : t === "miltruck" ? "m35" : t === "truck" ? "truck" : "car", type: bike ? "bike" : t, L: VEHICLE_L[bike ? "bike" : t], ax: "x", v: (v && v.id) || 0, up, wrecked: !!(v && v.destroyed), color: o.color || null };
+}
+const VEHICLE_L = { truck: 4, sedan: 3, suv: 3, hummer: 3, van: 3, miltruck: 5, bike: 2 }; // cells long on a map (sim/combat.js placeVehicle)
+// The <img> of a vehicle record (size: its height in rem, its width to match), or of a cell's car (carImg).
+export function vehicleImg(v, size = 2.5, o = {}) { return carImg(vehicleCar(v, o), size, o.yaw); }
+export function carImg(car, size = 2.5, yaw = 330) {
+  const p = carImgURL(car, yaw);
+  if (!p.url || !p.h) return "";
+  return `<img class="sprite vehimg" src="${p.url}" alt="" style="height:${size}rem;width:${((p.w / p.h) * size).toFixed(2)}rem">`;
 }
 // The whole car's painting, for a look at it (the tools, the dev page): { px, w, h, ox, oy } on the SS grid (ss: grid px an art px).
 export function vehiclePainting(car, yaw = 330, straight = false) {

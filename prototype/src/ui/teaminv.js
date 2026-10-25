@@ -11,6 +11,7 @@ import { SUPPLIES, supWeight } from "../sim/data.js";
 import { survivorById } from "../sim/world.js";
 import { partyMembers, partyTile, tileLabel, partyCapacity } from "../sim/parties.js";
 import { partyVehicles, vehicleLabel, vehicleCapacity, isBike } from "../sim/vehicles.js"; // the fleet, vehicle by vehicle, under the cargo
+import { vehicleImg } from "./vehiclemodel.js"; // each vehicle's picture, its low-poly model, on its chip
 import { SLOT_NAMES, parseLoc, itemLoad } from "../sim/inventory.js";
 import { teamBase, transferProblem, teamsAtBase, teamHoldings, baseHoldings, dropOff, dropAllCargo, dropAllSupplies, loadFromBase, isPlayerTeam, dropHeldOff, pendingUnpack, unpackSpots, unpackHome } from "../sim/teaminv.js";
 import { recText, HANDS_KG } from "../sim/carry.js"; // the supplies each member holds (pockets, pack, arms)
@@ -112,7 +113,7 @@ function memberStrip(state, ui, members, open) {
 // (the cargo is one load across them: sim/vehicles.js fleetOf). On foot: how many pairs of hands carry it.
 function fleetLine(state, p, members) {
   const vs = partyVehicles(state, p);
-  if (vs.length > 1) return `<div class="small muted tifleet"${tip("The team's vehicles. The cargo rides as one load across them (the payloads add up); each one's payload is what it takes on its own, riders included.")}>${vs.map((v) => `<span class="chip">${esc(vehicleLabel(v))}${isBike(v) ? "" : ` <span class="muted">${Math.round(vehicleCapacity(v))} kg</span>`}${v.condition != null && v.condition < 0.5 ? ` <span class="danger">${Math.round(v.condition * 100)}%</span>` : ""}</span>`).join(" ")}</div>`;
+  if (vs.length > 1) return `<div class="small muted tifleet"${tip("The team's vehicles. The cargo rides as one load across them (the payloads add up); each one's payload is what it takes on its own, riders included.")}>${vs.map((v) => `<span class="chip">${vehicleImg(v, 1.4)}${esc(vehicleLabel(v))}${isBike(v) ? "" : ` <span class="muted">${Math.round(vehicleCapacity(v))} kg</span>`}${v.condition != null && v.condition < 0.5 ? ` <span class="danger">${Math.round(v.condition * 100)}%</span>` : ""}</span>`).join(" ")}</div>`;
   if (!vs.length) return `<div class="small muted tifleet"${tip("No vehicle: the cargo and the packed supplies are shared out among the people, by what each can carry on top of what they wear.")}>${members.length === 1 ? `Carried by hand: ${Math.round(partyCapacity(state, p))} kg at most.` : `Carried by ${members.length} people: ${Math.round(partyCapacity(state, p))} kg between them.`}</div>`;
   return "";
 }
