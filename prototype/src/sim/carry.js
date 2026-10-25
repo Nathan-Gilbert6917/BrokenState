@@ -113,6 +113,7 @@ import { lootLayer, raidShares, haulLoad, haulText, dropHaulInto } from "./raidl
 import { gunLeavesTeam } from "./gunload.js"; // a gun in a bag set down leaves the team loaded
 import { isCart, cartOf, cartFree, addLot, cartWorth, letGoCart, cartsEnd, oneHandOk, cartSpec } from "./carts.js"; // carts: a place for the supplies, a 1x1 thing in a fight (call-time only)
 import { cfgOf } from "./worldcfg.js"; // the run's dials: Food spoilage
+import { LIFT, liftDef, dropPiece, reweigh, pieceKindOf } from "./furnicarry.js"; // a piece of furniture in the arms: the hands, Drop carried, the weight (call-time only)
 
 // ---------- the table ----------
 // pack: units a pack slot holds, pocket: units a pocket holds (0: never there). kg: per unit (food: FOOD_KG a day,
@@ -838,9 +839,9 @@ export const keyKg = (p, k) => (((p.supplies && p.supplies[k]) || 0) + ((p.cargo
 // The acts that need free hands (combat.js combatAct). Carrying a body or dragging someone blocks the same.
 // Doors, locks, windows, a car's wires and a captive's ropes need the hands too (the user's ask, 2026-10-19).
 const HAND_ACTS = new Set(["shoot", "melee", "reload", "getshells", "throw", "throwspear", "launch", "glreload", "suppress", "overwatch", "doubletap", "finish", "taser", "reloadTaser", "pepper", "unjam", "subdue", "tie", "pickup", "dragAlly", "meds", "heal", "revive", "plate", "turret", "gunner", "open", "close", "brace", "keylock", "keyunlock", "forceStore", "climb", "checkwindow", "openwindow", "closewindow", "breakwindow", "car", "rescue"]);
-export const handsKg = (u) => kgOf(u && u.hands) + (u && u.bag ? itemLoad(u.bag) : 0) + (u ? haulLoad(u) : 0);
+export const handsKg = (u) => kgOf(u && u.hands) + (u && u.bag ? itemLoad(u.bag) : 0) + (u ? haulLoad(u) : 0) + (u && u.piece && u.shareKg != null ? u.shareKg - (u.bag ? itemLoad(u.bag) : 0) : 0); // furnicarry.js: a piece shared, its half on each
 // Arms full of supplies or a bag (the loads: autoDrop, fitHands, the end of a fight); a hand on a cart (carts.js).
-export const armsBusy = (u) => !!(u && (u.hands || u.bag || u.cartHelp != null)); // cartHelp: helping pull a hand cart (carts.js)
+export const armsBusy = (u) => !!(u && (u.hands || u.bag || u.cartHelp != null || u.piece)); // cartHelp: helping pull a hand cart (carts.js); piece: a piece of furniture, the other end of one too (furnicarry.js)
 // Finds carried loose (raidloot.js u.haul: the search window's Carried column). A supply counts from one whole unit,
 // as the Carried list shows it and a move takes it (raidloot.js moves whole units): a crumb left of a part-unit (half a
 // kilo of meat from a food item put down) never fills the hands unseen (the user's report 2026-10-20: "Hands full" with
@@ -856,7 +857,7 @@ export const handsBusy = (u) => armsBusy(u) || haulBusy(u);
 export function handsCount(u) {
   if (!u) return 0;
   const kinds = (rec, min) => Object.entries(rec || {}).reduce((a, [k, q]) => a + (q >= min - EPS && q > EPS ? (bothArms(k) ? 2 : 1) : 0), 0);
-  let n = kinds(u.hands, 0) + (u.bag ? (isCart(u.bag) || isTwoHands(u.bag) ? 2 : 1) : 0) + (u.cartHelp != null ? 1 : 0);
+  let n = kinds(u.hands, 0) + (u.bag ? (isCart(u.bag) || isTwoHands(u.bag) ? 2 : 1) : 0) + (u.cartHelp != null ? 1 : 0) + (u.piece && !u.bag ? 2 : 0); // furnicarry.js: the other end of a piece, both hands
   if (u.haul) {
     const keys = new Set(u.haul.gear.filter((it) => !isTwoHands(it)).map((it) => it.key));
     n += keys.size + 2 * u.haul.gear.filter(isTwoHands).length + kinds(u.haul.sup, HAUL_MIN);
@@ -864,8 +865,8 @@ export function handsCount(u) {
   return n;
 }
 export const HANDS_MAX = 2; // two hands: two different things carried, and nothing more can be taken
-export const armsText = (u) => [recText(u.hands), u.bag ? `the ${u.bag.name}` : "", u.cartHelp != null ? "a hand on the cart (helping pull it)" : "", haulText(u)].filter(Boolean).join(" and ");
-export const handsWord = (u) => (u.cartHelp != null && !u.bag ? `Hands full: ${u.name.split(" ")[0]} helps pull the cart. Let go first (free); a pistol fires one-handed.` : isCart(u.bag) ? `Hands full: ${u.name.split(" ")[0]} pushes the ${u.bag.name.toLowerCase()} (${r1(handsKg(u))} kg). Let go first (free); a pistol fires one-handed.` : `Hands full: ${u.name.split(" ")[0]} carries ${armsText(u)} (${r1(handsKg(u))} kg). Set it down first (Drop carried: free${haulBusy(u) ? ", or put it in the pack, the pockets or the vehicle" : ""}).`);
+export const armsText = (u) => [recText(u.hands), u.bag ? `the ${u.piece ? u.bag.name.toLowerCase() : u.bag.name}${u.piece && u.tether != null ? " (one end of it)" : ""}` : "", u.piece && !u.bag ? `the other end of the ${liftDef(u.piece) ? liftDef(u.piece).name.toLowerCase() : "piece"}` : "", u.cartHelp != null ? "a hand on the cart (helping pull it)" : "", haulText(u)].filter(Boolean).join(" and ");
+export const handsWord = (u) => (u.piece ? `Hands full: ${u.name.split(" ")[0]} is carrying ${armsText(u)} (${r1(handsKg(u))} kg). Set it down first (Set down: ${LIFT.SET_AP} action), or put it in the vehicle.` : u.cartHelp != null && !u.bag ? `Hands full: ${u.name.split(" ")[0]} helps pull the cart. Let go first (free); a pistol fires one-handed.` : isCart(u.bag) ? `Hands full: ${u.name.split(" ")[0]} pushes the ${u.bag.name.toLowerCase()} (${r1(handsKg(u))} kg). Let go first (free); a pistol fires one-handed.` : `Hands full: ${u.name.split(" ")[0]} carries ${armsText(u)} (${r1(handsKg(u))} kg). Set it down first (Drop carried: free${haulBusy(u) ? ", or put it in the pack, the pockets or the vehicle" : ""}).`);
 // Why this unit cannot take one more thing in hand ("" when it can): two different things carried already; item: a
 // twoHands thing (the fire safe, the rifle case) wants both hands free.
 export function handsTakeRefusal(u, what = "that", item = null) {
@@ -909,8 +910,9 @@ export function fitHands(state, b) {
     const bag = bagOf(s);
     const hands = h && h.by[u.sid] ? nonzero(h.by[u.sid].hands) : null;
     if (bag) u.bag = bag;
+    if (bag && pieceKindOf(bag)) u.piece = pieceKindOf(bag); // furnicarry.js: a piece of furniture carried from the road (a bed, a fridge), the very rules
     if (hands) u.hands = hands;
-    if (bag || hands) names.push(u.name.split(" ")[0]);
+    if (bag || hands) { names.push(u.name.split(" ")[0]); reweigh(state, b, u); } // furnicarry.js: what is held in the arms is weighed
   }
   if (names.length) say(b, `${names.join(", ")} ${names.length === 1 ? "has their" : "have their"} arms full: no shooting or fighting with a weapon until it is set down (Drop carried: free).`, "warn");
 }
@@ -1002,6 +1004,7 @@ export function groundDropCell(state, b, u, sup, item = null, at = null) {
 // the unit's cell (at: on another cell, setOverCover). Returns "" or an error.
 export function dropCarried(state, b, u, quiet = false, at = null) {
   if (!u || !handsBusy(u)) return "Not carrying anything in the arms.";
+  if (u.piece) { dropPiece(state, b, u); return ""; } // furnicarry.js: the piece onto a free cell next to them, else on the ground at their feet (the tether ends)
   if (u.cartHelp != null && !u.bag && !u.hands) return letGoCart(state, b, u, { quiet }); // carts.js: a helper lets go
   const what = armsText(u);
   if (isCart(u.bag)) { letGoCart(state, b, u, { quiet }); if (!u.hands) return ""; } // carts.js: let go, a cart on the map
@@ -1012,6 +1015,7 @@ export function dropCarried(state, b, u, quiet = false, at = null) {
   if (!quiet) say(b, `${u.name} sets down ${what}${at ? " on the far side of the cover" : ""}.`, "info");
   u.hands = null;
   u.bag = null;
+  reweigh(state, b, u); // furnicarry.js: lighter now (what is held in the arms is weighed)
   return "";
 }
 // One of the team's supplies in the arms (u.hands, a hold key: carried from the road, or taken off a ground pile in a
@@ -1110,6 +1114,7 @@ export function pickCarried(state, b, u) {
   prune(b);
   if (!took) return "Already carrying a bag: set it down first.";
   if (u.hands && !Object.keys(u.hands).length) u.hands = null;
+  reweigh(state, b, u); // furnicarry.js: what is held in the arms is weighed
   say(b, `${u.name} picks up ${armsText(u)}.`, "info");
   return "";
 }
@@ -1205,6 +1210,7 @@ export function pileToArms(state, b, box, uid, k, n) {
   u.hands = u.hands || {};
   addPool(p, k, take);
   add(u.hands, holdKeyOf(k), FOODS[k] ? unitsOf(k, take) : take); // a food item in the arms: days of food or fresh game
+  reweigh(state, b, u); // furnicarry.js: what is held in the arms is weighed
   return ` ${u.name.split(" ")[0]} carries it in the arms (hands full: no weapon until it is set down).`;
 }
 // After a fight (combat.js finishCombat, before its handler). Loads still in their piles (a raid's, or a battle that

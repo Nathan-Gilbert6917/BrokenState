@@ -27,6 +27,7 @@ import { STREET, DOOR_KINDS } from "../sim/buildingmaps.js"; // the neighbourhoo
 import { WINDOW } from "../sim/windows.js"; // the map's windows: open, locked, fixed or broken
 import { BELT_KG } from "../sim/holsters.js"; // the side arm and melee slots (k:holsters)
 import { PUSH, GRIP } from "../sim/shoving.js"; // people and the dead shoved back a tile or flat on their back
+import { LIFT, liftKinds, liftDef } from "../sim/furnicarry.js"; // furniture and appliances carried (issue #12)
 import { SHOVE, BOARD, CRAWL, FURNITURE, shoveable, isBoarded } from "../sim/barricade.js"; // furniture shoved in the way, boards over doors and windows, the dead crawling over half cover
 import { NOMADS } from "../sim/nomads.js"; // nomad bands: one entry a tier
 import { BAL } from "../sim/coalition.js"; // keeping the coalition together
@@ -37,7 +38,7 @@ import { BUILDINGS, RECIPES, PLOT_NAMES } from "../sim/buildings.js";
 import { CONDITIONS, SICK } from "../sim/health.js";
 import { WORM, wormSeen } from "../sim/worm.js";
 import { bossUnit, DEFENCE } from "../sim/defences.js";
-import { ZOMBIE_MOVE, playerSees, VAULT } from "../sim/combat.js";
+import { ZOMBIE_MOVE, playerSees, VAULT, CELL } from "../sim/combat.js";
 import { zRevealed } from "../sim/zombietypes.js";
 import { FLASH } from "../sim/throwables.js"; // a flashbang's numbers
 import { allItems, SLOT_NAMES, ARMOR_CAP } from "../sim/inventory.js";
@@ -447,6 +448,17 @@ function placeEntries() {
     stats: [["Shove", `${SHOVE.AP} actions alone, ${SHOVE.HELP_AP} each with a teammate right next to the piece, from right next to it: a shelf, cabinet, counter, table, bed, crate, locker, tall shelving, barrel, hay or sandbags one tile, pushed onto a free cell beside it (open floor, or a broken or open door's frame to plug it) or pulled onto your own cell (you step back); lockers and tall shelving take two people, or a Strong back or Melee ${SHOVE.STRONG_MELEE}+; the scrape is heard ${SHOVE.RADIUS} tiles off`], ["Board up", `${BOARD.AP} actions and a bundle of boards and nails (crafted from 30 wood and a scrap, anywhere): nailed across a closed door, a doorway or a window from either side; ${BOARD.HP} hit points a layer, up to ${BOARD.MAX} layers, on top of a closed door's own; loud (heard ${BOARD.RADIUS} tiles off, Heat +${BOARD.HEAT} in a raid)`], ["Tear down", `${BOARD.TEAR.ap} actions from either side: the door or window back, shut; about half the bundles come off whole, the rest are splintered`], ["The vehicle", "a bundle in the team's vehicle counts from next to it"], ["The dead", `crawl over half cover (a table, a shelf, crates, a fence) at +${CRAWL.COST} tiles, a walker's whole turn; never a closed window; batter boards and a shoved tall piece (${FURNITURE.locker.hp} hit points for lockers) or go round`], ["Raiders", `vault half cover as your people do; batter boards when there is no other way in; guards and militia holding a building shove a piece into a door frame or board an outer window while nothing is in sight to shoot`], ["Their bases", "a group's base you assault starts with the windows and doors on your side boarded, as far as its wood and scrap go"]],
     text: "Furniture in a doorway or a corridor slows the dead and stops a crowd: they crawl over a table or a shelf one at a time, spending their turn on it, and a tall piece (lockers, tall shelving) they must batter down or go round. Boards nailed across a door or a window close it for good until someone batters through: no sight, no way, full cover. Everything you can do, the other side can undo: the dead claw boards down and tear through a shoved locker, raiders batter their way in.",
     how: "Before the dead arrive, shove a shelf across the doorway and board up the windows of the room you hold: each board-up is loud, so do it early. Keep boards in the pack (4 kg a bundle). Tear the boards down again when you leave, or vault out of a window.", sprite: null,
+  });
+  // Carrying furniture (sim/furnicarry.js, issue #12): a piece lifted, carried alone or by two tethered, set down, loaded into the vehicle.
+  out.push({
+    key: "k:furnicarry", cat: "places", name: "📦 Carrying furniture", sub: "Lift, carry, set down, load into the vehicle",
+    stats: [["Lift", `${LIFT.AP} actions (Alt+U), both hands free, right next to the piece (or to one lying on the ground): it is in the arms; a teammate with free hands next to it or to you takes the other end for ${LIFT.HELP_AP} actions of their own; a container's contents are tipped onto the floor first`],
+      ["One alone", `the full weight: past 40 kg the pace is crushed (a 60 kg fridge 2 tiles an action, 120 kg 1)`], ["Two together", `half the weight each, both faster; tethered: always right next to each other, the one who moves leads and the other steps along free; one down, gripped or pulled apart and it is set down`],
+      ["With it", "no shooting, doors, searching, vaulting, sneaking or dashing; the stairs take both actions (each of two)"], ["Set down", `${LIFT.SET_AP} action (Alt+G; each of two): on a free cell next to you that you can see (a door frame too: a barricade); two set it to their left or right, parallel to them, the side you choose; Drop carried (free) lets it down anywhere next to you, or at your feet`],
+      ["Into the vehicle", `${LIFT.STOW_AP} action at it (Alt+W): its full weight in the cargo, if there is room`],
+      ...liftKinds().filter((k) => CELL[k]).map((k) => { const d = liftDef(k); return [d.name, d.carry === "fixed" ? "fixed in place" : `${d.kg} kg, ${d.carry === "two" ? "two people" : "one person (or two)"}`]; })],
+    text: "Reasonable furniture and appliances can be carried off a raid's floor: a crate, a cabinet, a bed, a fridge. One person alone can barely move with a heavy one; two sharing the load move almost as fast as with a full pack, but must stay side by side. Get it to the vehicle and load it in.",
+    how: "Clear the way first: neither carrier can open a door, so have a third open them. Lift with a helper next to you, walk it to the vehicle, Load into vehicle. Set it down in a doorway to barricade it.", sprite: null,
   });
   // Shoving people and the dead (sim/shoving.js).
   out.push({
