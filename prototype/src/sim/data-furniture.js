@@ -167,8 +167,51 @@ export const FURNITURE_KINDS = {
   cartcorral:    P("Cart corral",       C(false, 1, false), 40, 150, "fixed", S21, false, ["shop"], "none"),
   baler:         P("Baler",             STEEL, 80, 700, "fixed", S1, false, ["bay", "shop"], "none", true),
   aislesign:     P("Aisle marker",      POLE, 5, 6, "one", S1, false, ["shop"], "none"),
+  // ---------- restaurants by kind of food, format and size (issue #33: eaterylayout.js lays them) ----------
+  // The cooking line by cuisine (a flat-top, deck and conveyor pizza ovens, a wok range, a clay tandoor, a smoker, a char
+  // grill, a gyro spit, a stockpot burner, steam tables, an espresso machine, a soft-serve machine, a slicer, a tortilla
+  // press), the dish pit's dish machine, the grease trap by the back door, the fire extinguisher; the front of house (a
+  // drive-through window, a sushi conveyor, a salad bar, a menu board on the wall, a play structure, a patio umbrella
+  // table, a host stand, a white-cloth table, a Korean grill table, a stage); the bar and the cases (a beer tap tower,
+  // brewing tanks, a lobster tank, a pastry case, a dipping cabinet, a wine rack) and the dry store's shelving. The
+  // pastry case, the dipping cabinet, the wine rack and the dry-goods shelving hold their own tables (combat.js BOX_LOOT);
+  // the rest is the line itself, liftable where a pair of people could get it out of the door.
+  flattop:      P("Flat-top grill",     HALF, 35, 90, "two", S1, false, ["kitchen"], "none", true),
+  deckoven:     P("Deck oven",          STEEL, 50, 180, "two", S1, false, ["kitchen"], "none", true),
+  conveyoroven: P("Conveyor oven",      HALF, 40, 140, "two", S21, false, ["kitchen"], "none", true),
+  wokrange:     P("Wok range",          HALF, 40, 130, "two", S1, false, ["kitchen"], "none", true),
+  tandoor:      P("Tandoor",            STEEL, 60, 300, "fixed", S1, false, ["kitchen"], "none", true), // a clay oven set in brick
+  smoker:       P("Smoker",             STEEL, 50, 180, "two", S21, false, ["kitchen", "yard"], "none"),
+  chargrill:    P("Char grill",         HALF, 35, 100, "two", S1, false, ["kitchen"], "none", true),
+  gyrospit:     P("Gyro spit",          HALF, 15, 25, "one", S1, false, ["kitchen"], "none", true),
+  stockpot:     P("Stockpot burner",    HALF, 30, 40, "two", S1, false, ["kitchen"], "none", true),
+  steamtable:   P("Steam table",        HALF, 30, 80, "two", S21, false, ["kitchen", "dining"], "none"),
+  espresso:     P("Espresso machine",   HALF, 15, 28, "one", S1, false, ["kitchen", "dining"], "none", true),
+  softserve:    P("Soft-serve machine", FULL, 35, 120, "two", S1, false, ["kitchen", "dining"], "none", true),
+  slicer:       P("Meat slicer",        HALF, 10, 20, "one", S1, false, ["kitchen"], "none", true),
+  tortillapress: P("Tortilla press",    HALF, 10, 12, "one", S1, false, ["kitchen"], "none", true),
+  dishpit:      P("Dish machine",       HALF, 40, 150, "fixed", S1, false, ["kitchen"], "none", true), // plumbed in: the dish pit's washer and its three sinks
+  greasetrap:   P("Grease trap",        HALF, 60, 120, "fixed", S1, false, ["yard"], "none"),
+  extinguisher: P("Fire extinguisher",  POLE, 5, 8, "one", S1, false, ["kitchen"], "none", true),
+  drivewindow:  P("Drive-through window", C(false, 1, false), 50, 80, "fixed", S1, false, ["kitchen"], "none", true),
+  sushibar:     P("Sushi conveyor",     HALF, 35, 150, "fixed", S1, false, ["dining"], "none"),
+  saladbar:     P("Salad bar",          HALF, 30, 90, "two", S21, false, ["dining"], "none"),
+  menuboard:    P("Menu board",         POLE, 5, 8, "one", S1, false, ["dining"], "none", true),
+  playplace:    P("Play structure",     C(false, 1, false), 60, 400, "fixed", S22, false, ["dining"], "none"),
+  patiotable:   P("Patio umbrella table", HALF, 15, 25, "one", S1, false, ["yard", "dining"], "work:table"),
+  hoststand:    P("Host stand",         HALF, 15, 20, "one", S1, false, ["dining"], "none"),
+  clothtable:   P("White-cloth table",  HALF, 15, 25, "one", S1, false, ["dining"], "work:table"),
+  kbbqtable:    P("Grill table",        HALF, 30, 60, "two", S21, false, ["dining"], "work:table"), // a Korean barbecue's: a gas grill set in the middle
+  stage:        P("Stage",              HALF, 60, 300, "fixed", S22, false, ["dining", "bar"], "none"),
+  beertower:    P("Beer tap tower",     HALF, 10, 15, "one", S1, false, ["bar"], "none", true),
+  brewtank:     P("Brewing tank",       STEEL, 70, 600, "fixed", S1, false, ["bar"], "none"),
+  lobstertank:  P("Lobster tank",       C(false, 1, false), 20, 90, "two", S1, false, ["dining"], "none", true),
+  pastrycase:   P("Pastry case",        HALF, 20, 70, "two", S1, true, ["dining", "shop"], "storage:20"),
+  dipcabinet:   P("Dipping cabinet",    HALF, 30, 120, "two", S21, true, ["dining", "shop"], "storage:40"),
+  winerack:     P("Wine rack",          FULL, 25, 60, "two", S1, true, ["cellar", "bar", "dining"], "storage:40", true),
+  dryshelf:     P("Dry-goods shelving", FULL, 35, 45, "two", S1, true, ["kitchen", "cellar"], "storage:100", true),
   // ---------- workshops, bays and garages ----------
-  workbench: P("Workbench",  HALF, 35, 60, "two", S21, true, ["bay", "cellar", "school"], "work:workbench", true),
+  workbench:P("Workbench",  HALF, 35, 60, "two", S21, true, ["bay", "cellar", "school"], "work:workbench", true),
   toolchest: P("Tool chest", HALF, 35, 55, "two", S1, true, ["bay", "cellar"], "storage:40", true),
   // ---------- police, fire stations, barracks, schools, offices ----------
   bunk:        P("Bunk",           HALF, 25, 40, "two", S12, false, ["cells", "bedroom", "ward"], "bed:bunkbed"),
