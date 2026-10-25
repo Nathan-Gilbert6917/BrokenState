@@ -174,6 +174,11 @@ Grey stone heaps with flat tops that taper like the hills: rocks knee high (half
 - Two heights by cover: a rock is short (STONE.H.short 8–11 px, knee high: half cover), a boulder tall (STONE.H.tall 24–29 px, head high beside a survivor: full cover); blockTop0 follows STONE.H for picking and fading. Same on every map drawn by ui/isoview: field fights, raids, assaults, base defences and the base's own map (its hills' and mountains' scatter, sim/basescatter.js).
 - Tests: `tools/roofsnowtest.js` (a boulder snow-topped), `tools/battleviewtest.js`, `tools/baseviewtest.js`.
 
+## Vehicles as low-poly models
+The battle map's cars and trucks and the State Map's vehicle pieces built from the figures' limb as real-car shapes (2026-10-25).
+- Detail: [combat.md, Vehicles in battle](../features/combat.md#vehicles-in-battle) (the battle's models, `ui/vehiclemodel.js`) and [travel.md, The map's vehicles by type](../features/travel.md#the-maps-vehicles-by-type) (the map's pieces and flat sprites by type).
+- The painter (`ui/figures.js`) grew for them: a limb's `flat` option (straight sides between the section's corners: a true prism), end caps that follow the section's polygon (a box's cap a rectangle, an eight-sided limb's an octagon: every figure's caps, a sub-pixel change on a person), a transform's `step` (the sampling step, for a fine grid) and `cell` (a tag per plotted point, kept per pixel in `paintLimbs`' cell buffer).
+
 ## The boxes over the map: a strip on phones, one handle on desktops
 On a phone or upright tablet a strip of chips opens one box over the map at a time as a sheet; on a desktop a row of buttons at the bottom left shows and hides each box, every box moving by one header bar. The running orders are the left panel's Orders tab.
 - The user's request 2026-10-24: "Improve the UI for the menus and windows … The world map has alerts and layers and a mini map etc: some can freely move around, others don't. For the phone version move the alerts and the other things shown on the world map overlay into a collapsible display or something. Check that the information the UI provides is accurate to the actions and what is on screen."
