@@ -4,6 +4,7 @@ Detail for sections 10 and 11 of [docs/agents/features.md](../agents/features.md
 
 ## Group arsenals and job kit
 - Groups fight only with what they gathered [arsenal].
+- What is in an item (a rig's pouches, a pack's slots, a gun's fitted parts) can be on the books for itself as well (the home kit-out books a magazine it puts in a pouch). An item off the books (`arsenal removeFromArsenal`: lost, taken, given, picked up by another holder) takes those off with it, still in it (`contentsOnBooks`): before 2026-10-25 a dead Guard's plate carrier picked up by Red Hand (`caravanraids escortLost`) left its two magazines on the Guard's books, and both groups dealt them out, two people with one magazine (`tools/conservationtest.js` seed 7). A share of a group's stores taken (`arsenalShareTo`) brings a thing in what it is in, not loose as well.
 - Their job kit (decoys and flares, packs, the crowbar and lockpicks, picks, a drill) is on their books too: scavenged on its own draw (what they are short of first), decoys crafted by your recipes while short, paid more for while short [arsenal isJobKitKey, jobKitShort, scavFinds SCAV_KIT, arsenalDaily CRAFT.decoys; trade gearPool].
 
 ## Packing for the job

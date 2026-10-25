@@ -552,7 +552,7 @@ const at = (st, hr) => { while (st.hour % 24 !== hr) { st.hour++; needsHour(st);
   const perHead = (b0 - h.stock.f_beans) / 3 / ppl.length;
   check(perHead >= 4.95 && perHead <= 5.15, `beans only: the cans shared out, 5 a day a head (3 meals × 1.00 ÷ 0.60: ${perHead.toFixed(2)})`);
   check(mealOver(h) >= 1 && mealOver(h) < 1.03, `shared cans: the meals hardly run over (×${mealOver(h).toFixed(3)})`);
-  check(near(foodUse(st, h).rate, mealOver(h) * foodUse(st, { ...h, mealOver: 1 }).rate, 1e-6), "and the forecast eats it (foodUse ×mealOver)");
+  check(near(foodUse(st, h).total, mealOver(h) * foodUse(st, { ...h, mealOver: 1 }).total, 1e-6), "and the forecast eats it (foodUse ×mealOver; its total: the rate shown is to 2 places)");
   check(near(mealFV(st, h), MEAL_FV) && nextMeal(st, h).items[0].q === 2, `the next meal here: ${nextMeal(st, h).text}`);
   h.rationLevel = "lean";
   check(near(mealFV(st, h), 0.8), "lean: a meal is 0.80");

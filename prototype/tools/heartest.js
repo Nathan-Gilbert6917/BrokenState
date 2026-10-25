@@ -422,7 +422,8 @@ section("9. The visor toggle, fog, the ballistic visor's sight; the team headset
     if (i === 0) { const h = newItem("highcut"); fitHelmetMod(h, newItem("ballvisor")); s.gear.head = h; s.gear.ears = newItem("commset"); }
     if (i === 1) s.gear.ears = newItem("commset");
   });
-  const [a, c, d] = P(b);
+  // By who they are (the units' order is the battle's own, not the crew's): the first two with headsets, the third none.
+  const [a, c, d] = atBase(st, hub(st).id).slice(0, 3).map((s) => P(b).find((u) => u.sid === s.id));
   const [e0] = E(b);
   place(a, 5, 5); place(c, 5, 8); place(d, 5, 11); place(e0, 12, 5);
   a.weapon = "ar"; a.ap = 2;

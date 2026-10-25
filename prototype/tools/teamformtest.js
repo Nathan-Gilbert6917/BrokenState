@@ -87,7 +87,9 @@ function sameCensus(a, b, what) {
 function setup(state) {
   const h = hub(state);
   const crew = atBase(state, h.id).slice(0, 4);
-  for (const s of crew) { s.traits = []; stripAll(s); }
+  // The same skills each (the crew is the crew's own dice since 2026-10-25: a fight hands the team's rounds out best
+  // shooters first, so the order a, b, c, d is set here, not left to who the dice made).
+  crew.forEach((s, i) => { s.traits = []; stripAll(s); for (const k of Object.keys(s.skills)) s.skills[k] = 5; s.skills.shooting = 9 - i; });
   const car = vehiclesAtBase(state, h.id).find((x) => !isBike(x));
   car.fuel = 20; car.condition = 100;
   const rifle = newItem("ar"), pack = newItem("backpack"), knife = newItem("knife"), crowbar = newItem("crowbar");
@@ -473,7 +475,9 @@ section("Fleets: every vehicle on the battle map; one blown up is left, the othe
   // foundation, mapgen.js) one stands right beside another, where a rocket at its corner wrecks both.
   const cellsOf = (v) => { const out = []; for (let cy = v.y; cy < v.y + v.h; cy++) for (let cx = v.x; cx < v.x + v.w; cx++) out.push([cx, cy]); return out; };
   const reaches = (v, [x, y]) => cellsOf(v).some(([cx, cy]) => Math.hypot(cx - x, cy - y) <= ROCKET.r + 0.5 + 1e-6);
-  const aimAt = (c) => cellsOf(c).find((at) => ![b.vehicle, ...b.convoy].some((v) => v !== c && reaches(v, at)));
+  // In it or round it (a rocket at the ground beside it): a point that reaches it and none of the others.
+  const around = (c) => { const out = []; for (let y = c.y - ROCKET.r; y < c.y + c.h + ROCKET.r; y++) for (let x = c.x - ROCKET.r; x < c.x + c.w + ROCKET.r; x++) if (x >= 0 && y >= 0 && x < b.w && y < b.h) out.push([x, y]); return out; };
+  const aimAt = (c) => around(c).find((at) => reaches(c, at) && ![b.vehicle, ...b.convoy].some((v) => v !== c && reaches(v, at)));
   if (b.convoy && b.convoy[0]) {
     const c = b.convoy.find(aimAt) || b.convoy[0];
     const [ax, ay] = aimAt(c) || [c.x, c.y];

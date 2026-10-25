@@ -231,8 +231,10 @@ function strongTeam(n) {
   const enemyB = bodies.filter((x) => x.sid == null && x.kind === "human");
   const ally = bodies.find((x) => x.sid === team[3].id);
   check(enemyB.length >= 1 && enemyB.every((x) => x.gear.weapon), `each dead raider has their weapon (${enemyB.length} bodies)`);
-  // Their rounds: loose round stacks in pockets and rig (people carry real rounds: fighters.js), or rounds in supplies.
-  const bodyRounds = (x) => totalRounds(x.supplies) + allItems(x).filter(isRoundItem).reduce((a, it) => a + amountOf(it), 0);
+  // Their rounds: loose round stacks in pockets and rig (people carry real rounds: fighters.js), or rounds in supplies,
+  // and what is still in the gun (a revolver that reloaded from its pockets in the fight has its rounds there).
+  const inGun = (x) => (x.gear.weapon && x.gear.weapon.loaded ? Number(x.gear.weapon.loaded.n) || 0 : 0);
+  const bodyRounds = (x) => totalRounds(x.supplies) + allItems(x).filter(isRoundItem).reduce((a, it) => a + amountOf(it), 0) + inGun(x);
   check(enemyB.every((x) => bodyRounds(x) >= 3 && !x.supplies.ammo), "each dead raider carries rounds (by calibre: ammo.js)");
   check(!!ally && !team[3].alive, "the fallen teammate is a body to loot");
   check(b.result.loot.gear.length === 0 && !Object.keys(b.result.loot.supplies).length, "nothing is taken before the loot screen (browser)");

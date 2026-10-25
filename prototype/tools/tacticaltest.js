@@ -325,7 +325,7 @@ section("5. A raid: a pile on the ground");
     const pile = G.groundAt(b, u.x, u.y, u.f || 0);
     check(!!pile && b.raid.containers.includes(pile), "the pile is one of the raid's containers");
     check(b.raid.containers.filter((c) => c.kind !== "body" && c.kind !== "ground").length === boxes0, "not a place to search");
-    check(G.pickUpFromGround(st, b, u, pile).got.length === 1, "and picked up again");
+    check(G.pickUpFromGround(st, b, u, pile).got.some((g) => /knife/i.test(g)), "and picked up again (with anything set down on that cell coming in)");
     done = true;
   }
   check(done, "a raid map was made");
@@ -387,6 +387,7 @@ section("6. The enemy's downed searched alive");
     if (!spot) continue;
     const [nx, ny] = spot;
     guard.down = true; guard.ko = true; guard.x = nx; guard.y = ny; guard.f = ru.f || 0;
+    ru.face = [nx - ru.x, ny - ru.y]; // facing it (a search needs that; how they stood after the deployment is the dice's)
     check(combatAct(rs, { type: "searchBody", unit: ru.id, target: guard.id }) === "" && !!G.bodyBoxOf(rb, guard), "in a raid the downed are searched the same way");
     const n0 = rb.raid.containers.length;
     guard.ko = false;

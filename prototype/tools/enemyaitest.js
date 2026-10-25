@@ -17,7 +17,7 @@
 import { createWorld, makeSurvivor, hub, atBase, combatPower } from "../src/sim/world.js";
 import { GEAR } from "../src/sim/data.js";
 import {
-  createBattle, autoPlayerTurn, runEnemyPhase, endPlayerTurn, closeCombat, registerCombatHandler, enemyUnit, active,
+  createBattle, autoPlayerTurn, runEnemyPhase, endPlayerTurn, closeCombat, registerCombatHandler, enemyUnit, active, WEAPONS,
 } from "../src/sim/combat.js";
 import { SURRENDER, surrenderCheck, thirdSurrenderCheck, numbersSurrenders, raidPrisoners } from "../src/sim/nonlethal.js";
 import { COVER_SMOKE } from "../src/sim/siege.js";
@@ -271,7 +271,9 @@ function threeWay(st, kind, team, { enemies = 4, thirdN = 4, armed = "pistol" } 
   const b = openBattle(st, [fighter(st)], { kind, count: enemies, power: 3, name: "the Red Hand" });
   mine(b)[0].x = 1; mine(b)[0].y = 1;
   const g = { side: team, name: team === "military" ? "the soldiers" : "the travellers", factionId: null, people: Array.from({ length: thirdN }, (_, k) => ({ name: `Third ${k + 1}`, weapon: armed })) };
-  const units = Array.from({ length: thirdN }, (_, k) => { const u = enemyUnit(b, st.rng, team === "military" ? "soldiers" : "survivors", 3, k + 1); b.units.push(u); thirdSideUnit(b, u, g, k); u.aware = true; u.x = 14; u.y = 4 + k * 2; return u; });
+  // Armed as asked: a soldier whose kit (the world's dice) holds no rounds for the gun is refitted to fists; here
+  // they hold the gun as given (the checks below are about who gives up to whom, not their pockets).
+  const units = Array.from({ length: thirdN }, (_, k) => { const u = enemyUnit(b, st.rng, team === "military" ? "soldiers" : "survivors", 3, k + 1); b.units.push(u); thirdSideUnit(b, u, g, k); if (u.weapon === "fists" && armed !== "fists" && WEAPONS[armed]) { u.weapon = armed; u.weaponName = WEAPONS[armed].name; } u.aware = true; u.x = 14; u.y = 4 + k * 2; return u; });
   theirs(b).forEach((e, i) => { e.x = 17; e.y = 4 + i * 2; e.aware = true; });
   return { b, units };
 }

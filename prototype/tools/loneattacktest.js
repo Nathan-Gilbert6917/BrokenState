@@ -96,7 +96,7 @@ section("A worker on a job trip (tripevents.js raiseCard → the attack card; he
   answer(st, 1); // Fight: headless, by the numbers at once through the battle's own resolver
   const lines = logText(st, logN);
   check(!t.ev.battle && !t.ev.pending && lines.some((l) => new RegExp(`${s.name.split(" ")[0]}.*(put down|ran from|got away|was killed)`).test(l)), `resolved and the trip steered: "${lines.find((l) => /put down|ran from|got away|was killed/.test(l)) || ""}"`);
-  check(!st.cards.length, "the card is gone");
+  check(!st.cards.some((c) => c.attack || c.tripEv != null), `the card is gone${st.cards.length ? ` (what the fight led to stays: ${st.cards.map((c) => c.title).join(", ")})` : ""}`);
 }
 
 section("A worker on a job trip: the battle map, one person with what they carry");

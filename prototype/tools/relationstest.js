@@ -89,19 +89,33 @@ section("Opinion drift and thresholds");
   // Leader: pairs where the leader is drift toward a higher target.
   const st4 = W();
   const h4 = hub(st4);
+  // The pair of them that gets on most nearly neither way (compat nearest 0, no traits): the crew's own dice since
+  // 2026-10-25 can make the first two a pair that cannot stand each other (chemistry, temper), whose quarrels and
+  // breaks swamp the leader's lift; the leader alone is measured.
+  const evenPair = (st) => {
+    const ps = atBase(st, hub(st).id).filter((s) => !s.leader);
+    let best = null;
+    for (let i = 0; i < ps.length; i++) for (let j = i + 1; j < ps.length; j++) { const v = Math.abs(compat(st, ps[i], ps[j]).v); if (!best || v < best.v) best = { v, pair: [ps[i], ps[j]] }; }
+    return best.pair;
+  };
+  for (const s of st4.survivors) s.traits = [];
   const L = atBase(st4, h4.id).find((s) => s.leader);
-  const pair = atBase(st4, h4.id).filter((s) => !s.leader).slice(0, 2);
+  const pair = evenPair(st4);
   setO(st4, pair[0], pair[1], 0);
   L.skills.leadership = 20;
   for (let i = 0; i < 60; i++) { nextDay(st4); relationsDaily(st4); }
   const withLeader = getRel(st4, pair[0], pair[1]).o;
+  // The same world with the same leader at home on Leadership 0: the day's dice fall as alike as they can (with the
+  // leader away the pairs and their quarrels' dice differ, and a pair the crew's dice made touchy drifts more on them
+  // than the leader lifts it), so the leader's lift is what differs.
   const st5 = W();
+  for (const s of st5.survivors) s.traits = [];
   const h5 = hub(st5);
-  atBase(st5, h5.id).find((s) => s.leader).location = { kind: "errand", baseId: h5.id, until: 9999 };
-  const pair5 = atBase(st5, h5.id).slice(0, 2);
+  atBase(st5, h5.id).find((s) => s.leader).skills.leadership = 0;
+  const pair5 = evenPair(st5);
   setO(st5, pair5[0], pair5[1], 0);
   for (let i = 0; i < 60; i++) { nextDay(st5); relationsDaily(st5); }
-  check(withLeader > getRel(st5, pair5[0], pair5[1]).o + 5, `a Leadership-20 leader at the base lifts opinions (${Math.round(getRel(st5, pair5[0], pair5[1]).o)} → ${Math.round(withLeader)})`);
+  check(withLeader > getRel(st5, pair5[0], pair5[1]).o + 5, `a Leadership-20 leader at the base lifts opinions (Leadership 0: ${Math.round(getRel(st5, pair5[0], pair5[1]).o)} → ${Math.round(withLeader)})`);
   // How many friends and rivals a hub grows over 60 days (no hardship): a few of each.
   let fr = 0, rv = 0, n = 0;
   const al = atBase(st5, h5.id);

@@ -13,6 +13,7 @@ The user's requests 2026-10-19. Modules: [buildings, defences, wire, fort, inter
 - Shelter: sandbag positions, the watchtower.
 - Outpost: concertina wire, the reinforced gate, floodlights, camouflage.
 - Main hub: guard towers, the **minefield**.
+- On the wall-line map (`deploy.js`) the guard towers stand on the walkway at `GUARD_ROWS` (3 rows above and 2 below the wall's middle row, either side of the gate); breaches are not cut in those rows when the base has guard towers (2026-10-25: a breach there left a built tower off the map, `tools/defensestest.js`).
 - Hold limit DEFENCE.WIRE / RAZOR / BAGS / TOWERS / TRENCH2; raid tiers TIERS.WALL / YARD.
 - **Trenches**: up to two lines (the second needs the Army Engineering Manual). The dead that drop in lose their turn; the living only the rest of the move (combat moveAlong).
 - **On the battle map** every defense built stands when the base is raided or a horde breaks in: rings of wire and trench round the fort map's wall with gaps at the gates and the attackers starting beyond them (fort buildFort `wireOut`); lines in front of the yard without a wall (interior layInterior); columns in front of the wall line (deploy deployMap); sandbag cells; two more towers.

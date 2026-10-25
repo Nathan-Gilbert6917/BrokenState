@@ -150,7 +150,11 @@ section("The governor builds at a camp and a shelter");
   run(st, c, 1);
   const yard = c.buildings.map((x) => x.type);
   check(yard.length >= 2 && yard.every((k) => CAMP.build[k]), `a camp's yard goes up on its two plots (${yard.join(", ")})`);
-  check(c.construction.some((j) => BUILDINGS[j.type].tierUp) || !isCamp(c), "and the step up is under way");
+  // The step up: under way within the first days (the beds first when there are none: how soon the yard is up and the
+  // step up queued is the crew's own pace, their dice since 2026-10-25).
+  let upDay = 1;
+  while (!c.construction.some((j) => BUILDINGS[j.type].tierUp) && isCamp(c) && upDay < 3) { run(st, c, 1); upDay++; }
+  check(c.construction.some((j) => BUILDINGS[j.type].tierUp) || !isCamp(c), `and the step up is under way (day ${upDay})`);
   const st2 = W(), s = hub(st2);
   st2.noWanderers = true;
   asShelter(s); s.farm = null;

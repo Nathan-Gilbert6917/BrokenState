@@ -185,7 +185,8 @@ console.log("Footsteps");
   foe.x = me.x; foe.y = Math.max(0, me.y - 2);
   C.fx(bt, { type: "move", unit: foe.id, from: [foe.x, foe.y], path: [[foe.x, foe.y]] });
   s = stepCues(st, mem, 5.5);
-  check(!C.playerSees(bt, foe) && s.length === 1 && s[0].seen === false && s[0].dist === 2 && s[0].gain < S.STEP_GAIN, "an enemy out of sight but close (upstairs): heard, muffled, its distance known");
+  const nearest = Math.min(...bt.units.filter((p) => p.side === "player" && C.active(p)).map((p) => Math.max(Math.abs(p.x - foe.x), Math.abs(p.y - foe.y)))); // 2 from me; nearer if another of yours stands closer
+  check(!C.playerSees(bt, foe) && s.length === 1 && s[0].seen === false && s[0].dist === nearest && nearest <= 2 && s[0].gain < S.STEP_GAIN, `an enemy out of sight but close (upstairs): heard, muffled, its distance known (${s[0] ? s[0].dist : "none"} of ${nearest})`);
   foe.f = 0; bt.floors = hadFloors; foe.x = up[0]; foe.y = up[1];
   // The dead.
   const z = { ...foe, id: 99902, kind: "zombie", ztype: "brute", side: "enemy", x: me.x, y: me.y + 1 };
