@@ -895,7 +895,7 @@ function milPlan(rng, v, o = {}) {
       const { bw, bh } = milSize(rng, "hq");
       const fd = Math.floor((bh - 4) / 2);
       return {
-        bw, bh, front: { width: 2 }, ground: "compound", helipad: true, margins: { right: 13 }, storeys: 2, foot: "large", stairs: ENDS,
+        bw, bh, front: { width: 2 }, ground: "compound", helipad: true, margins: { right: 13 }, storeys: 2, foot: "large", stairs: { ...ENDS, len: 2 }, // a run of 2 steps at each end of the corridor
         program: corridorPlan([["*", { role: "control", name: "Operations room", type: "control", civic: "ops", maxBoxes: 3 }], [6, { role: "lobby", entry: true, name: "Duty desk", type: "office", civic: "mlobby" }], ["*", { role: "office", name: "Briefing room", civic: "briefing" }]],
           [["*", { role: "control", name: "Comms room", type: "control", civic: "comms" }], [6, { role: "office", name: "Commander's office", lock: ["door", 0.4], gunSafe: ["gunsafe2", 0.5], civic: "cmdoffice" }], [5, { role: "office", name: "Records", boxLock: ["safe", 0.3], civic: "records" }], [3, WASH], ["*", { role: "office", name: "Staff office", civic: "squadron" }]], fd, 2),
         upper: () => corridorPlan([["*", { role: "office", name: "Planning room", civic: "ops", type: "control" }], [6, { role: "office", name: "Adjutant's office", civic: "squadron" }], ["*", { role: "office", name: "Conference room", civic: "briefing" }]],
@@ -913,7 +913,7 @@ function milPlan(rng, v, o = {}) {
         : [["*", bay(0)], [6, { role: "foyer", name: "Duty desk", entry: true, type: "barracks", civic: "dutydesk" }], ["*", bay(1)]];
       const back = (f) => [["*", bay(20 + f)], [6, { role: "restroom", name: "Latrine", civic: "latrine" }], [6, { role: "dayroom", name: "Day room", civic: "mdayroom", hub: false, type: "barracks", maxBoxes: 2 }], [4, { role: "bedroom", name: "NCO room", type: "barracks", civic: "nco", maxBoxes: 2 }], [4, { role: "bedroom", name: "NCO room", type: "barracks", civic: "nco", maxBoxes: 2 }], ["*", bay(30 + f)]];
       return {
-        bw, bh, front: { width: 1 }, ground: "compound", storeys: n, foot: "large", stairs: ENDS,
+        bw, bh, front: { width: 1 }, ground: "compound", storeys: n, foot: "large", stairs: { ...ENDS, len: 2 },
         program: corridorPlan(front, back(0), fd, 2),
         upper: (f) => corridorPlan(rooms ? [...rowRooms(side, 4, (i) => bay(40 + i)), [6, { role: "storage", name: "Supply room", type: "barracks", lock: ["door", 0.3], civic: "qmcage" }], ...rowRooms(side, 4, (i) => bay(50 + i))] : [["*", bay(2)], [6, { role: "storage", name: "Supply room", type: "barracks", lock: ["door", 0.3], civic: "qmcage" }], ["*", bay(3)]], back(f), fd, 2),
         exits: [{ side: "back", roles: ["corridor"], chance: 0.7, lock: 0.2 }, { side: "left", roles: ["corridor"], chance: 0.7, lock: 0.3 }, { side: "right", roles: ["corridor"], chance: 0.7, lock: 0.3 }],
@@ -988,7 +988,7 @@ function milPlan(rng, v, o = {}) {
       const { bw, bh } = milSize(rng, "tower"), n = milStoreys(rng, "tower");
       const SW = [2, { role: "stairwell" }];
       return {
-        bw, bh, front: { width: 1 }, ground: "airfield", milAir: site === "airbase", margins: { front: 12 }, storeys: n, foot: "tower", stairs: { roles: ["stairwell"], n: 1, len: 3 },
+        bw, bh, front: { width: 1 }, ground: "airfield", milAir: site === "airbase", margins: { front: 12 }, storeys: n, foot: "tower", stairs: { roles: ["stairwell"], n: 1, len: 2 },
         program: { split: "x", parts: [SW, ["*", { split: "y", parts: leaves([["*", { role: "lobby", entry: true, name: "Tower entrance", type: "office", civic: "tlobby" }], [4, { role: "workshop", name: "Equipment room", type: "control", civic: "tequip" }]]) }]] },
         upper: (f, r, ctx) => ({ split: "x", parts: [SW, ["*", ctx.top ? { role: "control", name: "Tower cab", civic: "cab", maxBoxes: 3 } : { role: "control", name: f === 1 ? "Radar room" : "Approach control", civic: "tradar" }]] }),
         exits: [{ side: "back", roles: ["workshop", "lobby"], chance: 0.5, lock: 0.5 }],
@@ -998,7 +998,7 @@ function milPlan(rng, v, o = {}) {
       const { bw, bh } = milSize(rng, "flightops"), n = milStoreys(rng, "flightops");
       const fd = Math.floor((bh - 3) / 2);
       return {
-        bw, bh, front: { width: 2 }, ground: "airfield", milAir: true, margins: { front: 12 }, storeys: n, foot: "medium",
+        bw, bh, front: { width: 2 }, ground: "airfield", milAir: true, margins: { front: 12 }, storeys: n, foot: "large",
         program: corridorPlan([["*", { role: "office", name: "Briefing room", civic: "briefing" }], [6, { role: "lobby", entry: true, name: "Ops desk", type: "office", civic: "opsdesk" }], ["*", { role: "lockerroom", name: "Crew room", type: "flightgear", civic: "crewroom" }]],
           [["*", { role: "storage", name: "Life support", type: "flightgear", lock: ["door", 0.3], civic: "lifesupport" }], [6, { role: "office", name: "Weather office", civic: "weather" }], [3, WASH], ["*", { role: "office", name: "Squadron office", civic: "squadron" }]], fd),
         upper: n > 1 ? () => corridorPlan([["*", { role: "office", name: "Squadron commander", civic: "cmdoffice", gunSafe: ["gunsafe2", 0.3] }], ["*", { role: "office", name: "Planning room", type: "control", civic: "ops" }]], [["*", { role: "breakroom", civic: "breakroom" }], [3, WASH], ["*", { role: "office", name: "Records", civic: "records" }]], fd) : null,
