@@ -42,6 +42,7 @@
 // see docs/features/travel.md "Recover the convoy".
 /** @import { State, Party, Faction, Vehicle } from "./types" */
 import { log, addCard, hub, baseById, factionById, day, isNight } from "./world.js";
+import { earnAch } from "./achievements.js"; // a lost convoy recovered
 import { partyMembers, partyTile, tileLabel, awaitOrders, startReturn, weighTeam, wipeParty, leaveVehicle, takeVehicleCargo, spawnAiParty, planPath, removeParty, teamName } from "./parties.js";
 import { partyVehicles, setPartyVehicles, vehicleLabel, isBike, MAX_VEHICLES } from "./vehicles.js";
 import { vehicleValue } from "./vehicles.js";
@@ -194,6 +195,7 @@ function convoyAfter(state, result, setup) {
     : `The team got out of ${tileLabel(state, tile)} without the convoy.${left.length ? ` Nobody to drive ${list(left)}: left there, marked.` : ""}`;
   if (!brought.length) p.convoyFailed = { tile, why: left.length ? "too few left to drive" : "nobody got back to the vehicles", fid: null };
   log(state, text, brought.length ? "good" : "danger");
+  if (brought.length) earnAch(state, "convoy"); // achievements.js: a lost convoy back on the road
   startReturn(state, p); // home to its base of origin
 }
 registerCombatHandler("convoyRecover", convoyAfter);
@@ -352,6 +354,7 @@ export function recoveryArrive(state, p) {
         }
         v.loc = { kind: "base", baseId: b.id };
       }
+      earnAch(state, "convoy"); // achievements.js: a lost convoy brought home
       log(state, `${f.name}'s party brought your convoy to ${b.name}: ${list(vs.map((v) => `the ${vehicleLabel(v)}`))}${goods.length ? `, with ${goods.join(", ")} into the stores` : ""}.`, "good");
     } else {
       const tile = partyTile(p);

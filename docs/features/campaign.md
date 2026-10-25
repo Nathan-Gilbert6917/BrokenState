@@ -2,7 +2,7 @@
 
 Detail for section 1 of [docs/agents/features.md](../agents/features.md). `[name]` is `prototype/src/sim/name.js`; `ui/name` is `prototype/src/ui/name.js`.
 
-Contents: [Hardcore mode](#hardcore-mode) · [Bare start and the hub's start layout](#bare-start-and-the-hubs-start-layout) · [New-run shortcuts](#new-run-shortcuts) · [Custom mode and starting vehicles](#custom-mode-and-starting-vehicles) · [Crashlanding](#crashlanding) · [World sizes](#world-sizes) · [No map until it is needed, and the crew's own dice](#no-map-until-it-is-needed-and-the-crews-own-dice) · [The map kept between settings](#the-map-kept-between-settings) · [Unique names on the map](#unique-names-on-the-map) · [World configuration](#world-configuration) · [Ponds in the hollows](#ponds-in-the-hollows) · [Seasonal weather in play](#seasonal-weather-in-play) · [The ground by the season](#the-ground-by-the-season) · [Ponds on the map](#ponds-on-the-map) · [Rain and fog on the State Map](#rain-and-fog-on-the-state-map) · [Rain in waves](#rain-in-waves) · [Puddles after rain](#puddles-after-rain) · [Hub events](#hub-events)
+Contents: [Hardcore mode](#hardcore-mode) · [Bare start and the hub's start layout](#bare-start-and-the-hubs-start-layout) · [New-run shortcuts](#new-run-shortcuts) · [Custom mode and starting vehicles](#custom-mode-and-starting-vehicles) · [Crashlanding](#crashlanding) · [World sizes](#world-sizes) · [No map until it is needed, and the crew's own dice](#no-map-until-it-is-needed-and-the-crews-own-dice) · [The map kept between settings](#the-map-kept-between-settings) · [Unique names on the map](#unique-names-on-the-map) · [World configuration](#world-configuration) · [Ponds in the hollows](#ponds-in-the-hollows) · [Seasonal weather in play](#seasonal-weather-in-play) · [The ground by the season](#the-ground-by-the-season) · [Ponds on the map](#ponds-on-the-map) · [Rain and fog on the State Map](#rain-and-fog-on-the-state-map) · [Rain in waves](#rain-in-waves) · [Puddles after rain](#puddles-after-rain) · [Hub events](#hub-events) · [Achievements](#achievements)
 
 ## Hardcore mode
 Start the day Calder falls, on the road with 1–4 survivors and no hub.
@@ -231,3 +231,46 @@ Home decisions every few days and the harvest festival.
 
 - The events: a fire, a quarrel, a peddler, rats in the stores, the dead at the fence, a sick traveller, a cold snap, music at night, a wreck to strip, flu season, bad water, a coughing stranger and more [hubevents, disease].
 - The harvest festival [festival].
+
+## Achievements
+Feats a run earns once, kept in its save; the list on the end screens and in a 🏆 window.
+
+- The user's request 2026-10-25: "add achievements per run."
+- Per run: `state.ach = { [id]: day }`; a new run starts with none, an older save without it has none yet. No cross-run record here (the hall of fame keeps that).
+- [achievements]: `ACHIEVEMENTS` (id, group, icon, name, desc, `hidden`, `modes`); `achievementsOf` (the earned list `[{ id, day }]`, oldest first: the UI and the hall of fame read it); `earnAch` (once a run, in its modes only, a log line "🏆 Achievement: …"); `runMode` (normal, custom, hardcore, crash); `achievementsFor` (the mode's rows); `foundersOf` (the starting crew: `s.joined` ≤ 2, no parents).
+- When: `achievementsDaily` at midnight (world hourOfWorld) reads what the run keeps anyway; `achievementsEnd` at each ending (world checkGameOver, crashstart crashJoin), so the victory's rows are in before the end screen; hooks where nothing is left to read later: radiotrade (bookDeal, the deliver and meet deals), foundcars driveHome, convoyrecover (your team's recovery raid, an allied group's party bringing it home), parties recoverVehicle (one vehicle running again with its cargo), combat finishCombat → `achievementsBattle`. relations makePartners notes `r.pDay`.
+- Recording only: no dice, nothing in play changes. `state.achOff` turns it off (the test's second run).
+- UI [ui/achievements]: the 🏆 button in the top bar (the count) opens the window: the mode's rows by group, earned with their day, the rest greyed, hidden ones "???" until earned; Esc closes it. A toast (`ui.flash`, `achievementsFlash`) when one is earned. The victory and game-over screens list them and open the window.
+
+| id | Group | Name | How | Modes |
+|---|---|---|---|---|
+| day30 / day100 / day365 | Survival | A month on / A hundred days / A year and a day | the day reaches 30 / 100 / 365 | all |
+| winter | Survival | Through the winter | the first day after a winter | all |
+| nodeath | Survival | Nobody lost | 100 days since the last name on the memorial wall (or the start) | all |
+| shelter | Growth | A roof at last | the hub is no longer a camp | Hardcore, Crashlanding |
+| mainhub | Growth | A real hub | the hub past tier 0 (a Main hub) | Hardcore, Crashlanding |
+| outpost | Growth | Outpost | an outpost past tier 0 | all |
+| pop25 / pop50 | Growth | A village / A town again | 25 / 50 people alive at once | all |
+| child | Growth | New life | a birth (family birthsTotal) | all |
+| master | Growth | Master of a craft | a skill grown to 15 (the last perk milestone) from below it | all |
+| radio | Building | On the air | a base with a radio | all |
+| ring | Building | Walled in | a ring wall that closes (buildings hasWall) | all |
+| solar | Building | Power from the sun | a solar panel array | all |
+| grid | Building | Lights in the dark | a base's grid serving something at midnight | all |
+| hive | Combat | Burn it out | a hive in your people's service records | all |
+| held | Combat | Held the walls | a raid repelled, or a horde held or beaten at the walls | all |
+| kills | Combat | A thousand dead | 1,000 of the dead in the service records | all |
+| military | Combat | Raid the armoury | a raid won on a military site | all |
+| brood | Combat | Broodkiller | a Broodmother killed by your side on the battle map | all |
+| radiotrade | World | Deal on the air | the first radio deal | all |
+| coalition | World | Not alone | a group in your Calder Coalition | all |
+| carhome | World | Drive it home | a found car sent home (foundcars driveHome) | all |
+| convoy | World | Nothing left behind | a lost team's convoy recovered (convoyrecover), or one of its vehicles running again with its cargo | all |
+| winhives / wincoalition | Victory | Every hive is ash / The state is ours | state.hivesWon / state.allianceWon | all |
+| road | Mode | Life on the road | day 30 with no base and the first hub not founded | Hardcore |
+| bunker | Mode | The bunker | the unit's bunker found | Crashlanding |
+| love | Hidden | Till death | two partners both alive 100 days after they became partners | all |
+| founders | Hidden | All of us | a victory with every founder alive | all |
+
+- Dropped or changed (no clean hook): "the hub reaches outpost tier" in normal and Custom runs (their hub starts as a Main hub; the tier rows are Hardcore's and Crashlanding's, an outpost its own row); "married" is relations' partners (there is no wedding); the top skill is the last perk milestone 15, not SKILL_MAX 20 (years past it); the Broodmother counts on the battle map only (a hive taken by the numbers has no unit to read).
+- Test `tools/achievementstest.js`: the table (31 rows, unique ids, modes, the hidden two); awards on a world set up by hand, each once with its day and log line; mode filters; the endings with the founders; a battle's end (a military raid, a Broodmother); an older save without `state.ach`; the dice untouched, and seed 42 for 32 days on the autopilot with and without achievements digesting the same (tools/digest.js).

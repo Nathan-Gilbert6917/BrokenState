@@ -855,6 +855,7 @@ export function makePartners(state, a, b) {
   for (const s of [a, b]) { const old = partnerOf(state, s); if (old && old !== a && old !== b) getRel(state, s, old).p = false; }
   const r = getRel(state, a, b, true);
   r.p = true;
+  r.pDay = day(state); // since when (achievements.js: partners who lasted)
   r.o = Math.max(r.o, REL.partnerFloor);
   r.h = Math.max(r.h, 20);
   const d = day(state);

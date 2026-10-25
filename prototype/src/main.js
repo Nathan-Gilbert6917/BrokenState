@@ -118,6 +118,7 @@ import { renderAlerts, ALERT_ACTIONS, mapHotkey, initAlerts, camSpot, nextWaitin
 import { ROSTER_ACTIONS, ROSTER_CHANGE } from "./ui/roster.js";
 import { GUIDE_ACTIONS, guideCheck, renderGuide, guideTab, renderGuideTip, guidePulse, startGuide, guideDefault } from "./ui/guide.js"; // the first-week guide under the alerts; its notes over new windows
 import { LEDGER_ACTIONS, ledgerKey, drawCharts, sparkNode } from "./ui/ledger.js"; // the Ledger, the run summary, the stock trends
+import { ACH_ACTIONS, achievementsFlash } from "./ui/achievements.js"; // the run's achievements: the window, the toast
 import { WATCHLIST_ACTIONS, renderWatchlist, syncWatchlist, ctxWatchlist } from "./ui/watchlist.js"; // the Watching panel (📌) and map notes
 import { EXPLORE_ACTIONS, EXPLORE_CHANGE } from "./ui/explore.js";
 import { LOCK_ACTIONS } from "./ui/locks.js";
@@ -205,6 +206,7 @@ const freshUi = () => ({
   settings: null, slot: null, savedMark: null, // ui/settings.js: the menu, the save slot this game uses, when it was last saved
   codex: null, paletteRecent: [], palFocus: null, // ui/codex.js window; ui/cmdpalette.js recent picks and a build button to light up
   ledger: null, // ui/ledger.js: the Ledger window is open
+  achView: null, // ui/achievements.js: the Achievements window is open
   ask: null, // ui/confirm.js: the question up before an order that cannot be undone
   mapSel: null, selParty: null, // ui/mapselect.js: a party, band or outsiders selected on the map; selParty: your selected team's id
   tileView: null, moveExit: null, // ui/poipick.js: the tile view of a team walking on its tile ({ partyId }); move mode from its "Leave for another tile…" (the team's id)
@@ -586,6 +588,7 @@ function refresh(user = true) {
   noteNames(state);
   codexScan(state, ui); // ui/codex.js: open the entries for what the player now sees (before the alerts: it may flash)
   guideCheck(state, ui); // the first-week guide ticks off what is done (ui/guide.js), before the alerts show its toast
+  achievementsFlash(state, ui); // ui/achievements.js: a toast for an achievement just earned
   const alerts = renderAlerts(state, ui); // the alerts stack on the right of the map (ui/alerts.js); also sets ui.alertList
   autoShow();
   afterRefresh(state, ui); // ui/pacing.js: a new red alert slows the clock to 1×, a horde near a base stops it
@@ -1513,6 +1516,7 @@ for (const [k, fn] of Object.entries(REL_ACTIONS)) actions[k] = (d) => fn(state,
 // use the handlers above (center, openbase, xp-open).
 for (const [k, fn] of Object.entries({ ...DIARY_ACTIONS, ...ALERT_ACTIONS, ...ROSTER_ACTIONS, ...GUIDE_ACTIONS, ...WHY_ACTIONS, ...THREAT_ACTIONS })) actions[k] = (d) => fn(state, ui, d, actions); // GUIDE: the first-week guide (ui/guide.js); WHY: Why? on deaths and lost bases (ui/causes.js)
 for (const [k, fn] of Object.entries(LEDGER_ACTIONS)) actions[k] = (d) => fn(state, ui, d); // the Ledger and the run summary (ui/ledger.js)
+for (const [k, fn] of Object.entries(ACH_ACTIONS)) actions[k] = (d) => fn(state, ui, d); // the achievements window (ui/achievements.js)
 for (const [k, fn] of Object.entries(NB_ACTIONS)) actions[k] = (d) => fn(state, ui, d); // the Needs panel's base chips (ui/needsbar.js)
 // Repairs, and opening locks in a raid (ui/explore.js, ui/locks.js).
 for (const [k, fn] of Object.entries({ ...EXPLORE_ACTIONS, ...LOCK_ACTIONS, ...CAR_ACTIONS })) actions[k] = (d) => fn(state, ui, d);
@@ -2966,6 +2970,7 @@ function closeTopLayer() {
     return true;
   }
   if (ui.ledger) { ui.ledger = null; return true; } // ui/ledger.js (it can open over the end screen)
+  if (ui.achView) { ui.achView = null; return true; } // ui/achievements.js (the same)
   if (state.gameOver) return false;
   if (ui.cardResult) { ui.cardResult = null; return true; }
   if (trayEsc(state, ui)) return true; // a card opened from the tray goes back to it (ui/pacing.js)
