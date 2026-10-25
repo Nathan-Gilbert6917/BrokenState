@@ -46,19 +46,28 @@ const field = (st, tile, enemy, extra = {}) => {
 // Used by the "furniture" layout below and by tools/raidshot.cjs (site "furniture": the same on a real raid's map).
 // showroom(b, x0?, y0?) → [{ k, x, y }] (each piece's first cell).
 export function showroom(b, x0 = 2, y0 = 2) {
-  const placed = [], cols = Math.max(4, Math.floor((b.w - x0 - 1) / 3));
+  const placed = [];
   const kinds = Object.keys(FURNITURE_KINDS);
-  const rows = Math.ceil(kinds.length / cols), x1 = Math.min(b.w - 1, x0 + cols * 3), y1 = Math.min(b.h - 1, y0 + rows * 3);
-  for (let y = y0 - 1; y <= y1; y++) for (let x = x0 - 1; x <= x1; x++) {
-    if (x < 0 || y < 0 || x >= b.w || y >= b.h) continue;
-    b.cells[y * b.w + x] = { k: "open", f: "floor", fl: (x + y) % 7 ? undefined : "tile" };
+  // Packed in rows, each piece at its own width with a free cell after it, a row as tall as its tallest piece and a free
+  // row under it (the catalogue outgrew a grid of 3 × 3 slots on the field map: issue #15).
+  const spots = [];
+  let x = x0, y = y0, rowH = 1;
+  for (const k of kinds) {
+    const [w, h] = FURNITURE_KINDS[k].size;
+    if (x + w > b.w - 2) { x = x0; y += rowH + 1; rowH = 1; }
+    spots.push({ k, x, y, w, h });
+    x += w + 1; rowH = Math.max(rowH, h);
   }
-  kinds.forEach((k, i) => {
-    const x = x0 + (i % cols) * 3, y = y0 + Math.floor(i / cols) * 3, [w, h] = FURNITURE_KINDS[k].size;
-    if (y + h > b.h - 1) return;
+  const x1 = Math.min(b.w - 1, Math.max(...spots.map((p) => p.x + p.w))), y1 = Math.min(b.h - 1, y + rowH);
+  for (let yy = y0 - 1; yy <= y1; yy++) for (let xx = x0 - 1; xx <= x1; xx++) {
+    if (xx < 0 || yy < 0 || xx >= b.w || yy >= b.h) continue;
+    b.cells[yy * b.w + xx] = { k: "open", f: "floor", fl: (xx + yy) % 7 ? undefined : "tile" };
+  }
+  for (const { k, x, y, w, h } of spots) {
+    if (y + h > b.h - 1) continue;
     for (let dy = 0; dy < h; dy++) for (let dx = 0; dx < w; dx++) b.cells[(y + dy) * b.w + x + dx] = { k, f: "floor" };
     placed.push({ k, x, y });
-  });
+  }
   const taken = (x, y) => b.units.some((u) => u.x === x && u.y === y);
   for (const u of b.units) {
     if (b.cells[u.y * b.w + u.x].k === "open") continue;

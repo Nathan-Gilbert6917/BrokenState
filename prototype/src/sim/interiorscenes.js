@@ -8,7 +8,8 @@
 //   a church 40%; DEFAULT otherwise), then 1, 2 or 3 of them (COUNT: the chance of a second, of a third). Which ones:
 //   by weight (SCENE_KINDS[k].w, × BY_KIND[kind][k] for the building's kind), each tried in a room that fits it; one
 //   that fits nowhere gives way to the next by weight, so a building that rolls scenes nearly always gets one.
-//   The scenes (SCENE_KINDS; registerScene adds one: the hospital, police and school layouts call it):
+//   The scenes (SCENE_KINDS; registerScene adds one: the hospital, police and school layouts call it; civiclayout.js
+//   adds a police station's, a school's and a church's, issue #15):
 //     barricade  a dead-end room (one door, not an exit, no stairs) shut from inside: its door boarded up (barricade.js
 //                boardCell, BOARD.HP a layer) or a piece shoved into its open frame (setPiece: c.frame, hp), a piece
 //                dragged against the inside (c.moved, hp); inside 1–2 survivor bodies with their kit, a pile of empty
@@ -91,7 +92,7 @@ export const sceneRng = (state, tileId, option) => new Rng(Math.floor(hash01(sta
 // tags fit the room (ROLE_TAG: its role's tag), else the ones any room has (COMMON); never a fixed piece (barricade.js
 // FURNITURE holds only what can be shoved). opts.half: half cover only (the living vault it, the dead crawl over it);
 // opts.full: one full-cover piece allowed among them (a bookshelf, a wardrobe across a hall with a gap left).
-export const SHOVED = ["chair", "sofa", "armchair", "table", "desk", "dresser", "cabinet", "shelf", "bookshelf", "wardrobe", "filing", "nightstand", "tvstand", "crate", "bed", "hospbed", "gurney", "pew", "locker", "counter", "rack", "barrel"];
+export const SHOVED = ["chair", "sofa", "armchair", "table", "desk", "dresser", "cabinet", "shelf", "bookshelf", "wardrobe", "filing", "nightstand", "tvstand", "crate", "bed", "hospbed", "gurney", "pew", "locker", "counter", "rack", "barrel", "schooldesk", "cot"];
 const COMMON = ["chair", "table", "cabinet", "bookshelf", "sofa", "dresser", "crate", "shelf"];
 const ROLE_TAG = {
   living: "living", greatroom: "living", dayroom: "living", hall: "living", dining: "dining", mess: "dining", cafeteria: "dining", kitchen: "kitchen", breakroom: "kitchen",
@@ -145,7 +146,9 @@ function context(map, rng, key) {
   ctx.freeIn = (r) => ctx.inner(r).filter(([x, y]) => ctx.free(r.f || 0, x, y));
   ctx.floorCell = (f, x, y) => { const c = ctx.at(f, x, y); return !!c && c.f === "floor" && !!CELL[c.k] && CELL[c.k].walk && c.k !== "void"; };
   ctx.piece = (f, x, y, k) => { const c = ctx.at(f, x, y); setPiece(c, k); delete c.blood; delete c.brass; /* blood lies on the floor, not on a piece */ ctx.take(f, x, y); ctx.out.pieces.push({ f, x, y, k }); };
-  ctx.body = (f, x, y, o = {}) => { ctx.take(f, x, y); ctx.out.bodies.push({ f, x, y, human: !!o.human, quiet: !!o.quiet, r: rng.next(), weapon: o.human ? rng.pick(KITS.survivors.weapons) : null }); };
+  // o.kit, o.name: a body of another kit (a police officer in uniform: civiclayout.js); o.sleeper: one of the dead that
+  // will rise (a prisoner turned in a locked cell).
+  ctx.body = (f, x, y, o = {}) => { ctx.take(f, x, y); ctx.out.bodies.push({ f, x, y, human: !!o.human, quiet: !!o.quiet, r: rng.next(), weapon: o.human ? rng.pick((KITS[o.kit] || KITS.survivors).weapons) : null, ...(o.kit ? { kit: o.kit } : {}), ...(o.name ? { name: o.name } : {}), ...(o.sleeper ? { sleeper: true } : {}) }); };
   ctx.pile = (f, x, y, label, sup, area) => { ctx.take(f, x, y); ctx.out.piles.push({ f, x, y, label, sup, area }); };
   ctx.blood = (f, x, y, kind, amount) => {
     if (!ctx.floorCell(f, x, y)) return false;
@@ -373,13 +376,14 @@ export function sceneBattle(b, map) {
   b.corpses = b.corpses || [];
   let cid = b.corpses.reduce((a, c) => Math.max(a, c.id || 0), 0) + 1, n = 0;
   for (const o of S.bodies) {
-    if (!o.human) { b.corpses.push({ id: cid++, x: o.x, y: o.y, f: o.f, seed: Math.floor(o.r * 99999), sleeper: o.r < odds, scene: true }); continue; }
-    const u = enemyUnit(b, rng, "survivors", 2, ++n);
-    Object.assign(u, { side: "neutral", name: "A survivor", short: "S", x: o.x, y: o.y, f: o.f, away: o.f !== (b.floor || 0), dead: true, hp: 0, aware: false, reinforcement: true, restored: true, scene: true, face: [0, 1] });
+    if (!o.human) { b.corpses.push({ id: cid++, x: o.x, y: o.y, f: o.f, seed: Math.floor(o.r * 99999), sleeper: !!o.sleeper || o.r < odds, scene: true }); continue; }
+    const kit = o.kit && KITS[o.kit] ? o.kit : "survivors";
+    const u = enemyUnit(b, rng, kit, 2, ++n);
+    Object.assign(u, { side: "neutral", name: o.name || "A survivor", short: "S", x: o.x, y: o.y, f: o.f, away: o.f !== (b.floor || 0), dead: true, hp: 0, aware: false, reinforcement: true, restored: true, scene: true, face: [0, 1] });
     if (o.weapon) u.weapon = o.weapon;
     if (o.quiet) u.noPool = true; // ui/battlemarks.js: no pool of blood under a quiet death
     b.units.push(u);
-    b.raid.containers.push({ id: b.nextId++, x: o.x, y: o.y, f: o.f, kind: "body", area: null, searched: false, kit: "survivors", weapon: u.weapon, label: "A survivor's body", uid: u.id, full: true });
+    b.raid.containers.push({ id: b.nextId++, x: o.x, y: o.y, f: o.f, kind: "body", area: null, searched: false, kit, weapon: u.weapon, label: o.name ? `${o.name}'s body` : "A survivor's body", uid: u.id, full: true });
   }
   for (const p of S.piles) b.raid.containers.push({ id: b.nextId++, x: p.x, y: p.y, f: p.f, kind: "ground", drop: false, area: p.area ?? null, searched: true, partial: false, label: p.label, scene: true, contents: { sup: { ...p.sup }, gear: [] } });
   b.raid.scenes = { list: S.list.map((s) => ({ ...s })), pieces: S.pieces.map((p) => ({ ...p })) };
