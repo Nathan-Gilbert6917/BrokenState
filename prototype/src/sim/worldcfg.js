@@ -139,6 +139,8 @@ export function presetOf(cfg) {
 export const RAID_MAPS = 1;
 /** @param {any} state */
 export const legacyRaids = (state) => !!(state && state.raidLegacy);
+// A save from before homes were furnished room by room (save.js roomsLegacy): buildingmaps.js furnishes as it did.
+export const legacyRooms = (state) => !!(state && state.roomsLegacy);
 // The run's raid map dials as [smallest, largest]: each clamped to its range, the two in order whatever was stored
 // (a hand-edited or older settings object can hold them the wrong way round: the range never runs backwards).
 /** @param {any} state */

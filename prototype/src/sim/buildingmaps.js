@@ -47,7 +47,8 @@ import { noiseAt, detectRange, isBehind, throwablesOf, THROWABLES } from "./stea
 import { FRANCHISES } from "./data-shops.js"; // a franchise's layout (plan): the floor, the front room's depth and name, the width, a flat above
 import { applyZType, siteList } from "./zombietypes.js";
 import { fitMargins, buildingTarget, densifyOutside, densify, coverTarget, buildingDeadScale, streetDeadScale, raidMaxDims, raidDims, SIZE_CLASSES } from "./battlesize.js";
-import { legacyRaids } from "./worldcfg.js"; // an older save: a neighbourhood's street laid out as it always was
+import { legacyRaids, legacyRooms } from "./worldcfg.js"; // an older save: a neighbourhood's street laid out as it always was; its buildings furnished as they were
+import { roomLayout, homeStyle, LAYOUT } from "./roomlayout.js"; // homes furnished room by room (the placement helpers)
 import { decorate, flipDecoY, placeDecorPieces } from "./decor.js"; // rugs, clutter, wall art, wall colours, light fixtures (cosmetic)
 import { rollWin, winMixOf, windowOpen } from "./windows.js"; // the windows' states (open, locked, fixed), a throw through an open one
 
@@ -228,7 +229,12 @@ const planOf = (kind, o) => { const id = o && o.variant; const f = id ? (FRANCHI
 const withPlan = (leaf, plan) => (leaf && leaf.role ? { ...leaf, ...(plan.fl ? { fl: plan.fl } : {}), ...(plan.room ? { name: plan.room } : {}), ...(plan.look ? { wallc: plan.look.wall } : {}) } : leaf); // wallc: its inside walls in the franchise's colour (decor.js)
 export const MAX_STOREYS = 8;
 
-function house(rng, v) {
+// o.legacy: an older save's plan (worldcfg.js legacyRooms). Since rooms are furnished room by room (roomlayout.js) a
+// kitchen keeps room for its fridge, sink and stove: a farmhouse's pantry only when it is wide enough, and a house's or
+// a ranger station's garage takes the ground floor's bath (upstairs has one) or the supply room rather than squeezing
+// the kitchen to two cells. The dice are rolled as before either way.
+function house(rng, v, o = {}) {
+  const roomy = !o.legacy;
   const big = v === "farmhouse" || v === "lodge";
   const bw = v === "cabin" ? rng.int(8, 10) : v === "lodge" ? rng.int(15, 18) : v === "farmhouse" ? rng.int(12, 15) : v === "ranger" ? rng.int(12, 14) : rng.int(11, 14);
   const bh = v === "cabin" ? rng.int(7, 8) : v === "lodge" ? rng.int(11, 13) : v === "farmhouse" ? rng.int(10, 12) : rng.int(9, 11);
@@ -246,19 +252,22 @@ function house(rng, v) {
   } else {
     const farm = v === "farmhouse";
     front = { split: "x", parts: leaves([[0.55, { role: "living", entry: true, type: farm ? "farmhouse" : "house" }], ["*", farm ? { role: "dining", type: "farmhouse" } : "bedroom"]]) };
-    back = { split: "x", parts: leaves(farm ? [["*", { role: "kitchen" }], [2, "pantry"], [2, "bath"], ["*", { role: "bedroom", type: "farmhouse" }]] : [["*", "kitchen"], [2, "bath"], ["*", "bedroom"]]) };
+    back = { split: "x", parts: leaves(farm ? [["*", { role: "kitchen" }], ...(roomy && bw < 14 ? [] : [[2, "pantry"]]), [2, "bath"], ["*", { role: "bedroom", type: "farmhouse" }]] : [["*", "kitchen"], [2, "bath"], ["*", "bedroom"]]) };
   }
   const hall = v !== "cabin" && ih >= 8;
-  let program = hall ? { split: "y", parts: [["*", front], [1, { role: "hall" }], ["*", back]] } : { split: "y", parts: [["*", front], ["*", back]] };
+  const plan = () => (hall ? { split: "y", parts: [["*", front], [1, { role: "hall" }], ["*", back]] } : { split: "y", parts: [["*", front], ["*", back]] });
+  let program = plan();
   const exits = [];
   if (v === "house" && bw >= 12 && rng.chance(0.4)) {
     const left = rng.chance(0.5);
+    if (roomy) { front = { role: "living", entry: true, type: "house" }; back = { role: "kitchen" }; program = plan(); } // the bedrooms upstairs
     const g = [4, { role: "hgarage" }];
     program = { split: "x", parts: left ? [g, ["*", program]] : [["*", program], g] };
     exits.push({ side: "front", roles: ["hgarage"], chance: 1, roller: true, width: 2, lock: 0.2 });
   }
   if (v === "ranger" && rng.chance(0.5)) {
     const left = rng.chance(0.5), g = [4, { role: "hgarage", type: "garage" }];
+    if (roomy) { front = { split: "x", parts: leaves([[0.55, { role: "office", name: "Ranger office", entry: true, hub: true }], ["*", "bunk"]]) }; back = { role: "kitchen" }; program = plan(); }
     program = { split: "x", parts: left ? [g, ["*", program]] : [["*", program], g] };
     exits.push({ side: "front", roles: ["hgarage"], chance: 1, roller: true, width: 2, lock: 0.3 });
   }
@@ -391,7 +400,8 @@ function shop(rng, v, o = {}) {
   exits.push({ side: sideRoom(rng), roles: ["sales", "dining"], chance: 0.25, lock: 0.5 });
   // A corner store sometimes has a flat above the shop.
   const flat = (v === "corner" && rng.chance(0.5)) || (!!plan.flat && rng.chance(plan.flat)); // a franchise's flat above (plan.flat: a pub, a bookshop)
-  const upper = () => ({ split: "y", parts: [["*", { split: "x", parts: leaves([["*", { role: "living", name: "Flat: living room" }], ["*", { role: "kitchen", name: "Flat: kitchen" }]]) }], [1, { role: "hall", name: "Landing" }], ["*", { split: "x", parts: leaves([["*", "bedroom"], [2, "bath"], ["*", "bedroom"]]) }]] });
+  const F = (r) => ({ role: r, flat: true }); // the flat's rooms take the home styles (roomlayout.js)
+  const upper = () => ({ split: "y", parts: [["*", { split: "x", parts: leaves([["*", { role: "living", name: "Flat: living room", flat: true }], ["*", { role: "kitchen", name: "Flat: kitchen", flat: true }]]) }], [1, { role: "hall", name: "Landing", flat: true }], ["*", { split: "x", parts: leaves([["*", F("bedroom")], [2, F("bath")], ["*", F("bedroom")]]) }]] });
   return {
     bw, bh, program, exits, front: { width: 2 }, openDoors: 0.3, ground: v === "feedstore" ? "rural" : truck || gas ? "lot" : "town", pumps: gas || truck ? (truck ? 3 : 2) : 0,
     storeys: flat ? 2 : 1, upper: flat ? upper : null, foot: gas ? "small" : "medium",
@@ -754,12 +764,23 @@ function apartments(rng, o = {}) {
   const bw = rng.int(18, 22), bh = rng.int(14, 16);
   // 3–6 floors of flats (deeper city blocks taller: o.storeyBonus), a lobby and the maintenance room on the ground floor.
   const n = clampN(rng.int(3, 6) + (o.storeyBonus || 0), 3, MAX_STOREYS);
-  const flat = (f, k) => ({ role: "apt", name: `Apartment ${f + 1}${k}` });
+  const lobby = rng.int(4, 5);
+  // A flat (roomlayout.js): a kitchen-living room with a bedroom and a bathroom beside it when it is wide enough (w:
+  // its width as the plan will cut it), a studio and a bathroom when not, a studio alone when narrower still; its rooms
+  // share a unit (assemble: doors within the flat, the living room's onto the corridor). An older save (o.legacy): one
+  // room a flat, as before.
+  const flat = (f, k, w = 0) => {
+    const name = `Apartment ${f + 1}${k}`, unit = `${f}${k}`;
+    if (o.legacy || w < 6) return { role: "apt", name, ...(o.legacy ? {} : { unit }) };
+    if (w < 8) return { split: "x", parts: [["*", { role: "apt", name, unit, maxBoxes: 2 }], [2, { role: "bath", name: `${name}: bathroom`, unit }]] };
+    return { split: "x", parts: [["*", { role: "apt", name, unit, maxBoxes: 1 }], [3, { split: "y", parts: [["*", { role: "bedroom", name: `${name}: bedroom`, unit, maxBoxes: 1 }], [2, { role: "bath", name: `${name}: bathroom`, unit }]] }]] };
+  };
+  const fw = Math.floor((bw - 2 - lobby - 2) / 2), uw = Math.floor((bw - 3) / 2), bk = Math.floor((bw - 2 - 4 - 2) / 2), ub = Math.floor((bw - 2 - 3 - 2) / 2);
   return {
     bw, bh, front: { width: 2 }, ground: "city", storeys: n, foot: "medium", extraDoors: 0,
-    program: corridorPlan([["*", flat(0, "A")], [rng.int(4, 5), { role: "lobby", entry: true, type: "house" }], ["*", flat(0, "B")]],
-      [["*", flat(0, "C")], ["*", flat(0, "D")], [4, { role: "hgarage", name: "Maintenance", type: "garage", lock: ["door", 0.3] }]], 5),
-    upper: (f) => corridorPlan([["*", flat(f, "A")], ["*", flat(f, "B")]], [["*", flat(f, "C")], ["*", flat(f, "D")], [3, { role: "storage", name: f === 1 ? "Laundry" : "Utility room", type: "house" }]], 5),
+    program: corridorPlan([["*", flat(0, "A", fw)], [lobby, { role: "lobby", entry: true, type: "house" }], ["*", flat(0, "B", fw)]],
+      [["*", flat(0, "C", bk)], ["*", flat(0, "D", bk)], [4, { role: "hgarage", name: "Maintenance", type: "garage", lock: ["door", 0.3] }]], 5),
+    upper: (f) => corridorPlan([["*", flat(f, "A", uw)], ["*", flat(f, "B", uw)]], [["*", flat(f, "C", ub)], ["*", flat(f, "D", ub)], [3, { role: "storage", name: f === 1 ? "Laundry" : "Utility room", type: "house" }]], 5),
     exits: [{ side: "back", roles: ["hgarage"], chance: 0.8, lock: 0.3 }, { side: "left", roles: ["corridor"], chance: 0.4, lock: 0.4 }, { side: "right", roles: ["corridor"], chance: 0.4, lock: 0.4 }],
   };
 }
@@ -767,11 +788,11 @@ function apartments(rng, o = {}) {
 // The buildings: key → { name, make(rng, opts) }. Location types use these through SITES. opts.storeyBonus: extra
 // storeys for offices and apartments (the city crawl's deeper blocks).
 export const BUILDINGS = {
-  house:       { name: "House", make: (r) => house(r, "house") },
-  farmhouse:   { name: "Farmhouse", make: (r) => house(r, "farmhouse") },
-  cabin:       { name: "Cabin", make: (r) => house(r, "cabin") },
-  lodge:       { name: "Hunting lodge", make: (r) => house(r, "lodge") },
-  ranger:      { name: "Ranger station", make: (r) => house(r, "ranger") },
+  house:       { name: "House", make: (r, o) => house(r, "house", o) },
+  farmhouse:   { name: "Farmhouse", make: (r, o) => house(r, "farmhouse", o) },
+  cabin:       { name: "Cabin", make: (r, o) => house(r, "cabin", o) },
+  lodge:       { name: "Hunting lodge", make: (r, o) => house(r, "lodge", o) },
+  ranger:      { name: "Ranger station", make: (r, o) => house(r, "ranger", o) },
   grocery:     { name: "Grocery store", make: (r, o) => shop(r, "grocery", o) },
   corner:      { name: "Corner store", make: (r, o) => shop(r, "corner", o) },
   pharmacy:    { name: "Pharmacy", make: (r, o) => shop(r, "pharmacy", o) },
@@ -829,7 +850,7 @@ export const BUILDINGS = {
   apartments:  { name: "Apartment block", make: (r, o) => apartments(r, o) },
   // A street of houses (the neighbourhood point of interest): buildingMap builds it with streetMap; make gives one of
   // its houses (the hint, the archetype tests).
-  neighbourhood: { name: "Neighbourhood", make: (r) => house(r, "house"), street: true },
+  neighbourhood: { name: "Neighbourhood", make: (r, o) => house(r, "house", o), street: true },
 };
 // The storeys a type can have, [min, max] (the city crawl's bonus can add to offices and apartments, up to MAX_STOREYS).
 export const STOREYS_BY_TYPE = {
@@ -939,21 +960,21 @@ export function buildingHint(key) {
 // The map for a raid on a building: the site's own layout (its dice from the world seed, the tile and the building).
 // option.storeyBonus: extra storeys (the city crawl's deeper blocks, offices and apartments).
 const specSeed = (state, tileId, option) => Math.floor(hash01(state.seed, "bmap", tileId, option.id) * 4294967296);
-const makeSpec = (rng, option) => BUILDINGS[option.key].make(rng, { storeyBonus: option.storeyBonus || 0, variant: option.variant || null, kind: option.kind || null }); // variant, kind: the place's franchise and kind (data-shops.js plans)
+const makeSpec = (rng, option, legacy = false) => BUILDINGS[option.key].make(rng, { storeyBonus: option.storeyBonus || 0, variant: option.variant || null, kind: option.kind || null, legacy }); // variant, kind: the place's franchise and kind (data-shops.js plans); legacy: an older save's plan (worldcfg.js legacyRooms: an apartment's flats one room each)
 // The archetype's spec for a building at a site (its storeys and footprint) without building the map: the same dice
 // buildingMap rolls, so the block card can say how many storeys a place has.
 export function buildingSpec(state, tileId, option) {
-  return makeSpec(new Rng(specSeed(state, tileId, option)), option);
+  return makeSpec(new Rng(specSeed(state, tileId, option)), option, legacyRooms(state));
 }
 export function buildingMap(state, tileId, option, withVehicle) {
   if (BUILDINGS[option.key] && BUILDINGS[option.key].street) return streetMap(state, tileId, option, withVehicle); // a street of houses (the neighbourhood)
   const rng = new Rng(specSeed(state, tileId, option));
-  const spec = makeSpec(rng, option);
+  const spec = makeSpec(rng, option, legacyRooms(state));
   // battlesize.js: at least the site's raid map (more outside around a single-building site's plan, a city's or a
   // town's building the run's largest), the new ground topped up with cover. The floor plan itself is the archetype's.
   const tile = state.tiles[tileId], sb = siteBuildings(tile);
   spec.margins = fitMargins(spec.bw, spec.bh, { ...BMAP.MARGIN, ...(spec.margins || {}) }, buildingTarget(tile, !!(sb && sb.single), state));
-  const map = assemble(rng, spec, { key: option.key, id: option.id, name: option.name, withVehicle });
+  const map = assemble(rng, spec, { key: option.key, id: option.id, name: option.name, withVehicle, legacy: legacyRooms(state) });
   densifyOutside(map, rng, tile ? tile.terrain : "plains");
   return map;
 }
@@ -1013,12 +1034,12 @@ export function streetMap(state, tileId, option, withVehicle) {
     const row = k < perRow[0] ? 0 : 1, col = row ? k - perRow[0] : k;
     const id = `${option.id}#${k + 1}`;
     const hr = new Rng(specSeed(state, tileId, { id }));
-    const spec = BUILDINGS.house.make(hr);
+    const spec = BUILDINGS.house.make(hr, { legacy: legacyRooms(state) });
     spec.bw = Math.max(S.BW[0], Math.min(spec.bw, S.BW[1], Math.floor((MAXW - 2 * S.SIDE - (perRow[row] - 1) * S.GAP) / perRow[row])));
     spec.bh = Math.min(spec.bh, S.BH);
     spec.margins = { front: 1, back: 1, left: 1, right: 1 };
     spec.ground = "none";
-    const m = assemble(hr, spec, { key: "house", id, name: BUILDINGS.house.name });
+    const m = assemble(hr, spec, { key: "house", id, name: BUILDINGS.house.name, legacy: legacyRooms(state) });
     houses.push({ k, row, col, m, bw: spec.bw, bh: spec.bh, flip: row === 1, name: `No. ${no0 + 2 * col + row}`, x0: 0, y0: 0, rect: null });
   }
   // The layout: the north row's fronts in line along the north sidewalk, the south row's along the south one.
@@ -1058,6 +1079,8 @@ export function streetMap(state, tileId, option, withVehicle) {
       const dst = floors[g].cells, cars = new Map(); // a car in the garage: its cells take the id of their new top-left cell
       for (let y = B.y0; y < B.y0 + B.h; y++) for (let x = B.x0; x < B.x0 + B.w; x++) {
         const c = { ...F.cells[y * m.w + x] }, X = tx(x), Y = ty(y);
+        if (h.flip && (c.fc === "n" || c.fc === "s")) c.fc = c.fc === "n" ? "s" : "n"; // roomlayout.js: a piece's front turns with the house
+        if (c.pc) c.pc += 10000 * (h.k + 1); // and its number is the street's own
         if (h.flip) flipDecoY(c); // a rug's sides, wall art's face turned with the house (decor.js)
         if (c.car) {
           c.car = { ...c.car };
@@ -1077,7 +1100,7 @@ export function streetMap(state, tileId, option, withVehicle) {
     for (const c of m.containers) {
       const area = areas[base + c.area];
       const what = String(c.label || "").split(": ").slice(1).join(": ") || c.kind;
-      containers.push({ ...c, id: cid++, x: tx(c.x), y: ty(c.y), area: base + c.area, house: h.k, label: `${area ? area.name : h.name}: ${what}` });
+      containers.push({ ...c, id: cid++, x: tx(c.x), y: ty(h.flip ? c.y + (c.h || 1) - 1 : c.y), area: base + c.area, house: h.k, label: `${area ? area.name : h.name}: ${what}` }); // a piece of 2 rows (roomlayout.js): its top-left once flipped
     }
     for (const d of m.lockedDoors) lockedDoors.push({ ...d, x: tx(d.x), y: ty(d.y), area: d.area == null ? null : base + d.area });
     for (const [x, y] of m.stairs || []) stairs.push([tx(x), ty(y)]);
@@ -1414,6 +1437,10 @@ export function assemble(rng, spec, opts = {}) {
     const A = rooms[p.a], B = rooms[p.b];
     let w = rng.next() * 0.6 - Math.min(6, p.cells.length) * 0.15; // a longer shared wall first
     if (!A.hub && !B.hub) w += 2;
+    if (A.unit || B.unit) { // a flat's rooms (apartments): doors within the flat, only its living room's onto the corridor
+      if (A.unit && B.unit && A.unit !== B.unit) w += 8;
+      else if (!A.unit || !B.unit) { const u = A.unit ? A : B; if (u.role !== "apt") w += 3; }
+    }
     if (A.hub && B.hub) w -= 0.6; // hubs open onto each other
     if (A.locked || B.locked) w += 4;
     if (A.up !== B.up) w += (A.up ? B.hub : A.hub) ? 1 : 50;
@@ -1449,6 +1476,7 @@ export function assemble(rng, spec, opts = {}) {
   for (const e of edges) {
     const A = rooms[e.a], B = rooms[e.b];
     if (inner(e) || A.locked || B.locked || A.up !== B.up) continue;
+    if ((A.unit || B.unit) && A.unit !== B.unit) continue; // never a second way into a flat
     if (rng.chance(spec.extraDoors ?? BMAP.EXTRA_DOOR)) innerDoor(e);
   }
   // Upper floors: a stair down to the hub at its door; an upper room whose door does not lead to a hub comes down.
@@ -1590,11 +1618,13 @@ export function assemble(rng, spec, opts = {}) {
   const containers = [];
   let cid = opts._cid || 1; // container ids run on across the floors
   const walkAt = (x, y) => inside(x, y) && passable(cells[I(x, y)]);
-  function box(room, x, y, kind, outdoorArea = null) {
+  function box(room, x, y, kind, outdoorArea = null, kept = false) {
     const area = outdoorArea || room;
     if (!area.type || !AREAS[area.type]) return false;
-    // It needs a free side to search it from (kept clear).
-    const side = [[0, 1], [0, -1], [1, 0], [-1, 0]].map(([dx, dy]) => [x + dx, y + dy]).find(([nx, ny]) => walkAt(nx, ny) && (outdoorArea ? rid[I(nx, ny)] === -2 : rid[I(nx, ny)] === room.id || keep[I(nx, ny)]));
+    // It needs a free side to search it from (kept clear). kept (roomlayout.js): a side already kept clear first (a
+    // door's front, a lane), so a small room does not lose a cell to it.
+    const sides = [[0, 1], [0, -1], [1, 0], [-1, 0]].map(([dx, dy]) => [x + dx, y + dy]).filter(([nx, ny]) => walkAt(nx, ny) && (outdoorArea ? rid[I(nx, ny)] === -2 : rid[I(nx, ny)] === room.id || keep[I(nx, ny)]));
+    const side = (kept && sides.find(([nx, ny]) => keep[I(nx, ny)] || (typeof kept === "function" && kept(nx, ny)))) || sides[0];
     if (!side) return false;
     const cellKind = kind === "car" ? "car" : kind === "pump" ? "pump" : kind;
     if (!block(x, y, cellKind, outdoorArea ? null : room)) return false;
@@ -1606,8 +1636,28 @@ export function assemble(rng, spec, opts = {}) {
     containers.push(c);
     return true;
   }
+  // Homes room by room (roomlayout.js): which bedroom is the master, which a child's, a great room with no kitchen on
+  // its floor, a flat with no bedroom (a studio). An older save (opts.legacy) furnishes every room as it did.
+  const styleOf = (room) => (opts.legacy ? null : homeStyle(room, opts.key));
+  if (!opts.legacy) {
+    for (const r of rooms) if (r.role === "bedroom" && styleOf(r) && r.iw * r.ih <= 4) Object.assign(r, { role: "storage", name: "Box room", furnish: "shelves" }); // too small for a bed and a wardrobe
+    const beds = rooms.filter((r) => r.role === "bedroom" && styleOf(r)).sort((a, b) => b.iw * b.ih - a.iw * a.ih);
+    if (beds.length && beds[0].iw * beds[0].ih >= LAYOUT.MASTER_AREA && Math.min(beds[0].iw, beds[0].ih) >= 3) beds[0].master = true;
+    if (beds.length >= 2 && hash01(rng.state, "child", f) < LAYOUT.CHILD) beds[beds.length - 1].child = true;
+    if (!rooms.some((r) => r.role === "kitchen" || r.role === "apt")) for (const r of rooms) if (r.role === "greatroom") r.kitchenette = true;
+    for (const r of rooms) if (r.role === "apt" && !rooms.some((q) => q.role === "bedroom" && q.unit && q.unit === r.unit)) r.studio = true;
+  }
+  const layoutSeed = rng.state; // the arrangements' dice (read, not consumed)
+  let pieceNo = opts._piece || 0;
   for (const room of rooms) {
     const ctx = furnishCtx(room);
+    const home = styleOf(room);
+    if (home) { // the pieces are the containers: no top-up; the lanes then stay clear of what comes after (decor.js pieces)
+      const L = roomLayout(ctx);
+      home(L);
+      for (let y = ctx.y0; y <= ctx.y1; y++) for (let x = ctx.x0; x <= ctx.x1; x++) if (L.lane(x, y) && ctx.free(x, y)) keepAt(x, y);
+      continue;
+    }
     (FURNISH[room.furnish] || FURNISH.none)(ctx);
     // Top up the containers along the walls.
     if (room.type && AREAS[room.type]) {
@@ -1632,8 +1682,18 @@ export function assemble(rng, spec, opts = {}) {
     const free = (x, y) => x >= x0 && x <= x1 && y >= y0 && y <= y1 && FLOOR_KINDS.has(cells[I(x, y)].k) && !keep[I(x, y)];
     const wallNext = (x, y) => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => rid[I(x + dx, y + dy)] === -1);
     const all = () => { const out = []; for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (free(x, y)) out.push([x, y]); return out; };
+    const canBox = !!(room.type && AREAS[room.type]);
     return {
-      rng, room, x0, y0, x1, y1, w: room.iw, h: room.ih, free,
+      rng, room, x0, y0, x1, y1, w: room.iw, h: room.ih, free, key: opts.key,
+      // roomlayout.js: the cells as they stand, a piece taken back up, a container on a cell (its record), the dice.
+      kindAt: (x, y) => (inside(x, y) ? cells[I(x, y)].k : null),
+      ridAt: (x, y) => (inside(x, y) ? rid[I(x, y)] : -2),
+      cell: (x, y) => cells[I(x, y)],
+      unblock: (x, y) => { const i = I(x, y), c = cells[i]; const was = pass[i]; c.k = "open"; delete c.fc; delete c.pc; passAt(i); if (!was && pass[i]) total++; },
+      container: (x, y, k, lane = true) => (free(x, y) && box(room, x, y, k, null, lane) ? containers[containers.length - 1] : null),
+      boxes: () => containers.filter((q) => q.area === room.id),
+      target: canBox ? Math.max(1, Math.min(room.maxBoxes ?? 4, Math.round((room.iw * room.ih) / 10))) : 0,
+      seed: hash01(layoutSeed, "rooms", f) * 0x7fffffff, canBox, piece: () => ++pieceNo,
       kinds: () => (room.type && AREAS[room.type] ? AREAS[room.type].boxes : ["shelf"]),
       block: (x, y, k) => free(x, y) && block(x, y, k, room),
       // A car or a truck in the room (a garage bay, a hangar): 2 × 3–4 cells (combat.js placeCar) when it fits without
@@ -1755,20 +1815,21 @@ export function assemble(rng, spec, opts = {}) {
     hub: !!r.hub, locked: r.locked || null, up: !!r.up, entry: !!r.entry, noLabel: r.label === false,
   }));
   rooms.forEach((r, i) => { if (r.gunSafe) areas[i].gunSafe = r.gunSafe.slice(); }); // locks.js placeGunSafes: a gun safe may stand here
+  if (!opts.legacy) rooms.forEach((r, i) => { if (r.flat) areas[i].flat = true; if (r.unit) areas[i].unit = r.unit; }); // roomlayout.js: a shop's flat above, an apartment's rooms
   for (const a of outdoor) areas.push({ ...a, id: idBase + a.id, f: 0 });
   for (const c of containers) c.area += idBase;
   for (const d of lockedDoors) { d.f = f; if (d.area != null) d.area += idBase; }
-  if (upper) return { cells, rooms: areas, containers, lockedDoors, nextCid: cid };
+  if (upper) return { cells, rooms: areas, containers, lockedDoors, nextCid: cid, nextPiece: pieceNo };
   // The upper floors (storeys): each built on its own grid from spec.upper's plan, the same stairwell cells.
   const floorName = (g) => (g === 0 ? "Ground floor" : g === storeys - 1 ? "Top floor" : `Floor ${g + 1}`);
   const floors = [{ cells, name: floorName(0) }];
   let base = areas.length, nextCid = cid;
   for (let g = 1; g < storeys; g++) {
     const program = spec.upper ? spec.upper(g, rng, { top: g === storeys - 1, storeys, bw, bh }) : spec.program;
-    const up = assemble(rng, spec, { ...opts, _floor: g, _program: program, _stairs: stairCells, _idBase: base, _cid: nextCid });
+    const up = assemble(rng, spec, { ...opts, _floor: g, _program: program, _stairs: stairCells, _idBase: base, _cid: nextCid, _piece: pieceNo });
     areas.push(...up.rooms); containers.push(...up.containers); lockedDoors.push(...up.lockedDoors);
     floors.push({ cells: up.cells, name: floorName(g) });
-    base += up.rooms.length; nextCid = up.nextCid;
+    base += up.rooms.length; nextCid = up.nextCid; pieceNo = up.nextPiece;
   }
   const plan = {
     key: opts.key, id: opts.id || opts.key, name: opts.name, w: W, h: H, building: { x0: bx0, y0: by0, w: bw, h: bh }, tall, storeys, stairs: stairCells.map((s) => s.slice()),

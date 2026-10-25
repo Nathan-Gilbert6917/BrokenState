@@ -41,6 +41,7 @@ import { survivorById, factionById, alive, atBase, homeAt, combatPower, hurt, lo
 import { partyMembers, partyTile, partyCapacity, cargoLoad, cargoRoom, unitsThatFit, wipeParty, leaveVehicle } from "./parties.js";
 import { noteGunfire } from "./fieldheat.js";
 import { GEAR, SUPPLIES, TERRAIN } from "./data.js";
+import * as Weather from "./weather.js"; // the season: a chest freezer's food kept in winter (BOX_LOOT; call-time only)
 import { partyVehicle, partyVehicles, isBike, upgradesOf, armourOf, riderMult, vehicleOdds, UPGRADE_FX, technicalPlated, SEATS, teamDrivers, driversFor } from "./vehicles.js"; // the team's car or truck on the map (placeVehicle); its upgrades (glass, plating)
 import { wearAfterFight, wearSlot, itemDur, medKitBonus } from "./crafting.js";
 import { armorMult, enemyBody, allyBody, bodyEmpty, takeAllBodies, leaveBodies, ARMOR_SLOTS, itemLoad, lootItem, deadBodyFinds, carryMods, carriedThrowables } from "./inventory.js";
@@ -6837,6 +6838,40 @@ export const AREAS = {
   miltrucks: { name: "Army trucks", outdoor: true, trucks: true, boxes: ["miltruck"], loot: {}, gear: [] },
   cargodrop: { name: "Scattered cargo",  outdoor: true, boxes: ["crate", "crate", "crate"], loot: { food: [0.6, 3, 8], water: [0.5, 2, 6], meds: [0.25, 1, 2], preserved: [0.35, 2, 6], ammo: [0.25, 5, 15] }, gear: [["assaultpack", 0.03], ["bandagekit", 0.05], ["rucksack", 0.03], ["stove", 0.03]] },
 };
+// What a piece of furniture holds (the user's request 2026-10-25, issue #10: homes furnished room by room,
+// roomlayout.js): a container whose kind is here rolls this table in place of its room's (AREAS) — the room's own rows
+// still rolled at `rest` times their chances, so a farmhouse wardrobe can still hold a farm rifle. A fridge holds
+// mostly spoiled food (gone: what is left is a little that keeps, tins and drinks), a chest freezer frozen food that
+// has gone bad unless it is winter (cold: its rows then), a medicine cabinet meds and bandages, a wardrobe clothes and
+// a bag, a nightstand a pistol now and then (the house's own gun rates, gathered where people keep them), a tool chest
+// tools and parts. Tuned with tools/interiortest.js so a house holds what it did before within ±10%.
+export const BOX_LOOT = {
+  fridge:     { rest: 0, loot: { food: [0.4, 1, 3], water: [0.7, 2, 6], preserved: [0.4, 1, 3] }, gear: [["bottle", 0.08]] },
+  freezer:    { rest: 0, loot: { food: [0.15, 1, 3] }, cold: { food: [0.85, 3, 9], preserved: [0.2, 1, 3] }, gear: [] },
+  medcab:     { rest: 0.6, loot: { meds: [0.5, 1, 2], water: [0.1, 1, 1] }, gear: [["bandagekit", 0.05]] },
+  wardrobe:   { rest: 1, loot: {}, gear: [["backpack", 0.04], ["slingbag", 0.04], ["leatherjacket", 0.03], ["sportspads", 0.02]] },
+  dresser:    { rest: 1, loot: {}, gear: [["slingbag", 0.02], ["flashlight", 0.02]] },
+  nightstand: { rest: 0.35, loot: { ammo: [0.3, 4, 12], meds: [0.1, 1, 1] }, gear: [["pistol", 0.09], ["revolver", 0.035], ["compact9", 0.045], ["pistol22", 0.02], ["flashlight", 0.06], ["knife", 0.05]] },
+  toolchest:  { rest: 0.3, loot: { scrap: [0.6, 2, 6], parts: [0.5, 1, 2] }, gear: [["hammer", 0.1], ["crowbar", 0.06], ["prybar", 0.06], ["sledge", 0.03], ["flashlight", 0.04]] },
+  tvstand:    { rest: 0.8, loot: { scrap: [0.35, 1, 3], parts: [0.1, 1, 1] }, gear: [] },
+};
+const boxDefs = new Map();
+// The table a container rolls: its room's (AREAS[type]), or its kind's (BOX_LOOT) with the room's rows at `rest` times
+// their chances (cold: a chest freezer in winter). The same object for the same three every time.
+export function boxLoot(type, kind, cold = false) {
+  const A = AREAS[type], K = A && BOX_LOOT[kind];
+  if (!K) return A;
+  const key = `${type}|${kind}|${cold ? 1 : 0}`;
+  if (!boxDefs.has(key)) {
+    const loot = {};
+    if (K.rest > 0) for (const [k, [p, lo, hi]] of Object.entries(A.loot)) loot[k] = [p * K.rest, lo, hi];
+    Object.assign(loot, (cold && K.cold) || K.loot);
+    const gear = [...K.gear, ...(K.rest > 0 ? A.gear.map(([k, p]) => [k, p * K.rest]) : [])];
+    boxDefs.set(key, { ...A, loot, gear });
+  }
+  return boxDefs.get(key);
+}
+
 export const AREA_SETS = {
   town: ["house", "house", "store", "garage", "kitchen", "wreck"], city: ["store", "office", "office", "house", "warehouse", "wreck"],
   farm: ["farmhouse", "barn", "barn", "campsite"], gas: ["store", "garage", "pumps", "wreck"], mall: ["store", "store", "lockers", "kitchen", "warehouse"],
@@ -7575,7 +7610,7 @@ export function searchBox(state, b, u, box, open = false, quick = false) {
       Object.assign(sup, got.sup);
       gear.push(...got.gear);
     } else {
-      const def = AREAS[R.areas[box.area].type];
+      const def = boxLoot(R.areas[box.area].type, box.kind, box.kind === "freezer" && Weather.season(state).key === "winter"); // a piece's own table (BOX_LOOT: a fridge, a nightstand...), else the room's
       const site = poiKind || (state.tiles[b.tileId] && state.tiles[b.tileId].loc ? state.tiles[b.tileId].loc.type : null);
       const src = areaSource(R.areas[box.area].type, site); // itemcond.js: a house's things used, a shop's picked over, a wreck's scorched
       const gunSite = (b.setup && b.setup.raid && b.setup.raid.gunSite) || site; // gundist.js: the building a city crawl's map is (a police station, an Army checkpoint), else the site

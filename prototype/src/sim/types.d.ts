@@ -415,6 +415,8 @@ export interface State {
   gunSlots?: number; // gunmods.js: guns have attachment slots (save.js moves an older save's parts on load)
   raidMaps?: number; // worldcfg.js RAID_MAPS: raid maps by the World… dials; absent in older saves
   raidLegacy?: boolean; // save.js: a save from before the raid map dials (battlesize.js keeps its old raid map sizes)
+  roomsV?: number; // roomlayout.js: homes furnished room by room; absent in older saves
+  roomsLegacy?: boolean; // save.js: a save from before (buildingmaps.js keeps every building's old furnishing and container ids)
   groupJails?: number; // jailhouse: the AI groups keep prisoners in jails, work and trade them (groupjails.js); absent in older saves
   machinesV?: number; // machines-2: generators with no operator, the pressure canner fitted to a kitchen (save.js migrateGenerators / migrateCanners for older saves)
   grid: HexGrid;
