@@ -335,7 +335,8 @@ export const MODEL_NAMES = Object.keys(MODELS);
 // A cell's car (sim/combat.js placeCar: c.car { i, j, L, ax, kind, v, body, type, up, mil, wrecked }) → its model: the
 // team's own vehicle ("vehicle") by its type (placeVehicle: VEHICLE_TYPES), else by its body: the Army trucks, the map's
 // box trucks, and a parked car a sedan at 2 × 3, a van or a pickup at 2 × 4 by its dice (as the prisms drew them).
-const CIVIC_MODEL = { engine: "fireengine", ambulance: "ambulance", police: "police" };
+const CIVIC_MODEL = { engine: "fireengine", ambulance: "ambulance", police: "police", bookmobile: "van" }; // bookmobile: a bookmobile depot's van (sim/librarylayout.js, issue #34)
+const BODY_PAINT = { bookmobile: "#2d5a8a" }; // a body's own livery (the county library's blue)
 const CIVIC_PAINT = { fireengine: "#a8241c", ambulance: "#dcdad2", police: "#22252a" };
 const BY_TYPE = { truck: "pickup", sedan: "sedan", suv: "suv", hummer: "humvee", van: "van", miltruck: "m35", bike: "bicycle" };
 export function modelOf(car) {
@@ -360,6 +361,7 @@ export function lookOf(car) {
   else if (car.color) { o.color = car.color; o.rust = false; } // a colour of its own (another group's vehicle in the trade window)
   else if (own) o.color = TEAM_BLUE;
   else if (model === "boxtruck") o.color = BOX_RUST;
+  else if (BODY_PAINT[car.body]) o.color = BODY_PAINT[car.body];
   else if (CIVIC_PAINT[model]) o.color = CIVIC_PAINT[model];
   else o.color = CAR_COLORS[(car.v || 0) % CAR_COLORS.length];
   if (!own && mil && mil.enemy) o.gun = true;

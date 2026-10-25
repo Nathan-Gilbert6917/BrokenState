@@ -216,6 +216,36 @@ export const FURNITURE_KINDS = {
   footlocker:   P("Footlocker",             HALF, 20, 18, "one", S1, true, ["bunker", "bedroom", "cells"], "storage:40"),
   batteries:    P("Solar battery rack",     HALF, 30, 80, "two", S1, false, ["bunker", "cellar"], "none", true),
   genset:       P("Military generator",     STEEL, 80, 140, "two", S22, false, ["bunker", "bay"], "none"),
+  // ---------- libraries (issue #34: librarylayout.js lays them) ----------
+  // The shelving: a library's tall double-sided stacks (old libraries), low shelving (modern ones), compact mobile
+  // shelving on its rails (archives), a card catalogue's drawers, a map cabinet's flat drawers, a book cart and the book
+  // return: all hold loot (books, papers, maps), so they lift. The modern library's computer desk, printer, self-check
+  // station and microfilm reader; the reading room's long reading table with its green lamps, a study carrel, a beanbag,
+  // a globe, a lectern and a cast-iron wood stove (a rural reading room's heat). Fixed: a hearth (a historic library's
+  // fireplace), the lift doors (dead without power), the rows of auditorium seats bolted down, a gallery's railing and
+  // the gallery's open well (the floor cut away over the reading hall below: nobody stands there).
+  bookstack:   P("Library stacks",        FULL, 30, 60, "two", S1, true, ["library"], "storage:40"),
+  lowshelf:    P("Low shelving",          HALF, 20, 25, "one", S1, true, ["library", "school"], "storage:30"),
+  mobileshelf: P("Compact mobile shelving", FULL, 50, 150, "two", S1, true, ["library", "office"], "storage:80"),
+  cardcat:     P("Card catalogue",        HALF, 25, 45, "two", S1, true, ["library"], "storage:20", true),
+  mapcase:     P("Map cabinet",           HALF, 30, 80, "two", S21, true, ["library", "office"], "storage:30", true),
+  booktruck:   P("Book cart",             HALF, 10, 18, "one", S1, true, ["library", "school"], "storage:20"),
+  bookreturn:  P("Book return",           HALF, 25, 40, "two", S1, true, ["library"], "storage:40", true),
+  computer:    P("Computer desk",         HALF, 15, 28, "one", S1, true, ["library", "office", "school"], "work:desk", true),
+  printer:     P("Printer",               HALF, 12, 22, "one", S1, true, ["library", "office"], "storage:5", true),
+  microfilm:   P("Microfilm reader",      HALF, 15, 26, "one", S1, true, ["library"], "storage:5", true),
+  selfcheck:   P("Self-check station",    HALF, 20, 38, "two", S1, false, ["library", "shop"], "none"),
+  readtable:   P("Reading table",         HALF, 25, 55, "two", S21, false, ["library", "office", "dining"], "work:table"),
+  carrel:      P("Study carrel",          HALF, 15, 28, "one", S1, false, ["library", "school"], "work:desk", true),
+  beanbag:     P("Beanbag",               C(false, 0, false), 6, 4, "one", S1, false, ["library", "living", "school"], "comfort:0.2"),
+  globe:       P("Globe",                 POLE, 8, 9, "one", S1, false, ["library", "office", "school"], "comfort:0.1"),
+  lectern:     P("Lectern",               HALF, 12, 16, "one", S1, false, ["library", "school", "church"], "none"),
+  woodstove:   P("Wood stove",            HALF, 60, 110, "two", S1, false, ["library", "living", "cabin"], "stove"),
+  fireplace:   P("Fireplace",             FULL, 120, 900, "fixed", S21, false, ["library", "living"], "none", true),
+  liftdoor:    P("Lift doors",            STEEL, 100, 400, "fixed", S1, false, ["library", "office"], "none", true),
+  audseat:     P("Auditorium seats",      HALF, 30, 90, "fixed", S1, false, ["library", "school", "church"], "none"),
+  railing:     P("Gallery railing",       HALF, 40, 60, "fixed", S1, false, ["library"], "none"),
+  galleryvoid: P("Open to the hall below", C(false, 0, false), 999, 1, "fixed", S1, false, ["library"], "none"),
   // ---------- lootable decor (issue #13: decor.js places them; light comfort pieces for the base) ----------
   // The plant and the floor lamp stand on a room's floor cell; the painting and the wall clock hang on a wall (decor.js:
   // c.wart = { k, d, piece: true } on the wall cell, the wall's own kind unchanged) and stand on a cell only once set down.
