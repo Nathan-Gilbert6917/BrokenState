@@ -60,7 +60,7 @@ export const SHOP = {
   // building's. Tuned with tools/shopstest.js: each kind within ±10% of before. A lootable piece placed past the share
   // stands plain (not searched: roomlayout.js place's plain).
   BOXES: {
-    superfloor: 1.6, deptfloor: 1.75, pallets: 1.3, "pallets:warehouse": 1.1, "pallets:deptstore": 1, machines: 1.1, stacks: 1.05, bookfront: 1.2,
+    superfloor: 1.6, deptfloor: 1.75, cornerstore: 1.9, "stock:corner": 2, grocerfloor: 1.2, superstore: 1, warehouse: 1, pallets: 1.3, "pallets:warehouse": 1.1, "pallets:deptstore": 1, machines: 1.1, stacks: 1.05, bookfront: 1.2,
     aislefront: "full", "aislefront:deptstore": 1.3, guncounter: 1.25, guncage: 1.7, "stock:electronics": 1.25, walkin: 2,
   },
 };
@@ -138,6 +138,75 @@ function aisles(L, o = {}) {
   }
   if (!rows && o.fallback !== false) some(L, k, 2, { prefer: "corner" }); // a shallow room the lanes cross: shelving along a wall
   return rows;
+}
+/**
+ * Aisles that run front to back (a grocery's, a supermarket's: issue #22): a column of shelving every `step` cells from
+ * x0 to x1 (a 1-cell walk between at step 2), from row y0 to y1; each run cut where a lane crosses it. A container of
+ * `box` at each end of a run (the end caps) and every `every` cells while the room has its share to come, the rest `k`
+ * (not searched); `sign`: an aisle marker (decor) at the head of each run of 4+ cells, toward the front. Returns the
+ * runs ([[x, y0, y1]...]). @param {Lay} L
+ */
+function aislesY(L, o) {
+  const k = o.k || "rack", box = o.box || "shelf", every = o.every || SHOP.EVERY, runs = [];
+  for (let x = o.x0; o.dir < 0 ? x >= o.x1 : x <= o.x1; x += (o.step || 2) * (o.dir || 1)) {
+    let seg = [];
+    const flush = () => {
+      if (seg.length >= 2) runs.push([x, seg[0], seg[seg.length - 1]]);
+      seg.forEach((y, i) => {
+        if (o.sign && seg.length >= 4 && i === seg.length - 1 && L.place("aislesign", [[x, y]])) return;
+        const want = i === 0 || i === seg.length - (o.sign && seg.length >= 4 ? 2 : 1) ? box : i % every === every - 1 ? box : null;
+        if (want && !full(L) && L.place(want, [[x, y]], { face: "e" })) return;
+        shelving(L, x, y, k);
+      });
+      seg = [];
+    };
+    for (let y = o.y0; y <= o.y1; y++) { if (!L.ok(x, y)) { flush(); continue; } seg.push(y); }
+    flush();
+  }
+  return runs;
+}
+/** A row of checkout lanes across the front at row y (the till at y, the belt behind it, a lane between), n of them from x toward dir. @param {Lay} L */
+function checkoutLanes(L, x, y, n, dir = 1) {
+  let made = 0;
+  for (let i = 0; made < n && i < n * 3; i++, x += 2 * dir) {
+    if (!L.inRoom(x, y) || !L.inRoom(x, y - 1)) break;
+    if (!L.ok(x, y) || !L.ok(x, y - 1)) continue;
+    if (!L.place("checkout", [[x, y]], P(L, { face: "s" }))) continue;
+    L.place("counter", [[x, y - 1]], { face: "s", plain: true });
+    made++;
+  }
+  return { made, x };
+}
+/**
+ * A supermarket's front end at row y (issue #22): up to n checkout lanes from x0 toward x1 (the till at y, the belt
+ * behind it, a lane between), then the self-checkout block past them (two rows of three kiosks facing each other across
+ * a walk: rows y and y - 2); what does not fit that way is tried from x1 back. @param {Lay} L
+ */
+function frontEnd(L, x0, x1, y, n) {
+  const dir = x1 >= x0 ? 1 : -1;
+  let lanes = 0, kiosks = 0;
+  const laneScan = (from, to, d) => {
+    for (let x = from, last = null; lanes < n && (d > 0 ? x <= to : x >= to); x += d) {
+      if (!L.ok(x, y) || !L.ok(x, y - 1) || (last !== null && Math.abs(x - last) < 2)) continue;
+      if (!L.place("checkout", [[x, y]], P(L, { face: "s" }))) continue;
+      L.place("counter", [[x, y - 1]], { face: "s", plain: true });
+      lanes++; last = x;
+    }
+  };
+  const block = (from, to, d) => {
+    for (let x = from; !kiosks && (d > 0 ? x + 2 * d <= to : x + 2 * d >= to); x += d) {
+      const xs = [x, x + d, x + 2 * d];
+      if (!xs.every((q) => L.ok(q, y) && L.ok(q, y - 1) && L.ok(q, y - 2))) continue;
+      for (const q of xs) for (const [yy, f] of [[y, "n"], [y - 2, "s"]]) if (L.place("selfcheckout", [[q, yy]], P(L, { face: f }))) kiosks++;
+    }
+  };
+  laneScan(x0, x1, dir);
+  if (lanes < n) laneScan(x1, x0, -dir);
+  const placed = L.placed.filter((p) => p.k === "checkout").map((p) => p.cells[0][0]);
+  const end = placed.length ? (dir > 0 ? Math.max(...placed) : Math.min(...placed)) + 2 * dir : x0;
+  block(end, x1, dir);
+  if (!kiosks) block(x1, x0, -dir);
+  return { lanes, kiosks };
 }
 /** The cells of row y between x0 and x1 that take a piece (off the lanes). @param {Lay} L */
 function freeIn(L, y, x0, x1) { let n = 0; for (let x = x0; x <= x1; x++) if (L.ok(x, y)) n++; return n; }
@@ -247,6 +316,110 @@ export const COMMERCIAL_STYLES = {
     aisles(L, { box: "shelf" });
     fill(L, ["shelf", "coldcase"]);
   },
+  // ---------- grocery stores by size (issue #22) ----------
+  // A corner store: the counter with its till by the door, the drinks fridges along a side wall, the chest freezer of ice
+  // cream by the counter, two to four short shelf runs.
+  cornerstore(L) {
+    share(L, "cornerstore");
+    const c = L.c, door = frontDoor(L), cold = L.variant(2, "cold") ? "e" : "w", other = cold === "e" ? "w" : "e";
+    const till = L.wall("checkout", P(L, { sides: ["s", other], near: door })) || L.need("checkout", P(L, { near: door }));
+    if (till) L.beside(till, "counter", { plain: true });
+    along(L, "coldcase", Math.max(2, c.h - 1), [cold]);
+    L.wall("freezer", P(L, { sides: [other, "n", "s"], near: door })) || L.centre("freezer", P(L, { near: door })) || L.need("freezer", P(L, { near: door }));
+    const runs = aislesY(L, { x0: c.x0 + (cold === "w" ? 2 : 1), x1: c.x1 - (cold === "w" ? 1 : 2), y0: c.y0 + 1, y1: c.y1 - 2, box: "shelf", every: 3 });
+    if (!runs.length) aisles(L, { box: "shelf", front: 2, side: 2, every: 3 });
+    fill(L, ["shelf", "coldcase"]);
+  },
+  // A neighbourhood grocery's sales floor: two or three checkouts at the front, the dairy wall of cold cases along the
+  // back with a small deli counter (display cases, the butcher's case) in its corner, the frozen section down one side
+  // (upright freezer cases, a chest freezer), the produce corner (bins along the wall and a table of them) on the other,
+  // five to eight aisles front to back between.
+  grocerfloor(L) {
+    share(L, "grocerfloor");
+    const c = L.c, door = frontDoor(L), cold = L.variant(2, "cold") ? "e" : "w", prod = cold === "e" ? "w" : "e";
+    const n = 2 + L.variant(2, "lanes");
+    const startX = door[0] + (door[0] - c.x0 > c.x1 - door[0] ? -2 : 2);
+    checkoutLanes(L, startX, c.y1 - 1, n, startX < door[0] ? -1 : 1);
+    if (!L.has("checkout")) checkout(L);
+    const deli = ["displaycase", "meatcase", "displaycase"], dairy = Array(Math.max(3, c.w - 8)).fill("coldcase");
+    L.run(prod === "w" ? [...deli, ...dairy] : [...dairy, ...deli], ["n"], { plain: () => full(L) });
+    along(L, "freezercase", Math.max(3, c.h - 4), [cold]);
+    L.wall("freezer", P(L, { sides: [cold], near: [cold === "e" ? c.x1 : c.x0, c.y1] })) || L.centre("freezer", P(L, { near: [cold === "e" ? c.x1 - 2 : c.x0 + 2, c.y1 - 3] }));
+    const px = prod === "e" ? c.x1 : c.x0;
+    some(L, "producebin", 3, { sides: [prod], near: [px, c.y1 - 2] });
+    L.centre("producebin", P(L, { near: [px + (prod === "e" ? -2 : 2), c.y1 - 3] }));
+    const ax0 = cold === "w" ? c.x0 + 2 : c.x0 + 3, ax1 = cold === "w" ? c.x1 - 3 : c.x1 - 2;
+    aislesY(L, { x0: ax0, x1: ax1, y0: c.y0 + 2, y1: c.y1 - 4, box: "shelf", every: 3 });
+    fill(L, ["shelf", "coldcase"]);
+  },
+  // A supermarket's sales floor: the entrance with the cart corrals by the doors and the customer service desk, a row of
+  // six to twelve checkout lanes and a self-checkout block, the wide front aisle, produce down one side (bins along the
+  // wall and tables of them: the misting racks), the frozen aisles down the other (the wall of upright freezer cases,
+  // island freezers down the middle, a back-to-back row of freezer cases), the dairy wall of cold cases along the back,
+  // and the long grocery aisles between, an aisle marker at the head of each.
+  superstore(L) {
+    share(L, "superstore");
+    const c = L.c, door = frontDoor(L), prod = L.variant(2, "produce") ? "e" : "w", froz = prod === "e" ? "w" : "e";
+    const fronts = (L.room.doors || []).filter(([, y]) => y === c.y1 + 1);
+    for (const [dx] of fronts) L.wall("cartcorral", { sides: ["s"], near: [dx, c.y1], avoid: (cells) => cells.some(([x]) => Math.abs(x - dx) < 2) });
+    const far = door[0] - c.x0 > c.x1 - door[0] ? c.x0 + 1 : c.x1 - 1;
+    for (let i = 0; i < 3; i++) L.wall("counter", P(L, { sides: ["s"], near: [far + (far < door[0] ? i : -i), c.y1] })); // the customer service desk
+    // The checkout row: the one of the rows 2 to 4 off the front that the lanes cross least (a lane from the front doors
+    // to a side door runs along one); the lanes from the produce side toward the doors, the self-checkout block after them.
+    const lx0 = prod === "w" ? c.x0 + 7 : c.x1 - 7, lx1 = prod === "w" ? c.x1 - 7 : c.x0 + 7, sgn = prod === "w" ? 1 : -1;
+    const freeRow = (y) => { let n = 0; for (let x = Math.min(lx0, lx1); x <= Math.max(lx0, lx1); x++) if (L.ok(x, y) && L.ok(x, y - 1)) n++; return n; };
+    const yC = [c.y1 - 3, c.y1 - 4, c.y1 - 2].reduce((a, b) => (freeRow(b) > freeRow(a) ? b : a));
+    frontEnd(L, lx0, lx1, yC, Math.min(12, Math.max(6, Math.floor((c.w - 18) / 2))));
+    const yTop = c.y0 + 3, yBot = yC - 5;
+    // Produce: bins along the wall (the misting racks), two rows of tables off it.
+    const pw = prod === "w" ? c.x0 : c.x1, pd = prod === "w" ? 1 : -1;
+    for (let y = yTop - 1; y <= yC - 3; y++) if (L.ok(pw, y)) L.place("producebin", [[pw, y]], P(L, { face: prod === "w" ? "e" : "w" }));
+    const roomy = c.w >= 38; // a wide floor: two rows of produce tables and two of freezer cases, else one of each (the aisles first)
+    for (const dx of roomy ? [2, 3] : [2]) for (let y = yTop; y <= yBot; y++) if ((y - yTop) % 4 !== 3 && L.ok(pw + dx * pd, y)) L.place("producebin", [[pw + dx * pd, y]], P(L));
+    // Frozen: the wall of freezer cases, island freezers down the middle, a back-to-back row of freezer cases.
+    const fw = froz === "w" ? c.x0 : c.x1, fd = froz === "w" ? 1 : -1;
+    for (let y = yTop - 1; y <= yC - 3; y++) if (L.ok(fw, y)) L.place("freezercase", [[fw, y]], P(L, { face: froz === "w" ? "e" : "w" }));
+    for (let y = yTop; y + 1 <= yBot; y += 3) if (L.ok(fw + 2 * fd, y) && L.ok(fw + 2 * fd, y + 1)) L.place("islandfreezer", [[fw + 2 * fd, y], [fw + 2 * fd, y + 1]], P(L));
+    for (const dx of roomy ? [4, 5] : [4]) for (let y = yTop; y <= yBot; y++) if (L.ok(fw + dx * fd, y)) L.place("freezercase", [[fw + dx * fd, y]], P(L, { face: dx === 4 ? (froz === "w" ? "w" : "e") : froz === "w" ? "e" : "w" }));
+    // The dairy wall along the back.
+    for (let x = c.x0 + 1; x <= c.x1 - 1; x++) if (L.ok(x, c.y0)) L.place("coldcase", [[x, c.y0]], P(L, { face: "s" }));
+    // The grocery aisles between, front to back.
+    const gx0 = prod === "w" ? pw + (roomy ? 5 : 4) : fw + (roomy ? 7 : 6), gx1 = prod === "w" ? fw - (roomy ? 7 : 6) : pw - (roomy ? 5 : 4);
+    aislesY(L, { x0: gx0, x1: gx1, y0: yTop, y1: yBot, box: "shelf", every: 5, sign: true });
+    fill(L, ["shelf", "coldcase"]);
+  },
+  // A supermarket's bakery: the ovens and a sink along the back, bread racks, a display case of the cakes.
+  bakery(L) {
+    const ws = L.walls();
+    L.run(["oven", "oven", "counter", "sink", "counter"], [ws[0] ? ws[0].side : "n"], { plain: () => full(L) });
+    if (!L.has("oven")) L.need("oven");
+    some(L, "breadrack", 3, { prefer: "corner" });
+    L.wall("displaycase", P(L, { near: frontDoor(L) })) || L.centre("displaycase", P(L));
+    fill(L, ["breadrack", "counter", "shelf"]);
+  },
+  // A supermarket's deli and butcher: the counter of butcher's cases and display cases, a cold case, the cutting counters,
+  // a sink and a range behind it.
+  butcher(L) {
+    const ws = L.walls();
+    L.run(["meatcase", "displaycase", "meatcase", "displaycase", "coldcase"], [ws[0] ? ws[0].side : "n"], { plain: () => full(L) });
+    if (!L.has("meatcase")) L.need("meatcase", P(L));
+    L.run(["counter", "sink", "counter", "range"], [ws[1] ? ws[1].side : "s"], { plain: () => full(L) });
+    fill(L, ["counter", "coldcase", "shelf"]);
+  },
+  // A supermarket's warehouse: the receiving floor along the dock wall (the back) kept clear but for the forklift and
+  // a few crates, pallet racks in rows behind it (whole pallets of tins and water: combat.js BOX_LOOT palletrack@store).
+  warehouse(L) {
+    share(L, "warehouse");
+    const c = L.c;
+    L.centre("forklift", { near: [c.x0 + Math.floor(c.w / 3), c.y0 + 1] });
+    aisles(L, { box: "palletrack", every: 2, step: 3, start: 4, front: 1, cap: "palletrack" });
+    for (const [x, y] of c.innerSpots().filter(([, y]) => y <= c.y0 + 2).slice(0, 4)) shelving(L, x, y, "crate");
+    fill(L, ["palletrack", "crate"]);
+  },
+  // A walk-in freezer behind its steel door: freezer shelving round the walls (frozen food gone bad but in winter).
+  walkfreezer(L) { share(L, "walkin"); fill(L, ["freezershelf"]); if (!L.has("freezershelf")) L.need("freezershelf"); },
+  // The compactor and baler: the baler against a wall, bales of cardboard (crates, not searched), a shelf.
+  baler(L) { L.wall("baler") || L.need("baler"); for (const [x, y] of L.c.innerSpots().slice(0, 3)) shelving(L, x, y, "crate"); fill(L, ["shelf", "crate"]); },
   // A pharmacy's, a sporting goods store's, a pet store's (fish tanks, cages), a feed store's, a garden center's (potting
   // benches): aisles and the checkout.
   aislefront(L) {
@@ -648,6 +821,12 @@ export function commercialStyle(room, key) {
 //   counterstand a last stand behind a shop's counter (a gun store's, a pawn shop's, a liquor store's, a corner store's,
 //                a gas station's): the owner's body behind it, spent brass, the dead in front of it;
 //   walkin       a restaurant's walk-in cold room as a hiding place: someone shut in behind its steel door, never let out.
+//   The grocery stores' (issue #22): the stock shelter above also in a supermarket's warehouse, and
+//   checkoutline the checkout lanes barricaded: the gaps between the checkouts shoved full of crates and shelving (half
+//                cover: one gap left), the one who held them behind with spent brass, the dead in front of them;
+//   freezershut  someone shut in a supermarket's walk-in freezer, never let out;
+//   frontdoors   the dead piled inside the front doors of a grocery or a supermarket, where they broke in and were cut
+//                down: blood to the doors, spent brass where the shooters stood.
 // ======================================================================================
 const NEXT4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 const shopRooms = (ctx, styles) => ctx.rng.shuffle(ctx.rooms.filter((r) => styles.includes(r.shop) && !r.scene && !r.locked));
@@ -673,7 +852,7 @@ function motelHold(ctx) {
 }
 function stockShelter(ctx) {
   const { rng } = ctx;
-  for (const r of shopRooms(ctx, ["pallets", "stock"])) {
+  for (const r of shopRooms(ctx, ["pallets", "stock", "warehouse"])) {
     const f = r.f || 0;
     const free = ctx.freeIn(r).filter(([x, y]) => (x + y) % 2 === 0);
     if (free.length < 4) continue;
@@ -724,6 +903,66 @@ function walkIn(ctx) {
   }
   return null;
 }
+function checkoutLine(ctx) {
+  const { rng } = ctx;
+  for (const r of shopRooms(ctx, ["superstore", "grocerfloor"])) {
+    const f = r.f || 0, tills = ctx.inner(r).filter(([x, y]) => (ctx.at(f, x, y) || {}).k === "checkout");
+    if (tills.length < 2) continue;
+    const y = tills.map((t) => t[1]).sort((a, b) => tills.filter((t) => t[1] === b).length - tills.filter((t) => t[1] === a).length)[0];
+    const xs = tills.filter((t) => t[1] === y).map((t) => t[0]), x0 = Math.min(...xs), x1 = Math.max(...xs);
+    const gaps = [];
+    for (let x = x0 + 1; x < x1; x++) if (ctx.free(f, x, y)) gaps.push(x);
+    if (gaps.length < 2) continue;
+    const open = rng.pick(gaps);
+    for (const x of gaps) if (x !== open) ctx.piece(f, x, y, rng.pick(["crate", "shelf", "cabinet", "crate"]));
+    const behind = nearest(ctx.freeIn(r).filter(([, yy]) => yy < y - 1), (x0 + x1) / 2, y - 2);
+    let held = "";
+    if (behind.length) {
+      const [bx, by] = behind[0];
+      ctx.body(f, bx, by, { human: true });
+      ctx.splatter(f, bx, by, "human", rng.int(1, 2));
+      for (const [x, yy] of behind.slice(1, 4)) { const c = ctx.at(f, x, yy); c.brass = rng.int(SCENES.BRASS[0], SCENES.BRASS[1]); }
+      held = ", the one who held them behind";
+    }
+    const front = rng.shuffle(ctx.freeIn(r).filter(([x, yy]) => yy > y && yy <= y + 3 && x >= x0 - 1 && x <= x1 + 1));
+    const dead = Math.min(front.length, rng.int(3, 6));
+    for (const [x, yy] of front.slice(0, dead)) { ctx.body(f, x, yy, {}); ctx.splatter(f, x, yy, "zombie", rng.int(1, 2)); }
+    return ctx.done("checkoutline", r, open, y, `The checkout lanes were barricaded: crates and shelving shoved between the tills${held}, ${dead} of the dead in front of them.`);
+  }
+  return null;
+}
+function freezerShut(ctx) {
+  const { rng } = ctx;
+  for (const r of shopRooms(ctx, ["walkfreezer"])) {
+    const f = r.f || 0, free = ctx.freeIn(r);
+    if (!free.length) continue;
+    const [x, y] = rng.pick(free);
+    ctx.body(f, x, y, { human: true, quiet: true });
+    return ctx.done("freezershut", r, x, y, "Someone shut themselves in the walk-in freezer and was never let out: frost on the door's inside, scratched through.");
+  }
+  return null;
+}
+function frontDoors(ctx) {
+  const { rng } = ctx;
+  for (const r of shopRooms(ctx, ["superstore", "grocerfloor"])) {
+    const f = r.f || 0, doors = (r.doors || []).filter((d) => ctx.exit(d[0], d[1], f));
+    if (!doors.length) continue;
+    const [dx, dy] = rng.pick(doors);
+    const near = nearest(ctx.freeIn(r), dx, dy).filter(([x, y]) => Math.abs(x - dx) + Math.abs(y - dy) <= 6);
+    if (near.length < 6) continue;
+    const dead = rng.int(5, 9);
+    let n = 0;
+    for (const [x, y] of near.slice(0, dead)) { ctx.body(f, x, y, {}); ctx.splatter(f, x, y, "zombie", rng.int(1, 3)); n++; }
+    ctx.trail(f, near[0][0], near[0][1], dx, dy, "zombie");
+    const back = nearest(ctx.freeIn(r).filter(([x, y]) => Math.abs(x - dx) + Math.abs(y - dy) >= 8), dx, dy).slice(0, 2);
+    for (const [x, y] of back) { const c = ctx.at(f, x, y); c.brass = rng.int(SCENES.BRASS[0], SCENES.BRASS[1]); }
+    return ctx.done("frontdoors", r, dx, dy, `The dead lie piled inside the front doors, ${n} of them, cut down as they broke in.`);
+  }
+  return null;
+}
+registerScene("checkoutline", { w: 3, place: checkoutLine, kinds: ["supermarket", "grocery"], when: styled });
+registerScene("freezershut", { w: 2, place: freezerShut, kinds: ["supermarket"], when: styled });
+registerScene("frontdoors", { w: 3, place: frontDoors, kinds: ["supermarket", "grocery"], when: styled });
 registerScene("motelhold", { w: 4, place: motelHold, kinds: ["motel"], when: styled });
 registerScene("stockshelter", { w: 3, place: stockShelter, kinds: ["supermarket", "grocery", "deptstore", "hardware", "warehouse"], when: styled });
 registerScene("counterstand", { w: 3, place: counterStand, kinds: ["gunstore", "pawnshop", "liquor", "corner", "gasstation"], when: styled });
