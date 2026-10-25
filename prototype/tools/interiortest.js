@@ -1061,7 +1061,7 @@ console.log("\nHotels room by room (hotellayout.js): an inn, a business hotel, a
   }
   const want = ["hotelbarricade", "evaccentre", "lobbyoverrun", "penthouse"];
   check(want.every((k) => seenKinds.has(k)), `the hotel's scenes turn up (${want.filter((k) => seenKinds.has(k)).join(", ")} of ${want.join(", ")}; also ${[...seenKinds].filter((k) => !want.includes(k)).join(", ")})`);
-=======
+}
 
 console.log("\nBunkers (bunkerlayout.js)");
 {
@@ -1217,7 +1217,7 @@ console.log("\nWarehouses, factories and labs: a dozen plans each (industrylayou
     if (miss.length) bad.push(`${p.name}: no ${miss.join(", ")}`);
   }
   check(!bad.length, `${n} industrial buildings (${INDUSTRY_KEYS.map((k) => `${plansOf(k).length} ${k} plans`).join(", ")}, 3 seeds each): all reached, each with its signature pieces${bad.length ? ` (${[...new Set(bad)].slice(0, 5).join("; ")})` : ""}`);
-=======
+}
 console.log("\nMilitary bases, air bases, airports and prisons laid out like the real thing (militarylayout.js)");
 {
   const N = Math.max(SEEDS, 6);
