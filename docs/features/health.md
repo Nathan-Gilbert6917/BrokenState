@@ -2,7 +2,10 @@
 
 Detail for section 4 of [docs/agents/features.md](../agents/features.md). `[name]` is `prototype/src/sim/name.js`.
 
+Contents: [Disease and outbreaks](#disease-and-outbreaks)
+
 ## Disease and outbreaks
+Camp fever and wound fever, with the risk rising with headcount, crowding and newcomers, treated by rest and courses of meds; hub cards and AI parity.
 - The user's request 2026-10-21: "Add disease ... treated with rest and meds. More people higher chances of sicknesses as well as new additions to a base".
 - **Camp fever** (catching, worst in packed bunks) and **wound fever** (from an infected wound) climb first, take a course of two doses or more, and untreated drag on and kill [health `CONDITIONS` campfever, woundfever (`rise`, `minCourse`)].
 - **Chances**:

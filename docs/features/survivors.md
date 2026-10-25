@@ -2,7 +2,10 @@
 
 Detail for section 2 of [docs/agents/features.md](../agents/features.md). `[name]` is `prototype/src/sim/name.js`; `ui/name` is `prototype/src/ui/name.js`.
 
+Contents: [Bonds between survivors](#bonds-between-survivors) · [Appearance, figures and customization](#appearance-figures-and-customization)
+
 ## Bonds between survivors
+Named levels from rival to partner, with reasons, work and mood buffs and debuffs, behaviours and hub cards.
 The user's request 2026-10-21: "Improve survivor inter-connected relationships and behaviors Buffs and debuffs and events". Modules: [bonds, bondevents]; test `tools/bondstest.js`.
 
 ### Levels and reasons
@@ -37,6 +40,7 @@ Each is a mood line (bondMood in moodFactors) and on the survivor screen's Bonds
 - AI parity: none for AI groups' people (ADR 0001 §3: their mood and relationships do not tick; O(n²) pairs on a Huge world). Anyone who joins you is under the rules at once. See [ADR 0001](../adr/0001-ai-parity.md).
 
 ## Appearance, figures and customization
+How a survivor is made and drawn: backgrounds, points, starting gear and random kits, and the low-poly figures on the battle map, the panels and the State Map.
 Modules: [appearance, custombg, custompoints, startgear, randomkit].
 
 - Survivor customization: backgrounds, customization points, starting gear, random builds.

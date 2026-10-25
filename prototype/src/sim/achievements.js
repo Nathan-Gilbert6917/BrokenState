@@ -10,8 +10,8 @@
 //                      (the day, the people, their records and skills, the bases, the memorial wall, the coalition,
 //                      the counters in state.stats, Crashlanding's stage); also at every ending (achievementsEnd).
 //   earnAch            at the event itself, for what leaves no trace to read later: the first radio deal
-//                      (radiotrade.js), a found car driven home (foundcars.js driveHome), a lost convoy's vehicle
-//                      running again with its cargo (parties.js recoverVehicle), and a battle's end (achievementsBattle,
+//                      (radiotrade.js), a found car driven home (foundcars.js driveHome), a lost convoy recovered
+//                      (convoyrecover.js, or one vehicle with its cargo: parties.js recoverVehicle), and a battle's end (achievementsBattle,
 //                      combat.js finishCombat: a military site raided, a Broodmother put down on the map).
 // A row's modes: the run modes (runMode) it can be earned in (all when absent); hidden: shown as "???" until earned.
 import { day, log, alive, hub } from "./world.js";
@@ -57,7 +57,7 @@ export const ACHIEVEMENTS = [
   { id: "radiotrade", group: "World", icon: "📡", name: "Deal on the air", desc: "Make a first trade over the radio." },
   { id: "coalition", group: "World", icon: "🤝", name: "Not alone", desc: "A group joins your Calder Coalition." },
   { id: "carhome", group: "World", icon: "🚗", name: "Drive it home", desc: "Drive a found car home." },
-  { id: "convoy", group: "World", icon: "🚚", name: "Nothing left behind", desc: "Get a lost team's vehicle running again, with what was left inside it." },
+  { id: "convoy", group: "World", icon: "🚚", name: "Nothing left behind", desc: "Recover a lost team's convoy: its vehicles back on the road with what was left in them." },
   // Victory
   { id: "winhives", group: "Victory", icon: "🏆", name: "Every hive is ash", desc: "Win the hive victory." },
   { id: "wincoalition", group: "Victory", icon: "🏛", name: "The state is ours", desc: "Win with the Calder Coalition." },

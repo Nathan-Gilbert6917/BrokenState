@@ -2,17 +2,27 @@
 
 Detail for section 8 of [docs/agents/features.md](../agents/features.md). `[name]` is `prototype/src/sim/name.js`; `ui/name` is `prototype/src/ui/name.js`. Crawl docs: [docs/multi-storey-crawl.md](../multi-storey-crawl.md), [docs/crawl-balance.md](../crawl-balance.md).
 
+Contents: [Bosses on 2 × 2 cells](#bosses-on-2--2-cells) · [Hive crawl](#hive-crawl) · [Hordes](#hordes) · [Special dead and the dead beasts](#special-dead-and-the-dead-beasts) · [Attacked alone (2026-10-19)](#attacked-alone-2026-10-19) · [The counter-dead](#the-counter-dead) · [The Digger's tunnels](#the-diggers-tunnels) · [The pool of the dead widens with the years](#the-pool-of-the-dead-widens-with-the-years)
+
 ## Bosses on 2 × 2 cells
+The two boss dead take 2 × 2 cells.
 - The Broodmother and the Hivemind stand on 2 × 2 cells (`defences.js` BOSSES size; `combat.js` unitSize / unitCells / nearCell / coversCell).
 - The footprint blocks all four cells and answers `unitAt` on any of them. Distance for shots, melee reach and blasts goes by the nearest cell; sight by any cell; the figure and its ring by the centre.
 - The Hivemind's own throws-at-it targeting and its brood's spawn window go by its heart (the centre cell, the old one cell); the flames on it and the lash by its edge.
 - Modules: [combat, defences, hivecrawl; ui/isoview, ui/battlehud].
 
 ## Hive crawl
+The raid down into a hive, chamber by chamber.
 - Chamber by chamber down to the Hivemind through a round grid of chambers, each open on 3 sides with 1 wall (a hallway with a room off the side).
 - Four mouths, one on each side, to pick from and walk back out by. The core deep in it, open on 1–2 sides; the beat through the walls, the warmth along the passages [hivecrawl, citygrid].
 
+## Hordes
+Hordes are the hives' armies on the State Map.
+- Roles (guard, build, attack, roam); hordes merge on the State Map [hordes].
+- Drawn on the State Map as a crowd of the dead shuffling the way the horde drifts [ui/mapfigures mapHordeCanvas].
+
 ## Special dead and the dead beasts
+The special kinds of the dead beyond the plain ones, and the worm's dead animals.
 - Runners, brutes, spitters (acid pools), screamers, crawlers, elites, a Broodmother [zombietypes, acid]. Mid-game dead such as the Boneback [middead]. Carriers and worm swarms [carriers]. Armoured soldier and riot dead [deadsoldiers]. Sleepers among the bodies [sleepers].
 - **The dead beasts** (2026-10-19): the worm's dead animals among the dead of the hills, woods and farmland (a dead stag, hog, dog and cow) and its dead pets in towns, cities and houses (dead dogs and cats).
   - Their bites carry the worm; most burst into a worm swarm when killed.
@@ -20,6 +30,7 @@ Detail for section 8 of [docs/agents/features.md](../agents/features.md). `[name
   - Modules: [deadbeasts, hiveconst BEASTS; locks lockRaid / openLock; events "deadbeasts"].
 
 ## Attacked alone (2026-10-19)
+A lone worker or walker set upon by the dead fights alone on the battle map or by the numbers.
 - A worker on a job trip or one of a team on foot set upon by the dead or the dead beasts: the card "<name> was attacked by …" with Save and fight, Fight (the battle map with just that person and what they carry: combat `afield`) or by the numbers.
 - The trip holds while it is fought; its end steers the trip.
 - Modules: [loneattack, tripevents raiseCard / holdTrip / settleBattle, events "straggler"; ui/settings saveBeforeFight]. Crews: see [economy.md, Teamwork on job trips](economy.md#teamwork-on-job-trips).
@@ -44,6 +55,8 @@ The user's requests 2026-10-21. Modules: [counterdead, tunnels, hiveconst COUNTE
 - **UI**: the log names the base ("The hive near X has begun breeding diggers": counterNews from completeGrowth); the tile panel shows a hive's read (hiveCounterText); the warning card the counter-dead in a horde (counterText); the codex and battle hover what each counters. Figures (ui/figures.js specialApp: spade hands, a hide, nose to the ground, the pale one), flat painters and growth sprites (ui/hivesprites.js).
 
 ## The Digger's tunnels
+Diggers tunnel under walls; the tunnels stay on the base map until filled.
+
 Modules: [tunnels; hiveconst DIG].
 - **Digging**: goes down only on bare ground (open or bush cells floored dirt, grass or a field: diggable) and comes up only on bare ground, up to 8 cells away, under anything (walls, gates, buildings, wire, trenches, mines: nothing set off), 3 cells a turn, unseen (off the map: u.off, u.under), when the tunnel saves 4 moves of its siege field (diggerTurn from zombietypes.js zombieTurn).
 - **The tunnel stays**: combat.js reachable and distField link its ends for the dead (tunnelLinks; 1.5 moves a cell); moveAlong sends one down it (crawlIn); tunnelRound (combat.js endPlayerTurn) brings them up at the far end. A blocked exit waits, then comes up beside it, never on an occupied, mined or unbare cell.
@@ -53,6 +66,7 @@ Modules: [tunnels; hiveconst DIG].
 - **Fill tunnel**: a construction job, 4 + 2 work-hours a cell, put first, worked by builders (queueFill / finishFill, buildings.js BUILDINGS.filltunnel and constructionHour). Queued by clicking a hole on the base map (basemap.js layoutAct tunnel / fillTunnel / unfill; ui/basemap.js tunnelCard / tunnelList with Cancel). An alert while any is open (ui/alerts.js tunnels). The governor queues them (autoFillTunnels from autopilot.js governBase). A group fills 16 work-hours a day (groupFillDaily from groupworks.js).
 
 ## The pool of the dead widens with the years
+The kinds of the dead met widen with the years, by place and era.
 - Whatever the hives do [deadpool; hiveconst POOL].
 - **Shaped by the place**: the era's kinds met exploring (shapeKinds / poolPlace from hivetech.js siteSpecials and citycrawl.js crawlKind): Climbers and screamers in cities; crawlers, runners and Diggers in the countryside; brutes, Bonebacks and Trippers round military sites; the counter-dead at half their share.
 - **From day 60** the dead nobody bred grow a little a year (widenMix, merged in scavenge.js raidEnemies (raids, the places on a tile), conflicts.js and the city crawl's street): soldiers within 3 tiles of a military site, riot police in towns and cities, the dead beasts of the countryside.

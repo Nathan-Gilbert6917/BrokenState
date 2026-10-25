@@ -11,6 +11,7 @@ import { vehicleLabel, isBike } from "../sim/vehicles.js";
 import { foodIn } from "../sim/foods.js";
 import { supplyAmt } from "../sim/rounds.js";
 import { KINDS, GOODS, GET_GOODS, commsWith, communicate, envoyPlan, messageProblem, messageList, pendingFrom, answerNow, ENVOY } from "../sim/envoys.js";
+import { recoverOffered, recoverFee, recoverDest } from "../sim/convoyrecover.js"; // Recover our convoy: who is asked, the fee
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -21,8 +22,9 @@ const hours = (h) => (h >= 36 ? `${Math.round(h / 24)} days` : `${Math.round(h)}
 
 // The form (UI only): ui.envoy = { fid, kind, goods, give, get, key, qty, pact, members, vehicleId, msg }.
 // Volunteers (sim/loans.js): n, days, purpose, baseId, offerKey / offerQty, favour; a joint operation: op, target,
-// share, dayIn (days from now), opId (join one already planned).
-const FORM = { fid: null, kind: "aid", goods: {}, give: {}, get: {}, key: "food", qty: 10, pact: "nonaggression", members: [], vehicleId: null, msg: "", n: 2, days: 7, purpose: "work", baseId: null, offerKey: "food", offerQty: 0, favour: false, op: "hive", target: null, share: 0, dayIn: 4, opId: null, opN: 3 };
+// share, dayIn (days from now), opId (join one already planned). Recover our convoy (sim/convoyrecover.js): rtile (the
+// convoy's tile), rdest ("" your nearest base, "b<id>" a base, "t<id>" a tile).
+const FORM = { rtile: null, rdest: "", fid: null, kind: "aid", goods: {}, give: {}, get: {}, key: "food", qty: 10, pact: "nonaggression", members: [], vehicleId: null, msg: "", n: 2, days: 7, purpose: "work", baseId: null, offerKey: "food", offerQty: 0, favour: false, op: "hive", target: null, share: 0, dayIn: 4, opId: null, opN: 3 };
 function form(ui) {
   if (!ui.envoy) ui.envoy = { ...FORM };
   for (const [k, v] of Object.entries(FORM)) if (ui.envoy[k] === undefined) ui.envoy[k] = v;
@@ -30,6 +32,7 @@ function form(ui) {
 }
 const payloadOf = (e, state) => (e.kind === "aid" ? { goods: { ...e.goods } } : e.kind === "trade" ? { give: { ...e.give }, get: { ...e.get } } : e.kind === "askaid" ? { key: e.key, qty: Math.max(0, Math.floor(Number(e.qty) || 0)) } : e.kind === "pact" ? { pact: e.pact }
   : e.kind === "volunteers" ? { baseId: e.baseId ?? (hub(state) || {}).id, n: e.n, days: e.days, purpose: e.purpose, offer: e.offerQty > 0 ? { key: e.offerKey, qty: e.offerQty } : null, favour: !!e.favour }
+  : e.kind === "recover" ? { tile: e.rtile, dest: e.rdest[0] === "b" ? { kind: "base", baseId: Number(e.rdest.slice(1)) } : e.rdest[0] === "t" ? { kind: "tile", tile: Number(e.rdest.slice(1)) } : null }
   : e.kind === "jointop" ? (e.opId != null && opById(state, e.opId) ? { opId: e.opId } : { op: e.op, target: e.target, share: e.share, n: e.opN, dayAt: day(state) + Math.max(1, e.dayIn) }) : {});
 // A badge for someone on loan (the roster, the survivor panel): their group and the days left.
 export function loanBadge(state, s) {
@@ -110,6 +113,16 @@ function composer(state, ui, e) {
     what = `<div class="small">To <select class="mini" data-action="ev-base">${state.bases.map((b) => `<option value="${b.id}" ${(P.baseId === b.id) ? "selected" : ""}>${esc(b.name)}</option>`).join("")}</select> · ${num("ev-n", e.n, 1, LOAN.MAX)} people for ${num("ev-days", e.days, LOAN.SPAN.min, LOAN.SPAN.max)} days, to <select class="mini" data-action="ev-purpose">${Object.entries(PURPOSES).map(([k, l]) => `<option value="${k}" ${e.purpose === k ? "selected" : ""}>${esc(l)}</option>`).join("")}</select></div>
       <div class="small">Offer <select class="mini" data-action="ev-offerkey">${GOODS.map((k) => `<option value="${k}" ${e.offerKey === k ? "selected" : ""}>${esc(WORD[k])}</option>`).join("")}</select> ${num("ev-offerqty", e.offerQty, 0, 999)} <label><input type="checkbox" data-action="ev-favour" ${e.favour ? "checked" : ""}> a favour owed</label></div>
       <div class="small muted"${tip((q.parts || []).map((x) => `${x.label} ${x.v >= 0 ? "+" : ""}${x.v}`).join("\n"))}>${via === "radio" ? `They would ${q.yes ? "say yes" : `say no${q.refuse ? `: ${esc(q.refuse)}` : ""}`} (points ${q.points ?? "—"}).` : "Their answer comes home with the envoy (it weighs standing, their kind, their own headcount and trouble, the purpose and your offer)."}</div>`;
+  } else if (e.kind === "recover") {
+    // The convoys you know of (your vehicles marked on the map) and where they go: a base, or a known place near them.
+    const tiles = [...new Set(state.markers.filter((m) => m.type === "vehicle" && !m.remove).map((m) => m.tile))];
+    if (e.rtile == null || !tiles.includes(e.rtile)) e.rtile = tiles.length ? tiles[0] : null;
+    const near = e.rtile == null ? [] : state.tiles.filter((t) => t.loc && state.knowledge[t.id] && t.id !== e.rtile && !state.bases.some((b) => b.tile === t.id)).sort((a, b) => state.grid.distance(a.id, e.rtile) - state.grid.distance(b.id, e.rtile) || a.id - b.id).slice(0, 10);
+    const fee = e.rtile != null && f ? recoverFee(state, f, e.rtile, P.dest, base) : null;
+    const d = e.rtile != null ? recoverDest(state, e.rtile, P.dest) : null;
+    what = `<div class="small">Convoy at <select class="mini" data-action="ev-rtile">${tiles.map((t) => `<option value="${t}" ${e.rtile === t ? "selected" : ""}>${esc(tileLabel(state, t))}</option>`).join("") || `<option value="">no vehicles of yours abandoned</option>`}</select>
+      to <select class="mini" data-action="ev-rdest"><option value="">your nearest base${d && d.kind === "base" && !e.rdest ? ` (${esc((state.bases.find((b) => b.id === d.baseId) || {}).name || "")})` : ""}</option>${state.bases.map((b) => `<option value="b${b.id}" ${e.rdest === `b${b.id}` ? "selected" : ""}>${esc(b.name)}</option>`).join("")}${near.map((t) => `<option value="t${t.id}" ${e.rdest === `t${t.id}` ? "selected" : ""}>${esc(tileLabel(state, t.id))} (parked there)</option>`).join("")}</select></div>
+      ${fee ? `<div class="small muted"${tip(`Their fee: a base, ${fee.tiles} tiles to the convoy and on to where it goes, and a share of what the convoy and its cargo are worth (worth ${fee.value} in all), in the goods they need most.`)}>Their fee: ${esc(Object.entries(fee.goods).map(([k, q]) => `${q} ${WORD[k] || k}`).join(", ") || "nothing")}, paid on agreement (the envoy carries it).</div>` : ""}`;
   } else if (e.kind === "jointop") {
     const open = opsOf(state).filter((o) => o.status === "planned" || o.status === "met");
     const targets = opTargets(state, e.op);
@@ -136,7 +149,7 @@ function composer(state, ui, e) {
   const block = why || (needsEnvoy ? e.planWhy : "");
   return `<div class="card small" style="margin-top:0.5rem">
     <div class="spread"><b>${swatch(f.color)}To ${esc(f.name)}</b><span class="${via === "radio" ? "good" : "muted"}">${via === "radio" ? "📻 by radio: the answer at once" : "✉ by envoy: the answer when it is home"}</span></div>
-    <div class="row small"><select class="mini" data-action="ev-kind">${Object.keys(KINDS).filter((k) => !KINDS[k].hidden).map(opt).join("")}</select> <span class="muted">${esc(KINDS[e.kind].desc)}</span></div>
+    <div class="row small"><select class="mini" data-action="ev-kind">${Object.keys(KINDS).filter((k) => !KINDS[k].hidden && (k !== "recover" || recoverOffered(state, f))).map(opt).join("")}</select> <span class="muted">${esc(KINDS[e.kind].desc)}</span></div>
     ${what}${envoy}
     ${why ? `<div class="danger small">${esc(why)}</div>` : ""}
     ${e.msg ? `<div class="result">${esc(e.msg)}</div>` : ""}
@@ -194,5 +207,7 @@ export const ENVOY_CHANGE = {
   "ev-target": (state, ui, el) => { form(ui).target = el.value === "" ? null : Number(el.value); },
   "ev-dayin": (state, ui, el) => { form(ui).dayIn = Math.max(1, Math.min(30, Math.floor(Number(el.value) || 1))); },
   "ev-opn": (state, ui, el) => { form(ui).opN = Math.max(1, Math.min(LOAN.OP_MAX, Math.floor(Number(el.value) || 1))); },
+  "ev-rtile": (state, ui, el) => { form(ui).rtile = el.value === "" ? null : Number(el.value); },
+  "ev-rdest": (state, ui, el) => { form(ui).rdest = /^[bt]\d+$/.test(el.value) ? el.value : ""; },
   "ev-share": (state, ui, el) => { const v = Number(el.value); if ([0, 0.1, 0.25].includes(v)) form(ui).share = v; },
 };
