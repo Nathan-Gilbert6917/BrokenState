@@ -27,6 +27,7 @@ import { addCard, skill } from "./world.js";
 import { partyMembers, bestSkill } from "./parties.js";
 import { say, setFloor, enemyUnit, KITS, WEAPONS, active, activeAny, canSee, fire } from "./combat.js";
 import { BMAP, placeOccupantGroups } from "./buildingmaps.js";
+import { tidyDecor } from "./decor.js"; // the survivors' room swept
 import { newNeutralGroup, talkChance, groupById } from "./wanderers.js";
 import { applyZType } from "./zombietypes.js";
 import { lootItem } from "./inventory.js";
@@ -233,6 +234,7 @@ function barricadeSurvivors(state, b) {
   const doors = room.doors.map((d) => d.slice());
   for (const [x, y] of doors) { const c = cells[I(b, x, y)]; c.k = "door"; c.hp = c.mhp = BMAP.DOOR[S.door]; c.barred = true; delete c.roll; delete c.under; delete c.boards; delete c.frame; delete c.moved; } // a scene's boards or piece in the frame: their barricade now
   for (const box of R.containers) if ((box.f || 0) === f && box.area === room.id) { box.barred = true; box.botSkip = true; }
+  tidyDecor(cells, b.w, room); // they keep their room swept (decor.js: the trash, clothes and papers gone)
   clearLos(b, f);
   return { room: room.id, f, doors, wid: g.wid, mood: g.mood, names: g.people.map((s) => s.name), count: units.length, met: false, state: "holding" };
 }

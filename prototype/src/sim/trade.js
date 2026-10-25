@@ -66,10 +66,10 @@ export { itemValue };
 // (woodcutting.js): groups cut their own; the seasons move its price (valuation.js: dear in winter, cheap in summer).
 // Arrows (hunting.js): groups fletch their own and keep them (comfortable, none to spare) until they hold more.
 const REF = { food: 6, // days of food a head (every kind together, foods.js foodIn)
-  water: 5, fuel: 2, meds: 1, ammo: 10, arrows: 2, parts: 0.5, scrap: 3, preserved: 2, jars: 1, wood: 120, stone: 10, carparts: 0.15, gunparts: 0.5, electronics: 0.5, buildmat: 1, metalsheet: 0.5, brass: 5, powder: 3, primers: 3, blackpowder: 1, matchprimers: 1 }; // reloading.js: the bench's inputs (cases, charges, primers); wood: 12 kg a head; gun parts and electronics are priced by the group's one count of parts, car parts by their own
+  water: 5, fuel: 2, meds: 1, ammo: 10, arrows: 2, parts: 0.5, scrap: 3, preserved: 2, jars: 1, wood: 120, stone: 10, carparts: 0.15, gunparts: 0.5, electronics: 0.5, buildmat: 1, metalsheet: 0.5, brass: 5, powder: 3, primers: 3, blackpowder: 1, matchprimers: 1, propane: 0.5 }; // reloading.js: the bench's inputs (cases, charges, primers); wood: 12 kg a head; gun parts and electronics are priced by the group's one count of parts, car parts by their own
 // Per head a group never sells: it keeps this much for itself. Food and water: the pay-out reserve your governor keeps
 // (upkeep.js PAYOUT.days a head, read when used: the modules load in a cycle; it was 2 and 1.5).
-const RESERVE = { get food() { return PAYOUT.days; }, get water() { return PAYOUT.days; }, fuel: 0.5, meds: 0.3, ammo: 3, arrows: 2, parts: 0, scrap: 0, preserved: 0.5, jars: 0, wood: 60, stone: 5, carparts: 0, gunparts: 0, electronics: 0, buildmat: 0, metalsheet: 0, brass: 0, powder: 0, primers: 0, blackpowder: 0, matchprimers: 0 };
+const RESERVE = { get food() { return PAYOUT.days; }, get water() { return PAYOUT.days; }, fuel: 0.5, meds: 0.3, ammo: 3, arrows: 2, parts: 0, scrap: 0, preserved: 0.5, jars: 0, wood: 60, stone: 5, carparts: 0, gunparts: 0, electronics: 0, buildmat: 0, metalsheet: 0, brass: 0, powder: 0, primers: 0, blackpowder: 0, matchprimers: 0, propane: 0 };
 // Groups always have some water (wells, rain barrels), wood (they cut their own: woodcutting.js) and arrows (they
 // make their own): with no figure yet they count as comfortable.
 // Water (water.js): other groups keep a single pool (f.stock.water; they purify their own). Un-purified water is
@@ -345,7 +345,7 @@ export function goodsWorth(state, f, supplies = {}, gear = [], speech = 0) {
 // Nothing they refuse. prices: both prices for every good; prev: last week's.
 // Their radio offers and requests (radio.js) and the caravans you ask for (caravans.js) use these lists.
 export const WANT_NEED = 1.25, SURPLUS_NEED = 0.9, MARKET_DAYS = 7;
-export const LOT = { food: 20, water: 20, rawwater: 20, fuel: 10, meds: 6, ammo: 50, arrows: 20, parts: 3, scrap: 20, preserved: 10, jars: 10, wood: 600, stone: 40, carparts: 3, gunparts: 4, electronics: 4, buildmat: 5, metalsheet: 4, brass: 100, powder: 100, primers: 100, blackpowder: 100, matchprimers: 50 }; // wood: 60 kg
+export const LOT = { food: 20, water: 20, rawwater: 20, fuel: 10, meds: 6, ammo: 50, arrows: 20, parts: 3, scrap: 20, preserved: 10, jars: 10, wood: 600, stone: 40, carparts: 3, gunparts: 4, electronics: 4, buildmat: 5, metalsheet: 4, brass: 100, powder: 100, primers: 100, blackpowder: 100, matchprimers: 50, propane: 5 }; // wood: 60 kg; propane: a grill's bottle (#19)
 // A food item's lot: 20 days of food of it (40 cans of beans, 16 MREs).
 const lotOf = (k) => (FOODS[k] ? Math.max(1, Math.round(LOT.food / perUnit(k))) : LOT[k] || 10);
 export const wantQty = (f, k) => (FOODS[k] ? Math.max(1, Math.ceil(lotOf(k) / 2), Math.ceil((REF.food * f.pop - foodIn(f.stock)) / perUnit(k))) : Math.max(1, Math.ceil((LOT[k] || 10) / 2), Math.ceil(REF[poolKey(k)] * f.pop - stockOf(f, k))));

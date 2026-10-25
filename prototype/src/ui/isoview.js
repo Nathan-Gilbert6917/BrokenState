@@ -5,8 +5,9 @@
 // floor; a watchtower is two) LV px up. Everything is painted as pixel art at that size (procedural, in the State
 // Map's gritty palette), cached, and drawn scaled up nearest-neighbour, so it stays crisp at any zoom:
 //   - the ground of the whole map is one small canvas (floors textured by surface: grass, field, dirt, gravel,
-//     asphalt, floorboards, concrete, rubble, water, mud and blood by the hive), rebuilt only when a floor changes or
-//     the view turns;
+//     asphalt, floorboards, concrete, rubble, water, mud and blood by the hive; a building's rooms by their floor and
+//     their decor, sim/decor.js: rugs, clutter, the pools of its lights), rebuilt only when a floor changes or the view
+//     turns;
 //   - fog of war is one more (tiles none of your people see, dark and grey), rebuilt when what they see changes;
 //   - every block (walls, fences, cars, trees, walkways, towers, barricades...) is a small sprite cached by its look.
 // Each frame: the ground and the fog (two images), the highlights on the ground (move range, deploy cells, evac
@@ -87,6 +88,7 @@ const groundCaches = new Map(), GROUNDS = 6; // groundFor: key -> picture, of on
 let fogCache = null, sceneCache = null, fogMaskCache = null, flatGroundCache = null;
 export function clearIsoCache() { spriteCache.clear(); groundCaches.clear(); fogCache = sceneCache = fogMaskCache = flatGroundCache = null; for (const k of Object.keys(looksCache)) delete looksCache[k]; }
 export const isoCacheSize = () => spriteCache.size;
+export const isoSpriteKeys = () => [...spriteCache.keys()]; // the cached sprites' keys (tools/decortest.js)
 
 // ---------- small helpers ----------
 function hash3(a, b, c) {
@@ -170,7 +172,7 @@ const GROUNDY = new Set(["water", "trench", "spikes", "hivewall"]);
 function sceneFor(b) {
   let sig = 0, fsig = 0;
   for (let i = 0; i < b.cells.length; i++) {
-    const c = b.cells[i], kc = c.k.charCodeAt(0) * 7 + c.k.length + (c.k.charCodeAt(2) || 0), fc = (c.f ? c.f.charCodeAt(0) + c.f.length : 0) + (c.fl ? c.fl.charCodeAt(0) * 3 + c.fl.length : 0);
+    const c = b.cells[i], kc = c.k.charCodeAt(0) * 7 + c.k.length + (c.k.charCodeAt(2) || 0), fc = (c.f ? c.f.charCodeAt(0) + c.f.length : 0) + (c.fl ? c.fl.charCodeAt(0) * 3 + c.fl.length : 0) + (c.deco ? decoSig(c.deco) : 0) + (c.wc ? c.wc.charCodeAt(3) * 11 + c.wc.charCodeAt(5) : 0) + (c.wart ? c.wart.k.charCodeAt(1) * 17 + c.wart.d : 0); // decor (sim/decor.js) drawn in the ground and the walls
     sig = (Math.imul(sig, 31) + kc + fc + (c.hp > 0 ? (c.hp | 0) + 1 : 0)) | 0;
     fsig = (Math.imul(fsig, 31) + fc + (GROUNDY.has(c.k) ? kc : 0)) | 0;
   }
@@ -884,6 +886,13 @@ const FURN_DRAW = {
     return [run(ax, 0.22, 0.78, 0, 12, fdrawers(FURNC.beige, 4, FURNC.black), 0.18, 0.82), run(ax, 0.26, 0.74, 12, 15, flatM(mul(FURNC.beige, 1.1)), 0.22, 0.78), run(ax, 0.26, 0.74, 15, 16, flatM(FURNC.black), 0.26, 0.74)];
   } },
   safe: { top: 18, p: () => [fbox(0.24, 0.76, 0.24, 0.76, 0, 18, fsafe(18))] },
+  // ---------- lootable decor (issue #13, sim/decor.js) ----------
+  // A plant in a clay pot, a floor lamp with its shade; a painting and a wall clock as they stand once set down (on a
+  // wall they are drawn on its face: wartTexel).
+  plant: { top: 18, p: (o, v) => [{ cyl: [0.5, 0.5, 0.16], z0: 0, z1: 6, m: (f) => (f === "top" ? mul(FLOORC.dirt, 0.8) : mul(PAL.rust, 1.1)) }, { cyl: [0.5, 0.5, 0.27], z0: 6, z1: 18, m: (f, s, t, X, Y) => mul(n2(X, Y, 81 + v) > 0.6 ? PAL.leaf2 : PAL.leaf, (f === "top" ? 1.25 : 1) + n2(X, Y, 82) * 0.2) }] },
+  floorlamp: { top: 28, p: () => [{ cyl: [0.5, 0.5, 0.14], z0: 0, z1: 1, m: flatM(PAL.metalDk) }, { cyl: [0.5, 0.5, 0.03], z0: 1, z1: 22, m: flatM(FURNC.chrome) }, { cyl: [0.5, 0.5, 0.17], z0: 22, z1: 28, m: (f) => (f === "top" ? mul(FURNC.cream, 1.1) : FURNC.cream) }] },
+  painting: { top: 14, p: (o) => { const ax = along(o), face = (f, s, t, X, Y, sw) => { if (f === "top" || s < 1 || s > (sw || 12) - 1 || t < 1 || t > 13) return WARTC.frame; return t < 7 + Math.sin(s) * 0.8 ? WARTC.hill : WARTC.sky; }; return [run(ax, 0.42, 0.52, 0, 14, face, 0.18, 0.82)]; } },
+  wallclock: { top: 8, p: (o) => { const ax = along(o), face = (f, s, t, X, Y, sw) => { const d = Math.hypot(s - (sw || 6) / 2, t - 4); return f === "top" || d > 3 ? WARTC.rim : d < 0.6 || (Math.abs(s - (sw || 6) / 2) < 0.4 && t > 4) ? WARTC.rim : WARTC.white; }; return [run(ax, 0.44, 0.52, 0, 8, face, 0.3, 0.7)]; } },
 };
 export const furnProbe = { primsOf: (k, o) => primsOf(k, o), blockTop0: (k, o) => blockTop0(k, o), FURN_DRAW, FURNITURE, FLOORED, OUTLINED: () => OUTLINED, JOINS: () => JOINS }; // tools/furnituretest.js
 
@@ -894,7 +903,9 @@ function primsOf(k, o) {
   switch (k) {
     case "wall": case "window": case "door": case "idoor": case "boarded": {
       const top = o.stub ? STUB : o.top;
-      const face = wallFace(o.mat ?? 0, o.dmg);
+      const outer = wallFace(o.mat ?? 0, o.dmg), inE = o.ie ? innerFace(o.ie) : null, inS = o.is ? innerFace(o.is) : null; // inE, inS: a room's paint on the inside faces (sim/decor.js c.wc)
+      const art = o.art && !o.stub ? { f: o.art[0] === "e" ? "east" : "south", k: o.art.slice(1) } : null; // wall art, gone with the wall cut away
+      const face = inE || inS || art ? (f, s, t, X, Y, sw) => (art && f === art.f && wartTexel(art.k, s, t, sw || 16, v)) || (f === "east" && inE ? inE(f, s, t, X, Y) : f === "south" && inS ? inS(f, s, t, X, Y) : outer(f, s, t, X, Y)) : outer;
       const winFace = (axisFace) => (f, s, t, X, Y, sw) => {
         if (f === axisFace && !o.stub) {
           const w0 = 4, w1 = (sw || 16) - 4;
@@ -920,7 +931,7 @@ function primsOf(k, o) {
             return mul(o.vault ? PAL.metal : k === "door" ? DOORC.locked : DOORC.leaf, (Math.floor(t) % 9 < 1 || Math.floor(s) === 7 ? 0.8 : 0.95) + n2(s, t, 1) * 0.1);
           }
         }
-        return face(f, s, t, X, Y);
+        return face(f, s, t, X, Y, sw);
       };
       const wf = o.n === "u" ? "east" : o.n === "v" ? "south" : null;
       const cap = k === "door" || k === "idoor" ? doorCap(k, o) : capFace; // a door's top in its colour: found from above at any turn of the view
@@ -1471,7 +1482,7 @@ function spritePut(key, s) {
 }
 // A cached sprite for a cell's look.
 function sprite(k, o, fog) {
-  const key = `${iso.straight ? "s|" : ""}${o.sea ? `${o.sea}|` : ""}${k}|${o.v}|${o.alt}|${o.j}|${o.n}|${o.top}|${o.stub ? 1 : 0}|${o.mat}|${o.dmg}|${o.barred ? 1 : 0}|${o.dir}|${o.part || ""}|${o.vault ? 1 : 0}|${o.roll ? 1 : 0}|${o.lit ? 1 : 0}|${o.spot || 0}|${fog ? 1 : 0}|${o.ter ? `${o.ter.key}${o.f}${o.wet ? `${o.wet}${o.wl}` : ""}${o.snow || ""}${o.gt ? `${o.gnd}${o.lf}` : ""}` : ""}|${o.car ? `${o.car.i},${o.car.j},${o.car.L},${o.car.ax},${o.car.kind},${o.car.v},${o.car.body || ""},${o.car.mil ? o.car.mil.cond : ""},${upKey(o.car.up)},${iso.rot & 3}` : ""}${o.sn ? `|n${o.sn}` : ""}`;
+  const key = `${iso.straight ? "s|" : ""}${o.sea ? `${o.sea}|` : ""}${k}|${o.v}|${o.alt}|${o.j}|${o.n}|${o.top}|${o.stub ? 1 : 0}|${o.mat}|${o.dmg}|${o.barred ? 1 : 0}|${o.dir}|${o.part || ""}|${o.vault ? 1 : 0}|${o.roll ? 1 : 0}|${o.lit ? 1 : 0}|${o.spot || 0}|${fog ? 1 : 0}|${o.ter ? `${o.ter.key}${o.f}${o.wet ? `${o.wet}${o.wl}` : ""}${o.snow || ""}${o.gt ? `${o.gnd}${o.lf}` : ""}` : ""}|${o.car ? `${o.car.i},${o.car.j},${o.car.L},${o.car.ax},${o.car.kind},${o.car.v},${o.car.body || ""},${o.car.mil ? o.car.mil.cond : ""},${upKey(o.car.up)},${iso.rot & 3}` : ""}${o.sn ? `|n${o.sn}` : ""}${o.ie || o.is || o.art ? `|w${o.ie || ""}/${o.is || ""}/${o.art || ""}` : ""}`;
   let s = spriteGet(key);
   if (s === undefined) {
     const p = prims(k, o);
@@ -1601,6 +1612,9 @@ const FLOORC = {
   floor: hex("#5a4632"), rubble: hex("#4e4842"), roof: hex("#6a6a64"),
   // A building's floors by room (sim/buildingmaps.js c.fl): tiles, concrete, carpet, a barn's dirt.
   tile: hex("#7a7668"), conc: hex("#5e5d5a"), carpet: hex("#4e3e44"), barn: hex("#5e5040"), straw: hex("#8a7440"),
+  // The room-appropriate floors of 2026-10-25 (issue #13): kitchens' and wards' lino, a bathroom's checker, a home's
+  // hardwood (narrow, warm) and a cabin's or a barn's planks (the old floorboards), a gym's rubber, the bays' steel plate.
+  lino: hex("#8a8a76"), checkA: hex("#8e8a80"), checkB: hex("#34322e"), hardwood: hex("#7a5636"), rubber: hex("#3a3c3e"), steel: hex("#6a6e72"),
 };
 // Which way the roads run on a map (the user's request 2026-10-22: "In base view and raids fix road tiles to look
 // better"): every road cell painted a lane dash of its own laid a hatching of dashes over the whole asphalt. Now each
@@ -1698,17 +1712,85 @@ function floorColor(c, k, x, y, lx, ly, mud, R = null, lf = 0, pd = 0, pe = 0) {
       else if (c.fl === "conc") col = q > 0.96 ? mul(FLOORC.conc, 0.75) : mul(FLOORC.conc, 0.9 + q * 0.12 + v * 0.04);
       else if (c.fl === "carpet") col = mul(FLOORC.carpet, 0.86 + q * 0.22);
       else if (c.fl === "dirt") col = q > 0.9 ? FLOORC.straw : mul(FLOORC.barn, 0.88 + q * 0.16);
+      else if (c.fl === "lino") col = (tx === 0 && ty % 16 === 0) ? mul(FLOORC.lino, 0.8) : mul(FLOORC.lino, 0.93 + q * 0.05 + (hash3(x * 4 + (tx >> 2), y * 4 + (ty >> 2), 5) > 0.8 ? 0.05 : 0)); // smooth sheet, a faint fleck
+      else if (c.fl === "checker") col = ((tx >> 2) + (ty >> 2)) % 2 ? mul(FLOORC.checkA, 0.92 + q * 0.08) : mul(FLOORC.checkB, 0.9 + q * 0.12); // 4 px checks
+      else if (c.fl === "hardwood") { const row = ty >> 2, off = hash3(x, y * 4 + row, 8) * 16; col = ty % 4 === 0 ? mul(FLOORC.hardwood, 0.7) : (tx + off) % 16 < 1 ? mul(FLOORC.hardwood, 0.76) : mul(FLOORC.hardwood, 0.9 + hash3(x * 2 + Math.floor((tx + off) / 16), y * 4 + row, 3) * 0.18 + q * 0.04); } // narrow boards, joints staggered
+      else if (c.fl === "rubber") col = (tx % 4 === 1 && ty % 4 === 1) ? mul(FLOORC.rubber, 1.25) : mul(FLOORC.rubber, 0.92 + q * 0.08); // studded mats
+      else if (c.fl === "steel") col = ((tx + ty) % 6 === 0 && (tx >> 1) % 2 === 0) || ((tx - ty + 16) % 6 === 3 && (tx >> 1) % 2 === 1) ? mul(FLOORC.steel, 1.22) : tx === 0 || ty === 0 ? mul(FLOORC.steel, 0.7) : mul(FLOORC.steel, 0.9 + q * 0.08); // diamond plate
       else col = ty % 4 === 0 ? mul(FLOORC.floor, 0.68) : mul(FLOORC.floor, 0.88 + hash3(x * 4 + Math.floor((tx + (Math.floor(ty / 4) % 2) * 8) / 16), y * 4 + Math.floor(ty / 4), 3) * 0.2);
       break;
     case "rubble": col = q > 0.82 ? mul(FLOORC.rubble, 1.35) : q < 0.1 ? mul(FLOORC.rubble, 0.6) : mul(FLOORC.rubble, 0.92 + v * 0.1); break;
     case "roof": col = mul(FLOORC.roof, 0.86 + q * 0.2); break;
     default: col = mul(FLOORC.grass, 0.92 + q * 0.12);
   }
+  if (c.deco) col = decoTexel(col, c.deco, x, y, tx, ty); // rugs, clutter, a light's pool (sim/decor.js)
   if (pe && c.plot) { const W = PLOT_EDGE.W; if (((pe & 1) && ly < W) || ((pe & 2) && ly > 1 - W) || ((pe & 4) && lx < W) || ((pe & 8) && lx > 1 - W)) col = mul(PLOT_EDGE.WOOD, 0.88 + (((tx >> 1) + (ty >> 1)) % 2) * 0.12 + q * 0.08); } // the plot's wood edge: planks
   if (!c.plot && (c.gnd || lf)) col = groundTexel(col, c, x * 16 + tx, y * 16 + ty, lf, Math.min(tx, 15 - tx, ty, 15 - ty) / 7.5); // the season on the ground (ui/groundlook.js); a built plot is the top layer: none on it
   if (pd > 0 && !c.plot) col = puddleTexel(col, c, x * 16 + tx, y * 16 + ty, pd); // rain water standing on it (ui/groundlook.js, sim/puddles.js); not on a plot
   if (mud) { const m = clamp01(mud - hash3(x * 16 + tx, y * 16 + ty, 9) * 0.6); if (m > 0) col = mix(col, q > 0.7 ? hex("#5a1a1c") : hex("#3e2a22"), m * 0.85); }
   return col;
+}
+// ---------- interior decor (sim/decor.js) ----------
+// The floor's decor (c.deco) painted into the ground canvas with the floor (cached with it: no cost a frame): rugs with
+// a border on their outer sides, papers, books, glass, trash and tins, clothes, toys, cracked tiles, stains, straw,
+// leaves; a light fixture overhead as the pool of light under it (a lamp warm, a strip light cool).
+const DECOC = {
+  rug: ["#7a3a32", "#3a4a6a", "#5a6a3a", "#7a6036", "#5a3a5a", "#4a5a5a"].map(hex), rugEdge: hex("#c8b890"),
+  paper: hex("#d8d4c4"), book: ["#7a2a2a", "#2a4a6a", "#3a5a2a", "#6a5a2a", "#4a2a4a", "#2a2a2a"].map(hex),
+  glass: hex("#b8d0d8"), trash: [hex("#6a5a44"), hex("#8a8070"), hex("#4a4038")], tin: hex("#9a9ea2"),
+  cloth: ["#5a6a8a", "#8a4a4a", "#c8c0a8", "#3a3a3a", "#6a8a5a", "#8a7a4a"].map(hex), toy: ["#d84a3a", "#e8c040", "#3a8ad8", "#4ab04a"].map(hex),
+  crack: hex("#2e2c28"), stain: hex("#6a5a3a"), oil: hex("#141414"), straw: hex("#a88a48"), leaf: ["#8a5a24", "#a8702a", "#6a5228", "#9a8a3a"].map(hex),
+  lamp: hex("#fff0c8"), strip: hex("#e8f0ff"),
+};
+const decoSig = (d) => d.k.charCodeAt(0) * 5 + d.k.charCodeAt(1) + (d.v | 0) * 3 + (d.e | 0) * 7 + (d.lt | 0) * 13;
+// A blob's mask: inside a wobbly circle round (cx, cy) of radius r px.
+const blobIn = (tx, ty, cx, cy, r, sd) => Math.hypot(tx - cx, ty - cy) < r * (0.8 + 0.3 * hash3(Math.floor(Math.atan2(ty - cy, tx - cx) * 2), sd, 61));
+function decoTexel(col, d, x, y, tx, ty) {
+  const v = d.v | 0, X = x * 16 + tx, Y = y * 16 + ty, q = hash3(X, Y, 51), r = (i) => hash3(x * 8 + i, y, 52 + v);
+  switch (d.k) {
+    case "rug": {
+      const e = d.e | 0, edge = ((e & 1) && ty < 2) || ((e & 2) && ty > 13) || ((e & 4) && tx < 2) || ((e & 8) && tx > 13);
+      const base = DECOC.rug[v % DECOC.rug.length];
+      col = edge ? mul(DECOC.rugEdge, 0.7 + q * 0.12) : ((X + Y) % 8 < 1 || (X - Y + 1024) % 8 < 1) ? mul(base, 1.25) : mul(base, 0.88 + q * 0.14); // woven: a diamond lattice
+      break;
+    }
+    case "papers": for (let i = 0; i < 3; i++) { const px = 1 + r(i) * 11, py = 1 + r(i + 3) * 11; if (tx >= px && tx < px + 4 && ty >= py && ty < py + 3) { col = mul(DECOC.paper, 0.85 + q * 0.15); break; } } break;
+    case "books": for (let i = 0; i < 2; i++) { const px = 2 + r(i) * 10, py = 2 + r(i + 3) * 10; if (tx >= px && tx < px + 3 && ty >= py && ty < py + 4) { col = mul(DECOC.book[(v + i) % 6], tx < px + 1 ? 0.7 : 0.95); break; } } break;
+    case "glass": if (q > 0.86) col = mul(DECOC.glass, 0.8 + q * 0.2); break;
+    case "trash": if (q > 0.84) col = mul(DECOC.trash[Math.floor(q * 97) % 3], 0.85 + q * 0.2); else if (blobIn(tx, ty, 4 + r(1) * 8, 4 + r(2) * 8, 2, x + y)) col = DECOC.trash[1]; break;
+    case "tins": for (let i = 0; i < 2; i++) { const dd = Math.hypot(tx - (3 + r(i) * 10), ty - (3 + r(i + 3) * 10)); if (dd < 2) { col = mul(DECOC.tin, dd < 1 ? 0.75 : 1.05); break; } } break;
+    case "clothes": if (blobIn(tx, ty, 5 + r(1) * 6, 5 + r(2) * 6, 4, x * 3 + y)) col = mul(DECOC.cloth[v % 6], 0.8 + (((tx + ty) >> 1) % 2) * 0.12 + q * 0.06); break;
+    case "toys": for (let i = 0; i < 3; i++) { const px = 2 + r(i) * 11, py = 2 + r(i + 3) * 11; if (tx >= px && tx < px + 2 && ty >= py && ty < py + 2) { col = DECOC.toy[(v + i) % 4]; break; } } break;
+    case "crack": { const a = 4 + r(1) * 8, run = Math.abs(ty - (a + (tx - 8) * (r(2) - 0.5) + Math.sin(tx * 1.3 + v) * 1.2)); if (run < 0.6) col = mul(DECOC.crack, 1 + q * 0.3); break; }
+    case "stain": if (blobIn(tx, ty, 8, 8, 6, x + y * 3)) col = mix(col, DECOC.stain, 0.35); break;
+    case "oil": if (blobIn(tx, ty, 7 + r(1) * 2, 7 + r(2) * 2, 5.5, x * 5 + y)) col = mix(col, DECOC.oil, 0.65 + q * 0.1); break;
+    case "straw": if (hash3(X >> 2, Y, 53) > 0.55 || q > 0.8) col = mul(DECOC.straw, 0.82 + q * 0.25); break;
+    case "leaves": if (hash3(X >> 1, Y >> 1, 54) > 0.72) col = mul(DECOC.leaf[Math.floor(hash3(X >> 1, Y >> 1, 55) * 4)], 0.85 + q * 0.2); break;
+  }
+  if (d.lt) { const dd = Math.hypot(tx - 7.5, ty - 7.5) / 8; if (dd < 1) col = mix(col, d.lt === 2 ? DECOC.strip : DECOC.lamp, 0.13 * (1 - dd)); } // the light's pool under the fixture
+  return col;
+}
+// The inside faces of the walls (c.wc on the room's cells, sim/decor.js): painted in the room's colour, a skirting
+// board along the foot, grime low down; wall art (c.wart) on the face toward its room, at eye height.
+const wcCache = new Map();
+const wcRgb = (h) => { let c = wcCache.get(h); if (!c) wcCache.set(h, (c = mul(hex(h), 0.74))); return c; }; // dimmed to the battle view's palette
+const innerFace = (wc) => (f, s, t, X, Y) => (t < 2 ? mul(PAL.woodDk, 0.95 + n2(X, Y, 3) * 0.1) : mul(wcRgb(wc), 0.92 + n2(X, Y, 5) * 0.08 - (t < 7 ? 0.08 * (1 - t / 7) : 0)));
+const WARTC = { frame: hex("#4a3424"), sky: hex("#7a98a8"), hill: hex("#5a6a3a"), white: hex("#e0e0d8"), rim: hex("#2a2a2a"), mirror: hex("#a8b8c0"), cork: hex("#8a6a44"), poster: ["#c8402f", "#3a6fb0", "#e8c04a", "#5a3a7a"].map(hex), shelf: hex("#6a4a2e"), knick: ["#b0a080", "#7a8a9a", "#9a5a4a"].map(hex) };
+function wartTexel(k, s, t, sw, v) {
+  const m = sw / 2; // the middle of the face
+  switch (k) {
+    case "painting": if (Math.abs(s - m) < 5 && t >= 13 && t < 24) return Math.abs(s - m) >= 4 || t < 14 || t >= 23 ? FURNC.gold : t < 18.5 - Math.sin(s * 0.8) ? mul(WARTC.sky, 0.9 + (s % 3) * 0.05) : t < 20 ? WARTC.hill : mul(WARTC.hill, 0.75); return null; // the catalogue's painting (sim/data-furniture.js): gilt-framed, bigger
+    case "wallclock": return wartTexel("clock", s, t, sw, v); // the catalogue's wall clock: a clock's face
+    case "picture": if (Math.abs(s - m) < 4 && t >= 15 && t < 23) return Math.abs(s - m) >= 3 || t < 16 || t >= 22 ? WARTC.frame : t < 19 - Math.sin(s) * 0.8 ? WARTC.sky : WARTC.hill; return null;
+    case "clock": { const dd = Math.hypot(s - m, t - 21); if (dd < 3) return dd >= 2.2 ? WARTC.rim : (Math.abs(s - m) < 0.6 && t >= 21 && t < 23) || (Math.abs(t - 21) < 0.6 && s >= m && s < m + 1.6) ? WARTC.rim : WARTC.white; return null; }
+    case "mirror": if (Math.abs(s - m) < 3 && t >= 13 && t < 26) return Math.abs(s - m) >= 2.4 || t < 14 || t >= 25 ? WARTC.frame : mul(WARTC.mirror, 0.9 + ((s + t) % 5) * 0.03); return null;
+    case "whiteboard": if (Math.abs(s - m) < 6 && t >= 14 && t < 23) return Math.abs(s - m) >= 5.4 || t < 14.6 || t >= 22.4 ? PAL.metalDk : (t | 0) % 3 === 0 && (s | 0) % 4 < 2 && Math.abs(s - m) < 4 ? WARTC.poster[1 + ((t | 0) % 2)] : WARTC.white; return null;
+    case "poster": if (Math.abs(s - m) < 3 && t >= 14 && t < 24) return t >= 21 ? WARTC.white : mul(WARTC.poster[v % 4], 0.85 + ((t | 0) % 3) * 0.06); return null;
+    case "crucifix": if ((Math.abs(s - m) < 0.8 && t >= 14 && t < 26) || (Math.abs(t - 22) < 0.8 && Math.abs(s - m) < 3)) return WARTC.frame; return null;
+    case "notice": if (Math.abs(s - m) < 5 && t >= 14 && t < 23) { if (Math.abs(s - m) >= 4.4 || t < 14.6 || t >= 22.4) return WARTC.frame; const cell = Math.floor((s - m + 5) / 3) * 3 + Math.floor((t - 14) / 3); return hash3(cell, v, 71) > 0.5 && (s | 0) % 3 && (t | 0) % 3 ? (hash3(cell, v, 72) > 0.7 ? WARTC.poster[2] : WARTC.white) : WARTC.cork; } return null;
+    case "shelf": if (Math.abs(s - m) < 6 && t >= 19 && t < 20.5) return WARTC.shelf; if (Math.abs(s - m) < 5.5 && t >= 20.5 && t < 23.5) { const i = Math.floor((s - m + 6) / 2.4); return hash3(i, v, 73) > 0.4 ? WARTC.knick[i % 3] : null; } return null;
+  }
+  return null;
 }
 // The whole map's ground at art resolution (one canvas; the view origin's top vertex at (Hv × 16, 0); in a straight
 // view the origin at (0, 0): ox, the art x of its left edge).
@@ -2030,6 +2112,17 @@ function lookOf(b, scene, x, y, cut, focus = null) {
         if (scene.comp[j] === bid && FLOORED.has(b.cells[j].k)) { const d = viewDir(dx, dy, r); o.n = d < 2 ? "u" : "v"; break; }
       }
       if (WALL_FURN.has(k)) o.n = o.n === "u" ? "v" : o.n === "v" ? "u" : null; // furniture runs along the wall it stands by (sim/data-furniture.js wall)
+    }
+    // The inside faces toward the camera (+u: east, +v: south) in the colour of the room beyond them (c.wc), and the
+    // wall art on the face toward its room (c.wart; sim/decor.js). The outside keeps the building's colour.
+    if (k === "wall") for (const [dx, dy] of VD) {
+      const nx = x + dx, ny = y + dy;
+      if (nx < 0 || ny < 0 || nx >= b.w || ny >= b.h) continue;
+      const d = viewDir(dx, dy, r), face = d === 0 ? "e" : d === 2 ? "s" : null;
+      if (!face) continue;
+      const nc = b.cells[ny * b.w + nx];
+      if (nc.wc && scene.comp[ny * b.w + nx] === bid) o[face === "e" ? "ie" : "is"] = nc.wc;
+      if (c.wart && VD[c.wart.d] && VD[c.wart.d][0] === dx && VD[c.wart.d][1] === dy) o.art = `${face}${c.wart.k}`;
     }
     // The cutaway: a cut building's near walls (the ones with its inside behind them) drop to stubs (behind: up the
     // screen, toward −u and −v; in a straight view toward −v).
