@@ -12,12 +12,19 @@
 //     world.js removeBase and conquest.js occupyPlayerBase / razePlayerBase call noteBaseLoss.
 //   - base.lows = { water, food, scrap, meds, ammo, heat }: the day each stock ran out (causesDaily), so a chain can
 //     say "no scrap since day 38". A key is dropped when the stock comes back.
+//   - a setback (the user's request 2026-10-25: "update 'Why did this happen?' so it explains more of what goes wrong
+//     in a run"): state.setbacks = [{ id, kind, day, tile, name, why, m }], newest first, at most MAX_SETBACKS. kind:
+//     SETBACK_KINDS: a vehicle left behind (walkers.js leavePlan's callers: noteVehiclesLeft), a team wiped out
+//     (parties.js wipeParty: explainWipe, then noteSetback), a vehicle lost to a group (groupworld.js vehicleDaily:
+//     noteVehicleLooted), a mission that failed (parties.js returnHome, envoys.js envoyHome / noteOverdue,
+//     convoyrecover.js: noteMissionFailed), a survivor who walked out (morale.js desert: noteDesertion). m: the start of
+//     the log line written with it (the "Why?" link on that line). An older save has none.
 // An older save's deaths have no chain: deathCause pieces one together from the memorial entry and the diary.
 //
 // For other modules (the run summary's "deaths by cause"): deathCause(state, survivorOrEntryOrId), deathsByCause(state),
-// lossesOf(state), causeKind(state, causeText).
+// lossesOf(state), setbacksOf(state), causeKind(state, causeText).
 import { foodIn } from "./foods.js"; // days of food
-import { day, baseById, factionById, atBase, residents, alive } from "./world.js";
+import { day, baseById, factionById, atBase, residents, alive, skill } from "./world.js";
 import { diaryEntries } from "./diary.js";
 import { fixtures, fixtureName, jobFor, fxDef, isBroken, isWaterFixture } from "./breakdowns.js";
 import { count, pieceKind } from "./buildings.js";
@@ -26,10 +33,15 @@ import { weatherOnDay } from "./weather.js";
 import { attitude } from "./factions.js";
 import { foodOutlook } from "./economy.js";
 import { totalRounds } from "./rounds.js"; // rounds by calibre ("ammo": every round there)
+import { tileLabel, carried, partyMembers } from "./parties.js"; // setbacks: places, a team's supplies (call-time only)
+import { vehicleLabel, driversFor, partyVehicles } from "./vehicles.js"; // setbacks: the vehicles left or taken
+import { crowdInfo } from "./morale.js"; // setbacks: a deserter's crowded base (call-time only)
 
 export const MAX_FACTORS = 4;
 export const MAX_LOSSES = 30;
 export const LOOK_BACK = 10; // days of diary a chain reads back
+export const MAX_SETBACKS = 30;
+export const MEDIC_SKILL = 3; // Medicine a team needs on someone not to be "a team with no medic"
 
 // The kinds of death, in the order the run summary lists them.
 export const CAUSE_KINDS = {
@@ -161,6 +173,7 @@ function defendersFactors(state, base, dying = null) {
   if (!here.length) return [F(`Nobody was at ${base.name}${away.length ? `: its ${plural(away.length, "person was", "people were")} away on a trip` : ""}.`)];
   out.push(F(away.length ? `${away.length} of the ${n} people living at ${base.name} ${away.length === 1 ? "was" : "were"} away on a trip; ${onGuard}.`
     : `${onGuard[0].toUpperCase()}${onGuard.slice(1)} (${plural(here.length, "person", "people")} there).`));
+  if (!guards && count(base, "watchtower") > 0) out.push(F(`The watchtower at ${base.name} was unmanned.`)); // 2026-10-25: a cheap factor the chains missed
   const ammo = totalRounds(base.stock);
   if (ammo < here.length * 3) out.push(F(`Ammo was short: ${ammo} left for ${plural(here.length, "defender")}.`));
   return out;
@@ -387,6 +400,11 @@ function teamSupplyFactors(state, p, today, what) {
   out.push(...teamLines(state, p, { id: -1 }, today, /\b(hordes?|stranded|broke down|out of fuel|ambush(ed)?|cancel(led)?|halted|cut off|lost|storm|blizzard|river|turned back|no water|no food|short of)\b/i));
   return out;
 }
+// A team with nobody who knows medicine (MEDIC_SKILL), the dead person counted (2026-10-25: a cheap factor the chains missed).
+function noMedic(state, p) {
+  const people = ((p && p.members) || []).map((id) => (state.survivors || []).find((x) => x.id === id)).filter(Boolean); // the dead on it too
+  return people.length && !people.some((x) => skill(x, "medicine") >= MEDIC_SKILL) ? F(`Nobody on the team knew medicine (Medicine ${MEDIC_SKILL}+).`) : null;
+}
 function teamFightFactors(state, p, s, today) {
   const out = [...fightFactors(state, p, null)];
   if (p) {
@@ -394,6 +412,8 @@ function teamFightFactors(state, p, s, today) {
     const weak = conditionsOf(s).filter((c) => CONDITIONS[c.key] && !CONDITIONS[c.key].mild).map((c) => CONDITIONS[c.key].name.toLowerCase());
     if (weak.length) out.push(F(`${first(s.name)} was already hurt or sick (${weak.join(", ")}).`));
     if (n && n <= 2) out.push(F(`The team was small: ${plural(n, "person", "people")}.`));
+    const medic = noMedic(state, p);
+    if (medic) out.push(medic);
     const trip = teamTrip(state, p, today);
     if (trip) out.push(trip);
   }
@@ -534,4 +554,159 @@ function pieceTogether(state, m) {
     f.push(...lines.map(quote));
   } catch { /* no diary */ }
   return finish(kind, head, f);
+}
+
+// ---------- setbacks: what else goes wrong in a run ----------
+// Each kept as { id, kind, day, tile, name, why: { k, h, f }, m }. Recorded only: read from the state and the diary, no
+// dice, nothing changed but state.setbacks (its own counter, state.setbackSeq: never world.js newId, which would move
+// every id handed out after it).
+export const SETBACK_KINDS = {
+  left: "Vehicle left behind", wiped: "Team wiped out", looted: "Vehicle lost to a group", failed: "Mission failed", gone: "Left the group",
+};
+export const setbacksOf = (state) => (state && state.setbacks) || [];
+// The log line just written (state.log[0]) names the setback: its start is kept to put the "Why?" link on it.
+function lastLine(state) {
+  const l = state.log && state.log[0];
+  return l && l.hour === state.hour ? String(l.text).slice(0, 48) : null;
+}
+// Records a setback. name: who or what it is about (a team, a vehicle, a person). Never throws.
+export function noteSetback(state, kind, name, tile, head, factors) {
+  if (!state) return null;
+  let why;
+  try { why = finish(kind, head, factors || []); } catch { why = { k: kind, h: head, f: [] }; }
+  state.setbackSeq = (state.setbackSeq || 0) + 1;
+  const rec = { id: state.setbackSeq, kind, day: day(state), tile: tile ?? null, name: String(name || ""), why, m: lastLine(state) };
+  const L = state.setbacks || (state.setbacks = []);
+  L.unshift(rec);
+  if (L.length > MAX_SETBACKS) L.length = MAX_SETBACKS;
+  return rec;
+}
+const cargoText = (c) => [...Object.entries((c && c.supplies) || {}).filter(([, q]) => q >= 1).map(([k, q]) => `${Math.floor(q)} ${k}`), ...((c && c.gear) || []).map((g) => g.name)];
+const listOf = (xs, max = 4) => (xs.length > max ? `${xs.slice(0, max).join(", ")} and more` : xs.length <= 1 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`);
+// The team's people who died on this trip (still on its list: parties.js partyMembers filters the living), and those
+// hurt or downed now.
+function teamLosses(state, p) {
+  const today = day(state);
+  const ids = (p && p.members) || [];
+  const dead = memorial(state).filter((m) => ids.includes(m.id) && m.died >= today - 1);
+  const hurt = p ? partyMembers(state, p).filter((x) => x.health < 40) : [];
+  return { dead, hurt };
+}
+// What the team was short of (the low-stock words of a base's: STOCK_WORD), as one factor.
+function teamShort(state, p) {
+  const short = [];
+  for (const k of ["water", "food", "meds", "ammo"]) if (carried(p, k) < 1) short.push(STOCK_WORD[k]);
+  return short.length ? F(`The team had no ${listOf(short)} left.`) : null;
+}
+function severeWeather(state, today) {
+  const w = weatherRun(state, today, ["storm", "blizzard", "heat", "snow"], 2);
+  return w ? F(`${w.name} since day ${w.d}.`, w.d) : null;
+}
+
+// A vehicle (or more) left on a tile with nobody to drive it (walkers.js shedSurplusVehicles, the raid's pick card).
+// vs: the vehicles left (their cargo already in them).
+export function noteVehiclesLeft(state, p, vs, tile) {
+  if (!state || !p || !vs || !vs.length) return null;
+  try {
+    const today = day(state);
+    const n = partyMembers(state, p).length;
+    const all = [...partyVehicles(state, p), ...vs];
+    const names = vs.map((v) => `the ${vehicleLabel(v)}`);
+    const out = [F(`${n === 1 ? "Only one" : `Only ${n}`} of the team ${n === 1 ? "was" : "were"} left to drive vehicles that need ${driversFor(all)} at the wheel (a car its driver, a bike its rider).`)];
+    const { dead, hurt } = teamLosses(state, p);
+    if (dead.length) out.push(F(`${listOf(dead.map((m) => first(m.name)))} died ${dead.length === 1 ? dead[0].cause : "on the trip"} (day ${dead[0].died}).`, dead[0].died));
+    if (hurt.length) out.push(F(`${listOf(hurt.map((x) => first(x.name)))} ${hurt.length === 1 ? "was" : "were"} badly hurt.`));
+    const cargo = vs.flatMap((v) => cargoText(v.cargo));
+    out.push(F(cargo.length ? `Left inside: ${listOf(cargo)}.` : "Nothing was left inside."));
+    out.push(...teamLines(state, p, { id: -1 }, today, /\b(fight|ambush(ed)?|hordes?|raid|bitten|hurt|wounded|retreat(ed)?|ran for it)\b/i, 1));
+    const rec = noteSetback(state, "left", listOf(names), tile, `${listOf(names)[0].toUpperCase()}${listOf(names).slice(1)} ${vs.length === 1 ? "was" : "were"} left at ${tileLabel(state, tile)} on day ${today}: nobody to drive.`, out);
+    if (rec) rec.v = vs.map((v) => v.id); // the vehicle markers' "Why?" (ui/ui.js)
+    return rec;
+  } catch { return null; }
+}
+
+// A whole team lost in the field (parties.js wipeParty): read before its supplies are moved. Returns the chain's
+// parts ({ head, factors }); the caller records it (noteSetback) after its log line.
+export function explainWipe(state, p, tile) {
+  const today = day(state);
+  const out = [];
+  try {
+    const { dead } = teamLosses(state, p);
+    const last = dead[dead.length - 1] || null; // the memorial is newest last
+    if (last) out.push(F(`The last of them, ${first(last.name)}, died ${last.cause}.`, last.died));
+    out.push(...fightFactors(state, p, null)); // the odds noted by noteFight this hour, or the battle on the map
+    const home = baseById(state, p.homeBaseId);
+    if (home && state.grid) out.push(F(`${tileLabel(state, tile)} is ${plural(state.grid.distance(home.tile, tile), "tile")} from ${home.name}.`));
+    const short = teamShort(state, p);
+    if (short) out.push(short);
+    const medic = noMedic(state, p);
+    if (medic) out.push(medic);
+    const wx = severeWeather(state, today);
+    if (wx) out.push(wx);
+    const trip = teamTrip(state, p, today);
+    if (trip) out.push(trip);
+  } catch { /* the wipe must go through */ }
+  const names = ((p && p.members) || []).map((id) => (memorial(state).find((m) => m.id === id) || {}).name).filter(Boolean).map(first);
+  return { head: `The whole team${names.length ? ` (${listOf(names)})` : ""} was lost near ${tileLabel(state, tile)} on day ${today}.`, name: names.length ? `the team (${listOf(names)})` : "a team", factors: out };
+}
+
+// One of your vehicles taken or stripped by a group (groupworld.js vehicleDaily), when you hear of it (the group known
+// or the tile in sight: the log line). f is the group that did it (named when you know it).
+// What a vehicle was like before a group took it (its cargo, its marker go with it): pass to noteVehicleLooted.
+export function lootedBefore(state, v) {
+  const mark = (state.markers || []).find((m) => m.key === `vehicle:${v.id}`);
+  const why = mark && /\(([^)]*)\)/.exec(mark.label);
+  return { tile: v.loc.tile, since: v.loc.since ?? null, cargo: cargoText(v.cargo), why: why ? why[1].replace(/, cargo inside$/, "") : null };
+}
+export function noteVehicleLooted(state, f, v, how, was) {
+  if (!state || !f || !v || !was) return null;
+  const { tile, since } = was;
+  try {
+    const today = day(state);
+    const who = f.known ? f.name : "A group you have not met";
+    const out = [F(`${who} ${how === "stripped" ? "stripped its racks" : "drove it off"}${f.known && f.bases && f.bases.length ? ` (a base of theirs ${plural(state.grid.distance(f.bases[0], tile), "tile")} away)` : ""}.`)];
+    if (since != null) out.push(F(`It had been left there ${plural(Math.max(0, Math.floor((state.hour - since) / 24)), "day")} (since day ${dayOf(since)}).`, dayOf(since)));
+    if (was.cargo.length) out.push(F(`With it: ${listOf(was.cargo)}.`));
+    if (was.why) out.push(F(`It had been left there: ${was.why}.`));
+    const head = `${who} ${how === "stripped" ? "stripped what was on" : "took"} the ${vehicleLabel(v)} at ${tileLabel(state, tile)} on day ${today}.`;
+    const rec = noteSetback(state, "looted", vehicleLabel(v), tile, head, out);
+    if (rec) { rec.f = f.id; rec.v = [v.id]; }
+    return rec;
+  } catch { return null; }
+}
+
+// A mission that failed: a team home with nothing, an envoy lost or turned away, a convoy not recovered. why: the main
+// reason (plain text); more: other factors.
+export function noteMissionFailed(state, name, tile, head, why, more = []) {
+  if (!state) return null;
+  return noteSetback(state, "failed", name, tile, `${head} (day ${day(state)})`, [why ? F(why) : null, ...more]);
+}
+// A team home from a search with nothing (parties.js returnHome): the main reason, read from the tile.
+export function searchFailedWhy(state, p) {
+  const t = p && state.tiles[p.dest];
+  if (!t) return "";
+  if (p.convoyFailed) return "";
+  if ((t.loot || 0) <= 0.05 && !t.loc) return `${tileLabel(state, p.dest)} was picked over: nothing was left to find.`;
+  if (t.loc && (t.loot || 0) <= 0.08) return `${tileLabel(state, p.dest)} had been searched clean before.`;
+  return "The team came out before it found anything (a fight, the Heat, or the dead).";
+}
+
+// A survivor who walked out (morale.js desert): the mood factors behind it.
+export function noteDesertion(state, base, s, opener = "") {
+  if (!state || !s) return null;
+  try {
+    const today = day(state);
+    const out = [];
+    if (opener) out.push(F(opener));
+    out.push(F(`${first(s.name)}'s mood was ${Math.round(s.mood ?? 0)} out of 100${s.moodWarn >= 2 ? " after two warnings" : ""}.`));
+    if (base) {
+      try { const ci = crowdInfo(state, base); if (ci.penalty > 0) out.push(F(`${base.name} was ${ci.level.name.toLowerCase()} (${ci.people} people in ${ci.beds} beds).`)); } catch { /* no crowding read */ }
+      if (base.rationing) out.push(F("Everyone was on short rations."));
+      if (base.hungerDays) out.push(F(`${base.name} had been out of food for ${plural(base.hungerDays, "day")}.`));
+      if (base.thirstDays) out.push(F(`${base.name} had been out of water for ${plural(base.thirstDays, "day")}.`));
+    }
+    out.push(...weakFactors(s));
+    out.push(...diaryLines(state, today - LOOK_BACK, today, (e) => hasRef(e, "s", s.id) && /grie|mourn|quarrel|rival|snapped|talks about leaving|packing/i.test(e.text) && !/walked away/.test(e.text), 2).map(quote));
+    return noteSetback(state, "gone", s.name, base ? base.tile : null, `${s.name} walked out${base ? ` of ${base.name}` : ""} on day ${today}.`, out);
+  } catch { return null; }
 }

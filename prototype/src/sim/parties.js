@@ -46,6 +46,7 @@ import { rescueArrive, captivesOf, contactAttack } from "./conflicts.js";
 import { handoverArrive } from "./ransom.js";
 import { assaultArrive } from "./conquest.js";
 import { occupyArrive, occupyProblem } from "./occupy.js"; // Occupy: move into an abandoned base
+import { explainWipe, noteSetback, noteMissionFailed, searchFailedWhy } from "./causes.js"; // "Why?": a team wiped out, a search that found nothing (recording only)
 import { convoyRecoverArrive, convoyProblem, convoyAt, recoveryArrive, recoveryLost } from "./convoyrecover.js"; // Recover convoy: your team, or a group's party (call-time only)
 import { abandonedAt } from "./groupworld.js"; // a base standing empty on a tile (Occupy instead of Build outpost there)
 import { BUILDINGS, CAMP } from "./buildings.js"; // a new outpost is a camp first, its step up (outpost_up) placed from its Build list
@@ -2583,6 +2584,7 @@ function returnHome(state, p) {
     const what = loot.length ? ` with ${loot.join(", ")}` : searched ? ": found nothing" : "";
     const fish = caught ? (caught.fish > 0.05 ? ` Caught ${r1(caught.fish)} days of food in fish, ${r1(fishHome)} brought into the stores.` : " Caught no fish.") : "";
     log(state, `${teamName(state, p)} ${p.movingIn ? `moved into ${home.name}` : "is home"}${what}.${stored ? ` Into ${home.name}'s stores: ${stored}.` : ""}${fish}${revealed > 0 ? ` ${revealed} new tiles mapped.` : " Map intel updated."}${newMarkers > 0 ? ` ${newMarkers} new marker${newMarkers === 1 ? "" : "s"} on the map.` : ""}`, "good");
+    if (p.owner === "player" && searched && !loot.length && !p.movingIn && !p.convoyFailed) noteMissionFailed(state, teamName(state, p), p.dest, `${teamName(state, p)} came home from ${tileLabel(state, p.dest)} with nothing`, searchFailedWhy(state, p)); // causes.js
   }
   removeParty(state, p);
 }
@@ -2637,6 +2639,7 @@ export function wipeParty(state, p) {
     // (carriers.js endBodies: a car nobody keeps). The dead's own kit is there already (world.js killSurvivor).
     // Recovered with the vehicle (Recover vehicle: recoverVehicle), or taken first: a group near it drives a car off
     // with its cargo, and strips the bikes' racks (groupworld.js vehicleDaily).
+    const wiped = p.owner === "player" && !unheardEnvoy(p) ? explainWipe(state, p, tile) : null; // causes.js: read before the supplies move
     const items = [];
     /** @type {Stock} */
     const sup = {};
@@ -2667,6 +2670,7 @@ export function wipeParty(state, p) {
     const what = vs.some(vehicleCargo) ? `${left[0].toUpperCase()}${left.slice(1)} with what it carried inside${items.length ? ", the rest on the ground there" : ground ? ", the dead's things on the ground there" : ""}` : `${ground ? "What it carried lies there" : "Nothing it carried is left"}${left ? `, and ${left}` : ""}`;
     if (quiet) envoyLostQuiet(state, p);
     else log(state, `A whole team was lost near ${tileLabel(state, tile)}. ${what}: marked on the map.`, "death");
+    if (wiped) { const rec = noteSetback(state, "wiped", wiped.name, tile, wiped.head, wiped.factors); if (rec && vs.length) rec.v = vs.map((x) => x.id); }
   }
   p.cargo = { supplies: {}, gear: [] };
   p.supplies = {};

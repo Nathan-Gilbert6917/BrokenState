@@ -81,6 +81,7 @@ import { pwarById, sueCard, demandCard, declareOnPlayer, offerTerms } from "./pl
 import { withTalk } from "./talk.js"; // the sending group's side waits for its envoy home
 import { negotiationCard } from "./ransom.js"; // a ransom's price, once the envoy is home
 import { keepAnswer, keepDelivered, keepHome } from "./loans.js"; // loaned people who want to stay
+import { noteMissionFailed } from "./causes.js"; // "Why?": an envoy turned away or lost (recording only)
 import { recoverProblem, recoverAnswer, recoverFee, sendRecovery, recoverDest } from "./convoyrecover.js"; // Recover our convoy (call-time only)
 
 export const ENVOY = {
@@ -488,6 +489,7 @@ export function envoyHome(state, p, home) {
   msg.homeText = text;
   ensureEnvoys(state).stats.returned++;
   log(state, `Our envoy is back at ${home.name} from ${nameOf(state, msg.to)}: ${text}`, msg.answer && msg.answer.yes ? "good" : "info");
+  if (!msg.answer || !msg.answer.yes) noteMissionFailed(state, `our envoy to ${nameOf(state, msg.to)}`, partyTile(p), `Our envoy to ${nameOf(state, msg.to)} came home without a yes`, !msg.answer ? `It never reached ${nameOf(state, msg.to)}.` : msg.undelivered ? msg.answer.text : msg.answer.why ? `${nameOf(state, msg.to)} said no: ${msg.answer.why}.` : msg.answer.text, [{ t: `The message: ${KINDS[msg.kind] ? KINDS[msg.kind].label.toLowerCase() : msg.kind}${msg.via === "radio" ? " (agreed on the radio, the goods carried)" : ""}.` }]); // causes.js
   p.envoy = null;
 }
 // Something left the envoy waiting for orders (a card, a fight's end): it carries on with its errand. True: handled.
@@ -860,6 +862,7 @@ function noteOverdue(state, m) {
   const dead = (m.quietDead || []).map((n) => String(n).split(" ")[0]);
   const who = dead.length <= 1 ? dead.join("") : `${dead.slice(0, -1).join(", ")} and ${dead[dead.length - 1]}`;
   log(state, `No word from our envoy to ${nameOf(state, m.to)}. ${m.status === "lost" ? `They should have been back long ago${m.quiet ? `: ${who || "the envoy"} ${dead.length > 1 ? "are" : "is"} given up for lost` : ""}.` : "They are long overdue."}`, "danger");
+  if (m.status === "lost") noteMissionFailed(state, `our envoy to ${nameOf(state, m.to)}`, m.base ?? null, `Our envoy to ${nameOf(state, m.to)} never came back`, `Lost on the road${m.delivered != null ? " on the way home, after the message was delivered" : " before the message got there"}${dead.length ? `: ${who} died out of radio reach` : ""}.`, [{ t: `It set out on day ${Math.floor(m.sent / 24) + 1} and was due back by day ${Math.floor((m.due ?? m.overdueAt) / 24) + 1}.`, d: Math.floor(m.sent / 24) + 1 }]); // causes.js
 }
 // parties.js wipeParty, world.js killSurvivor: your envoy (or one of it) died out of your radio coverage. Nothing is
 // said now; the message remembers it for its overdue hour (noteOverdue).
