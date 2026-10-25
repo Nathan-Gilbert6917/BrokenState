@@ -281,23 +281,24 @@ The user's request 2026-10-25 (the interiors epic #7): "All buildings should sca
   | Lodge | 18–28 × 12–18 | 2 | | Fire station | 20–30 × 14–22 | 1–2 |
   | Ranger station | 11–15 × 9–12 | 1 | | Offices | 20–40 × 15–30 a floor | 2–4, city 6–10 |
   | Apartment block | 25–50 × 15–25 | 3–6, city 6–10 | | Lab | 20–40 × 15–25 | 1–3 |
-  | Pharmacy | 12–20 × 14–24 | 1 | | Barracks | 30–60 × 10–15 | 2–3 |
-  | Gun store, pawn shop, liquor, bookstore | 10–18 × 12–22 | 1–2 | | Armory | 15–25 × 10–15 | 1 |
-  | Sporting goods, electronics, pet store, clothing | 12–26 × 12–25 | 1–2 | | Cell block | 30–50 × 15–25 | 2 |
-  | Radio shop | 12–16 × 13–18 | 1–2 | | Mess hall | 25–40 × 15–25 | 1 |
+  | Pharmacy | 12–20 × 14–24 | 1 | | Barracks (#25) | 40–50 × 15–17 | 2–3 |
+  | Gun store, pawn shop, liquor, bookstore | 10–18 × 12–22 | 1–2 | | Armory (#25) | 17–21 × 12–14 | 1 |
+  | Sporting goods, electronics, pet store, clothing | 12–26 × 12–25 | 1–2 | | Cell block (#25) | 40–48 × 24–27 | 2 |
+  | Radio shop | 12–16 × 13–18 | 1–2 | | Mess hall (#25) | 26–32 × 17–20 | 1 |
   | Garden center, hardware | 18–30 × 14–25 | 1 | | Control building | 15–25 × 12–18 | 1–3 |
   | Feed store | 15–25 × 12–20 | 1 | | Transmitter hut | 8–12 × 6–9 | 1 |
-  | Diner, restaurant, bar | 15–25 × 12–20 | 1–2 | | Terminal | 40–80 × 20–35 | 1–2 |
+  | Diner, restaurant, bar | 15–25 × 12–20 | 1–2 | | Terminal (#25) | 80–90 × 40–44 | 1–2 |
   | Pizza place | 12–18 × 12–18 | 1 | | Warehouse | 40–80 × 25–50 | 1 (tall) |
   | Gas station | 15–25 × 10–15 (and the forecourt) | 1 | | Factory | 50–100 × 30–60 | 1 |
-  | Truck stop | 25–40 × 15–25 | 1 | | Hangar | 40–60 × 30–50 | 1 |
-  | Bank | 15–30 × 15–25 | 1–2 | | Motor pool | 40–70 × 25–40 | 1 |
+  | Truck stop | 25–40 × 15–25 | 1 | | Hangar (#25) | 50–58 × 40–46 | 1 |
+  | Bank | 15–30 × 15–25 | 1–2 | | Motor pool (#25) | 40–48 × 26–30 | 1 |
   | Car dealership | 30–50 × 20–35 | 1–2 | | Auto shop | 15–25 × 12–20 | 1 |
   | Library | 25–40 × 20–30 | 1–2 | | Garage | 10–16 × 8–12 | 1 |
   | Vet | 15–20 × 12–18 | 1–2 | | Workshop, machine shed | 12–20 × 8–14 | 1 |
   | Motel | 40–70 × 10–14 | 2 | | Barn | 15–30 × 10–20 | 1 (a hayloft) |
   | Church | 14–24 × 22–36 (a long nave) | 1 | | Corner store, grocery, supermarket, department store (#22), school (#23), bunkers (#26) | their own | |
 
+  The rows marked #25 are #25's military plans (militarylayout.js, its `MIL_SIZE` now these rows, `planned`: each plan is drawn at its size, so `realScale` leaves it as it is, every floor built); so are its HQ 26–32 × 17–20 (2), aid station 17–21 × 13–15, gatehouse 8–10 × 6–7, control tower 9–11 × 9–11 (4–5), flight operations 24–28 × 15–17 (1–2) and a base's supply warehouse 40–48 × 25–29.
   Tuned from the issue's starting values: a cabin 7–9 (a 6 m cabin has no room for its bathroom), the radio shop a little bigger, the motel 10–14 deep (single-loaded rooms; deeper rooms would halve its rooms to the square metre), the church 14–24 × 22–36 and the fire station 20–30 × 14–22 (a small-town church and firehouse; the bigger ones read as cathedrals and city stations, with too few rooms for their floor).
 - **Layouts at that size** (`realScale`): the archetype's own plan stays what its dice made, at its own size (`natW × natH`). The building's footprint is the table's, and the plan goes over it:
   - **wings**: from `SCALE.TILE` (1.7) times the plan's width or depth, the plan is laid out nx × ny times, each copy at least its own size and never under `SCALE.SQUASH` (80%) of it, a 2-wide corridor between them (a hub: the doors join every wing to it), each copy turned left for right by the dice. One more wing each way is tried too, and the layout nearest today's rooms to the square metre is kept;
