@@ -1206,15 +1206,17 @@ export function removeCar(cells, W, r) {
 // touches keeps it (R.vehicleZone follows it: syncVehicleZone).
 export const DRIVE = { RANGE: 8, AP: 2, HEAT: 5, RADIUS: 10, MIL: 1.6 }; // MIL: × Heat and radius for an Army truck (vehicles.js miltruck)
 export const nearRect = (r, x, y) => Math.max(r.x - x, x - (r.x + r.w - 1), r.y - y, y - (r.y + r.h - 1), 0) <= 1;
-export function placeVehicle(cells, W, H, zone, kind, ok) {
+// type: the vehicle's type (vehicles.js VEHICLE_TYPES: "sedan", "suv", "hummer", "van", … ), on its cells (c.car.type) and the
+// rect, for the view to draw it as that kind of vehicle (ui/vehiclemodel.js); the footprint goes by `kind` as before.
+export function placeVehicle(cells, W, H, zone, kind, ok, type = null) {
   const mil = kind === "miltruck"; // an Army truck (vehicles.js miltruck): 2 × 5, drawn as the loot trucks are (body "m35")
   const L = mil ? 5 : kind === "truck" ? 4 : kind === "bike" ? 2 : 3; // a bike or a motorcycle: 2 x 1 cells
   const z = zone;
   const [x, y, ax] = z.side === "east" ? [z.x0 + 1, z.y0, "y"] : z.side === "north" ? [z.x0, z.y0, "x"] : z.side === "south" ? [z.x0, z.y0 + 1, "x"] : [z.x0, z.y0, "y"];
   const rect = placeCar(cells, W, H, x, y, ax, L, "vehicle", ok, 0, { ring: false, body: mil ? "m35" : kind, wide: kind === "bike" ? 1 : 2 });
   if (!rect) return null;
-  for (let yy = rect.y0; yy < rect.y0 + rect.h; yy++) for (let xx = rect.x0; xx < rect.x0 + rect.w; xx++) cells[yy * W + xx].f = "road";
-  return { x: rect.x0, y: rect.y0, w: rect.w, h: rect.h, ax, kind: mil ? "truck" : kind, ...(mil ? { mil: true } : {}) };
+  for (let yy = rect.y0; yy < rect.y0 + rect.h; yy++) for (let xx = rect.x0; xx < rect.x0 + rect.w; xx++) { const c = cells[yy * W + xx]; c.f = "road"; if (type) c.car.type = type; }
+  return { x: rect.x0, y: rect.y0, w: rect.w, h: rect.h, ax, kind: mil ? "truck" : kind, ...(mil ? { mil: true } : {}), ...(type ? { type } : {}) };
 }
 // The team's other vehicles on a field map (b.convoy: [{ vid, x, y, w, h, ax, kind, cond0, up, wear, blownUp }]): by the
 // west edge near the lead one, nearest rows first, never cutting anyone off from the map (b.reach).
@@ -1229,7 +1231,7 @@ function placeConvoy(b, party, others, W, H, inside) {
     for (const y of rows) {
       let vr = null;
       for (const x0 of [1, 4, 7]) {
-        vr = placeVehicle(b.cells, W, H, { x0, y0: y, side: "north" }, kind, (xx, yy) => inside(xx, yy) && b.cells[idx(xx, yy)].k === "open" && b.reach[idx(xx, yy)] && !unitAt(b, xx, yy));
+        vr = placeVehicle(b.cells, W, H, { x0, y0: y, side: "north" }, kind, (xx, yy) => inside(xx, yy) && b.cells[idx(xx, yy)].k === "open" && b.reach[idx(xx, yy)] && !unitAt(b, xx, yy), x.type);
         if (vr) break;
       }
       if (!vr) continue;
@@ -1271,7 +1273,7 @@ function placeRaidConvoy(map, party, others) {
     for (const [sx, sy] of spots) {
       const was = []; // the ground under it, put back if it comes up again (placeVehicle lays road under the car)
       for (let yy = sy - 1; yy <= sy + 5; yy++) for (let xx = sx - 1; xx <= sx + 5; xx++) if (inside(xx, yy)) was.push([idx(xx, yy), cells[idx(xx, yy)].f]);
-      const vr = placeVehicle(cells, W, H, { x0: sx, y0: sy, side: z.side }, kind, ok);
+      const vr = placeVehicle(cells, W, H, { x0: sx, y0: sy, side: z.side }, kind, ok, x.type);
       if (!vr) continue;
       const reach = flood(cells, from[0], from[1]);
       let under = 0;
@@ -1583,6 +1585,7 @@ const carUpTag = (u) => (u.plating || u.scrapPlate || u.glass || u.mesh || u.tur
 // state, party: the team's driver of it (vehicles.js teamDrivers) as v.wheelSid, the one at its wheel (wheelUnit).
 export function fitMapVehicle(b, pv, state = null, party = null) {
   const v = b.vehicle;
+  if (v && pv && pv.type) { v.type = pv.type; for (const [cx, cy] of vehicleCells(v)) { const c = b.cells[cy * b.w + cx]; if (c && c.car) c.car.type = pv.type; } } // its type (vehicles.js VEHICLE_TYPES), for the view to draw it as that kind (ui/vehiclemodel.js)
   if (v && pv && state && party && !isBike(pv)) { const d = teamDrivers(state, party).get(pv.id); if (d) v.wheelSid = d.id; }
   if (v && pv && Number.isFinite(pv.condition)) v.cond0 = pv.condition; // the condition it came in with: blasts that wear it past this blow it up (vehicleBlast)
   if (!v || !pv || isBike(pv)) return;
