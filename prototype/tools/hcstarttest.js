@@ -213,7 +213,7 @@ section("Who they were: three backgrounds, no two alike; one car between them wi
     check(back.every((g) => TR.gear && TR.gear[g.key]) && back.length >= TR.n[0] && back.length <= TR.n[1], `seed ${st.seed}: the things in the back are the owner's (${back.map((g) => g.key).join(", ")})`);
     check(p.cargo.gear.filter(isTentBag).length === m.length * TENTS.HARDCORE, `seed ${st.seed}: and a one-person tent bag for each of them`);
     const line = hc0.grabbed[hc0.grabbed.length - 1];
-    check(new RegExp(`^${owner.name.split(" ")[0]} got everyone into their ${v.name.toLowerCase()}`).test(line) && /tank \d+% full/.test(line) && /in the back/.test(line) && st.cards[0].text.includes(line), `seed ${st.seed}: the opening blurb says whose car and what is in the back`);
+    check(new RegExp(`^${owner.name.split(" ")[0]} got everyone into their ${v.name}`, "i").test(line) && /tank \d+% full/.test(line) && /in the back/.test(line) && st.cards[0].text.includes(line), `seed ${st.seed}: the opening blurb says whose car and what is in the back`);
     check(st.log.some((l) => /set off in .*: tank \d+% full/.test(l.text) && Math.floor(l.hour / 24) === 0), `seed ${st.seed}: day 1's log says they set off in it`);
     check(m.every((x) => new RegExp(`${x.name.split(" ")[0]} \\(${A[x.background].name.toLowerCase()}`).test(st.cards[0].text)), `seed ${st.seed}: the card names each one's background`);
     check(!p.burden || p.burden.band <= 2, `seed ${st.seed}: the car is not overloaded (load band ${p.burden && p.burden.band})`);

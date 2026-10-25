@@ -33,6 +33,11 @@
 //   null: whoever is free, Hardcore's car its owner first, then the crew in order; fleetDrivers). One wheel each: a
 //   survivor picked who is at another's swaps with its driver (ui/startgear.js fleet-driver). seatDrivers puts it on
 //   the vehicle (v.driver: their id), named on the Hardcore start's lines and in the planners' vehicle picker.
+// - roll (2026-10-25, user request: "have each additional vehicle have random gear set in the back with dice rolling
+//   like how the first vehicle and add a button to view and randomize it"): Hardcore, the dice of its back as rolled
+//   (null: the world's for the car, the seed's and the slot's for the rest: hardcore-start.js extraBacks), set anew by
+//   the screen's 🎲 Reroll (ui/startgear.js fleet-reroll); what they put in it is noted on the world's slot as
+//   f.diceTrunk (the car's on its owner, s.diceTrunk), shown by 👁 Back (fleetViewer).
 import { VEHICLE_TYPES, RIDER_KG } from "./vehicles.js";
 import { wornLoad } from "./load.js";
 import { sanitizeStartVehicle, trunkKg } from "./startgear.js";
@@ -69,7 +74,7 @@ export const fleetMode = (state) => (isCustomRun(state) ? "custom" : state && st
  * pickup when none; Hardcore's first: null, as the dice roll it). Each its limit, its load (null: as rolled) and empty
  * (no vehicle in the slot). None given: the initial vehicle alone.
  * @param {any} raw @param {string} mode "normal" | "hardcore" | "custom" @param {number} [max]
- * @returns {{ type: string | null, limit: number, load: { items: any[], supplies: Record<string, number> } | null, empty: boolean, driver: number | null }[]}
+ * @returns {{ type: string | null, limit: number, load: { items: any[], supplies: Record<string, number> } | null, empty: boolean, driver: number | null, roll: number | null }[]}
  */
 export function cleanFleet(raw, mode, max = START_FLEET.COUNT.MAX) {
   const list = Array.isArray(raw) ? raw : [];
@@ -81,7 +86,7 @@ export function cleanFleet(raw, mode, max = START_FLEET.COUNT.MAX) {
     const r = list[i] && typeof list[i] === "object" ? list[i] : {};
     const type = kinds.includes(r.type) ? r.type : mode === "hardcore" && i === 0 ? null : START_FLEET.KIND;
     const empty = !!r.empty;
-    out.push({ type, limit: clampLimit(r.limit), load: r.load && !empty ? sanitizeStartVehicle(r.load, custom) : null, empty, driver: cleanDriver(r.driver, max) });
+    out.push({ type, limit: clampLimit(r.limit), load: r.load && !empty ? sanitizeStartVehicle(r.load, custom) : null, empty, driver: cleanDriver(r.driver, max), roll: cleanRoll(r.roll) });
   }
   return out;
 }
@@ -90,7 +95,7 @@ export function cleanFleet(raw, mode, max = START_FLEET.COUNT.MAX) {
 export function fitFleet(fleet, n, mode) {
   const want = Math.max(START_FLEET.COUNT.MIN, Math.min(START_FLEET.COUNT.MAX, Math.round(n) || START_FLEET.COUNT.MIN));
   const list = cleanFleet(fleet, mode, want);
-  while (list.length < want) list.push({ type: START_FLEET.KIND, limit: START_FLEET.LIMIT, load: null, empty: true, driver: null });
+  while (list.length < want) list.push({ type: START_FLEET.KIND, limit: START_FLEET.LIMIT, load: null, empty: true, driver: null, roll: null });
   return list;
 }
 /** The slot's vehicle is the one the riders sit in (Hardcore: the first vehicle there is). @param {any} state @param {number} i */
@@ -100,6 +105,13 @@ export function cleanDriver(v, max = START_FLEET.COUNT.MAX) {
   const n = Number(v);
   return v != null && v !== "" && Number.isInteger(n) && n >= 0 && n < max ? n : null;
 }
+/** A back's dice made safe: a seed for rng.js (1 up to 2147483646), else null (as the world rolls it). @param {any} v */
+export function cleanRoll(v) {
+  const n = Number(v);
+  return v != null && v !== "" && Number.isInteger(n) && n >= 1 && n <= 2147483646 ? n : null;
+}
+/** A new back's dice (the screen's 🎲 Reroll). */
+export const newRoll = () => 1 + Math.floor(Math.random() * 2147483645);
 /** @param {string} mode */
 export const defaultFleet = (mode) => cleanFleet(null, mode);
 // The Vehicles box: the first n kept (at most max, the starting survivors), new ones a pickup with the default limit, as rolled.

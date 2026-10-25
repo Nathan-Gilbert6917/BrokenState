@@ -103,6 +103,11 @@ Rules:
 - Not under the governor. UI only, no AI side.
 - Modules: [staging askLayout / layoutAsks / layoutDone / buildMapChoice, ui/buildmap (buildMapAlerts, buildMapRow, BUILDMAP_ACTIONS, buildMapKey, selectedBase), ui/alerts SECTIONS.layout, ui/keymap base.buildmap]; test `tools/buildmapbtntest.js`.
 
+### The No base yet card
+- The user's request 2026-10-25: "When no base is established update the NoBase Yet to align with the current building a camp with the campfire needs etc".
+- The team panel's card with no base (ui/hardcore.js campStatusCard) is the two steps as they are built now: **1. Camp**: the camp fire's wood and stone (CAMP.fireCost, carried: staging.js fireCostProblem), ticked against what the team carries; short, its line says so first and points at Cut wood and Gather stone (the Land orders), then Establish base. **2. Shelter**: the Shelter shack placed from the camp's Build list, its scrap, building materials and 200 wood brought in, then its work-hours. No more "nothing carried".
+- The Bases tab's card (firstHubCard) has a Camp fire row (n / 20 wood · n / 8 stone, ✓ carried); the opening card's steps and the Hardcore help say the same (hardcore-start, ui/ui.js helpText; staging STAGING.FIRE, STAGING.HARDCORE.name). `tools/campcardtest.js`.
+
 ## Buildings and construction queue
 What a base builds and the queue its builders work through.
 - Plots by base size, demolition refunds, water barrels, storage crates and the storage ladder (storage box, shed, warehouse; the Armory) [buildings].

@@ -4,7 +4,7 @@ Detail for section 3 of [docs/agents/features.md](../agents/features.md) (what r
 
 `[name]` is `prototype/src/sim/name.js`; `ui/name` is `prototype/src/ui/name.js`.
 
-Contents: [No idle workers](#no-idle-workers) · [Farming: placed crop plots](#farming-placed-crop-plots) · [Winter's lean months](#winters-lean-months) · [Woodcutting and heating](#woodcutting-and-heating) · [Stone](#stone) · [The land order box: hours and expected yield](#the-land-order-box-hours-and-expected-yield) · [Teamwork on job trips](#teamwork-on-job-trips) · [Tools as prerequisites](#tools-as-prerequisites) · [Crafting stacks](#crafting-stacks) · [Building materials and metal sheets](#building-materials-and-metal-sheets) · [The power grid](#the-power-grid) · [Hauling](#hauling) · [Electronics recipes](#electronics-recipes) · [More of the grid: electronics builds](#more-of-the-grid-electronics-builds) · [The governor builds the grid](#the-governor-builds-the-grid)
+Contents: [No idle workers](#no-idle-workers) · [Farming: placed crop plots](#farming-placed-crop-plots) · [Winter's lean months](#winters-lean-months) · [Woodcutting and heating](#woodcutting-and-heating) · [Stone](#stone) · [The land order box: hours and expected yield](#the-land-order-box-hours-and-expected-yield) · [A team at a gathering order on the map](#a-team-at-a-gathering-order-on-the-map) · [Teamwork on job trips](#teamwork-on-job-trips) · [Tools as prerequisites](#tools-as-prerequisites) · [Crafting stacks](#crafting-stacks) · [Building materials and metal sheets](#building-materials-and-metal-sheets) · [The power grid](#the-power-grid) · [Hauling](#hauling) · [Electronics recipes](#electronics-recipes) · [More of the grid: electronics builds](#more-of-the-grid-electronics-builds) · [The governor builds the grid](#the-governor-builds-the-grid)
 
 ## No idle workers
 Anyone whose job has no work helps elsewhere and keeps their role.
@@ -93,6 +93,16 @@ The user's request 2026-10-23: "For gathering LAND orders for Forage, Hunt, Fish
 - **How much**: Bring back at most (forage, hunt, fish, wood: the old how-much box's slider, Max, Packs only), sent as the order's qty only below Max; what of the expected haul would go in the arms.
 - **The order**: the action picked runs again with d.hours, d.qty and d.asked (main.js "xp-order", "tc-do", ctxhunt; ui/teamctx.js runTeamAction puts them on the item's land job, queued after a move too).
 - Modules: [landest, stone expectStone, ui/landorder, ui/teamctx landPick, ui/expedition landBlock, ui/carry askQty, main]; test `tools/landordertest.js`.
+
+## A team at a gathering order on the map
+A team of yours at Cut wood, Gather stone, Hunt, Fish, Forage or Fetch water is drawn at the job, with a ring filling over it.
+
+The user's request 2026-10-25: "Add progress bar circle like how it is for base orders when doing a order to gather as a team. Add animations to the group sprites when being sent out to do gathering orders."
+- **The ring**: the base workers' work ring (ui/workermap.js workRing, RING by job; stone's grey added) over the team's figures, filled by the order's share done (orders.js orderStatus pct: its hours, to the minute), in place of the work badge. An open-ended order (no hours) draws no ring.
+- **The figures** (ui/render.js gatherJob, drawGatherers): on foot, its people (up to GATHER_FIGS, 3) in the job's kit in place of the party's walking piece; with a vehicle, the vehicle parked and the figures beside it. Cut wood and Gather stone swing an axe or a pick side on, the two outer ones facing each other; Fish works the rod and Fetch water fills buckets at the water's edge (moved toward the water neighbour, facing it: waterWay); Hunt and Forage roam round the spot along an oval. Animations off: a held frame.
+- **Work poses** (ui/mapfigures.js mapWorkerCanvas with `work`, WORK_JOBS): `chop` (both hands on the haft, lifted slowly and swung down fast; an axe's blade or a pick's crossbar), `cast` (the rod held out over the water, its tip dipping), the water carrier bending down and up (lean); the roaming jobs keep the walk. A "stone" worker: a pick over the shoulder and a sack. Cached per frame like every map piece.
+- Not drawn for any other task (a Quick look, a repair, a rest), nor the snares.
+- Modules: [ui/render, ui/mapfigures, ui/workermap, orders]; test `tools/mapfigurestest.js`.
 
 ## Teamwork on job trips
 Workers on the same job and tile are a crew sharing load, events, battles and loot.
