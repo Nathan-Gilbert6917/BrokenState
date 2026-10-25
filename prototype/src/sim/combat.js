@@ -7387,9 +7387,9 @@ export function createRaid(state, setup) {
   // reach floods from the first stairwell (a street of houses: from every one). b.cells / b.reach / b.losCache alias
   // the active floor's (setFloor).
   if (pick && map.floors && map.floors.length > 1) {
-    // Each house's upper floor on a street is its own, void between them.
+    // Each house's upper floor on a street is its own, void between them (a compound's buildings likewise: compound.js).
     const upReach = (F) => { const r = new Uint8Array(W * H); for (const [sx, sy] of map.stairs) if (CELL[F.cells[sy * W + sx].k].walk && !r[sy * W + sx]) { const f = flood(F.cells, sx, sy); for (let j = 0; j < r.length; j++) r[j] |= f[j]; } return r; };
-    b.floors = map.floors.map((F, i) => ({ cells: F.cells, reach: i === 0 ? map.reach : map.street ? upReach(F) : flood(F.cells, map.stairs[0][0], map.stairs[0][1]), losCache: i === 0 ? b.losCache : null, name: F.name }));
+    b.floors = map.floors.map((F, i) => ({ cells: F.cells, reach: i === 0 ? map.reach : map.street || map.compound ? upReach(F) : flood(F.cells, map.stairs[0][0], map.stairs[0][1]), losCache: i === 0 ? b.losCache : null, name: F.name }));
     b.floor = 0;
     b.raid.storeys = map.floors.length;
     b.raid.stairs = map.stairs.map((s) => s.slice()); // the cells that change floor: each stair run's top step
