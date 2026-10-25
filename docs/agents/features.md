@@ -277,6 +277,7 @@ Detail: [ui.md](../features/ui.md).
 - **The whole game by pad**: SVG maps take the ring, a pointer for charts and the minimap, map picks and the base build map by cursor [ui/padnav, main, ui/combat, ui/poimap] `tools/padmaptest.cjs`. [details](../features/ui.md#the-whole-game-by-pad)
 - **Key hints by device**: hints and tooltips worded for mouse, finger or pad [ui/hints, ui/inputmode]. [details](../features/ui.md#key-hints-by-device)
 - **Seasonal trees**: autumn colours, bare snowy trees and bushes in winter, on every map [ui/seasontrees, ui/isoview, ui/terraindeco, ui/render] `tools/seasontreestest.js`. [details](../features/ui.md#seasonal-trees)
+- **Interior decor**: rugs, clutter, wall art, painted rooms, floors by room and light fixtures in raid buildings; cosmetic, own dice [decor, buildingmaps, floorfolk, ui/isoview] `tools/decortest.js`. [details](../features/ui.md#interior-decor)
 - **Rocks and boulders**: grey tapering stone heaps; rocks knee high (half cover), boulders head high (full cover) on the battle, raid and base maps [ui/isoview]. [details](../features/ui.md#rocks-and-boulders)
 - **Snow on buildings**: in winter, snow on roofs by its depth and on walls, fences, tents, cars and props in the open [ui/roofsnow, ui/isoview] `tools/roofsnowtest.js`. [details](../features/ui.md#snow-on-buildings)
 - **Audio**: adaptive music director and synth score, ambience, SFX for guns, melee, zombies, doors, vehicles [ui/music*, ui/amb*, ui/sfx*].

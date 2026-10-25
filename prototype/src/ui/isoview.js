@@ -5,8 +5,9 @@
 // floor; a watchtower is two) LV px up. Everything is painted as pixel art at that size (procedural, in the State
 // Map's gritty palette), cached, and drawn scaled up nearest-neighbour, so it stays crisp at any zoom:
 //   - the ground of the whole map is one small canvas (floors textured by surface: grass, field, dirt, gravel,
-//     asphalt, floorboards, concrete, rubble, water, mud and blood by the hive), rebuilt only when a floor changes or
-//     the view turns;
+//     asphalt, floorboards, concrete, rubble, water, mud and blood by the hive; a building's rooms by their floor and
+//     their decor, sim/decor.js: rugs, clutter, the pools of its lights), rebuilt only when a floor changes or the view
+//     turns;
 //   - fog of war is one more (tiles none of your people see, dark and grey), rebuilt when what they see changes;
 //   - every block (walls, fences, cars, trees, walkways, towers, barricades...) is a small sprite cached by its look.
 // Each frame: the ground and the fog (two images), the highlights on the ground (move range, deploy cells, evac

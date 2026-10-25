@@ -51,6 +51,20 @@ When a raid has a street and buildings to go into, a card asks which before the 
 Raids go into generated buildings and neighbourhood streets to search, past locks, keys and safes.
 - Procedurally generated buildings, containers and searches; raid loot carried by hand [buildingmaps, search, raidloot]. Raid planning (entry side, scout, wait for night) [raidplan]; locks, keys and safes [locks, gunsafes]. A site's building is picked before the map (see above).
 - **Neighbourhood POI**: a street of 3–5 two-storey houses on one map (rows facing a road, yards, fences, parked cars to search; ways out at both ends and the back gardens). Each house's containers are kept apart in the POI's ledger with the one pool falling across them. Headless it is one POI searched a house at a time [buildingmaps `streetMap`, `streetHouses`, `STREET`, `streetIntro`; combat `createRaid` (upper floors' reach from every stairwell); poicont `poiHouses`; scavenge `searchHour` / `afterRaid`].
+- **Room floors** (sim/buildingmaps.js `ROLES` fl, set on `c.fl` by `addRoom`; a franchise's front room by its `plan.fl`; drawn by ui/isoview.js `floorColor`; footsteps by ui/sfx-steps.js `HARD_FL`). Since 2026-10-25 (issue #13, the decor layer: see [ui.md](ui.md#interior-decor)) each room has a floor that suits it; the floor never changes a rule:
+
+  | fl | Look | Rooms | Steps |
+  |---|---|---|---|
+  | hardwood | narrow warm boards, staggered joints | living, dining, hall, bedroom, apartment, day room | wood |
+  | plank (and the old wood) | wide floorboards | great room, bunk room, gun room, pantry, tack room, hayloft | wood |
+  | lino | a smooth sheet, a faint fleck | kitchen, break room, mess hall, corridor, ward, exam room, nurse's office, classroom | hard |
+  | checker | 4 px black and white checks | bathroom, cafeteria | hard |
+  | tile | 8 px tiles with grout | entry hall, lobby, front desk, sales floor, restroom, dispensary, pharmacy, locker room, dorm, terminal, control room, lab | hard |
+  | carpet | soft, mottled | office, vestry, motel room, library stacks | carpet |
+  | conc | bare concrete | storage, stockroom, garage, armory, evidence room, cells, parts room, warehouse, factory, motor pool, hangar, workshop | hard |
+  | rubber | studded mats | gym | carpet |
+  | steel | diamond plate | service bays | hard |
+  | dirt | a barn's earth and straw | barn floor | dirt |
 - **Makeshift picks** (bent wire, `GEAR.makeshiftpick`, a stack of up to 10; `CRAFTS.makeshiftpick` three a scrap at a base or in the field). Test `tools/makeshiftpicktest.js`.
   - Pick without the crowbar, like lockpicks from a lower base, as quiet; one snaps off the stack half the time an attempt.
   - A safe, a steel security door and the gun safes are beyond them. The crowbar's picks are used first.
