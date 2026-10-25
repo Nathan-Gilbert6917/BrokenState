@@ -40,6 +40,11 @@ import { GEAR, LOCATIONS } from "../src/sim/data.js";
 import { CRAFT_TOOLS } from "../src/sim/data-tools.js";
 import { siteDeadMix } from "../src/sim/deadsoldiers.js";
 import { archetypeOf } from "../src/sim/hardcore-start.js";
+import { createBattle, registerCombatHandler, autoPlayerTurn, runEnemyPhase, combatAct, setFloor } from "../src/sim/combat.js"; // the bunker raided (issue #26)
+import { raidEnemies } from "../src/sim/scavenge.js";
+import { gensetOptions } from "../src/sim/indoorlight.js";
+import { stampGrid, itemsOf } from "../src/sim/basemap.js"; // the captured bunker's base map: its own yard
+import { storageOf } from "../src/sim/basestorage.js";
 
 let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
@@ -183,6 +188,40 @@ section("3. The chain: the reveal, the hive, the hoard, the message, the bunker"
   check(card && card.title === "Reunited" && card.choices.length === 3 && /Join them/.test(card.choices[0].label) && /Take command/.test(card.choices[1].label) && /Not yet/.test(card.choices[2].label), "the Reunited card with its three choices");
   check(rem.known && rem.goodwill >= 70 && s.knowledge[C.nextTile] && s.markers.some((x) => x.tile === C.nextTile && /remnant/.test(x.label)), "the remnant known and allied, the bunker marked");
   check(siteKnown(s, C.nextTile), "the bunker a known, raidable site");
+  // Raid it (issue #26: the bunker is a building now, bunkerlayout.js): its own map, three levels down, the remnant
+  // inside as soldiers of a third side (their own people), the generator lighting it, a few turns played.
+  {
+    registerCombatHandler("crashtest", () => {});
+    const groups = raidEnemies(s, C.nextTile);
+    const b = createBattle(s, { mode: "raid", tile: C.nextTile, partyId: p.id, canRetreat: true, ambush: null, handler: "crashtest", enemy: { kind: "mixed", count: 1, power: 3, groups }, raid: { heat0: 5 } });
+    s.combat = b;
+    const names = (b.raid.areas || []).map((a) => a.name);
+    check(b.raid.interior && b.raid.interior.key === "mountainbunker" && b.floors && b.floors.length === 3 && b.floors[0].name === "Entrance level" && b.floors[2].name === "Level \u22122", `the bunker's own map, three levels down (${b.raid.interior && b.raid.interior.key}, ${b.floors && b.floors.map((F) => F.name).join(" / ")})`);
+    check(["Blast door hall", "Decontamination airlock", "Command centre", "Barracks gallery", "Armory", "Generator and plant room", "Escape hatch"].every((n) => names.includes(n)), "its signature rooms");
+    const third = b.units.filter((u) => u.side === "third" && u.team === "military" && u.factionId === rem.id);
+    check(third.length >= Math.min(rem.people.length, 6) && third.every((u) => !!u.who), `the remnant inside: ${third.length} of their own people (${rem.people.length}), soldiers of a third side`);
+    const inRooms = third.filter((u) => b.raid.areas.some((a) => (a.bunker === "barracks" || a.bunker === "command") && (a.f || 0) === (u.f || 0) && u.x > a.x0 && u.x < a.x0 + a.w - 1 && u.y > a.y0 && u.y < a.y0 + a.h - 1));
+    check(inRooms.length === third.length, `in the barracks gallery and the command centre (${inRooms.length} of ${third.length})`);
+    // The generator: find it, stand a unit by it, start it: every room lit.
+    const me = b.units.find((u) => u.side === "player");
+    let gen = null;
+    for (let f = 0; f < b.floors.length && !gen; f++) { const cs = b.floors[f].cells; const i = cs.findIndex((c) => c.k === "genset"); if (i >= 0) gen = { f, x: i % b.w, y: Math.floor(i / b.w) }; }
+    check(!!gen, "a genset in the generator room");
+    if (gen && me) {
+      setFloor(b, gen.f); me.f = gen.f; me.away = false;
+      const spot = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1], [2, 0], [0, 2]].map(([dx, dy]) => [gen.x + dx, gen.y + dy]).find(([x, y]) => b.cells[y * b.w + x].k === "open" && gensetOptions(b, { x, y }).length);
+      if (spot) { me.x = spot[0]; me.y = spot[1]; }
+      const dark = b.raid.areas.filter((a) => a.bunker).every((a) => a.dark && !a.on);
+      const heat0 = b.raid.heat;
+      me.ap = Math.max(me.ap, 2);
+      const err = combatAct(s, { type: "genset", unit: me.id });
+      check(dark && !err && b.raid.genOn && b.raid.areas.filter((a) => a.bunker).every((a) => a.on) && b.raid.heat > heat0, `dark until the genset is started, then every room lit, loud (${err || `Heat ${heat0} → ${b.raid.heat}`})`);
+    }
+    let crashed = null;
+    try { for (let i = 0; i < 4 && !b.over; i++) { autoPlayerTurn(s); runEnemyPhase(s); } } catch (e) { crashed = e; console.log(e.stack); }
+    check(!crashed, "turns played in the bunker");
+    s.combat = null;
+  }
   // 3. Not yet: still allied, the choice comes again on the next arrival.
   const notYet = card.choices[2].resolve(s);
   s.cards = s.cards.filter((c) => c !== card);
@@ -225,6 +264,12 @@ section("3. The chain: the reveal, the hive, the hoard, the message, the bunker"
     cmd.cards = [];
     tickHour(cmd);
     check(!cmd.gameOver, "an hour passes at the bunker");
+    // The bunker as your base (issue #26): the base map keeps its own yard (basemap.js: the raid's bunker map is the site's,
+    // the base's map is the base's), and its storage works.
+    let err = null;
+    try { stampGrid(cmd, base); itemsOf(cmd, base); } catch (e) { err = e; console.log(e.stack); }
+    const st = storageOf(cmd, base);
+    check(!err && !!st, `the captured bunker's base map and storage (${st ? Object.keys(st).slice(0, 4).join(", ") : "none"})`);
   }
 }
 

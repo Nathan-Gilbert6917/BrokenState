@@ -95,7 +95,7 @@ const GROUPS = [
   ["shoot", "cab", "overwatch", "reload", "ammocycle", "getshells", "drawside", "drawmelee", "drawmain", "firemode", "unjam", "suppress", "launch", "glround", "glreload", "melee", "shoveFoe", "pull", "subdue", "taser", "reloadTaser", "pepper", "throw", "throwspear", "pickspear", "hunker"],
   ["meds", "heal", "revive", "selfStab", "dragAlly", "dropVehicle", "drag", "tie", "finish", "execute", "plate"],
   ["search", "searchBody", "quick", "ground", "handover", "dropCarried", "dropAllCarried", "pickCarried", "crush", "doubletap", "pickup", "stowbody"],
-  ["peek", "close", "brace", "climb", "checkwindow", "openwindow", "closewindow", "breakwindow", "shove", "liftPiece", "setPiece", "stowPiece", "boardup", "teardown", "cutwire", "strike", "slashtent", "lights", "cellswitch", "light", "nvg", "visor"], // doors, windows (sim/windows.js), barricades (sim/barricade.js), wire (sim/wire.js) and lights
+  ["peek", "close", "brace", "climb", "checkwindow", "openwindow", "closewindow", "breakwindow", "shove", "liftPiece", "setPiece", "stowPiece", "boardup", "teardown", "cutwire", "strike", "slashtent", "lights", "genset", "cellswitch", "light", "nvg", "visor"], // doors, windows (sim/windows.js), barricades (sim/barricade.js), wire (sim/wire.js) and lights
   ["vehicle", "board", "disembark", "drive", "turn", "gunner", "pullOut"],
   ["callout", "allyorder"], // the rest: Call out (sim/parley.js), Ally orders (sim/allyorders.js), a rescue's ropes and locks, the siege kit, Surrender, Take them alive
   ["inventory", "cones"],

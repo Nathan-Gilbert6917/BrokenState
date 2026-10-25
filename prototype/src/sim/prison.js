@@ -2,7 +2,7 @@
 // Prison complexes (the user's request 2026-10-25, issue #31 of the interiors epic #7: "add … prisons max of 400x400").
 // A prison site (data.js LOCATIONS prison) and a county jail (the jail POI, pois.js jailExtra: one in a suburb ring of
 // each town) open one map of many buildings instead of a pick of one (buildingmaps.js buildingMap → prisonMap), laid out
-// through complexmap.js (the multi-building map shared with the campus, #28) and furnished by prisonlayout.js. New saves
+// through compound.js (the multi-building map shared with the malls, #30, and the campus, #28) and furnished by prisonlayout.js. New saves
 // only: an older save (worldcfg.js legacyPrisons, no state.prisonV) keeps the prison's one-building pick and no jails.
 //
 // The kinds (PRISON.KINDS; a prison site is a state prison or a maximum-security penitentiary by its own dice):
@@ -46,7 +46,7 @@ import { Rng } from "./rng.js";
 import { hash01 } from "./skills.js";
 import { assemble, BMAP, DOOR_KINDS } from "./buildingmaps.js"; // call-time only (buildingmaps.js builds the complexes through here)
 import { placeCar, placeVehicle } from "./combat.js";
-import { complexGrid, stampBuilding, connectBuildings, guard, finishComplex } from "./complexmap.js";
+import { compoundGrid, placeBuilding, link, guard, parkingLot, compoundResult, compoundVehicle, orient } from "./compound.js"; // the multi-building map shared with #28 and #30
 
 export const PRISON = {
   // The map's cap (cells a side). #24's big-map engine work raises it to 400 (the user's "max of 400x400").
@@ -62,6 +62,7 @@ export const PRISON = {
   HOLES: [0, 2],              // holes in a state prison's fence (where some got out): each through both lines
   DENSE: 4,                   // the housing units' rooms weigh this much more for the dead (placeInterior)
   DEAD: { jail: 1.6, state: 5, max: 5.5 }, // the dead: the site's roster × this (map.deadScale)
+  HOLD: { chance: 0.4, n: [3, 6], power: 3, guns: ["shiv", "shiv", "baton", "baton", "shotgun", "pistol", "machete"] }, // a prison gang holding a unit (prisonHolders)
   POSTS: 0.7,                 // a guard's body at a post (a tower, a picket, the gatehouse, central control)
   RING: 14,                   // cells of open ground round the perimeter to the map's edge (the perimeter road in it)
   FRONT: 40,                  // the strip in front (south) of the perimeter: the administration, the armory, the parking
@@ -103,9 +104,9 @@ export function housingUnit(rng, o) {
 }
 // The main corridor (the telephone pole): one long hall, 3 wide.
 const spine = (len) => spec(5, len, { role: "mainhall", name: "Main corridor", entry: true });
-// Central control: the control room, its lobby, the shift office.
+// Central control: the control room, its lobby, receiving and the inmates' property, the shift office.
 function centralControl(rng) {
-  return spec(rng.int(18, 22), rng.int(11, 13), { split: "x", parts: leaves([["*", { role: "pcontrol", prison: "control", panels: 4, name: "Central control" }], [6, { role: "lobby", entry: true, name: "Control lobby" }], ["*", { role: "office", prison: "office", name: "Shift office" }]]) });
+  return spec(rng.int(24, 28), rng.int(11, 13), { split: "x", parts: leaves([["*", { role: "pcontrol", prison: "control", panels: 4, name: "Central control" }], [6, { role: "lobby", entry: true, name: "Control lobby" }], [7, { role: "property", prison: "property", name: "Receiving and property", lock: ["door", 0.4] }], ["*", { role: "office", prison: "office", name: "Shift office" }]]) });
 }
 // The chow hall: the hall, the kitchen and the food warehouse behind.
 export function chowHall(rng) {
@@ -128,14 +129,18 @@ const armory = (rng) => spec(rng.int(16, 20), 12, { split: "y", parts: [[3, { ro
 // The gatehouse straddles the two fences: its front door outside, its back door inside. bh: the depth it must span.
 const gatehouse = (rng, bh) => spec(rng.int(12, 14), bh, { split: "y", parts: [["*", { role: "gatepost", prison: "gate", entry: true, name: "Visitor processing" }], ["*", { role: "gatepost", prison: "gate", name: "Officers' post" }]] },
   { exits: [{ side: "back", roles: ["gatepost"], chance: 1, lock: 0, name: "Into the prison" }] });
-// The county jail's building.
+// The county jail's building: the public side along the front (the sally port, booking, the lobby, visitation), the
+// holding tanks, the property room, the kitchen and the medical room behind, and a secure corridor along the back wall
+// (the pods' corridors join it); upstairs the control room and the offices.
 function jailMain(rng) {
   const bw = rng.int(42, 48);
-  return spec(bw, 21, corridorPlan([[6, { role: "bays", name: "Sally port", type: "garage", maxBoxes: 2, civic: "sallyport" }], ["*", { role: "booking", prison: "booking", name: "Booking and intake" }], [6, { role: "lobby", entry: true, name: "Public lobby" }], ["*", { role: "visitation", prison: "visit" }]],
-    [["*", { role: "holding", prison: "holding", name: "Holding tank" }], ["*", { role: "holding", prison: "holding", name: "Holding tank" }], [6, { role: "property", prison: "property", lock: ["door", 0.4] }], ["*", { role: "pkitchen", prison: "pkitchen", name: "Jail kitchen" }], [6, { role: "pward", prison: "ward", name: "Medical room" }]], 7, 2), {
+  const band = (list) => ({ split: "x", parts: leaves(list) });
+  const back = [2, { role: "corridor", name: "Secure corridor", hub: true }];
+  return spec(bw, 2 + 7 + 1 + 7 + 1 + 2, { split: "y", parts: [[7, band([[6, { role: "bays", name: "Sally port", type: "garage", maxBoxes: 2, civic: "sallyport" }], ["*", { role: "booking", prison: "booking", name: "Booking and intake" }], [6, { role: "lobby", entry: true, name: "Public lobby" }], ["*", { role: "visitation", prison: "visit" }]])],
+    [7, band([["*", { role: "holding", prison: "holding", name: "Holding tank" }], ["*", { role: "holding", prison: "holding", name: "Holding tank" }], [6, { role: "property", prison: "property", lock: ["door", 0.4] }], ["*", { role: "pkitchen", prison: "pkitchen", name: "Jail kitchen" }], [6, { role: "pward", prison: "ward", name: "Medical room" }]])], back] }, {
     storeys: 2, stairs: { roles: ["corridor"], n: 1, len: 2 },
-    upper: () => corridorPlan([["*", { role: "pcontrol", prison: "control", panels: 3, name: "Control room" }], ["*", { role: "office", prison: "office", name: "Jail administration" }], [6, { role: "office", prison: "office", name: "Sheriff's office", gunSafe: ["gunsafe2", 0.3] }]],
-      [["*", { role: "office", prison: "office", name: "Records", boxLock: ["evidence", 0.3] }], [6, "breakroom"], [4, "restroom"], ["*", { role: "lockerroom", type: "lockers", name: "Officers' lockers" }]], 7, 2),
+    upper: () => ({ split: "y", parts: [[7, band([["*", { role: "pcontrol", prison: "control", panels: 3, name: "Control room" }], ["*", { role: "office", prison: "office", name: "Jail administration" }], [6, { role: "office", prison: "office", name: "Sheriff's office", gunSafe: ["gunsafe2", 0.3] }]])],
+      [7, band([["*", { role: "office", prison: "office", name: "Records", boxLock: ["evidence", 0.3] }], [6, "breakroom"], [4, "restroom"], ["*", { role: "lockerroom", type: "lockers", name: "Officers' lockers" }]])], [2, { role: "corridor", name: "Upper corridor", hub: true }]] }),
     exits: [{ side: "left", roles: ["bays"], chance: 1, roller: true, width: 2, lock: 0.2, name: "Sally port" }],
   });
 }
@@ -171,6 +176,15 @@ export function openTiers(m, sp) {
         for (const r of rooms) if (r.f === f && r.doors) r.doors = r.doors.filter(([dx, dy]) => dx !== x || dy !== y);
         m.lockedDoors = m.lockedDoors.filter((d) => d.x !== x || d.y !== y || (d.f || 0) !== f);
       }
+      // A floor cell of the tier its walkway cannot reach (boxed in by the bars where the plan's door stood): bars too.
+      {
+        const inT = (x, y) => x > t.x0 && x < t.x0 + t.w - 1 && y > t.y0 && y < t.y0 + t.h - 1;
+        const walkable = (c) => c.k === "open" || c.k === "idoor" || c.k === "odoor" || c.k === "door";
+        const seen = new Set(), q = [];
+        for (let x = t.x0 + 1; x < t.x0 + t.w - 1; x++) if (walkable(at(f, x, walk))) { seen.add(`${x},${walk}`); q.push([x, walk]); }
+        while (q.length) { const [x, y] = q.pop(); for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = x + dx, ny = y + dy, k = `${nx},${ny}`; if (!inT(nx, ny) || seen.has(k) || !walkable(at(f, nx, ny))) continue; seen.add(k); q.push([nx, ny]); } }
+        for (let y = t.y0 + 1; y < t.y0 + t.h - 1; y++) for (let x = t.x0 + 1; x < t.x0 + t.w - 1; x++) { const c = at(f, x, y); if (c.k === "open" && !seen.has(`${x},${y}`)) c.k = "bars"; }
+      }
       if (pk) { // the tier's door into the officers' station, at its walkway
         const wx = pk.x0 === t.x0 + t.w - 1 ? pk.x0 : pk.x0 + pk.w - 1;
         const c = at(f, wx, walk);
@@ -197,6 +211,41 @@ export function openTiers(m, sp) {
 const pickW = (rng, w) => { const keys = Object.keys(w); return rng.weighted(keys, (k) => w[k]); };
 const inRect = (r, x, y, m = 0) => x >= r.x0 - m && y >= r.y0 - m && x < r.x0 + r.w + m && y < r.y0 + r.h + m;
 const overlaps = (a, b, m) => a.x0 - m < b.x0 + b.w && b.x0 - m < a.x0 + a.w && a.y0 - m < b.y0 + b.h && b.y0 - m < a.y0 + a.h;
+
+// compound.js with what a prison needs on top of it: which building owns a cell (C.owner: the fences, the towers and
+// the dressing keep off them), a cell door's floor inside placed with its building, the sally-port corridors' doors'
+// strength, the plan's prison marks.
+function grid(W, H, storeys, groundAt) {
+  const C = compoundGrid(W, H, storeys, groundAt);
+  C.owner = new Int16Array(W * H).fill(-1);
+  return C;
+}
+function stamp(C, m, x0, y0, o) {
+  const part = placeBuilding(C, m, { x0, y0, face: o.face || "s", name: o.name, key: m.plan && m.plan.key, tag: { part: o.extra || {} } });
+  // A cell door's floor inside (c.cellIn: the scenes, the tests) placed as the building is.
+  const B = m.building, T = orient(part.face, B.w, B.h);
+  for (const F of C.floors) for (let y = part.y0; y < part.y0 + part.h; y++) for (let x = part.x0; x < part.x0 + part.w; x++) {
+    const c = F.cells[y * C.W + x];
+    if (c.cellIn) { const [u, v] = T.pt(c.cellIn[0] - B.x0, c.cellIn[1] - B.y0); c.cellIn = [x0 + u, y0 + v]; }
+  }
+  for (let y = part.y0; y < part.y0 + part.h; y++) for (let x = part.x0; x < part.x0 + part.w; x++) C.owner[y * C.W + x] = part.k;
+  return part;
+}
+function corridor(C, a, b, o) {
+  const area = link(C, a, b, { kind: "corridor", width: o.width || 2, name: o.name, dk: o.dk, sally: !!o.sally });
+  if (!area) return null;
+  const K = DOOR_KINDS[o.dk] || DOOR_KINDS.steel;
+  for (const [x, y] of area.doors) { const c = C.cells[y * C.W + x]; if (c.k === "idoor") { c.hp = c.mhp = K.hp; c.dk = o.dk || "steel"; } }
+  for (let y = area.y0; y < area.y0 + area.h; y++) for (let x = area.x0; x < area.x0 + area.w; x++) if (C.owner[y * C.W + x] < 0) C.owner[y * C.W + x] = 1000 + area.id;
+  area.conn = [a.k, b.k];
+  return area;
+}
+function finish(C, option, o) {
+  const map = compoundResult(C, { key: option.key, id: option.id, name: option.name, zones: o.zones, vehicle: o.vehicle || null, kind: o.kind, extra: o.extra });
+  map.complex = o.kind; map.plan.complex = o.kind; map.plan.street = true; // its ways out are its zones (ui/combat.js), as a street's
+  map.plan.rooms = map.plan.rooms.map((r) => { const a = C.areas[r.id]; return a && a.prison ? { ...r, prison: a.prison, ...(a.unitId != null ? { unitId: a.unitId } : {}) } : r; });
+  return map;
+}
 
 // Assembles a building from its spec: { m, sp } (its own dice from the complex's: the same complex every visit).
 function build(seed, salt, sp, key, name, legacy) {
@@ -237,7 +286,7 @@ function penMap(rng, seed, option, kind, withVehicle, o) {
   for (let i = 0; i < n; i++) {
     const side = i % 2 ? "right" : "left"; // left of the corridor: its picket on its right (toward the corridor)
     const dorm = kind === "state" && rng.chance(PRISON.DORM);
-    const len = rng.int(56, 70); // a real block 40–70 m long: about 17–21 cells a tier
+    const len = rng.int(54, 66); // a real block 40–70 m long: about 16–20 cells a tier
     const u = build(seed, `unit${i}`, (r) => housingUnit(r, { len, picket: side === "left" ? "right" : "left", unitId: i + 1, kind: dorm ? "dorm" : "cells", tiers: 2 }), "pblock", `Housing unit ${String.fromCharCode(65 + i)}`, legacy);
     u.role = "housing"; u.unitId = i + 1; u.side = side; u.row = Math.floor(i / 2); u.dorm = dorm;
     units.push(u);
@@ -263,7 +312,9 @@ function penMap(rng, seed, option, kind, withVehicle, o) {
     u.x0 = u.side === "left" ? sx - PRISON.UNIT_GAP - bw : sx + 5 + PRISON.UNIT_GAP;
     u.y0 = sy + 2 + u.row * rowH;
   }
-  ctl.x0 = sx + 2 - Math.floor(ctl.m.building.w / 2); ctl.y0 = sy + spineLen + 5;
+  // Central control below the corridor's end, its lobby under the corridor (the secure corridor joins them there).
+  const lob = ctl.m.rooms.find((a) => a.role === "lobby" && !(a.f > 0));
+  ctl.x0 = sx + 2 - (lob ? lob.x0 + Math.floor(lob.w / 2) - ctl.m.building.x0 : Math.floor(ctl.m.building.w / 2)); ctl.y0 = sy + spineLen + 5;
   B.push(sp, ctl, ...units);
   const housing = { x0: bx - 3, y0: sy - 3, w: blockW + 6, h: ctl.y0 + ctl.m.building.h - sy + 6 };
   // ---------- the yard and the other buildings inside ----------
@@ -307,14 +358,14 @@ function penMap(rng, seed, option, kind, withVehicle, o) {
   // ---------- the grid ----------
   const storeys = Math.max(...B.map((b) => b.m.storeys || 1));
   const roadRing = (x, y) => { const d = Math.min(Math.abs(x - (outer.x0 - 7)), Math.abs(x - (outer.x0 + outer.w + 6)), Math.abs(y - (outer.y0 - 7)), Math.abs(y - (outer.y0 + outer.h + 6))); return d <= 1 && x >= outer.x0 - 8 && x <= outer.x0 + outer.w + 7 && y >= outer.y0 - 8 && y <= outer.y0 + outer.h + 7; };
-  const G = complexGrid(W, H, storeys, (x, y) => (inRect(inner, x, y) ? (yard && inRect(yard, x, y) ? "grass" : "gravel") : roadRing(x, y) ? "road" : "grass"));
+  const G = grid(W, H, storeys, (x, y) => (inRect(inner, x, y) ? (yard && inRect(yard, x, y) ? "grass" : "gravel") : roadRing(x, y) ? "road" : "grass"));
   for (const b of B) {
-    b.rec = stampBuilding(G, b.m, b.x0, b.y0, { name: b.name, extra: { role: b.role, ...(b.unitId ? { unitId: b.unitId } : {}) } });
+    b.rec = stamp(G, b.m, b.x0, b.y0, { name: b.name, extra: { role: b.role, ...(b.unitId ? { unitId: b.unitId } : {}) } });
   }
   // The secure corridors: each housing unit to the main corridor (sally-port doors), the main corridor to central control.
   const conns = [];
-  for (const u of units) { const c = connectBuildings(G, sp.rec, u.rec, { width: 2, name: `Secure corridor to ${u.name.toLowerCase()}`, dk: "security", sally: true }); if (c) conns.push(c); }
-  { const c = connectBuildings(G, sp.rec, ctl.rec, { width: 2, name: "Secure corridor to central control", dk: "security", sally: false }); if (c) conns.push(c); }
+  for (const u of units) { const c = corridor(G, sp.rec, u.rec, { width: 2, name: `Secure corridor to ${u.name.toLowerCase()}`, dk: "security", sally: true }); if (c) conns.push(c); }
+  { const c = corridor(G, sp.rec, ctl.rec, { width: 2, name: "Secure corridor to central control", dk: "security", sally: false }); if (c) conns.push(c); }
   const I = (x, y) => y * W + x, cells = G.cells;
   const ownerAt = (x, y) => G.owner[I(x, y)];
   const setK = (x, y, k, extra = {}) => { if (x < 0 || y < 0 || x >= W || y >= H || ownerAt(x, y) >= 0) return false; const c = cells[I(x, y)]; for (const q of Object.keys(c)) if (q !== "f") delete c[q]; Object.assign(c, { k, ...extra }); return true; };
@@ -414,12 +465,12 @@ function penMap(rng, seed, option, kind, withVehicle, o) {
   ];
   for (let y = southOuter + 1; y < H; y++) for (let x = gx; x < gx + 4; x++) if (cells[I(x, y)].k === "open") cells[I(x, y)].f = "road"; // the approach road
   for (const z of zones) for (let y = z.y0 - 1; y <= z.y0 + z.h; y++) for (let x = z.x0 - 1; x <= z.x0 + z.w; x++) if (x >= 0 && y >= 0 && x < W && y < H) G.keep[I(x, y)] = 1;
-  const vehicle = teamVehicle(G, zones[0], withVehicle);
+  const vehicle = compoundVehicle(G, zones[0], withVehicle);
   // ---------- dressing: floodlights along the inner fence, crates and barrels by the buildings' back doors ----------
-  const gd = guard(G, [zones[0].x0 + 1, zones[0].y0 + 1]);
+  const gd = guard(G, zones[0].x0 + 1, zones[0].y0 + 1, { free: (x, y) => x >= 0 && y >= 0 && x < W && y < H && G.cells[y * W + x].k === "open" && !G.keep[y * W + x] && G.owner[y * W + x] < 0 });
   for (let i = 0; i < 24; i++) { const x = rng.int(inner.x0 + 2, inner.x0 + inner.w - 3), y = rng.pick([inner.y0 + 2, inner.y0 + inner.h - 3]); gd.block(x, y, "lamp"); }
   for (let i = 0; i < 30; i++) { const b = rng.pick(B); const x = b.x0 + rng.int(-3, b.m.building.w + 2), y = b.y0 + rng.pick([-3, b.m.building.h + 2]); gd.block(x, y, rng.pick(["crate", "barrel"])); }
-  const map = finishComplex(G, option, {
+  const map = finish(G, option, {
     kind, zones, vehicle,
     extra: {
       prisonKind: kind, kindName: K.name, perimeter: { outer, inner, wire: wireLine, wall: kind === "max" }, towers, holes, sallyport, gate: { x: gx, w: 4, y: southOuter, house: gh.rec.k }, yard: yardArea ? yardArea.id : null,
@@ -431,16 +482,6 @@ function penMap(rng, seed, option, kind, withVehicle, o) {
   map.deadScale = PRISON.DEAD[kind];
   return map;
 }
-// The team's vehicle in the entry zone (laid last: the complex is the same with or without it), as streetMap's.
-function teamVehicle(G, z, withVehicle) {
-  if (!withVehicle) return null;
-  z.vehicle = true;
-  const W = G.W, H = G.H, cells = G.cells;
-  const v = placeVehicle(cells, W, H, z, withVehicle, (x, y) => x >= 0 && y >= 0 && x < W && y < H && cells[y * W + x].k === "open");
-  if (!v) { const c = cells[(z.y0 + 1) * W + z.x0 + 1]; c.k = "vehicle"; c.f = "road"; }
-  return v;
-}
-
 // A county jail: the jail building and two pods north of it, a fenced pen off a pod, the street in front.
 function jailMap(rng, seed, option, withVehicle, o) {
   const K = PRISON.KINDS.jail;
@@ -453,46 +494,44 @@ function jailMap(rng, seed, option, withVehicle, o) {
   const left = rng.chance(0.5);
   for (let i = 0; i < 2; i++) {
     const len = rng.int(26, 32);
-    const u = build(seed, `pod${i}`, (r) => housingUnit(r, { len, picket: i === 0 ? "right" : "left", unitId: i + 1, kind: "cells", tiers: 2, yard: i === (left ? 0 : 1) }), "pblock", `Pod ${String.fromCharCode(65 + i)}`, legacy);
+    const u = build(seed, `pod${i}`, (r) => housingUnit(r, { len, picket: i === 0 ? "left" : "right", unitId: i + 1, kind: "cells", tiers: 2, yard: i === (left ? 0 : 1) }), "pblock", `Pod ${String.fromCharCode(65 + i)}`, legacy);
     u.role = "housing"; u.unitId = i + 1; units.push(u);
   }
-  // The pods side by side north of the jail, joined to it (an L or a T of buildings: one over the middle, one over an end).
-  const pw0 = units[0].m.building.w, pw1 = units[1].m.building.w, ph = Math.max(...units.map((u) => u.m.building.h));
-  const gapX = 8;
-  const span = pw0 + gapX + pw1;
+  // The pods side by side north of the jail, turned so their officers' stations face it (compound.js placeBuilding
+  // face: the first's station on its left turned to the south, the second's on its right): one over the middle of the
+  // jail or one over an end (an L or a T of buildings), joined to its secure corridor along the back.
+  units[0].face = "e"; units[1].face = "w";
+  const pw = units.map((u) => u.m.building.h), gapX = 6;
+  const span = pw[0] + gapX + pw[1];
   const startX = rng.chance(0.5) ? main.x0 + Math.floor((mw - span) / 2) : main.x0 + 2;
-  units[0].x0 = startX; units[1].x0 = startX + pw0 + gapX;
-  for (const u of units) u.y0 = main.y0 - 7 - u.m.building.h;
+  units[0].x0 = startX; units[1].x0 = startX + pw[0] + gapX;
+  for (const u of units) u.y0 = main.y0 - 7 - u.m.building.w;
   const B = [main, ...units];
   const storeys = Math.max(...B.map((b) => b.m.storeys || 1));
   const street = { y0: H - 10, h: 6 };
-  const G = complexGrid(W, H, storeys, (x, y) => (y >= street.y0 && y < street.y0 + street.h ? "road" : y === street.y0 - 1 || y === street.y0 + street.h ? "gravel" : "grass"));
-  for (const b of B) b.rec = stampBuilding(G, b.m, b.x0, b.y0, { name: b.name, extra: { role: b.role, ...(b.unitId ? { unitId: b.unitId } : {}) } });
+  const G = grid(W, H, storeys, (x, y) => (y >= street.y0 && y < street.y0 + street.h ? "road" : y === street.y0 - 1 || y === street.y0 + street.h ? "gravel" : "grass"));
+  for (const b of B) b.rec = stamp(G, b.m, b.x0, b.y0, { name: b.name, face: b.face, extra: { role: b.role, ...(b.unitId ? { unitId: b.unitId } : {}) } });
   const conns = [];
-  for (const u of units) { const c = connectBuildings(G, main.rec, u.rec, { width: 2, name: `Secure corridor to ${u.name.toLowerCase()}`, dk: "security", sally: true }); if (c) conns.push(c); }
+  for (const u of units) { const c = corridor(G, main.rec, u.rec, { width: 2, name: `Secure corridor to ${u.name.toLowerCase()}`, dk: "security", sally: true }); if (c) conns.push(c); }
   const I = (x, y) => y * W + x, cells = G.cells;
-  // The pen: a fenced yard off the pod with the yard door.
+  // The pen: a fenced yard off the pod with the yard door (its exit's side of the pod), the door its one way in.
   const yu = units.find((u) => u.sp.exits.length);
   let pen = null;
-  if (yu) {
-    const ex = yu.rec.exits.find((e) => e.cells.length);
-    const B0 = yu.rec, pwid = 16, phgt = Math.min(14, B0.h);
-    const east = ex && ex.cells[0][0] >= B0.x0 + B0.w - 1;
-    const x0 = east ? B0.x0 + B0.w : B0.x0 - pwid, y0 = B0.y0 + Math.floor((B0.h - phgt) / 2);
-    pen = { x0, y0, w: pwid, h: phgt };
-    for (let y = y0; y < y0 + phgt; y++) for (let x = x0; x < x0 + pwid; x++) {
+  const ex = yu ? yu.rec.exits.find((e) => e.cells.length) : null;
+  if (ex) {
+    const B0 = yu.rec, [dx, dy] = { n: [0, -1], s: [0, 1], w: [-1, 0], e: [1, 0] }[ex.side], along = 16, deep = 12;
+    const [cx, cy] = ex.cells[0];
+    pen = dx ? { x0: dx > 0 ? B0.x0 + B0.w : B0.x0 - deep, y0: Math.max(B0.y0, Math.min(B0.y0 + B0.h - along, cy - (along >> 1))), w: deep, h: along }
+      : { x0: Math.max(B0.x0, Math.min(B0.x0 + B0.w - along, cx - (along >> 1))), y0: dy > 0 ? B0.y0 + B0.h : B0.y0 - deep, w: along, h: deep };
+    for (let y = pen.y0; y < pen.y0 + pen.h; y++) for (let x = pen.x0; x < pen.x0 + pen.w; x++) {
       if (x < 0 || y < 0 || x >= W || y >= H || G.owner[I(x, y)] >= 0) continue;
-      const edge = y === y0 || y === y0 + phgt - 1 || (east ? x === x0 + pwid - 1 : x === x0);
+      const far = dx ? (dx > 0 ? x === pen.x0 + pen.w - 1 : x === pen.x0) : dy > 0 ? y === pen.y0 + pen.h - 1 : y === pen.y0;
+      const edge = far || (dx ? y === pen.y0 || y === pen.y0 + pen.h - 1 : x === pen.x0 || x === pen.x0 + pen.w - 1);
       const c = cells[I(x, y)];
-      if (edge) { c.k = "pfence"; } else c.f = "conc";
+      if (edge) c.k = "pfence"; else c.f = "conc";
       G.keep[I(x, y)] = 1;
     }
-    // A sure way into the pen from the pod: the yard door, else one put in the wall.
-    const wallX = east ? B0.x0 + B0.w - 1 : B0.x0;
-    if (!G.floors[0].cells.some((c, i) => (i % W) === wallX && ((i / W) | 0) > y0 && ((i / W) | 0) < y0 + phgt - 1 && (c.k === "idoor" || c.k === "odoor" || c.k === "door"))) {
-      for (let y = y0 + 1; y < y0 + phgt - 1; y++) { const c = cells[I(wallX, y)], inn = cells[I(wallX + (east ? -1 : 1), y)]; if ((c.k === "wall" || c.k === "window") && inn.f === "floor" && inn.k === "open") { Object.assign(c, { k: "idoor", dk: "steel", hp: DOOR_KINDS.steel.hp, mhp: DOOR_KINDS.steel.hp }); delete c.win; break; } }
-    }
-    G.areas.push({ id: G.areas.length, type: null, role: "yard", name: "Exercise pen", outdoor: true, f: 0, ...pen, doors: [] });
+    G.areas.push({ id: G.areas.length, type: null, role: "yard", name: "Exercise pen", outdoor: true, f: 0, ...pen, doors: [ex.cells[0].slice()] });
   }
   // The street: parked cars, the staff lot beside the jail.
   const wreck = { id: G.areas.length, type: "wreck", name: "Parked cars", outdoor: true, f: 0, x0: 0, y0: street.y0, w: W, h: street.h, doors: [] };
@@ -512,10 +551,10 @@ function jailMap(rng, seed, option, withVehicle, o) {
     { x0: Math.floor(W / 2) - 1, y0: 0, w: Z, h: Z, side: "north", exit: "north", name: "Behind the jail", vehicle: false },
   ];
   for (const z of zones) for (let y = z.y0 - 1; y <= z.y0 + z.h; y++) for (let x = z.x0 - 1; x <= z.x0 + z.w; x++) if (x >= 0 && y >= 0 && x < W && y < H) G.keep[I(x, y)] = 1;
-  const gd = guard(G, [zones[0].x0 + 1, zones[0].y0 + 1]);
+  const gd = guard(G, zones[0].x0 + 1, zones[0].y0 + 1, { free: (x, y) => x >= 0 && y >= 0 && x < W && y < H && G.cells[y * W + x].k === "open" && !G.keep[y * W + x] && G.owner[y * W + x] < 0 });
   for (let i = 0; i < 10; i++) gd.block(rng.int(1, W - 2), rng.int(1, street.y0 - 3), "tree");
-  const vehicle = teamVehicle(G, zones[0], withVehicle);
-  const map = finishComplex(G, option, { kind: "jail", zones, vehicle, extra: { prisonKind: "jail", kindName: K.name, units: units.map((u) => ({ unitId: u.unitId, name: u.name, house: u.rec.k, dorm: false, role: u.role })), control: main.rec.k, pen, conns: conns.map((c) => c.id), towers: [], holes: [] } });
+  const vehicle = compoundVehicle(G, zones[0], withVehicle);
+  const map = finish(G, option, { kind: "jail", zones, vehicle, extra: { prisonKind: "jail", kindName: K.name, units: units.map((u) => ({ unitId: u.unitId, name: u.name, house: u.rec.k, dorm: false, role: u.role })), control: main.rec.k, pen, conns: conns.map((c) => c.id), towers: [], holes: [] } });
   finishPrison(map, rng, units, B, "jail");
   map.deadScale = PRISON.DEAD.jail;
   return map;
@@ -640,5 +679,23 @@ export function cellSwitch(state, b, u, h) {
   if (h && h.say) h.say(b, n ? `${u.name} throws the switch: ${n} cell door${n === 1 ? "" : "s"} roll open${p.all ? " across the prison" : ""}, the alarm wailing.` : `${u.name} throws the switch: the doors are open already.`, n ? "danger" : "info");
   return "";
 }
-// The dressed areas a raid's dead and people favour, by name (wanderers.js, floorfolk.js): the holders' unit.
-export const holdRoom = (plan) => (plan && plan.rooms ? plan.rooms.find((r) => r.prison === "dayroom" && !(r.f > 0)) || plan.rooms.find((r) => r.prison === "dorm") : null);
+// A prison gang holding a unit (combat.js createRaid, after the building's dead and the people the world has there):
+// on the site's own dice (PRISON.HOLD.chance), 3–6 inmates who took a housing unit, in the day room of the takeover
+// scene's unit when it has one, else a unit's day room or dormitory; armed from what a prison holds (shivs, batons, a
+// shotgun or a pistol off a guard). Hostile, placed through buildingmaps.js placeOccupantGroups: each one a survivor
+// record of their own (combat.js enemyUnit, fighters.js: ADR 0001), as any site's holders.
+export function prisonHolders(state, b, place) {
+  const P = b && b.raid && b.raid.plan;
+  if (!P || !P.complex) return 0;
+  const H = PRISON.HOLD;
+  if (hash01(state.seed, "prisonhold", b.tileId, P.id) >= H.chance) return 0;
+  const sc = b.raid.scenes && b.raid.scenes.list.find((s) => s.kind === "takeover");
+  const rooms = b.raid.areas.filter((a) => !a.outdoor && (a.prison === "dayroom" || a.prison === "dorm") && !(a.f > 0) && !a.well);
+  if (!rooms.length) return 0;
+  const room = (sc && rooms.find((a) => a.id === sc.room)) || rooms[Math.floor(hash01(state.seed, "prisonholdroom", b.tileId) * rooms.length)];
+  const n = H.n[0] + Math.floor(hash01(state.seed, "prisonholdn", b.tileId) * (H.n[1] - H.n[0] + 1));
+  const people = Array.from({ length: n }, (_, i) => ({ kit: "raiders", weapon: H.guns[Math.floor(hash01(state.seed, "prisonholdgun", b.tileId, i) * H.guns.length)], power: H.power, name: i === 0 ? "The gang's boss" : "An inmate" }));
+  place(state, b, [{ side: "hostile", kind: "raiders", count: n, power: H.power, name: "a prison gang", people, room: room.id, aware: false }]);
+  b.raid.holders = { room: room.id, n, name: "a prison gang" };
+  return n;
+}

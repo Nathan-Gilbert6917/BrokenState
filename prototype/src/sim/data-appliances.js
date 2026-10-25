@@ -24,6 +24,10 @@
 //   oven           f_oven        oven       oven       40   two    0     the baking recipes at a range; ×1.25 with a
 //                                                                       range in the same building (OVEN)
 //   microwave      f_microwave   microwave  microwave  15   one    1     reheats: ×1.1 on a meal's time (MICROWAVE)
+//   freezer_case   f_freezercase freezercase freezer   130  two    3     a store's upright freezer: 90 days at 0.05×
+//   island_freezer f_islandfreezer islandfreezer freezer 110 two  3     a store's island freezer: 110 days at 0.05×
+//   meat_case      f_meatcase    meatcase   fridge     140  two    2     a butcher's case: 70 days at 0.3×
+//   (the last three a grocery store's, issue #22: their rows below each type's)
 // Off (no power, switched off, short of power): a fridge, a freezer or a cold case still stands and is a cupboard (its
 // room at room temperature: the walk-in freezer's thaw; the Power card says why); a range off the grid burns
 // propane, with neither it is idle; a microwave off does nothing. A broken one holds and does nothing.
@@ -40,6 +44,11 @@ import { FURNITURE_KINDS, FURNITURE_GEAR, itemKey } from "./data-furniture.js"; 
 export const COLD = {
   chest_freezer: { need: 2, room: 60, factor: 0.05, kind: "freezer", name: "Chest freezers" }, // the walk-in's rate (storage.js FACTOR.freezer)
   cold_case: { need: 2, room: 100, factor: 0.3, kind: "coldcase", name: "Cold cases" },
+  // A grocery store's (issue #22): the upright glass-door freezer case and the island freezer at the walk-in freezer's
+  // rate, the butcher's case at the cold case's.
+  freezer_case: { need: 3, room: 90, factor: 0.05, kind: "freezer", name: "Freezer cases" },
+  island_freezer: { need: 3, room: 110, factor: 0.05, kind: "freezer", name: "Island freezers" },
+  meat_case: { need: 2, room: 70, factor: 0.3, kind: "coldcase", name: "Butcher's cases" },
 };
 // The range: power while it cooks (or propane a batch without), one cook at it a day (hours: work-hours a day at it,
 // as a cook fire's tender's COOK.fireHours, more: no fire to mind), one range in use a `per` people living here.
@@ -50,7 +59,7 @@ export const MICROWAVE = { need: 1, boost: 1.1 };
 // The catalogue's kind of each type (#8 FURNITURE_KINDS keys): its cell on the base map and the base's battle map
 // (combat.js CELL), its size and its kg.
 /** @type {Record<string, string>} */
-export const APPLIANCE_KINDS = { chest_freezer: "freezer", cold_case: "coldcase", range: "stove", oven: "oven", microwave: "microwave" };
+export const APPLIANCE_KINDS = { chest_freezer: "freezer", cold_case: "coldcase", range: "stove", oven: "oven", microwave: "microwave", freezer_case: "freezercase", island_freezer: "islandfreezer", meat_case: "meatcase" }; // the last three: a grocery store's (issue #22)
 export const APPLIANCE_TYPES = Object.keys(APPLIANCE_KINDS);
 const kg = (t) => FURNITURE_KINDS[APPLIANCE_KINDS[t]].kg;
 const gear = (t) => FURNITURE_GEAR[itemKey(APPLIANCE_KINDS[t])];
@@ -62,6 +71,12 @@ export const APPLIANCE_GEAR = {
     desc: `A white chest freezer, its lid taped shut and its cord coiled on top. ${kg("chest_freezer")} kg: two to lift it, a cart or a vehicle. Set it inside a hut, cabin, lodge, hall or barn (the base map's Build list, Power): with ${COLD.chest_freezer.need} power it keeps ${COLD.chest_freezer.room} days of food frozen (a twentieth of its shelf a day, as the walk-in freezer); without power it is only a cupboard.` },
   [itemKey("coldcase")]: { ...gear("cold_case"), value: 20, placed: "cold_case",
     desc: `A shop's glass-door cold case, its compressor in the base. ${kg("cold_case")} kg: a cart or a vehicle, two people at least. Set it inside a general building (Build list, Power): with ${COLD.cold_case.need} power it keeps ${COLD.cold_case.room} days of food chilled at ${COLD.cold_case.factor}× its shelf a day; without power it is only a cupboard.` },
+  [itemKey("freezercase")]: { ...gear("freezer_case"), value: 22, placed: "freezer_case",
+    desc: `A supermarket's upright freezer case: glass doors, wire shelves, the compressor on top. ${kg("freezer_case")} kg: a cart or a vehicle, two people at least. Set it inside a general building (Build list, Power): with ${COLD.freezer_case.need} power it keeps ${COLD.freezer_case.room} days of food frozen (a twentieth of its shelf a day, as the walk-in freezer); without power it is only a cupboard.` },
+  [itemKey("islandfreezer")]: { ...gear("island_freezer"), value: 22, placed: "island_freezer",
+    desc: `A supermarket's island freezer: a long open chest under sliding glass lids. ${kg("island_freezer")} kg: a cart or a vehicle, two people at least. Set it inside a general building (Build list, Power): with ${COLD.island_freezer.need} power it keeps ${COLD.island_freezer.room} days of food frozen (the walk-in freezer's rate); without power it is only a cupboard.` },
+  [itemKey("meatcase")]: { ...gear("meat_case"), value: 18, placed: "meat_case",
+    desc: `A butcher's counter case: curved glass over a chilled tray, the compressor in its base. ${kg("meat_case")} kg: a cart or a vehicle, two people at least. Set it inside a general building (Build list, Power): with ${COLD.meat_case.need} power it keeps ${COLD.meat_case.room} days of food chilled at ${COLD.meat_case.factor}× its shelf a day; without power it is only a cupboard.` },
   [itemKey("stove")]: { ...gear("range"), name: "Kitchen range", value: 16, placed: "range",
     desc: `A four-ring kitchen range, dual fuel: a plug and a gas hose on the back. ${kg("range")} kg: two to lift it, a cart or a vehicle. Set it inside a general building (Build list, Fittings) and it is a cooking station of its own, burning no wood: ${RANGE.need} power while it cooks, or ${RANGE.propane} propane a batch off the grid; with neither it stands idle. One cook at it a day, one range for every ${RANGE.per} people living here.` },
   [itemKey("oven")]: { ...gear("oven"), value: 12, placed: "oven",
@@ -79,6 +94,12 @@ export const APPLIANCE_BUILDINGS = {
     desc: `A chest freezer set on a general building's floor: with ${COLD.chest_freezer.need} power, ${COLD.chest_freezer.room} days of food room that keeps food twenty times longer than the shelf (the walk-in freezer's rate). Off, a cupboard: the food thaws. Demolish picks it up again.` },
   cold_case: { name: "Cold case", fit: true, furniture: true, grid: true, set: true, cost: {}, hours: 0, max: 3, item: itemKey("coldcase"), use: "fridge",
     desc: `A shop's cold case set on a general building's floor: with ${COLD.cold_case.need} power, ${COLD.cold_case.room} days of food room at ${COLD.cold_case.factor}× the shelf a day. Off, a cupboard. Demolish picks it up again.` },
+  freezer_case: { name: "Freezer case", fit: true, furniture: true, grid: true, set: true, cost: {}, hours: 0, max: 3, item: itemKey("freezercase"), use: "freezer",
+    desc: `A store's upright freezer case set on a general building's floor: with ${COLD.freezer_case.need} power, ${COLD.freezer_case.room} days of food room that keeps food twenty times longer than the shelf. Off, a cupboard: the food thaws. Demolish picks it up again.` },
+  island_freezer: { name: "Island freezer", fit: true, furniture: true, grid: true, set: true, cost: {}, hours: 0, max: 3, item: itemKey("islandfreezer"), use: "freezer",
+    desc: `A store's island freezer set on a general building's floor: with ${COLD.island_freezer.need} power, ${COLD.island_freezer.room} days of food room that keeps food twenty times longer than the shelf. Off, a cupboard: the food thaws. Demolish picks it up again.` },
+  meat_case: { name: "Butcher's case", fit: true, furniture: true, grid: true, set: true, cost: {}, hours: 0, max: 3, item: itemKey("meatcase"), use: "fridge",
+    desc: `A butcher's counter case set on a general building's floor: with ${COLD.meat_case.need} power, ${COLD.meat_case.room} days of food room at ${COLD.meat_case.factor}× the shelf a day. Off, a cupboard. Demolish picks it up again.` },
   range: { name: "Kitchen range", fit: true, furniture: true, grid: true, set: true, cost: {}, hours: 0, max: 4, item: itemKey("stove"), use: "stove", menu: "Fittings",
     desc: `A kitchen range set on a general building's floor: a cooking station of its own (the Farming tab's Cooking: its bills), no wood. ${RANGE.need} power while its bills cook, or ${RANGE.propane} propane a batch off the grid (a gas range runs without the grid); with neither it is idle. One cook at a range a day (${RANGE.hours} hours), one range for every ${RANGE.per} people here. A cheaper way to cooked meals than the Kitchen, without its hot-meal service. Demolish picks it up again.` },
   oven: { name: "Oven", fit: true, furniture: true, set: true, cost: {}, hours: 0, max: 4, item: itemKey("oven"), use: "oven", menu: "Fittings",
@@ -96,6 +117,9 @@ export const APPLIANCE_FOOT = Object.fromEntries(APPLIANCE_TYPES.map((t) => { co
 export const APPLIANCE_FIXTURES = {
   chest_freezer: { power: true, use: 0.4, idle: 0.02, spares: 30, repair: { hours: 4, cost: { scrap: 2, parts: 1 }, min: 2 }, rig: { hours: 1, cost: { scrap: 1 }, min: 1 }, what: "a dead compressor: the food in it thaws" },
   cold_case: { power: true, use: 0.5, idle: 0.02, spares: 24, repair: { hours: 5, cost: { scrap: 3, parts: 1 }, min: 2 }, rig: { hours: 1, cost: { scrap: 1 }, min: 1 }, what: "a dead compressor: the food in it warms" },
+  freezer_case: { power: true, use: 0.5, idle: 0.02, spares: 24, repair: { hours: 5, cost: { scrap: 3, parts: 1 }, min: 2 }, rig: { hours: 1, cost: { scrap: 1 }, min: 1 }, what: "a dead compressor: the food in it thaws" },
+  island_freezer: { power: true, use: 0.5, idle: 0.02, spares: 24, repair: { hours: 5, cost: { scrap: 3, parts: 1 }, min: 2 }, rig: { hours: 1, cost: { scrap: 1 }, min: 1 }, what: "a dead compressor: the food in it thaws" },
+  meat_case: { power: true, use: 0.5, idle: 0.02, spares: 24, repair: { hours: 4, cost: { scrap: 2, parts: 1 }, min: 2 }, rig: { hours: 1, cost: { scrap: 1 }, min: 1 }, what: "a dead compressor: the food in it warms" },
   range: { ranDay: true, use: 0.4, idle: 0.01, spares: 40, repair: { hours: 3, cost: { scrap: 2, parts: 1 }, min: 1 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "no cooking at the range" },
   oven: { ranDay: true, use: 0.3, idle: 0.01, spares: 50, repair: { hours: 2, cost: { scrap: 1, parts: 1 }, min: 1 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "no baking, no ×1.25" },
   microwave: { power: true, use: 0.3, idle: 0.02, repair: { hours: 2, cost: { scrap: 1, electronics: 1 }, min: 1 }, rig: { hours: 1, cost: { scrap: 1 }, min: 0 }, what: "no reheating" },
@@ -103,7 +127,7 @@ export const APPLIANCE_FIXTURES = {
 // Where they are kept (loot.js ITEM_TAGS, through POWER_TAGS).
 /** @type {Record<string, string[]>} */
 export const APPLIANCE_TAGS = {
-  f_freezer: ["home", "kitchen", "farm"], f_coldcase: ["shop", "kitchen"], f_stove: ["home", "kitchen"], f_oven: ["home", "kitchen"], f_microwave: ["home", "kitchen", "office"],
+  f_freezer: ["home", "kitchen", "farm"], f_coldcase: ["shop", "kitchen"], f_freezercase: ["shop"], f_islandfreezer: ["shop"], f_meatcase: ["shop", "kitchen"], f_stove: ["home", "kitchen"], f_oven: ["home", "kitchen"], f_microwave: ["home", "kitchen", "office"],
 };
 // The State Map's hour-by-hour finds (data-power.js POWER_FINDS, merged there by the site): the range at a third of
 // the fridge's weight, the freezer in houses and farms, the microwave in houses and offices.

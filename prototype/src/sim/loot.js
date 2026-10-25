@@ -57,6 +57,7 @@ export const SITE_TAGS = {
   house: ["home", "kitchen"], neighbourhood: ["home", "kitchen", "garage"], garage: ["garage", "tools"], corner: ["shop", "kitchen"],
   pizza: ["kitchen", "shop"], farmstand: ["farm", "shop", "kitchen"], shed: ["tools", "farm", "garage"], blind: ["hunt", "outdoor"],
   campsite: ["camp", "outdoor"], hikercamp: ["camp", "outdoor"], mineshack: ["industry", "tools", "outdoor"],
+  bunker: ["military", "guns", "camp"], govbunker: ["tech", "office", "military"], shelter: ["kitchen", "medical", "camp"], prepper: ["camp", "hunt", "guns", "kitchen", "outdoor"], // bunkers (issue #26)
   // A pawn shop (pois.js shopExtra, the city crawl): whatever people pawned, guns and camping gear behind the counter.
   pawnshop: ["shop", "guns", "hunt", "crime", "home", "outdoor", "camp", "tools", "sport", "tech", "travel"],
 };

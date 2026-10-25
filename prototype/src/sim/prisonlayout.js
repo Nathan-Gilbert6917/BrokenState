@@ -134,8 +134,8 @@ export const PRISON_STYLES = {
   },
   dorm(L) {
     const c = L.c;
-    // Bunks (1 × 2) in rows across the bay, an aisle between each pair of columns, a row free between bunk rows.
-    for (let y = c.y0; y + 1 <= c.y1; y += 3) for (let x = c.x0; x <= c.x1; x += 2) L.place("bunk", [[x, y], [x, y + 1]], { face: "s" });
+    // Bunks (1 × 2) in rows across the bay, two cells of aisle between the columns, two rows free between bunk rows.
+    for (let y = c.y0; y + 1 <= c.y1; y += 4) for (let x = c.x0; x <= c.x1; x += 3) L.place("bunk", [[x, y], [x, y + 1]], { face: "s" });
     along(L, "locker", 6);
   },
   chow(L) {
@@ -223,9 +223,9 @@ export function prisonStyle(room) {
 // or a jail's complex only (when: its rooms carry the prison marks):
 //   opened     a block where the doors opened: every cell door of a tier standing open, bodies on the walkway and in
 //              the day room, blood;
-//   sealed     a block still locked from central control: its cell doors locked (the dead inside, Sleepers that rise
+//   lockdown   a block still locked from central control: its cell doors locked (the dead inside, Sleepers that rise
 //              when the doors open: cellSwitch, or a lock picked);
-//   laststand  the guards' last stand in central control: officers' bodies in uniform with their kit (kit guards), brass,
+//   guardstand the guards' last stand in central control: officers' bodies in uniform with their kit (kit guards), brass,
 //              the dead in front of the door, a desk shoved against it;
 //   takeover   inmates who took over and barricaded a unit: tables and lockers piled in the door to the corridor, a
 //              holder's note; floorfolk.js's holders (survivors or raiders, prison.js PRISON.HOLD) are inside;
@@ -238,6 +238,9 @@ const lower = (r) => String(r.name || "room").replace(/ \(upstairs\)$/, "").repl
 const marked = (ctx, mark) => ctx.rng.shuffle(ctx.rooms.filter((r) => r.prison === mark && !r.scene));
 const cellDoorsIn = (ctx, r) => ctx.inner(r).map(([x, y]) => [x, y, ctx.at(r.f || 0, x, y)]).filter(([, , c]) => c && c.cellDoor && c.cellIn);
 const unitOf = (ctx, r) => (r.unitId == null ? null : r.unitId);
+// Open floor nothing took (ctx.free refuses a cell beside a door: a cell's floor inside its door, a doorway's inside).
+const openAt = (ctx, f, x, y) => { const c = ctx.at(f, x, y); return !!c && c.k === "open" && c.f === "floor" && !ctx.used(f, x, y) && !ctx.stair(x, y); };
+const openIn = (ctx, r) => ctx.inner(r).filter(([x, y]) => openAt(ctx, r.f || 0, x, y));
 
 function opened(ctx) {
   const { rng } = ctx;
@@ -249,7 +252,7 @@ function opened(ctx) {
     const free = ctx.freeIn(r);
     const n = Math.min(free.length, rng.int(2, 4));
     for (const [x, y] of rng.shuffle(free).slice(0, n)) { ctx.body(f, x, y, { human: true, quiet: rng.chance(0.3), kit: rng.chance(0.3) ? "guards" : undefined }); ctx.splatter(f, x, y, "human", rng.int(1, 3)); }
-    for (const [dx, dy, c] of doors.slice(0, 4)) if (ctx.free(f, c.cellIn[0], c.cellIn[1])) ctx.blood(f, c.cellIn[0], c.cellIn[1], "human", 1);
+    for (const [, , c] of doors.slice(0, 4)) if (openAt(ctx, f, c.cellIn[0], c.cellIn[1])) ctx.blood(f, c.cellIn[0], c.cellIn[1], "human", 1);
     return ctx.done("opened", r, doors[0][0], doors[0][1], `Every door on the ${lower(r)} stands open: the block's doors were opened all at once, and the walkway shows what came out.`, { unit: unitOf(ctx, r) });
   }
   return null;
@@ -268,18 +271,18 @@ function sealed(ctx) {
     let dead = 0;
     for (const [x, y, c] of doors) {
       const [ix, iy] = c.cellIn;
-      if (rng.chance(0.55) && ctx.free(f, ix, iy)) { ctx.body(f, ix, iy, { sleeper: true }); ctx.blood(f, ix, iy, "zombie", 1); dead++; }
+      if (rng.chance(0.55) && openAt(ctx, f, ix, iy)) { ctx.body(f, ix, iy, { sleeper: true }); ctx.blood(f, ix, iy, "zombie", 1); dead++; }
       lockDoor(ctx, r, f, x, y);
     }
     if (!dead) continue;
-    return ctx.done("sealed", r, doors[0][0], doors[0][1], `The ${lower(r)} is still locked down from central control: ${dead} of its cells hold something that moves behind the bars.`, { unit: unitOf(ctx, r) });
+    return ctx.done("lockdown", r, doors[0][0], doors[0][1], `The ${lower(r)} is still locked down from central control: ${dead} of its cells hold something that moves behind the bars.`, { unit: unitOf(ctx, r) });
   }
   return null;
 }
 function lastStand(ctx) {
   const { rng } = ctx;
   for (const r of marked(ctx, "control")) {
-    const f = r.f || 0, free = ctx.freeIn(r);
+    const f = r.f || 0, free = openIn(ctx, r);
     if (free.length < 5) continue;
     const door = (r.doors || [])[0];
     const away = door ? nearest(free, door[0], door[1]).reverse() : free;
@@ -287,12 +290,12 @@ function lastStand(ctx) {
     for (const [x, y] of away.slice(0, n)) { ctx.body(f, x, y, { human: true, kit: "guards", name: "A corrections officer" }); ctx.splatter(f, x, y, "human", rng.int(2, 3)); }
     for (const [x, y] of away.slice(n, n + 4)) { const c = ctx.at(f, x, y); c.brass = rng.int(SCENES.BRASS[0], SCENES.BRASS[1]); }
     if (door) {
-      const inn = NEXT4.map(([ox, oy]) => [door[0] + ox, door[1] + oy]).find(([x, y]) => x > r.x0 && x < r.x0 + r.w - 1 && y > r.y0 && y < r.y0 + r.h - 1 && ctx.free(f, x, y));
+      const inn = NEXT4.map(([ox, oy]) => [door[0] + ox, door[1] + oy]).find(([x, y]) => x > r.x0 && x < r.x0 + r.w - 1 && y > r.y0 && y < r.y0 + r.h - 1 && openAt(ctx, f, x, y));
       if (inn) ctx.piece(f, inn[0], inn[1], "desk");
-      const outside = NEXT4.map(([ox, oy]) => [door[0] + ox, door[1] + oy]).filter(([x, y]) => !(x > r.x0 && x < r.x0 + r.w - 1 && y > r.y0 && y < r.y0 + r.h - 1) && ctx.free(f, x, y));
+      const outside = NEXT4.map(([ox, oy]) => [door[0] + ox, door[1] + oy]).filter(([x, y]) => !(x > r.x0 && x < r.x0 + r.w - 1 && y > r.y0 && y < r.y0 + r.h - 1) && openAt(ctx, f, x, y));
       for (const [x, y] of outside.slice(0, 2)) { ctx.body(f, x, y, {}); ctx.splatter(f, x, y, "zombie", 1); }
     }
-    return ctx.done("laststand", r, (door || away[0])[0], (door || away[0])[1], `The guards made their last stand in ${lower(r)}: a desk against the door, spent brass by the panels, ${n} officers who never left their post.`);
+    return ctx.done("guardstand", r, (door || away[0])[0], (door || away[0])[1], `The guards made their last stand in ${lower(r)}: a desk against the door, spent brass by the panels, ${n} officers who never left their post.`);
   }
   return null;
 }
@@ -305,12 +308,12 @@ function takeover(ctx) {
     let n = 0;
     for (const d of ds) {
       const inn = NEXT4.map(([ox, oy]) => [d[0] + ox, d[1] + oy]).find(([x, y]) => x > r.x0 && x < r.x0 + r.w - 1 && y > r.y0 && y < r.y0 + r.h - 1);
-      if (!inn || !ctx.free(f, inn[0], inn[1])) continue;
+      if (!inn || !openAt(ctx, f, inn[0], inn[1])) continue;
       ctx.piece(f, inn[0], inn[1], n % 2 ? "locker" : "table");
       n++;
     }
     if (!n) continue;
-    const p = ctx.freeIn(r)[0];
+    const p = ctx.freeIn(r)[0] || openIn(ctx, r)[0];
     if (p) ctx.pile(f, p[0], p[1], "A stash the holders kept: tins and a few smokes", { food: rng.int(1, 3) }, r.id, rng.chance(0.6) ? ["cigarettes"] : []);
     return ctx.done("takeover", r, ds[0][0], ds[0][1], `Inmates took ${lower(r)} and barricaded it: tables and lockers piled in its doors. Someone may still hold it.`, { alive: true, unit: unitOf(ctx, r) });
   }
@@ -330,7 +333,7 @@ function bus(ctx) {
 const prisonish = (ctx) => ctx.rooms.some((r) => !!r.prison);
 const KINDS = ["prison", "jail"];
 registerScene("opened", { w: 3, place: opened, kinds: KINDS, when: prisonish });
-registerScene("sealed", { w: 3, place: sealed, kinds: KINDS, when: prisonish });
-registerScene("laststand", { w: 3, place: lastStand, kinds: KINDS, when: prisonish });
+registerScene("lockdown", { w: 3, place: sealed, kinds: KINDS, when: prisonish });
+registerScene("guardstand", { w: 3, place: lastStand, kinds: KINDS, when: prisonish });
 registerScene("takeover", { w: 3, place: takeover, kinds: KINDS, when: prisonish });
 registerScene("bus", { w: 2, place: bus, kinds: ["prison"], when: (ctx) => prisonish(ctx) && !!ctx.map.busAt });

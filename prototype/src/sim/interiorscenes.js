@@ -72,6 +72,7 @@ export const SCENES = {
     warehouse: 0.35, factory: 0.35, barn: 0.25, garage: 0.35, gasstation: 0.45, diner: 0.45,
   },
   COUNT: [0.35, 0.12],   // a second scene, a third (of a building with scenes)
+  COUNT_BY: { prison: [0.95, 0.75], jail: [0.6, 0.3] }, // a complex of many buildings (prison.js, issue #31): more of them
   ALIVE: 0.3,            // an upper floor's barricaded room: nobody died there (floorfolk.js's survivors may hold it)
   DEAD: [3, 6],          // the dead an overrun survivor took with them
   STAND_DEAD: [2, 4],    // the dead on the stairs of a last stand (part of them on the floor below)
@@ -104,6 +105,7 @@ export const BY_KIND = {
   church: { barricade: 2, quiet: 1.5 }, school: { barricade: 2, choke: 1.5 },
   house: { barricade: 1.5, quiet: 1.5 }, apartments: { barricade: 2, stand: 1.5 }, motel: { barricade: 2 },
   supermarket: { choke: 1.5, overrun: 1.5 }, offices: { stand: 1.5, choke: 1.5 },
+  prison: { opened: 2, lockdown: 2, guardstand: 2, takeover: 2, bus: 2, quiet: 0.5, barricade: 0.5 }, jail: { opened: 2, lockdown: 2, guardstand: 2, takeover: 2, quiet: 0.5 }, // prisonlayout.js's own come first (issue #31)
 };
 // A scene of another module's (the special buildings' layouts): def { w, place(ctx, room?) → scene | null, kinds?, when?
 // (ctx → whether the map can have it: kept out of the weighted draw otherwise) }.
@@ -446,7 +448,8 @@ export function rollScenes(map, rng, key, place = null) {
   const bias = sceneBias(key, place);
   const odds = bias ? bias.odds : SCENES.ODDS[key] ?? SCENES.DEFAULT;
   if (!rng.chance(odds)) return null;
-  const want = 1 + (rng.chance(SCENES.COUNT[0]) ? 1 + (rng.chance(SCENES.COUNT[1]) ? 1 : 0) : 0);
+  const CN = SCENES.COUNT_BY[key] || SCENES.COUNT;
+  const want = 1 + (rng.chance(CN[0]) ? 1 + (rng.chance(CN[1]) ? 1 : 0) : 0);
   const ctx = context(map, rng, key);
   const by0 = BY_KIND[key] || {};
   const by = bias ? Object.fromEntries(Object.keys(SCENE_KINDS).map((k) => [k, (by0[k] ?? 1) * (bias.w[k] ?? 1)])) : by0;

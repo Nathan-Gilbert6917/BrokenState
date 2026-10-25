@@ -1921,6 +1921,40 @@ function paintMineshack() {
   return p;
 }
 
+// ---- bunkers (sim/bunkerlayout.js, issue #26) ----
+// A bunker's portal cut into the hillside: the rock, a concrete face with the blast door (hazard bands round it), a vent
+// stack on the rock above; the military's with a wire fence and a guard hut, the government's with a flag on a pole.
+function paintBunkerPortal(gov) {
+  const p = painter(20, 17);
+  for (let y = 1; y <= 14; y++) p.rect(Math.max(0, 6 - y), y, Math.min(19, 13 + y), y, y % 3 ? "#6e6a60" : "#7a766c"); // the hill
+  p.rect(5, 7, 14, 14, OUTLINE); p.rect(6, 8, 13, 14, "#9c9e98"); p.rect(6, 8, 13, 8, "#b8bab4"); // the concrete face
+  p.rect(8, 10, 11, 14, "#4d5258"); for (let x = 8; x <= 11; x++) p.set(x, 9, x % 2 ? "#e0b020" : "#1c1c1e"); p.set(10, 12, "#8a8a8a"); // the blast door
+  p.rect(14, 2, 15, 5, "#4d5258"); p.rect(13, 1, 16, 1, "#6f757c");               // the vent stack
+  p.rect(0, 15, 19, 16, "#5a5648");
+  if (gov) { p.rect(3, 3, 3, 14, "#c9ced3"); p.rect(4, 3, 6, 4, "#3a6fb0"); p.set(4, 5, "#c8402f"); p.set(5, 5, "#eef0f2"); } // a flag on its pole
+  else { for (let x = 0; x <= 19; x += 2) p.set(x, 15, "#9aa1a8"); p.rect(16, 11, 18, 14, OLIVE); p.set(17, 12, LIT_WIN); } // the wire fence, the guard hut
+  return p;
+}
+function paintFalloutShelter() {
+  const p = painter(20, 17);
+  // A public fallout shelter: a grassy mound, a concrete stair kiosk, the yellow and black shelter sign on a post.
+  for (let y = 6; y <= 14; y++) p.rect(Math.max(0, 9 - y), y, Math.min(19, 10 + y), y, y % 2 ? "#5d7a3e" : "#678446");
+  p.rect(6, 8, 13, 14, OUTLINE); p.rect(7, 9, 12, 14, "#a8a8a0"); p.rect(7, 9, 12, 9, "#c4c4bc"); p.rect(9, 11, 11, 14, "#1c1c1e"); // the kiosk, its stairway
+  p.rect(15, 4, 15, 14, "#8a8a8a"); p.rect(14, 2, 18, 5, "#e0b020"); p.rect(15, 3, 17, 4, "#1c1c1e"); p.set(16, 3, "#e0b020"); // the sign
+  p.rect(0, 15, 19, 16, "#4b4b50");
+  return p;
+}
+function paintPrepper() {
+  const p = painter(18, 15);
+  // A prepper's place: a plank shed in the yard, a solar panel on its roof, the steel hatch in the ground beside it.
+  p.rect(0, 12, 17, 14, "#5d7a3e");
+  p.rect(2, 5, 10, 12, OUTLINE); p.rect(3, 6, 9, 12, WOOD); for (let x = 3; x <= 9; x += 2) p.rect(x, 6, x, 12, shade(WOOD, -0.2)); // the shed
+  p.rect(1, 4, 11, 4, shade(WOOD, -0.35)); p.rect(3, 2, 8, 3, "#2a3a5a"); p.set(4, 2, "#5a7ab0"); p.set(7, 3, "#5a7ab0"); // the roof, the panel
+  p.rect(5, 9, 7, 12, shade(WOOD, -0.45));
+  p.rect(12, 10, 16, 12, "#4d5258"); p.rect(13, 11, 15, 11, "#6f757c"); p.set(14, 10, "#c9ced3"); // the hatch
+  return p;
+}
+
 // ---- shops and services by franchise (sim/data-shops.js FRANCHISES) ----
 // A kind with franchises is painted in its franchise's look (poiSpriteCanvas: the place's own by its variant, else the
 // kind's first): { wall, trim, sign, text, accent, style }. The wall; the trim (the footing, the sills, the mullions);
@@ -2349,7 +2383,7 @@ const POI_PAINT = {
   military_hive: paintInfestedBase, bunker_mil: () => paintMilitarySite(true), // sim/crashstart.js: Crashlanding's overrun Guard base (loc.look "hivebase", ui/render.js siteLook) and the unit's mountain bunker
   // Points of interest (sim/pois.js): the small places a tile holds besides its site.
   house: paintHouse, neighbourhood: paintNeighbourhood, garage: paintGarage, corner: paintCorner, pizza: paintPizza,
-  farmstand: paintFarmstand, shed: paintShed, blind: paintBlind, campsite: paintCampsite, hikercamp: paintHikercamp, mineshack: paintMineshack,
+  farmstand: paintFarmstand, shed: paintShed, blind: paintBlind, campsite: paintCampsite, hikercamp: paintHikercamp, mineshack: paintMineshack, bunker: () => paintBunkerPortal(false), govbunker: () => paintBunkerPortal(true), shelter: paintFalloutShelter, prepper: paintPrepper, // bunkers (issue #26)
   pawnshop: paintPawnShop, // sim/shops.js
   jail: paintPolice, // sim/pois.js jailExtra: a county jail, a station's look
   // The shops and services (sim/data-shops.js NEW_KINDS), each painted in its franchise's look.
