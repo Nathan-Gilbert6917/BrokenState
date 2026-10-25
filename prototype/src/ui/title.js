@@ -1,6 +1,7 @@
 // The title screen: what the game opens on (main.js showTitle), in front of everything else. Continue (the latest
-// save), New game (the new-run screen), Load game (the menu's save list), Settings (the menu's Options tab), How to
-// play (its Help tab) and, in the desktop app, Quit. The menu itself (ui/settings.js) opens over the title.
+// save), New game (the new-run screen), Load game (the menu's save list), Hall of fame (ui/halloffame.js: past runs),
+// Settings (the menu's Options tab), How to play (its Help tab) and, in the desktop app, Quit. The menu itself
+// (ui/settings.js) and the Hall of fame open over the title.
 //
 // Behind it, three animated backgrounds drawn in code take turns: a ruined skyline at dusk, a campfire at night and a
 // holdout's wall in a storm, each held for a while and then cross-faded into the next.
@@ -43,6 +44,7 @@ export function titleMenuHTML(ui, api = API) {
   if (last) items.push(`<button class="tt-item primary" data-action="set-continue"${tip(`Load the latest save: ${last.name}`)}>Continue<small>${esc(last.name)}${/\bday \d/i.test(last.name || "") ? "" : ` · day ${esc(last.day ?? "?")}`}</small></button>`);
   items.push(`<button class="tt-item${last ? "" : " primary"}" data-action="title-new"${tip("Pick the map, the mode and your people, then start")}>New game</button>`);
   items.push(`<button class="tt-item" data-action="title-load"${n ? "" : " disabled"}${tip(n ? `Pick one of your ${n} save${n === 1 ? "" : "s"}, or load a save file` : "No saves yet")}>Load game</button>`);
+  items.push(`<button class="tt-item" data-action="hall-open"${tip("Your past runs: every ending you reached, how long, who, what kind of victory (ui/halloffame.js)")}>Hall of fame</button>`);
   items.push(`<button class="tt-item" data-action="title-settings"${tip("Autosave, confirmations, display, the keys")}>Settings</button>`);
   items.push(`<button class="tt-item" data-action="title-help"${tip("How the game works, one topic at a time")}>How to play</button>`);
   if (api && api.desktop) items.push(`<button class="tt-item" data-action="title-quit">Quit</button>`);
@@ -95,7 +97,7 @@ export function syncTitle(state, ui) {
   const on = titleCovers(ui);
   if (!root) { if (!on) return; build(); }
   root.classList.toggle("hidden", !on);
-  root.classList.toggle("covered", on && (!ui.title || !!(ui.settings || ui.zombieLook))); // the menu opens over the title, or the new-run screen is up: only the background shows
+  root.classList.toggle("covered", on && (!ui.title || !!(ui.settings || ui.zombieLook || ui.hall))); // the menu opens over the title, or the new-run screen is up: only the background shows
   if (!on) { scenes.length = 0; sceneSize = ""; return; }
   if (!ui.title) return; // the new-run screen: the menu waits as it was
   const menu = titleMenuHTML(ui);

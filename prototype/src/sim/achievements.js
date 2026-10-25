@@ -80,10 +80,16 @@ export const achInMode = (state, a) => !a.modes || a.modes.includes(runMode(stat
 /** @param {any} state */
 export const achievementsFor = (state) => ACHIEVEMENTS.filter((a) => achInMode(state, a));
 
-// The founders: the people the run began with (relations.js sets s.joined on the first midnight, day 2; a crew still
-// on day 1 has none). Children born in the group are never founders.
+// The founders: the people the run began with. relations.js sets s.joined on the first midnight (day 2 of a normal
+// run, later in a Crashlanding one: its calendar starts in year 4), so the founders are those with the earliest
+// joined day there is (everyone, before that first midnight; someone who came after it and before the next is not
+// one). Children born in the group are never founders.
 /** @param {any} state */
-export const foundersOf = (state) => (state.survivors || []).filter((s) => !s.parents && !s.vol && !s.loan && (s.joined == null || s.joined <= 2));
+export function foundersOf(state) {
+  const pool = (state.survivors || []).filter((s) => !s.parents && !s.vol && !s.loan);
+  const first = Math.min(...pool.map((s) => (s.joined == null ? Infinity : s.joined)));
+  return pool.filter((s) => (first === Infinity ? true : s.joined != null && s.joined <= first)); // none joined yet: the first day, everyone
+}
 
 // The earned list, oldest first: [{ id, day }] (the UI and the hall of fame read it). Unknown ids (a row taken out of
 // the table) are left out.
