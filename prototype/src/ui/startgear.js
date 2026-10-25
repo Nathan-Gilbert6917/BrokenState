@@ -116,6 +116,15 @@ const qtyBox = (ui, k, max, t) => `<label class="small"${tip(t)}>× <input type=
 export function uiFleet(state, ui) {
   const mode = fleetMode(state), live = (state && state.fleet) || [];
   if (!Array.isArray(ui.fleet) || ui.fleet.length !== live.length) ui.fleet = cleanFleet(live.map((f) => ({ type: f.rolledType ? null : f.type, limit: f.limit, load: f.load, empty: f.empty, driver: f.driver, roll: f.roll, backRoll: f.backRoll })), mode); // rolledType: Hardcore's car as the dice rolled it
+  // Each vehicle's dice and owner pinned once rolled (the user's request 2026-10-25: "make each vehicle keep its own dice
+  // when removing"): they go with it when the list closes up (fleet-remove). Hardcore's car is the world's (rollCar).
+  const crew = (state && state.survivors) || [];
+  ui.fleet.forEach((f, i) => {
+    const w = live[i];
+    if (!f || f.empty || !w || w.vid == null || (isHardcore(state) && i === 0)) return;
+    if (f.roll == null && w.roll != null) f.roll = w.roll;
+    if (f.owner == null && w.ownerId != null && crew.some((s) => s.id === w.ownerId)) f.owner = crew.findIndex((s) => s.id === w.ownerId);
+  });
   return ui.fleet;
 }
 // One vehicle as the screen shows it: { v, type, name, label, room (kg), hard, open, limit, load (null: as rolled) }.
@@ -755,7 +764,7 @@ export const SG_ACTIONS = {
     const i = Number(d.i), F = uiFleet(state, ui);
     if (ui.started || !F[i] || F[i].empty) return false;
     if (carSlot(state, i)) F[i] = { ...F[i], load: null, empty: true };
-    else { F.splice(i, 1); F.push({ type: START_FLEET.KIND, limit: START_FLEET.LIMIT, load: null, empty: true }); }
+    else { F.splice(i, 1); F.push({ type: null, limit: START_FLEET.LIMIT, load: null, empty: true, roll: null, backRoll: null, owner: null }); } // the rest close up with their own dice and owners (uiFleet)
     ui.fleetEdit = null;
     return "fleet";
   },
@@ -764,7 +773,7 @@ export const SG_ACTIONS = {
   "fleet-add": (state, ui) => {
     const F = uiFleet(state, ui), i = F.findIndex((f) => f.empty);
     if (ui.started || i < 0) return false;
-    F[i] = { ...F[i], type: null, load: null, empty: false }; // rolled by whose it is (the user's requests 2026-10-25: Hardcore, then Normal and Custom)
+    F[i] = { ...F[i], type: null, load: null, empty: false, roll: carSlot(state, i) ? null : newRoll(), backRoll: null, owner: null }; // rolled by whose it is (the user's requests 2026-10-25: Hardcore, then Normal and Custom), on new dice
     ui.fleetEdit = null;
     return "fleet";
   },
