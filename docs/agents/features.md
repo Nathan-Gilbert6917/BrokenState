@@ -164,6 +164,7 @@ Detail: [combat.md](../features/combat.md).
 - **Before you go in**: the raid plan window (scout, wait for night, kit, side to enter, leave) [raidplan, ui/raidplan]. [details](../features/combat.md#before-you-go-in-the-raid-plan)
 - **The building picked before the raid map**: a card picks the building before the map is made, the autopilot by dice [poiraid, parties, combat] `tools/buildingpicktest.js`. [details](../features/combat.md#the-building-picked-before-the-raid-map)
 - **Raids into building interiors**: buildings and streets to search; locks, keys, safes, makeshift picks [buildingmaps, search, raidloot, locks, gunsafes] `tools/makeshiftpicktest.js`. [details](../features/combat.md#raids-into-building-interiors)
+- **Furniture and appliance catalogue**: 61 kinds with cell rules, hp, kg, carry class, base use and sprites [data-furniture, barricade, ui/isoview] `tools/furnituretest.js`. [details](../features/combat.md#raids-into-building-interiors)
 - **Stealth**: takedowns, facing and view cones, sneaking, lights and darkness, indoor light switches [stealth, vision, indoorlight, ailights].
 - **Vaulting half cover**: over waist-high cells at extra cost, landing winded [combat]. [details](../features/combat.md#vaulting-half-cover)
 - **Windows and the kinds of door**: window states (open, locked, broken) and door kinds with their own hit points, sight and locks [windows, buildingmaps, locks]. [details](../features/combat.md#windows-and-the-kinds-of-door)

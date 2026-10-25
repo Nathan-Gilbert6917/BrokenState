@@ -163,6 +163,7 @@ import { cfgOf, lootQty, battleDials, legacyRaids } from "./worldcfg.js";
 import { concealHidden, concealAim, concealScore, softOn, softCost, markShot, tentStep, tentAI, tearTent, softSetup, settleTents } from "./softcover.js"; // bushes and tents: they hide people, stop no bullets; tents slashed, burned and worn (the user's picks 2026-10-20) // the run's dials (World… on the new-run screen): the battle carries its own
 import { strikeAct, slashAct, settleTentsDown } from "./tentfight.js"; // tents taken down (and carried off) and slashed in a fight (the user's request 2026-10-20)
 import { campRaidMap, campRaidUnits, campSleeperTurn, tentBoxLoot, campAfter } from "./campsite.js"; // the campsite raid: its clearing, its tents and their loot, its campers (the user's request 2026-10-20)
+import { furnitureCells } from "./data-furniture.js"; // the furniture and appliance catalogue: its cells (merged into CELL below)
 import { NEW_KINDS, AREA_DEFS } from "./data-shops.js"; // the shops and services new as places: their raid rooms
 
 // Result handlers by key. Other modules register theirs while they load (conflicts.js, scavenge.js), which can be
@@ -740,8 +741,6 @@ export const CELL = {
   fence:   { walk: false, cover: 1, los: false, name: "Fence" },
   wirefence: { walk: false, cover: 0, los: false, name: "Wire fence" }, // a farmland field's post-and-wire fence (basescatter.js fieldLayer): no cover, climbed over (vaultable)
   fieldgate: { walk: true, cover: 0, los: false, name: "Field gate" }, // a farmland field's gate (basescatter.js fieldLayer): swung open and walked through
-  hay:     { walk: false, cover: 1, los: false, name: "Hay bales" },
-  crate:   { walk: false, cover: 1, los: false, name: "Crates" },
   sandbag: { walk: false, cover: 1, los: false, name: "Sandbags" },
   pump:    { walk: false, cover: 1, los: false, name: "Fuel pump" },
   water:   { walk: false, cover: 0, los: false, name: "Water" },
@@ -749,12 +748,6 @@ export const CELL = {
   // In front of a bridge barricade (deploy.js, conquest.js): steel hedgehogs people walk between but no vehicle can
   // drive through (driveTo wants open ground); battered down from next to them (c.hp, bash).
   tanktrap: { walk: true,  cover: 1, los: false, name: "Tank trap" },
-  // Raid containers and props.
-  shelf:   { walk: false, cover: 1, los: false, name: "Shelves" },
-  locker:  { walk: false, cover: 2, los: true,  name: "Lockers" },
-  cabinet: { walk: false, cover: 1, los: false, name: "Cabinet" },
-  counter: { walk: false, cover: 1, los: false, name: "Counter" },
-  gunsafe: { walk: false, cover: 2, los: false, name: "Gun safe" }, // locks.js / gunsafes.js: a steel safe, waist to head high
   vehicle: { walk: false, cover: 2, los: true,  name: "Your vehicle" },
   // A cart let go (carts.js): a mini barricade on its cell, half cover: the living never vault it (NO_VAULT: they
   // shove it, barricade.js, or go round), the dead crawl over it (barricade.js crawlable), a brute smashes it.
@@ -813,18 +806,13 @@ export const CELL = {
   boarded:   { walk: false, cover: 2, los: true,  name: "Boards" },
   rubble:    { walk: true,  cover: 0, los: false, name: "Rubble" },
   well:      { walk: false, cover: 1, los: false, name: "Well" },
-  barrel:    { walk: false, cover: 1, los: false, name: "Rain barrels" },
   // Building interiors (buildingmaps.js): a closed door blocks sight until someone walks through it (moveAlong opens
-  // it: odoor; a roller door is loud to haul up), tall shelving blocks sight (sneak down the aisles), tables, beds and
-  // cell bars are half cover you see over or through.
+  // it: odoor; a roller door is loud to haul up). The furniture (tall shelving blocks sight, tables, beds and cell bars
+  // are half cover you see over or through) is data-furniture.js's, merged below.
   // A closed door is barred to the dead (they batter it: its hit points) and to people while someone braces it;
   // people otherwise open it (doorOpens), which ends their move.
   idoor:     { walk: true,  cover: 0, los: true,  name: "Closed door", bar: true },
   odoor:     { walk: true,  cover: 0, los: false, name: "Open door" },
-  rack:      { walk: false, cover: 2, los: true,  name: "Shelving" },
-  table:     { walk: false, cover: 1, los: false, name: "Table" },
-  bed:       { walk: false, cover: 1, los: false, name: "Bed" },
-  bars:      { walk: false, cover: 1, los: false, name: "Cell bars" },
   // A siege ladder set against a wall section (siege.js): the wall cell becomes a climb up to height 1, onto the
   // walkway behind it; whoever is on it stands exposed. Its wall stays a wall for sight from the ground (c.t).
   siegeladder: { walk: true, cover: 0, los: false, name: "Siege ladder", h: 1, climb: true },
@@ -836,6 +824,11 @@ export const CELL = {
   // and blocks line of sight"): sheer rock three levels up, no way over it, nothing seen through it.
   crag:      { walk: false, cover: 2, los: true,  name: "Mountainside", tall: 3 },
 };
+// The furniture and appliances (data-furniture.js FURNITURE_KINDS, the one source of truth, issue #8 2026-10-25): the
+// raid containers and props (shelves, lockers, cabinets, counters, crates, tall shelving, tables, beds, cell bars,
+// hay bales, rain barrels, the gun safe) and the catalogue's fridges, stoves, sofas, toilets, pews, hospital beds...
+// Their names are the tooltips' (structureName) and the codex's.
+Object.assign(CELL, furnitureCells());
 // The ground's own height (basescatter.js reliefLayer: c.h with c.ter, −2 to 3 levels): hills and hollows walked up and
 // down a level at a step (climbCost: TERRAIN_STEP levels at most, any way, CLIMB moves a level), the height under
 // whatever stands there (a tree on a hill is a hill's height taller: LOS); a vehicle drives over it with all its cells
