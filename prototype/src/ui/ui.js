@@ -116,6 +116,7 @@ import { trainingInfo, TRAINING, PROFESSOR, lessonGap } from "../sim/training.js
 import { skillProgress } from "../sim/skills.js";
 import { relChip, moodTipAttr, relationsSection, memorialModal, memorialButton } from "./relations.js";
 import { achButton, achievementsModal, achievementsEndHTML } from "./achievements.js"; // the run's achievements (sim/achievements.js)
+import { hallModal, hallEndHTML } from "./halloffame.js"; // the hall of fame of past runs (sim/halloffame.js)
 import { whyModal, cardWhy, markerWhy } from "./causes.js"; // "Why?": the chain of causes of a death or a lost base
 import { familyChip, familyBlock, childrenPeople } from "./family.js"; // children and families (sim/family.js)
 import { diaryModal } from "./diary.js";
@@ -874,6 +875,7 @@ function pickModal(state, ui) {
   if (ui.gearEdit && !ui.started) return ["gearedit", () => startGearEditor(state, ui)]; // ui/startgear.js, over the new-run screen
   if (ui.fleetEdit && !ui.started) return ["fleetedit", () => fleetEditor(state, ui)]; // ui/startgear.js: a starting vehicle's back (Edit…), over the new-run screen
   if (ui.settings) return ["settings", () => settingsModal(state, ui)]; // ui/settings.js: over everything, a battle included
+  if (ui.hall) return ["hall", () => hallModal(state, ui)]; // ui/halloffame.js: over the title, the new-run screen and the end screens
   if (ui.title) return null; // the title screen (ui/title.js) is up: the new-run screen waits for New game
   takeLootReq(state, ui); // a raid's search window asked for by the battle (ui/combat.js, sim/raidloot.js)
   if (ui.gunb && ui.gunb.battle != null && state.combat && !state.combat.over) return ["gunb", () => gunBuilderModal(state, ui)]; // ui/gunbuilder.js over a battle (the item menu's Modify on a fighter's gun)
@@ -886,11 +888,11 @@ function pickModal(state, ui) {
   if (!ui.started) return ["newrun", () => newRunScreen(state, ui)];
   // A card raised over a fight (sim/floorfolk.js: the survivors barricaded upstairs) is the one card that shows during it.
   if (state.combat && !state.combat.over && !state.gameOver && state.cards.length && state.cards[0].battle) return ["card", () => cardModal(state, state.cards[0])];
-  if (state.combat) return state.gameOver && !state.combat.over ? ["over", () => gameOverScreen(state)] : null;
+  if (state.combat) return state.gameOver && !state.combat.over ? ["over", () => gameOverScreen(state, ui)] : null;
   if (ui.why) return ["why", () => whyModal(state, ui)]; // ui/causes.js: over a card, the diary, the memorial wall or game over
   // A card's result comes before "game over", so the last thing that happened is not skipped.
   if (ui.cardResult) return ["result", () => `<div class="box"><h1>${esc(ui.cardResult.title)}</h1><div class="result">${esc(ui.cardResult.text || "Done.")}</div><button class="primary" data-action="cardok">Continue</button></div>`];
-  if (state.gameOver) return ui.ledger ? ["ledger", () => ledgerModal(state, ui)] : ui.achView ? ["ach", () => achievementsModal(state, ui)] : ["over", () => gameOverScreen(state)]; // the Ledger and the achievements open over the end screen
+  if (state.gameOver) return ui.ledger ? ["ledger", () => ledgerModal(state, ui)] : ui.achView ? ["ach", () => achievementsModal(state, ui)] : ["over", () => gameOverScreen(state, ui)]; // the Ledger and the achievements open over the end screen
   // A card that stops the clock by the pause rules, or one opened from the tray (ui/pacing.js puts it first).
   if (nameModalUp(state, ui)) return ["namebase", () => nameBaseModal(state, ui)]; // ui/basename.js: a base just founded, or ✎ Rename (before its founding card)
   if (cardUp(state, ui)) return ["card", () => trayCardFrame(state, ui, cardModal(state, state.cards[0]))];
@@ -954,9 +956,9 @@ export function modalKind(state, ui) {
 // The new-run setup screen lives in ui/newgame.js (newRunScreen).
 
 // The end screen (fallen, or a victory) with the run summary under its words (ui/ledger.js), before its buttons.
-function gameOverScreen(state) {
+function gameOverScreen(state, ui) {
   return gameOverWords(state).replace('<div class="box">', '<div class="box rsbox">')
-    .replace('<div class="row">', `${achievementsEndHTML(state)}<div class="rs-over">${runSummaryHTML(state, { noButtons: true })}</div><div class="row"><button data-action="ld-open" data-tab="ledger"${tip("Every resource day by day, per base (E)")}>📈 Ledger</button><button data-action="ach-open"${tip("Every achievement of this run")}>🏆 Achievements</button>`);
+    .replace('<div class="row">', `${hallEndHTML(ui)}${achievementsEndHTML(state)}<div class="rs-over">${runSummaryHTML(state, { noButtons: true })}</div><div class="row"><button data-action="ld-open" data-tab="ledger"${tip("Every resource day by day, per base (E)")}>📈 Ledger</button><button data-action="ach-open"${tip("Every achievement of this run")}>🏆 Achievements</button>`);
 }
 function gameOverWords(state) {
   if (state.victory && state.victoryReason === "alliance") {

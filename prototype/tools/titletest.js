@@ -2,7 +2,8 @@
 // Usage: node tools/titletest.js
 // - The menu: New game first and highlighted with no saves, Load game disabled; with saves Continue comes first
 //   (the latest save's name), Load game is enabled; Quit only in the desktop app. Clean HTML, every button has a handler.
-// - New game hides the title; Load game, Settings and How to play open the menu at the right tab over it; the title
+// - New game hides the title; Load game, Settings and How to play open the menu at the right tab over it; Hall of fame
+//   opens its window (ui/halloffame.js) over it; the title
 //   is never covered by the new-run screen (ui.js) while it is up.
 // - The backgrounds take turns: three scenes, each held and then cross-faded into the next, round and round.
 // - main.js: opens on the title (unless ?notitle), hands Esc and the map keys to it, loading a game closes it, and the
@@ -10,6 +11,7 @@
 import { readFileSync } from "node:fs";
 import { TITLE_ACTIONS, titleMenuHTML, initTitle, titleCovers } from "../src/ui/title.js";
 import { SETTINGS_ACTIONS } from "../src/ui/settings.js";
+import { HALL_ACTIONS } from "../src/ui/halloffame.js"; // the title's Hall of fame
 
 let fails = 0, passes = 0;
 const check = (ok, what) => { if (ok) passes++; else { fails++; console.log("FAIL", what); } };
@@ -23,7 +25,7 @@ const api = { desktop: false, quit: () => calls.push("quit") };
 initTitle(api);
 
 const actionsOf = (html) => [...html.matchAll(/data-action="([^"]+)"/g)].map((m) => m[1]);
-const known = (a) => a in TITLE_ACTIONS || a in SETTINGS_ACTIONS;
+const known = (a) => a in TITLE_ACTIONS || a in SETTINGS_ACTIONS || a in HALL_ACTIONS;
 
 // ---------- the menu, without saves ----------
 let html = titleMenuHTML({}, api);
@@ -34,7 +36,8 @@ check(!/title-quit/.test(html), "in the browser: no Quit");
 check(actionsOf(html).every(known), `every button has a handler (${actionsOf(html).filter((a) => !known(a)).join(", ")})`);
 check(!/undefined|NaN|null/.test(html), "no undefined / NaN / null");
 const opened = (html.match(/<button/g) || []).length, closed = (html.match(/<\/button>/g) || []).length;
-check(opened === closed && opened === 4, `four buttons, balanced (${opened}/${closed})`);
+check(opened === closed && opened === 5, `five buttons, balanced (${opened}/${closed})`);
+{ const u = {}; HALL_ACTIONS["hall-open"]({}, u, {}); check(/data-action="hall-open"/.test(html) && u.hall && u.hall.ending === "all" && !u.hall.sel, "Hall of fame opens its window, the whole list"); }
 check(/data-action="title-quit"/.test(titleMenuHTML({}, { ...api, desktop: true })), "in the desktop app: Quit");
 
 // ---------- with saves ----------
