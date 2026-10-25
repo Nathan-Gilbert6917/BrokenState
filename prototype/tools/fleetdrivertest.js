@@ -1,7 +1,8 @@
 // Who drives each starting vehicle (sim/startfleet.js fleetDrivers, seatDrivers, pickDriver; 2026-10-24, user request:
 // "For a new game start for setting vehicles also set which survivor is driving it with a dropdown of avaliable
 // survivors").
-//   1. by default one at each wheel: Normal and Custom the crew in order, Hardcore's car its owner (whose car it was);
+//   1. by default one at each wheel: each vehicle its owner (whose it was, rolled in crew order in every mode since
+//      2026-10-25; Hardcore's car its owner), then the crew in order;
 //   2. a driver set on the screen is the one at that wheel (v.driver), kept through a rebuild; one picked who drives
 //      another vehicle swaps with that one's driver; a crew made smaller drops a driver past it;
 //   3. the screen: a Driver select on each vehicle's row (Customize on or off), the free survivors first and the ones at
@@ -34,7 +35,7 @@ import { raidEnemies } from "../src/sim/scavenge.js";
 import { setEntry } from "../src/sim/raidplan.js";
 import { setRounds } from "../src/sim/ammo.js";
 import { renderExpedition } from "../src/ui/expedition.js";
-import { cleanFleet, fitFleet, fleetDrivers, fleetDriver, fleetVehicle, resizeFleet } from "../src/sim/startfleet.js";
+import { cleanFleet, fitFleet, fleetDrivers, fleetDriver, fleetVehicle, fleetName, resizeFleet } from "../src/sim/startfleet.js";
 import { newRunScreen } from "../src/ui/newgame.js";
 import { SG_CHANGE } from "../src/ui/startgear.js";
 
@@ -61,11 +62,11 @@ section("2. a driver set, kept, swapped");
 {
   const fleet = [{ type: "truck", driver: 2 }, { type: "van" }];
   const cs = createWorld({ seed: 42, factionCount: 5, custom: SMALL, fleet });
-  check(fleetDriver(cs, 0) === cs.survivors[2] && fleetDriver(cs, 1) === cs.survivors[0], "the third survivor drives the pickup, the first free one the van");
+  check(cs.fleet[1].ownerId === cs.survivors[1].id && fleetDriver(cs, 0) === cs.survivors[2] && fleetDriver(cs, 1) === cs.survivors[1], "the third survivor drives the pickup, the van's owner (the second, free) the van");
   const ui = UI({ mode: "custom", fleet: cleanFleet(fleet, "custom") });
-  check(SG_CHANGE["fleet-driver"](cs, ui, sel(1, 2)) === "fleet" && ui.fleet[1].driver === 2 && ui.fleet[0].driver === 0, "picking the pickup's driver for the van swaps them");
+  check(SG_CHANGE["fleet-driver"](cs, ui, sel(1, 2)) === "fleet" && ui.fleet[1].driver === 2 && ui.fleet[0].driver === 1, "picking the pickup's driver for the van swaps them (the van's owner to the pickup)");
   const re = createWorld({ seed: 42, factionCount: 5, custom: SMALL, fleet: ui.fleet });
-  check(fleetDriver(re, 1) === re.survivors[2] && fleetDriver(re, 0) === re.survivors[0] && fleetVehicle(re, 1).driver === re.survivors[2].id, "the world again: the drivers as picked");
+  check(fleetDriver(re, 1) === re.survivors[2] && fleetDriver(re, 0) === re.survivors[1] && fleetVehicle(re, 1).driver === re.survivors[2].id && fleetVehicle(re, 0).driver === re.survivors[1].id, "the world again: the drivers as picked");
   check(SG_CHANGE["fleet-driver"](re, ui, sel(1, 2)) === false, "the same driver again: nothing to do");
   check(SG_CHANGE["fleet-driver"](re, UI({ started: true, fleet: ui.fleet }), sel(1, 3)) === false, "not once started");
   const hfleet = [{ type: null, driver: null }, { type: "suv", driver: null }];
@@ -89,7 +90,8 @@ section("3. the screen");
     const h = newRunScreen(cs, UI({ mode: "custom", freeEdit: free }));
     const s0 = (h.match(/data-action="fleet-driver" data-i="0"[\s\S]*?<\/select>/) || [""])[0];
     check((h.match(/data-action="fleet-driver"/g) || []).length === 2, `Customize ${free ? "on" : "off"}: a Driver select on each vehicle`);
-    check(new RegExp(`value="0" selected>${cs.survivors[0].name}<`).test(s0) && s0.includes(`>${cs.survivors[2].name}<`) && /<optgroup label="Swap with"><option value="1" >[^<]+ \(at Vehicle 2\)</.test(s0), `Customize ${free ? "on" : "off"}: its driver, the free ones, and the one at Vehicle 2's wheel under Swap with`);
+    const at2 = fleetName(cs, 1), esc = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    check(at2.startsWith(`${cs.survivors[1].name.split(" ")[0]}'s `) && new RegExp(`value="0" selected>${cs.survivors[0].name}<`).test(s0) && s0.includes(`>${cs.survivors[2].name}<`) && new RegExp(`<optgroup label="Swap with"><option value="1" >${esc(cs.survivors[1].name)} \\(at ${esc(at2)}\\)<`).test(s0), `Customize ${free ? "on" : "off"}: its driver, the free ones, and the one at ${at2}'s wheel under Swap with`);
   }
 }
 
