@@ -38,7 +38,8 @@
 //     rack, the command centre, the barracks' bunks and footlockers, the genset, the pantry), no windows, the levels
 //     named down, the Entrance level mostly rock, the stairs landing in the main tunnel, the escape hatch as a second
 //     exit, every door reachable and the containers on their pieces; the loot per kind (the prepper's pantry the
-//     richest food per area), the scenes, the POI rates on a world;
+//     richest food per area), the scenes, the POI rates on a world; every kind's twelve named plans (BUNKER_VARIANTS),
+//     each built and checked, at least 12 distinct room lists a kind.
 //   - military bases, air bases, airports, prisons laid out like the real thing (militarylayout.js, issue
 //     #25): each building at its real size with its signature rooms and pieces (a footlocker by every bunk, an armory's
 //     vault behind a locked vault door with weapon racks in rows, military vehicles in the motor pool's bays, a control
@@ -64,8 +65,8 @@ import { rollScenes } from "../src/sim/interiorscenes.js";
 import { COMMERCIAL_KEYS, styleName } from "../src/sim/shoplayout.js";
 import { CIVIC_STYLES } from "../src/sim/civiclayout.js";
 import { MIL_KEYS, MILITARY_STYLES, MIL_SIZE } from "../src/sim/militarylayout.js";
-import { BUNKER_STYLES, BUNKER_KEYS } from "../src/sim/bunkerlayout.js"; // bunkers (issue #26)
-import { BUNKER_POI } from "../src/sim/pois.js";
+import { BUNKER_STYLES, BUNKER_KEYS, BUNKER_VARIANTS } from "../src/sim/bunkerlayout.js"; // bunkers (issue #26)
+import { BUNKER_POI, POI } from "../src/sim/pois.js";
 import { pieceDef } from "../src/sim/data-furniture.js";
 import { boxLoot, FLOOR_RICH } from "../src/sim/combat.js";
 import { GEAR, supValue } from "../src/sim/data.js";
@@ -972,27 +973,36 @@ console.log("\nBunkers (bunkerlayout.js)");
   const errs = {};
   const err = (k, msg) => { (errs[k] = errs[k] || []).push(msg); };
   const value = (def) => { let v = 0; for (const [k, [p, lo, hi]] of Object.entries(def.loot)) v += Math.min(0.95, p) * ((lo + hi) / 2) * supValue(k); for (const [k, p] of def.gear) v += p * ((GEAR[k] && GEAR[k].value) || 0); return v; };
+  // The rooms every plan of a kind has (its variants differ in the rest: bunkerlayout.js BUNKER_VARIANTS); food: one of.
   const SIG = {
-    milbunker: { rooms: ["garage", "guardpost", "portal", "airlock", "checkpoint", "hatch", "tunnel", "command", "comms", "barracks", "armory", "magazine", "mess", "kitchen", "rations", "medbay", "genroom", "waterstore", "stores"], exit: /hatch/i, power: "genset" },
-    mountainbunker: { rooms: ["garage", "guardpost", "portal", "airlock", "checkpoint", "hatch", "tunnel", "command", "comms", "barracks", "quarters", "armory", "magazine", "mess", "kitchen", "rations", "medbay", "genroom", "waterstore", "stores", "latrine"], exit: /hatch/i, power: "genset", levels: 3 },
-    govbunker: { rooms: ["guardpost", "portal", "airlock", "checkpoint", "hatch", "tunnel", "situation", "comms", "govoffice", "barracks", "vault", "armory", "genroom", "kitchen", "rations", "medbay"], exit: /hatch/i, power: "genset" },
-    shelter: { rooms: ["stairhead", "hatch", "tunnel", "bunkhall", "rations", "genroom", "firstaid", "latrine"], exit: /hatch/i, power: "genset" },
-    prepper: { rooms: ["shed", "prepairlock", "prepbunks", "preppantry", "prepguns"], exit: null, power: "batteries" },
+    milbunker: { rooms: ["portal", "airlock", "checkpoint", "hatch", "tunnel", "genroom"], bunks: ["barracks", "quarters"], food: ["rations"], power: "genset" },
+    mountainbunker: { rooms: ["garage", "guardpost", "portal", "airlock", "checkpoint", "hatch", "tunnel", "command", "comms", "barracks", "quarters", "armory", "magazine", "mess", "kitchen", "rations", "medbay", "genroom", "waterstore", "stores", "latrine"], bunks: ["barracks"], food: ["rations"], power: "genset", levels: 3 },
+    govbunker: { rooms: ["guardpost", "portal", "airlock", "checkpoint", "hatch", "tunnel", "genroom"], bunks: ["barracks"], food: ["rations"], power: "genset" },
+    shelter: { rooms: ["stairhead", "tunnel", "genroom"], bunks: ["bunkhall"], food: ["rations", "rootcellar"], power: "genset" },
+    prepper: { rooms: ["shed", "prepguns"], bunks: ["prepbunks"], food: ["preppantry", "rootcellar"], power: "batteries" },
   };
   const PIECES = { airlock: ["deconshower", "hazmatrack"], command: ["maptable", "radioconsole", "screens"], situation: ["maptable", "radioconsole"], comms: ["radioconsole"], barracks: [["bunk", "cot"], "footlocker"], genroom: ["genset"], waterstore: ["watertank"], rations: ["rationshelf"], armory: ["gunrack"], medbay: [["hospbed", "medcab"]], hatch: ["escapeladder"], bunkhall: [["bunk", "cot"]], preppantry: ["rationshelf"], prepguns: ["gunrack", "radioconsole", "batteries"], prepairlock: ["hazmatrack"], portal: [] };
-  const loot = {}, sceneKinds = new Set(), sizes = {};
-  for (const key of [...BUNKER_KEYS.filter((k) => k !== "milbunker"), "milbunker", "mountainbunker"].filter((k, i, a) => a.indexOf(k) === i)) for (let s = 0; s < N; s++) {
-    const rng = new Rng(52000 + s * 7919 + key.length * 17);
-    const spec = BUILDINGS[key].make(rng);
+  const loot = {}, sceneKinds = new Set(), sizes = {}, plans = {}, named = {};
+  // Every kind's every plan (BUNKER_VARIANTS, by o.plan), a few seeds each, and the dice's own pick; the mountain bunker by its own.
+  const runs = [];
+  for (const key of BUNKER_KEYS) for (let p = 0; p < BUNKER_VARIANTS[key].length; p++) for (let s = 0; s < 3; s++) runs.push([key, p, s]);
+  for (const key of BUNKER_KEYS) for (let s = 0; s < N; s++) runs.push([key, null, s]);
+  for (let s = 0; s < N; s++) runs.push(["mountainbunker", null, s]);
+  for (const [key, plan, s] of runs) {
+    const rng = new Rng(52000 + s * 7919 + key.length * 17 + (plan ?? 99) * 131);
+    const spec = BUILDINGS[key].make(rng, plan == null ? {} : { plan });
     const m = assemble(rng, spec, { key, name: BUILDINGS[key].name, withVehicle: s % 2 === 1 });
-    const tag = `${key} ${s}`, S = SIG[key];
+    if (spec.variant) (named[key] = named[key] || new Set()).add(spec.variant);
+    const tag = `${key} ${plan ?? "dice"} ${s}`, S = SIG[key];
     (sizes[key] = sizes[key] || new Set()).add(`${spec.bw}x${spec.bh}/${m.storeys}`);
     const grids = m.floors || [{ cells: m.cells }];
     const rooms = m.rooms.filter((a) => !a.outdoor);
     const at = (f, x, y) => (x >= 0 && y >= 0 && x < m.w && y < m.h ? grids[f].cells[y * m.w + x] : null);
     const cellsIn = (a) => { const out = []; for (let y = a.y0 + 1; y < a.y0 + a.h - 1; y++) for (let x = a.x0 + 1; x < a.x0 + a.w - 1; x++) out.push([x, y, at(a.f, x, y)]); return out; };
     const marks = new Set(rooms.map((a) => a.bunker));
-    for (const r of S.rooms) if (!marks.has(r)) err("rooms", `${tag} no ${r}`);
+    for (const r of S.rooms) if (!marks.has(r)) err("rooms", `${tag} (${spec.variant}) no ${r}`);
+    if (!S.bunks.some((r) => marks.has(r)) || !S.food.some((r) => marks.has(r))) err("rooms", `${tag} (${spec.variant}) no bunks or no food store`);
+    (plans[key] = plans[key] || new Set()).add([m.storeys, ...grids.map((F, f) => rooms.filter((a) => (a.f || 0) === f).map((a) => a.bunker).sort().join(","))].join("|"));
     if (!rooms.every((a) => a.bunker && BUNKER_STYLES[a.bunker])) err("style", tag);
     for (const a of rooms) {
       const want = PIECES[a.bunker];
@@ -1007,22 +1017,23 @@ console.log("\nBunkers (bunkerlayout.js)");
     const names = grids.map((F) => F.name);
     if (names[0] !== "Entrance level" || names.slice(1).some((n, i) => n !== `Level −${i + 1}`) || (S.levels && m.storeys !== S.levels) || m.storeys < 2) err("levels", `${tag} ${names.join("/")}`);
     // The blast door (military and government): the front door's kind; the airlock's doors steel.
-    if (S.rooms.includes("portal")) {
+    if (marks.has("portal") && key !== "shelter") {
       const fd = at(0, m.front.x, m.front.y);
       if (!fd || fd.dk !== "blast") err("blast", `${tag} ${fd && fd.dk}`);
       for (const a of rooms.filter((r) => r.bunker === "airlock")) if ((a.doors || []).length < 2 || !a.doors.every(([x, y]) => (at(a.f, x, y) || {}).dk === "steel")) err("airlock", `${tag} ${(a.doors || []).length} doors`);
     }
     // A second exit where the plan has one (the escape hatch), reachable.
-    if (S.exit && !m.exits.some((e) => S.exit.test(e.name) && e.zone >= 0)) err("exit", `${tag} ${m.exits.map((e) => e.name)}`);
+    if ((spec.exits || []).some((e) => /hatch/i.test(e.name)) && !m.exits.some((e) => /hatch/i.test(e.name) && e.zone >= 0)) err("exit", `${tag} ${m.exits.map((e) => e.name)}`);
+    if (["milbunker", "mountainbunker", "govbunker"].includes(key) && !m.exits.some((e) => /hatch/i.test(e.name))) err("exit", `${tag} no escape hatch`);
     // The Entrance level mostly rock (the footprint's crag), only the portal shows.
     const B = m.building;
     let rock = 0;
     for (let y = B.y0; y < B.y0 + B.h; y++) for (let x = B.x0; x < B.x0 + B.w; x++) { const c = at(0, x, y); if (c.k === "crag" || c.k === "ventstack") rock++; }
     if (rock < B.w * B.h * (key === "shelter" ? 0.4 : 0.5)) err("rock", `${tag} ${rock} of ${B.w * B.h}`);
     // The stair runs land in the main tunnel (military, government, shelter: the checkpoint's and the hatch's).
-    if (S.rooms.includes("tunnel")) for (const [x, y] of m.stairs) for (let f = 1; f < grids.length; f++) {
+    if (marks.has("tunnel")) for (const [x, y] of m.stairs) for (let f = 1; f < grids.length; f++) {
       const r = rooms.find((a) => a.f === f && x > a.x0 && x < a.x0 + a.w - 1 && y > a.y0 && y < a.y0 + a.h - 1);
-      if (!r || (r.bunker !== "tunnel" && key !== "shelter")) err("runs", `${tag} the stairs at ${x},${y} on ${f} in ${r && r.name}`);
+      if (!r || r.bunker !== "tunnel") err("runs", `${tag} (${spec.variant}) the stairs at ${x},${y} on ${f} in ${r && r.name}`);
     }
     // Every room's doors reachable from each other; the containers the lootable pieces (and the Humvee).
     for (const a of rooms) {
@@ -1049,6 +1060,8 @@ console.log("\nBunkers (bunkerlayout.js)");
   }
   const fmt = (k) => `${k} ${(errs[k] || []).length}${errs[k] ? ` (${errs[k].slice(0, 3).join("; ")})` : ""}`;
   for (const [k, v] of Object.entries(sizes)) console.log(`    ${k.padEnd(15)} ${[...v].slice(0, 4).join(" ")}`);
+  check(BUNKER_KEYS.every((k) => plans[k].size >= 12 && named[k].size >= 12), `a dozen distinct plans a kind, each named (${BUNKER_KEYS.map((k) => `${k} ${plans[k].size} plans, ${named[k].size} names`).join("; ")})`);
+  for (const k of BUNKER_KEYS) console.log(`    ${k}: ${BUNKER_VARIANTS[k].map((v) => v.name).join(", ")}`);
   check(!errs.rooms && !errs.style, `every kind's signature rooms, each furnished by its style (${fmt("rooms")})`);
   check(!errs.pieces && !errs.power, `the signature pieces: the airlock's showers and hazmat rack, the command centre's map table, radios and screens, bunks and footlockers, the genset, the water tanks, the ration shelves (${fmt("pieces")}, ${fmt("power")})`);
   check(!errs.windows, `no windows on any level (${fmt("windows")})`);
@@ -1069,9 +1082,10 @@ console.log("\nBunkers (bunkerlayout.js)");
   const seen = {}, expect = {};
   for (const t of st.tiles) {
     for (const p of t.pois || []) if (p.extra === "bunker") seen[p.kind] = (seen[p.kind] || 0) + 1;
-    for (const k of ["bunker", "govbunker", "shelter", "prepper"]) expect[k] = (expect[k] || 0) + (BUNKER_POI[k][t.terrain] || 0);
+    const room = (t.pois || []).filter((p) => p.extra !== "bunker").length < POI.MAX; // a tile its other places leave room on (POI.MAX)
+    for (const k of ["bunker", "govbunker", "shelter", "prepper"]) expect[k] = (expect[k] || 0) + (room ? BUNKER_POI[k][t.terrain] || 0 : 0);
   }
-  console.log(`    on a ${st.grid.width} × ${st.grid.height} world: ${Object.keys(expect).map((k) => `${k} ${seen[k] || 0} (${expect[k].toFixed(1)} at the base rate)`).join(", ")}`);
+  console.log(`    on a ${st.grid.width} × ${st.grid.height} world: ${Object.keys(expect).map((k) => `${k} ${seen[k] || 0} (${expect[k].toFixed(1)} at the base rate on the tiles with room)`).join(", ")}`);
   check(["shelter", "prepper"].every((k) => (seen[k] || 0) >= expect[k] * 0.5 && (seen[k] || 0) <= expect[k] * 1.6) && (seen.bunker || 0) >= 1 && (seen.bunker || 0) <= expect.bunker * BUNKER_POI.NEAR, "the shelters and prepper bunkers at their rates, a military bunker or more (more often near a military site)");
   check(SITES.bunker_mil && SITES.bunker_mil[0] === "mountainbunker" && ["bunker", "govbunker", "shelter", "prepper"].every((k) => SITES[k] && BUILDINGS[SITES[k][0]]), "the bunker sites and points of interest open their bunkers");
 }
