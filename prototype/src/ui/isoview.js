@@ -856,6 +856,10 @@ const FURN_DRAW = {
     const ax = along(o), w = flatM(PAL.woodDk);
     return [run(ax, 0.22, 0.28, 0, 9, w, 0.04, 0.1), run(ax, 0.72, 0.78, 0, 9, w, 0.04, 0.1), run(ax, 0.22, 0.28, 0, 9, w, 0.9, 0.96), run(ax, 0.72, 0.78, 0, 9, w, 0.9, 0.96), run(ax, 0.22, 0.78, 2, 3, fwood(PAL.wood), 0.04, 0.96), run(ax, 0.2, 0.8, 9, 12, fwood(PAL.woodLt, 50), 0.02, 0.98), run(ax, 0.6, 0.76, 12, 14, flatM(FURNC.steel), 0.7, 0.86)];
   } },
+  gunrack: { top: 24, p: (o) => { // #20: a wall rack, the long guns' dark stocks and barrels standing in their slots
+    const ax = along(o), face = (f, s, t, X, Y) => (f === "top" ? mul(PAL.wood, 1.1) : t > 3 && t < 21 && Math.floor(s) % 3 === 1 ? mul(PAL.metalDk, 0.8) : mul(PAL.wood, 0.85 + n2(X, Y, 41) * 0.1));
+    return [run(ax, 0.3, 0.7, 0, 24, face, 0.14, 0.86)];
+  } },
   toolchest: { top: 18, p: (o) => { const ax = along(o); return [run(ax, 0.28, 0.72, 0, 18, fdrawers(FURNC.red, 3, FURNC.chrome), 0.18, 0.82)]; } },
   // ---------- police, barracks, schools, offices ----------
   bunk: { top: 22, p: (o) => {

@@ -2,12 +2,12 @@
 // want all reasonable appliances, furniture and some decor to be lootable and taken to your base for use, like [...]
 // shelves, crates etc for storage"). The base part of the ticket's furnituretest (the raid part is #8's
 // tools/furnituretest.js).
-// Checks: a stocked shelving unit set in a hut adds 150 kg and is a container that takes gear first; a wardrobe takes
-// clothing first; a gun rack holds up to 6 guns and nothing else; a tool chest's tools count for toolreqs; a sofa
-// gives +0.5 to the building's sleepers once per 6 of them, and the comfort line is capped by COMFORT.MAX; a found
+// Checks: a stocked shelves piece set in a hut adds its 40 kg (#8's catalogue) and is a container that takes gear first; a wardrobe takes
+// clothing first (the catalogue's numbers: a shelves piece 40 kg, a sofa +1); a gun rack holds up to 6 guns and nothing else; a tool chest's tools count for toolreqs; a sofa
+// gives its mood to the building's sleepers once per 6 of them, and the comfort line is capped by COMFORT.MAX; a found
 // workbench counts as a crafting bench; pick up returns the item; demolishing the building returns every piece; the
-// Build list lists a stored piece only; the governor sets a stored shelving unit before queueing crates; a group with
-// a shelving unit in its armory sets it and its storage counts it; a saved game from before loads (beds unchanged).
+// Build list lists a stored piece only; the governor sets stored shelving before queueing crates; a group with
+// shelves in its armory sets it and its storage counts it; a saved game from before loads (beds unchanged).
 // Usage: node tools/basefurnituretest.js [seed]
 import { createWorld, hub, residents } from "../src/sim/world.js";
 import { registerCombatHandler } from "../src/sim/combat.js";
@@ -24,7 +24,8 @@ import { worksAt, groupStorage } from "../src/sim/groupworks.js";
 import { homesOf } from "../src/sim/groupbases.js";
 import * as BM from "../src/sim/basemap.js";
 import * as FU from "../src/sim/furniture.js";
-import { FURNITURE_KINDS, COMFORT } from "../src/sim/data-basefurniture.js";
+import { FURN_KINDS, COMFORT } from "../src/sim/data-basefurniture.js";
+import { FURNITURE_KINDS } from "../src/sim/data-furniture.js";
 
 const seed = Number(process.argv[2] || 21);
 let pass = 0, fail = 0;
@@ -57,34 +58,35 @@ const set = (st, base, type) => { base.armory.push(makeItem(type, 0.9)); const r
 
 section("The pieces");
 {
-  const kinds = Object.keys(FURNITURE_KINDS);
+  const kinds = FURN_KINDS;
   check(kinds.every((k) => GEAR[`f_${k}`] && GEAR[`f_${k}`].bulky && GEAR[`f_${k}`].twoHands && GEAR[`f_${k}`].furniture === k && GEAR[`f_${k}`].weight === FURNITURE_KINDS[k].kg), `${kinds.length} item forms f_<kind>: bulky, both hands, furniture: <kind>, weight = kg`);
   check(kinds.every((k) => BUILDINGS[`f_${k}`] && BUILDINGS[`f_${k}`].fit && BUILDINGS[`f_${k}`].furniture && BM.FOOT[`f_${k}`] && BM.FOOT[`f_${k}`].fit), "each a placed fitting with a footprint");
   const st = (k) => FU.useOf(`f_${k}`).storage;
-  check(st("shelf") === 150 && st("bookshelf") === 60 && st("crate") === 40 && st("cabinet") === 60 && st("filecab") === 50 && st("wardrobe") === 80 && st("dresser") === 50 && st("locker") === 100 && st("toolchest") === 30 && st("display") === 40 && st("palletrack") === 300, "storage kg as the ticket's list");
-  check(FU.useOf("f_sofa").comfort === 0.5 && FU.useOf("f_armchair").comfort === 0.25 && FU.useOf("f_workbench").work === "craftbench", "a sofa +0.5, an armchair +0.25, a workbench a crafting bench");
+  check(["shelf", "rack", "crate", "cabinet", "filing", "bookshelf", "wardrobe", "dresser", "locker", "toolchest", "displaycase", "gunrack"].every((k) => kinds.includes(k) && st(k) === Number(FURNITURE_KINDS[k].use.slice(8))), "the storage pieces, their kg the catalogue's use");
+  check(!kinds.includes("fridge") && !kinds.includes("bed") && !kinds.includes("safe"), "not the appliances (#19), the beds (data-beds.js) or the fixed pieces");
+  check(FU.useOf("f_sofa").comfort === 1 && FU.useOf("f_armchair").comfort === 0.5 && FU.useOf("f_workbench").work === "workbench", "a sofa +1, an armchair +0.5, a workbench a crafting bench");
   const two = kinds.filter((k) => FURNITURE_KINDS[k].carry === "two"), one = kinds.filter((k) => FURNITURE_KINDS[k].carry === "one");
   check(Math.min(...two.map((k) => FURNITURE_KINDS[k].kg)) > Math.max(...one.map((k) => FURNITURE_KINDS[k].kg)), "a load for two weighs more than a load for one");
   check(FU.isFurniture("bed") && FU.isFurniture("f_shelf") && !FU.isFurniture("shelves") && !FU.isFurniture("f_nothing"), "isFurniture: the beds and the pieces, not the crafted shelves");
 }
 
-section("Storage: a shelving unit in a hut");
+section("Storage: shelves in a hut");
 {
   const st = world();
   const h = hub(st);
   const hut = withHouse(st, h);
   const cap0 = storageOf(st, h).cap;
   h.armory.push(makeItem("f_shelf", 0.9));
-  check(canBuild(st, h, "f_shelf").ok, "a shelving unit in the stores and a hut: it can be set");
+  check(canBuild(st, h, "f_shelf").ok, "shelves in the stores and a hut: it can be set");
   const menu = BM.buildMenu(st, h).filter((m) => m.group === "Furniture");
   check(menu.some((m) => m.type === "f_shelf" && m.have === 1 && m.ok) && !menu.some((m) => m.type === "f_wardrobe"), `the Build list lists the stored piece, not the ones not in the stores (${menu.filter((m) => m.type.startsWith("f_")).map((m) => m.type).join(", ")})`);
   const msg = queueBuild(st, h, "f_shelf");
   const shelf = h.buildings.find((b) => b.type === "f_shelf");
-  check(!!shelf && inArmory(h, "f_shelf") === 0 && !h.construction.length && /150 kg/.test(msg), `set from the stores, no job (${msg})`);
+  check(!!shelf && inArmory(h, "f_shelf") === 0 && !h.construction.length && /40 kg/.test(msg), `set from the stores, no job (${msg})`);
   check(BM.fittingsIn(st, h, hut.id).some((o) => o.rec === shelf), "it stands inside the hut");
   const s1 = storageOf(st, h);
-  check(s1.cap === cap0 + 150 && s1.containers.some((c) => c.key === keyOf(shelf) && c.cap === 150 && c.kind === "building"), `+150 kg of room (${cap0} → ${s1.cap}), a container of its own`);
-  check(storageSummary(st, h).some((r) => /shelving unit 150/i.test(r)), `the Overview's Storage row counts it (${storageSummary(st, h)[1]})`);
+  check(s1.cap === cap0 + 40 && s1.containers.some((c) => c.key === keyOf(shelf) && c.cap === 40 && c.kind === "building"), `+40 kg of room (${cap0} → ${s1.cap}), a container of its own`);
+  check(storageSummary(st, h).some((r) => /shelves 40/i.test(r)), `the Overview's Storage row counts it (${storageSummary(st, h)[1]})`);
   const L = containersOf(st, h);
   const c = L.find((x) => x.key === keyOf(shelf));
   check(c && c.assignable, "an assignable container in the Storage tab");
@@ -92,12 +94,12 @@ section("Storage: a shelving unit in a hut");
   h.armory.push(makeItem(gearKey, 0.9));
   const it = h.armory[h.armory.length - 1];
   autoStore(st, h);
-  check(it.store === keyOf(shelf), `Tidy up: gear goes to the shelving unit first (${it.name} → ${it.store})`);
+  check(it.store === keyOf(shelf), `Tidy up: gear goes to the shelves first (${it.name} → ${it.store})`);
   // On the battle map: its cells a store raiders search.
   BM.refreshBaseMap(st);
   globalThis.window = {}; try { BM.openBaseMap(st, h.id); } finally { delete globalThis.window; }
   const F = st.combat && st.combat.deployPlan && st.combat.deployPlan.fort;
-  check(!!F && F.stores.some((x) => x.key === keyOf(shelf) && x.room === 150), "on the base's battle map: a store of 150 kg");
+  check(!!F && F.stores.some((x) => x.key === keyOf(shelf) && x.room === 40), "on the base's battle map: a store of 40 kg");
   st.combat = null;
   // Picked up: back in the stores, whole.
   const pm = demolish(st, h, shelf.id);
@@ -159,15 +161,15 @@ section("Comfort: a sofa");
   for (const p of extra) p.alive = false; // six living there
   const line = (s) => FU.comfortLine(st, s, h);
   const l0 = line(sleepers[0]);
-  check(l0 && Math.abs(l0.v - 0.5) < 1e-9 && /sofa/.test(l0.label), `+0.5 to each of six sleepers (${l0 && `${l0.label} ${l0.v}`})`);
-  check(moodFactors(st, sleepers[0]).list.some((f) => /^Comforts: sofa/.test(f.label) && f.v === 0.5), "one line in the day's mood");
+  check(l0 && Math.abs(l0.v - 1) < 1e-9 && /sofa/.test(l0.label), `+1 to each of six sleepers (${l0 && `${l0.label} ${l0.v}`})`);
+  check(moodFactors(st, sleepers[0]).list.some((f) => /^Comforts: sofa/.test(f.label) && f.v === 1), "one line in the day's mood");
   // Twelve sleepers, one sofa: a share each; two sofas: +0.5 again.
   const c1 = FU.comfortOf(h, [sofa], 12);
-  check(Math.abs(c1.v - 0.25) < 1e-9, `one sofa for 12 sleepers: +${c1.v} each`);
+  check(Math.abs(c1.v - 0.5) < 1e-9, `one sofa for 12 sleepers: +${c1.v} each`);
   const c2 = FU.comfortOf(h, [sofa, { ...sofa, id: -1 }, { ...sofa, id: -2 }], 12);
-  check(Math.abs(c2.v - 0.5) < 1e-9, `three sofas for 12: still +${c2.v} (one for every ${COMFORT.SEATS} counts)`);
+  check(Math.abs(c2.v - 1) < 1e-9, `three sofas for 12: still +${c2.v} (one for every ${COMFORT.SEATS} counts)`);
   // Capped: everything at once.
-  for (const k of ["f_piano", "f_armchair", "f_diningtable", "f_rug", "f_painting", "f_plant", "f_lamp", "f_rug", "f_rug", "f_rug", "f_rug"]) { h.armory.push(makeItem(k, 0.9)); FU.setFurniture(st, h, k); }
+  for (const k of ["f_piano", "f_armchair", "f_chair", "f_chair", "f_chair", "f_barstool", "f_barstool", "f_barstool", "f_desk"]) { h.armory.push(makeItem(k, 0.9)); FU.setFurniture(st, h, k); }
   const raw = FU.comfortOf(h, h.buildings.filter((b) => b.type.startsWith("f_")), 6);
   const lc = line(sleepers[0]);
   check(raw.v > COMFORT.MAX && lc && lc.v === COMFORT.MAX, `capped: ${raw.v} → ${lc && lc.v} (COMFORT.MAX ${COMFORT.MAX})`);
@@ -203,15 +205,15 @@ section("The governor");
   const h = hub(st);
   withHouse(st, h, "gen_hall", -14, 6);
   Object.assign(h.stock, { wood: 5000, buildmat: 20 });
-  h.armory.push(makeItem("f_shelf", 0.9));
-  // About 100 kg of scrap lying outside: a storage wish the shelving unit (150 kg) answers.
+  h.armory.push(makeItem("f_rack", 0.9));
+  // About 60 kg of scrap lying outside: a storage wish the shelving (120 kg) answers.
   const free = storageOf(st, h).free;
-  h.stock.scrap = Math.ceil((free + 100) / supWeight("scrap"));
+  h.stock.scrap = Math.ceil((free + 60) / supWeight("scrap"));
   const w0 = storageWish(st, h);
-  check(!!w0 && w0.type === "f_shelf" && storageOf(st, h).outsideKg > 50, `goods outside (${storageOf(st, h).outsideKg} kg): the storage wish is the stored shelving unit, not crates (${w0 && w0.type})`);
+  check(!!w0 && w0.type === "f_rack" && storageOf(st, h).outsideKg > 30, `goods outside (${storageOf(st, h).outsideKg} kg): the storage wish is the stored shelving, not crates (${w0 && w0.type})`);
   st.hour = 24 * 4 + 7; // the morning's plan
   governBase(st, h);
-  check(h.buildings.some((b) => b.type === "f_shelf") && inArmory(h, "f_shelf") === 0, "the governor set the stored shelving unit");
+  check(h.buildings.some((b) => b.type === "f_rack") && inArmory(h, "f_rack") === 0, "the governor set the stored shelving");
   check(!h.construction.some((c) => BUILDINGS[c.type] && BUILDINGS[c.type].storeKg > 0) && storageOf(st, h).outsideKg === 0, `and queued no storage for what it holds (queued: ${h.construction.map((c) => c.type).join(", ") || "none"}; outside ${storageOf(st, h).outsideKg} kg)`);
   // Comfort: a sofa set while it counts.
   h.armory.push(makeItem("f_sofa", 0.9), makeItem("f_sofa", 0.9), makeItem("f_sofa", 0.9), makeItem("f_sofa", 0.9), makeItem("f_sofa", 0.9));
@@ -233,9 +235,9 @@ section("AI groups");
   const cap0 = groupStorage(st, f, tile).cap;
   home.armory.push(makeItem("f_shelf", 0.9));
   const got = FU.groupFurnitureDaily(st, f);
-  check(got.includes("f_shelf") && w.f_shelf === 1 && !home.armory.some((it) => it.key === "f_shelf"), `their shelving unit set in their hall (${got.join(", ")})`);
+  check(got.includes("f_shelf") && w.f_shelf === 1 && !home.armory.some((it) => it.key === "f_shelf"), `their shelves set in their hall (${got.join(", ")})`);
   const cap1 = groupStorage(st, f, tile).cap;
-  check(cap1 === cap0 + 150 && home.buildings.some((b) => b.type === "f_shelf"), `their storage counts it (${cap0} → ${cap1} kg)`);
+  check(cap1 === cap0 + 40 && home.buildings.some((b) => b.type === "f_shelf"), `their storage counts it (${cap0} → ${cap1} kg)`);
   const w2 = worksAt(f, tile);
   delete w2.hall;
   home.armory.push(makeItem("f_crate", 0.9));

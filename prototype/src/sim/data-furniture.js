@@ -109,6 +109,7 @@ export const FURNITURE_KINDS = {
   // ---------- workshops, bays and garages ----------
   workbench: P("Workbench",  HALF, 35, 60, "two", S21, true, ["bay", "cellar", "school"], "work:workbench", true),
   toolchest: P("Tool chest", HALF, 35, 55, "two", S1, true, ["bay", "cellar"], "storage:40", true),
+  gunrack:   P("Gun rack",   FULL, 20, 20, "one", S1, true, ["shop", "cells", "office"], "storage:40", true), // #20: a base's rack for six long guns (data-basefurniture.js FURN_STORE)
   // ---------- police, fire stations, barracks, schools, offices ----------
   bunk:        P("Bunk",           HALF, 25, 40, "two", S12, false, ["cells", "bedroom", "ward"], "bed:bunkbed"),
   schooldesk:  P("School desk",    HALF, 10, 12, "one", S1, true, ["school"], "storage:5"),

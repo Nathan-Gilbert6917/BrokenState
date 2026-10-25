@@ -128,7 +128,7 @@ Storage is kg of room by tier and buildings; what does not fit lies outside, wea
 - **Storming a group's base** puts its real stock and spare kit on the assault map in their storage (piles for what does not fit, a locked armory to force). Your people take from it through the raid search window; what they carry out leaves the group [assaultstores, fort, conquest, raidloot]; tests `tools/assaultstoretest.js`, `tools/groupstoragetest.js`.
 - **The woodpile** (the user's pick 2026-10-20): wood takes no storage room and is never outside (basestorage NOT_STORED, woodpileOf; storageSummary's and the Storage tab's "Woodpile: N wood"). On a base's battle map it is laid with the piles, so a raid still takes from it (basemap outsideOf).
 - A pitched tent is an assignable container in the Storage tab (food or gear kept in it by hand).
-- **Found storage furniture** (#20, see *Furniture*): a shelving unit 150, a pallet rack 300, a locker bank 100, a wardrobe 80, a bookshelf or a cabinet 60, a filing cabinet or a dresser 50, a crate, a display case or a gun rack 40, a tool chest 30, each set on a general building's floor, adds its kg and is an assignable container with its own preferences (a gun rack guns only, 6; a tool chest tools only; a filing cabinet papers only). The governor sets stored pieces before it builds storage (autopilot storageWish / furniture storedStorage); groups' pieces count in their storage.
+- **Found storage furniture** (#20, see *Furniture*): #8's catalogue's storage kinds (shelving 120, crates, lockers, a wardrobe or a vending machine 60, a counter 50, shelves, a cabinet, a chest of drawers, a tool chest or a gun rack 40, a bookshelf, a filing cabinet or a display case 30...), each set on a general building's floor, adds its kg and is an assignable container with its own preferences (a gun rack guns only, 6; a tool chest tools only; a filing cabinet papers only). The governor sets stored pieces before it builds storage (autopilot storageWish / furniture storedStorage); groups' pieces count in their storage.
 
 ## The base map
 Every base's own 500 × 500 grid and its 150 × 150 view: the land on it to clear, the rules for placing things, and Move.
@@ -303,43 +303,39 @@ The user's request 2026-10-19; [docs/base-building/plan.md](../base-building/pla
 Pieces set from the stores on a general building's floor: the beds (cots, beds, bunk beds, large beds, with one rough-sleeping rule for anyone without a bed) and the found storage, comfort and work pieces (#20). One machinery for all of them: furniture.js (generalised from beds.js 2026-10-25; beds.js re-exports it and keeps the beds' own rules).
 
 ### Storage, comfort and work pieces (#20)
-The user's request 2026-10-25: "I want all reasonable appliances, furniture and some decor to be lootable and taken to your base for use, like [...] shelves, crates etc for storage". Modules: [furniture (useOf, setFurniture / canSetFurniture / furnitureProblem / pickUpFurniture, comfortOf / comfortLine, governFurniture / governComfort / storedStorage, groupFurnitureDaily), data-basefurniture (FURNITURE_KINDS, FURN_GEAR, FURN_BUILDINGS, FURN_FOOT, FURN_STORE, COMFORT), basestorage (storeRule, fitsClass), containers (autoStore, putItem), crafting (hasBench), autopilot (storageWish), ui/codex (Furniture)]; test `tools/basefurnituretest.js` (the base part of the ticket's furnituretest; #8's `tools/furnituretest.js` is the raid part).
-- **Items and pieces.** Each kind is an item `f_<kind>` (bulky, both hands, `furniture: <kind>`, weight = its kg) and, set, a building record of the same type (BUILDINGS fit + furniture + found, no cost, no hours, max 60). Until #8's catalogue (`data-furniture.js`) is on dev, the rows live in data-basefurniture.js behind a `TODO(#8)` comment in #8's agreed shape (`{ name, cell, hp, kg, carry, size, loot, tags, use }`), drawn on the battle map as the nearest existing cell kind (CELL_STANDIN).
-- **What each does** is the row's `use`: `storage:<kg>`, `comfort:<mood>`, `work:<station>`, `none` (furniture useOf).
+The user's request 2026-10-25: "I want all reasonable appliances, furniture and some decor to be lootable and taken to your base for use, like [...] shelves, crates etc for storage". Modules: [furniture (useOf, setFurniture / canSetFurniture / furnitureProblem / pickUpFurniture, comfortOf / comfortLine, governFurniture / governComfort / storedStorage, groupFurnitureDaily), data-furniture (#8's FURNITURE_KINDS, FURNITURE_GEAR; the gun rack row), data-basefurniture (FURN_KINDS, FURN_GEAR, FURN_BUILDINGS, FURN_FOOT, FURN_STORE, COMFORT), ui/isoview (the gun rack's sprite), basestorage (storeRule, fitsClass), containers (autoStore, putItem), crafting (hasBench), autopilot (storageWish), ui/codex (Furniture)]; test `tools/basefurnituretest.js` (the base part of the ticket's furnituretest; #8's `tools/furnituretest.js` is the raid part).
+- **Items and pieces.** The kinds are #8's catalogue (data-furniture.js FURNITURE_KINDS, merged to dev while this was built): every liftable kind whose `use` is `storage:<kg>`, `comfort:<mood>` or `work:<station>` (data-basefurniture FURN_KINDS; the appliances are #19's, the `bed:` kinds stay data-beds.js's own items). Each is #8's item form `f_<kind>` (FURNITURE_GEAR: bulky, both hands, `furniture: <kind>`), merged into GEAR here (no ITEM_TAGS: nothing loots or sells them; #12 carries them home), and, set, a building record of the same type (BUILDINGS fit + furniture + found, no cost, no hours, max 60), drawn on the battle map as its own cell kind. This ticket added one row to the catalogue: the **gun rack** (20 kg, one, 1 × 1, storage:40, its iso sprite). The numbers are the catalogue's, not the ticket's first list (shelves 40 not 150, a sofa +1 not +0.5): decision 2026-10-25, one source of truth. The ticket's rug, painting, plant, lamp, dining table and pallet rack are not catalogue kinds: chairs and bar stools are the decor, Shelving (`rack`, 120) the big rack.
 
-| Piece | kg | Carry | Size | Use |
-|---|---|---|---|---|
-| Shelving unit | 25 | one | 2 × 1 | storage 150 (gear first; food ok) |
-| Bookshelf | 30 | one | 1 × 1 | storage 60 (books first); +0.25 comfort with a book in it |
-| Crate | 12 | one | 1 × 1 | storage 40 (food ok); the built Storage crates stay a build |
-| Cabinet | 30 | one | 1 × 1 | storage 60 (gear first; food ok) |
-| Filing cabinet | 38 | one | 1 × 1 | storage 50, papers only |
-| Wardrobe | 55 | two | 2 × 1 | storage 80 (clothing and bags first) |
-| Dresser | 40 | one | 2 × 1 | storage 50 (clothing and bags first) |
-| Locker bank | 45 | two | 2 × 1 | storage 100 (gear first) |
-| Tool chest | 40 | one | 1 × 1 | storage 30, tools only (they still count for toolreqs: the armory is the tool shelf) |
-| Display case | 50 | two | 2 × 1 | storage 40 (valuables first) |
-| Gun rack | 20 | one | 1 × 1 | storage 40, guns only, 6 at most |
-| Pallet rack | 80 | two | 2 × 1 | storage 300 (food ok) |
-| Sofa | 50 | two | 2 × 1 | comfort +0.5 |
-| Armchair | 20 | one | 1 × 1 | comfort +0.25 |
-| Rug, painting, plant, floor lamp | 4–8 | one | 1 × 1 / 2 × 1 | decor +0.1 |
-| TV stand | 25 | one | 2 × 1 | comfort 0 (decor only in looks) |
-| Piano | 200 | two | 2 × 1 | comfort +0.5 (no music activity yet) |
-| Pew | 60 | two | 2 × 1 | comfort 0 (seats) |
-| Dining table and chairs | 60 | two | 2 × 1 | comfort +0.25 (meals.js has no place to eat: mood) |
-| Desk | 35 | one | 2 × 1 | work:desk = decor +0.1 (no planner, radio or intel job is done at a desk yet) |
-| Workbench | 70 | two | 2 × 1 | work:craftbench: a crafting bench (crafting hasBench, the crafting bench's rate and condition) |
-| School desk | 12 | one | 1 × 1 | none |
-| Server rack | 90 | two | 1 × 1 | none; salvage gives 3 electronics (inventory SALVAGE_ELECTRONICS) |
+| Piece (kind) | Use | Rules |
+|---|---|---|
+| Shelves (shelf), Cabinet | storage 40 | gear first; food ok |
+| Shelving (rack) | storage 120 | food ok |
+| Crates (crate) | storage 60 | food ok; the built Storage crates stay a build |
+| Counter | storage 50 | food ok |
+| Lockers (locker) | storage 60 | gear first |
+| Filing cabinet (filing) | storage 30 | papers only |
+| Bookshelf | storage 30 | books first; +0.25 comfort with a book in it |
+| Wardrobe | storage 60 | clothing and bags first |
+| Chest of drawers (dresser), Nightstand | storage 40, 10 | clothing and bags first |
+| Display case (displaycase) | storage 30 | valuables first |
+| Tool chest (toolchest) | storage 40 | tools only (they still count for toolreqs: the armory is the tool shelf) |
+| Gun rack (gunrack, #20) | storage 40 | guns only, 6 at most |
+| Vending machine, Checkout, TV stand, Medicine cabinet, School desk | storage 60, 20, 15, 15, 5 | vending: food ok |
+| Sofa, Piano | comfort +1 | a seat piece: serves 6 sleepers |
+| Armchair | comfort +0.5 | a seat piece |
+| Chair, Bar stool | comfort +0.1 | decor |
+| Pew | comfort 0 | nothing yet (seats) |
+| Desk, Teacher's desk | work:desk | decor +0.1 (no planner, radio or intel job is done at a desk yet) |
+| Workbench | work:workbench | a crafting bench (crafting hasBench / benchBonus: the crafting bench's rate and condition) |
+| Table, Operating table | work:table, work:surgery | nothing yet |
 
-- **Storage** (FURN_STORE): a storage piece is a building container (BUILDINGS storeKg, merged into STORE_KG), so storageOf, the Overview's Storage row and the Storage tab count it with no new code; on the base's battle map it is a store raiders search (basemap STORES). Its own rules: `first` (autoStore puts that class there before any other container: a shelving unit gear, a wardrobe clothing and bags), `only` (nothing else, no supplies; its spare room is not pooled for the loose goods: basestorage storeRule / fitsClass), `max` (a gun rack 6 items), `food` (food only in a shelving unit, crate, cabinet or pallet rack). Otherwise it ranks as the shelves fitting does.
-- **Comfort** (COMFORT, the user's ticket): one mood line a day, "Comforts: sofa, rug", for each person sleeping in a bed (a piece of furniture) in the building the pieces stand in (basemap fittingsIn; a piece or a bed the map has no building for counts with the others that have none). A seat piece (sofa, armchair, piano, dining table, a bookshelf with books) serves 6 sleepers: with more sleepers than its pieces serve, each gets a share (1 sofa for 12: +0.25; 2: +0.5; a third adds nothing). Decor adds at most +0.5 a building. A person's line at most +1.5 (COMFORT.MAX). Sleepers in plain beds, a bunkhouse or a tent get none (they sleep in no building with furniture). Decision (2026-10-25): per building, as the ticket says, through the beds' records (bedSlots' bid).
+- **Storage** (FURN_STORE): a storage piece is a building container (BUILDINGS storeKg, merged into STORE_KG), so storageOf, the Overview's Storage row and the Storage tab count it with no new code; on the base's battle map it is a store raiders search (basemap STORES). Its own rules: `first` (autoStore puts that class there before any other container: a shelving unit gear, a wardrobe clothing and bags), `only` (nothing else, no supplies; its spare room is not pooled for the loose goods: basestorage storeRule / fitsClass), `max` (a gun rack 6 items), `food` (food only in shelves, shelving, crates, a cabinet, a counter or a vending machine). Otherwise it ranks as the shelves fitting does.
+- **Comfort** (COMFORT, the user's ticket): one mood line a day, "Comforts: sofa, rug", for each person sleeping in a bed (a piece of furniture) in the building the pieces stand in (basemap fittingsIn; a piece or a bed the map has no building for counts with the others that have none). A seat piece (sofa, armchair, piano, a bookshelf with books) serves 6 sleepers: with more sleepers than its pieces serve, each gets a share (1 sofa for 12: +0.5; 2: +1; a third adds nothing). Decor (chairs, bar stools, desks) adds at most +0.5 a building. A person's line at most +1.5 (COMFORT.MAX). Sleepers in plain beds, a bunkhouse or a tent get none (they sleep in no building with furniture). Decision (2026-10-25): per building, as the ticket says, through the beds' records (bedSlots' bid).
 - **Setting**: the Build list's Furniture group lists a found piece only while one is in the stores (with its kg and what it does in the description); a click sets it, R turns it; furnitureProblem refuses a 2-cell piece where no floor has room; Demolish picks it up; a building pulled down carries every piece out into the stores.
-- **Governor** (governFurniture after governBeds at the morning's plan, autopilot governBase): every storage piece in the stores set, the biggest first, and storageWish answers goods lying outside with a stored piece (storedStorage) before the fittings and the ladder (crates, a shed); a found workbench while the base has no bench of that kind; comfort (governComfort) while it counts: a seat kind until one for every 6 residents, decor up to +0.5 a general building. Pieces that do nothing (TV stand, pew, school desk, server rack) stay in the stores. Decision: the governor sets comfort whenever it would count, not only when mood is the base's lowest need (the game has no ranking of needs; a piece left in the stores only takes room).
+- **Governor** (governFurniture after governBeds at the morning's plan, autopilot governBase): every storage piece in the stores set, the biggest first, and storageWish answers goods lying outside with a stored piece (storedStorage) before the fittings and the ladder (crates, a shed); a found workbench while the base has no bench of that kind; comfort (governComfort) while it counts: a seat kind until one for every 6 residents, decor up to +0.5 a general building. Pieces that do nothing yet (a pew, a table, an operating table) stay in the stores. Decision: the governor sets comfort whenever it would count, not only when mood is the base's lowest need (the game has no ranking of needs; a piece left in the stores only takes room).
 - **AI groups** (ADR 0001; groupFurnitureDaily from groupWorksDaily): the pieces in their main base's armory are set in their hall (the Lodge beds.js has them build) while its floor has room (BEDS_AI.room cells less every piece's, beds and found: furnCells; your fittingRoom on their base object), storage first and the biggest first; each becomes a count of their works (`f.works[tile][f_<kind>]`), so a building of their base (groupbases WORKS_BUILDING) and room in their storage (groupStorage, storageWork's ladder). No hall, nothing set (your rule). Their comfort is not counted (their people have no mood: ADR 0001 §3).
 - **Saves**: nothing to migrate; a save from before has no `f_` pieces and its beds are unchanged.
-- **Left for later**: carrying pieces home is #12 (two-person loads); #8's catalogue, sprites and real cell kinds; a desk's planner/radio bonus and a piano's music once those activities exist.
+- **Left for later**: carrying pieces home is #12 (two-person loads); a desk's planner/radio bonus, a piano's music and a table's meals once those exist; the ticket's decor kinds (rug, painting, plant, lamp) once the catalogue has them.
 
 ### Beds
 The user's request 2026-10-20: "Cots 1x2 mood debuff, Beds 1x2, bunkbeds 1x2 mood debuff and large beds 2x2 mood buff can be created and set in buildings to add beds for a base". Modules: [beds, data-beds; ui/basemap (the Furniture group, Pick up), ui/ui, ui/cmdpalette, ui/codex (furniture and retired cots hidden from the building lists)]; test `tools/bedstest.js`.

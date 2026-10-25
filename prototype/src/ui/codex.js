@@ -34,7 +34,7 @@ import { ENVOY, envoysHelp } from "../sim/envoys.js"; // envoys and radio links
 import { LOAN } from "../sim/loans.js"; // volunteers on loan, joint operations
 import { ERA_OPEN } from "../sim/blueprints.js"; // the radio station's era
 import { BUILDINGS, RECIPES, PLOT_NAMES } from "../sim/buildings.js";
-import { FURNITURE_KINDS, FURN_STORE, COMFORT } from "../sim/data-basefurniture.js"; // furniture at the base (#20): the Furniture entry
+import { FURN_KINDS, FURN_STORE, COMFORT } from "../sim/data-basefurniture.js"; // furniture at the base (#20): the Furniture entry
 import { useOf, effectText } from "../sim/furniture.js";
 import { CONDITIONS, SICK } from "../sim/health.js";
 import { WORM, wormSeen } from "../sim/worm.js";
@@ -458,8 +458,8 @@ function placeEntries() {
   // Furniture at the base (sim/furniture.js, #20): the found storage, comfort and work pieces set in a building.
   out.push({
     key: "k:furniture", cat: "buildings", name: "🛋 Furniture", sub: "Shelves, crates, wardrobes, sofas and desks set at the base",
-    stats: Object.keys(FURNITURE_KINDS).filter((k) => useOf(`f_${k}`).storage || useOf(`f_${k}`).comfort || useOf(`f_${k}`).work).map((k) => [FURNITURE_KINDS[k].name, `${FURNITURE_KINDS[k].kg} kg${FURNITURE_KINDS[k].carry === "two" ? " (a load for two)" : ""}, ${FURNITURE_KINDS[k].size[0]} × ${FURNITURE_KINDS[k].size[1]}: ${effectText(`f_${k}`)}`]),
-    text: `Furniture found in the ruins and carried home is set from the stores on the floor of a hut, cabin, lodge, hall or barn (the base map's Build list, Furniture: a click sets it, R turns it). Storage pieces add their room to the base's storage and are containers of their own in the Storage tab: a shelving unit takes gear first, a wardrobe or a dresser clothing and bags, a bookshelf books; a gun rack holds ${FURN_STORE.gunrack.max} guns and nothing else, a tool chest tools only, a filing cabinet papers only. Comfort pieces cheer whoever sleeps in the same building: a sofa, an armchair, a piano or a dining table serves ${COMFORT.SEATS} sleepers, decor (a rug, a painting, a plant, a lamp) adds up to +${COMFORT.DECOR_MAX} a building, and nobody gets more than +${COMFORT.MAX} a day from it. A found workbench is a crafting bench.`,
+    stats: FURN_KINDS.filter((k) => useOf(`f_${k}`).storage || useOf(`f_${k}`).comfort || useOf(`f_${k}`).work).map((k) => [FURNITURE_KINDS[k].name, `${FURNITURE_KINDS[k].kg} kg${FURNITURE_KINDS[k].carry === "two" ? " (a load for two)" : ""}, ${FURNITURE_KINDS[k].size[0]} × ${FURNITURE_KINDS[k].size[1]}: ${effectText(`f_${k}`)}`]),
+    text: `Furniture found in the ruins and carried home is set from the stores on the floor of a hut, cabin, lodge, hall or barn (the base map's Build list, Furniture: a click sets it, R turns it). Storage pieces add their room to the base's storage and are containers of their own in the Storage tab: shelves and cabinets take gear first, a wardrobe or a chest of drawers clothing and bags, a bookshelf books; a gun rack holds ${FURN_STORE.gunrack.max} guns and nothing else, a tool chest tools only, a filing cabinet papers only. Comfort pieces cheer whoever sleeps in the same building: a sofa, an armchair or a piano serves ${COMFORT.SEATS} sleepers, decor (chairs, bar stools, a desk) adds up to +${COMFORT.DECOR_MAX} a building, and nobody gets more than +${COMFORT.MAX} a day from it. A found workbench is a crafting bench.`,
     how: "Bring pieces home in both arms or a cart, then set them from the base map. Demolish picks one up again; a building pulled down has its furniture carried out into the stores. The governor sets storage pieces before it builds new storage, and comfort pieces while they count.", sprite: null,
   });
   // Shoving people and the dead (sim/shoving.js).

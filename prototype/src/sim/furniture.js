@@ -5,7 +5,7 @@
 // (GEAR[key].furniture) is set from the stores onto a general building's floor and picked up again the same way. The
 // beds keep their own rules in beds.js (who sleeps where, rough sleeping, the governor's beds, the groups' halls),
 // which re-exports what is here so nothing that imported it changed. The numbers are data-beds.js (the beds) and
-// data-basefurniture.js (the storage, comfort and work pieces: FURNITURE_KINDS, until #8's catalogue holds them).
+// data-furniture.js (#8's catalogue: FURNITURE_KINDS, each row's use) with this ticket's rules in data-basefurniture.js.
 //
 // THE PIECE. An item while it is in the stores (the base's armory) or on the move; a placed thing once it is SET
 // inside a general building (a hut, cabin, lodge, hall or barn): a record in base.buildings of its own type (the item's
@@ -23,15 +23,14 @@
 //   comfort:<mood> a day's mood for the people sleeping in the building it stands in (comfortLine, relations.js
 //                  moodFactors): one line "Comforts: sofa, rug (+0.6)" (COMFORT: a piece serves SEATS sleepers, decor
 //                  at most DECOR_MAX a building, a person's line at most MAX).
-//   work:craftbench a crafting bench (crafting.js hasBench: a found workbench is the crafting bench's station).
-//   work:desk      decor (no planner, radio or intel job is done at a desk yet).
-//   none           nothing at the base (a school desk; a server rack's worth is its salvage: 3 electronics).
+//   work:workbench a crafting bench (crafting.js hasBench: a found workbench is the crafting bench's station).
+//   work:desk      decor (no planner, radio or intel job is done at a desk yet); work:table, work:surgery: nothing yet.
 //
 // THE GOVERNOR (governFurniture, autopilot.js governBase, the morning's plan before the day's builds): the storage
 // pieces in the stores set first, the biggest first (so the governor's storage wish, autopilot.js storageWish, counts
 // them before it queues crates or a shed); a found workbench where the base has no bench; then the comfort pieces
 // that would count (governComfort: one seat piece a SEATS people, decor while a building's decor is under DECOR_MAX).
-// Pieces that do nothing (a TV stand, a pew, a school desk, a server rack) stay in the stores for the player.
+// Pieces that do nothing at the base yet (a pew, a table, an operating table) stay in the stores for the player.
 //
 // AI GROUPS (docs/adr/0001-ai-parity.md; groupFurnitureDaily, groupworks.js groupWorksDaily): the pieces they bring
 // home lie in their main base's armory, as yours in yours; each day they set what has floor in their hall (the Lodge
@@ -39,7 +38,7 @@
 // (f.works[tile][f_<kind>]) and so a building of their base (groupbases.js WORKS_BUILDING), and their storage
 // (groupworks.js groupStorage, storageWork's ladder) counts its room as yours does.
 import { BED_SPEC } from "./data-beds.js";
-import { FURNITURE_KINDS, FURN_STORE, COMFORT, DECOR, DECOR_MOOD } from "./data-basefurniture.js";
+import { FURNITURE_KINDS, FURN_STORE, COMFORT, DECOR, DECOR_MOOD } from "./data-basefurniture.js"; // FURNITURE_KINDS: #8's catalogue (data-furniture.js)
 import { GEAR } from "./data.js";
 import { BUILDINGS, addBuilding, baseBeds } from "./buildings.js"; // (call-time only: the modules load in a circle)
 import { FOOT, fittingRoom, placeItem, refreshBaseMap, fittingsIn } from "./basemap.js"; // (call-time only)
@@ -59,7 +58,7 @@ const r2 = (v) => Math.round(v * 100) / 100;
 /** The catalogue kind a placed type or item key stands for ("f_shelf" -> "shelf"; a bed: its own type). @param {string} type */
 export const kindOf = (type) => (GEAR[type] && GEAR[type].furniture) || null;
 /** A piece of furniture: a bed or a catalogue piece. @param {string} type */
-export const isFurniture = (type) => !!BED_SPEC[type] || !!(BUILDINGS[type] && BUILDINGS[type].furniture && FURNITURE_KINDS[kindOf(type) || ""]);
+export const isFurniture = (type) => !!BED_SPEC[type] || !!(BUILDINGS[type] && BUILDINGS[type].furniture && BUILDINGS[type].found);
 /**
  * What a piece does at the base: { storage: kg, comfort: mood, work: station, sleepers } (0 / "" when not).
  * @param {string} type
@@ -82,7 +81,7 @@ export function effectText(type) {
   const u = useOf(type);
   if (u.sleepers) return `+${bedsWord(u.sleepers)}`;
   if (u.storage) { const S = FURN_STORE[kindOf(type) || ""] || {}; return `+${u.storage} kg of storage${S.only ? ` (${S.only} only${S.max ? `, ${S.max} at most` : ""})` : S.first ? ` (${S.first} first)` : ""}`; }
-  if (u.work === "craftbench") return "a crafting bench for the crafters";
+  if (u.work === "workbench") return "a crafting bench for the crafters";
   if (isDecor(type)) return `decor: +${DECOR_MOOD} mood for the building's sleepers (decor at most +${COMFORT.DECOR_MAX} a building)`;
   if (u.comfort) return `+${u.comfort} mood for the building's sleepers (one for every ${COMFORT.SEATS})`;
   return "nothing at the base but its looks";
@@ -224,7 +223,7 @@ export function comfortLine(state, s, base) {
   const c = comfortOf(base, pieces, sleepers);
   if (!(c.v > 0)) return null;
   const v = Math.min(COMFORT.MAX, c.v);
-  return { label: `Comforts: ${c.names.join(", ")}`, v, tip: `The furniture in the building they sleep in: a sofa, an armchair, a piano or a dining table serves ${COMFORT.SEATS} sleepers (fewer pieces: a share each), decor adds up to +${COMFORT.DECOR_MAX} a building, +${COMFORT.MAX} at most` };
+  return { label: `Comforts: ${c.names.join(", ")}`, v, tip: `The furniture in the building they sleep in: a sofa, an armchair or a piano serves ${COMFORT.SEATS} sleepers (fewer pieces: a share each), decor adds up to +${COMFORT.DECOR_MAX} a building, +${COMFORT.MAX} at most` };
 }
 
 // ---------- the governor ----------
@@ -236,7 +235,7 @@ export function governFurniture(state, base) {
   const stored = [...new Set((base.armory || []).filter((it) => it && isFurniture(it.key) && !BED_SPEC[it.key]).map((it) => it.key))];
   const storage = stored.filter((t) => useOf(t).storage > 0).sort((a, b) => useOf(b).storage - useOf(a).storage || (a < b ? -1 : 1));
   for (const type of storage) out.push(...setAll(state, base, type, Infinity));
-  for (const type of stored.filter((t) => useOf(t).work === "craftbench")) if (!(base.buildings || []).some((b) => useOf(b.type).work === "craftbench")) out.push(...setAll(state, base, type, 1));
+  for (const type of stored.filter((t) => useOf(t).work === "workbench")) if (!(base.buildings || []).some((b) => useOf(b.type).work === "workbench")) out.push(...setAll(state, base, type, 1));
   out.push(...governComfort(state, base, stored));
   return out;
 }
@@ -255,7 +254,7 @@ function setAll(state, base, type, most) {
   }
   return out;
 }
-// The comfort pieces worth setting: a seat piece (a sofa, an armchair, a piano, a dining table) while the base has
+// The comfort pieces worth setting: a seat piece (a sofa, an armchair, a piano) while the base has
 // fewer of that kind set than one for every COMFORT.SEATS people living there; decor while the base's decor is under
 // COMFORT.DECOR_MAX for each general building standing. The best first.
 export function governComfort(state, base, stored = null) {
@@ -287,7 +286,7 @@ export function groupFurnitureDaily(state, f) {
   syncBuildings(state, f);
   const h = homesOf(state, f)[tile];
   if (!h || h.real || !Array.isArray(h.armory)) return [];
-  const rank = (t) => (useOf(t).storage > 0 ? 3e6 + useOf(t).storage : useOf(t).work === "craftbench" ? 2e6 : useOf(t).comfort > 0 ? 1e6 + useOf(t).comfort * 1000 : 0);
+  const rank = (t) => (useOf(t).storage > 0 ? 3e6 + useOf(t).storage : useOf(t).work === "workbench" ? 2e6 : useOf(t).comfort > 0 ? 1e6 + useOf(t).comfort * 1000 : 0);
   const keys = [...new Set(h.armory.filter((it) => it && isFurniture(it.key) && !BED_SPEC[it.key]).map((it) => it.key))].filter((t) => rank(t) > 0).sort((a, b) => rank(b) - rank(a) || (a < b ? -1 : 1));
   const out = [];
   for (const type of keys) {

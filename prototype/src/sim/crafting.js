@@ -44,7 +44,7 @@ import { craftedCond } from "./itemcond.js"; // a crafted item's condition is th
 import { cfgOf } from "./worldcfg.js"; // the run's dials: Durability loss
 import { TOOL_CRAFTS } from "./data-tools.js"; // the makeshift tools and the sewing kit
 import { craftTools, craftToolProblem, wearBaseTools, partyToolItems, toolsMissing, toolsText, wearTools, kindsOf } from "./toolreqs.js"; // the tools a recipe needs (data-tools.js CRAFT_TOOLS)
-import { FURNITURE_KINDS } from "./data-basefurniture.js"; // furniture at the base (#20): a found workbench is a crafting bench (foundBench)
+import { FURNITURE_KINDS } from "./data-furniture.js"; // furniture at the base (#20): a found workbench is a crafting bench (foundBench)
 import { BED_CRAFTS, BED_SPEC } from "./data-beds.js"; // beds as furniture: a cot, a bed, a bunk bed, a large bed (beds.js)
 import { POWER_CRAFTS, SPOT } from "./data-power.js"; // the mounted spotlight (electric.js)
 
@@ -244,9 +244,9 @@ export const hasWorkshop = (base) => WORKSHOP_TYPES.some((t) => count(base, t) >
 // has its own station (needs) or it only re-packs a clogged filter (spent). A workshop counts as a bench (old saves).
 export const benchNeeded = (r) => !r.field && !r.needs && !r.spent;
 export const hasBench = (base) => !!benchOf(base) || hasWorkshop(base) || foundBench(base);
-// A found workbench set in a building (furniture.js, #20: use "work:craftbench") is the crafting bench's station, as a
+// A found workbench set in a building (furniture.js, #20: use "work:workbench") is the crafting bench's station, as a
 // crafting bench (its rate and condition: benchBonus).
-const foundBench = (base) => !!base && (base.buildings || []).some((b) => !b.broken && GEAR[b.type] && GEAR[b.type].furniture && FURNITURE_KINDS[GEAR[b.type].furniture] && FURNITURE_KINDS[GEAR[b.type].furniture].use === "work:craftbench");
+const foundBench = (base) => !!base && (base.buildings || []).some((b) => !b.broken && GEAR[b.type] && GEAR[b.type].furniture && FURNITURE_KINDS[GEAR[b.type].furniture] && FURNITURE_KINDS[GEAR[b.type].furniture].use === "work:workbench");
 // What the working bench here adds to hand crafting at this base: { rate: × work-hours, quality: + condition }.
 export const benchBonus = (base) => { const b = base && (benchOf(base) || (foundBench(base) ? BENCH.craftbench : null)); return { rate: b ? b.rate : 1, quality: b ? b.quality : 0 }; };
 // An item's condition made at this base with its bench (craftQuality is the crafter's own; still at most 100%).
