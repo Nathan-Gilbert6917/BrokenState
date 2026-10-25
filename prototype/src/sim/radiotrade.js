@@ -27,6 +27,7 @@
 // called off, their goods go back to their stores and they think less of you (goodwill −5 / −3). One pending deal per
 // group at a time. Gear is matched by what it is (key, condition, uses, contents), so a save and load keeps a deal.
 import { SUPPLIES, SUPPLY_KEYS } from "./data.js";
+import { earnAch } from "./achievements.js"; // the first radio deal
 import { log, day, factionById, baseById, atBase, skill } from "./world.js";
 import { planPath, travelHours, partyMembers, cargoRoom, tileLabel } from "./parties.js";
 import { attitude, changeGoodwill } from "./factions.js";
@@ -202,6 +203,7 @@ export function bookRadioTrade(state, v) {
     f.lastDiplomacy = day(state);
     gainXp(state, talker, "speech", USE.radio);
     state.trade = null;
+    earnAch(state, "radiotrade"); // achievements.js
     const text = `Deal over the radio: ${goodsText({ supplies: offer, gear: offerGear })} for ${goodsText({ supplies: ask, gear: askGear })}, met at ${tileLabel(state, t.meetTile)}. Their caravan sets out (about ${c.eta}h) and waits there two days; send your side with a team from ${base.name}.`;
     log(state, text, "good");
     return text;
@@ -217,6 +219,7 @@ export function bookRadioTrade(state, v) {
     f.lastDiplomacy = day(state);
     gainXp(state, talker, "speech", USE.radio);
     state.trade = null;
+    earnAch(state, "radiotrade"); // achievements.js
     const text = `Deal over the radio: ${goodsText({ supplies: offer, gear: offerGear })} for ${goodsText({ supplies: ask, gear: askGear })}, with a delivery fee. Their caravan sets out for ${base.name} (about ${c.eta}h); have your side ready there.`;
     log(state, text, "good");
     return text;
@@ -256,6 +259,7 @@ export function bookDeal(state, f, base, give, get, by) {
   };
   radioDeals(state).push(deal);
   f.lastDiplomacy = day(state);
+  earnAch(state, "radiotrade"); // achievements.js: the first deal over the radio, whoever called
   log(state, `Radio deal with ${f.name}: your caravan takes ${goodsText(deal.give)} to them and brings back ${goodsText(deal.get)}, by day ${deal.due}.`, "good");
   return deal;
 }

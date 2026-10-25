@@ -30,6 +30,7 @@
 //   turns?, medsUsed?, extraKilled?    // optional extras from the tactical engine
 // }
 import { applyRelief } from "./relief.js"; // hills, hollows and crag on a hills or mountain tile
+import { achievementsBattle } from "./achievements.js"; // the run's achievements at a battle's end
 import { pondsBattle, wetCost, wadeAim } from "./ponds.js"; // the hollows' ponds, mud and ice, the slopes in the rain and in winter
 import { seasonBattle, iceCost, slipStep, muffle, fogSight } from "./seasonfx.js"; // snow and ice underfoot, rain muffling sounds, fog cutting sight (the user's request 2026-10-23)
 import { seasonGround, groundCost } from "./seasonground.js"; // spring's mud and winter's snow on the ground (call-time only)
@@ -439,6 +440,7 @@ export function finishCombat(state, setup, result) {
   // the numbers wears everyone who was counted in it.
   if (!(result && result.worn) && (setup.mode !== "raid" || (result && result.enemiesKilled))) wearByNumbers(state, combatants(state, setup)); // armour.js: armour pieces wear by their hits (absorbOffscreen), the rest a use a fight
   battleRecord(state, setup, result, battle, combatants(state, setup)); // relations.js: kills, downed, rescues, shared hardship
+  achievementsBattle(state, setup, result, battle); // achievements.js: a military site raided, a Broodmother put down (recording only)
   volFought(state, combatants(state, setup)); // volunteers.js: they fought beside you (goodwill when they get home)
   capturePrisoners(state, setup, result, battle); // prisoners.js: the knocked out go with the team or into the cells
   if (battle) settleClaims(state, battle, result); // foundcars.js: the cars claimed on the map join the team or stay parked there

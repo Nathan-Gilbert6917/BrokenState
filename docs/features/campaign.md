@@ -192,3 +192,44 @@ Detail for section 1 of [docs/agents/features.md](../agents/features.md). `[name
 - Hover (ui/combat previewText: puddleWord): "Puddles: rain water standing on the ground (no effect on movement or aim)."
 - Test `tools/puddletest.js`: the level from rain hours (none before AFTER, rising to FULL, drying over DRY, a storm's hour, topped up, dried out then AFTER again), the share; a tile's own sky; none on frozen or snowy ground (late autumn to early spring) or under the ground; a raid after long rain with puddles only on the allowed ground, in patches, none on a dry tile at the same hour; the same seed the same puddles, the dice untouched; your people's moves and the dead's field the same with and without them; the hub's base map; the view on stub canvases (the water painted, the ground painted once per level), the rings in the rain (none out of sight, in Light or with no rain).
 
+
+## Achievements
+- The user's request 2026-10-25: "add achievements per run."
+- Per run: earned ones live in the save as `state.ach = { [id]: day }`, each new run starts with none, an older save without it has none yet. No cross-run record here (that is the hall of fame).
+- Module [achievements]: `ACHIEVEMENTS` (id, group, icon, name, desc, `hidden`, `modes`), `achievementsOf(state)` (the earned list `[{ id, day }]`, oldest first: the UI and the hall of fame read it), `earnAch(state, id)` (once a run, in its modes only; a log line "🏆 Achievement: …"), `runMode` (normal, custom, hardcore, crash), `achievementsFor` (the rows this mode can earn), `foundersOf` (the starting crew: `s.joined` ≤ 2, no parents).
+- When: `achievementsDaily` once a day at midnight (world.js hourOfWorld) over what the run keeps anyway; `achievementsEnd` at every ending (world.js checkGameOver, crashstart.js crashJoin) so the victory's rows are in before the end screen; and hooks at the events that leave nothing to read later: radiotrade.js (bookDeal and the deliver and meet deals), foundcars.js driveHome, parties.js recoverVehicle (a vehicle back with cargo inside), combat.js finishCombat → `achievementsBattle`. relations.js makePartners notes `r.pDay`, the day two people became partners.
+- Recording only: no dice, nothing in play changes. `state.achOff` turns it off (the test's second run): the same seed plays out the same either way.
+- UI [ui/achievements]: the 🏆 button in the top bar (count earned) opens the window: every row of the run's mode by group, earned ones with their day, the rest greyed, hidden ones "???" until earned; Esc closes it. A toast (`ui.flash`) when one is earned (`achievementsFlash`, on each redraw). The victory and game-over screens list the run's achievements and open the window.
+
+| id | Group | Name | How | Modes |
+|---|---|---|---|---|
+| day30 / day100 / day365 | Survival | A month on / A hundred days / A year and a day | the day reaches 30 / 100 / 365 | all |
+| winter | Survival | Through the winter | the first day after a winter | all |
+| nodeath | Survival | Nobody lost | 100 days since the last name on the memorial wall (or the start) | all |
+| shelter | Growth | A roof at last | the hub is no longer a camp | Hardcore, Crashlanding |
+| mainhub | Growth | A real hub | the hub is past tier 0 (a Main hub) | Hardcore, Crashlanding |
+| outpost | Growth | Outpost | an outpost past tier 0 | all |
+| pop25 / pop50 | Growth | A village / A town again | 25 / 50 people alive at once | all |
+| child | Growth | New life | a birth (family.js birthsTotal) | all |
+| master | Growth | Master of a craft | a skill grown to 15 (the last perk milestone) from below it | all |
+| radio | Building | On the air | a base with a radio | all |
+| ring | Building | Walled in | a ring wall that closes (buildings.js hasWall) | all |
+| solar | Building | Power from the sun | a solar panel array | all |
+| grid | Building | Lights in the dark | a base's grid serving something at midnight | all |
+| hive | Combat | Burn it out | a hive in your people's service records | all |
+| held | Combat | Held the walls | a raid repelled, or a horde held or beaten at the walls | all |
+| kills | Combat | A thousand dead | 1,000 of the dead in the service records | all |
+| military | Combat | Raid the armoury | a raid won on a military site | all |
+| brood | Combat | Broodkiller | a Broodmother killed by your side on the battle map | all |
+| radiotrade | World | Deal on the air | the first radio deal | all |
+| coalition | World | Not alone | a group in your Calder Coalition | all |
+| carhome | World | Drive it home | a found car sent home (foundcars.js driveHome) | all |
+| convoy | World | Nothing left behind | a lost team's vehicle running again with its cargo | all |
+| winhives / wincoalition | Victory | Every hive is ash / The state is ours | state.hivesWon / state.allianceWon | all |
+| road | Mode | Life on the road | day 30 with no base and the first hub not founded | Hardcore |
+| bunker | Mode | The bunker | the unit's bunker found | Crashlanding |
+| love | Hidden | Till death | two partners both alive 100 days after they became partners | all |
+| founders | Hidden | All of us | a victory with every founder alive | all |
+
+- Dropped (no clean hook): "a hub reaches outpost tier" for normal and Custom runs (their hub starts as a Main hub, so the tier rows are Hardcore's and Crashlanding's, and an outpost is its own row); "married" is the partners of relations.js (there is no wedding); the top skill is the last perk milestone, 15, not SKILL_MAX 20 (years past it); the Broodmother counts on the battle map only (a hive taken by the numbers has no unit to read).
+- Test `tools/achievementstest.js`: the table (31 rows, unique ids, modes, the hidden two); awards from a world set up by hand, each once with its day and log line; mode filters (a normal run never earns Hardcore's or Crashlanding's rows; Hardcore's road; Crashlanding's bunker); a victory with the founders; a battle's end (a military raid, a Broodmother); an older save without `state.ach`; the dice untouched, and seed 42 for 32 days on the autopilot with and without achievements digests the same (tools/digest.js).
