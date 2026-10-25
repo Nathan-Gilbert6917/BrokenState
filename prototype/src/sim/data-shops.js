@@ -6,7 +6,8 @@
 // ship, pizza shops and other restaurants, banks, bars, liquor store add all of these and have them more common in
 // areas that makes sense and make versions that fit the setting if they apply to multiple places for city, town,
 // suburbs POIs and crawls"; "Create many variants for each to show being different franchises including colors,
-// layout etc"). Pure data: no imports, so data.js, loot.js, combat.js and the rest can each merge their own slice.
+// layout etc"). Pure data (its one import, data-offices.js, is pure data too: the office buildings and their firms,
+// issue #27, merged into each table below), so data.js, loot.js, combat.js and the rest can each merge their own slice.
 //
 // NEW_KINDS: the site types new with this module (each module takes its part: data.js LOCATIONS from site, loot.js
 //   SITE_TAGS from tags, combat.js AREA_SETS from areas, battlesize.js SIZES.SITE from size, buildingmaps.js the
@@ -23,8 +24,10 @@
 //   (shops.js franchiseFor): poi.v, place.v, a site's by its tile.
 // ROWS: the new kinds' rows in the find tables, by table (each module merges its own: loot.js SITE_FINDS …).
 
+import { OFFICE_KINDS, OFFICE_AREAS, OFFICE_W, OFFICE_FIRMS, OFFICE_ROWS } from "./data-offices.js"; // the office buildings of every kind, with their firms (issue #27)
+
 /** @typedef {{ wall: string, trim: string, sign: string, text: string, accent: string, roof?: string, style: number }} Look */
-/** @typedef {{ fl?: string, depth?: number, wide?: boolean, flat?: number, storeys?: [number, number], room?: string, back?: string }} Plan */
+/** @typedef {{ fl?: string, depth?: number, wide?: boolean, flat?: number, storeys?: [number, number], room?: string, back?: string, office?: string, media?: string }} Plan */
 /** @typedef {{ id: string, name: string, w: { city: number, suburb: number, town: number }, look: Look, plan?: Plan }} Franchise */
 
 const G = (city, suburb, town) => ({ city, suburb, town });
@@ -117,6 +120,7 @@ export const NEW_KINDS = {
     tags: ["shop", "crime", "travel", "kitchen", "home"],
     areas: ["liquor", "liquor", "store", "office"], size: 0.5, storeys: [1, 1],
   },
+  ...OFFICE_KINDS, // the office buildings (data-offices.js)
 };
 
 // ---------- their raid rooms (combat.js AREAS; tags: loot.js AREA_TAGS) ----------
@@ -148,6 +152,7 @@ export const AREA_DEFS = {
     loot: { water: [0.5, 2, 6], food: [0.3, 1, 4] }, gear: [["bottle", 0.12], ["bat", 0.03], ["shotgun", 0.02], ["revolver", 0.02], ["knife", 0.03]] } },
   liquor: { tags: ["shop", "crime", "travel", "kitchen", "home"], def: { name: "Liquor shelves", boxes: ["shelf", "shelf", "counter"],
     loot: { water: [0.6, 2, 6], food: [0.25, 1, 3] }, gear: [["bottle", 0.15], ["revolver", 0.02], ["pistol", 0.02], ["bat", 0.02]] } },
+  ...OFFICE_AREAS,
 };
 
 // ---------- where each stands (shops.js) ----------
@@ -185,6 +190,8 @@ export const PLACE_W = {
   autoshop:    { ...G(0.45, 0.75, 0.7), crawl: C(0.5, 0.7, -0.1, 1, 0.9, 0.8) },
   firestation: { ...G(0.2, 0.25, 0.25), crawl: C(0.2, 0.25, 0.05, 1, 1.1, 1) },
   police:      { ...G(0.15, 0.2, 0.2),  crawl: C(0.15, 0.2, 0.05, 1, 1.2, 1.3, true) },
+  // the office buildings (data-offices.js): their own dice place them (shops.js officeExtras, officePlaces), not the shops'
+  ...OFFICE_W,
 };
 
 // ---------- the franchises ----------
@@ -395,6 +402,9 @@ export const FRANCHISES = {
     { id: "lumberbarn", name: "Lumber Barn", w: G(0.2, 0.8, 1), look: L("#a2713f", "#5a3a20", "#3f6b3a", "#f0d070", "#c9a46a", 2), plan: { back: "yard" } },
     { id: "fixit", name: "Fix-It Depot", w: G(1, 1, 0.5), look: L("#e8e4d8", "#3f6b3a", "#3f6b3a", "#ffffff", "#e8a020", 3), plan: { depth: 0.66, wide: true } },
   ],
+  // the office buildings' firms (data-offices.js); the tower's are the site type "office"'s (the crawl's "offices" reads
+  // them: shops.js franchisesOf)
+  ...OFFICE_FIRMS,
 };
 
 // ---------- the new kinds' rows in the find tables ----------
@@ -504,6 +514,9 @@ export const ROWS = {
   SEARCH_LOCK: { bank: 0.3, vet: 0.15 },
   SEARCH_KIND: { bank: "safe", vet: "drugs" },
 };
+
+// The office buildings' rows (data-offices.js), each table's own rows first.
+for (const [t, rows] of Object.entries(OFFICE_ROWS)) ROWS[t] = { ...rows, ...(ROWS[t] || {}) };
 
 /** Merges rows into a table, never over a row it has (a module's own rows win). @param {Record<string, any>} into @param {Record<string, any>} [rows] */
 export function mergeRows(into, rows) {
