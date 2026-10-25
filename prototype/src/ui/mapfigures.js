@@ -1,5 +1,6 @@
 // The State Map's moving pieces as low-poly figures (docs/design-doc/sprites/map-figures-3d.md): your teams on foot
-// and by car, the groups' parties and convoys, the hardcore bands and nomads, the outsiders, the hordes, the infested
+// and by car (a pickup, a sedan, an SUV, a work van, a Hummer or an Army truck: by the vehicle's type), the groups'
+// parties and convoys, the hardcore bands and nomads, the outsiders, the hordes, the infested
 // herds and your bases' workers out on job trips, built from the battle figures' one primitive (ui/figures.js limb: a
 // tapered prism between two points, its faces lit by their normals in the item art's light) in the same 2:1 projection,
 // at the map's scale (a person 14 px tall), each piece a small scene: the people in a loose column, a vehicle on its
@@ -43,6 +44,7 @@ const lerp = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a
 const rotator = (deg) => { const a = (deg * Math.PI) / 180, c = Math.cos(a), s = Math.sin(a); return (q) => [q[0] * c - q[1] * s, q[0] * s + q[1] * c, q[2]]; };
 
 // ---------- colours ----------
+const FURN = "#b8b2a2"; // a piece of furniture carried home (look.carry "furniture"): an appliance's off-white
 const TIRE = "#1c1c1e", HUB = "#8a8a8a", GLASS = "#7d9db5", WOOD = "#7a5230", WOOD_LIT = "#a2713f", PACK = "#6b5434", SKIN = "#d6a77a", PANTS = "#34363c", HAIR = "#3a2a1c";
 const METAL = "#7d848c", STEEL = "#cdd5da", STONE = "#8d8a82", WHITE = "#e8e4da", RED = "#d0342c", CANVAS = "#b3a27a", OLIVE = "#5d6b3a", OLIVE_DARK = "#454f2c", RUST = "#7b5a44", GOLD = "#e8c04a";
 const FIRE = "#ffb43b", FIRE_HOT = "#fff0a0", FIRE_RED = "#e0542a", GLOW = "#ff9a3a55", BONE = "#d8d0bc", HAY = "#c9b25a", SHOE = "#2a2622", GUN = "#4b5159", LOG = "#8a5e36";
@@ -296,8 +298,10 @@ function person(push, look, pose = {}) {
   const up = (side, Hf, Hz) => arm(side, add(SH(side), [1.0, side * 0.6, -0.4]), add(SH(side), [Hf, side * 0.4, Hz]));
   const W1 = { group: G.weapon }, pole = (A, B, col, r = 0.32) => push(limb(A, B, r, r, col, { sides: 4, ...W1 }));
   const ac = look.armColor || cloth, right = R, left = Lf; // "right": the near hand
-  const a = dead ? "reach" : look.arm || "none";
-  if (a === "reach") { // the dead: both arms out ahead, hanging a little
+  const a = dead ? "reach" : look.carry === "furniture" ? "overhead" : look.arm || "none";
+  if (a === "overhead") { // a piece of furniture on the shoulders (sim/furnicarry.js, issue #17): both hands up at its sides
+    for (const side of [-1, 1]) arm(side, add(SH(side), [0.5, side * 0.7, 0.6]), add(SH(side), [0.6, side * 0.5, 2.0]));
+  } else if (a === "reach") { // the dead: both arms out ahead, hanging a little
     for (const side of [-1, 1]) arm(side, add(SH(side), [2.0, side * 0.2, -1.4]), add(SH(side), [4.2, side * 0.1, -2.4]), cloth);
   } else if (a === "rifle") { // low ready: the right hand on the grip, the left out to the fore-end
     const butt = add(shP, [-0.6, R * 1.4, -1.6]), muzzle = add(shP, [5.0, R * 1.0, -2.6]);
@@ -373,6 +377,7 @@ function person(push, look, pose = {}) {
   if (look.carry === "logs") push(limb(add(shP, [-2.6, R * 2.2, 1.2]), add(shP, [2.6, R * 2.2, 1.6]), 0.9, 0.9, LOG, { sides: 6, group: G.carry, tex: (face, s, tt) => (tt < 0.06 || tt > 0.94 ? "#c8a070" : (Math.round(s * 5) + Math.round(tt * 9)) % 4 === 0 ? shade(LOG, -0.25) : null) }));
   if (look.carry === "game") { const hide = "#8a6a48", C = { sides: 6, group: G.carry }; push(limb(add(shP, [-2.4, 0, 1.4]), add(shP, [2.6, 0, 1.6]), 1.0, 1.2, hide, { ...C, tex: (face) => (face === "top" ? shade(hide, 0.2) : null) })); push(limb(add(shP, [2.6, 0, 1.6]), add(shP, [3.6, 0, 0.2]), 0.5, 0.5, hide, { ...C, sides: 4 })); push(limb(add(shP, [-2.4, R * 0.8, 1.2]), add(shP, [-2.6, R * 0.8, -1.4]), 0.3, 0.3, shade(hide, -0.3), { ...C, sides: 4 })); push(limb(add(shP, [3.8, 0.3, 0.6]), add(shP, [4.6, 0.6, 1.8]), 0.2, 0.2, BONE, { ...C, sides: 4 })); }
   if (look.carry === "fish") for (let i = 0; i < 3; i++) push(limb(add(SH(right), [0.6, R * 0.5, -4.8 - i * 0.6]), add(SH(right), [1.6, R * 0.5, -5.4 - i * 0.6]), 0.35, 0.25, i % 2 ? "#aab8c0" : "#8a9aa4", { sides: 4, group: G.carry }));
+  if (look.carry === "furniture") push(boxL(add(shP, [0.1, 0, 0.6]), add(shP, [0.1, 0, 3.8]), 1.7, 2.3, FURN, { u: [1, 0, 0], group: G.carry, tex: (face, s, tt) => (face === "top" ? shade(FURN, 0.25) : Math.abs(tt - 0.55) < 0.06 || s < 0.08 || s > 0.92 ? shade(FURN, -0.35) : null) })); // a stove, a dresser, a fridge carried home: a box on the shoulders
   if (look.carry === "small") push(limb(add(SH(right), [0.5, R * 0.5, -4.6]), add(SH(right), [0.7, R * 0.5, -6.4]), 0.5, 0.4, "#8a6a48", { sides: 5, taper: 0.7, group: G.carry }));
   // the neck and the head: the face on the front; tipped forward on the dead
   const drop = dead ? 0.8 : 0, hz = shoulderZ + 0.6 - drop, hf = lf + (dead ? 0.8 : 0) + (pose.lean ? 0.3 : 0);
@@ -457,50 +462,102 @@ function armour(push, ups, x0, x1, hw, z0, z1, roof) {
   if (sc || n) for (const side of [-1, 1]) push(boxL([x0, side * (hw + 0.3), (z0 + z1) / 2], [x1, side * (hw + 0.3), (z0 + z1) / 2], (z1 - z0) / 2, 0.15, sc ? SCRAP_A : PLATE, { u: [0, 0, 1], tex: (face, s, t) => (sc ? ((Math.round(s * 3) + Math.round(t * 9)) % 2 ? SCRAP_B : null) : Math.round(t * 7) % 2 ? PLATE_DK : null) }));
   if (ups.turret && roof) { const [f, z] = roof; push(limb([f, 0, z + 1.0], [f, 0, z], 1.1, 1.1, PLATE_DK, { sides: 8, group: G.weapon })); push(boxL([f - 0.3, 0, z + 1.2], [f + (ups.turret.gun === "m2hb" ? 4.6 : 3.4), 0, z + 1.2], 0.25, 0.22, "#26272a", { u: [0, 0, 1], group: G.weapon })); }
 }
-// A pickup: a bed behind the cab, the bonnet ahead, four wheels. body: colour; bed(push) paints the load.
+// A car at the map's scale, as the battle map's models have it (ui/vehiclemodel.js; the user's ask 2026-10-25: "look
+// more like real cars"): true prisms (figures.js flat: straight sides, not a limb's cushion), the body a low box from
+// the sill to the belt line (the bonnet and the boot are its top), the cabin a six-sided limb laid across it at the belt
+// (its upper half shows: a flat roof, the windscreen and the rear window sloping down to the belt, the side windows on
+// its ends), the wheels in their arches inside the body's width, a dark sill under it.
+const boxF = (A, B, ha, hb, col, o = {}) => boxL(A, B, ha, hb, col, { flat: true, ...o });
+const limbF = (A, B, ra, rb, col, o = {}) => limb(A, B, ra, rb, col, { flat: true, ...o });
+function cabin(push, ups, body, xc, zb, half, height, hw) {
+  const rb = height / Math.cos(Math.PI / 6), roof = shade(body, 0.2);
+  const pane = (s, t) => (ups.mesh ? ((Math.round(s * 6) + Math.round(t * 6)) % 2 ? MESH : GLASS) : ups.glass ? BGLASS : s < 0.3 && t < 0.3 ? "#d4e6f0" : GLASS);
+  push(limbF([xc, -hw, zb], [xc, hw, zb], half, rb, body, { sides: 6, phase: 0, group: G.cab, u: [-1, 0, 0], tex: (face, s, t) => {
+    if (face === "top") return roof;
+    if (face === "bottom") return shade(body, -0.3);
+    if (face === "front" || face === "back") return t > 0.1 && t < 0.9 ? pane(t, face === "front" ? 1 - s : s) : shade(body, -0.35);
+    if (t < 0.56) return null; // the lower half is inside the body
+    if (s < 0.12 || s > 0.88 || t > 0.92) return shade(body, -0.35);
+    return pane(face === "left" ? s : 1 - s, 1 - t);
+  } }));
+}
+const wheelsIn = (push, fs, hw, r, tw, t) => { for (const f of fs) for (const side of [-1, 1]) wheel(push, f, side * (hw - tw / 2 + 0.9), r, tw, t); }; // proud of the side by most of the tyre: their turn shows at this size
+function shell(push, body, x0, x1, hw, z0, z1, lamps = LAMP, tails = TAIL) {
+  const dark = shade(body, -0.3), ends = endTex(lamps, tails, dark);
+  push(boxF([x0, 0, (z0 + z1) / 2], [x1, 0, (z0 + z1) / 2], (z1 - z0) / 2, hw, body, { u: [0, 0, 1], tex: (face, s, t) => (face === "top" ? shade(body, 0.12) : ends(face, s, t)) }));
+  push(boxF([x0 + 0.3, 0, z0 + 0.25], [x1 - 0.3, 0, z0 + 0.25], 0.25, hw + 0.1, shade(body, -0.45), { u: [0, 0, 1], group: G.rails })); // the sill
+}
+// A pickup: the cab on the body's middle, the bed behind it between its rails. body: colour; bed(push, bx, by) paints
+// the load (bx the bed's back, on the body's top at z 4.0).
 function pickup(push, body, t, ups = {}, bed = null) {
-  const dark = shade(body, -0.3), L = 14, HW = 3.0;
-  push(boxL([-L / 2, 0, 3.0], [L / 2, 0, 3.0], 1.0, HW, body, { u: [0, 0, 1], tex: endTex(LAMP, TAIL, dark) })); // the body
-  push(boxL([-L / 2 + 0.3, 0, 4.5], [-0.5, 0, 4.5], 0.5, HW - 0.1, body, { u: [0, 0, 1], group: G.rails, tex: (face) => (face === "top" ? shade(body, -0.25) : null) })); // the bed's rails
-  push(boxL([1.65, 0, 7.4], [1.65, 0, 4.0], 1.95, HW - 0.3, body, { u: [1, 0, 0], group: G.cab, tex: glassTex(ups, null, shade(body, 0.2)) })); // the cab
-  push(boxL([3.6, 0, 4.7], [L / 2 - 0.2, 0, 4.7], 0.7, HW - 0.15, shade(body, 0.1), { u: [0, 0, 1], group: G.bonnet, tex: (face) => (face === "top" ? shade(body, 0.25) : null) })); // the bonnet
-  if (bed) bed(push, -L / 2 + 0.6, -0.6);
-  for (const f of [-4.2, 4.2]) for (const side of [-1, 1]) wheel(push, f, side * (HW + 0.6), 1.7, 1.2, t);
-  armour(push, ups, -L / 2, L / 2, HW, 2.0, 4.0, [1.6, 7.4]);
+  const L = 14, HW = 2.9, x0 = -L / 2, x1 = L / 2, belt = 4.0, xc = 1.6, half = 2.8, cab0 = xc - half;
+  shell(push, body, x0, x1, HW, 1.2, belt);
+  cabin(push, ups, body, xc, belt, half, 3.2, HW - 0.3);
+  for (const side of [-1, 1]) push(boxF([x0 + 0.3, side * (HW - 0.35), belt + 0.4], [cab0 - 0.4, side * (HW - 0.35), belt + 0.4], 0.4, 0.3, body, { u: [0, 0, 1], group: G.rails, tex: (face) => (face === "top" ? shade(body, -0.25) : null) })); // the bed's rails
+  push(boxF([x0 + 0.3, 0, belt + 0.4], [x0 + 0.3, 0, belt + 0.4], 0.4, HW - 0.35, body, { u: [1, 0, 0], group: G.rails })); // the tailgate
+  if (bed) bed(push, x0 + 0.6, -0.6);
+  wheelsIn(push, [-4.2, 4.2], HW, 1.6, 1.0, t);
+  armour(push, ups, x0, x1, HW, 1.4, belt, [xc, belt + 3.2]);
 }
 function sedan(push, body, t, ups = {}) {
-  const dark = shade(body, -0.3), L = 13, HW = 2.9;
-  push(boxL([-L / 2, 0, 2.9], [L / 2, 0, 2.9], 1.0, HW, body, { u: [0, 0, 1], tex: endTex(LAMP, TAIL, dark) }));
-  push(boxL([-0.4, 0, 6.4], [-0.4, 0, 3.9], 3.0, HW - 0.4, body, { u: [1, 0, 0], group: G.cab, tex: glassTex(ups, null, shade(body, 0.2)) }));
-  push(boxL([2.6, 0, 4.2], [L / 2 - 0.2, 0, 4.2], 0.35, HW - 0.1, shade(body, 0.1), { u: [0, 0, 1], group: G.bonnet, tex: (face) => (face === "top" ? shade(body, 0.25) : null) }));
-  push(boxL([-L / 2 + 0.2, 0, 4.2], [-3.4, 0, 4.2], 0.3, HW - 0.1, body, { u: [0, 0, 1], group: G.rails, tex: (face) => (face === "top" ? shade(body, 0.15) : null) }));
-  for (const f of [-4.0, 4.0]) for (const side of [-1, 1]) wheel(push, f, side * (HW + 0.6), 1.6, 1.2, t);
-  armour(push, ups, -L / 2, L / 2, HW, 1.9, 3.9, [-0.4, 6.4]);
+  const L = 13, HW = 2.8, x0 = -L / 2, x1 = L / 2, belt = 3.4;
+  shell(push, body, x0, x1, HW, 1.0, belt);
+  cabin(push, ups, body, -0.6, belt, 3.9, 2.4, HW - 0.3);
+  wheelsIn(push, [-4.0, 4.0], HW, 1.5, 1.0, t);
+  armour(push, ups, x0, x1, HW, 1.2, belt, [-0.6, belt + 2.4]);
 }
+// An SUV: a taller body, a long cabin running back to the tailgate, a rack on the roof, bigger wheels.
+function suv(push, body, t, ups = {}) {
+  const L = 13, HW = 2.9, x0 = -L / 2, x1 = L / 2, belt = 4.0, top = belt + 2.8;
+  shell(push, body, x0, x1, HW, 1.4, belt);
+  cabin(push, ups, body, -1.0, belt, 5.0, 2.8, HW - 0.3);
+  for (const l of [-1.4, 1.4]) push(boxF([-3.4, l, top + 0.25], [1.2, l, top + 0.25], 0.18, 0.18, METAL, { u: [0, 0, 1], group: G.rails })); // the roof rack
+  wheelsIn(push, [-4.0, 4.0], HW, 1.7, 1.0, t);
+  armour(push, ups, x0, x1, HW, 1.6, belt, [-1.0, top]);
+}
+// A work van: a short nose, then one tall box to the back doors: the cab's windows forward (on a side face s runs
+// toward the front on the left, the back on the right), the sliding door's line down the side.
+function van(push, body, t, ups = {}) {
+  const L = 14, HW = 2.9, x0 = -L / 2, x1 = L / 2, belt = 3.8, top = 7.6, box0 = x0 + 0.2, box1 = 3.4;
+  shell(push, body, x0, x1, HW, 1.2, belt);
+  const glass = (s, tt) => (ups.mesh ? ((Math.round(s * 6) + Math.round(tt * 6)) % 2 ? MESH : GLASS) : ups.glass ? BGLASS : s < 0.3 && tt < 0.25 ? "#d4e6f0" : GLASS);
+  push(boxF([(box0 + box1) / 2, 0, top], [(box0 + box1) / 2, 0, belt], (box1 - box0) / 2, HW - 0.15, body, { u: [1, 0, 0], group: G.cab, tex: (face, s, tt) => {
+    if (face === "top") return shade(body, 0.2);
+    const sf = face === "right" ? 1 - s : s;
+    if (face === "left" || face === "right") return sf > 0.74 && sf < 0.96 && tt > 0.08 && tt < 0.55 ? glass(s, tt) : Math.abs(sf - 0.45) < 0.04 && tt > 0.1 && tt < 0.95 ? shade(body, -0.35) : null;
+    if (face === "front") return tt > 0.08 && tt < 0.55 && s > 0.1 && s < 0.9 ? glass(s, tt) : null;
+    return face === "back" && Math.abs(s - 0.5) < 0.04 && tt > 0.1 ? shade(body, -0.35) : null;
+  } }));
+  wheelsIn(push, [-4.2, 4.4], HW, 1.5, 1.0, t);
+  armour(push, ups, x0, x1, HW, 1.4, belt, [0.6, top]);
+}
+// A Humvee: a wide low slab body with a long flat bonnet, a squat cab with near-vertical glass, big wheels. col: its
+// colour; ups: the gun on its roof and the rest (the groups' and the outsiders' always armed: humvee).
+function hummerBody(push, col, t, ups) {
+  const L = 14, HW = 3.4, x0 = -L / 2, x1 = L / 2, belt = 4.6, top = 7.4, cab0 = -5.6, cab1 = 0.6;
+  shell(push, col, x0, x1, HW, 1.6, belt, LAMP, null);
+  push(boxF([(cab0 + cab1) / 2, 0, top], [(cab0 + cab1) / 2, 0, belt], (cab1 - cab0) / 2, HW - 0.2, col, { u: [1, 0, 0], group: G.cab, tex: glassTex(ups, (face, s, tt) => (face !== "top" && face !== "bottom" && Math.abs(s - 0.5) < 0.06 && tt < 0.55 ? shade(col, -0.35) : null), shade(col, 0.2)) }));
+  wheelsIn(push, [-4.6, 4.6], HW, 1.9, 1.2, t);
+  armour(push, ups, x0, x1, HW, 1.8, belt, [-2.6, top]);
+}
+const hummer = (push, body, t, ups = {}) => hummerBody(push, mixHex(OLIVE_DARK, body, 0.5), t, ups);
 // An Army cargo truck: a tall square cab, a canvas-covered bed on six wheels, a white star on the door.
 function milTruck(push, color, t, ups = {}) {
   const body = OLIVE, dark = shade(body, -0.3), L = 17, HW = 3.2, canvas = mixHex(CANVAS, color, 0.15);
-  push(boxL([-L / 2, 0, 3.4], [L / 2, 0, 3.4], 1.0, HW, body, { u: [0, 0, 1], tex: (face) => (face === "bottom" ? dark : null) }));
-  push(boxL([-L / 2 + 0.3, 0, 6.6], [2.0, 0, 6.6], 2.2, HW - 0.1, canvas, { u: [0, 0, 1], group: G.load, tex: (face, s, tt) => (face === "top" ? shade(canvas, 0.2) : (face === "left" || face === "right") && Math.round(tt * 10) % 3 === 0 ? shade(canvas, -0.18) : null) }));
-  push(boxL([4.1, 0, 9.2], [4.1, 0, 4.4], 1.9, HW - 0.2, body, { u: [1, 0, 0], group: G.cab, tex: glassTex(ups, (face, s, tt) => ((face === "left" || face === "right") && tt > 0.6 && tt < 0.9 && Math.abs(s - 0.5) < 0.2 ? WHITE : null), shade(body, 0.2)) }));
-  push(boxL([6.0, 0, 4.8], [L / 2 - 0.2, 0, 4.8], 0.7, HW - 0.2, body, { u: [0, 0, 1], group: G.bonnet, tex: endTex(LAMP, null, null) }));
+  push(boxF([-L / 2, 0, 3.4], [L / 2, 0, 3.4], 1.0, HW, body, { u: [0, 0, 1], tex: (face) => (face === "bottom" ? dark : null) }));
+  push(boxF([-L / 2 + 0.3, 0, 6.6], [2.0, 0, 6.6], 2.2, HW - 0.1, canvas, { u: [0, 0, 1], group: G.load, tex: (face, s, tt) => (face === "top" ? shade(canvas, 0.2) : (face === "left" || face === "right") && Math.round(tt * 10) % 3 === 0 ? shade(canvas, -0.18) : null) }));
+  push(boxF([4.1, 0, 9.2], [4.1, 0, 4.4], 1.9, HW - 0.2, body, { u: [1, 0, 0], group: G.cab, tex: glassTex(ups, (face, s, tt) => ((face === "left" || face === "right") && tt > 0.6 && tt < 0.9 && Math.abs(s - 0.5) < 0.2 ? WHITE : null), shade(body, 0.2)) }));
+  push(boxF([6.0, 0, 4.8], [L / 2 - 0.2, 0, 4.8], 0.7, HW - 0.2, body, { u: [0, 0, 1], group: G.bonnet, tex: endTex(LAMP, null, null) }));
   for (const f of [-5.6, -2.0, 5.8]) for (const side of [-1, 1]) wheel(push, f, side * (HW + 0.7), 2.0, 1.3, t);
   armour(push, ups, -L / 2, L / 2, HW, 2.4, 4.4, [4.0, 9.2]);
 }
-function humvee(push, c, t) {
-  const body = mixHex(OLIVE_DARK, c, 0.25), L = 14, HW = 3.5;
-  push(boxL([-L / 2, 0, 4.0], [L / 2, 0, 4.0], 1.3, HW, body, { u: [0, 0, 1], tex: endTex(LAMP, null, shade(body, -0.3)) }));
-  push(boxL([-1.1, 0, 7.8], [-1.1, 0, 5.3], 3.5, HW - 0.2, body, { u: [1, 0, 0], group: G.cab, tex: glassTex({}, null, shade(body, 0.2)) }));
-  push(boxL([2.4, 0, 5.6], [L / 2 - 0.4, 0, 5.6], 0.3, HW - 0.1, shade(body, 0.08), { u: [0, 0, 1], group: G.bonnet }));
-  push(limb([-1.2, 0, 8.9], [-1.2, 0, 7.8], 1.3, 1.3, PLATE_DK, { sides: 8, group: G.weapon })); push(boxL([-1.4, 0, 8.9], [2.6, 0, 9.1], 0.25, 0.22, "#26272a", { u: [0, 0, 1], group: G.weapon })); // the ring and the gun
-  for (const f of [-4.4, 4.4]) for (const side of [-1, 1]) wheel(push, f, side * (HW + 0.7), 2.1, 1.4, t);
-}
+function humvee(push, c, t) { hummerBody(push, mixHex(OLIVE_DARK, c, 0.25), t, { turret: { gun: "m2hb" } }); }
 function mrap(push, c, t) {
   const body = mixHex("#4a4e3c", c, 0.2), L = 16, HW = 3.6;
-  push(boxL([-L / 2, 0, 4.8], [L / 2, 0, 4.8], 1.4, HW - 0.4, body, { u: [0, 0, 1], tex: (face) => (face === "bottom" ? shade(body, -0.3) : null) })); // the V hull
-  push(boxL([-2.3, 0, 9.9], [-2.3, 0, 6.2], 5.9, HW, body, { u: [1, 0, 0], group: G.cab, tex: (face, s, tt) => (face === "top" ? shade(body, 0.2) : (face === "left" || face === "right") && tt > 0.12 && tt < 0.32 && Math.round(s * 9) % 2 === 0 && s > 0.1 && s < 0.9 ? BGLASS : null) })); // the crew box, slit windows
-  push(boxL([5.6, 0, 8.7], [5.6, 0, 6.2], 2.1, HW - 0.2, shade(body, 0.05), { u: [1, 0, 0], group: G.bonnet, tex: (face, s, tt) => (face === "front" && tt > 0.1 && tt < 0.45 && Math.abs(s - 0.5) < 0.42 ? BGLASS : face === "top" ? shade(body, 0.15) : null) }));
-  push(limb([-0.6, 0, 11.0], [-0.6, 0, 9.9], 1.3, 1.3, PLATE_DK, { sides: 8, group: G.weapon })); push(boxL([-0.8, 0, 11.0], [3.6, 0, 11.2], 0.25, 0.22, "#26272a", { u: [0, 0, 1], group: G.weapon }));
+  push(boxF([-L / 2, 0, 4.8], [L / 2, 0, 4.8], 1.4, HW - 0.4, body, { u: [0, 0, 1], tex: (face) => (face === "bottom" ? shade(body, -0.3) : null) })); // the V hull
+  push(boxF([-2.3, 0, 9.9], [-2.3, 0, 6.2], 5.9, HW, body, { u: [1, 0, 0], group: G.cab, tex: (face, s, tt) => (face === "top" ? shade(body, 0.2) : (face === "left" || face === "right") && tt > 0.12 && tt < 0.32 && Math.round(s * 9) % 2 === 0 && s > 0.1 && s < 0.9 ? BGLASS : null) })); // the crew box, slit windows
+  push(boxF([5.6, 0, 8.7], [5.6, 0, 6.2], 2.1, HW - 0.2, shade(body, 0.05), { u: [1, 0, 0], group: G.bonnet, tex: (face, s, tt) => (face === "front" && tt > 0.1 && tt < 0.45 && Math.abs(s - 0.5) < 0.42 ? BGLASS : face === "top" ? shade(body, 0.15) : null) }));
+  push(limb([-0.6, 0, 11.0], [-0.6, 0, 9.9], 1.3, 1.3, PLATE_DK, { sides: 8, group: G.weapon })); push(boxF([-0.8, 0, 11.0], [3.6, 0, 11.2], 0.25, 0.22, "#26272a", { u: [0, 0, 1], group: G.weapon }));
   for (const f of [-5.0, 5.0]) for (const side of [-1, 1]) wheel(push, f, side * (HW + 0.7), 2.4, 1.5, t);
 }
 // Spiked pickup with scrap plating and a pipe cage over the bed.
@@ -515,11 +572,11 @@ function raiderTruck(push, c, t) {
 }
 function armoredTruck(push, c, t) {
   const body = mixHex("#5a6068", c, 0.3), L = 15, HW = 3.2;
-  push(boxL([-L / 2, 0, 3.4], [L / 2, 0, 3.4], 1.2, HW, body, { u: [0, 0, 1], tex: (face) => (face === "bottom" ? shade(body, -0.3) : null) }));
-  push(boxL([-2.45, 0, 8.2], [-2.45, 0, 4.6], 4.95, HW - 0.1, PLATE, { u: [1, 0, 0], group: G.load, tex: (face, s, tt) => ((face === "left" || face === "right") && Math.round(s * 8) % 2 === 0 && tt > 0.35 && tt < 0.65 ? PLATE_DK : face === "top" ? shade(PLATE, 0.15) : null) })); // the plated box, rivets along it
-  push(boxL([4.9, 0, 7.8], [4.9, 0, 4.6], 2.3, HW - 0.2, body, { u: [1, 0, 0], group: G.cab, tex: glassTex({ mesh: 1 }, null, shade(body, 0.2)) }));
+  push(boxF([-L / 2, 0, 3.4], [L / 2, 0, 3.4], 1.2, HW, body, { u: [0, 0, 1], tex: (face) => (face === "bottom" ? shade(body, -0.3) : null) }));
+  push(boxF([-2.45, 0, 8.2], [-2.45, 0, 4.6], 4.95, HW - 0.1, PLATE, { u: [1, 0, 0], group: G.load, tex: (face, s, tt) => ((face === "left" || face === "right") && Math.round(s * 8) % 2 === 0 && tt > 0.35 && tt < 0.65 ? PLATE_DK : face === "top" ? shade(PLATE, 0.15) : null) })); // the plated box, rivets along it
+  push(boxF([4.9, 0, 7.8], [4.9, 0, 4.6], 2.3, HW - 0.2, body, { u: [1, 0, 0], group: G.cab, tex: glassTex({ mesh: 1 }, null, shade(body, 0.2)) }));
   for (const f of [-4.6, 4.6]) for (const side of [-1, 1]) wheel(push, f, side * (HW + 0.7), 1.9, 1.3, t);
-  push(boxL([-L / 2 - 0.4, -HW, 3.6], [-L / 2 - 0.4, HW, 3.6], 0.9, 0.3, c, { u: [0, 0, 1], group: G.rails })); // the group's colour on the tailgate
+  push(boxF([-L / 2 - 0.4, -HW, 3.6], [-L / 2 - 0.4, HW, 3.6], 0.9, 0.3, c, { u: [0, 0, 1], group: G.rails })); // the group's colour on the tailgate
 }
 // A traders' covered wagon behind two horses (mules here), a lantern on a pole.
 function wagon(push, c, t, o = {}) {
@@ -660,17 +717,24 @@ const walkPose = (frame, k = 0, o = {}) => ({ t: frame > 0 ? ((phaseOf(frame) + 
 const nearOf = (yaw) => (yaw > 45 && yaw < 225 ? -1 : 1);
 
 // ---------- your teams ----------
-// kind: "walkers" | "raid" | "scouts" | "relief" (count people, 1–4) | "truck" | "sedan" | "miltruck" (ups: the
-// vehicle's upgrades, mapsprites.js upsCode) | "boat" | "raft" | "convoy" | "supply" (a loaded pickup) | "cart" |
-// "supplycart" (a handcart and two on foot). yaw: the heading; frame: 0 still, 1–FRAMES the cycle.
-export function mapPartyCanvas(kind, color, count = 3, ups = "", yaw = 315, frame = 0) {
+// kind: "walkers" | "raid" | "scouts" | "relief" (count people, 1–4) | "truck" | "sedan" | "suv" | "van" | "hummer" |
+// "miltruck" (the team's vehicle by its type, render.js partyLook; ups: the vehicle's upgrades, mapsprites.js upsCode)
+// | "boat" | "raft" | "convoy" | "supply" (a loaded pickup) | "cart" | "supplycart" (a handcart and two on foot).
+// yaw: the heading; frame: 0 still, 1–FRAMES the cycle.
+// furn: how many of a party on foot carry a piece of furniture home (s.gear.carry, sim/furnicarry.js): the first in the
+// column, each with it on the shoulders (look.carry "furniture").
+export function mapPartyCanvas(kind, color, count = 3, ups = "", yaw = 315, frame = 0, furn = 0) {
   const y = roundYaw(yaw), f = clampFrame(frame), n = Math.max(1, Math.min(4, count));
-  const people = PEOPLE.has(kind);
-  return cached(`party:${kind}:${color}:${people ? n : ""}:${ups}:${y}:${f}`, GRIDS.party, y, f, (g) => mapPartyCanvas(kind, color, count, ups, y, g), () => {
+  const people = PEOPLE.has(kind), fn = people ? Math.max(0, Math.min(n, furn | 0)) : 0;
+  return cached(`party:${kind}:${color}:${people ? n : ""}:${ups}:${y}:${f}${fn ? `:furn${fn}` : ""}`, GRIDS.party, y, f, (g) => mapPartyCanvas(kind, color, count, ups, y, g, fn), () => {
     const F = [], t = phaseOf(f), U = upsOf(ups);
     const push = (L) => F.push(L); push.F = F;
+    const fu = (i, L) => (i < fn ? { ...L, carry: "furniture" } : L); // the first fn of the column carry a piece home
     if (kind === "truck") place(F, [0, 0, 0], 0, (q) => pickup(q, color, t, U, (q2, bx) => q2(boxL([bx, 0, 4.0], [bx + 5.4, 0, 4.0], 0.9, 2.4, "#8c7a52", { u: [0, 0, 1], group: G.load, tex: (face) => (face === "top" ? shade("#8c7a52", 0.2) : null) }))));
     else if (kind === "sedan") place(F, [0, 0, 0], 0, (q) => sedan(q, color, t, U));
+    else if (kind === "suv") place(F, [0, 0, 0], 0, (q) => suv(q, color, t, U));
+    else if (kind === "van") place(F, [0, 0, 0], 0, (q) => van(q, color, t, U));
+    else if (kind === "hummer") place(F, [0, 0, 0], 0, (q) => hummer(q, color, t, U));
     else if (kind === "miltruck") place(F, [0, 0, 0], 0, (q) => milTruck(q, color, t, U));
     else if (kind === "boat" || kind === "raft") place(F, [0, 0, 0], 0, (q) => boat(q, color, t, kind === "raft"));
     else if (kind === "convoy" || kind === "supply") place(F, [0, 0, 0], 0, (q) => pickup(q, color, t, {}, (q2, bx) => {
@@ -685,10 +749,10 @@ export function mapPartyCanvas(kind, color, count = 3, ups = "", yaw = 315, fram
       place(F, [-6.4, 1.6, 0], 0, (q) => person(q, { cloth: shade(color, -0.15), pack: true, arm: "rifle" }, walkPose(f, 1)));
     } else if (kind === "scouts") {
       const col = columnOf(Math.min(2, n));
-      col.forEach(([pf, pl], i) => place(F, [pf, pl, 0], 0, (q) => person(q, { cloth: i ? shade(color, -0.15) : color, pack: true, hat: "cap", hatColor: shade(color, -0.4), arm: i ? "rifle" : f ? "none" : "binoc" }, walkPose(f, i))));
+      col.forEach(([pf, pl], i) => place(F, [pf, pl, 0], 0, (q) => person(q, fu(i, { cloth: i ? shade(color, -0.15) : color, pack: true, hat: "cap", hatColor: shade(color, -0.4), arm: i ? "rifle" : f ? "none" : "binoc" }), walkPose(f, i))));
     } else if (kind === "relief") {
-      columnOf(Math.min(3, n)).forEach(([pf, pl], i) => place(F, [pf, pl, 0], 0, (q) => person(q, { cloth: i % 2 ? shade(color, -0.15) : color, pack: true, hat: "helmet", hatColor: shade(color, -0.45), arm: i === 0 ? "banner" : "raised", armColor: color, band: RED }, walkPose(f, i))));
-    } else columnOf(Math.min(3, n)).forEach(([pf, pl], i) => place(F, [pf, pl, 0], 0, (q) => person(q, { cloth: i % 2 ? shade(color, -0.15) : color, pack: true, arm: kind === "raid" ? "rifle" : "none" }, walkPose(f, i))));
+      columnOf(Math.min(3, n)).forEach(([pf, pl], i) => place(F, [pf, pl, 0], 0, (q) => person(q, fu(i, { cloth: i % 2 ? shade(color, -0.15) : color, pack: true, hat: "helmet", hatColor: shade(color, -0.45), arm: i === 0 ? "banner" : "raised", armColor: color, band: RED }), walkPose(f, i))));
+    } else columnOf(Math.min(3, n)).forEach(([pf, pl], i) => place(F, [pf, pl, 0], 0, (q) => person(q, fu(i, { cloth: i % 2 ? shade(color, -0.15) : color, pack: true, arm: kind === "raid" ? "rifle" : "none" }), walkPose(f, i))));
     return F;
   });
 }
@@ -703,11 +767,13 @@ export const soloKind = (kind) => PEOPLE.has(kind);
 
 // A team of one on foot: kind as mapPartyCanvas's people; light "torch" | "lamp" | "" (carried, lit at night); gait ""
 // | "limp" (wounded: the hurt leg swings short, bandaged) | "heavy" (bent under a big load with a bedroll).
-export function mapSoloCanvas(kind, color, yaw = 315, frame = 0, light = "", gait = "") {
+// furn: a piece of furniture carried home (s.gear.carry, sim/furnicarry.js): on the shoulders (look.carry "furniture").
+export function mapSoloCanvas(kind, color, yaw = 315, frame = 0, light = "", gait = "", furn = false) {
   const y = roundYaw(yaw), f = clampFrame(frame), l = light ? (light === "torch" ? "torch" : "lamp") : "", g = gait === "limp" || gait === "heavy" ? gait : "";
-  return cached(`solo:${kind}:${color}:${y}:${f}:${l}:${g}`, GRIDS.solo, y, f, (fr) => mapSoloCanvas(kind, color, y, fr, light, gait), () => {
+  return cached(`solo:${kind}:${color}:${y}:${f}:${l}:${g}${furn ? ":furn" : ""}`, GRIDS.solo, y, f, (fr) => mapSoloCanvas(kind, color, y, fr, light, gait, furn), () => {
     const F = [], look = soloLook(kind, color, f > 0);
     if (l) look.arm = l;
+    if (furn) look.carry = "furniture";
     if (g === "heavy") { look.bigpack = true; look.pack = false; }
     if (g === "limp") look.bandage = true;
     place(F, [0, 0, 0], 0, (q) => person(q, look, walkPose(f, 0, g === "heavy" ? { lean: 0.35, stride: 0.7 } : g === "limp" ? { stride: 0.8, limp: 0.35 } : {})));

@@ -128,7 +128,9 @@ Detail: [travel.md](../features/travel.md).
 - **Some of a team on jobs of their own**: members picked go off on an order; the team stays put till they rejoin [detach, teammeet, ui/whopick, ui/teamctx] `tools/detachtest.js`. [details](../features/travel.md#some-of-a-team-on-jobs-of-their-own)
 - **Team forming, team inventory, teams meeting** and handing over goods; supplies and rounds onto a member; guns leave loaded [teamform, teaminv, teammeet, supitems, gunrounds]. [details](../features/travel.md#team-inventory-and-handing-over-goods)
 - **Carry weight and load bands**, physical supply carrying, carry kit and rigs; full hands in a fight [load, carry, carrykit, ui/carry]. [details](../features/travel.md#the-hands-in-a-fight)
+- **Carrying furniture**: lift 2 actions; alone slow, two tethered at half weight (drawn held) [furnicarry, carry, carrykit, ui/figures] `tools/furnicarrytest.js` `carryviewtest.js`. [details](../features/travel.md#carrying-furniture-and-appliances)
 - **Vehicles**: fuel, condition, breakdowns, bicycles; found cars, military trucks, road blockages and repairs, vehicle trade [vehicles, foundcars, miltrucks, roadblocks, vehicletrade]. [details](../features/travel.md#vehicles)
+  - A team's piece and a parked marker on the State Map show the vehicle's type (pickup, sedan, SUV, van, Hummer, Army truck) [ui/mapfigures, ui/mapsprites, ui/render]. [details](../features/travel.md#the-maps-vehicles-by-type)
 - **A lost team's vehicles keep what was in them**: left on the tile with their cargo, to recover [parties, groupworld, vehicles] `tools/lostfleettest.js`. [details](../features/travel.md#a-lost-teams-vehicles-keep-what-was-in-them)
 - **Recover the convoy**: a team raids the tile to drive your abandoned vehicles home, or an allied group fetches them for a fee [convoyrecover, parties, envoys] `tools/convoyrecoverytest.js`. [details](../features/travel.md#recover-the-convoy)
 - **Weather on the road**: stuck in mud (free in N h), winter fuel ×1.15–1.3 in every estimate, cold starts, the route outlook, for groups too [weather, parties] `tools/vehicleweathertest.js`. [details](../features/travel.md#weather-on-the-road)
@@ -187,7 +189,7 @@ Detail: [combat.md](../features/combat.md).
 - **Talking to other groups in a raid**: call out, truce, trade, recruit or ally for the battle; treachery and grudges [parley, thirdside]. [details](../features/combat.md#talking-to-other-groups-in-a-raid)
 - **Orders to allies**: give an allied survivor an order for 1 action; they may ignore it [allyorders]. [details](../features/combat.md#orders-to-allies)
 - **Siege kit**: ladders, rams and frag grenades; groups and raiders bring only their own [siege, arsenal, visitors]. [details](../features/combat.md#siege-kit)
-- **Vehicles in battle**: Humvee gunners, ramming gates [combat]. [details](../features/combat.md#vehicles-in-battle)
+- **Vehicles in battle**: Humvee gunners, ramming gates; every car and truck a low-poly model by its type [combat, ui/vehiclemodel, ui/isoview, ui/figures] `tools/vehiclemodeltest.js`. [details](../features/combat.md#vehicles-in-battle)
 - **Auto-resolve by the numbers** [combat]. [details](../features/combat.md#auto-resolve-by-the-numbers)
 
 ## 7. Weapons, armour and gear

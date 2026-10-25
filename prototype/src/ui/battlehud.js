@@ -16,6 +16,7 @@ import { gunQ, gunCond, jamChance, modesOf, modeOf, modeRolls, modeAim, FIRE_MOD
 import { glLabel } from "../sim/launchers.js";
 import { earStatus } from "../sim/hearing.js";
 import { handsBusy, armsText, handsCount, HANDS_MAX } from "../sim/carry.js";
+import { carriedPiece } from "../sim/furnicarry.js"; // a piece of furniture in the arms (issue #12): the HANDS chip names it (issue #17)
 import { tiredLevel, TIRED_WORDS } from "../sim/sleep.js";
 import { gunURL, isGunKey } from "./gunart.js";
 import { project, LV, liftOf, onFloor, isoOnScreen, ISO_ZOOMS, iso } from "./isoview.js";
@@ -201,7 +202,9 @@ export function unitChips(state, b, p) {
   if (p.stun && !p.down) c.push([p.stun.dazed ? "DAZED" : "STUN", "warn", "Dazed or stunned by a flash or a taser."]);
   for (const e of earStatus(p)) c.push([e.split(" ")[0].toUpperCase(), "warn", e]);
   if (p.jam) c.push(["JAM", "danger", "The gun is jammed: Unjam clears it."]);
-  if (handsBusy(p)) c.push([handsCount(p) >= HANDS_MAX ? "HANDS ✋✋" : "HANDS ✋", "warn", `${handsCount(p) >= HANDS_MAX ? "Both hands" : "Hands"} full: ${armsText(p)}. No shooting, reloading, doors or windows until it is set down (Drop carried: free; Set over cover) or stowed in the pack, the pockets or the vehicle.${handsCount(p) >= HANDS_MAX ? " Two different things carried: nothing more can be taken." : ""}`]);
+  const piece = p.piece ? carriedPiece(b, p) : null;
+  if (piece) c.push([`✋✋ ${piece.def.name}`, "warn", `Both hands on ${armsText(p) || `the ${piece.def.name.toLowerCase()}`}. No shooting, doors, searching, vaulting, sneaking or dashing until it is set down (Set down) or loaded into the vehicle.`]);
+  else if (handsBusy(p)) c.push([handsCount(p) >= HANDS_MAX ? "HANDS ✋✋" : "HANDS ✋", "warn", `${handsCount(p) >= HANDS_MAX ? "Both hands" : "Hands"} full: ${armsText(p)}. No shooting, reloading, doors or windows until it is set down (Drop carried: free; Set over cover) or stowed in the pack, the pockets or the vehicle.${handsCount(p) >= HANDS_MAX ? " Two different things carried: nothing more can be taken." : ""}`]);
   if (p.dragging != null) c.push(["DRAG", "warn", "Dragging someone: half speed, no shooting."]);
   if (p.gunner) c.push(["TURRET", "info", "On the vehicle's turret."]);
   else if (p.aboard) c.push(["IN CAR", "info", "In the vehicle."]);
@@ -310,7 +313,8 @@ export function hudPaint(ctx, b, { cw, ch, hits, hoverT, hoverO, mode, list, sel
     for (const p of list) {
       if (!handsBusy(p) || p.dead || p.left || p.fled || p.off || p.down || !onFloor(b, p) || (hits && hits.get(p.id)) || (hoverT && hoverT.id === p.id)) continue;
       const [X, Y] = head(p);
-      badge(ctx, X, Y - tagRoom, handsCount(p) >= HANDS_MAX ? "✋✋ hands full" : "✋ hands full", "#ffb347", fs, "", false);
+      const piece = p.piece ? carriedPiece(b, p) : null; // a piece of furniture: its name (issue #17)
+      badge(ctx, X, Y - tagRoom, piece ? `✋✋ ${piece.def.name}` : handsCount(p) >= HANDS_MAX ? "✋✋ hands full" : "✋ hands full", "#ffb347", fs, "", false);
     }
   }
   // Your people off screen: an arrow at the edge with their number, clear of the strip (avoid: its rect).

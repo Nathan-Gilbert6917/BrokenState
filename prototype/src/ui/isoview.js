@@ -28,7 +28,7 @@ import { CELL, active, coverSides, evacAt, barredCell, moveMob, vaultable, vault
 import { canPlace } from "../sim/deploy.js";
 import { acidAt } from "../sim/acid.js";
 import { unitCanvas, unitFacing, muzzleOf } from "./sprites.js";
-import { unitFigure, unitFigureDown, corpseFigure, figureMuzzle, figureStats, FIG } from "./figures.js"; // every body as a low-poly figure, facing its way; the fallen lying along the world's x
+import { unitFigure, unitFigureDown, corpseFigure, figureMuzzle, figureStats, FIG, setPieceArt, carryLook, CARRY_SCALE } from "./figures.js"; // every body as a low-poly figure, facing its way; the fallen lying along the world's x
 import { unitDownCanvas, drawDowned, downScale, corpseCanvas } from "./downsprites.js";
 import { thirdRing } from "../sim/thirdside.js";
 import { parleyStatus } from "../sim/parley.js"; // another group's people on a raid's map: the hostility badge
@@ -49,8 +49,10 @@ import { treeLookFor, treeStyle, styleKey, FALL } from "./seasontrees.js"; // tr
 import { snowOnFor } from "./roofsnow.js"; // snow on the buildings in winter (roofSprite, snowPrims)
 import { ringingCars } from "../sim/caralarms.js"; // a car alarm ringing (2026-10-23): its hazard lights blinking, how far it is heard
 import { groundTexel, leafField, leafBase, groundLookKey, snowShare, puddleField, puddleAt, puddleTexel } from "./groundlook.js"; // spring's mud, autumn's leaves, winter's snow on the ground (sim/seasonground.js); puddles after rain (sim/puddles.js)
-import { FURNITURE_KINDS } from "../sim/data-furniture.js"; // the furniture and appliance catalogue: the furniture set, its sprites (FURN_DRAW)
+import { FURNITURE_KINDS } from "../sim/data-furniture.js";
+import { carriedPiece, partnerOf, setTargets } from "../sim/furnicarry.js"; // a piece of furniture carried (issue #12): drawn in the arms, between a pair (issue #17) // the furniture and appliance catalogue: the furniture set, its sprites (FURN_DRAW)
 import { puddleGround } from "../sim/puddles.js"; // where a puddle may run onto (ui/groundlook.js puddleField)
+import { vehicleCellSprite, vehicleOneSprite, setVehicleCanvas } from "./vehiclemodel.js"; // the cars and trucks as low-poly models, the State Map's look: a cell's share of one, a car on one cell
 
 // ---------- constants ----------
 const HW = 16, HH = 8;          // half a tile in art px (a tile: 32 × 16)
@@ -82,7 +84,7 @@ export function setRoofs(on) {
 
 // Canvas factory (the tools hand in a stub).
 let mkCanvas = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
-export function setIsoCanvas(fn) { mkCanvas = fn; clearIsoCache(); setEdgeCanvas(fn); setLightsCanvas(fn); setMarksCanvas(fn); setWxCanvas(fn); }
+export function setIsoCanvas(fn) { mkCanvas = fn; clearIsoCache(); setEdgeCanvas(fn); setLightsCanvas(fn); setMarksCanvas(fn); setWxCanvas(fn); setVehicleCanvas(fn); }
 const spriteCache = new Map();
 const groundCaches = new Map(), GROUNDS = 6; // groundFor: key -> picture, of one battle (dropped with a new one), least recently used first
 let fogCache = null, sceneCache = null, fogMaskCache = null, flatGroundCache = null;
@@ -268,7 +270,18 @@ function primBounds(p, st) {
   if (st) return [p.u0 * SW, p.u1 * SW, p.v0 * SH - p.z1, p.v1 * SH - p.z0];
   return [(p.u0 - p.v1) * HW, (p.u1 - p.v0) * HW, (p.u0 + p.v0) * HH - p.z1, (p.u1 + p.v1) * HH - p.z0];
 }
-function paint(prims, { fog = false, outline = false, st = iso.straight } = {}) {
+function paint(prims, o = {}) {
+  const { buf, w, h, x0, y0 } = paintPx(prims, o);
+  const cv = mkCanvas(w, h);
+  const c = cv.getContext("2d");
+  const img = c.createImageData(w, h);
+  img.data.set(buf);
+  c.putImageData(img, 0, 0);
+  return toBitmap({ cv, ox: x0, oy: y0, w, h });
+}
+// The pixels themselves (paint; ui/figures.js paints a carried piece's into a figure: pieceArt): RGBA, w × h, its
+// corner at art px (x0, y0).
+function paintPx(prims, { fog = false, outline = false, st = iso.straight } = {}) {
   let x0 = st ? 0 : -HW, x1 = st ? SW : HW, y0 = 0, y1 = st ? SH : 2 * HH;
   for (const p of prims) { const [a, b, c, d] = primBounds(p, st); x0 = Math.min(x0, a); x1 = Math.max(x1, b); y0 = Math.min(y0, c); y1 = Math.max(y1, d); }
   x0 = Math.floor(x0) - 1; y0 = Math.floor(y0) - 1; x1 = Math.ceil(x1) + 1; y1 = Math.ceil(y1) + 1;
@@ -347,12 +360,7 @@ function paint(prims, { fog = false, outline = false, st = iso.straight } = {}) 
     for (const i of out) { buf[i] = 11; buf[i + 1] = 12; buf[i + 2] = 14; buf[i + 3] = 230; }
   }
   if (fog) fogPixels(buf);
-  const cv = mkCanvas(w, h);
-  const c = cv.getContext("2d");
-  const img = c.createImageData(w, h);
-  img.data.set(buf);
-  c.putImageData(img, 0, 0);
-  return toBitmap({ cv, ox: x0, oy: y0, w, h });
+  return { buf, w, h, x0, y0 };
 }
 // Fog of war on a sprite: darker, greyer, a little blue.
 function fogPixels(buf) {
@@ -407,7 +415,9 @@ const along = (o) => (o.j & 3 && !(o.j & 12) ? "u" : o.j & 12 && !(o.j & 3) ? "v
 // A box spanning the tile along an axis, thin across it.
 const run = (ax, c0, c1, z0, z1, m, a0 = 0, a1 = 1) => (ax === "u" ? { u0: a0, u1: a1, v0: c0, v1: c1, z0, z1, m } : { u0: c0, u1: c1, v0: a0, v1: a1, z0, z1, m });
 
-// One cell's share of a car that covers 2 × 3–4 cells (sim/combat.js placeCar: o.car = { i, j, L, ax, kind, v }). The
+// One cell's share of a car that covers 2 × 3–4 cells (sim/combat.js placeCar: o.car = { i, j, L, ax, kind, v }), as
+// prisms: the fallback when the car's low-poly model cannot be painted (no canvas: the tools); every view draws the
+// model, the State Map's look, cut by cell the same way (ui/vehiclemodel.js vehicleCellSprite; carModelSprite below). The
 // body is drawn in car-local units (a along its length 0..L, c across 0..2, z in art px) and clipped to this cell, so
 // the cells' pieces meet into one car: a low body, a cabin of glass in the middle (a van's longer, a pickup's bed
 // The Army trucks (sim/miltrucks.js TRUCK_KINDS body) in car-local units: [a0, a1, c0, c1, z0, z1, "body" | colour].
@@ -997,6 +1007,42 @@ const FURN_DRAW = {
   painting: { top: 14, p: (o) => { const ax = along(o), face = (f, s, t, X, Y, sw) => { if (f === "top" || s < 1 || s > (sw || 12) - 1 || t < 1 || t > 13) return WARTC.frame; return t < 7 + Math.sin(s) * 0.8 ? WARTC.hill : WARTC.sky; }; return [run(ax, 0.42, 0.52, 0, 14, face, 0.18, 0.82)]; } },
   wallclock: { top: 8, p: (o) => { const ax = along(o), face = (f, s, t, X, Y, sw) => { const d = Math.hypot(s - (sw || 6) / 2, t - 4); return f === "top" || d > 3 ? WARTC.rim : d < 0.6 || (Math.abs(s - (sw || 6) / 2) < 0.4 && t > 4) ? WARTC.rim : WARTC.white; }; return [run(ax, 0.44, 0.52, 0, 8, face, 0.3, 0.7)]; } },
 };
+// A piece carried (sim/furnicarry.js, issue #17): its own cells' prims (primsOf), its long side along the view's ax
+// ("u" | "v"), a 2-cell piece both its cells joined in one run (as JOINS draws it standing), on the ground at (0, 0).
+function carriedPrims(k, ax) {
+  const d = FURNITURE_KINDS[k];
+  if (!d) return [];
+  const long = Math.max(d.size[0], d.size[1]), out = [];
+  for (let i = 0; i < long; i++) {
+    const j = long < 2 ? 0 : ax === "u" ? (i < long - 1 ? 1 : 0) | (i ? 2 : 0) : (i < long - 1 ? 4 : 0) | (i ? 8 : 0);
+    const du = ax === "u" ? i : 0, dv = ax === "v" ? i : 0;
+    for (const q of primsOf(k, { v: 0, j, n: ax === "u" ? "v" : "u", top: 28, mat: 0, dmg: 0 })) {
+      if (q.cyl) out.push({ ...q, cyl: [q.cyl[0] + du, q.cyl[1] + dv, q.cyl[2]] });
+      else if (q.blob) out.push({ ...q, blob: [q.blob[0] + du, q.blob[1] + dv, q.blob[2]] });
+      else out.push({ ...q, u0: q.u0 + du, u1: q.u1 + du, v0: q.v0 + dv, v1: q.v1 + dv });
+    }
+  }
+  return out;
+}
+// Its middle on the ground (view u, v) and height (art px).
+const carriedMid = (k, ax) => { const d = FURNITURE_KINDS[k], L = d ? Math.max(d.size[0], d.size[1]) : 1; return ax === "u" ? [L / 2, 0.5] : [0.5, L / 2]; };
+const carriedTop = (k) => (FURN_DRAW[k] ? FURN_DRAW[k].top : blockTop0(k, { top: 28 }) || 12);
+// The piece in a carrier's arms as pixels (ui/figures.js setPieceArt: painted into the figure), the diagonal view's
+// projection (the figures' own), cached by kind and side.
+const pieceArtCache = new Map();
+export function pieceArt(k, ax) {
+  const key = `${k}|${ax}`;
+  if (pieceArtCache.has(key)) return pieceArtCache.get(key);
+  const prims = carriedPrims(k, ax);
+  let art = null;
+  if (prims.length) {
+    const px = paintPx(prims, { st: false }), [u, v] = carriedMid(k, ax);
+    art = { ...px, cx: artX(u, v, false), cy: artY(u, v, false), top: carriedTop(k) };
+  }
+  pieceArtCache.set(key, art);
+  return art;
+}
+setPieceArt(pieceArt);
 export const furnProbe = { primsOf: (k, o) => primsOf(k, o), blockTop0: (k, o) => blockTop0(k, o), FURN_DRAW, FURNITURE, FLOORED, OUTLINED: () => OUTLINED, JOINS: () => JOINS }; // tools/furnituretest.js
 
 function primsOf(k, o) {
@@ -1585,15 +1631,29 @@ function spritePut(key, s) {
 }
 // A cached sprite for a cell's look.
 function sprite(k, o, fog) {
-  const key = `${iso.straight ? "s|" : ""}${o.sea ? `${o.sea}|` : ""}${k}|${o.v}|${o.alt}|${o.j}|${o.n}|${o.top}|${o.stub ? 1 : 0}|${o.mat}|${o.dmg}|${o.barred ? 1 : 0}|${o.dir}|${o.part || ""}|${o.vault ? 1 : 0}|${o.roll ? 1 : 0}|${o.lit ? 1 : 0}|${o.spot || 0}|${fog ? 1 : 0}|${o.ter ? `${o.ter.key}${o.f}${o.wet ? `${o.wet}${o.wl}` : ""}${o.snow || ""}${o.gt ? `${o.gnd}${o.lf}` : ""}` : ""}|${o.car ? `${o.car.i},${o.car.j},${o.car.L},${o.car.ax},${o.car.kind},${o.car.v},${o.car.body || ""},${o.car.mil ? o.car.mil.cond : ""},${upKey(o.car.up)},${iso.rot & 3}` : ""}${o.sn ? `|n${o.sn}` : ""}${o.ie || o.is || o.art ? `|w${o.ie || ""}/${o.is || ""}/${o.art || ""}` : ""}`;
+  const key = `${iso.straight ? "s|" : ""}${o.sea ? `${o.sea}|` : ""}${k}|${o.v}|${o.alt}|${o.j}|${o.n}|${o.top}|${o.stub ? 1 : 0}|${o.mat}|${o.dmg}|${o.barred ? 1 : 0}|${o.dir}|${o.part || ""}|${o.vault ? 1 : 0}|${o.roll ? 1 : 0}|${o.lit ? 1 : 0}|${o.spot || 0}|${fog ? 1 : 0}|${o.ter ? `${o.ter.key}${o.f}${o.wet ? `${o.wet}${o.wl}` : ""}${o.snow || ""}${o.gt ? `${o.gnd}${o.lf}` : ""}` : ""}|${o.car ? `${o.car.i},${o.car.j},${o.car.L},${o.car.ax},${o.car.kind},${o.car.v},${o.car.body || ""},${o.car.type || ""},${o.car.mil ? `${o.car.mil.cond}${o.car.mil.enemy ? "e" : ""}` : ""},${o.car.wrecked ? "w" : ""},${upKey(o.car.up)},${iso.rot & 3}` : ""}${o.sn ? `|n${o.sn}` : ""}${o.ie || o.is || o.art ? `|w${o.ie || ""}/${o.is || ""}/${o.art || ""}` : ""}`;
   let s = spriteGet(key);
   if (s === undefined) {
-    const p = prims(k, o);
-    s = p.length ? paint(p, { fog, outline: OUTLINED.has(k) && !(k === "sandbag" && o.j) && !o.ter && !BARE.test(o.sea || "") }) : null; // BARE: a bare tree's twigs outlined would be a black mass // !o.ter: on a hill the outline would trace the ground's column and banks too // joined sandbags: no outline, or each cell's would cross the wall at the join
+    const car = CAR_CELLS.has(k) ? carModelSprite(k, o, fog) : null; // a car as its model (ui/vehiclemodel.js): this cell's share, or a car on this one cell
+    const p = car ? [] : prims(k, o);
+    s = car ? toBitmap(car) : p.length ? paint(p, { fog, outline: OUTLINED.has(k) && !(k === "sandbag" && o.j) && !o.ter && !BARE.test(o.sea || "") }) : null; // BARE: a bare tree's twigs outlined would be a black mass // !o.ter: on a hill the outline would trace the ground's column and banks too // joined sandbags: no outline, or each cell's would cross the wall at the join
     iso.builds.sprites++;
     spritePut(key, s);
   }
   return s;
+}
+// A car's cell drawn from the car's low-poly model (ui/vehiclemodel.js: the State Map's vehicles' look, the user's ask
+// 2026-10-25), the car headed along its axis in the view (a yaw in the figures' degrees: the angle in the view's u, v),
+// in the diagonal views and the straight one (its own projection there); a car on one cell (no o.car) as the model
+// shrunk onto it. Null without a canvas: the prisms then.
+const CAR_CELLS = new Set(["car", "truck", "vehicle"]);
+function carYaw(ax, r) {
+  const d = ax === "y" ? [0, 1] : [1, 0], [u0, v0] = ptView(0, 0, r, 0, 0), [u1, v1] = ptView(d[0], d[1], r, 0, 0);
+  return (Math.atan2(v1 - v0, u1 - u0) * 180) / Math.PI;
+}
+function carModelSprite(k, o, fog) {
+  const opt = { fog, sn: o.sn, straight: iso.straight };
+  try { return o.car ? vehicleCellSprite(o.car, carYaw(o.car.ax, iso.rot), opt) : vehicleOneSprite(k, (o.v || 0) * 7 + (o.j || 0), o.v & 1 ? "v" : "u", opt); } catch (e) { void e; return null; } // a model that cannot be painted: the prisms
 }
 // Snow on the buildings (the user's request 2026-10-23: "In raid and base view: Winter has snow on buildings."), by
 // the snow lying (ui/roofsnow.js snowOnFor: quarters, 0 none; this frame's snowLook), in the sprites' cache keys only
@@ -2750,6 +2810,7 @@ export const SNEAK_LOOK = { squash: 0.8, alpha: 0.82, filter: "brightness(0.62) 
 
 // Draw the battle. H: what ui/combat.js knows (the cached view, the selected unit, the mode, the hover, helpers).
 export function drawIso(ctx, cw, ch, state, b, now, H) {
+  carryFrame.pair = 0; carryFrame.shown.clear(); // the pieces carried drawn this frame (drawPairPiece, drawBody)
   frameNow = now; // the frame's clock, for the bodies' own animations (toppleOf)
   walkPaints = WALK_PAINTS;
   const t0 = typeof performance !== "undefined" ? performance.now() : 0;
@@ -3040,6 +3101,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     const tx = Math.max(0, Math.min(b.w - 1, Math.floor(wx))), ty = Math.max(0, Math.min(b.h - 1, Math.floor(wy)));
     shown.push({ t, wx, wy, z: standZ(b, tx, ty), d: depth(Math.floor(uu), Math.floor(vv), st) });
   }
+  frameShown = shown; // a pair carrying a piece: where the other one stands (drawPairPiece)
   const ghosts = (v.ghosts || []).filter((q) => !vis[q.y * b.w + q.x] && onFloor(b, q));
   // Cells close in front of one of your people are drawn faded, so nobody is lost behind a wall (in front: down the
   // screen, the cells whose blocks reach up over them; in a straight view the rows below).
@@ -3476,6 +3538,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   const h = H.hover;
   if (H.cone) fillCells(ctx, b, (i) => H.cone.has(i), "rgba(255,140,40,0.32)"); // the pepper spray's cone (ui/nonlethal.js)
   if (H.mode === "parkCart" && u) { const ps = new Set(parkCells(b, u).map(([x, y]) => y * b.w + x)); fillCells(ctx, b, (i) => ps.has(i), "rgba(224,168,79,0.38)"); } // sim/carts.js: the four cells beside them a cart can be parked on
+  if (H.mode === "setPiece" && u) { const ps = new Set(setTargets(b, u).flatMap((o) => o.cells.map(([x, y]) => y * b.w + x))); fillCells(ctx, b, (i) => ps.has(i), "rgba(224,168,79,0.38)"); } // sim/furnicarry.js: where the piece carried can be set down (Park cart's highlight)
   if (H.callout && H.callout.length) { // Call out (ui/combat.js): whom the selected one can call to, one per group
     ctx.strokeStyle = "#ffd166"; ctx.lineWidth = 2; ctx.setLineDash([4, 3]); ctx.beginPath();
     for (const t of H.callout) if (onFloor(b, t)) diamond(ctx, t.x, t.y, tileTop(b, t.x, t.y), 1.5);
@@ -3783,6 +3846,9 @@ function drawBody(ctx, state, b, s, H, silhouette = false) {
   const walk = m ? strideOf(m) : null;
   const fig = walkFigure(state, b, t, H.salt, yaw, walk) || unitFigure(state, b, t, H.salt, yaw); // a low-poly figure facing its way (ui/figures.js), else the flat sprite mirrored to its side
   frameFigs.push(["up", t]);
+  const carry = t.piece ? carryLook(state, b, t) : null; // a piece of furniture in the arms (ui/figures.js: the pose, the piece alone)
+  if (fig && carry && carry.kind) carryFrame.shown.add(t.id);
+  const sway = carry && carry.low ? Math.round(Math.sin((frameNow * Math.PI) / CARRY_VIEW.SWAY_MS)) : 0; // a heavy piece alone: a slow 1 px bob
   const cv = fig || unitCanvas(state, b, t, H.salt);
   if (!cv) return;
   // A cart in the arms (sim/carts.js) rolls with its pusher, facing their way (ui/ground.js, ui/cartmodel.js): the
@@ -3794,7 +3860,7 @@ function drawBody(ctx, state, b, s, H, silhouette = false) {
   const hgt = UNIT_H * unitBig(t) * S, w = hgt * (22 / 26);
   ctx.save();
   ctx.imageSmoothingEnabled = false;
-  ctx.translate(X, Y - (walk ? walk.bob * S : 0)); // walking: up a little as the legs pass
+  ctx.translate(X, Y - (walk ? walk.bob * S : 0) + sway * S); // walking: up a little as the legs pass
   if (!fig && facing < 0) ctx.scale(-1, 1);
   const spent = t.side === "player" && t.ap === 0 && b.phase === "player";
   if (!silhouette && spent) ctx.globalAlpha *= 0.65;
@@ -3853,6 +3919,8 @@ function unitMoveDir(b, t) {
   return null;
 }
 function unitYaw(b, t, r, st = iso.straight) {
+  const o = t.tether != null && t.piece ? partnerOf(b, t) : null; // one of a pair carrying a piece (sim/furnicarry.js): facing it, and the other
+  if (o && (o.x !== t.x || o.y !== t.y)) return dirYaw(b, t, r, [o.x - t.x, o.y - t.y], st);
   return dirYaw(b, t, r, (t.face && (t.face[0] || t.face[1]) && t.kind === "human" ? t.face : null) || unitMoveDir(b, t) || [unitFacing(b, t), 0], st);
 }
 // A world direction at a unit's tile as a figure's yaw in view rotation r (st: a straight view).
@@ -3936,6 +4004,50 @@ function isoTag(ctx, X, Y, text, col, S) {
   ctx.fillStyle = col;
   ctx.fillText(text, X, Y);
 }
+// ---------- a piece of furniture carried (sim/furnicarry.js; issue #17) ----------
+// Alone the piece is in the figure (ui/figures.js carryLook, paintBoxFigure). A pair's is drawn once, between them, by
+// whichever of the two is nearer the viewer (just before its body: over the far one, under the near one): its own
+// picture (carriedPrims) at CARRY_SCALE, its long side along the line between them, its middle on the midpoint at the
+// hands' height (CARRY_VIEW.HAND art px up, its middle there); a 1-cell piece leaves a gap, so a 1-px line in their
+// ring's colour joins the hands under it (the tether). carryFrame: the pieces drawn this frame (the CARRY tag, the tools).
+export const CARRY_VIEW = { HAND: 14, REACH: 0.3, SWAY_MS: 760 }; // the hands' height (art px); how far toward the other they reach (tiles); a heavy piece's bob, half the walk's rate
+export const carryFrame = { pair: 0, shown: new Set() };
+export const carryProbe = { unitYaw: (b, t) => unitYaw(b, t, FR.r), dirYaw: (b, t, d) => dirYaw(b, t, FR.r, d) }; // tools/carryviewtest.js
+let frameShown = [];
+function carriedSprite(k, ax) {
+  const key = `carried|${iso.straight ? "s" : ""}|${k}|${ax}`;
+  let spr = spriteGet(key);
+  if (spr === undefined) { const p = carriedPrims(k, ax); spr = p.length ? paint(p, { st: iso.straight }) : null; spritePut(key, spr); }
+  return spr;
+}
+function drawPairPiece(ctx, b, s) {
+  const t = s.t, o = partnerOf(b, t), P = o ? carriedPiece(b, t) : null;
+  if (!P) return;
+  const so = frameShown.find((q) => q.t === o);
+  if (!so) return;
+  const [X0, Y0] = feet(s), [X1, Y1] = feet(so);
+  if (so.d > s.d || (so.d === s.d && (Y1 > Y0 || (Y1 === Y0 && o.id > t.id)))) return; // the nearer one draws it
+  const k = P.def.kind, S = FR.S, K = CARRY_SCALE, r = FR.r;
+  const [u0, v0] = ptView(s.wx, s.wy, r, b.w, b.h), [u1, v1] = ptView(so.wx, so.wy, r, b.w, b.h);
+  const ax = Math.abs(u1 - u0) >= Math.abs(v1 - v0) ? "u" : "v", spr = carriedSprite(k, ax);
+  if (!spr) return;
+  const mx = (s.wx + so.wx) / 2, my = (s.wy + so.wy) / 2, z = (s.z + so.z) / 2, top = carriedTop(k) * K;
+  const d = FURNITURE_KINDS[k], one = !d || d.size[0] * d.size[1] < 2;
+  if (one) { // the tether: hand to hand, under the piece
+    const dx = so.wx - s.wx, dy = so.wy - s.wy, n = Math.hypot(dx, dy) || 1, q = CARRY_VIEW.REACH / n;
+    const [hx0, hy0] = project(s.wx + dx * q, s.wy + dy * q, s.z + CARRY_VIEW.HAND), [hx1, hy1] = project(so.wx - dx * q, so.wy - dy * q, so.z + CARRY_VIEW.HAND);
+    ctx.strokeStyle = ringOf(t); ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(hx0, hy0); ctx.lineTo(hx1, hy1); ctx.stroke();
+  }
+  const [X, Y] = project(mx, my, z + Math.max(1, CARRY_VIEW.HAND - top / 2));
+  const [cu, cv] = carriedMid(k, ax), st = iso.straight, cx = artX(cu, cv, st), cy = artY(cu, cv, st);
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(spr.cv, X + (spr.ox - cx) * S * K, Y + (spr.oy - cy) * S * K, spr.w * S * K, spr.h * S * K);
+  ctx.restore();
+  carryFrame.pair++;
+  carryFrame.shown.add(t.id); carryFrame.shown.add(o.id);
+}
 function drawUnitIso(ctx, state, b, s, H, now) {
   const t = s.t, S = FR.S, [X, Y] = feet(s);
   void now;
@@ -3961,6 +4073,7 @@ function drawUnitIso(ctx, state, b, s, H, now) {
     ctx.setLineDash([]);
     if (sel) { ctx.strokeStyle = "rgba(224,168,79,0.45)"; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(X, Y, 14 * S, 6.8 * S, 0, 0, Math.PI * 2); ctx.stroke(); }
   }
+  if (t.tether != null && t.piece && !t.dead && !t.down) drawPairPiece(ctx, b, s);
   drawBody(ctx, state, b, s, H);
   if (t.down && t.tied) {
     ctx.strokeStyle = "#c9a74a"; ctx.lineWidth = Math.max(2, 0.8 * S);
@@ -4049,6 +4162,7 @@ function drawLabels(ctx, b, s, H) {
   if (!t.down && isMedic(t)) tags.push(["✚", "#ff6b6b"]); // a medic (sim/medics.js)
   if (t.side === "player" && t.vol != null && !t.dead) tags.push(["VOL", "#c9a2ff"]); // a volunteer from an allied group: their own orders (sim/volunteers.js)
   if (t.dragging != null) tags.push(["DRAG", "#e0a84f"]);
+  if (t.piece && !t.down && !carryFrame.shown.has(t.id)) tags.push(["CARRY", "#e0a84f"]); // a piece in the arms not drawn (a flat sprite, the other one of a pair out of the picture)
   if (t.shaken && !t.down) tags.push(["SHK", "#ffd166"]); // revived: shaken, −10 aim
   if (t.boss && !t.down) tags.push([t.boss === "broodmother" ? "BROOD" : t.boss === "hivemind" ? "MIND" : "WALL", COL.bad]);
   if (t.ow) tags.push(["OW", "#e0a84f"]);

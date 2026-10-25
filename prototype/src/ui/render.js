@@ -13,6 +13,7 @@ import { heldUp } from "../sim/roadblocks.js"; // "Road blocked" over a team hel
 import { MARKER_TYPES, LAYER_OF } from "../sim/markers.js";
 import { vehicleById, partyVehicles, raidHumvees } from "../sim/vehicles.js";
 import { conditionsOf, CONDITIONS } from "../sim/health.js"; // a lone walker's limp
+import { isPieceItem } from "../sim/furnicarry.js"; // a piece of furniture carried home: on the shoulders (ui/mapfigures.js)
 import { BUILDINGS, count, tierUpJob, gatherCap, isCamp, CAMP, wallTier } from "../sim/buildings.js";
 import { weatherTint, iceRow } from "../sim/weather.js";
 import { mapSeasonOf, FOREST_FLAT } from "./seasontrees.js"; // the trees by the season: the decals' look, the forests' flat colour
@@ -1966,7 +1967,7 @@ function markerLook(state, m) {
   if (m.type === "vehicle") {
     const v = i.vehicleId != null ? vehicleById(state, i.vehicleId) : null;
     const bike = v && v.type === "bike";
-    return { vehicle: bike ? "bike" : v && v.type === "sedan" ? "sedan" : v && v.type === "miltruck" ? "miltruck" : "truck", needsFuel: !bike && i.fuel != null && i.fuel < 3, damaged: i.condition != null && i.condition < 25, ups: v ? upsCode(v.upgrades) : "", wreck: !!(v && v.destroyed) }; // ups: plates, glass, a gun on the roof (mapsprites.js); wreck: blown up (drawn as a wreck)
+    return { vehicle: bike ? "bike" : vehicleKind(v), needsFuel: !bike && i.fuel != null && i.fuel < 3, damaged: i.condition != null && i.condition < 25, ups: v ? upsCode(v.upgrades) : "", wreck: !!(v && v.destroyed) }; // ups: plates, glass, a gun on the roof (mapsprites.js); wreck: blown up (drawn as a wreck)
   }
   if (m.type === "death") { // a cart left on the tile (sim/carts.js: abandoned on a road, or set down): drawn as the cart
     const d = (state.deathSites || []).find((x) => x.tile === m.tile && !(x.names || []).length);
@@ -2121,19 +2122,25 @@ function headingOf(state, p) {
   return h;
 }
 
+// A vehicle's sprite kind by its type (sim/vehicles.js VEHICLE_TYPES; the user's ask 2026-10-25: the map's vehicle
+// sprites by the type of vehicle): a pickup for the truck and anything unknown (ui/mapfigures.js mapPartyCanvas,
+// ui/mapsprites.js partySpriteCanvas and the parked marker).
+const VEHICLE_KINDS = { sedan: "sedan", suv: "suv", hummer: "hummer", van: "van", miltruck: "miltruck" };
+export const vehicleKind = (v) => (v && VEHICLE_KINDS[v.type]) || "truck"; // exported for tools/vehiclemodeltest.js
 // Which sprite one of your parties gets and in what color: convoys carry crates (trade routes) or drums (supply
 // runs), by truck or pulling a handcart; recon teams on foot are scouts with binoculars, relief squads march
-// behind a banner.
+// behind a banner; a team by car as its vehicle's type (vehicleKind).
 function partyLook(state, p) {
   const color = p.kind === "convoy" ? (p.routeKind === "supply" ? SUPPLY_COLOR : ROUTE_COLOR) : PLAYER_COLOR;
   const v = p.vehicle ? vehicleById(state, p.vehicleId) : null;
   const supply = p.routeKind === "supply";
   const kind = p.kind === "convoy" ? (p.vehicle ? (supply ? "supply" : "convoy") : supply ? "supplycart" : "cart")
-    : p.vehicle === true ? (v && v.type === "sedan" ? "sedan" : v && v.type === "miltruck" ? "miltruck" : "truck") : p.mission === "recon" ? "scouts" : p.mission === "help" ? "relief" : "walkers";
+    : p.vehicle === true ? vehicleKind(v) : p.mission === "recon" ? "scouts" : p.mission === "help" ? "relief" : "walkers";
   const count = (p.members || []).length;
   // A team of one: a lone walker, or a rider on a bike (a car keeps its vehicle sprite).
   const solo = p.kind === "convoy" || count !== 1 ? "" : p.vehicle === "bike" ? "cyclist" : !p.vehicle && soloKind(kind) ? "walker" : "";
-  return { color, kind, count, solo, ups: v && p.kind !== "convoy" ? upsCode(v.upgrades) : "" }; // ups: its upgrades (mapsprites.js upsCode)
+  const furn = p.vehicle || p.kind === "convoy" ? 0 : partyMembers(state, p).filter((s) => s && s.gear && isPieceItem(s.gear.carry)).length; // on foot with a piece of furniture in the arms (sim/furnicarry.js): on the shoulders (ui/mapfigures.js)
+  return { color, kind, count, solo, furn, ups: v && p.kind !== "convoy" ? upsCode(v.upgrades) : "" }; // ups: its upgrades (mapsprites.js upsCode)
 }
 
 // The piece for one of your teams this frame, at its heading: a team of one gets its own figure (walking or standing,
@@ -2143,16 +2150,16 @@ function teamCanvas(state, p, look, moving, yaw, night = false) {
   const sz = zoomBoost();
   if (!look.solo) {
     const motor = MOTOR.has(look.kind), ms = motor ? 240 : look.kind.includes("cart") ? 520 : 380;
-    return [mapPartyCanvas(look.kind, look.color, look.count, look.ups, yaw, cycleFrame(p.id, moving, ms)), PIECE_PX * sz, !moving ? 0 : motor ? rumble(p.id, 0.35 * sz) : stepBob(p.id, (look.kind.includes("cart") ? 0.6 : 0.8) * sz, ms)];
+    return [mapPartyCanvas(look.kind, look.color, look.count, look.ups, yaw, cycleFrame(p.id, moving, ms), look.furn || 0), PIECE_PX * sz, !moving ? 0 : motor ? rumble(p.id, 0.35 * sz) : stepBob(p.id, (look.kind.includes("cart") ? 0.6 : 0.8) * sz, ms)];
   }
   const s = partyMembers(state, p)[0], light = night && s ? lightOf(s) || "" : "";
   if (look.solo === "cyclist") return [mapCyclistCanvas(look.color, yaw, cycleFrame(p.id, moving, 240)), SOLO_PX * sz, moving ? stepBob(p.id, 0.3 * sz, 480) : 0];
   const gait = soloGait(p, s), ms = GAIT_MS[gait];
   // A heavy load bobs less; a limp dips on the hurt leg (every other step).
   const bob = !moving ? 0 : stepBob(p.id, (gait === "heavy" ? 0.5 : 0.8) * sz, ms) + (gait === "limp" && animOn() && Math.floor(animNow / ms + phaseOf(p.id)) % 2 ? 0.8 * sz : 0);
-  return [mapSoloCanvas(look.kind, look.color, yaw, cycleFrame(p.id, moving, ms), light, gait), SOLO_PX * sz, bob];
+  return [mapSoloCanvas(look.kind, look.color, yaw, cycleFrame(p.id, moving, ms), light, gait, !!look.furn), SOLO_PX * sz, bob];
 }
-const MOTOR = new Set(["truck", "sedan", "miltruck", "convoy", "supply"]);
+const MOTOR = new Set(["truck", "sedan", "suv", "van", "hummer", "miltruck", "convoy", "supply"]);
 // How a lone walker goes: "limp" when hurt (under 60% health, an infected wound, or a cut or sprain: health.js injuries),
 // "heavy" when their load is Heavy or more (load.js bands, as last weighed: p.burden), else "" (a steady walk).
 const GAIT_MS = { "": 380, heavy: 520, limp: 560 };
