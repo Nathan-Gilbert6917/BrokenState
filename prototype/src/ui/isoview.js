@@ -475,6 +475,15 @@ const CIV_TOPS = {
   police: (L) => [[0.1, L - 0.1, 0.15, 1.85, 3, 9, "body"], [0.1, L - 0.1, 0.12, 0.16, 5, 8, "#e8e8e0"], [0.1, L - 0.1, 1.84, 1.88, 5, 8, "#e8e8e0"], [0.9, L - 1.1, 0.3, 1.7, 9, 14, "#2a3a44"], [1.3, 1.9, 0.4, 1.0, 14, 15.5, "#d04030"], [1.3, 1.9, 1.0, 1.6, 14, 15.5, "#3050c0"]],
 };
 const CIV_PAINT = { engine: "#a8241c", ambulance: "#dcdad2", police: "#22252a" };
+// The aircraft (sim/militarylayout.js, issue #25: car.wide cells across, W): a fuselage down the middle, the wings across
+// it, the tail; as CIV_TOPS, [a0, a1, c0, c1, z0, z1, colour].
+const AIR_TOPS = {
+  jet: (L, W) => [[0.2, L - 0.1, W / 2 - 0.35, W / 2 + 0.35, 5, 14, "body"], [L - 2, L - 0.8, W / 2 - 0.25, W / 2 + 0.25, 14, 17, "#7d9db5"], [L * 0.3, L * 0.55, 0.15, W - 0.15, 8, 10, "body"], [0.2, 0.9, W / 2 - 0.4, W / 2 - 0.25, 14, 22, "body"], [0.2, 0.9, W / 2 + 0.25, W / 2 + 0.4, 14, 22, "body"]],
+  helo: (L, W) => [[L * 0.4, L - 0.2, 0.2, W - 0.2, 2, 20, "body"], [L - 0.6, L - 0.1, 0.4, W - 0.4, 6, 16, "#7d9db5"], [0.1, L * 0.4, W / 2 - 0.2, W / 2 + 0.2, 12, 17, "body"], [0.1, L - 0.1, W / 2 - 0.08, W / 2 + 0.08, 22, 23, "#26272a"]],
+  cargoplane: (L, W) => [[0.3, L - 0.2, W / 2 - 0.75, W / 2 + 0.75, 3, 26, "body"], [L * 0.42, L * 0.56, 0.1, W - 0.1, 24, 27, "body"], [0.1, 0.6, W / 2 - 0.08, W / 2 + 0.08, 26, 40, "body"]],
+  airliner: (L, W) => [[0.3, L - 0.2, W / 2 - 0.75, W / 2 + 0.75, 3, 26, "body"], [L * 0.42, L * 0.56, 0.1, W - 0.1, 7, 10, "body"], [0.1, 0.6, W / 2 - 0.08, W / 2 + 0.08, 26, 40, "body"]],
+};
+const AIR_PAINT = { jet: "#7d848c", helo: "#4d5a32", cargoplane: "#6b7058", airliner: "#d8d8d0" };
 // behind), wheels at the corners; a truck is a tall cab and a box. The cell's local x/y then turn with the view (r).
 // A vehicle's upgrades (sim/combat.js fitMapVehicle: car.up { p plating, s scrap plating, g glass, m mesh, t turret }):
 // steel plates along both sides (two rows at level 2; patchy scrap plates), a grille over the cab's glass, a thick green
@@ -521,6 +530,10 @@ function carPieces(car, r) {
     const m = (f, s, t, X, Y) => (n2(X, Y, 13) > 0.95 ? mul(PAL.rust, 1.1) : mul(col, f === "top" ? 1 : 0.92));
     for (const [a0, a1, c0, c1, z0, z1, k] of CIV_TOPS[car.body](L)) parts.push([a0, a1, c0, c1, z0, z1, k === "body" ? m : flatM(hex(k))]);
     for (const a of car.body === "engine" ? [0.7, L - 1.5, L - 0.6] : [0.6, L - 0.6]) { wheel(a, 0.2); wheel(a, 1.8); }
+  } else if (AIR_TOPS[car.body]) {
+    const col = car.wrecked ? hex("#2b2723") : hex(AIR_PAINT[car.body]);
+    const m = (f, s, t, X, Y) => (n2(X, Y, 13) > 0.9 ? mul(PAL.tire, 1.2) : mul(col, f === "top" ? 1 : 0.92));
+    for (const [a0, a1, c0, c1, z0, z1, k] of AIR_TOPS[car.body](L, car.wide || 2)) parts.push([a0, a1, c0, c1, z0, z1, k === "body" ? m : flatM(hex(k))]);
   } else if (car.body === "bike") { // a bike or a motorcycle: 2 x 1 cells, wheels at each end, a low frame, a seat and the bars
     const frame = flatM(kind === "vehicle" ? PAL.blue : mul(PAL.metal, 1.1)), dark = flatM(PAL.tire);
     parts.push([0.15, 0.65, 0.4, 0.6, 0, 6, dark], [1.35, 1.85, 0.4, 0.6, 0, 6, dark], [0.45, 1.55, 0.44, 0.56, 4, 7, frame], [0.75, 1.15, 0.38, 0.62, 7, 9, flatM(PAL.cloth)], [1.45, 1.55, 0.2, 0.8, 9, 11, frame]);
@@ -537,7 +550,7 @@ function carPieces(car, r) {
   }
   if (car.up) carUpParts(car, L, parts); // its upgrades (sim/vehicles.js): plating, grilles, the gun on its roof
   // Head high (VEH_TOP): every piece stretched up from the ground by the kind's factor (a bike stays as it is).
-  const zk = car.body === "bike" ? 1 : vehZ(mil || CIV_TOPS[car.body] ? VEH_ROOF[car.body] : big ? VEH_ROOF.truck : VEH_ROOF.car);
+  const zk = car.body === "bike" || AIR_TOPS[car.body] ? 1 : vehZ(mil || CIV_TOPS[car.body] ? VEH_ROOF[car.body] : big ? VEH_ROOF.truck : VEH_ROOF.car);
   if (zk !== 1) for (const q of parts) { q[4] *= zk; q[5] *= zk; }
   // Clip to this cell, to local 0..1 along the world axes, then into the view's frame.
   const loc = (fx, fy) => (r & 3) === 0 ? [fx, fy] : (r & 3) === 1 ? [1 - fy, fx] : (r & 3) === 2 ? [1 - fx, 1 - fy] : [fy, 1 - fx];
@@ -1226,6 +1239,51 @@ const FURN_DRAW = {
     return [run(ax, 0.24, 0.76, 0, 16, m, 0.06, 0.94)];
   } },
   genset: { top: 16, p: () => [fbox(0.04, 0.96, 0.04, 0.96, 0, 2, flatM(PAL.metalDk)), fbox(0.1, 0.9, 0.1, 0.9, 2, 16, (f, s, t, X, Y) => (f === "top" ? mul(hex("#4a5a30"), 1.15) : t > 10 && t < 12 ? FURNC.black : n2(X, Y, 97) > 0.95 ? FURNC.amber : hex("#4a5a30")))] },
+  // ---------- military bases, air bases, airports and prisons (issue #25, sim/militarylayout.js) ----------
+  // (The footlocker, the map table and the radio console are #26's, above.) An ammo crate a green crate stencilled yellow; a barrier gate a striped boom
+  // on its post; a guard booth a small hut with windows; a fuel bladder a low black pillow; a jet engine stand a steel
+  // cradle with the engine's drum on it; a baggage belt a low black belt on a steel frame; a security scanner a grey
+  // X-ray tunnel with its rollers; gate seating a row of linked seats; a property locker a steel bank of small doors.
+  ammocrate: { top: 9, p: () => {
+    const g = hex("#4d5a32"), face = (f, s, t, X, Y) => (f === "top" ? mul(g, 1.12) : t > 4 && t < 5.5 ? FURNC.amber : Math.floor(X) % 6 < 1 ? mul(g, 0.6) : mul(g, 0.9 + n2(X, Y, 206) * 0.08));
+    return [fbox(0.2, 0.8, 0.28, 0.72, 0, 9, face)];
+  } },
+  barrier: { top: 12, p: (o) => {
+    const ax = along(o), boom = (f, s, t, X) => (Math.floor(X / 3) % 2 ? FURNC.red : FURNC.white);
+    return [run(ax, 0.36, 0.64, 0, 12, flatM(mul(FURNC.white, 0.8)), 0.36, 0.64), run(ax, 0.44, 0.56, 9, 11, boom, 0, 1)];
+  } },
+  guardbooth: { top: 28, p: () => {
+    const wall = (f, s, t, X, Y, sw) => (f === "top" ? mul(PAL.conc, 1.1) : t > 12 && t < 22 && s > 2 && s < (sw || 12) - 2 ? mul(PAL.glass, 1.1) : mul(hex("#a8a48c"), 0.9 + n2(X, Y, 207) * 0.08));
+    return [fbox(0.14, 0.86, 0.14, 0.86, 0, 26, wall), fbox(0.08, 0.92, 0.08, 0.92, 26, 28, flatM(PAL.cap))];
+  } },
+  fuelbladder: { top: 7, p: () => {
+    const rub = (f, s, t, X, Y) => (f === "top" ? mul(FURNC.black, 1.4 + n2(Math.floor(X / 4), Math.floor(Y / 4), 208) * 0.2) : mul(FURNC.black, 1.2));
+    return [fbox(0.02, 0.98, 0.02, 0.98, 0, 5, rub), fbox(0.1, 0.9, 0.1, 0.9, 5, 7, rub)];
+  } },
+  enginestand: { top: 16, p: (o) => {
+    const ax = along(o), drum = (f, s, t, X, Y) => (f === "top" ? mul(FURNC.chrome, 1.05) : mul(FURNC.steel, 0.95 + n2(X, Y, 209) * 0.1));
+    return [run(ax, 0.2, 0.8, 0, 4, flatM(hex("#c8a02a")), 0.06, 0.94), run(ax, 0.26, 0.74, 4, 16, drum, 0.1, 0.9), run(ax, 0.34, 0.66, 6, 14, flatM(FURNC.black), 0.04, 0.1)];
+  } },
+  baggagebelt: { top: 8, p: (o) => {
+    const ax = along(o), belt = (f, s, t, X) => (f === "top" ? (Math.floor(X) % 4 < 1 ? FURNC.ring : FURNC.black) : FURNC.steel);
+    return [run(ax, 0.18, 0.82, 0, 8, belt, 0, 1)];
+  } },
+  scanner: { top: 18, p: (o) => {
+    const ax = along(o), body = (f, s, t, X, Y) => (f === "top" ? mul(FURNC.beige, 1.1) : t > 4 && t < 12 ? FURNC.black : mul(FURNC.beige, 0.9 + n2(X, Y, 210) * 0.08));
+    return [run(ax, 0.2, 0.8, 0, 18, body, 0.1, 0.9), run(ax, 0.26, 0.74, 5, 6, flatM(FURNC.chrome), 0, 1)];
+  } },
+  gateseat: { top: 12, p: (o) => {
+    const ax = along(o), seat = (f, s, t, X) => (Math.floor(X) % 8 < 1 ? FURNC.black : f === "top" ? mul(PAL.blue, 1.15) : PAL.blue);
+    return [run(ax, 0.44, 0.56, 0, 5, flatM(FURNC.chrome), 0.1, 0.9), run(ax, 0.26, 0.74, 5, 7, seat, 0.02, 0.98), run(ax, 0.26, 0.34, 7, 12, seat, 0.02, 0.98)];
+  } },
+  luggage: { top: 10, p: () => {
+    const bag = (f, s, t, X, Y) => (f === "top" ? (Math.abs(s - 6) < 2 ? FURNC.black : mul(fgoods(0, 0, 211 + Math.floor(X / 16)), 1.1)) : mul(fgoods(0, 0, 211 + Math.floor(X / 16)), 0.9 + n2(X, Y, 212) * 0.08));
+    return [fbox(0.28, 0.72, 0.36, 0.64, 0, 9, bag), fbox(0.46, 0.54, 0.46, 0.54, 9, 10, flatM(FURNC.black))];
+  } },
+  intakelocker: { top: 26, p: (o) => {
+    const ax = along(o), face = (f, s, t, X) => (f === "top" ? FURNC.steel : Math.floor(t) % 6 < 1 || Math.floor(X) % 5 < 1 ? mul(FURNC.steel, 0.6) : Math.floor(X) % 5 === 3 && Math.floor(t) % 6 === 3 ? FURNC.amber : mul(FURNC.steel, 0.95));
+    return [run(ax, 0.26, 0.74, 0, 26, face, 0.04, 0.96)];
+  } },
   // ---------- lootable decor (issue #13, sim/decor.js) ----------
   // A plant in a clay pot, a floor lamp with its shade; a painting and a wall clock as they stand once set down (on a
   // wall they are drawn on its face: wartTexel).

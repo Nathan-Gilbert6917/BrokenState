@@ -47,7 +47,7 @@ export const SIZES = {
   // Raids by the site's location type (data.js LOCATIONS), then by terrain: a scale from RAID_RANGE.LO (the run's
   // smallest raid map) to RAID_RANGE.HI (its largest), raidDims.
   SITE: {
-    hospital: L, univ: L, prison: L, military: L, mall: L, factory: L, airport: L, warehouse: L, city: L, dam: L,
+    hospital: L, univ: L, prison: L, military: L, airbase: L, mall: L, factory: L, airport: L, warehouse: L, city: L, dam: L,
     town: 1.5, supermarket: M, school: M, police: M, firestation: M, apartments: M, office: M, motel: M, church: M, truckstop: M, quarry: M,
     gas: 0.5, diner: 0.5, grocery: 0.5, pharmacy: 0.5, clinic: 0.5, cabin: 0.5, barn: 0.5, gunstore: 0.5, pawnshop: 0.5, hardware: 0.5,
     autoshop: 0.5, feedstore: 0.5, ranger: 0.5, radiotower: 0.5, airdrop: 0.5,

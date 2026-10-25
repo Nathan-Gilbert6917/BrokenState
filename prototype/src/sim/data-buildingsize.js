@@ -17,6 +17,8 @@
 //   set      the setting it is usually found in (rural | town | city): the tests' and the docs' only;
 //   own      the size belongs to another ticket (#22: the corner store, grocery, supermarket and department store;
 //            #23: the school; #26: the bunkers): its archetype's own dice are kept (only the storeys rule applies);
+//   planned  the archetype's own plan is drawn at this size (#25's military buildings: militarylayout.js MIL_SIZE is these
+//            rows, read through realFoot): realScale leaves its footprint and storeys as they are;
 //   wings    how a footprint much bigger than the plan is laid out (buildingmaps.js realScale), when not in whole copies:
 //            "along" side by side along the front only, wall to wall, never turned, the copies after the first without the
 //            entry's part (a motel: more rooms down the row, every door on the lot, one office and its outside stair);
@@ -27,7 +29,7 @@
 // density per area).
 export const CELL_M = 1;
 
-/** @typedef {{ w?: [number, number], d?: [number, number], small?: [number, [number, number], [number, number]], storeys?: [number, number], city?: [number, number], set: string, own?: boolean, wings?: string }} RealSize */
+/** @typedef {{ w?: [number, number], d?: [number, number], small?: [number, [number, number], [number, number]], storeys?: [number, number], city?: [number, number], set: string, own?: boolean, planned?: boolean, wings?: string }} RealSize */
 /** @type {Record<string, RealSize>} */
 export const REAL_SIZE = {
   // Homes
@@ -84,18 +86,25 @@ export const REAL_SIZE = {
   firestation: { w: [20, 30], d: [14, 22], storeys: [1, 2], set: "town" },
   offices:     { w: [20, 40], d: [15, 30], storeys: [2, 4], city: [6, 10], set: "city" },
   lab:         { w: [20, 40], d: [15, 25], storeys: [1, 3], set: "town" },
-  barracks:    { w: [30, 60], d: [10, 15], storeys: [2, 3], set: "rural" },
-  armorybldg:  { w: [15, 25], d: [10, 15], storeys: [1, 1], set: "rural" },
-  cellblock:   { w: [30, 50], d: [15, 25], storeys: [2, 2], set: "rural" },
-  messhall:    { w: [25, 40], d: [15, 25], storeys: [1, 1], set: "rural" },
+  barracks:    { w: [40, 50], d: [15, 17], storeys: [2, 3], set: "rural", planned: true },
+  armorybldg:  { w: [17, 21], d: [12, 14], storeys: [1, 1], set: "rural", planned: true },
+  cellblock:   { w: [40, 48], d: [24, 27], storeys: [2, 2], set: "rural", planned: true },
+  messhall:    { w: [26, 32], d: [17, 20], storeys: [1, 1], set: "rural", planned: true },
   control:     { w: [15, 25], d: [12, 18], storeys: [1, 3], set: "rural" },
   radio:       { w: [8, 12], d: [6, 9], storeys: [1, 1], set: "rural" }, // a transmitter hut
-  terminal:    { w: [40, 80], d: [20, 35], storeys: [1, 2], set: "rural" },
+  terminal:    { w: [80, 90], d: [40, 44], storeys: [1, 2], set: "rural", planned: true },
+  // #25's military bases, air bases, airports and prisons (militarylayout.js): planned at these sizes by their own plans
+  hq:          { w: [26, 32], d: [17, 20], storeys: [2, 2], set: "rural", planned: true },
+  aidstation:  { w: [17, 21], d: [13, 15], storeys: [1, 1], set: "rural", planned: true },
+  gatehouse:   { w: [8, 10], d: [6, 7], storeys: [1, 1], set: "rural", planned: true },
+  tower:       { w: [9, 11], d: [9, 11], storeys: [4, 5], set: "rural", planned: true },
+  flightops:   { w: [24, 28], d: [15, 17], storeys: [1, 2], set: "rural", planned: true },
+  supply:      { w: [40, 48], d: [25, 29], storeys: [1, 1], set: "rural", planned: true }, // a military base's warehouse (no archetype of its own: the warehouse's plan at a base)
   // Open floors
   warehouse:   { w: [40, 80], d: [25, 50], storeys: [1, 1], set: "town" }, // one tall storey
   factory:     { w: [50, 100], d: [30, 60], storeys: [1, 1], set: "town" },
-  hangar:      { w: [40, 60], d: [30, 50], storeys: [1, 1], set: "rural" },
-  motorpool:   { w: [40, 70], d: [25, 40], storeys: [1, 1], set: "rural" },
+  hangar:      { w: [50, 58], d: [40, 46], storeys: [1, 1], set: "rural", planned: true },
+  motorpool:   { w: [40, 48], d: [26, 30], storeys: [1, 1], set: "rural", planned: true },
   autoshop:    { w: [15, 25], d: [12, 20], storeys: [1, 1], set: "town" },
   garage:      { w: [10, 16], d: [8, 12], storeys: [1, 1], set: "town" },
   workshop:    { w: [12, 20], d: [10, 14], storeys: [1, 1], set: "rural" },

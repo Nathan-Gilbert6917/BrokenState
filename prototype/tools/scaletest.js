@@ -75,16 +75,18 @@ const dens = [];
       const spec = realScale(r0, nat, key, { setting, storeyBonus: s % 5 === 4 ? 1 : 0 });
       const wm = spec.bw * CELL_M, dm = spec.bh * CELL_M;
       wMin = Math.min(wMin, wm); wMax = Math.max(wMax, wm); dMin = Math.min(dMin, dm); dMax = Math.max(dMax, dm);
+      const mine = !R.own && !R.planned; // the rows this ticket sizes (the others: #22's, #23's, #25's and #26's own)
       if (R.w && !R.own) {
         const okW = (wm >= R.w[0] && wm <= R.w[1]) || (R.small && wm >= R.small[1][0] && wm <= R.small[1][1]);
         const okD = (dm >= R.d[0] && dm <= R.d[1]) || (R.small && dm >= R.small[2][0] && dm <= R.small[2][1]);
         if (!okW || !okD) { badFoot++; if (badFoot <= 5) console.log(`    ${key}: ${wm} × ${dm} m outside ${R.w.join("–")} × ${R.d.join("–")}`); }
       } else if (spec.bw !== nat.bw || spec.bh !== nat.bh) { badFoot++; console.log(`    ${key}: another ticket's size changed (${nat.bw}×${nat.bh} → ${spec.bw}×${spec.bh})`); }
+      if (R.planned && (spec.bw !== nat.bw || spec.bh !== nat.bh || spec.storeys !== (nat.storeys || 1))) { badFoot++; console.log(`    ${key}: a planned building laid out again (${nat.bw}×${nat.bh} → ${spec.bw}×${spec.bh})`); }
       const range = storeyRange(key, setting);
       const bonus = s % 5 === 4 ? 1 : 0;
       if (range && R.city && (spec.height < range[0] || spec.height > Math.min(MAX_STOREYS, range[1] + bonus))) { badStorey++; console.log(`    ${key} (${setting}): ${spec.height} storeys outside ${range.join("–")}`); }
       if (range && !R.city && (spec.height < range[0] || spec.height > range[1])) { badStorey++; console.log(`    ${key}: ${spec.height} storeys outside ${range.join("–")}`); }
-      if (spec.height > MAX_STOREYS || spec.storeys !== openStoreys(spec.height, bonus)) { badOpen++; console.log(`    ${key}: ${spec.storeys} floors built of ${spec.height}`); }
+      if (spec.height > MAX_STOREYS || (mine && spec.storeys !== openStoreys(spec.height, bonus))) { badOpen++; console.log(`    ${key}: ${spec.storeys} floors built of ${spec.height}`); }
       if (city[key] && setting === "city") city[key].add(spec.height);
       if (town[key] && setting === "town") town[key].add(spec.height);
       if (spec.wings > 1) wings++;
@@ -103,8 +105,9 @@ const dens = [];
       const a = measure(spec, m), b = measure(old, mo);
       for (const k of Object.keys(acc.n)) { acc.n[k] += a[k]; acc.o[k] += b[k]; }
     }
+    const mine = !R.own && !R.planned;
     const per = (A, k) => (A[k] / (k === "dead" ? A.floorsArea : A.area)) * 1000;
-    dens.push({ key, R, w: [wMin, wMax], d: [dMin, dMax], wings, tall, acc, rooms: per(acc.n, "rooms") / per(acc.o, "rooms"), boxes: per(acc.n, "boxes") / per(acc.o, "boxes"), dead: per(acc.n, "dead") / per(acc.o, "dead"), areaK: acc.n.floorsArea / acc.o.floorsArea });
+    dens.push({ key, R, mine, w: [wMin, wMax], d: [dMin, dMax], wings, tall, acc, rooms: per(acc.n, "rooms") / per(acc.o, "rooms"), boxes: per(acc.n, "boxes") / per(acc.o, "boxes"), dead: per(acc.n, "dead") / per(acc.o, "dead"), areaK: acc.n.floorsArea / acc.o.floorsArea });
   }
   check(!badFoot, `every footprint in metres within its row (${badFoot} outside)`);
   check(!badStorey, `every building's storeys within its row's range for the setting (${badStorey} outside)`);
@@ -123,11 +126,11 @@ console.log("\nDensity per square metre of floor, new against today's (the kind'
   let off = 0;
   console.log("  kind          metres (w × d)      area ×  wings  tall   rooms   boxes   dead");
   for (const d of dens) {
-    const bad = [d.rooms, d.boxes, d.dead].some((v) => Math.abs(v - 1) > TOL);
+    const bad = d.mine && [d.rooms, d.boxes, d.dead].some((v) => Math.abs(v - 1) > TOL); // another ticket's design: shown, not judged
     if (bad) off++;
     console.log(`  ${d.key.padEnd(13)} ${`${d.w[0]}–${d.w[1]} × ${d.d[0]}–${d.d[1]}`.padEnd(19)} ${d.areaK.toFixed(1).padStart(5)}  ${String(d.wings).padStart(5)}  ${String(d.tall).padStart(4)}   ${d.rooms.toFixed(2)}    ${d.boxes.toFixed(2)}    ${d.dead.toFixed(2)}${bad ? "  ←" : ""}`);
   }
-  check(!off, `rooms, containers and the dead per square metre within ±${TOL * 100}% of today's for every kind (${off} off)`);
+  check(!off, `rooms, containers and the dead per square metre within ±${TOL * 100}% of today's for every kind this ticket sizes (${off} off; #22's, #23's, #25's and #26's own designs shown, not judged)`);
 }
 
 console.log("\nAn older save keeps its buildings exactly; a new world's city towers are tall");

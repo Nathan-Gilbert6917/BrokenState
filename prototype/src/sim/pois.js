@@ -206,7 +206,7 @@ export function bunkerExtra(state, t, list, knownZone) {
   const near = () => { const g = /** @type {any} */ (state).grid, ids = /** @type {any} */ (state).militaryIds || []; return !!(g && g.distance && ids.some((m) => g.distance(t.id, m) <= BUNKER_POI.NEAR_HEX)); };
   for (const kind of ["bunker", "govbunker", "shelter", "prepper"]) {
     let p = /** @type {Record<string, number>} */ (BUNKER_POI[kind])[t.terrain] || 0;
-    if (!p || list.some((q) => q.kind === kind)) continue;
+    if (!p || list.some((q) => q.kind === kind) || (t.loc && LOCATIONS[t.loc.type] && LOCATIONS[kind].richness > LOCATIONS[t.loc.type].richness)) continue; // an extra never out-ranks the site
     if (kind === "bunker" && near()) p *= BUNKER_POI.NEAR;
     if (hash01(state.seed, "bunkerpoi", t.id, kind) >= p) continue;
     const spread = BUNKER_POI.POOL[0] + (BUNKER_POI.POOL[1] - BUNKER_POI.POOL[0]) * hash01(state.seed, "bunkerpool", t.id);
