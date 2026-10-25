@@ -49,7 +49,7 @@ import { glLabel, glName, glRange, glLoads, glRounds, roundLabel, launchRefusal,
 import { LIGHTS } from "../sim/lights.js";
 import { VISION, viewWedges, faceAng, hasFront, setFacing, nightWord, darkSight, activeLight, nvgOn, nvgSight, facesBox, faceRefusal } from "../sim/vision.js"; // facing, view cones, sneaking (the user's request 2026-10-12)
 import { noticeRange, earshot } from "../sim/stealth.js";
-import { switchOptions, switchAt, roomAt, roomLit, INDOOR } from "../sim/indoorlight.js"; // a raid's dark rooms and light switches
+import { switchOptions, switchAt, roomAt, roomLit, INDOOR, gensetOptions, GEN } from "../sim/indoorlight.js"; // a raid's dark rooms and light switches
 import { keyHint as hintFor } from "./inputmode.js"; // the chip's words by the device in use (a finger, a controller)
 import { LISTEN } from "./soundcues.js"; // deafened: the battle is heard muffled through the selected unit's ears
 import { earStatus, visorState } from "../sim/hearing.js"; // deaf and dazed chips, the Visor toggle (sim/helmets.js)
@@ -155,7 +155,7 @@ function stairsOf(b, u) {
   const onStairs = b.cells[u.y * W + u.x].k === "stairs" && onFloor(b, u);
   return { up: onStairs && floorNo(b) < F.length - 1, down: onStairs && floorNo(b) > 0 };
 }
-const floorLabel = (b, f) => `Floor ${f + 1} of ${floorsOf(b).length}`;
+const floorLabel = (b, f) => { const nm = (floorsOf(b)[f] || {}).name || ""; return /^(Entrance level|Level \u2212)/.test(nm) ? `${nm} (${f + 1} of ${floorsOf(b).length})` : `Floor ${f + 1} of ${floorsOf(b).length}`; }; // a bunker's levels go down (sim/bunkerlayout.js levelName)
 // Still in the fight, whatever floor they are on (sim/combat.js active() counts a unit on another floor as off the
 // map for the active floor; the team list, Tab and the number keys must still reach them).
 const alive = (u) => !u.dead && !u.down && !u.left && !u.fled && (!u.off || u.aboard); // aboard the vehicle: off the map but still yours to order
@@ -2135,6 +2135,7 @@ export function combatAction(state, key, d, ui = null) { // ui: main.js's screen
     cui.msg = cui.mode === v ? "Click the wire to cut." : "";
     return;
   }
+  if (v === "genset") return void act(state, { type: "genset", unit: u.id }); // sim/indoorlight.js: a bunker's generator
   if (v === "lights") return void act(state, { type: "lights", unit: u.id }); // sim/indoorlight.js: the switch in reach (the sim says why not)
   if (v === "light" || v === "nvg") { if (v === "light" ? u.light : u.nvg) return void act(state, { type: v, unit: u.id }); cui.msg = v === "light" ? `${u.name.split(" ")[0]} has no light.` : `${u.name.split(" ")[0]} has no night vision.`; return; } // sim/combat.js switchAct: free, even with no actions left
   if (v === "overwatch") {
@@ -3081,6 +3082,8 @@ function raidButtons(state, b, u, btn) {
     const wins = windowsNear(b, u), quiet = wins.length && windowOpen(b.cells[wins[0].y * W + wins[0].x]);
     html += btn("climb", "Climb window", wins.length ? (quiet ? `${BMAP.CLIMB.ap} action, quiet: ${first} climbs through the ${b.cells[wins[0].y * W + wins[0].x].k === "smashed" ? "broken" : "open"} window next to them to the other side.` : `${BMAP.CLIMB.ap} action: smash the window next to ${first} and climb through to the other side. Loud: Heat +${BMAP.CLIMB.heat}, and it wakes everything within ${BMAP.CLIMB.radius} tiles; the window stays broken after. Open it first (Open window, if it is unlocked) for a quiet climb.`) : "Stand right next to a window (not diagonally) with room on the far side to climb through it (quiet through an open or broken one, loud through a closed one).", u.ap >= BMAP.CLIMB.ap && wins.length > 0, "L");
   } else { html += doorButtons(b, u, btn, true); html += windowButtons(b, u, btn); } // the street map's houses (sim/combat.js genRaidMap): with a door or a window next to them
+  // A bunker's generator in reach (sim/indoorlight.js, issue #26): every room lit, or dark again.
+  if (gensetOptions(b, u).length) html += btn("genset", b.raid.genOn ? "Shut down generator" : "Start generator", b.raid.genOn ? `${GEN.AP} action: shut the bunker's power down. Every room goes dark.` : `${GEN.AP} action: start the bunker's power. Every room's lights come on; a generator is loud (Heat +${GEN.HEAT}, and it draws the dead within ${GEN.RADIUS} tiles), a battery rack quiet.`, u.ap >= GEN.AP);
   // A light switch in reach (sim/indoorlight.js): the room's lights on or off.
   const sws = switchOptions(b, u);
   if (sws.length) {

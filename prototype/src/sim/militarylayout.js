@@ -1,5 +1,5 @@
 // @ts-check
-// Military bases, air bases, airports, prisons and the bunker laid out like the real thing (the user's request
+// Military bases, air bases, airports and prisons laid out like the real thing (the user's request
 // 2026-10-25, issue #25 of the interiors epic #7: "yes open a ticket for the military buildings bases, airports, air
 // bases, etc that fits too"). The room styles, on roomlayout.js's placement helpers (lanes kept clear between the doors
 // and to the stairs, backs to the walls, a door's front never taken, the lootable pieces the containers) and
@@ -58,10 +58,8 @@
 //   control room: security desks of monitors, a server rack of door panels, a radio console), visitation (a glass
 //   divider of teller windows across the room, chairs either side), guardroom (lockers, a table and chairs), riotstore
 //   (riot gear: lockers, gun racks of shotguns, an ammo cabinet of beanbag rounds).
-//   Bunker: bentry (the blast door's entry: a guard desk, lockers), airlock (nothing: two doors), command (a map table,
-//   radio consoles, server racks), bbunks (bunks with footlockers), generator (the generator: a boiler, a compressor, a
-//   tool chest, barrels of fuel), rations (shelves, crates, barrels of water), barmory (gun racks, an ammo cabinet, ammo
-//   crates).
+//
+// The bunkers are #26's (bunkerlayout.js: the mountain bunker of the bunker_mil site among them).
 //
 // The outside (militaryOutside, called from assemble for the grounds these plans name):
 //   compound (a military base's buildings): a perimeter fence a cell in from the map's edge with barbed wire along its
@@ -73,7 +71,6 @@
 //   its fence and towers as a base's.
 //   prisonyard: a double perimeter (the fence and barbed wire along its inside), towers at the corners, the exercise
 //   yard behind the cell block (its own fence, weight benches).
-//   bunker: the mountainside (rock and trees), sandbags by the blast door.
 // The scenes (registerScene, their own dice; only on maps these styles laid out: when): gatestand, barracksoverrun,
 // armorybarricade, helipadevac, cellsopen, terminalshelter (below).
 import { hash01 } from "./skills.js";
@@ -104,10 +101,9 @@ export const MIL_SIZE = {
   flightops:  { w: [24, 28], d: [15, 17], storeys: [1, 2] },
   terminal:   { w: [80, 90], d: [40, 44], storeys: [1, 2] },
   cellblock:  { w: [40, 48], d: [24, 27], storeys: [2, 2] },
-  bunker:     { w: [30, 36], d: [17, 19], storeys: [1, 1] },
 };
 // The archetypes (buildingmaps.js BUILDINGS keys) these styles lay out in a new save.
-export const MIL_KEYS = new Set(["hq", "barracks", "armorybldg", "messhall", "motorpool", "aidstation", "gatehouse", "hangar", "tower", "flightops", "terminal", "cellblock", "bunker"]);
+export const MIL_KEYS = new Set(["hq", "barracks", "armorybldg", "messhall", "motorpool", "aidstation", "gatehouse", "hangar", "tower", "flightops", "terminal", "cellblock"]);
 
 const OPP = { n: "s", s: "n", w: "e", e: "w" };
 const D4 = { n: [0, -1], s: [0, 1], w: [-1, 0], e: [1, 0] };
@@ -593,38 +589,6 @@ export const MILITARY_STYLES = {
     L.wall("ammocab", { prefer: "corner" });
     L.fill(["locker"]);
   },
-  // ---------- bunker ----------
-  bentry(L) {
-    deskWithChair(L);
-    L.fill(["locker"]);
-  },
-  airlock() {},
-  command(L) {
-    const t = L.centre("maptable") || L.need("maptable");
-    if (t) L.around(t, "chair", 3);
-    wallRun(L, "radioconsole", 3);
-    L.wall("serverrack", { prefer: "corner" });
-  },
-  bbunks(L) {
-    const n = Math.max(2, Math.min(10, Math.floor((L.c.w * L.c.h) / 7)));
-    for (let i = 0; i < n; i++) if (!bunkWithLocker(L)) break;
-    if (!L.has("bunk")) L.need("bunk");
-  },
-  generator(L) {
-    L.wall("boiler", { prefer: "corner" }) || L.need("boiler"); // the generator set
-    L.wall("compressor", { prefer: "corner" });
-    L.wall("toolchest", { prefer: "corner" });
-    for (let i = 0; i < 3; i++) L.wall("barrel", { prefer: "corner" });
-  },
-  rations(L) {
-    L.fill(["shelf", "crate"]);
-    for (let i = 0; i < 3; i++) L.wall("barrel", { prefer: "corner" });
-  },
-  barmory(L) {
-    wallRun(L, "gunrack", 4);
-    L.wall("ammocab", { prefer: "corner" }) || L.need("ammocab");
-    L.fill(["ammocrate"]);
-  },
 };
 
 // The military style for a room (buildingmaps.js assemble): its plan leaf's civic mark when it is one of these.
@@ -634,7 +598,7 @@ export function militaryStyle(room) {
 }
 
 // ======================================================================================
-// The outside (assemble's grounds compound, airfield, prisonyard and bunker). api: assemble's tools for the ground
+// The outside (assemble's grounds compound, airfield and prisonyard). api: assemble's tools for the ground
 // floor's outside: { rng, W, H, I, cells, bx0, by0, bx1, by1, outsideFree(x, y), block(x, y, k) (refused where it would
 // cut anything off: the ways out stay open), box(room, x, y, kind, area), outCar(x, y, o) (a vehicle on the lot, o as a
 // room's: kind, len, wide, ax, body; its rect or null), area(type, name) (a new outdoor area), spec }.
@@ -723,11 +687,6 @@ function fuelFarm(api, n) {
 export function militaryOutside(kind, api) {
   const { rng, W, H, cells, I, bx0, by0, bx1, by1, spec } = api;
   const out = { fence: 0, towers: 0, gate: 0, helo: null, plane: null, truck: null, fuel: 0, yard: 0 };
-  if (kind === "bunker") {
-    api.scatter("rock", rng.int(6, 10)); api.scatter("tree", rng.int(6, 12), (x, y) => y < by0 - 1);
-    for (let x = bx0; x <= bx1; x++) if (api.outsideFree(x, by1 + 2) && rng.chance(0.3)) api.block(x, by1 + 2, "sandbag");
-    return out;
-  }
   if (kind === "airfield") {
     // The apron across the front: road cells (the taxiway's centre line drawn with them), an aircraft wreck and a
     // fire truck parked on it.
@@ -802,7 +761,7 @@ function gateStand(ctx) {
 }
 function barracksOverrun(ctx) {
   const { rng } = ctx;
-  for (const r of milRooms(ctx, "bay", "bbunks")) {
+  for (const r of milRooms(ctx, "bay")) {
     const f = r.f || 0, free = ctx.freeIn(r);
     if (free.length < 6) continue;
     const pick = rng.shuffle(free.slice());
@@ -816,7 +775,7 @@ function barracksOverrun(ctx) {
 }
 function armoryBarricade(ctx) {
   const { rng } = ctx;
-  for (const r of ctx.rng.shuffle(ctx.rooms.filter((q) => (q.civic === "vault" || q.civic === "barmory") && !q.scene))) {
+  for (const r of ctx.rng.shuffle(ctx.rooms.filter((q) => q.civic === "vault" && !q.scene))) {
     const f = r.f || 0, free = ctx.freeIn(r);
     if (free.length < 3) continue;
     // Its racks bare: what they held is gone (searched, empty).
@@ -888,9 +847,9 @@ function terminalShelter(ctx) {
 }
 // Only on a map laid out by these styles (when): an older save's building rolls its scenes as it did.
 const styled = (ctx) => ctx.rooms.some((r) => !!r.civic && !!MILITARY_STYLES[r.civic]);
-registerScene("gatestand", { w: 3, place: gateStand, kinds: ["barracks", "gatehouse", "hq", "bunker"], when: styled });
-registerScene("barracksoverrun", { w: 3, place: barracksOverrun, kinds: ["barracks", "bunker"], when: styled });
-registerScene("armorybarricade", { w: 2, place: armoryBarricade, kinds: ["armorybldg", "bunker"], when: styled });
+registerScene("gatestand", { w: 3, place: gateStand, kinds: ["barracks", "gatehouse", "hq"], when: styled });
+registerScene("barracksoverrun", { w: 3, place: barracksOverrun, kinds: ["barracks"], when: styled });
+registerScene("armorybarricade", { w: 2, place: armoryBarricade, kinds: ["armorybldg"], when: styled });
 registerScene("helipadevac", { w: 3, place: helipadEvac, kinds: ["hq"], when: styled });
 registerScene("cellsopen", { w: 3, place: cellsOpen, kinds: ["cellblock"], when: styled });
 registerScene("terminalshelter", { w: 3, place: terminalShelter, kinds: ["terminal"], when: styled });
@@ -930,15 +889,12 @@ export function dressCheckpoint(map, W, H, rng, walk) {
     base = n;
     return true;
   };
-  const out = { footlockers: 0, radio: 0, racks: 0, truck: 0, barrier: 0, booth: 0 };
+  const out = { footlockers: 0, racks: 0, truck: 0, barrier: 0, booth: 0 };
   for (const a of map.areas || []) {
     if (a.outdoor) continue;
     const boxes = (map.containers || []).filter((b) => b.area === a.id && b.kind !== "body");
     if (a.type === "barracks") {
       for (const b of boxes) { b.kind = "footlocker"; b.label = `${a.name}: footlocker`; cells[I(b.x, b.y)].k = "footlocker"; out.footlockers++; }
-      const spots = [];
-      for (let y = a.y0 + 1; y < a.y0 + a.h - 1; y++) for (let x = a.x0 + 1; x < a.x0 + a.w - 1; x++) if (NEXT4.some(([dx, dy]) => (cells[I(x + dx, y + dy)] || {}).k === "wall")) spots.push([x, y]);
-      for (const [x, y] of rng.shuffle(spots)) if (put(x, y, "radioconsole")) { out.radio++; break; }
     } else if (a.type === "armory") {
       boxes.forEach((b, i) => { const k = i % 2 ? "ammocrate" : "gunrack"; b.kind = k; b.label = `${a.name}: ${k === "gunrack" ? "gun rack" : "ammo crate"}`; cells[I(b.x, b.y)].k = k; out.racks++; });
     } else continue;

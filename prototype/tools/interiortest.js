@@ -32,14 +32,20 @@
 //     school's classrooms with every desk facing the whiteboard wall, a corridor of lockers, a gym with bleachers and a
 //     storage cage, a walk-in behind a cold room door, a church's pews in two columns either side of a clear aisle to
 //     the altar; every room's doors reachable; the containers are exactly the lootable pieces and the vehicles; the
-//     armory, the evidence room and a school hold what they did within ±10%; an older save keeps the old layouts;
-//   - military bases, air bases, airports, prisons and the bunker laid out like the real thing (militarylayout.js, issue
+//     armory, the evidence room and a school hold what they did within ±10%; an older save keeps the old layouts.
+//   - bunkers (bunkerlayout.js, issue #26): the military, mountain, government, shelter and prepper kinds each have
+//     their signature rooms and pieces (the blast door, the airlock between two steel doors with its showers and hazmat
+//     rack, the command centre, the barracks' bunks and footlockers, the genset, the pantry), no windows, the levels
+//     named down, the Entrance level mostly rock, the stairs landing in the main tunnel, the escape hatch as a second
+//     exit, every door reachable and the containers on their pieces; the loot per kind (the prepper's pantry the
+//     richest food per area), the scenes, the POI rates on a world;
+//   - military bases, air bases, airports, prisons laid out like the real thing (militarylayout.js, issue
 //     #25): each building at its real size with its signature rooms and pieces (a footlocker by every bunk, an armory's
 //     vault behind a locked vault door with weapon racks in rows, military vehicles in the motor pool's bays, a control
 //     tower's cab on its top floor, a terminal's security lanes, gates and check-in, a prison's two tiers of cells, a
-//     hangar's aircraft, the bunker's blast door and no windows, a base's fence, towers and gatehouse, the HQ's
+//     hangar's aircraft, a base's fence, towers and gatehouse, the HQ's
 //     helipad), doors reachable, containers on their pieces; the loot at least what it was and no richer a square metre,
-//     the armory the richest; an older save keeps its layouts; the sites (the bunker's, the air base's, a base's); air
+//     the armory the richest; an older save keeps its layouts; the sites (the air base's, a base's); air
 //     bases on generated maps; the scenes; the crawl's checkpoint with its new pieces.
 // Usage: node tools/interiortest.js [seeds per archetype] [raids]
 import { createWorld, hub, atBase } from "../src/sim/world.js";
@@ -58,6 +64,8 @@ import { rollScenes } from "../src/sim/interiorscenes.js";
 import { COMMERCIAL_KEYS, styleName } from "../src/sim/shoplayout.js";
 import { CIVIC_STYLES } from "../src/sim/civiclayout.js";
 import { MIL_KEYS, MILITARY_STYLES, MIL_SIZE } from "../src/sim/militarylayout.js";
+import { BUNKER_STYLES, BUNKER_KEYS } from "../src/sim/bunkerlayout.js"; // bunkers (issue #26)
+import { BUNKER_POI } from "../src/sim/pois.js";
 import { pieceDef } from "../src/sim/data-furniture.js";
 import { boxLoot, FLOOR_RICH } from "../src/sim/combat.js";
 import { GEAR, supValue } from "../src/sim/data.js";
@@ -105,15 +113,16 @@ console.log(`Every archetype (${Object.keys(BUILDINGS).length}), ${SEEDS} seeds 
   for (const key of Object.keys(BUILDINGS)) {
     sizes[key] = []; exitsBy[key] = []; locksBy[key] = { rooms: 0, boxes: 0, exits: 0 };
     for (let s = 0; s < SEEDS; s++) {
-      let m;
+      let m, spec;
       try {
         const rng = new Rng(1000 + s * 7919 + key.length * 31);
-        m = assemble(rng, BUILDINGS[key].make(rng), { key, name: BUILDINGS[key].name, withVehicle: s % 2 === 1 });
+        spec = BUILDINGS[key].make(rng);
+        m = assemble(rng, spec, { key, name: BUILDINGS[key].name, withVehicle: s % 2 === 1 });
       } catch (e) { bad++; console.log(`  ${key} seed ${s}: ${e.stack}`); continue; }
       const W = m.w, H = m.h;
       sizes[key].push(`${W}x${H}`);
       const errs = [];
-      const huge = m.building && m.building.w >= 50; // the supermarket since issue #22: past the largest size class, its map its footprint and margins
+      const huge = spec.foot === "huge" || (m.building && m.building.w >= 50); // a bunker at real-world scale (bunkerlayout.js BUNKER.SIZE, issue #26); the supermarket since issue #22: past the largest size class, its map its footprint and margins
       if (W < 14 || H < 14 || (MIL_KEYS.has(key) ? W > 300 || H > 300 : W > (huge ? m.building.w + 12 : 44) || H > (huge ? m.building.h + 16 : 34))) errs.push(`size ${W}x${H}`); // issue #25: the military buildings at their real size (the maps up to 300 × 300, #24)
       const z0 = m.zones[0];
       const start = [z0.x0 + 1, z0.y0 + (s % 2 === 1 ? 0 : 1)];
@@ -953,7 +962,121 @@ console.log("\nPolice stations, fire stations, schools and churches laid out for
   check(turnedOk, "a turned prisoner: one of the dead that rises, behind a locked cell door");
 }
 
-console.log("\nMilitary bases, air bases, airports, prisons and the bunker laid out like the real thing (militarylayout.js)");
+
+console.log("\nBunkers (bunkerlayout.js)");
+{
+  // Each kind's signature rooms (by their bunker mark) and pieces, no windows on any level, the second exit where the
+  // plan has one, the levels named down, the Entrance level mostly rock, the stair runs landing in the main tunnel, the
+  // containers the lootable pieces, the scenes; loot per kind reported; the POI rates against BUNKER_POI.
+  const N = Math.max(SEEDS * 3, 12);
+  const errs = {};
+  const err = (k, msg) => { (errs[k] = errs[k] || []).push(msg); };
+  const value = (def) => { let v = 0; for (const [k, [p, lo, hi]] of Object.entries(def.loot)) v += Math.min(0.95, p) * ((lo + hi) / 2) * supValue(k); for (const [k, p] of def.gear) v += p * ((GEAR[k] && GEAR[k].value) || 0); return v; };
+  const SIG = {
+    milbunker: { rooms: ["garage", "guardpost", "portal", "airlock", "checkpoint", "hatch", "tunnel", "command", "comms", "barracks", "armory", "magazine", "mess", "kitchen", "rations", "medbay", "genroom", "waterstore", "stores"], exit: /hatch/i, power: "genset" },
+    mountainbunker: { rooms: ["garage", "guardpost", "portal", "airlock", "checkpoint", "hatch", "tunnel", "command", "comms", "barracks", "quarters", "armory", "magazine", "mess", "kitchen", "rations", "medbay", "genroom", "waterstore", "stores", "latrine"], exit: /hatch/i, power: "genset", levels: 3 },
+    govbunker: { rooms: ["guardpost", "portal", "airlock", "checkpoint", "hatch", "tunnel", "situation", "comms", "govoffice", "barracks", "vault", "armory", "genroom", "kitchen", "rations", "medbay"], exit: /hatch/i, power: "genset" },
+    shelter: { rooms: ["stairhead", "hatch", "tunnel", "bunkhall", "rations", "genroom", "firstaid", "latrine"], exit: /hatch/i, power: "genset" },
+    prepper: { rooms: ["shed", "prepairlock", "prepbunks", "preppantry", "prepguns"], exit: null, power: "batteries" },
+  };
+  const PIECES = { airlock: ["deconshower", "hazmatrack"], command: ["maptable", "radioconsole", "screens"], situation: ["maptable", "radioconsole"], comms: ["radioconsole"], barracks: [["bunk", "cot"], "footlocker"], genroom: ["genset"], waterstore: ["watertank"], rations: ["rationshelf"], armory: ["gunrack"], medbay: [["hospbed", "medcab"]], hatch: ["escapeladder"], bunkhall: [["bunk", "cot"]], preppantry: ["rationshelf"], prepguns: ["gunrack", "radioconsole", "batteries"], prepairlock: ["hazmatrack"], portal: [] };
+  const loot = {}, sceneKinds = new Set(), sizes = {};
+  for (const key of [...BUNKER_KEYS.filter((k) => k !== "milbunker"), "milbunker", "mountainbunker"].filter((k, i, a) => a.indexOf(k) === i)) for (let s = 0; s < N; s++) {
+    const rng = new Rng(52000 + s * 7919 + key.length * 17);
+    const spec = BUILDINGS[key].make(rng);
+    const m = assemble(rng, spec, { key, name: BUILDINGS[key].name, withVehicle: s % 2 === 1 });
+    const tag = `${key} ${s}`, S = SIG[key];
+    (sizes[key] = sizes[key] || new Set()).add(`${spec.bw}x${spec.bh}/${m.storeys}`);
+    const grids = m.floors || [{ cells: m.cells }];
+    const rooms = m.rooms.filter((a) => !a.outdoor);
+    const at = (f, x, y) => (x >= 0 && y >= 0 && x < m.w && y < m.h ? grids[f].cells[y * m.w + x] : null);
+    const cellsIn = (a) => { const out = []; for (let y = a.y0 + 1; y < a.y0 + a.h - 1; y++) for (let x = a.x0 + 1; x < a.x0 + a.w - 1; x++) out.push([x, y, at(a.f, x, y)]); return out; };
+    const marks = new Set(rooms.map((a) => a.bunker));
+    for (const r of S.rooms) if (!marks.has(r)) err("rooms", `${tag} no ${r}`);
+    if (!rooms.every((a) => a.bunker && BUNKER_STYLES[a.bunker])) err("style", tag);
+    for (const a of rooms) {
+      const want = PIECES[a.bunker];
+      if (!want) continue;
+      const k = new Set(cellsIn(a).map(([, , c]) => c.k));
+      for (const q of want) if (!(Array.isArray(q) ? q.some((z) => k.has(z)) : k.has(q))) err("pieces", `${tag} ${a.name}: no ${q}`);
+    }
+    if (![...grids.flatMap((F) => F.cells)].some((c) => c.k === S.power)) err("power", `${tag} no ${S.power}`);
+    // No windows anywhere.
+    if (grids.some((F) => F.cells.some((c) => c.k === "window" || c.k === "smashed"))) err("windows", tag);
+    // The levels: the Entrance level, then down.
+    const names = grids.map((F) => F.name);
+    if (names[0] !== "Entrance level" || names.slice(1).some((n, i) => n !== `Level −${i + 1}`) || (S.levels && m.storeys !== S.levels) || m.storeys < 2) err("levels", `${tag} ${names.join("/")}`);
+    // The blast door (military and government): the front door's kind; the airlock's doors steel.
+    if (S.rooms.includes("portal")) {
+      const fd = at(0, m.front.x, m.front.y);
+      if (!fd || fd.dk !== "blast") err("blast", `${tag} ${fd && fd.dk}`);
+      for (const a of rooms.filter((r) => r.bunker === "airlock")) if ((a.doors || []).length < 2 || !a.doors.every(([x, y]) => (at(a.f, x, y) || {}).dk === "steel")) err("airlock", `${tag} ${(a.doors || []).length} doors`);
+    }
+    // A second exit where the plan has one (the escape hatch), reachable.
+    if (S.exit && !m.exits.some((e) => S.exit.test(e.name) && e.zone >= 0)) err("exit", `${tag} ${m.exits.map((e) => e.name)}`);
+    // The Entrance level mostly rock (the footprint's crag), only the portal shows.
+    const B = m.building;
+    let rock = 0;
+    for (let y = B.y0; y < B.y0 + B.h; y++) for (let x = B.x0; x < B.x0 + B.w; x++) { const c = at(0, x, y); if (c.k === "crag" || c.k === "ventstack") rock++; }
+    if (rock < B.w * B.h * (key === "shelter" ? 0.4 : 0.5)) err("rock", `${tag} ${rock} of ${B.w * B.h}`);
+    // The stair runs land in the main tunnel (military, government, shelter: the checkpoint's and the hatch's).
+    if (S.rooms.includes("tunnel")) for (const [x, y] of m.stairs) for (let f = 1; f < grids.length; f++) {
+      const r = rooms.find((a) => a.f === f && x > a.x0 && x < a.x0 + a.w - 1 && y > a.y0 && y < a.y0 + a.h - 1);
+      if (!r || (r.bunker !== "tunnel" && key !== "shelter")) err("runs", `${tag} the stairs at ${x},${y} on ${f} in ${r && r.name}`);
+    }
+    // Every room's doors reachable from each other; the containers the lootable pieces (and the Humvee).
+    for (const a of rooms) {
+      const g = grids[a.f].cells;
+      if ((a.doors || []).length) { const seen = walkFrom(m, a.doors[0][0], a.doors[0][1], true, g); for (const [x, y] of a.doors) if (!seen[y * m.w + x]) err("doors", `${tag} ${a.name} door ${x},${y}`); }
+      const boxes = m.containers.filter((c) => c.area === a.id && c.kind !== "humvee");
+      const bad = boxes.filter((b) => { const c = at(a.f, b.x, b.y); return !c || c.k !== b.kind || !(pieceDef(c.k) || {}).loot; }); // a footlocker past the room's share stands plain
+      if (bad.length) err("containers", `${tag} ${a.name}: ${bad.map((b) => `${b.kind} on ${(at(a.f, b.x, b.y) || {}).k}`)}`);
+    }
+    // Loot: the value of every container's table (supplies by supValue, gear by value), and the food per floor cell.
+    const L = (loot[key] = loot[key] || { v: 0, food: 0, guns: 0, elec: 0, area: 0, n: 0 });
+    L.n++;
+    for (const c of m.containers) {
+      const a = m.rooms[c.area];
+      const def = boxLoot(a.type, c.kind);
+      if (!def) continue;
+      L.v += value(def);
+      for (const [k, [p, lo, hi]] of Object.entries(def.loot)) { if (k === "food" || k === "preserved") L.food += Math.min(0.95, p) * (lo + hi) / 2; if (k === "electronics") L.elec += Math.min(0.95, p) * (lo + hi) / 2; }
+      for (const [k, p] of def.gear) if (GEAR[k] && GEAR[k].slot === "weapon" && GEAR[k].skill && GEAR[k].skill !== "melee") L.guns += p;
+    }
+    for (const a of rooms) L.area += (a.w - 2) * (a.h - 2);
+    rollScenes(m, new Rng(900 + s), key); // last: a scene's barricade may stand across a way
+    for (const sc of (m.scenes && m.scenes.list) || []) sceneKinds.add(sc.kind);
+  }
+  const fmt = (k) => `${k} ${(errs[k] || []).length}${errs[k] ? ` (${errs[k].slice(0, 3).join("; ")})` : ""}`;
+  for (const [k, v] of Object.entries(sizes)) console.log(`    ${k.padEnd(15)} ${[...v].slice(0, 4).join(" ")}`);
+  check(!errs.rooms && !errs.style, `every kind's signature rooms, each furnished by its style (${fmt("rooms")})`);
+  check(!errs.pieces && !errs.power, `the signature pieces: the airlock's showers and hazmat rack, the command centre's map table, radios and screens, bunks and footlockers, the genset, the water tanks, the ration shelves (${fmt("pieces")}, ${fmt("power")})`);
+  check(!errs.windows, `no windows on any level (${fmt("windows")})`);
+  check(!errs.levels, `the Entrance level, then Level −1, Level −2 (${fmt("levels")})`);
+  check(!errs.blast && !errs.airlock, `the blast door at the portal, the airlock between two steel doors (${fmt("blast")}, ${fmt("airlock")})`);
+  check(!errs.exit, `a second exit where the plan has one: the escape hatch (${fmt("exit")})`);
+  check(!errs.rock, `the Entrance level mostly rock: only the portal shows above (${fmt("rock")})`);
+  check(!errs.runs, `the stairs land in the main tunnel (${fmt("runs")})`);
+  check(!errs.doors && !errs.containers, `every room's doors reachable; the containers are the lootable pieces (${fmt("doors")}, ${fmt("containers")})`);
+  for (const [k, L] of Object.entries(loot)) console.log(`    ${k.padEnd(15)} loot ${(L.v / L.n).toFixed(1)} a map, food ${(L.food / L.n).toFixed(1)} days (${(L.food / L.area).toFixed(3)} a floor cell), guns ${(L.guns / L.n).toFixed(2)}, electronics ${(L.elec / L.n).toFixed(1)}`);
+  const perCell = (k) => loot[k].food / loot[k].area;
+  check(perCell("prepper") > perCell("shelter") && perCell("prepper") > perCell("milbunker") && perCell("prepper") > perCell("govbunker"), `the prepper's pantry the richest food per area (${["prepper", "shelter", "milbunker", "govbunker"].map((k) => `${k} ${perCell(k).toFixed(3)}`).join(", ")})`);
+  check(loot.govbunker.elec / loot.govbunker.n > loot.govbunker.guns / loot.govbunker.n && loot.milbunker.guns > loot.govbunker.guns, "the government bunker: more electronics than guns, fewer guns than the military's");
+  const want = ["sealed", "lastlog", "bitten", "laststand", "sealedhatch", "booby"];
+  check(want.every((k) => sceneKinds.has(k)), `the bunker scenes turn up (${want.filter((k) => sceneKinds.has(k)).join(", ")} of ${want.join(", ")})`);
+  // The sites and points of interest (pois.js bunkerExtra) at their rates on a world.
+  const st = createWorld({ seed: 4242, factionCount: 6 });
+  const seen = {}, expect = {};
+  for (const t of st.tiles) {
+    for (const p of t.pois || []) if (p.extra === "bunker") seen[p.kind] = (seen[p.kind] || 0) + 1;
+    for (const k of ["bunker", "govbunker", "shelter", "prepper"]) expect[k] = (expect[k] || 0) + (BUNKER_POI[k][t.terrain] || 0);
+  }
+  console.log(`    on a ${st.grid.width} × ${st.grid.height} world: ${Object.keys(expect).map((k) => `${k} ${seen[k] || 0} (${expect[k].toFixed(1)} at the base rate)`).join(", ")}`);
+  check(["shelter", "prepper"].every((k) => (seen[k] || 0) >= expect[k] * 0.5 && (seen[k] || 0) <= expect[k] * 1.6) && (seen.bunker || 0) >= 1 && (seen.bunker || 0) <= expect.bunker * BUNKER_POI.NEAR, "the shelters and prepper bunkers at their rates, a military bunker or more (more often near a military site)");
+  check(SITES.bunker_mil && SITES.bunker_mil[0] === "mountainbunker" && ["bunker", "govbunker", "shelter", "prepper"].every((k) => SITES[k] && BUILDINGS[SITES[k][0]]), "the bunker sites and points of interest open their bunkers");
+}
+
+console.log("\nMilitary bases, air bases, airports and prisons laid out like the real thing (militarylayout.js)");
 {
   const N = Math.max(SEEDS, 6);
   const errs = {};
@@ -1072,14 +1195,6 @@ console.log("\nMilitary bases, air bases, airports, prisons and the bunker laid 
     if (k === "aidstation") need("aidward", ["cot"], "aid station: cots");
     if (k === "gatehouse") need("guardpost", ["radioconsole"], "gatehouse: the guard post's radio");
     if (k === "flightops") need("crewroom", ["locker"], "flight ops: the crew room's lockers");
-    if (k === "bunker") {
-      need("command", ["maptable", "radioconsole"], "bunker: the command room");
-      need("bbunks", ["bunk", "footlocker"], "bunker: bunks with footlockers");
-      need("generator", ["boiler"], "bunker: the generator");
-      const fd = at(0, m.front.x, m.front.y);
-      if (!fd || fd.dk !== "vault") err("bunker: the blast door", `${tag} ${fd && fd.dk}`);
-      if (grids[0].cells.some((c) => c.k === "window")) err("bunker: no windows", tag);
-    }
     if (["hq", "barracks", "armorybldg", "messhall", "motorpool", "aidstation", "gatehouse"].includes(k) && !(m.plan.ground && m.plan.ground.fence > 0 && m.plan.ground.towers > 0 && m.plan.ground.gate > 0)) err("base: the compound's fence, towers and gatehouse", `${tag} ${JSON.stringify(m.plan.ground)}`);
     if (k === "hq" && !(m.plan.ground && m.plan.ground.helo)) err("HQ: a helicopter wreck on the helipad", tag);
   }
@@ -1108,10 +1223,9 @@ console.log("\nMilitary bases, air bases, airports, prisons and the bunker laid 
     for (const F of m.floors || [{ cells: m.cells }]) for (const c of F.cells) if (NEW.has(c.k)) newKinds++;
   }
   check(!marks && !newKinds, `an older save's barracks, armory, motor pool, mess hall, cell block, hangar, terminal and warehouse keep their old layouts (${marks} styled rooms, ${newKinds} new pieces)`);
-  // The sites: the bunker opens straight into its building; an air base offers its hangars, tower, flight ops, barracks
+  // The sites: an air base offers its hangars, tower, flight ops, barracks
   // and mess; a base its HQ, mess hall, aid station and gatehouse besides its first four (their ids as they were).
   const sb = (type) => siteBuildings({ loc: { type }, pois: [] });
-  check(sb("bunker_mil") && sb("bunker_mil").single && sb("bunker_mil").options[0].key === "bunker", "the mountain bunker opens straight into its bunker");
   check(sb("airbase") && ["hangar", "tower", "flightops", "barracks", "messhall"].every((kk) => sb("airbase").options.some((o) => o.key === kk && o.site === "airbase")), `an air base's buildings (${sb("airbase").options.map((o) => o.name).join(", ")})`);
   check(sb("military").options.slice(0, 4).map((o) => o.id).join() === "barracks,armorybldg,motorpool,warehouse" && ["hq", "messhall", "aidstation", "gatehouse"].every((kk) => sb("military").options.some((o) => o.key === kk)), "a base's buildings, its first four's ids as they were");
   // The air base on generated maps: one a six of the military sites (a Normal map: two), never the only one.

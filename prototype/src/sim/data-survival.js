@@ -14,6 +14,8 @@
 //   leatherjacket torso armour AC 1 (soft): a biker's jacket that turns most bites and scratches (armour.js)
 //   chainsleeves  arm armour AC 2 (steel): a butcher's chainmail sleeves, near bite-proof and slow to wear by teeth
 //   motopants     leg armour AC 1 (padding): armoured motorcycle trousers with knee and shin pads
+//   hazmat        torso armour AC 1 (soft): a sealed hazmat suit with its hood, from a bunker's decontamination airlock
+//                 (issue #26: bunkerlayout.js's suit racks, combat.js BOX_LOOT hazmatrack); bites mostly do not get through
 //   anglelight    a light clipped to the chest (lights.js free: hands free wherever it is carried): further than a
 //                 headlamp down a narrower beam, and seen a little further off
 //   solarlantern  a light in the off hand: a pool of light 4 tiles all round, lighter and dimmer than the lantern
@@ -39,6 +41,8 @@ export const SURV_ITEMS = {
                    desc: "A butcher's stainless chainmail gauntlets and sleeves (armour class 2, steel): almost no bite gets through to the forearm, and teeth barely wear it. Meat counters, packing plants and kitchen suppliers." },
   motopants:     { name: "Armoured motorcycle trousers", slot: "legs", skill: null, power: 0.8, req: 0, value: 20, noise: 0, weight: 1.6, dur: 25, cat: "armor",
                    desc: "Cordura riding trousers with foam knee and shin armour sewn in (armour class 1, padding): a crawler's bite at the ankle has to chew through it first." },
+  hazmat:        { name: "Hazmat suit",             slot: "armor", skill: null, power: 0.8, req: 0, value: 22, noise: 0, weight: 2.5, dur: 20, cat: "armor",
+                   desc: "A sealed yellow chemical suit with its hood and visor, off the hooks of a bunker's decontamination airlock (armour class 1, soft): teeth and nails mostly do not get through the rubberised layers, a knife or a bullet does, and it tears as it wears." },
   // ---------- lights ----------
   anglelight:    { name: "Angle-head flashlight",   slot: "pack", skill: null, power: 0, req: 0, value: 16, noise: 0, small: true, weight: 0.4, cat: "tools",
                    desc: "An army right-angle flashlight clipped to the chest strap: hands free wherever it is carried, like a headlamp, but a longer, narrower beam (9 tiles ahead at night). Guards notice it from 3 tiles further off (a headlamp 1)." },
@@ -66,6 +70,7 @@ export const SURV_ARMOUR = {
   leatherjacket: { ac: 1, dmax: 30, mat: "soft" },
   chainsleeves:  { ac: 2, dmax: 35, mat: "steel" },
   motopants:     { ac: 1, dmax: 25, mat: "padding" },
+  hazmat:        { ac: 1, dmax: 20, mat: "soft" },
 };
 // The lights (lights.js LIGHTS: sight, seen, survey, free, cone, beam / round + pool).
 /** @type {Record<string, any>} */
@@ -82,6 +87,7 @@ export const SURV_TAGS = {
   leatherjacket: ["home", "garage", "crime", "mall", "shop", "travel"],
   chainsleeves: ["kitchen", "industry", "shop"],
   motopants: ["garage", "home", "sport", "shop", "mall", "travel"],
+  hazmat: ["military", "medical", "industry"],
   anglelight: ["military", "camp", "police", "outdoor"],
   solarlantern: ["camp", "outdoor", "home", "shop", "mall"],
   legrig: ["police", "military", "guns"],

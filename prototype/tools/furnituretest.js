@@ -49,8 +49,8 @@ console.log("The catalogue's rows");
   check(isFurniture("sofa") && !isFurniture("wall"), "isFurniture");
   check(pieceDef("sofa") === FURNITURE_KINDS.sofa && pieceDef("wall") === null, "pieceDef: the row, or null");
   const liftable = kinds.filter((k) => FURNITURE_KINDS[k].carry !== "fixed");
-  check(liftable.every((k) => { const g = k === "fridge" ? POWER_GEAR.fridge : k === "cot" ? BED_GEAR.cot : FURNITURE_GEAR[`f_${k}`]; return g && g.bulky && g.twoHands && g.weight === FURNITURE_KINDS[k].kg && (k === "fridge" || g.furniture === k); }) && !FURNITURE_GEAR.f_cot && itemKey("cot") === "cot", "every liftable piece has its item form (f_<kind>, the fridge its own Refrigerator, the cot data-beds.js's Cot): both arms, its weight");
-  check(!FURNITURE_GEAR.f_fridge && itemKey("fridge") === "fridge" && itemKey("bathtub") === null && Object.keys(FURNITURE_GEAR).length === liftable.length - 2, "no f_fridge (nor f_cot), no item for a fixed piece");
+  check(liftable.every((k) => { const g = k === "fridge" ? POWER_GEAR.fridge : k === "cot" ? BED_GEAR.cot : k === "genset" ? POWER_GEAR.genset_military : FURNITURE_GEAR[`f_${k}`]; return g && g.bulky && g.twoHands && g.weight === FURNITURE_KINDS[k].kg && (k === "fridge" || k === "genset" || g.furniture === k); }) && !FURNITURE_GEAR.f_cot && itemKey("cot") === "cot", "every liftable piece has its item form (f_<kind>, the fridge its own Refrigerator, the cot data-beds.js's Cot): both arms, its weight");
+  check(!FURNITURE_GEAR.f_fridge && itemKey("fridge") === "fridge" && itemKey("bathtub") === null && !FURNITURE_GEAR.f_genset && itemKey("genset") === "genset_military" && Object.keys(FURNITURE_GEAR).length === liftable.length - 3, "no f_fridge (nor f_cot, nor f_genset: a bunker's generator is the Military tactical generator), no item for a fixed piece");
 }
 
 console.log("Driven from the table: CELL, barricade FURNITURE, the old twelve kinds as before");

@@ -51,10 +51,11 @@ import { legacyRaids, legacyRooms } from "./worldcfg.js"; // an older save: a ne
 import { roomLayout, homeStyle, medicalStyle, LAYOUT } from "./roomlayout.js"; // homes furnished room by room (the placement helpers); hospitals, clinics and vets too (#14)
 import { commercialStyle, styleName as shopStyleName } from "./shoplayout.js"; // shops, restaurants, bars, offices, motels, banks and big stores laid out for their kind (issue #16)
 import { civicStyle } from "./civiclayout.js"; // police stations, fire stations, schools and churches laid out for their kind (issue #15)
-import { militaryStyle, militaryOutside, MIL_SIZE } from "./militarylayout.js"; // military bases, air bases, airports, prisons and the bunker laid out like the real thing (issue #25)
+import { militaryStyle, militaryOutside, MIL_SIZE } from "./militarylayout.js"; // military bases, air bases, airports and prisons laid out like the real thing (issue #25)
 import { decorate, flipDecoY, placeDecorPieces } from "./decor.js"; // rugs, clutter, wall art, wall colours, light fixtures (cosmetic)
 import { rollWin, winMixOf, windowOpen } from "./windows.js"; // the windows' states (open, locked, fixed), a throw through an open one
 import { rollScenes, sceneRng } from "./interiorscenes.js"; // signs of survival: barricades, blood, bodies (dice of their own)
+import { BUNKER_PLANS, bunkerStyle, levelName } from "./bunkerlayout.js"; // bunkers: the plans, their rooms, their levels below ground (issue #26)
 
 export const BMAP = {
   MARGIN: { front: 5, back: 4, left: 4, right: 4 }, // cells of outside around the building
@@ -105,6 +106,7 @@ export const DOOR_KINDS = {
   gate:     { name: "Gate", hp: 100, see: false, kick: false, sfx: "gate", desc: "a base's gate" },
   vault:    { name: "Steel security door", hp: 240, see: false, diff: 3, kick: false, sfx: "vault", desc: "an armory's or a gun cage's" },
   coldroom: { name: "Cold room door", hp: 50, see: false, diff: 2, kick: true, sfx: "metal", desc: "a walk-in's insulated steel door" }, // a school kitchen's walk-in (issue #15)
+  blast:    { name: "Blast door", hp: 400, see: false, diff: 3, kick: false, force: false, sfx: "vault", desc: "a bunker's portal: a slab of steel on hinges a metre thick, not kicked or forced" }, // bunkers (issue #26)
 };
 // A closed door seen through (combat.js los): a glass door, a screen door, a cell's bars.
 export const doorSees = (c) => !!c && (c.k === "idoor" || c.k === "door") && !!c.dk && !!DOOR_KINDS[c.dk] && !!DOOR_KINDS[c.dk].see;
@@ -115,10 +117,10 @@ const DOOR_STYLE = {
   shop:   { front: "glass", back: "steel", side: "steel" },
   office: { front: "glass", back: "steel", side: "steel" },
   secure: { front: "security", back: "security", side: "security" }, // police, the military, a gun store, a control room
-  bunker: { front: "vault", back: "vault", side: "vault" }, // the bunker's blast door (issue #25)
   works:  { front: "steel", back: "steel", side: "steel" },
   barn:   { front: "wood", back: "wood", side: "wood" },
   church: { front: "front", back: "front", side: "front" },
+  bunker: { front: "blast", back: "steel", side: "steel" }, // the blast door at the portal, a steel hatch (issue #26)
 };
 const STYLE_OF = {
   house: "house", farmhouse: "house", cabin: "house", lodge: "house", ranger: "house", motel: "house", neighbourhood: "house",
@@ -128,7 +130,8 @@ const STYLE_OF = {
   gunstore: "secure", pawnshop: "secure", bank: "secure", police: "secure", barracks: "secure", armorybldg: "secure", cellblock: "secure", control: "secure",
   firestation: "works", messhall: "works", radio: "works", warehouse: "works", factory: "works", hangar: "works", motorpool: "works", autoshop: "works", garage: "works", workshop: "works", machineshed: "works",
   barn: "barn", church: "church",
-  hq: "secure", aidstation: "office", gatehouse: "secure", tower: "secure", flightops: "office", bunker: "bunker", // issue #25
+  hq: "secure", aidstation: "office", gatehouse: "secure", tower: "secure", flightops: "office", // issue #25
+  milbunker: "bunker", mountainbunker: "bunker", govbunker: "bunker", shelter: "bunker", prepper: "bunker",
 };
 export const doorStyleOf = (key) => DOOR_STYLE[STYLE_OF[key] || "house"];
 // Risk pays (raids on the map: what containers hold × this): by the site's danger (data.js siteDanger: the
@@ -210,6 +213,16 @@ export const ROLES = {
   nursestation: role("Nurses' station", "clinic", "office", { fl: "lino", maxBoxes: 3 }),
   laundry:     role("Laundry", null, "none", { fl: "tile", windows: false }),
   staffroom:   role("Staff room", "kitchen", "kitchen", { fl: "lino", maxBoxes: 2 }),
+  // Bunkers (issue #26: bunkerlayout.js BUNKER_STYLES; no windows anywhere, concrete and steel). A plan's { role: "rock" }
+  // leaf is no room: assemble fills it with the hillside's crag.
+  portal:      role("Blast door hall", "barracks", "none", { fl: "steel", maxBoxes: 1 }),
+  airlock:     role("Airlock", "barracks", "none", { fl: "steel", maxBoxes: 1 }),
+  checkpoint:  role("Security checkpoint", "barracks", "none", { hub: true, fl: "conc", maxBoxes: 1 }),
+  hatch:       role("Escape hatch", null, "none", { fl: "conc" }),
+  tunnel:      role("Main tunnel", null, "none", { hub: true, fl: "conc" }),
+  genroom:     role("Generator room", "motorpool", "none", { fl: "steel", maxBoxes: 2 }),
+  waterstore:  role("Water store", "kitchen", "shelves", { fl: "conc", maxBoxes: 2 }),
+  medbay:      role("Med bay", "clinic", "beds", { fl: "lino", maxBoxes: 3 }),
 };
 
 // ---------- the outside ----------
@@ -223,11 +236,11 @@ const GROUNDS = {
   lot:   { yard: "gravel", walk: "gravel", street: "road", alley: "gravel" },
   base:  { yard: "dirt", walk: "gravel", street: "road", alley: "dirt" },
   // Issue #25 (militarylayout.js militaryOutside): a base's compound, an air base's or an airport's apron, a prison's
-  // grounds, the bunker's mountainside.
+  // grounds.
   compound:   { yard: "dirt", walk: "gravel", street: "road", alley: "dirt" },
   airfield:   { yard: "grass", walk: "road", street: "road", alley: "gravel" },
   prisonyard: { yard: "gravel", walk: "gravel", street: "road", alley: "dirt" },
-  bunker:     { yard: "dirt", walk: "gravel", street: "dirt", alley: "dirt" },
+  rock:  { yard: "dirt", walk: "gravel", street: "road", alley: "dirt" }, // a bunker in the hillside (assemble: crag round it, spec.rockFill)
 };
 
 // ---------- the archetypes ----------
@@ -860,13 +873,14 @@ function churchPlan(rng) {
   };
 }
 
-// ---------- military bases, air bases, airports, prisons and the bunker laid out like the real thing (issue #25) ----------
+// ---------- military bases, air bases, airports and prisons laid out like the real thing (issue #25) ----------
 // The new saves' plans (an older save keeps the ones above: o.legacy), at real-world sizes (militarylayout.js MIL_SIZE:
 // metres, a metre a cell); every leaf names its style (civic: militarylayout.js MILITARY_STYLES, or civiclayout.js's
 // shared briefing, records, washroom and breakroom). o.site: the site's location type (siteBuildings), so a hangar at
 // an air base holds military aircraft and a warehouse at a base is the supply warehouse. The grounds: compound (a
 // base's fence, wire, watchtowers and gatehouse), airfield (the apron, a parked wreck, an air base's fuel farm),
-// prisonyard (the double perimeter and the exercise yard), bunker (the mountainside): militarylayout.js militaryOutside.
+// prisonyard (the double perimeter and the exercise yard): militarylayout.js militaryOutside. The bunkers are #26's
+// (bunkerlayout.js).
 // Plans with no rectangle beyond their own (no #23 shapes on dev yet): each is a split tree, so a part can become a
 // wing of a shape once spec.shape lands.
 const milSize = (rng, k) => { const s = MIL_SIZE[k]; return { bw: rng.int(s.w[0], s.w[1]), bh: rng.int(s.d[0], s.d[1]) }; };
@@ -1005,7 +1019,7 @@ function milPlan(rng, v, o = {}) {
         exits: [{ side: "back", roles: ["warefloor", "terminal"], chance: 0.9, roller: true, width: 3, lock: 0.2, name: "Airside doors" }, { side: "left", roles: ["terminal"], chance: 0.6, lock: 0.4 }, { side: "right", roles: ["terminal"], chance: 0.6, lock: 0.4 }],
       };
     }
-    case "cellblock": { // two tiers of cells facing the day room; intake, control, visitation and the guard room at the front
+    default: { // the cell block: two tiers of cells facing the day room; intake, control, visitation and the guard room at the front
       const { bw, bh } = milSize(rng, "cellblock");
       const dw = rng.int(10, 12);
       const tier = (up) => ({ split: "x", parts: leaves([["*", { role: "cells", name: up ? "Cell block A (upper tier)" : "Cell block A", civic: "pcells", maxBoxes: 2 }], [dw, { role: "dayroom", name: up ? "Upper tier walkway" : "Day room", civic: "pdayroom", type: "cellblock", maxBoxes: 1 }], ["*", { role: "cells", name: up ? "Cell block B (upper tier)" : "Cell block B", civic: "pcells", maxBoxes: 2 }]]) });
@@ -1014,16 +1028,6 @@ function milPlan(rng, v, o = {}) {
         program: { split: "y", parts: [[7, { split: "x", parts: leaves([["*", { role: "office", name: "Intake", entry: true, type: "cellblock", civic: "intake", maxBoxes: 4 }], [8, { role: "control", name: "Control room", lock: ["door", 0.5], civic: "pcontrol" }], ["*", { role: "office", name: "Visitation", type: "cellblock", civic: "visitation", maxBoxes: 1 }], [7, { role: "lockerroom", name: "Guard room", type: "cellblock", civic: "guardroom" }]]) }], [2, { role: "corridor" }], ["*", tier(false)]] }, // the front band, the corridor, the cells round the day room behind
         upper: () => ({ split: "y", parts: [[7, { split: "x", parts: leaves([["*", { role: "office", name: "Records", civic: "records" }], [8, { role: "control", name: "Upper control", civic: "pcontrol" }], ["*", { role: "breakroom", name: "Staff room", civic: "breakroom" }], [7, { role: "armory", name: "Riot gear store", lock: ["vault", 0.7], boxLock: ["cage", 0.4], civic: "riotstore", dk: "steel" }]]) }], [2, { role: "corridor" }], ["*", tier(true)]] }),
         exits: [{ side: "left", roles: ["corridor"], chance: 0.6, lock: 0.6 }, { side: "right", roles: ["corridor"], chance: 0.6, lock: 0.6 }],
-      };
-    }
-    default: { // the bunker: the blast door's entry and the airlock, a corridor of rooms, no windows
-      const { bw, bh } = milSize(rng, "bunker");
-      const B = (o2) => ({ windows: false, fl: "conc", ...o2 });
-      return {
-        bw, bh, front: { width: 1 }, ground: "bunker", storeys: 1, foot: "large", openDoors: 0.15,
-        program: corridorPlan([[6, B({ role: "foyer", name: "Blast door entry", entry: true, type: "barracks", civic: "bentry" })], [4, B({ role: "storage", name: "Airlock", type: null, civic: "airlock", dk: "security" })], ["*", B({ role: "control", name: "Command room", civic: "command" })], [7, B({ role: "armory", name: "Bunker armory", lock: ["vault", 0.8], boxLock: ["cage", 0.4], civic: "barmory", dk: "steel" })]],
-          [["*", B({ role: "dorm", name: "Bunk room", civic: "bbunks", maxBoxes: 4 })], ["*", B({ role: "dorm", name: "Bunk room", civic: "bbunks", maxBoxes: 4 })], [7, B({ role: "workshop", name: "Generator room", civic: "generator" })], ["*", B({ role: "pantry", name: "Ration store", type: "kitchen", civic: "rations", maxBoxes: 4 })], [4, B(WASH)]], Math.floor((bh - 3) / 2), 2, { windows: false, fl: "conc" }),
-        exits: [{ side: "back", roles: ["corridor"], chance: 0.5, lock: 0.8, name: "Escape hatch" }],
       };
     }
   }
@@ -1237,13 +1241,12 @@ export const BUILDINGS = {
   radio:       { name: "Transmitter hut", make: (r) => institution(r, "radio") },
   terminal:    { name: "Terminal", make: (r, o) => institution(r, "terminal", o) },
   firestation: { name: "Fire station", make: (r, o) => institution(r, "firestation", o) },
-  // Military bases, air bases, airports and the bunker (issue #25: militarylayout.js), new with it (no older plan).
+  // Military bases, air bases and airports (issue #25: militarylayout.js), new with it (no older plan).
   hq:          { name: "Headquarters", make: (r, o) => milPlan(r, "hq", o) },
   aidstation:  { name: "Aid station", make: (r, o) => milPlan(r, "aidstation", o) },
   gatehouse:   { name: "Gatehouse", make: (r, o) => milPlan(r, "gatehouse", o) },
   tower:       { name: "Control tower", make: (r, o) => milPlan(r, "tower", o) },
   flightops:   { name: "Flight operations", make: (r, o) => milPlan(r, "flightops", o) },
-  bunker:      { name: "Bunker", make: (r, o) => milPlan(r, "bunker", o) },
   warehouse:   { name: "Warehouse", make: (r, o) => openfloor(r, "warehouse", o) },
   factory:     { name: "Factory", make: (r) => openfloor(r, "factory") },
   hangar:      { name: "Hangar", make: (r, o) => openfloor(r, "hangar", o) },
@@ -1259,6 +1262,13 @@ export const BUILDINGS = {
   // A street of houses (the neighbourhood point of interest): buildingMap builds it with streetMap; make gives one of
   // its houses (the hint, the archetype tests).
   neighbourhood: { name: "Neighbourhood", make: (r, o) => house(r, "house", o), street: true },
+  // Bunkers (issue #26, bunkerlayout.js): the military command bunker (a rare military site), Crashlanding's mountain
+  // bunker (the same plan, always three levels deep), the government bunker, the fallout shelter and the prepper's.
+  milbunker:      { name: "Military command bunker", make: (r) => BUNKER_PLANS.milbunker(r) },
+  mountainbunker: { name: "Mountain bunker", make: (r) => BUNKER_PLANS.milbunker(r, { levels: 3 }) },
+  govbunker:      { name: "Government bunker", make: (r) => BUNKER_PLANS.govbunker(r) },
+  shelter:        { name: "Fallout shelter", make: (r) => BUNKER_PLANS.shelter(r) },
+  prepper:        { name: "Prepper bunker", make: (r) => BUNKER_PLANS.prepper(r) },
 };
 // The storeys a type can have, [min, max] (the city crawl's bonus can add to offices and apartments, up to MAX_STOREYS).
 export const STOREYS_BY_TYPE = {
@@ -1267,12 +1277,13 @@ export const STOREYS_BY_TYPE = {
   supermarket: [1, 2], deptstore: [1, 2],
   clinic: [1, 3], infirmary: [1, 3], hospital: [3, 5], police: [2, 3], school: [2, 3], offices: [3, 8], lab: [1, 3], barracks: [2, 3], armorybldg: [1, 1],
   cellblock: [1, 2], messhall: [1, 2], control: [1, 3], radio: [1, 1], terminal: [1, 3], firestation: [2, 2], // issue #25: a new save's cell block two tiers, its mess hall one storey
-  hq: [2, 2], aidstation: [1, 1], gatehouse: [1, 1], tower: [4, 5], flightops: [1, 2], bunker: [1, 1],
+  hq: [2, 2], aidstation: [1, 1], gatehouse: [1, 1], tower: [4, 5], flightops: [1, 2],
   warehouse: [1, 1], factory: [1, 1], hangar: [1, 1], motorpool: [1, 1], autoshop: [1, 1], garage: [1, 1], workshop: [1, 1], machineshed: [1, 1], barn: [1, 1],
   church: [1, 1], motel: [2, 2], apartments: [3, 6], neighbourhood: [2, 2],
   // the shops and services of data-shops.js (a franchise's plan can add a flat above or more floors)
   sportshop: [1, 2], electronics: [1, 2], radioshop: [1, 2], bookstore: [1, 2], petstore: [1, 2], garden: [1, 2], clothing: [1, 2], liquor: [1, 2],
   restaurant: [1, 2], bar: [1, 2], dealer: [1, 2], bank: [1, 3], library: [1, 3], vet: [1, 2], pizza: [1, 1],
+  milbunker: [2, 3], mountainbunker: [3, 3], govbunker: [2, 2], shelter: [2, 2], prepper: [2, 2], // bunkers: the Entrance level and the levels below it (bunkerlayout.js)
 };
 
 // Which buildings stand at a site, by location type (or the terrain, for open land): a list of building keys (or
@@ -1288,9 +1299,9 @@ export const SITES = {
   town: ["house", "corner", "garage", "pharmacy", ["house", "House on the corner"]], city: ["grocery", "pharmacy", "offices", "apartments", "warehouse"],
   farm: ["farmhouse", "barn"], ranch: ["farmhouse", "barn", "machineshed"], mall: ["deptstore", "pharmacy", ["diner", "Food court"], ["warehouse", "Mall stockrooms"]],
   // Issue #25: a base's HQ, mess hall, aid station and gatehouse after its first four (their ids as they were); the
-  // air base (a site of its own, near the bases); an airport's control tower and fire station; the bunker's own.
+  // air base (a site of its own, near the bases); an airport's control tower and fire station.
   military: ["barracks", "armorybldg", "motorpool", ["warehouse", "Supply warehouse"], "hq", "messhall", "aidstation", "gatehouse"], prison: ["cellblock", "messhall", ["armorybldg", "Guard armory"], "infirmary"],
-  airbase: ["hangar", ["hangar", "Second hangar"], "tower", "flightops", "barracks", "messhall"], bunker_mil: ["bunker"],
+  airbase: ["hangar", ["hangar", "Second hangar"], "tower", "flightops", "barracks", "messhall"],
   univ: ["lab", "offices", ["messhall", "Cafeteria"]], airport: ["hangar", "terminal", ["warehouse", "Cargo warehouse"], "tower", "firestation"], factory: ["factory", "offices"],
   warehouse: ["warehouse", ["warehouse", "Second warehouse"], "offices"], dam: ["control", "workshop", "warehouse"],
   // Points of interest (pois.js): one building each (the raid map a chosen POI opens). The pizza place is the diner
@@ -1302,6 +1313,9 @@ export const SITES = {
   sportshop: ["sportshop"], electronics: ["electronics"], radioshop: ["radioshop"], bookstore: ["bookstore"], library: ["library"], petstore: ["petstore"],
   garden: ["garden"], clothing: ["clothing"], vet: ["vet"], dealer: ["dealer"], restaurant: ["restaurant"], bank: ["bank"], bar: ["bar"], liquor: ["liquor"],
   farmstand: [["corner", "Farm stand"]], shed: [["machineshed", "Shed"]], mineshack: [["cabin", "Mine shack"]],
+  // Bunkers (issue #26): Crashlanding's mountain bunker, the military bunker and the government bunker (sites), the
+  // fallout shelter and the prepper's bunker (points of interest).
+  bunker_mil: ["mountainbunker"], bunker: ["milbunker"], govbunker: ["govbunker"], shelter: ["shelter"], prepper: ["prepper"],
   // Open land (no site).
   suburb: ["house", ["house", "House across the street"], "garage"], plains: ["farmhouse", "barn"],
   forest: { multi: true, list: ["cabin"] }, hills: { multi: true, list: ["cabin"] }, mountain: { multi: true, list: ["cabin"] },
@@ -1383,7 +1397,7 @@ export function buildingHint(key) {
 const specSeed = (state, tileId, option) => Math.floor(hash01(state.seed, "bmap", tileId, option.id) * 4294967296);
 const makeSpec = (rng, option, legacy = false) => BUILDINGS[option.key].make(rng, { storeyBonus: option.storeyBonus || 0, variant: option.variant || null, kind: option.kind || null, legacy: legacy && !NEW_KEYS.has(option.key), site: option.site || null });
 // The archetypes issue #25 added (no older plan): laid out the new way in an older save too.
-const NEW_KEYS = new Set(["hq", "aidstation", "gatehouse", "tower", "flightops", "bunker"]); // variant, kind: the place's franchise and kind (data-shops.js plans); legacy: an older save's plan (worldcfg.js legacyRooms: an apartment's flats one room each)
+const NEW_KEYS = new Set(["hq", "aidstation", "gatehouse", "tower", "flightops"]); // variant, kind: the place's franchise and kind (data-shops.js plans); legacy: an older save's plan (worldcfg.js legacyRooms: an apartment's flats one room each)
 // The archetype's spec for a building at a site (its storeys and footprint) without building the map: the same dice
 // buildingMap rolls, so the block card can say how many storeys a place has.
 export function buildingSpec(state, tileId, option) {
@@ -1754,6 +1768,10 @@ export function assemble(rng, spec, opts = {}) {
   }
   const firstLeaf = (n) => (n.role ? n : firstLeaf(n.parts[0][1]));
   function carve(node, r) {
+    if (node.role === "rock") { // solid rock (a bunker's footprint round its portal): the hillside's crag, no room
+      for (let y = r.y0; y < r.y0 + r.h; y++) for (let x = r.x0; x < r.x0 + r.w; x++) { cells[I(x, y)] = { k: "crag", f: G.yard, rock: true }; rid[I(x, y)] = -1; }
+      return;
+    }
     if (node.role) return addRoom(node, r);
     const axis = node.split, len = axis === "x" ? r.w : r.h;
     let parts = node.parts.slice(), sizes = fit(parts, len);
@@ -1780,6 +1798,11 @@ export function assemble(rng, spec, opts = {}) {
     for (let y = r.y0; y < r.y0 + r.h; y++) for (let x = r.x0; x < r.x0 + r.w; x++) { rid[I(x, y)] = room.id; cells[I(x, y)].k = "open"; cells[I(x, y)].fl = room.fl || "wood"; }
   }
   carve(upper ? opts._program : spec.program, { x0: bx0 + 1, y0: by0 + 1, w: bw - 2, h: bh - 2 });
+  // The walls round the rock with no room beside them are rock too (bunkers: only the portal shows above).
+  if (rooms.length && cells.some((c) => c.rock)) {
+    const roomNear = (x, y) => { for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (inside(x + dx, y + dy) && rid[I(x + dx, y + dy)] >= 0) return true; return false; };
+    for (let y = by0; y <= by1; y++) for (let x = bx0; x <= bx1; x++) if (cells[I(x, y)].k === "wall" && !roomNear(x, y)) cells[I(x, y)] = { k: "crag", f: G.yard, rock: true };
+  }
   const touches = (room, side) => (side === "front" ? room.iy0 + room.ih - 1 === by1 - 1 : side === "back" ? room.iy0 === by0 + 1 : side === "left" ? room.ix0 === bx0 + 1 : room.ix0 + room.iw - 1 === bx1 - 1);
   let entry = upper ? null : rooms.find((r) => r.entry && touches(r, "front")) || rooms.find((r) => r.hub && touches(r, "front")) || rooms.find((r) => touches(r, "front")) || rooms[0];
   // ---------- the stairwells (storeys) ----------
@@ -2186,7 +2209,7 @@ export function assemble(rng, spec, opts = {}) {
   }
   // Homes room by room (roomlayout.js): which bedroom is the master, which a child's, a great room with no kitchen on
   // its floor, a flat with no bedroom (a studio). An older save (opts.legacy) furnishes every room as it did.
-  const styleOf = (room) => (opts.legacy ? null : militaryStyle(room) || commercialStyle(room, opts.key) || homeStyle(room, opts.key) || medicalStyle(room, opts.key) || civicStyle(room)); // shoplayout.js first (a motel's rooms, a shop's back rooms; a flat above stays a home), a hospital's, a clinic's, a vet's rooms (#14), civiclayout.js a civic building's rooms (their leaf's civic mark)
+  const styleOf = (room) => bunkerStyle(room) || (opts.legacy ? null : militaryStyle(room) || commercialStyle(room, opts.key) || homeStyle(room, opts.key) || medicalStyle(room, opts.key) || civicStyle(room)); // shoplayout.js first (a motel's rooms, a shop's back rooms; a flat above stays a home), a hospital's, a clinic's, a vet's rooms (#14), civiclayout.js a civic building's rooms (their leaf's civic mark); bunkerlayout.js a bunker's (their leaf's bunker mark: new kinds, so an older save lays them out the same way)
   if (!opts.legacy) {
     for (const r of rooms) if (r.role === "bedroom" && styleOf(r) && r.iw * r.ih <= 4) Object.assign(r, { role: "storage", name: "Box room", furnish: "shelves" }); // too small for a bed and a wardrobe
     const beds = rooms.filter((r) => r.role === "bedroom" && styleOf(r)).sort((a, b) => b.iw * b.ih - a.iw * a.ih);
@@ -2270,7 +2293,7 @@ export function assemble(rng, spec, opts = {}) {
         if (!side.length || !connected()) { removeCar(cells, W, rect); passRect(rect); total += rect.w * rect.h; return null; }
         if (o.box && canBox) {
           keep[I(side[0][0], side[0][1])] = 1;
-          containers.push({ id: cid++, x: rect.x0, y: rect.y0, w: rect.w, h: rect.h, f, area: room.id, kind: o.box, searched: false, label: `${room.name}: ${o.label || (o.box === "engine" ? "fire engine" : o.box === "policecar" ? "police car" : o.box)}` }); // o.label: an aircraft's, an Army vehicle's name (militarylayout.js)
+          containers.push({ id: cid++, x: rect.x0, y: rect.y0, w: rect.w, h: rect.h, f, area: room.id, kind: o.box, searched: false, label: `${room.name}: ${o.label || (o.box === "engine" ? "fire engine" : o.box === "policecar" ? "police car" : o.box === "humvee" ? "Humvee" : o.box)}` }); // o.label: an aircraft's, an Army vehicle's name (militarylayout.js)
         }
         return rect;
       },
@@ -2304,6 +2327,31 @@ export function assemble(rng, spec, opts = {}) {
     return placed;
   };
   const inStreet = (x, y) => y > by1 + 1;
+  // A bunker in the hillside (spec.rockFill): the outside behind and beside the footprint is mountainside, right up to
+  // the walls (the clear ring round a building too), but never the exits' paths, their zones or a door's step, and never
+  // where it would cut a walkable cell off (the escape hatch's way round to the front stays). One flood a cell.
+  function rockFill() {
+    const nearDoor = (x, y) => { for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (inside(x + dx, y + dy) && DOORISH.has(cells[I(x + dx, y + dy)].k)) return true; return false; };
+    const inZone = (x, y) => zones.some((z) => x >= z.x0 - 1 && x <= z.x0 + z.w && y >= z.y0 - 1 && y <= z.y0 + z.h);
+    for (let y = 0; y <= by1; y++) for (let x = 0; x < W; x++) {
+      const i = I(x, y), c = cells[i];
+      if (c.k !== "open" || rid[i] !== -2 || pathCells[i] || keep[i] || inZone(x, y) || nearDoor(x, y)) continue;
+      c.k = "crag"; passAt(i); total--;
+      if (!connected()) { c.k = "open"; passAt(i); total++; }
+    }
+  }
+  // The vent stack on the rock over the bunker: the footprint's rock cell nearest its middle.
+  function ventStack() {
+    let best = -1, bd = Infinity;
+    const mx = (bx0 + bx1) / 2, my = (by0 + by1) / 2;
+    for (let y = by0; y <= by1; y++) for (let x = bx0; x <= bx1; x++) { const c = cells[I(x, y)]; if (c.rock && c.k === "crag") { const d = Math.hypot(x - mx, y - my); if (d < bd) { bd = d; best = I(x, y); } } }
+    if (best >= 0) cells[best].k = "ventstack";
+  }
+  // The wire fence across a bunker's approach (gaps where the paths and the zones are: block keeps every way open).
+  function fenceLine() {
+    const y = Math.min(H - 2, by1 + 4);
+    for (let x = 0; x < W; x++) block(x, y, "wirefence");
+  }
   const behind = (x, y) => y < by0;
   // Fuel pumps (a gas station, a truck stop) on the lot in front: an outdoor area of their own.
   if (!upper && spec.pumps) {
@@ -2354,7 +2402,7 @@ export function assemble(rng, spec, opts = {}) {
       outdoor.push(a);
     }
   }
-  // The outside of a base, an airfield, a prison or the bunker (issue #25: militarylayout.js militaryOutside): its tools.
+  // The outside of a base, an airfield or a prison (issue #25: militarylayout.js militaryOutside): its tools.
   let milGround = null;
   const milApi = () => ({
     rng, W, H, I, cells, bx0, by0, bx1, by1, spec, containers, outsideFree, scatter, box,
@@ -2372,12 +2420,15 @@ export function assemble(rng, spec, opts = {}) {
       return rect;
     },
   });
+  if (!upper && spec.rockFill) rockFill();
+  if (!upper && spec.vent) ventStack();
   switch (upper ? "none" : spec.ground) {
     case "none": break; // an upper floor: nothing outside its walls
+    case "rock": if (spec.fence) fenceLine(); scatter("boulder", rng.int(2, 4), (x, y) => y > by1 + 1); scatter("sandbag", rng.int(2, 4), (x, y) => y > by1 + 1 && y < by1 + 5); break; // a bunker's approach: the wire fence across it, sandbags by the portal
     case "city": scatter("car", rng.int(2, 4), inStreet); scatter("truck", rng.int(0, 1), inStreet); scatter("crate", rng.int(2, 3), behind); break;
     case "lot": scatter("truck", rng.int(1, 2)); scatter("crate", rng.int(2, 4)); scatter("barrel", rng.int(1, 2)); scatter("car", rng.int(1, 2), inStreet); break;
     case "base": scatter("sandbag", rng.int(3, 6)); scatter("crate", rng.int(2, 3)); scatter("truck", rng.int(1, 2)); break;
-    case "compound": case "airfield": case "prisonyard": case "bunker": milGround = militaryOutside(spec.ground, milApi()); break; // issue #25
+    case "compound": case "airfield": case "prisonyard": milGround = militaryOutside(spec.ground, milApi()); break; // issue #25
     case "farm": scatter("hay", rng.int(3, 5)); scatter("fence", rng.int(4, 7)); scatter("tree", rng.int(2, 4)); scatter("truck", rng.int(0, 1)); scatter("well", rng.int(0, 1)); break;
     case "woods": scatter("tree", rng.int(10, 18)); scatter("rock", rng.int(2, 4)); break;
     case "rural": scatter("tree", rng.int(4, 7)); scatter("fence", rng.int(2, 5)); scatter("car", rng.int(0, 1)); break;
@@ -2423,14 +2474,15 @@ export function assemble(rng, spec, opts = {}) {
     hub: !!r.hub, locked: r.locked || null, up: !!r.up, entry: !!r.entry, noLabel: r.label === false,
   }));
   rooms.forEach((r, i) => { if (r.gunSafe) areas[i].gunSafe = r.gunSafe.slice(); }); // locks.js placeGunSafes: a gun safe may stand here
-  rooms.forEach((r, i) => { if (r.kennel) areas[i].kennel = true; }); // deadbeasts.js shutInPets: a vet's locked kennels hold dead pets
+  rooms.forEach((r, i) => { if (r.kennel) areas[i].kennel = true; });
+  rooms.forEach((r, i) => { if (r.bunker) areas[i].bunker = r.bunker; }); // bunkerlayout.js: a bunker's room (its scenes, its dark, who holds it) // deadbeasts.js shutInPets: a vet's locked kennels hold dead pets
   if (!opts.legacy) rooms.forEach((r, i) => { if (r.flat) areas[i].flat = true; if (r.unit) areas[i].unit = r.unit; if (r.civic) areas[i].civic = r.civic; if (r.aisle != null) areas[i].aisle = r.aisle; const sn = shopStyleName(r, opts.key); if (sn) areas[i].shop = sn; }); // shoplayout.js: a room's style (its scenes' when); roomlayout.js: a shop's flat above, an apartment's rooms; civiclayout.js: a room's style, a nave's aisle
   for (const a of outdoor) areas.push({ ...a, id: idBase + a.id, f: 0 });
   for (const c of containers) c.area += idBase;
   for (const d of lockedDoors) { d.f = f; if (d.area != null) d.area += idBase; }
   if (upper) return { cells, rooms: areas, containers, lockedDoors, nextCid: cid, nextPiece: pieceNo };
   // The upper floors (storeys): each built on its own grid from spec.upper's plan, the same stairwell cells.
-  const floorName = (g) => (g === 0 ? "Ground floor" : g === storeys - 1 ? "Top floor" : `Floor ${g + 1}`);
+  const floorName = (g) => (spec.below ? levelName(g) : g === 0 ? "Ground floor" : g === storeys - 1 ? "Top floor" : `Floor ${g + 1}`); // a bunker's go down: the Entrance level, Level −1...
   const floors = [{ cells, name: floorName(0) }];
   let base = areas.length, nextCid = cid;
   for (let g = 1; g < storeys; g++) {
@@ -2442,7 +2494,7 @@ export function assemble(rng, spec, opts = {}) {
   }
   const plan = { // ground: what militarylayout.js put outside (issue #25: tools/interiortest.js)
     key: opts.key, id: opts.id || opts.key, name: opts.name, w: W, h: H, building: { x0: bx0, y0: by0, w: bw, h: bh }, tall, storeys, ...(milGround ? { ground: milGround } : {}), stairs: stairCells.map((s) => s.slice()), runs: runs.map((r) => ({ ...r })),
-    rooms: areas.filter((a) => !a.outdoor).map((a) => ({ id: a.id, f: a.f, name: a.name, role: a.role, type: a.type, x0: a.x0, y0: a.y0, w: a.w, h: a.h, locked: a.locked, up: a.up, hub: a.hub, entry: a.entry, ...(a.civic ? { civic: a.civic } : {}) })), // civic: wanderers.js interiorOccupants' rooms by kind
+    rooms: areas.filter((a) => !a.outdoor).map((a) => ({ id: a.id, f: a.f, name: a.name, role: a.role, type: a.type, x0: a.x0, y0: a.y0, w: a.w, h: a.h, locked: a.locked, up: a.up, hub: a.hub, entry: a.entry, ...(a.civic ? { civic: a.civic } : {}), ...(a.bunker ? { bunker: a.bunker } : {}) })), // civic, bunker: wanderers.js interiorOccupants' rooms by kind
     front: { x: front.x, y: front.y },
     exits: exits.map((e) => ({ side: e.side, name: e.name, x: e.x, y: e.y, cells: e.cells, locked: e.locked, roller: e.roller, zone: e.zone })),
   };

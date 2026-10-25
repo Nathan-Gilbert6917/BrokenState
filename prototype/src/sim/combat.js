@@ -159,7 +159,7 @@ import { groundAct, groundEnd, groundLeftovers, fieldFinds, searchedInBattle, ai
 import { assaultStoresEnd, forceStoreAct } from "./assaultstores.js"; // a group's stores on the map of an assault: what you took leaves them
 import { gunOut, gunIn, enemyGunLoaded, carriedWithBag } from "./gunload.js";
 import { aiLights, aiFlashlight, aiRoomLights, wakeLights } from "./ailights.js"; // the AI's flashlights and room lights (the user's request 2026-10-12)
-import { indoorSetup, lightAt, indoorSees, lightsAct } from "./indoorlight.js"; // light inside a raid's buildings: dark rooms, lit rooms, switches (the user's request 2026-10-12)
+import { indoorSetup, lightAt, indoorSees, lightsAct, gensetAct, GEN } from "./indoorlight.js"; // light inside a raid's buildings: dark rooms, lit rooms, switches (the user's request 2026-10-12)
 import { VISION, hasFront, inArc, coned, nightSees, nightEyes, faceToward, setFacing, sneakMob, stepNoise, glance, facesBox, faceRefusal, turnToBox, activeLight, nvgOn, nvgSight } from "./vision.js"; // facing, view cones, sneaking (the user's request 2026-10-12) // the rounds in a gun kept on the item when it changes hands // bodies searched where they fell, things on the ground
 import { swapGun, kitGunSource, bodyGunSource, areaSourceName } from "./gundist.js"; // the gun distribution: which gun a kit, a body or a room yields
 import { planStart, closePlan } from "./raidplan.js"; // choices before a raid: the side, a scout, the night (docs/suggestions-5.md #23)
@@ -5225,6 +5225,20 @@ export function combatAct(state, act) {
       for (const p of b.units) if (p.side === "player" && active(p)) detect(b, p);
       break;
     }
+    case "genset": { // indoorlight.js: a bunker's generator (or battery rack) next to the unit started or shut down (1 action): every room lit or dark; a genset is loud
+      const r = gensetAct(b, u);
+      if (r.err) return r.err;
+      u.ap -= GEN.AP;
+      u.hunker = false;
+      if (r.on && r.loud) {
+        b.raid.heat = Math.min(100, (b.raid.heat || 0) + GEN.HEAT);
+        b.noise = (b.noise || 0) + 1;
+        say(b, `${u.name} starts the generator: it coughs and roars, and the bunker's lights come on (Heat +${GEN.HEAT}).`, "info");
+        alertNear(b, u.x, u.y, GEN.RADIUS, "A generator roars into life somewhere in the bunker.");
+      } else say(b, r.on ? `${u.name} throws the battery switch: the bunker's lights come on.` : `${u.name} shuts the ${r.kind === "genset" ? "generator" : "batteries"} down: the bunker goes dark.`, "info");
+      for (const p of b.units) if (p.side === "player" && active(p)) detect(b, p);
+      break;
+    }
     case "climb": { // buildingmaps.js: through a window next to the unit (not diagonally); a closed one is smashed (loud), an open or broken one is quiet (windows.js)
       if (!b.raid) return "Nothing to climb.";
       const opts = windowsNear(b, u);
@@ -6933,6 +6947,19 @@ export const BOX_LOOT = {
   engine:       { rest: 0, loot: { fuel: [0.5, 2, 6], parts: [0.3, 1, 2] }, gear: [["fireaxe", 0.5], ["prybar", 0.35], ["crowbar", 0.2], ["ladder", 0.3], ["sledge", 0.15], ["leatherjacket", 0.2], ["bikehelmet", 0.15], ["bandagekit", 0.2], ["flashlight", 0.2]] },
   ambulance:    { rest: 0, loot: { meds: [0.85, 2, 5], water: [0.4, 1, 3] }, gear: [["bandagekit", 0.25], ["surgkit", 0.08]] },
   policecar:    { rest: 0, loot: { ammo: [0.5, 5, 15], meds: [0.3, 1, 1] }, gear: [["shotgun", 0.15], ["flare", 0.4], ["bandagekit", 0.15], ["handradio", 0.2], ["baton", 0.08]] },
+  // Bunkers (issue #26, bunkerlayout.js). A garage's Humvee: fuel, parts, a box of rounds and its crew's kit; a hazmat
+  // rack the suits; a ration shelf MREs and tins by the room's mix (a military pantry's are the Army's: foods.js AREA_MIX
+  // barracks; a prepper's pantry the richest food per area in the game, cabin@: their own); a radio console electronics
+  // and a radio now and then; a footlocker a soldier's things (a dormitory's or a shelter's a little less); a prepper's gun
+  // rack their rifles.
+  humvee:       { rest: 0, loot: { fuel: [0.7, 3, 8], parts: [0.4, 1, 3], ammo: [0.5, 20, 60] }, gear: [["milradio", 0.15], ["rucksack", 0.15], ["etool", 0.2], ["sandbags", 0.1], ["traumakit", 0.1]] },
+  hazmatrack:   { rest: 0, loot: {}, gear: [["hazmat", 0.75], ["hazmat", 0.35]] },
+  rationshelf:  { rest: 0, loot: { preserved: [0.95, 3, 7], water: [0.55, 2, 5] }, gear: [["puritabs", 0.1]] },
+  "rationshelf@cabin": { rest: 0, loot: { preserved: [1, 6, 12], food: [0.7, 3, 6], water: [0.8, 4, 9], meds: [0.3, 1, 2] }, gear: [["puritabs", 0.25]] },
+  radioconsole: { rest: 0.3, loot: { electronics: [0.7, 1, 3], parts: [0.4, 1, 2] }, gear: [["milradio", 0.2], ["handradio", 0.15]] },
+  footlocker:   { rest: 0.6, loot: { ammo: [0.3, 5, 15] }, gear: [["combatknife", 0.04], ["flashlight", 0.05], ["pistol", 0.03]] },
+  "footlocker@house": { rest: 0.6, loot: { water: [0.2, 1, 2] }, gear: [["flashlight", 0.05]] },
+  "gunrack@cabin": { rest: 0.4, loot: { ammo: [0.7, 10, 30] }, gear: [["huntrifle", 0.2], ["ar", 0.12], ["shotgun", 0.15], ["leverrifle", 0.08]] },
   // The hospitals, clinics and vets room by room (issue #14, roomlayout.js MEDICAL_STYLES): the pharmacy's drug safe and
   // the theatre's instrument cabinets the richest (a surgical kit for the medics), the ER's medicine cabinets and the
   // supply room's shelves next, a ward's nightstands the poorest (a patient's things); the morgue's drawers a body's
@@ -6951,23 +6978,19 @@ export const BOX_LOOT = {
   "nightstand@clinic": { rest: 0.25, loot: { water: [0.3, 1, 1] }, gear: [["flashlight", 0.03], ["knife", 0.02]] },
   "medcab@vet":        { rest: 0.5, loot: { meds: [0.75, 1, 4] }, gear: [["dewormer", 0.08]] },
   "crate@vet":         { rest: 0, loot: { food: [0.75, 1, 4] }, gear: [] }, // the food store's sacks of feed: food, at a low worth
-  // Military bases, air bases, airports and prisons (issue #25, militarylayout.js). A footlocker a soldier's own kit (a
-  // bag, a knife, a light, a sidearm now and then); an ammo crate the rounds and the odd grenade; a radio console the
-  // radios; a fuel bladder fuel; an inmate's property locker what was taken off them at intake (a phone, a watch, a
-  // knife, cigarettes); a suitcase what a traveller packed. The wrecks and vehicles (2 × L containers): a Humvee or an Army
-  // truck in the motor pool its kit and fuel, a helicopter the crew's (a rifle, a radio, flares), a fighter little but
-  // parts and the pilot's flares, a transport plane its cargo. The flight gear (helmets, survival vests) maps to the
-  // nearest items there are (a military helmet, a chest rig), as #15's turnout gear did: no new items. Tuned with
-  // tools/interiortest.js so the armory and the barracks hold what they did, scaled by area (the comment on issue #25).
+  // Military bases, air bases, airports and prisons (issue #25, militarylayout.js; the footlocker, the radio console and
+  // the Humvee are #26's rows above): an ammo crate the rounds and the odd grenade; a fuel bladder fuel; an inmate's
+  // property locker what was taken off them at intake (a phone, a watch, a knife, cigarettes); a suitcase what a traveller
+  // packed. The wrecks and vehicles (2 × L containers): an Army truck in the motor pool its kit and fuel, a helicopter the
+  // crew's (a rifle, a radio, flares), a fighter little but parts and the pilot's flares, a transport plane its cargo.
+  // The flight gear (helmets, survival vests) maps to the nearest items there are (a military helmet, a chest rig), as
+  // #15's turnout gear did: no new items. Measured with tools/interiortest.js (the comment on issue #25).
   "sportcage@armory": { rest: 0.2, loot: {}, gear: [["nvg", 0.12], ["binoculars", 0.2], ["thermal", 0.04], ["spotscope", 0.08], ["holo", 0.08], ["reddot", 0.08], ["milradio", 0.04]] }, // an armory's NVG and optics cage
   "sportcage@barracks": { rest: 0.6, loot: { ammo: [0.3, 5, 15] }, gear: [["rucksack", 0.06], ["camonet", 0.06], ["etool", 0.08], ["sandbags", 0.06]] }, // a quartermaster's cage, a barracks supply room
-  footlocker:   { rest: 0.35, loot: { ammo: [0.25, 5, 15], meds: [0.08, 1, 1], food: [0.15, 1, 2] }, gear: [["pistol", 0.04], ["compact9", 0.03], ["knife", 0.05], ["combatknife", 0.03], ["flashlight", 0.05], ["assaultpack", 0.02], ["photos", 0.08], ["cigarettes", 0.08], ["watch", 0.02]] },
   ammocrate:    { rest: 0.4, loot: { ammo: [0.9, 20, 60] }, gear: [["frag", 0.08]] },
-  radioconsole: { rest: 0, loot: { parts: [0.6, 1, 3], scrap: [0.4, 1, 2] }, gear: [["milradio", 0.08], ["handradio", 0.15]] },
   fuelbladder:  { rest: 0, loot: { fuel: [0.85, 6, 16] }, gear: [] },
   intakelocker: { rest: 0, loot: { scrap: [0.2, 1, 2] }, gear: [["phone", 0.08], ["watch", 0.06], ["knife", 0.05], ["cigarettes", 0.1], ["photos", 0.06], ["slingbag", 0.03]] },
   luggage:      { rest: 0, loot: { food: [0.15, 1, 2], water: [0.15, 1, 2], meds: [0.1, 1, 1] }, gear: [["slingbag", 0.04], ["duffle", 0.03], ["cigarettes", 0.06], ["watch", 0.03], ["phone", 0.05], ["photos", 0.04], ["flashlight", 0.03]] },
-  humvee:       { rest: 0, loot: { fuel: [0.6, 3, 8], ammo: [0.5, 10, 30], parts: [0.4, 1, 2] }, gear: [["ar", 0.05], ["milhelmet", 0.08], ["etool", 0.15], ["bandagekit", 0.15], ["handradio", 0.1], ["flare", 0.2]] },
   m35:          { rest: 0, loot: { fuel: [0.6, 4, 10], parts: [0.5, 1, 3], food: [0.3, 2, 6] }, gear: [["sandbags", 0.15], ["barbedwire", 0.1], ["etool", 0.2], ["camonet", 0.08]] },
   helo:         { rest: 0, loot: { ammo: [0.5, 10, 30], fuel: [0.5, 2, 6], parts: [0.5, 1, 3], meds: [0.3, 1, 2] }, gear: [["ar", 0.05], ["milhelmet", 0.12], ["milradio", 0.05], ["chestrig", 0.06], ["flare", 0.4], ["bandagekit", 0.2]] },
   jet:          { rest: 0, loot: { parts: [0.7, 2, 4], scrap: [0.7, 3, 8], fuel: [0.4, 2, 6] }, gear: [["milhelmet", 0.1], ["flare", 0.4], ["chestrig", 0.04]] },
@@ -7389,9 +7412,9 @@ export function createRaid(state, setup) {
   // reach floods from the first stairwell (a street of houses: from every one). b.cells / b.reach / b.losCache alias
   // the active floor's (setFloor).
   if (pick && map.floors && map.floors.length > 1) {
-    // Each house's upper floor on a street is its own, void between them.
+    // Each house's upper floor on a street is its own, void between them (a compound's buildings likewise: compound.js).
     const upReach = (F) => { const r = new Uint8Array(W * H); for (const [sx, sy] of map.stairs) if (CELL[F.cells[sy * W + sx].k].walk && !r[sy * W + sx]) { const f = flood(F.cells, sx, sy); for (let j = 0; j < r.length; j++) r[j] |= f[j]; } return r; };
-    b.floors = map.floors.map((F, i) => ({ cells: F.cells, reach: i === 0 ? map.reach : map.street ? upReach(F) : flood(F.cells, map.stairs[0][0], map.stairs[0][1]), losCache: i === 0 ? b.losCache : null, name: F.name }));
+    b.floors = map.floors.map((F, i) => ({ cells: F.cells, reach: i === 0 ? map.reach : map.street || map.compound ? upReach(F) : flood(F.cells, map.stairs[0][0], map.stairs[0][1]), losCache: i === 0 ? b.losCache : null, name: F.name }));
     b.floor = 0;
     b.raid.storeys = map.floors.length;
     b.raid.stairs = map.stairs.map((s) => s.slice()); // the cells that change floor: each stair run's top step
