@@ -46,19 +46,21 @@ import { armFromArsenal } from "./arsenal.js"; // a person given the weapon the 
 import { noiseAt, detectRange, isBehind, throwablesOf, THROWABLES } from "./stealth.js";
 import { FRANCHISES } from "./data-shops.js"; // a franchise's layout (plan): the floor, the front room's depth and name, the width, a flat above
 import { applyZType, siteList } from "./zombietypes.js";
-import { fitMargins, buildingTarget, densifyOutside, densify, coverTarget, buildingDeadScale, streetDeadScale, raidMaxDims, raidDims, SIZE_CLASSES } from "./battlesize.js";
+import { fitMargins, buildingTarget, densifyOutside, densify, coverTarget, buildingDeadScale, streetDeadScale, raidMaxDims, raidDims, SIZE_CLASSES, mapCap } from "./battlesize.js";
 import { legacyRaids, legacyRooms, legacyScale } from "./worldcfg.js"; // an older save: a neighbourhood's street laid out as it always was; its buildings furnished as they were
 import { roomLayout, homeStyle, medicalStyle, LAYOUT } from "./roomlayout.js"; // homes furnished room by room (the placement helpers); hospitals, clinics and vets too (#14)
 import { commercialStyle, styleName as shopStyleName } from "./shoplayout.js";
 import { OFFICE_PLANS } from "./officeplans.js"; // the office buildings of every kind, the corporate tower (issue #27)
 import { officeStyle } from "./officelayout.js"; // their rooms' styles (a leaf's office mark) // shops, restaurants, bars, offices, motels, banks and big stores laid out for their kind (issue #16)
 import { civicStyle } from "./civiclayout.js"; // police stations, fire stations, schools and churches laid out for their kind (issue #15)
+import { hotelSpec } from "./hotellayout.js"; // hotels: their plans, rooms, grounds and scenes (issue #29)
 import { militaryStyle, militaryOutside, MIL_SIZE } from "./militarylayout.js"; // military bases, air bases, airports and prisons laid out like the real thing (issue #25)
 import { decorate, flipDecoY, placeDecorPieces } from "./decor.js"; // rugs, clutter, wall art, wall colours, light fixtures (cosmetic)
 import { rollWin, winMixOf, windowOpen } from "./windows.js"; // the windows' states (open, locked, fixed), a throw through an open one
 import { rollScenes, sceneRng } from "./interiorscenes.js"; // signs of survival: barricades, blood, bodies (dice of their own)
 import { realFoot, realStoreys, storeyRange, REAL_SIZE } from "./data-buildingsize.js"; // buildings at real size (issue #24)
 import { BUNKER_PLANS, bunkerStyle, levelName } from "./bunkerlayout.js"; // bunkers: the plans, their rooms, their levels below ground (issue #26)
+import { eateryPlan, eateryOf } from "./eaterylayout.js"; // restaurants by kind of food, format and size (issue #33)
 
 export const BMAP = {
   MARGIN: { front: 5, back: 4, left: 4, right: 4 }, // cells of outside around the building
@@ -346,6 +348,12 @@ function house(rng, v, o = {}) {
 // the frozen section, a small deli counter; a stockroom with a walk-in cooler behind it). The supermarket is bigstore's
 // (supermarket below). The dice are rolled in the same order either way.
 function shop(rng, v, o = {}) {
+  // Issue #33: a new save's restaurant, pizza place, diner or bar is its variant's plan (eaterylayout.js: by its cuisine,
+  // format and size; a place with no franchise one by the building's dice, read not consumed). An older save as below.
+  if (!o.legacy && (v === "restaurant" || v === "diner" || v === "bar")) {
+    const kind = v === "diner" && o.kind === "pizza" ? "pizza" : v;
+    return eateryPlan(rng, eateryOf(kind, o.variant, hash01(rng.state, "eatery")), planOf(v, o));
+  }
   const gas = v === "gasstation", truck = v === "truckstop";
   const plan = planOf(v === "gasstation" ? "gas" : v, o); // data-shops.js: the franchise's layout
   const tier = !o.legacy && (v === "corner" || v === "grocery") ? v : null; // issue #22: the corner store and the grocery by size
@@ -1182,6 +1190,13 @@ function vet(rng, o = {}) {
   };
 }
 
+// A hotel (issue #29, hotellayout.js): a roadside inn, a business hotel, a resort or a city tower by its franchise
+// (data-shops.js FRANCHISES.hotel plan.hotel; a sample plan's by the dice), its grounds round it; its map up to
+// battlesize.js MAP_CAP.hotel (200 × 200).
+function hotel(rng, o = {}) {
+  return hotelSpec(rng, { ...o, plan: planOf("hotel", o), maxStoreys: MAX_STOREYS });
+}
+
 function apartments(rng, o = {}) {
   const bw = rng.int(18, 22), bh = rng.int(14, 16);
   // 3–6 floors of flats (deeper city blocks taller: o.storeyBonus), a lobby and the maintenance room on the ground floor.
@@ -1477,6 +1492,7 @@ export const BUILDINGS = {
   church:      { name: "Church", make: (r, o) => church(r, o) },
   motel:       { name: "Motel", make: (r, o) => motel(r, o) },
   apartments:  { name: "Apartment block", make: (r, o) => apartments(r, o) },
+  hotel:       { name: "Hotel", make: (r, o) => hotel(r, o) },
   // The office buildings of every kind (issue #27: officeplans.js, their firms' plans; the tower is "offices" above).
   storefront:  { name: "Storefront office", make: (r, o) => OFFICE_PLANS.storefront(r, o || {}, planOf("storefront", o), MAX_STOREYS) },
   bizpark:     { name: "Business park offices", make: (r, o) => OFFICE_PLANS.bizpark(r, o || {}, planOf("bizpark", o), MAX_STOREYS) },
@@ -1490,11 +1506,11 @@ export const BUILDINGS = {
   neighbourhood: { name: "Neighbourhood", make: (r, o) => house(r, "house", o), street: true },
   // Bunkers (issue #26, bunkerlayout.js): the military command bunker (a rare military site), Crashlanding's mountain
   // bunker (the same plan, always three levels deep), the government bunker, the fallout shelter and the prepper's.
-  milbunker:      { name: "Military command bunker", make: (r) => BUNKER_PLANS.milbunker(r) },
+  milbunker:      { name: "Military command bunker", make: (r, o) => BUNKER_PLANS.milbunker(r, o) },
   mountainbunker: { name: "Mountain bunker", make: (r) => BUNKER_PLANS.milbunker(r, { levels: 3 }) },
-  govbunker:      { name: "Government bunker", make: (r) => BUNKER_PLANS.govbunker(r) },
-  shelter:        { name: "Fallout shelter", make: (r) => BUNKER_PLANS.shelter(r) },
-  prepper:        { name: "Prepper bunker", make: (r) => BUNKER_PLANS.prepper(r) },
+  govbunker:      { name: "Government bunker", make: (r, o) => BUNKER_PLANS.govbunker(r, o) },
+  shelter:        { name: "Fallout shelter", make: (r, o) => BUNKER_PLANS.shelter(r, o) },
+  prepper:        { name: "Prepper bunker", make: (r, o) => BUNKER_PLANS.prepper(r, o) },
 };
 // The storeys a type can have, [min, max] (the city crawl's bonus can add to offices and apartments, up to MAX_STOREYS).
 export const STOREYS_BY_TYPE = {
@@ -1505,11 +1521,11 @@ export const STOREYS_BY_TYPE = {
   cellblock: [1, 2], messhall: [1, 2], control: [1, 3], radio: [1, 1], terminal: [1, 3], firestation: [2, 2], // issue #25: a new save's cell block two tiers, its mess hall one storey
   hq: [2, 2], aidstation: [1, 1], gatehouse: [1, 1], tower: [4, 5], flightops: [1, 2],
   warehouse: [1, 1], factory: [1, 1], hangar: [1, 1], motorpool: [1, 1], autoshop: [1, 1], garage: [1, 1], workshop: [1, 1], machineshed: [1, 1], barn: [1, 1],
-  church: [1, 1], motel: [2, 2], apartments: [3, 6], neighbourhood: [2, 2],
+  church: [1, 1], motel: [2, 2], apartments: [3, 6], neighbourhood: [2, 2], hotel: [2, 10], // a hotel: an inn 2–3, a resort 2–4, a business hotel 4–6, a tower 8–10 (within MAX_STOREYS)
   // the shops and services of data-shops.js (a franchise's plan can add a flat above or more floors)
   sportshop: [1, 2], electronics: [1, 2], radioshop: [1, 2], bookstore: [1, 2], petstore: [1, 2], garden: [1, 2], clothing: [1, 2], liquor: [1, 2],
   restaurant: [1, 2], bar: [1, 2], dealer: [1, 2], bank: [1, 3], library: [1, 3], vet: [1, 2], pizza: [1, 1],
-  milbunker: [2, 3], mountainbunker: [3, 3], govbunker: [2, 2], shelter: [2, 2], prepper: [2, 2], // bunkers: the Entrance level and the levels below it (bunkerlayout.js)
+  milbunker: [2, 3], mountainbunker: [3, 3], govbunker: [2, 3], shelter: [2, 2], prepper: [2, 3], // bunkers: the Entrance level and the levels below it (bunkerlayout.js)
   // the office buildings (issue #27; officeplans.js SIZE, the crawl's bonus for the city's kinds)
   storefront: [1, 2], bizpark: [1, 3], cityhall: [2, 3], courthouse: [2, 3], callcenter: [1, 2], techoffice: [2, 5], station: [2, 2],
 };
@@ -1521,7 +1537,7 @@ export const SITES = {
   // One building.
   pharmacy: ["pharmacy"], gunstore: ["gunstore"], pawnshop: ["pawnshop"], hardware: ["hardware"], grocery: ["grocery"], diner: ["diner"], supermarket: ["supermarket"],
   police: ["police"], clinic: ["clinic"], hospital: ["hospital"], school: ["school"], office: ["offices"], firestation: ["firestation"],
-  church: ["church"], motel: ["motel"], apartments: ["apartments"], autoshop: ["autoshop"], feedstore: ["feedstore"], cabin: ["cabin"],
+  church: ["church"], motel: ["motel"], hotel: ["hotel"], apartments: ["apartments"], autoshop: ["autoshop"], feedstore: ["feedstore"], cabin: ["cabin"],
   lodge: ["lodge"], ranger: ["ranger"], radiotower: ["radio"], barn: ["barn"], truckstop: ["truckstop"], gas: ["gasstation"], quarry: ["workshop"],
   // A choice of buildings.
   town: ["house", "corner", "garage", "pharmacy", ["house", "House on the corner"]], city: ["grocery", "pharmacy", "offices", "apartments", "warehouse"],
@@ -1628,11 +1644,11 @@ const specSeed = (state, tileId, option) => Math.floor(hash01(state.seed, "bmap"
 // scale: the real-size step (realScale: { setting }); null for an older save's buildings (worldcfg.js legacyScale: the
 // archetype's own footprint and storeys, as they were).
 const makeSpec = (rng, option, legacy = false, scale = null) => { // variant, kind: the place's franchise and kind (data-shops.js plans); legacy: an older save's plan (worldcfg.js legacyRooms: an apartment's flats one room each)
-  const spec = BUILDINGS[option.key].make(rng, { storeyBonus: option.storeyBonus || 0, variant: option.variant || null, kind: option.kind || null, legacy: legacy && !NEW_KEYS.has(option.key), site: option.site || null });
+  const spec = BUILDINGS[option.key].make(rng, { storeyBonus: option.storeyBonus || 0, variant: option.variant || null, kind: option.kind || null, legacy: legacy && !NEW_KEYS.has(option.key), site: option.site || null, ...(option.plan != null ? { plan: option.plan } : {}) }); // plan: one of the kind's named plans (bunkerlayout.js BUNKER_VARIANTS: a city hall's shelter, #27)
   return scale ? realScale(rng, spec, option.key, { ...scale, storeyBonus: option.storeyBonus || 0 }) : spec;
 };
 // The archetypes issue #25 added (no older plan): laid out the new way in an older save too.
-const NEW_KEYS = new Set(["hq", "aidstation", "gatehouse", "tower", "flightops"]);
+const NEW_KEYS = new Set(["hq", "aidstation", "gatehouse", "tower", "flightops", "hotel"]); // hotel: issue #29, no older save had one
 // The setting a site's buildings stand in (data-buildingsize.js REAL_SIZE city: a city's towers): "city" on a city's
 // tile (its crawl too) or a site-less city tile, "town" on a town's, else "rural".
 export function settingOf(tile) {
@@ -1653,9 +1669,9 @@ export function buildingMap(state, tileId, option, withVehicle) {
   // battlesize.js: at least the site's raid map (more outside around a single-building site's plan, a city's or a
   // town's building the run's largest), the new ground topped up with cover. The floor plan itself is the archetype's.
   const tile = state.tiles[tileId], sb = siteBuildings(tile);
-  const target = buildingTarget(tile, !!(sb && sb.single), state);
-  if (spec.natW) { const nm = fitMargins(spec.natW, spec.natH, { ...BMAP.MARGIN, ...(spec.margins || {}) }, target); spec.natMap = [spec.natW + nm.left + nm.right, spec.natH + nm.front + nm.back]; } // the map its plan would have had at its own size: the dead go by it (placeInterior)
-  spec.margins = fitMargins(spec.bw, spec.bh, { ...BMAP.MARGIN, ...(spec.margins || {}) }, target);
+  const target = buildingTarget(tile, !!(sb && sb.single), state), cap = mapCap(option.key); // mapCap: a hotel's map at most 200 × 200
+  if (spec.natW) { const nm = fitMargins(spec.natW, spec.natH, { ...BMAP.MARGIN, ...(spec.margins || {}) }, target, cap); spec.natMap = [spec.natW + nm.left + nm.right, spec.natH + nm.front + nm.back]; } // the map its plan would have had at its own size: the dead go by it (placeInterior)
+  spec.margins = fitMargins(spec.bw, spec.bh, { ...BMAP.MARGIN, ...(spec.margins || {}) }, target, cap);
   const map = assemble(rng, spec, { key: option.key, id: option.id, name: option.name, withVehicle, legacy: legacyRooms(state) && !NEW_KEYS.has(option.key) });
   densifyOutside(map, rng, tile ? tile.terrain : "plains");
   rollScenes(map, sceneRng(state, tileId, option), option.key, option.scenes || null); // interiorscenes.js: signs of survival (their own dice: the map is as it was); option.scenes: a city crawl place's say (citycrawl.js placeOption)
@@ -2706,6 +2722,28 @@ export function assemble(rng, spec, opts = {}) {
       outdoor.push(a);
     }
   }
+  // A building's own grounds (spec.yard: a hotel's drive, car park, pool deck, tennis courts and gardens, hotellayout.js),
+  // before the outside is dressed.
+  if (!upper && spec.yard) spec.yard({ rng, W, H, b: { x0: bx0, y0: by0, x1: bx1, y1: by1 }, front, exits, cell: (x, y) => cells[I(x, y)], outside: (x, y) => inside(x, y) && rid[I(x, y)] === -2,
+    free: outsideFree, block: (x, y, k) => block(x, y, k), car: (x, y, kind, test) => carAt(x, y, kind, test), area: (a) => outdoor.push({ id: rooms.length + outdoor.length, type: null, outdoor: true, ...a }) });
+  // What stands outside a restaurant (issue #33, eaterylayout.js eateryOutside: the drive-through lane and its cars, a
+  // patio, a BBQ's smokers, a food truck, the grease trap by the back door), every piece keeping the lot one walk.
+  if (!upper && spec.outside) spec.outside({
+    rng, bx0, bx1, by0, by1, exits,
+    free: outsideFree,
+    block: (x, y, k) => outsideFree(x, y) && block(x, y, k),
+    unblock: (x, y) => { const i = I(x, y), was = pass[i]; cells[i].k = "open"; passAt(i); if (!was && pass[i]) total++; },
+    area: (o) => { const a = { id: rooms.length + outdoor.length, outdoor: true, ...o }; outdoor.push(a); return a; },
+    car: (x, y, ax, len, kind, body = null) => {
+      const rect = placeCar(cells, W, H, x, y, ax, len, kind, (cx, cy) => outsideFree(cx, cy), rng.int(0, 1e6), { ring: false, ...(body ? { body } : {}) });
+      if (!rect) return null;
+      passRect(rect);
+      total -= rect.w * rect.h;
+      if (!connected()) { removeCar(cells, W, rect); passRect(rect); total += rect.w * rect.h; return null; }
+      return rect;
+    },
+    container: (rect, a, kind, label) => containers.push({ id: cid++, x: rect.x0, y: rect.y0, w: rect.w, h: rect.h, f, area: a.id, kind, searched: false, label: `${a.name}: ${label}` }),
+  });
   // The outside of a base, an airfield or a prison (issue #25: militarylayout.js militaryOutside): its tools.
   let milGround = null;
   const milApi = () => ({
@@ -2781,6 +2819,7 @@ export function assemble(rng, spec, opts = {}) {
   rooms.forEach((r, i) => { if (r.kennel) areas[i].kennel = true; });
   rooms.forEach((r, i) => { if (r.bunker) areas[i].bunker = r.bunker; }); // bunkerlayout.js: a bunker's room (its scenes, its dark, who holds it) // deadbeasts.js shutInPets: a vet's locked kennels hold dead pets
   if (!opts.legacy) rooms.forEach((r, i) => { if (r.flat) areas[i].flat = true; if (r.unit) areas[i].unit = r.unit; if (r.civic) areas[i].civic = r.civic; if (r.office) areas[i].office = r.office; if (r.aisle != null) areas[i].aisle = r.aisle; const sn = shopStyleName(r, opts.key); if (sn) areas[i].shop = sn; }); // shoplayout.js: a room's style (its scenes' when); roomlayout.js: a shop's flat above, an apartment's rooms; civiclayout.js: a room's style, a nave's aisle
+  rooms.forEach((r, i) => { if (r.mix) areas[i].mix = r.mix; if (r.eat) areas[i].eat = r.eat; }); // eaterylayout.js: a restaurant's rooms hold its cuisine's food (combat.js boxFinds)
   for (const a of outdoor) areas.push({ ...a, id: idBase + a.id, f: 0 });
   for (const c of containers) c.area += idBase;
   for (const d of lockedDoors) { d.f = f; if (d.area != null) d.area += idBase; }
@@ -2800,6 +2839,7 @@ export function assemble(rng, spec, opts = {}) {
     key: opts.key, id: opts.id || opts.key, name: opts.name, w: W, h: H, building: { x0: bx0, y0: by0, w: bw, h: bh }, tall, storeys, height, ...(milGround ? { ground: milGround } : {}), stairs: stairCells.map((s) => s.slice()), runs: runs.map((r) => ({ ...r })),
     rooms: areas.filter((a) => !a.outdoor).map((a) => ({ id: a.id, f: a.f, name: a.name, role: a.role, type: a.type, x0: a.x0, y0: a.y0, w: a.w, h: a.h, locked: a.locked, up: a.up, hub: a.hub, entry: a.entry, ...(a.civic ? { civic: a.civic } : {}), ...(a.bunker ? { bunker: a.bunker } : {}) })), // civic, bunker: wanderers.js interiorOccupants' rooms by kind
     front: { x: front.x, y: front.y },
+    ...(spec.variant ? { variant: spec.variant } : {}), // a plan's name among its kind's (bunkerlayout.js BUNKER_VARIANTS)
     exits: exits.map((e) => ({ side: e.side, name: e.name, x: e.x, y: e.y, cells: e.cells, locked: e.locked, roller: e.roller, zone: e.zone })),
   };
   return { w: W, h: H, cells, rooms: areas, containers, zones, vehicle, exits, front, lockedDoors, plan, building: plan.building, floors, stairs: plan.stairs, runs: plan.runs, storeys, height, deadK: spec.deadK || 0, natMap: spec.deadK ? spec.natMap || [spec.natW + BMAP.MARGIN.left + BMAP.MARGIN.right, spec.natH + BMAP.MARGIN.front + BMAP.MARGIN.back] : null };

@@ -55,10 +55,10 @@ export const REAL_SIZE = {
   liquor:      { w: [10, 18], d: [12, 20], storeys: [1, 2], set: "town" },
   hardware:    { w: [18, 30], d: [16, 25], storeys: [1, 1], set: "town" },
   feedstore:   { w: [15, 25], d: [12, 20], storeys: [1, 1], set: "rural" },
-  restaurant:  { w: [15, 25], d: [12, 20], storeys: [1, 2], set: "town" },
-  pizza:       { w: [12, 18], d: [12, 18], storeys: [1, 1], set: "town" },
-  bar:         { w: [15, 25], d: [12, 20], storeys: [1, 2], set: "town" },
-  diner:       { w: [15, 25], d: [12, 18], storeys: [1, 1], set: "town" },
+  restaurant:  { w: [8, 46], d: [9, 30], storeys: [1, 2], set: "town", planned: true }, // #33: by its format and size (the eat* rows)
+  pizza:       { w: [8, 46], d: [9, 30], storeys: [1, 1], set: "town", planned: true },
+  bar:         { w: [8, 46], d: [9, 30], storeys: [1, 2], set: "town", planned: true },
+  diner:       { w: [8, 46], d: [9, 30], storeys: [1, 1], set: "town", planned: true },
   gasstation:  { w: [15, 25], d: [10, 15], storeys: [1, 1], set: "rural" }, // plus the forecourt and its canopy outside
   truckstop:   { w: [25, 40], d: [15, 25], storeys: [1, 1], set: "rural" },
   bank:        { w: [15, 30], d: [15, 25], storeys: [1, 2], set: "town" },
@@ -111,6 +111,20 @@ export const REAL_SIZE = {
   callcenter:  { w: [26, 32], d: [17, 20], storeys: [1, 2], set: "town", planned: true },
   techoffice:  { w: [20, 24], d: [15, 18], storeys: [2, 5], set: "city", planned: true },
   station:     { w: [22, 26], d: [15, 17], storeys: [2, 2], set: "town", planned: true },
+  // #29's hotels (hotellayout.js HOTEL.SIZE reads the kinds' rows): planned at these sizes, their storeys built by the
+  // tall rule (a city tower hotel's 8–10 storeys: 4 floors built, the stairs above blocked); "hotel" the archetype's span
+  hotel:         { w: [21, 90], d: [19, 23], storeys: [2, 10], set: "town", planned: true },
+  hotelinn:      { w: [21, 25], d: [19, 19], storeys: [2, 3], set: "rural", planned: true },
+  hotelbusiness: { w: [40, 60], d: [21, 23], storeys: [4, 6], set: "town", planned: true },
+  hotelresort:   { w: [64, 90], d: [21, 23], storeys: [2, 4], set: "rural", planned: true },
+  hoteltower:    { w: [36, 44], d: [21, 23], storeys: [8, 10], set: "city", planned: true },
+  // #33's restaurants by size (data-eateries.js EAT_SIZE reads these; a pizza place's, a diner's and a bar's too):
+  // planned at these sizes by its plans (eaterylayout.js eateryPlan)
+  eattiny:     { w: [8, 10], d: [9, 10], set: "town", planned: true },
+  eatsmall:    { w: [11, 14], d: [10, 12], set: "town", planned: true },
+  eatmedium:   { w: [16, 22], d: [13, 16], set: "town", planned: true },
+  eatlarge:    { w: [26, 34], d: [18, 22], set: "town", planned: true },
+  eathuge:     { w: [40, 46], d: [26, 30], set: "town", planned: true },
   // Open floors
   warehouse:   { w: [40, 80], d: [25, 50], storeys: [1, 1], set: "town" }, // one tall storey
   factory:     { w: [50, 100], d: [30, 60], storeys: [1, 1], set: "town" },

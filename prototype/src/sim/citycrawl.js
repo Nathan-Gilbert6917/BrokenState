@@ -72,6 +72,7 @@ import { itemValue } from "./valuation.js";
 import { atBase } from "./world.js";
 import { shopPlaces, civicPlaces, crawlFranchise, franchiseName } from "./shops.js"; // the shops and services on a block besides its own (their own dice), a place's franchise
 import { PLACE_W } from "./data-shops.js"; // a shop's crawl place stats (rich, dead, rare)
+import { hotelPlace, HOTELS } from "./hotels.js"; // a hotel on a block now and then (issue #29), its place stats
 import { OFFICE_CIVIC } from "./data-offices.js"; // city hall's and the courthouse's (issue #27)
 import { piecesOut, piecesText, crawlPieces as homePieces } from "./furnihome.js"; // furniture carried out of a building: the vehicle or exhaustion at the rim (issue #18; the walk's pace: carryPace, by pairs)
 import { gridOf, inGrid, isEdge, levelOf, ringOf, maxLevel, entryOf, headingToward, turn, rimOf, pathToRim, dirTo, keyOf, xyOf, DIRS, DIR_NAMES, cellsOf } from "./citygrid.js"; // the round grid of blocks (2026-10-13)
@@ -500,6 +501,8 @@ export function genBlock(state, c, cell = c.cell) {
   // shops.js: up to two shops or services besides, on their own dice (the places above are as they were).
   const extra = shopPlaces(state, c.tile, cell, places, CRAWL.PLACES[1], n, setting, (k) => !!BUILDINGS[k]);
   extra.forEach((key, j) => addPlace(new Rng(seedOf(state.seed, "crawlshop", c.tile, cell, j)), key, PLACE_W[key].crawl, places.length));
+  // hotels.js: a hotel now and then, on dice of its own after the shops (the places above are as they were).
+  if (BUILDINGS.hotel && hotelPlace(state, c.tile, cell, places, CRAWL.PLACES[1], n, setting)) addPlace(new Rng(seedOf(state.seed, "crawlhotel", c.tile, cell)), "hotel", HOTELS.PLACE, places.length);
   // This visit: a place may be shut.
   if (places.length > 2 && vr.chance(CRAWL.BLOCKED)) {
     const pl = vr.pick(places);
