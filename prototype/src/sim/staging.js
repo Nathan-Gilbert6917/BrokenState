@@ -328,7 +328,7 @@ export function makeCamp(state, p, tile, { up = false, queueUp = up && (!!state.
   const people = partyMembers(state, p);
   const base = {
     id: newId(), tile, type: hubNow ? "outpost" : "hub", name: campName(state, tile),
-    stock: { water: 0, fuel: 0, meds: 0, ammo: 0, arrows: 0, parts: 0, scrap: 0, jars: 0, wood: 0, buildmat: 0, metalsheet: 0, [RAW]: 0 }, // arrows, wood: every base keeps the count (a camp read arrows = undefined: farmtest 43)
+    stock: { water: 0, fuel: 0, meds: 0, ammo: 0, arrows: 0, parts: 0, scrap: 0, jars: 0, wood: 0, stone: 0, buildmat: 0, metalsheet: 0, [RAW]: 0 }, // arrows, wood, stone: every base keeps the count (a camp read arrows = undefined: farmtest 43; stone = undefined in a camp the governor set up: farmtest's long run, 2026-10-25)
     radio: false, watchtower: false, buildings: [], construction: [], armory: [],
     tier: 0, camp: true, fire: true, campDay: day(state), lastPresent: state.hour, first: firstHubPending(state) && !hubNow, tentsSet: true, // tentsSet: a new camp has no tents (no beds) until one is put up (buildings.js TENTS)
     plan: { plots: [], origin: campSiteFor(state, p, tile), fresh: true }, // its spot on the tile's 500 × 500 map (basemap.js originOf, freshBase); level: below
@@ -670,7 +670,7 @@ export function migrateStaging(state) {
   const hubNow = hub(state);
   const base = {
     id: old.id || newId(), tile: old.tile, type: hubNow ? "outpost" : "hub", name: campName(state, old.tile),
-    stock: { water: 0, fuel: 0, meds: 0, ammo: 0, arrows: 0, parts: 0, scrap: 0, jars: 0, wood: 0, buildmat: 0, metalsheet: 0, [RAW]: 0 }, // arrows, wood: every base keeps the count (a camp read arrows = undefined: farmtest 43)
+    stock: { water: 0, fuel: 0, meds: 0, ammo: 0, arrows: 0, parts: 0, scrap: 0, jars: 0, wood: 0, stone: 0, buildmat: 0, metalsheet: 0, [RAW]: 0 }, // arrows, wood, stone: every base keeps the count (a camp read arrows = undefined: farmtest 43; stone = undefined in a camp the governor set up: farmtest's long run, 2026-10-25)
     radio: false, watchtower: false, buildings: [], construction: [], armory: [],
     tier: 0, camp: true, fire: old.fire !== false, campDay: old.started || day(state), lastPresent: old.lastPresent ?? state.hour, first: !!old.first,
   };
