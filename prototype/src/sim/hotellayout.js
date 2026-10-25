@@ -7,15 +7,17 @@
 // THE KINDS (a hotel's franchise says which: data-shops.js FRANCHISES.hotel plan.hotel; a hotel with none, a sample
 // plan, by HOTEL.ANY's dice). Sizes in cells, about a metre each (#24's CELL_M; HOTEL.SIZE until #24's size table is on
 // dev):
-//   inn       a roadside inn or a B&B, 21–25 × 19, 3 storeys (2 when 24 wide or more: its ground floor then has guest
-//             rooms too, the owners' flat at the front): the reception, the parlour, the breakfast room, a small kitchen
-//             and the owners' flat on the ground floor; 10–20 rooms. One stair run (a stairwell at the end of the back).
+//   inn       a roadside inn or a B&B, 21–25 × 19, 3 storeys (2, half the time, when 25 wide: its ground floor then
+//             has guest rooms and their housekeeping too, the owners' flat at the front, the laundry upstairs): the
+//             reception, the parlour, the breakfast room, a small kitchen, the laundry and the owners' flat on the ground
+//             floor; 10–20 rooms. One stair run (a stairwell at the end of the back band).
 //   business  40–60 × 21–23, 4–6 storeys: the lobby and its front desk, the restaurant, a bar when 50 wide, the gift
 //             shop, the kitchen and its walk-in, the luggage room, the restrooms, the manager's office, the staff
 //             lockers, the loading bay when 48 wide; the conference floor above (conference rooms, the business centre,
 //             the gym, a ballroom when 50 wide, the laundry, the maintenance shop); guest floors over it.
 //   resort    64–90 × 21–23, 2–4 storeys (a long block: #23's L and U wings are not on dev yet): guest wings either
-//             side of the core on the ground floor (the grand lobby, the restaurant, the bar, the gift shop), behind it
+//             side of the core on the ground floor (the grand lobby, the restaurant, the bar, the gift shop; the wings'
+//             housekeeping closet and ice nook at their ends), behind it
 //             the ballroom, the spa, the gym, the kitchen; the back of house upstairs; the pool deck (an empty pool),
 //             tennis courts and gardens in the grounds behind.
 //   tower     36–44 × 21–23, 8–10 storeys (buildingmaps.js MAX_STOREYS caps it: 8 until #24 raises it to 10): the grand
