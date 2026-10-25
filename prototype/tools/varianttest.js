@@ -31,6 +31,8 @@ export const PENDING_OWNER = {
   offices: "#27",
   deptstore: "#30",
   cellblock: "#31",
+  hq: "#25", aidstation: "#25", gatehouse: "#25", tower: "#25", flightops: "#25", // the new military buildings
+  milbunker: "#26", mountainbunker: "#26", govbunker: "#26", shelter: "#26", prepper: "#26", // the bunkers
 };
 const MIN = { motel: 5 }; // plans and layouts at least (else 3)
 

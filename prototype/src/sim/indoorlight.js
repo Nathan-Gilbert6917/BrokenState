@@ -28,6 +28,11 @@
 //   it is not needed). Quiet: no noise and no Heat, but a lit room is seen by anyone looking in. Rooms start dark at
 //   night and unlit by day. The state lives on the areas (a.on, a.dark, a.sw: plain values, saved with the battle);
 //   b.indoor marks a raid set up with them (a save from before has none: every cell keeps the old rules).
+// Bunkers (issue #26, bunkerlayout.js): every room of a bunker (an area with a bunker mark) is dark, by day too, and
+//   its switch works only while the bunker's power runs (b.raid.genOn). The generator room's genset (or a prepper's
+//   battery rack) is started from any of the 8 cells round it (act "genset", GEN.AP actions: combat.js): every room of
+//   the bunker lit at once; started again it is shut down and every room goes dark. A genset is loud (GEN.HEAT Heat and
+//   the dead within GEN.RADIUS come to look); the batteries are quiet. Saved with the battle (plain values).
 // Not changed: battles that are not raids (your own base's, a field fight), every outdoor cell (the battle's own day
 //   or night, flares and floodlights as before). No dice (no b.rng, no hash01 needed: the switch's place is the first
 //   free wall cell beside a door).
@@ -44,6 +49,7 @@ export const INDOOR = {
   DARK_ROLES: ["barnfloor", "hayloft", "tack", "storage", "pantry", "restroom", "gunroom", "dispensary", "pharmroom", "armory", "evidence"], // dark even by day
   DARK_TYPES: ["barn"], // a street map's buildings (no roles): by their area type
 };
+export const GEN = { AP: 1, HEAT: 4, RADIUS: 12, KINDS: ["genset", "batteries"] }; // a bunker's power (bunkerlayout.js POWER_PIECES)
 export const LIT = 1, DARK = 2; // lightAt: 0 outdoors (the battle's own rules)
 
 // A room of a building (not an outdoor area: wrecks, pumps, a campsite, the cars on the road).
@@ -61,7 +67,8 @@ export function indoorSetup(b) {
   const used = new Set();
   for (const a of b.raid.areas) {
     if (!isRoom(a)) continue;
-    a.dark = a.role ? INDOOR.DARK_ROLES.includes(a.role) : INDOOR.DARK_TYPES.includes(a.type);
+    a.dark = !!a.bunker || (a.role ? INDOOR.DARK_ROLES.includes(a.role) : INDOOR.DARK_TYPES.includes(a.type)); // a bunker's rooms: underground, dark by day
+    if (a.bunker) b.raid.bunker = 1;
     a.on = false;
     const powered = a.role ? !INDOOR.UNPOWERED.includes(a.role) : !INDOOR.DARK_TYPES.includes(a.type);
     const sw = powered ? switchSpot(b, a, used) : null;
@@ -195,8 +202,34 @@ export function lightsAct(b, u, act = {}) {
   const a = act.area != null ? opts.find((o) => o.id === Number(act.area)) : act.x != null ? opts.find((o) => o.sw[0] === Number(act.x) && o.sw[1] === Number(act.y)) : opts[0];
   if (!a) return { err: opts.length || !switchNear(b, u) ? "Stand next to a light switch (in the room or its doorway) to flip it." : "Reach the switch from inside the room (or its doorway)." };
   if (u.ap < INDOOR.AP) return { err: "Not enough actions." };
+  if (a.bunker && !b.raid.genOn) return { err: "No power: the bunker's lights need the generator running (start it in the generator room)." };
   a.on = !a.on;
   return { room: a };
+}
+
+// ---------- a bunker's generator (issue #26) ----------
+// The power pieces next to a unit (8 cells round it, on its floor): [{ x, y, k }].
+export function gensetOptions(b, u) {
+  if (!b || !b.raid || !b.raid.bunker || !u) return [];
+  const out = [];
+  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+    const x = u.x + dx, y = u.y + dy;
+    if (x < 0 || y < 0 || x >= b.w || y >= b.h) continue;
+    const c = b.cells[y * b.w + x];
+    if (c && GEN.KINDS.includes(c.k)) out.push({ x, y, k: c.k });
+  }
+  return out;
+}
+// Start (or shut down) the bunker's power: { on, loud, kind } or { err }; the caller spends the action, the Heat and
+// the noise (combat.js "genset").
+export function gensetAct(b, u) {
+  const opts = gensetOptions(b, u);
+  if (!opts.length) return { err: "Stand next to the generator (or the battery rack) to start it." };
+  if (u.ap < GEN.AP) return { err: "Not enough actions." };
+  const on = !b.raid.genOn;
+  b.raid.genOn = on ? 1 : 0;
+  for (const a of b.raid.areas) if (isRoom(a) && a.bunker) a.on = on;
+  return { on, loud: opts.some((o) => o.k === "genset"), kind: opts.find((o) => o.k === "genset") ? "genset" : "batteries" };
 }
 const switchNear = (b, u) => b.raid.areas.some((a) => isRoom(a) && a.sw && (a.f || 0) === (u.f || 0) && Math.max(Math.abs(a.sw[0] - u.x), Math.abs(a.sw[1] - u.y)) <= 1);
 // Words for the panel and the hover text: "on" / "off".

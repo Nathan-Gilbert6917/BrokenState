@@ -100,7 +100,7 @@ export function agedSource(source, years = LOOT_AGE) {
 
 // Where a source comes from. A site type (data.js LOCATIONS), anything not listed: "site".
 export const SITE_SOURCE = {
-  military: "military", airdrop: "military", convoy: "military",
+  military: "military", airdrop: "military", convoy: "military", airbase: "military",
   police: "police", prison: "police",
   gunstore: "shop", hardware: "shop", mall: "shop", pharmacy: "shop", supermarket: "shop", grocery: "shop", feedstore: "shop",
   town: "home", city: "home", apartments: "home", motel: "home", farm: "home", ranch: "home", cabin: "home",
