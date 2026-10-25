@@ -20,14 +20,15 @@
 //   stands (w: city, suburb, town), its look on the map (look: wall, trim, sign, text and accent colours, roof, style
 //   0–3: the painter's shape, ui/mapsprites.js) and its layout inside (plan: buildingmaps.js reads fl, the main
 //   room's floor; depth, the share of the building the front room takes; wide; flat, the chance of a flat above;
-//   storeys; room, the front room's name; back, the back's arrangement by kind). A place's franchise is its own dice
+//   storeys; room, the front room's name; back, the back's arrangement by kind; libs, a library's variants and their
+//   weights: librarylayout.js). A place's franchise is its own dice
 //   (shops.js franchiseFor): poi.v, place.v, a site's by its tile.
 // ROWS: the new kinds' rows in the find tables, by table (each module merges its own: loot.js SITE_FINDS …).
 
 import { OFFICE_KINDS, OFFICE_AREAS, OFFICE_W, OFFICE_FIRMS, OFFICE_ROWS } from "./data-offices.js"; // the office buildings of every kind, with their firms (issue #27)
 
 /** @typedef {{ wall: string, trim: string, sign: string, text: string, accent: string, roof?: string, style: number }} Look */
-/** @typedef {{ fl?: string, depth?: number, wide?: boolean, flat?: number, storeys?: [number, number], room?: string, back?: string, office?: string, media?: string, truck?: boolean, hotel?: string }} Plan */
+/** @typedef {{ fl?: string, depth?: number, wide?: boolean, flat?: number, storeys?: [number, number], room?: string, back?: string, office?: string, media?: string, truck?: boolean, hotel?: string, libs?: Record<string, number> }} Plan */
 /** @typedef {{ id: string, name: string, w: { city: number, suburb: number, town: number, scenic?: number }, look: Look, plan?: Plan, eat?: { cuisine: string, format: string, size: string, brew?: boolean, truck?: boolean } }} Franchise */
 
 import { VARIANTS } from "./data-eateries.js"; // the restaurant variants (issue #33): pure data too
@@ -176,6 +177,22 @@ export const AREA_DEFS = {
     loot: { food: [0.6, 2, 6], preserved: [0.4, 1, 3], wood: [0.5, 10, 30] }, gear: [["knife", 0.06], ["cleaver", 0.04]] } },
   liquor: { tags: ["shop", "crime", "travel", "kitchen", "home"], def: { name: "Liquor shelves", boxes: ["shelf", "shelf", "counter"],
     loot: { water: [0.6, 2, 6], food: [0.25, 1, 3] }, gear: [["bottle", 0.15], ["revolver", 0.02], ["pistol", 0.02], ["bat", 0.02]] } },
+  // A library's rooms by what they hold (issue #34, librarylayout.js): the reference and technical rooms (and a
+  // genealogy archive) manuals and skill books; the map room maps (no map item in the game: the survival books, "maps,
+  // tracks, reading the land", and a compass's worth of kit); the rare-books room valuables; the staff room snacks and
+  // first aid; the computer bank electronics. The stacks and the reading rooms are "books" (above), and every container
+  // in a library rolls skills.js's book as before.
+  libref: { tags: ["books", "office", "school", "tools"], def: { name: "Reference shelves", boxes: ["bookshelf", "cardcat"],
+    loot: { scrap: [0.25, 1, 2], parts: [0.05, 1, 1] },
+    gear: [["medbook", 0.01], ["enginebook", 0.01], ["diybook", 0.008], ["forgebook", 0.007], ["surgerybook", 0.004], ["gardenbook", 0.008], ["survivalbook", 0.007], ["cookbook", 0.007], ["lockbook", 0.003], ["gunbook", 0.003], ["scavbook", 0.005], ["leadbook", 0.005], ["talkbook", 0.005]] } },
+  libmaps: { tags: ["books", "travel", "outdoor"], def: { name: "Map cabinets", boxes: ["mapcase"],
+    loot: { scrap: [0.3, 1, 2] }, gear: [["survivalbook", 0.08], ["bushcraftbook", 0.04], ["binoculars", 0.02], ["telescope", 0.01]] } },
+  librare: { tags: ["books", "crime", "office"], def: { name: "Rare books", boxes: ["displaycase"],
+    loot: { scrap: [0.15, 1, 1] }, gear: [["stamps", 0.06], ["coins", 0.03], ["silverware", 0.02], ["cigars", 0.02], ["scotch", 0.015], ["tcards", 0.015], ["goldchain", 0.01], ["watch", 0.01], ["surgerybook", 0.015], ["armymanual", 0.007]] } },
+  libstaff: { tags: ["kitchen", "office", "medical"], def: { name: "Staff room", boxes: ["cabinet", "counter"],
+    loot: { food: [0.45, 1, 3], water: [0.35, 1, 2], meds: [0.2, 1, 1] }, gear: [["bandagekit", 0.03], ["candy", 0.06], ["coffee", 0.04], ["tea", 0.04]] } },
+  libtech: { tags: ["tech", "office", "school"], def: { name: "Computers", boxes: ["computer", "printer"],
+    loot: { electronics: [0.2, 1, 1], parts: [0.2, 1, 1], scrap: [0.3, 1, 2] }, gear: [["laptop", 0.01], ["phone", 0.01], ["camera", 0.005], ["handradio", 0.005]] } },
   ...OFFICE_AREAS,
 };
 
@@ -252,12 +269,32 @@ export const FRANCHISES = {
     { id: "boundfound", name: "Bound & Found", w: G(0.6, 1, 0.5), look: L("#d9c9a8", "#8a7a5a", "#c8402f", "#ffffff", "#3a6fb0", 2), plan: { fl: "wood", depth: 0.65 } },
     { id: "readwells", name: "Readwell's", w: G(1, 0.6, 0.2), look: L("#e8e4d8", "#5d6168", "#1f4f9a", "#ffffff", "#e8c04a", 3), plan: { fl: "carpet", depth: 0.7, wide: true } },
   ],
+  // Libraries (issue #34): each name lays its building out as one of librarylayout.js's variants (plan.libs: their
+  // weights; the five first names' ids as before, so a saved place keeps its name): a Carnegie Library is always a
+  // Carnegie, a Branch Library a modern branch or a strip-mall library, the Central Library the city's main one (only
+  // downtown, and rare there: about 1 in 15 of the downtown libraries), the reading rooms and house libraries in the towns'
+  // villages, the Athenaeum and Harmon Hall the rare historic ones; a children's library in the suburbs, a historical
+  // society in the towns, the county law library and the college library rare downtown (the courthouse's and the
+  // campus's own come from #27 and #28 through libraryPlan).
   library: [
-    { id: "central", name: "Central Library", w: G(1, 0.3, 0), look: L("#c9c2b0", "#7d786c", "#5d6168", "#ffffff", "#8a8780", 1), plan: { storeys: [2, 3], wide: true } },
-    { id: "carnegie", name: "Carnegie Library", w: G(0.5, 0.4, 1), look: L("#8e4f3c", "#d9d0b8", "#3c3a36", "#e8e4d8", "#d9d0b8", 0), plan: { storeys: [1, 2] } },
-    { id: "branch", name: "Branch Library", w: G(0.6, 1, 0.5), look: L("#b9a98a", "#5d6168", "#3a6fb0", "#ffffff", "#9cc46e", 2), plan: { storeys: [1, 1] } },
-    { id: "county", name: "County Library", w: G(0.2, 0.7, 1), look: L("#a7adb3", "#5d6168", "#2d4a3c", "#e8e4d8", "#c9873c", 3), plan: { storeys: [1, 2] } },
-    { id: "memorial", name: "Memorial Library", w: G(0.8, 0.6, 0.8), look: L("#d9d4c8", "#8a8780", "#5b3a7a", "#ffffff", "#d9a520", 0), plan: { storeys: [1, 2] } },
+    { id: "central", name: "Central Library", w: G(0.25, 0, 0), look: L("#c9c2b0", "#7d786c", "#5d6168", "#ffffff", "#8a8780", 1), plan: { storeys: [2, 3], wide: true, libs: { central: 1 } } },
+    { id: "carnegie", name: "Carnegie Library", w: G(0.5, 0.4, 1), look: L("#8e4f3c", "#d9d0b8", "#3c3a36", "#e8e4d8", "#d9d0b8", 0), plan: { storeys: [1, 2], libs: { carnegie: 1 } } },
+    { id: "branch", name: "Branch Library", w: G(0.6, 1, 0.5), look: L("#b9a98a", "#5d6168", "#3a6fb0", "#ffffff", "#9cc46e", 2), plan: { storeys: [1, 1], libs: { modern: 0.7, strip: 0.3 } } },
+    { id: "county", name: "County Library", w: G(0.2, 0.7, 1), look: L("#a7adb3", "#5d6168", "#2d4a3c", "#e8e4d8", "#c9873c", 3), plan: { storeys: [1, 2], libs: { county: 0.85, bookmobile: 0.15 } } },
+    { id: "memorial", name: "Memorial Library", w: G(0.8, 0.6, 0.8), look: L("#d9d4c8", "#8a8780", "#5b3a7a", "#ffffff", "#d9a520", 0), plan: { storeys: [1, 2], libs: { carnegie: 0.45, county: 0.25, historic: 0.15, archive: 0.15 } } },
+    { id: "calderfree", name: "Calder Free Public Library", w: G(0.6, 0.4, 0.6), look: L("#9a5a44", "#e2d8c0", "#2d4a3c", "#f0e6c8", "#d9d0b8", 0), plan: { libs: { carnegie: 0.6, county: 0.4 } } },
+    { id: "pinecrest", name: "Pinecrest Reading Room", w: G(0, 0.1, 1), look: L("#8b6a48", "#4a3424", "#3f6b3a", "#f0e6c8", "#c9873c", 0), plan: { libs: { rural: 1 } } },
+    { id: "millbrook", name: "Millbrook Village Library", w: G(0, 0, 0.8), look: L("#c9b28a", "#6b5434", "#7a3b32", "#ffffff", "#e8e4d8", 2), plan: { libs: { rural: 0.6, house: 0.4 } } },
+    { id: "elmstreet", name: "Elm Street House Library", w: G(0, 0.4, 0.6), look: L("#e2ddcc", "#6b5434", "#3f6b3a", "#ffffff", "#c9873c", 0), plan: { libs: { house: 1 } } },
+    { id: "juniper", name: "Juniper Children's Library", w: G(0.3, 0.5, 0.3), look: L("#e8c04a", "#a8842a", "#3a6fb0", "#ffffff", "#e2412f", 3), plan: { libs: { children: 1 } } },
+    { id: "countylaw", name: "Calder County Law Library", w: G(0.12, 0, 0.05), look: L("#c9c2b0", "#5d6168", "#2a2a2e", "#e8d8a8", "#8a6a3a", 1), plan: { libs: { law: 1 } } },
+    { id: "college", name: "Calder College Library", w: G(0.06, 0.03, 0), look: L("#9a5a44", "#e2d8c0", "#5b2a2a", "#f0e6c8", "#d9a520", 1), plan: { libs: { university: 1 } } },
+    { id: "historical", name: "Harlan County Historical Society", w: G(0.1, 0.2, 0.5), look: L("#d9d0b8", "#6b5434", "#4a2a20", "#f0d070", "#7a5a3a", 0), plan: { libs: { archive: 1 } } },
+    { id: "lakeside", name: "Lakeside Branch Library", w: G(0.3, 1, 0.3), look: L("#d9e0e4", "#5d6168", "#2a7090", "#ffffff", "#9cc46e", 3), plan: { libs: { modern: 1 } } },
+    { id: "westgate", name: "Westgate Library Express", w: G(0.3, 0.8, 0.2), look: L("#e8e4d8", "#3c3a36", "#c8402f", "#ffffff", "#3a6fb0", 3), plan: { libs: { strip: 1 } } },
+    { id: "bookmobile", name: "County Bookmobile Depot", w: G(0, 0.3, 0.6), look: L("#a7adb3", "#4d4741", "#2d5a8a", "#ffffff", "#e8c04a", 2), plan: { libs: { bookmobile: 1 } } },
+    { id: "athenaeum", name: "The Athenaeum", w: G(0.15, 0.05, 0.05), look: L("#d0c4a8", "#6b5434", "#3c3a36", "#e8d8a8", "#8a6a3a", 1), plan: { libs: { historic: 1 } } },
+    { id: "harmonhall", name: "Harmon Hall Library", w: G(0.1, 0.1, 0.1), look: L("#7a5240", "#d9d0b8", "#4a2a20", "#f0d070", "#d9d0b8", 0), plan: { libs: { historic: 1 } } },
   ],
   petstore: [
     { id: "pawsclaws", name: "Paws & Claws", w: G(1, 1, 0.5), look: L("#e8c04a", "#a8842a", "#3a6fb0", "#ffffff", "#e2412f", 3), plan: { fl: "tile", depth: 0.68, wide: true } },

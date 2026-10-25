@@ -62,7 +62,7 @@ const UNIT_H = 30;              // a standing unit in art px
 // Cars and trucks stand about head high on a survivor (the user's ask): their roofs at VEH_TOP art px. The bodies are
 // drawn in their old proportions (roof at VEH_ROOF of the kind) and stretched up by VEH_TOP / roof, wheels from the ground.
 const VEH_TOP = 28;
-const VEH_ROOF = { m35: 20, humvee: 19, mrap: 21, truck: 17, car: 15, one: 16, oneTruck: 23, engine: 16.5, ambulance: 16, police: 15.5 };
+const VEH_ROOF = { m35: 20, humvee: 19, mrap: 21, truck: 17, car: 15, one: 16, oneTruck: 23, engine: 16.5, ambulance: 16, police: 15.5, bookmobile: 15 };
 const vehZ = (roof) => VEH_TOP / roof;
 export const ISO_ZOOMS = [0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4, 5]; // CSS px per art px
 
@@ -473,8 +473,10 @@ const CIV_TOPS = {
     [1.7, L - 0.2, 0.6, 0.72, 15, 16.5, "#b8bec4"], [1.7, L - 0.2, 1.28, 1.4, 15, 16.5, "#b8bec4"]],
   ambulance: (L) => [[0.1, 1.3, 0.15, 1.85, 3, 11, "body"], [0.2, 0.5, 0.3, 1.7, 8, 11, "#2a3a44"], [1.35, L - 0.1, 0.1, 1.9, 3, 16, "body"], [1.35, L - 0.1, 0.06, 0.1, 8, 10, "#b02a20"], [1.35, L - 0.1, 1.9, 1.94, 8, 10, "#b02a20"], [0.5, 1.1, 0.6, 1.4, 11, 12.5, "#d04030"]],
   police: (L) => [[0.1, L - 0.1, 0.15, 1.85, 3, 9, "body"], [0.1, L - 0.1, 0.12, 0.16, 5, 8, "#e8e8e0"], [0.1, L - 0.1, 1.84, 1.88, 5, 8, "#e8e8e0"], [0.9, L - 1.1, 0.3, 1.7, 9, 14, "#2a3a44"], [1.3, 1.9, 0.4, 1.0, 14, 15.5, "#d04030"], [1.3, 1.9, 1.0, 1.6, 14, 15.5, "#3050c0"]],
+  // A bookmobile (sim/librarylayout.js, issue #34): a blue van, a gold band of books painted down its flanks.
+  bookmobile: (L) => [[0.1, L - 0.1, 0.15, 1.85, 3, 15, "body"], [0.2, 0.6, 0.3, 1.7, 9, 13, "#2a3a44"], [1.0, L - 0.3, 0.1, 0.15, 7, 10, "#e8c04a"], [1.0, L - 0.3, 1.85, 1.9, 7, 10, "#e8c04a"]],
 };
-const CIV_PAINT = { engine: "#a8241c", ambulance: "#dcdad2", police: "#22252a" };
+const CIV_PAINT = { engine: "#a8241c", ambulance: "#dcdad2", police: "#22252a", bookmobile: "#2d5a8a" };
 // The aircraft (sim/militarylayout.js, issue #25: car.wide cells across, W): a fuselage down the middle, the wings across
 // it, the tail; as CIV_TOPS, [a0, a1, c0, c1, z0, z1, colour].
 const AIR_TOPS = {
@@ -1274,6 +1276,86 @@ const FURN_DRAW = {
     return [run(ax, 0.24, 0.76, 0, 16, m, 0.06, 0.94)];
   } },
   genset: { top: 16, p: () => [fbox(0.04, 0.96, 0.04, 0.96, 0, 2, flatM(PAL.metalDk)), fbox(0.1, 0.9, 0.1, 0.9, 2, 16, (f, s, t, X, Y) => (f === "top" ? mul(hex("#4a5a30"), 1.15) : t > 10 && t < 12 ? FURNC.black : n2(X, Y, 97) > 0.95 ? FURNC.amber : hex("#4a5a30")))] },
+  // ---------- libraries (issue #34, sim/librarylayout.js) ----------
+  // Tall double-sided stacks of books on a steel frame (spines both faces); low modern shelving, waist-high and pale;
+  // compact mobile shelving's grey carriages on their floor rails, a wheel on the end; the card catalogue's little
+  // brass-handled drawers; a map cabinet's wide flat drawers; a book cart of spines on two shelves; the book return's
+  // slot; a computer desk with its monitor; a printer; a microfilm reader's hood and screen; a self-check kiosk; the
+  // long reading table with its green banker's lamps; a study carrel's screened desk; a globe on its stand; a lectern; a
+  // cast-iron wood stove and its pipe; a fireplace's mantel and hearth; a row of auditorium seats; a gallery's railing;
+  // and the well of a gallery, the hall's floor seen far below (the beanbag and the lift doors: #27's, below).
+  bookstack: { top: 28, p: (o) => {
+    const ax = along(o), books = (f, s, t, X) => (f === "top" ? FURNC.steel : Math.floor(t) % 7 < 1 || t > 27 ? FURNC.steel : n2(Math.floor(X), Math.floor(t / 7), 134) > 0.12 ? mul(fgoods(Math.floor(X), Math.floor(t / 7), 135), 1.05) : mul(FURNC.steel, 0.5));
+    return [run(ax, 0.16, 0.84, 0, 28, books, 0.02, 0.98)];
+  } },
+  lowshelf: { top: 12, p: (o) => {
+    const ax = along(o), books = (f, s, t, X) => (f === "top" ? mul(PAL.woodLt, 1.25) : Math.floor(t) % 6 < 1 ? mul(PAL.woodLt, 1.15) : n2(Math.floor(X), Math.floor(t / 6), 136) > 0.2 ? mul(fgoods(Math.floor(X), Math.floor(t / 6), 137), 1.2) : mul(PAL.woodLt, 0.7));
+    return [run(ax, 0.18, 0.82, 0, 12, books, 0.04, 0.96)];
+  } },
+  mobileshelf: { top: 26, p: (o) => {
+    const ax = along(o), face = (f, s, t, X) => (f === "top" ? mul(FURNC.white, 0.95) : Math.floor(X) % 8 < 1 ? mul(FURNC.white, 0.7) : t > 10 && t < 14 && Math.floor(X) % 8 === 4 ? FURNC.chrome : mul(FURNC.white, 0.88));
+    return [run(ax, 0.48, 0.52, 0, 1, flatM(FURNC.steel), 0, 1), run(ax, 0.1, 0.9, 1, 26, face, 0.02, 0.98)];
+  } },
+  cardcat: { top: 14, p: (o) => {
+    const ax = along(o), drawers = (f, s, t, X) => (f === "top" ? mul(PAL.woodLt, 1.1) : Math.floor(t) % 3 < 1 || Math.floor(X) % 3 < 1 ? PAL.woodDk : Math.floor(X) % 3 === 2 && Math.floor(t) % 3 === 2 ? FURNC.gold : PAL.wood);
+    return [...flegs(0.3, 0.66, 0.12, 0.84, 3, flatM(PAL.woodDk)), run(ax, 0.26, 0.74, 3, 14, drawers, 0.1, 0.9)];
+  } },
+  mapcase: { top: 11, p: (o) => {
+    const ax = along(o);
+    return [run(ax, 0.16, 0.84, 0, 10, fdrawers(hex("#7d8a7a"), 2.5, FURNC.chrome), 0.02, 0.98), run(ax, 0.14, 0.86, 10, 11, flatM(FURNC.cream), 0.02, 0.98)];
+  } },
+  booktruck: { top: 12, p: (o) => {
+    const ax = along(o), books = (f, s, t, X) => (f === "top" ? FURNC.steel : n2(Math.floor(X), 1, 138) > 0.15 ? fgoods(Math.floor(X), 2, 139) : FURNC.steel);
+    return [...flegs(0.28, 0.66, 0.2, 0.76, 2, flatM(FURNC.black), 0.06), run(ax, 0.3, 0.7, 2, 3, flatM(FURNC.steel), 0.2, 0.8), run(ax, 0.32, 0.68, 3, 7, books, 0.22, 0.78), run(ax, 0.3, 0.7, 7, 8, flatM(FURNC.steel), 0.2, 0.8), run(ax, 0.32, 0.68, 8, 12, books, 0.22, 0.78)];
+  } },
+  bookreturn: { top: 16, p: (o) => {
+    const ax = along(o), face = (f, s, t, X, Y, sw) => (f === "top" ? mul(hex("#2d5a8a"), 1.15) : t > 11 && t < 13 && s > 2 && s < (sw || 10) - 2 ? FURNC.black : t > 14 ? FURNC.chrome : hex("#2d5a8a"));
+    return [run(ax, 0.24, 0.76, 0, 16, face, 0.2, 0.8)];
+  } },
+  computer: { top: 16, p: (o) => {
+    const ax = along(o), scr = (f, s, t, X, Y, sw) => (f === "top" ? FURNC.black : s < 0.8 || s > (sw || 8) - 0.8 || t < 9.8 || t > 15.2 ? FURNC.black : mul(FURNC.screen, 1.1 + n2(X, Y, 140) * 0.2));
+    return [...flegs(0.22, 0.74, 0.1, 0.86, 8, flatM(FURNC.steel)), run(ax, 0.2, 0.8, 8, 9, flatM(FURNC.beige), 0.06, 0.94), run(ax, 0.3, 0.38, 9, 16, scr, 0.24, 0.76), run(ax, 0.5, 0.64, 9, 10, flatM(FURNC.beige), 0.3, 0.7)];
+  } },
+  printer: { top: 11, p: (o) => {
+    const ax = along(o);
+    return [run(ax, 0.26, 0.74, 0, 6, fwood(PAL.woodDk), 0.18, 0.82), run(ax, 0.28, 0.72, 6, 10, fdrawers(FURNC.beige, 2, FURNC.black), 0.22, 0.78), run(ax, 0.34, 0.66, 10, 11, flatM(FURNC.cloth), 0.3, 0.7)];
+  } },
+  microfilm: { top: 18, p: (o) => {
+    const ax = along(o), hood = (f, s, t, X, Y, sw) => (f === "top" ? mul(FURNC.beige, 1.1) : t > 11 && t < 17 && s > 1 && s < (sw || 10) - 1 ? mul(FURNC.screen, 1.5) : FURNC.beige);
+    return [...flegs(0.24, 0.72, 0.14, 0.82, 8, flatM(FURNC.steel)), run(ax, 0.2, 0.8, 8, 9, flatM(PAL.woodLt), 0.08, 0.92), run(ax, 0.3, 0.6, 9, 18, hood, 0.2, 0.8)];
+  } },
+  selfcheck: { top: 18, p: (o) => {
+    const ax = along(o), scr = (f, s, t, X, Y, sw) => (f === "top" ? FURNC.black : t > 12 && s > 1 && s < (sw || 8) - 1 ? mul(FURNC.led, 0.7) : FURNC.black);
+    return [run(ax, 0.3, 0.7, 0, 11, (f) => (f === "top" ? mul(FURNC.steel, 1.1) : FURNC.steel), 0.28, 0.72), run(ax, 0.36, 0.5, 11, 18, scr, 0.3, 0.7)];
+  } },
+  readtable: { top: 15, p: (o) => {
+    const ax = along(o), top = fwood(PAL.woodDk, 141), shade = (f) => (f === "top" ? mul(hex("#2f6a3a"), 1.25) : hex("#2f6a3a"));
+    return [run(ax, 0.2, 0.26, 0, 9, flatM(PAL.woodDk), 0.06, 0.12), run(ax, 0.74, 0.8, 0, 9, flatM(PAL.woodDk), 0.06, 0.12), run(ax, 0.2, 0.26, 0, 9, flatM(PAL.woodDk), 0.88, 0.94), run(ax, 0.74, 0.8, 0, 9, flatM(PAL.woodDk), 0.88, 0.94),
+      run(ax, 0.14, 0.86, 9, 11, top, 0.02, 0.98), fcyl(ax, 0.5, 0.25, 0.03, 11, 13, flatM(FURNC.gold)), run(ax, 0.42, 0.58, 13, 15, shade, 0.16, 0.34), fcyl(ax, 0.5, 0.75, 0.03, 11, 13, flatM(FURNC.gold)), run(ax, 0.42, 0.58, 13, 15, shade, 0.66, 0.84)];
+  } },
+  carrel: { top: 18, p: (o) => {
+    const ax = along(o), screen = (f) => (f === "top" ? mul(FURNC.fabric, 1.2) : FURNC.fabric);
+    return [run(ax, 0.2, 0.8, 0, 9, fwood(PAL.woodLt), 0.08, 0.92), run(ax, 0.18, 0.24, 9, 18, screen, 0.04, 0.96), run(ax, 0.24, 0.8, 9, 16, screen, 0.04, 0.1), run(ax, 0.24, 0.8, 9, 16, screen, 0.9, 0.96)];
+  } },
+  globe: { top: 16, p: () => [{ cyl: [0.5, 0.5, 0.14], z0: 0, z1: 1, m: flatM(PAL.woodDk) }, { cyl: [0.5, 0.5, 0.03], z0: 1, z1: 7, m: flatM(FURNC.gold) }, { cyl: [0.5, 0.5, 0.24], z0: 7, z1: 15, m: (f, s, t, X, Y) => (n2(Math.floor(X / 2), Math.floor(Y / 2), 142) > 0.55 ? hex("#8aa070") : hex("#3a6f9a")) }, { cyl: [0.5, 0.5, 0.05], z0: 15, z1: 16, m: flatM(FURNC.gold) }] },
+  lectern: { top: 18, p: (o) => {
+    const ax = along(o);
+    return [run(ax, 0.4, 0.6, 0, 1, flatM(PAL.woodDk), 0.3, 0.7), run(ax, 0.45, 0.55, 1, 15, fwood(PAL.wood), 0.44, 0.56), run(ax, 0.3, 0.7, 15, 18, (f) => (f === "top" ? mul(PAL.woodLt, 1.15) : PAL.wood), 0.26, 0.74)];
+  } },
+  woodstove: { top: 30, p: () => [fbox(0.24, 0.76, 0.24, 0.76, 0, 2, flatM(FURNC.black)), fbox(0.26, 0.74, 0.26, 0.74, 2, 12, (f, s, t) => (f === "top" ? mul(FURNC.black, 1.4) : t > 3 && t < 9 && s > 2 && s < 6 ? (n2(s, t, 143) > 0.5 ? FURNC.amber : FURNC.red) : mul(FURNC.black, 1.2))), { cyl: [0.5, 0.36, 0.06], z0: 12, z1: 30, m: flatM(mul(FURNC.black, 1.3)) }] },
+  fireplace: { top: 22, p: (o) => {
+    const ax = along(o), face = (f, s, t, X, Y, sw) => (f === "top" ? PAL.stone : t < 12 && s > (sw || 16) * 0.25 && s < (sw || 16) * 0.75 ? (t < 3 ? mul(FURNC.amber, 0.6) : FURNC.ring) : mul(PAL.stone, 0.95 + n2(Math.floor(X / 2), Math.floor(t / 2), 144) * 0.1));
+    return [run(ax, 0.6, 0.98, 0, 18, face, 0.02, 0.98), run(ax, 0.5, 0.98, 18, 20, fwood(PAL.woodDk), 0, 1), run(ax, 0.62, 0.98, 20, 22, flatM(PAL.stone), 0.12, 0.88), run(ax, 0.2, 0.6, 0, 1, flatM(PAL.stone), 0.12, 0.88)];
+  } },
+  audseat: { top: 12, p: (o) => {
+    const ax = along(o), red = (f) => (f === "top" ? mul(FURNC.red, 1.15) : FURNC.red);
+    return [run(ax, 0.3, 0.7, 0, 4, flatM(FURNC.black), 0.12, 0.2), run(ax, 0.3, 0.7, 0, 4, flatM(FURNC.black), 0.8, 0.88), run(ax, 0.3, 0.74, 4, 6, red, 0.04, 0.96), run(ax, 0.62, 0.74, 6, 12, red, 0.04, 0.96)];
+  } },
+  railing: { top: 10, p: (o) => {
+    const ax = along(o), bal = (f, s, t, X) => (f === "top" || t > 8 ? mul(PAL.wood, 1.15) : Math.floor(X) % 3 < 1 ? PAL.woodDk : mul(PAL.woodDk, 0.7));
+    return [run(ax, 0.42, 0.58, 0, 1, flatM(PAL.woodDk), 0, 1), run(ax, 0.45, 0.55, 1, 10, bal, 0, 1)];
+  } },
+  galleryvoid: { top: 1, p: () => [fbox(0, 1, 0, 1, 0, 0.5, (f, s, t, X, Y) => mul(PAL.woodDk, 0.28 + n2(Math.floor(X / 4), Math.floor(Y / 4), 146) * 0.06))] },
   // ---------- warehouses, factories and labs (issue #37, sim/industrylayout.js) ----------
   // A fume hood: a steel cabinet below, the glass sash above the work surface, its duct up to the ceiling; a conveyor's
   // belt on its frame with the rollers' lines; a process tank's white steel cylinder banded and capped; a kiln's

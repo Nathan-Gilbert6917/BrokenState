@@ -63,6 +63,7 @@ console.log(`Generation: every type (${Object.keys(BUILDINGS).length}), ${SEEDS}
   const FOOT = { // footprint area (cells) by class, and the biggest width a tower has
     small: (a) => a <= 190, medium: (a) => a >= 90 && a <= 360, large: (a) => a >= 290, wide: (a, bw) => a >= 280 && bw >= 20, tower: (a, bw) => a <= 330 && bw <= 22,
     huge: (a, bw) => a >= 1800 && bw >= 50, // the supermarket (issue #22): past the largest size class, its map its footprint and margins
+    xl: (a, bw) => a >= 700 && bw >= 30, // a county library at real-world scale (librarylayout.js, issue #34): past the large maps, its map its footprint and margins as a huge one's
   };
   let bad = 0, multi = 0, floorsSeen = 0;
   const towers = [];
@@ -87,7 +88,7 @@ console.log(`Generation: every type (${Object.keys(BUILDINGS).length}), ${SEEDS}
       const W = m.w, H = m.h;
       // The map fits the footprint and its margins, and is one of the size classes.
       const cap = mapCap(key); // a hotel's map up to 200 × 200 with its grounds (issue #29)
-      const [maxW, maxH] = MIL_KEYS.has(key) ? [300, 300] : cap ? [cap, cap] : spec.foot === "huge" ? [spec.bw + 12, spec.bh + 16] : [48, 36]; // a huge footprint: the map no bigger than it needs; issue #25: the military buildings at their real size (the maps up to 300 × 300, #24)
+      const [maxW, maxH] = MIL_KEYS.has(key) ? [300, 300] : cap ? [cap, cap] : spec.foot === "huge" || spec.foot === "xl" ? [spec.bw + 12, spec.bh + 16] : [48, 36]; // a huge footprint: the map no bigger than it needs; issue #25: the military buildings at their real size (the maps up to 300 × 300, #24)
       if (W < spec.bw + 8 || H < spec.bh + 9 || W > maxW || H > maxH) errs.push(`map ${W}x${H} for a ${spec.bw}x${spec.bh} footprint`);
       const cls = sizeClass(W, H);
       if (spec.foot === "tower" && !["S", "M"].includes(cls)) errs.push(`a tower on a ${cls} map`);
