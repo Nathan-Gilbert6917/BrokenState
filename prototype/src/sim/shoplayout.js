@@ -45,6 +45,7 @@
 // Density: every style tops its room up to the containers it held before (c.target, × SHOP.BOXES[style] where the old
 // furnishing held more), so a shop holds what it did within ±10% (tools/shopstest.js, 200 seeds a kind).
 import { hash01 } from "./skills.js";
+import { registerScene, SCENES } from "./interiorscenes.js"; // the commercial buildings' signs of survival (issue #11's hook)
 
 export const SHOP = {
   EVERY: 4,           // aisles: a shelf to search every this many cells of shelving (and one at each end)
@@ -635,3 +636,95 @@ export function commercialStyle(room, key) {
   const n = styleName(room, key);
   return n ? COMMERCIAL_STYLES[n] || null : null;
 }
+
+// ======================================================================================
+// The commercial buildings' signs of survival (interiorscenes.js registerScene, issue #11's hook; their own dice there),
+// only on a map laid out by these styles (when: an area carries its style as `shop`, so an older save's building rolls
+// its scenes as it did):
+//   motelhold    a motel room held from inside: the chest of drawers shoved against its door, the one who held it on the
+//                bed or by it (a quiet death now and then);
+//   stockshelter a stockroom (a supermarket's, a grocery's, a department store's, a hardware store's, a warehouse's) used
+//                as a shelter: cots in rows, a water barrel, the ones who never left, the last tins;
+//   counterstand a last stand behind a shop's counter (a gun store's, a pawn shop's, a liquor store's, a corner store's,
+//                a gas station's): the owner's body behind it, spent brass, the dead in front of it;
+//   walkin       a restaurant's walk-in cold room as a hiding place: someone shut in behind its steel door, never let out.
+// ======================================================================================
+const NEXT4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+const shopRooms = (ctx, styles) => ctx.rng.shuffle(ctx.rooms.filter((r) => styles.includes(r.shop) && !r.scene && !r.locked));
+const nearest = (cells, x, y) => cells.slice().sort((p, q) => Math.hypot(p[0] - x, p[1] - y) - Math.hypot(q[0] - x, q[1] - y));
+const lower = (r) => String(r.name || "room").replace(/ \(upstairs\)$/, "").replace(/ \d+$/, "").toLowerCase();
+const inside = (r, d) => NEXT4.map(([ox, oy]) => [d[0] + ox, d[1] + oy]).find(([x, y]) => x > r.x0 && x < r.x0 + r.w - 1 && y > r.y0 && y < r.y0 + r.h - 1);
+const styled = (ctx) => ctx.rooms.some((r) => !!r.shop);
+
+function motelHold(ctx) {
+  const { rng } = ctx;
+  for (const r of shopRooms(ctx, ["motelroom"])) {
+    const f = r.f || 0;
+    const d = (r.doors || []).find((q) => ctx.exit(q[0], q[1], f)) || (r.doors || [])[0];
+    const p = d && inside(r, d), c = p && ctx.at(f, p[0], p[1]);
+    if (!c || c.k !== "open" || ctx.stair(p[0], p[1]) || ctx.used(f, p[0], p[1])) continue;
+    ctx.piece(f, p[0], p[1], "dresser");
+    const bed = ctx.inner(r).find(([x, y]) => (ctx.at(f, x, y) || {}).k === "bed");
+    const spot = nearest(ctx.freeIn(r), ...(bed || p))[0];
+    if (spot) { const quiet = rng.chance(0.4); ctx.body(f, spot[0], spot[1], { human: true, quiet }); if (!quiet) ctx.splatter(f, spot[0], spot[1], "human", rng.int(1, 2)); }
+    return ctx.done("motelhold", r, p[0], p[1], `The chest of drawers is shoved against the door of ${lower(r) === "room" ? "this motel room" : `the ${lower(r)}`}: someone held it from inside.`);
+  }
+  return null;
+}
+function stockShelter(ctx) {
+  const { rng } = ctx;
+  for (const r of shopRooms(ctx, ["pallets", "stock"])) {
+    const f = r.f || 0;
+    const free = ctx.freeIn(r).filter(([x, y]) => (x + y) % 2 === 0);
+    if (free.length < 4) continue;
+    const cots = rng.shuffle(free).slice(0, rng.int(3, 6));
+    for (const [x, y] of cots) ctx.piece(f, x, y, "cot");
+    const left = ctx.freeIn(r);
+    if (!left.length) continue;
+    const [bx, by] = rng.pick(left);
+    ctx.piece(f, bx, by, "barrel");
+    const by2 = nearest(ctx.freeIn(r).filter(([x, y]) => cots.some(([cx, cy]) => Math.abs(cx - x) + Math.abs(cy - y) === 1)), bx, by);
+    const n = Math.min(by2.length, rng.int(1, 3));
+    for (const [x, y] of rng.shuffle(by2).slice(0, n)) ctx.body(f, x, y, { human: true, quiet: rng.chance(0.6) });
+    const q = ctx.freeIn(r).find(([x, y]) => Math.abs(x - bx) + Math.abs(y - by) <= 2);
+    if (q) ctx.pile(f, q[0], q[1], "The last of the tins and a jug of water", { food: rng.int(1, 2), water: 1 }, r.id);
+    return ctx.done("stockshelter", r, bx, by, `The ${lower(r)} was a shelter: cots between the shelves, a water barrel${n ? `, and ${n === 1 ? "one who never left" : `${n} who never left`}` : ""}.`);
+  }
+  return null;
+}
+function counterStand(ctx) {
+  const { rng } = ctx;
+  for (const r of shopRooms(ctx, ["guncounter", "pawncounter", "minimart"])) {
+    const f = r.f || 0, free = ctx.freeIn(r);
+    if (free.length < 5) continue;
+    const counter = ctx.inner(r).find(([x, y]) => ["displaycase", "checkout"].includes((ctx.at(f, x, y) || {}).k));
+    if (!counter) continue;
+    const near = nearest(free, counter[0], counter[1]);
+    const [ox, oy] = near.shift();
+    ctx.body(f, ox, oy, { human: true, name: "The shopkeeper" });
+    ctx.splatter(f, ox, oy, "human", rng.int(2, 3));
+    for (const [x, y] of near.slice(0, 2)) { const c = ctx.at(f, x, y); c.brass = rng.int(SCENES.BRASS[0], SCENES.BRASS[1]); }
+    const door = (r.doors || []).find((d) => ctx.exit(d[0], d[1], f)) || (r.doors || [])[0];
+    const far = door ? nearest(near.slice(2), door[0], door[1]) : near.slice(2).reverse();
+    const dead = rng.int(2, 3);
+    let placed = 0;
+    for (const [x, y] of far) { if (placed >= dead) break; if (!ctx.free(f, x, y)) continue; ctx.body(f, x, y, {}); ctx.splatter(f, x, y, "zombie", rng.int(1, 2)); placed++; }
+    return ctx.done("counterstand", r, ox, oy, `The shopkeeper made a stand behind the counter: spent brass, ${placed} of the dead in front of it.`);
+  }
+  return null;
+}
+function walkIn(ctx) {
+  const { rng } = ctx;
+  for (const r of shopRooms(ctx, ["walkin"])) {
+    const f = r.f || 0, free = ctx.freeIn(r);
+    if (!free.length) continue;
+    const [x, y] = rng.pick(free);
+    ctx.body(f, x, y, { human: true, quiet: true });
+    return ctx.done("walkin", r, x, y, "Someone shut themselves in the walk-in cold room and was never let out.");
+  }
+  return null;
+}
+registerScene("motelhold", { w: 4, place: motelHold, kinds: ["motel"], when: styled });
+registerScene("stockshelter", { w: 3, place: stockShelter, kinds: ["supermarket", "grocery", "deptstore", "hardware", "warehouse"], when: styled });
+registerScene("counterstand", { w: 3, place: counterStand, kinds: ["gunstore", "pawnshop", "liquor", "corner", "gasstation"], when: styled });
+registerScene("walkin", { w: 2, place: walkIn, kinds: ["restaurant", "diner", "pizza"], when: styled });

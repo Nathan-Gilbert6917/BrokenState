@@ -22,7 +22,8 @@
 //   restaurant a kitchen with a range and a walk-in cold room behind a steel door (a pizza place a pizza oven); every
 //   motel room a bed and a bathroom; the bank's vault locked, its ATM; the office tower's desks, meeting rooms, server
 //   racks; every container on its piece and reachable, every room's floor one walk; the same building the same layout;
-//   loot per kind within ±10% of the old layout over 200 seeds; an older save's buildings furnished the old way
+//   loot per kind within ±10% of the old layout over 200 seeds; an older save's buildings furnished the old way; their
+//   signs of survival (a motel room held, a stockroom shelter, a counter stand, a walk-in) on the new layouts only
 // Usage: node tools/shopstest.js [seed]
 import { createWorld, hub, atBase } from "../src/sim/world.js";
 import { LOCATIONS, GEAR } from "../src/sim/data.js";
@@ -33,6 +34,7 @@ import { COMMERCIAL_KEYS, styleName } from "../src/sim/shoplayout.js";
 import { pieceDef } from "../src/sim/data-furniture.js";
 import { boxLoot, CELL } from "../src/sim/combat.js";
 import { supValue } from "../src/sim/data.js";
+import { rollScenes } from "../src/sim/interiorscenes.js";
 import { SIZES } from "../src/sim/battlesize.js";
 import { SITE_KIT, AREA_KIT } from "../src/sim/carrykit.js";
 import { SURV_FINDS, AREA_SURV } from "../src/sim/data-survival.js";
@@ -461,6 +463,15 @@ section("Laid out for their kind (shoplayout.js, issue #16)");
   let newer = 0;
   for (const key of KEYS) for (let s = 0; s < 3; s++) { const m = make(key, s, true, true); for (const F of m.floors || [{ cells: m.cells }]) for (const c of F.cells) if (NEWK.has(c.k)) newer++; if (m.rooms.some((a) => /Walk-in cold|ATM lobby|Safe-deposit|Pharmacy counter|Greenhouse/.test(a.name) && !/^Walk-in$/.test(a.name))) newer++; }
   check(!newer, `an older save's shops are furnished and planned the old way (${newer} new pieces or rooms)`);
+  // Their signs of survival (interiorscenes.js registerScene): a motel room held, a stockroom shelter, a counter stand,
+  // a walk-in hiding place; only on a map laid out by these styles.
+  const SC = { motel: "motelhold", supermarket: "stockshelter", gunstore: "counterstand", liquor: "counterstand", restaurant: "walkin", diner: "walkin" };
+  const got = {}, old = {};
+  for (const [key, kind] of Object.entries(SC)) for (let s = 0; s < 40; s++) for (const legacy of [false, true]) {
+    const S = rollScenes(make(key, s, legacy), new Rng(900 + s), key);
+    if (S && S.list.some((x) => x.kind === kind)) (legacy ? old : got)[key] = ((legacy ? old : got)[key] || 0) + 1;
+  }
+  check(Object.keys(SC).every((k) => got[k] > 0) && !Object.keys(old).length, `their scenes turn up on the new layouts, none on an older save's (${Object.entries(SC).map(([k, v]) => `${k} ${v} ${got[k] || 0}`).join(", ")})`);
 }
 
 console.log(`\n${passes} passed, ${fails} failed.`);
