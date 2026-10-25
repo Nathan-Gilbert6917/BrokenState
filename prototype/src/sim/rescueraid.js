@@ -63,6 +63,7 @@ import { kitSource, spend } from "./itemcond.js";
 import { PICK, MAKESHIFT_PICK, FORCE, SMASH, picksOf, barOf, isMakeshiftPicks } from "./locks.js";
 import { changeGoodwill, collapseFaction, groupBroken } from "./factions.js";
 import { partyMembers, partyTile, tileLabel, awaitOrders, wipeIfEmpty, addGearToCargo } from "./parties.js";
+import { raidVehiclePick } from "./walkers.js"; // fewer people than vehicles after the raid: which go on
 import { itemValue } from "./valuation.js";
 import { hasPerk, gainXp } from "./skills.js";
 import { Rng } from "./rng.js";
@@ -733,6 +734,8 @@ function onRescueRaid(state, result, setup, battle) {
   if (!result.tactical || !battle) {
     // By the numbers (headless, the autopilot): the old rescue fight (conflicts.js).
     settleRescue(state, result, { context: { partyId: c.partyId, factionId: c.factionId, mode: c.mode === "sneak" ? "alarm" : "assault" } });
+    const q = state.parties.find((x) => x.id === c.partyId);
+    if (q) raidVehiclePick(state, q, partyTile(q)); // walkers.js: fewer left than the vehicles need: which go on
     return;
   }
   const out = afterRescueBattle(state, result, setup, battle);
@@ -745,7 +748,11 @@ function onRescueRaid(state, result, setup, battle) {
     if (groupBroken(f)) collapseFaction(state, f);
   }
   log(state, out.text, out.freed.length ? "good" : "danger");
-  if (p && state.parties.includes(p) && !wipeIfEmpty(state, p)) { delete p.conflictResume; awaitOrders(state, p, out.text); }
+  if (p && state.parties.includes(p) && !wipeIfEmpty(state, p)) {
+    delete p.conflictResume;
+    raidVehiclePick(state, p, partyTile(p)); // walkers.js: fewer left than the vehicles need: the player picks which go on, the rest stay here
+    awaitOrders(state, p, out.text);
+  }
 }
 
 // Who came out free, who is still held, and the group's armory put right. Returns { freed, held, text }.

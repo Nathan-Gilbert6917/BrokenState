@@ -14,10 +14,21 @@
 //      showed in the raid"): every vehicle the team has on the raid map, the others parked by the entry zone (b.convoy),
 //      the team still starting there and every zone reachable, the lead's driver at its wheel; the same side picked
 //      again in the plan (raidplan.js setEntry); a field map's lead placed on a crowded west edge too.
+//   7. after a raid with fewer left than the vehicles need (sim/walkers.js raidVehiclePick, vehiclePickCard,
+//      takeVehicles; 2026-10-25, the user's request: "If not enough people are left after a raid to drive a vehicle all
+//      vehicles not driven are left at the POI you decide which was taken and which was left"): a card asks which go
+//      on, the default the worst-first rule; the one picked goes on as the lead, the other stays at the POI's tile
+//      (marked, what the people cannot carry left in it); the hourly sweep waits for the card, a team that sets off
+//      takes the default; the autopilot and a headless run get the rule's pick at once; no card when there is a driver
+//      for each.
 // Usage: node tools/fleetdrivertest.js
-import { createWorld, hub, atBase } from "../src/sim/world.js";
-import { launchExpedition } from "../src/sim/parties.js";
-import { teamDrivers, partyVehicles } from "../src/sim/vehicles.js";
+import { createWorld, hub, atBase, hurt, tickHour } from "../src/sim/world.js";
+import { launchExpedition, partyTile, orderMove, poolLoad, carryCapacity, partyMembers } from "../src/sim/parties.js";
+import { teamDrivers, partyVehicles, partyVehicle } from "../src/sim/vehicles.js";
+import { afterRaid } from "../src/sim/scavenge.js";
+import { keepOptions, vehiclePickWanted } from "../src/sim/walkers.js";
+import { poisOf } from "../src/sim/pois.js";
+import { defaultChoice } from "../src/sim/cardrules.js";
 import { createBattle, registerCombatHandler, combatAct, cabSeat, wheelUnit, wheelTaken, CELL } from "../src/sim/combat.js";
 import { raidEnemies } from "../src/sim/scavenge.js";
 import { setEntry } from "../src/sim/raidplan.js";
@@ -191,6 +202,89 @@ section("6. raids: every vehicle of the team on the map");
   }
   check(maps >= 20 && all === maps, `every map with both vehicles on it (${all} of ${maps}: raids and field fights)`);
   check(ok === maps, `the team starts at the entry, every zone reachable, no vehicle on a zone (${ok} of ${maps})`);
+}
+
+section("7. after a raid: fewer left than the vehicles need, the player picks which go on");
+{
+  // A team of three with the pickup (its lead) and the van raids a POI; two die, one gets out with both vehicles kept.
+  const raidEnd = (opts = {}) => {
+    const state = createWorld({ seed: 21, factionCount: 5, fleet: [{ type: "truck", driver: 2 }, { type: "van" }] });
+    const h = hub(state);
+    const crew = [state.survivors[2], ...atBase(state, h.id).filter((s) => s !== state.survivors[2]).slice(0, 2)];
+    const go = (x) => launchExpedition(state, { memberIds: crew.map((s) => s.id), dest: x.id, mission: "scavenge", stance: "normal", vehicleIds: state.vehicles.filter((v) => v.loc.kind === "base").slice(0, 2).map((v) => v.id), supplies: { food: 6, water: 6, ammo: 30, meds: 1 } });
+    let t = null, res = null;
+    for (const x of state.tiles) {
+      if (!(poisOf(x).length && x.road && !x.loc && x.terrain !== "water" && x.id !== h.tile && state.grid.distance(x.id, h.tile) > 1 && state.grid.distance(x.id, h.tile) < 12)) continue;
+      res = go(x);
+      if (!res.error) { t = x; break; }
+    }
+    if (!t) throw new Error(res ? res.error : "no POI tile");
+    const p = res.party;
+    p.path = [t.id]; p.idx = 0; p.phase = "engaged";
+    const [truck, van] = partyVehicles(state, p);
+    truck.condition = 90; van.condition = 40; // the rule leaves the van (the worse one)
+    if (opts.load) p.cargo.supplies.scrap = (p.cargo.supplies.scrap || 0) + opts.load; // more than the people and the van carry
+    state.vehiclePickAlways = !!opts.card;
+    if (opts.autopilot) state.autopilot = true;
+    const lost = crew.slice(opts.keep || 1);
+    for (const s of lost) hurt(state, s, 9999, t.id, "while scavenging");
+    state.cards.length = 0;
+    const out = crew.slice(0, opts.keep || 1).map((s) => s.id);
+    afterRaid(state, { outcome: "extracted", loot: { supplies: {}, gear: [] }, survivorsDead: lost.map((s) => s.id), survivorsHurt: [], raid: { extractedIds: out, carriedIds: [], hadVehicle: true, vehicleKept: true, hours: 1, searched: 0, total: 0, heat: 5 } }, { partyId: p.id, tile: t.id, raid: { poi: 0 }, context: {} });
+    return { state, p, t, truck, van, card: state.cards.find((c) => c.vehiclePickFor === p.id) };
+  };
+  const leftAt = (state, p, v, tile) => v.loc.kind === "abandoned" && v.loc.tile === tile && !!(p.spotted && p.spotted.get(`vehicle:${v.id}`)) && p.spotted.get(`vehicle:${v.id}`).tile === tile;
+  {
+    const { state, p, t, truck, van, card } = raidEnd({ card: true, load: 0 });
+    check(!!card && card.choices.length === 2, `one left for two vehicles: a card asks which goes on (${card ? card.choices.map((c) => c.label).join(" / ") : "none"})`);
+    check(!!card && card.text.includes(truck.name) && card.text.includes(van.name) && /condition 90%/.test(card.text) && /condition 40%/.test(card.text) && /fuel \d+\/\d+/.test(card.text) && /carries \d+ kg/.test(card.text), "the card lists each vehicle: name, kind, condition, fuel, what it carries");
+    check(partyVehicles(state, p).length === 2 && !!p.vehiclePick && p.vehiclePick.tile === t.id, "nothing left yet: the vehicles wait for the pick (the raid's hour went by)");
+    tickHour(state); tickHour(state);
+    check(partyVehicles(state, p).length === 2 && !state.cards.some((c) => c.title === "Vehicles left behind"), "the hourly sweep waits for the card too");
+    const def = defaultChoice(state, card);
+    check(!!def && def === card.choices[0] && def.label.includes(truck.name) && def.ai() > card.choices[1].ai(), `the default and the AI's pick: the rule's, the van in the worse shape left (${def ? def.label : "none"})`);
+    const take = card.choices.find((c) => c.label.includes(van.name));
+    const line = take.resolve(state);
+    state.cards.splice(state.cards.indexOf(card), 1);
+    check(partyVehicles(state, p).length === 1 && partyVehicle(state, p) === van && p.vehicleId === van.id, `picking the second vehicle: the ${van.name} goes on, the lead now`);
+    check(leftAt(state, p, truck, t.id) && partyTile(p) === t.id, `the ${truck.name} stays at the POI's tile, marked on the map (${line})`);
+    check(!p.vehiclePick && !state.cards.some((c) => c.vehiclePickFor === p.id), "the pick made: nothing waits any more");
+    tickHour(state);
+    check(partyVehicles(state, p).length === 1 && partyVehicle(state, p) === van, "the next hour leaves nothing more");
+  }
+  {
+    // A heavy load: what the one left and the van cannot carry stays in the pickup.
+    const probe = raidEnd({ card: true });
+    const room = carryCapacity(probe.state, partyMembers(probe.state, probe.p), probe.van) - poolLoad(probe.p);
+    const { state, p, t, truck, van, card } = raidEnd({ card: true, load: Math.ceil((room + 60) / 2) });
+    const take = card && card.choices.find((c) => c.label.includes(van.name));
+    check(!!take && /kg of the team's .* load will not fit/.test(take.hint), `the choice says how much of the load stays (${take ? take.hint : "none"})`);
+    take.resolve(state);
+    check(leftAt(state, p, truck, t.id) && !!truck.cargo && (truck.cargo.supplies.scrap || 0) > 0 && poolLoad(p) <= carryCapacity(state, partyMembers(state, p), van) + 1e-6, `what does not fit stays in the ${truck.name} (${truck.cargo ? truck.cargo.supplies.scrap : 0} scrap)`);
+  }
+  {
+    // The team sets off before answering: the default (the rule's pick), the card gone.
+    const { state, p, t, truck, van, card } = raidEnd({ card: true });
+    const to = state.tiles.find((x) => x.road && x.terrain !== "water" && state.grid.distance(x.id, t.id) === 3);
+    orderMove(state, p, to.id);
+    tickHour(state);
+    check(!!card && !state.cards.includes(card) && !p.vehiclePick && partyVehicles(state, p).length === 1 && partyVehicle(state, p) === truck && leftAt(state, p, van, t.id), `set off first: the default, the ${van.name} left at the POI's tile, the card gone`);
+  }
+  {
+    // Headless (no card) and the autopilot: the rule picks at once, the van left there.
+    for (const [name, opts] of [["a headless run", {}], ["the autopilot", { card: true, autopilot: true }]]) {
+      const { state, p, t, truck, van, card } = raidEnd(opts);
+      check(!card && !p.vehiclePick && partyVehicles(state, p).length === 1 && partyVehicle(state, p) === truck && leftAt(state, p, van, t.id), `${name}: no card, the ${van.name} (worse shape) left at the POI's tile at once`);
+      check((state.log || []).some((l) => /fewer people than vehicles now/.test(l.text || l)), `${name}: the log says what was left, as it always has`);
+    }
+    const { state, p } = raidEnd({ card: true });
+    check(vehiclePickWanted(state, p) && !vehiclePickWanted({ ...state, autopilot: true }, p) && !vehiclePickWanted({ ...state, vehiclePickAlways: false }, p) && !vehiclePickWanted(state, { ...p, crewRole: "scav" }), "the card for your own team by hand only: not the autopilot, a crew or a headless run");
+  }
+  {
+    // A driver for each: no card, nothing left.
+    const { state, p, card } = raidEnd({ card: true, keep: 2 });
+    check(!card && partyVehicles(state, p).length === 2 && !state.cards.some((c) => c.title === "Vehicles left behind") && keepOptions(state, p).length === 0, "two left for two vehicles: no card, both go on");
+  }
 }
 
 console.log(`\n${passes} passed, ${fails} failed`);

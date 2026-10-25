@@ -239,6 +239,7 @@ export interface Party {
   stance?: string; // parties.js STANCES key
   vehicleId?: number | null; // the lead vehicle (vehicles.js fleets)
   walkers?: number; // people without a seat after a vehicle was lost: the team goes at their pace (walkers.js)
+  vehiclePick?: { tile: number, hour: number }; // walkers.js raidVehiclePick: fewer drivers than vehicles after a raid, the card's pick waiting (the vehicles wait on this tile)
   vehicleIds?: number[]; // every vehicle of the team's, the lead first (up to vehicles.js MAX_VEHICLES)
   supplies?: Stock;
   cargo?: Cargo;

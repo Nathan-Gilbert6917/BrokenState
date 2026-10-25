@@ -40,7 +40,7 @@ import { survivorById, factionById, alive, atBase, homeAt, combatPower, hurt, lo
 import { partyMembers, partyTile, partyCapacity, cargoLoad, cargoRoom, unitsThatFit, wipeParty, leaveVehicle } from "./parties.js";
 import { noteGunfire } from "./fieldheat.js";
 import { GEAR, SUPPLIES, TERRAIN } from "./data.js";
-import { partyVehicle, partyVehicles, isBike, upgradesOf, armourOf, riderMult, vehicleOdds, UPGRADE_FX, technicalPlated, SEATS, teamDrivers } from "./vehicles.js"; // the team's car or truck on the map (placeVehicle); its upgrades (glass, plating)
+import { partyVehicle, partyVehicles, isBike, upgradesOf, armourOf, riderMult, vehicleOdds, UPGRADE_FX, technicalPlated, SEATS, teamDrivers, driversFor } from "./vehicles.js"; // the team's car or truck on the map (placeVehicle); its upgrades (glass, plating)
 import { wearAfterFight, wearSlot, itemDur, medKitBonus } from "./crafting.js";
 import { armorMult, enemyBody, allyBody, bodyEmpty, takeAllBodies, leaveBodies, ARMOR_SLOTS, itemLoad, lootItem, deadBodyFinds, carryMods, carriedThrowables } from "./inventory.js";
 import { areaSource, kitSource, spend } from "./itemcond.js";
@@ -7727,6 +7727,12 @@ function endRaid(state, b) {
   endBodies(state, b, extractedIds.length ? "extracted" : "defeat", vehicleKept); // carriers.js: the risen still walking take their things into the walking loot; bodies in the car come home with it
   raidHome(state, b, home); // raidloot.js: what the ones who made it carry goes in the team's cargo; the rest is lost
   if (hadVehicle && extractedIds.length && !vehicleKept) lines.push("Nobody went back to the vehicle. It stays behind at the site.");
+  { // fewer left than the vehicles need at the wheel (walkers.js raidVehiclePick: which go on is picked next, the rest stay)
+    const party = vehicleKept ? state.parties.find((x) => x.id === b.setup.partyId) : null;
+    const out = [...extractedIds, ...carriedIds].filter((id, i, a) => a.indexOf(id) === i && (survivorById(state, id) || { alive: false }).alive).length;
+    const need = party ? driversFor(partyVehicles(state, party)) : 0;
+    if (party && out && need > out) lines.push(`Only ${out} left to drive ${need === partyVehicles(state, party).length ? `the ${need} vehicles` : `vehicles that need ${need} at the wheel`}: the ones nobody drives stay at the site.`);
+  }
   const enemies = b.units.filter((u) => u.side === "enemy");
   const original = enemies.filter((u) => !u.reinforcement);
   const killed = original.filter((u) => u.dead).length;
