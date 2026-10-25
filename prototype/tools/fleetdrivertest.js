@@ -78,7 +78,7 @@ section("2. a driver set, kept, swapped");
   const first = h1.survivors[other].name.split(" ")[0];
   check(h1.hardcore.start.grabbed.some((l) => l.includes(`${first} at the wheel`)), `Hardcore: the start's line names ${first} at the wheel`);
   const suvBy = fleetDriver(h1, 1).name.split(" ")[0];
-  check(h1.hardcore.start.grabbed.some((l) => l.startsWith(`${suvBy} followed in an SUV`)), `and ${suvBy} drives the SUV along, on a line of its own (the user's request 2026-10-25: the vehicles melded)`);
+  check(h1.hardcore.start.grabbed.some((l) => new RegExp(`^${suvBy} followed in (their|\\w+'s) SUV`).test(l)), `and ${suvBy} drives the SUV along, on a line of its own (the user's request 2026-10-25: the vehicles melded)`);
   check(!h1.hardcore.start.grabbed.some((l) => /got everyone into|Another vehicle comes/.test(l)), "nobody 'got everyone into' the car with a second vehicle along, and no tacked-on line");
 }
 
