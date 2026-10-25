@@ -6989,6 +6989,15 @@ export const BOX_LOOT = {
   microfilm:  { rest: 0, loot: { electronics: [0.4, 1, 1], parts: [0.4, 1, 2] }, gear: [] },
   bookreturn: { rest: 0.5, loot: { scrap: [0.2, 1, 1] }, gear: [["photos", 0.04], ["novel", 0.06], ["comic", 0.04], ["magazines", 0.04]] },
   bookmobile: { rest: 1, loot: { fuel: [0.6, 2, 6], parts: [0.3, 1, 2] }, gear: [["novel", 0.15], ["comic", 0.1], ["gardenbook", 0.06], ["cookbook", 0.06], ["survivalbook", 0.05], ["medbook", 0.04], ["diybook", 0.04]] },
+  // Restaurants by kind of food (issue #33, eaterylayout.js): a dry store's shelving its sacks and tins (the cuisine's:
+  // the room's mix), a pastry case stale biscuits and the sugar, a dipping cabinet ice cream long melted but in winter,
+  // a wine rack wine, a food truck its stock, its propane bottles and a little fuel. Tuned with tools/restauranttest.js
+  // so a restaurant holds what the old ones did per area within ±10%.
+  dryshelf:   { rest: 0, loot: { preserved: [0.8, 2, 5], food: [0.45, 1, 3] }, gear: [] },
+  pastrycase: { rest: 0, loot: { preserved: [0.25, 1, 2], food: [0.2, 1, 2] }, gear: [] },
+  dipcabinet: { rest: 0, loot: { food: [0.1, 1, 2] }, cold: { food: [0.8, 2, 6], preserved: [0.1, 1, 2] }, gear: [] },
+  winerack:   { rest: 0, loot: { water: [0.5, 1, 3] }, gear: [["wine", 0.45], ["bottle", 0.2]] },
+  foodtruck:  { rest: 0, loot: { preserved: [0.6, 2, 5], food: [0.4, 1, 3], propane: [0.8, 1, 2], fuel: [0.3, 1, 3] }, gear: [["knife", 0.15], ["cleaver", 0.15], ["flashlight", 0.1]] },
   // Military bases, air bases, airports and prisons (issue #25, militarylayout.js; the footlocker, the radio console and
   // the Humvee are #26's rows above): an ammo crate the rounds and the odd grenade; a fuel bladder fuel; an inmate's
   // property locker what was taken off them at intake (a phone, a watch, a knife, cigarettes); a suitcase what a traveller
@@ -7845,7 +7854,7 @@ export function searchBox(state, b, u, box, open = false, quick = false) {
     lockedLoot(state, b, u, box, sup, gear); // locks.js: more in locked things, keys, blueprints (its own dice)
     const site = poiKind || (state.tiles[b.tileId] && state.tiles[b.tileId].loc ? state.tiles[b.tileId].loc.type : null);
     const rTheme = box.kind === "body" ? "home" : box.truck ? "military" : raidTheme(site, box.area != null && R.areas[box.area] ? R.areas[box.area].type : "house");
-    typeFind(state, sup, box.kind === "body" ? (box.zombie ? "travel" : "raider") : box.truck ? "military" : box.area != null && R && R.areas[box.area] ? AREA_MIX[R.areas[box.area].type] || "house" : "house", box.kind === "body" ? null : b.tileId, pd ? drng : undefined); // foods.js: the food as the items a place like this holds (a site's shelves run down)
+    typeFind(state, sup, box.kind === "body" ? (box.zombie ? "travel" : "raider") : box.truck ? "military" : box.area != null && R && R.areas[box.area] ? R.areas[box.area].mix || AREA_MIX[R.areas[box.area].type] || "house" : "house", box.kind === "body" ? null : b.tileId, pd ? drng : undefined); // foods.js: the food as the items a place like this holds (a site's shelves run down)
     sortFind(sup, rTheme, "box", b.tileId, bid); // ammo.js: what turns up there, by calibre
     if (box.kind !== "body") formFinds(sup, gear, rTheme, "box", b.tileId, bid); // ammo.js: some of it boxed (stacks of boxes), now and then a bulk ammo container; the rest loose
     box.contents = { sup, gear };

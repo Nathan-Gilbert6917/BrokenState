@@ -57,8 +57,8 @@ function freshState(b, key) {
   preplaced(st);
   return st;
 }
-// What the map came with (sim/interiorscenes.js): blood on the floors (c.blood { kind, amount }) and spent brass
-// (c.brass: cases) on every floor of the building, found like any mark when someone sees the cell.
+// What the map came with (sim/interiorscenes.js): blood on the floors (c.blood { kind, amount }), spent brass
+// (c.brass: cases) and a fire's scorch (c.scorch: 1–3, a restaurant kitchen's) on every floor of the building, found like any mark when someone sees the cell.
 function preplaced(st) {
   const b = st.b;
   const floors = b.floors && b.floors.length ? b.floors.map((F) => F.cells) : [b.cells];
@@ -66,13 +66,14 @@ function preplaced(st) {
     if (!cells) return;
     for (let i = 0; i < cells.length; i++) {
       const c = cells[i];
-      if (!c || (!c.blood && !c.brass)) continue;
+      if (!c || (!c.blood && !c.brass && !c.scorch)) continue;
       const x = i % b.w, y = (i / b.w) | 0;
       const put = (m) => { m.t0 = -GROW_MS; m.seen = false; m.f = f; m.cell = i; st.list.push(m); st.unseen++; };
       if (c.blood) {
         const n = Math.max(1, Math.min(3, c.blood.amount || 1));
         for (let k = 0; k < n; k++) put({ k: c.blood.kind === "zombie" ? "zblood" : "blood", x: x + 0.5 + (hash(i, k, 21) - 0.5) * 0.5, y: y + 0.5 + (hash(i, k, 22) - 0.5) * 0.5, r: 0.16 + 0.1 * n + hash(i, k, 23) * 0.08, a: hash(i, k, 24) * 6.28, n: 3 + n, seed: i * 11 + k + 5 });
       }
+      if (c.scorch) { put({ k: "scorch", x: x + 0.5, y: y + 0.5, r: 0.4 + 0.1 * c.scorch, a: 0, n: 4, seed: i * 13 + 1 }); put({ k: "ash", x: x + 0.5, y: y + 0.5, r: 0.35, a: 0, n: 6, seed: i * 13 + 2 }); } // a kitchen fire's aftermath (sim/eaterylayout.js)
       for (let k = 0; k < Math.min(8, c.brass || 0); k++) put({ k: "brass", x: x + 0.2 + hash(i, k, 31) * 0.6, y: y + 0.2 + hash(i, k, 32) * 0.6, r: 0.1, a: hash(i, k, 33) * 6.28, n: 1, seed: i * 13 + k });
     }
   });
