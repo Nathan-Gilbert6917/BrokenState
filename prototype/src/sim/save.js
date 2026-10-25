@@ -188,6 +188,10 @@ export function deserializeState(save) {
   // Rooms laid out room by room (roomlayout.js, 2026-10-25): a save from before keeps every building's old furnishing,
   // so its places' containers keep their ids (poicont.js poi.cont, citycrawl.js restoreBuilding).
   if (!state.roomsV) { state.roomsLegacy = true; state.roomsV = 1; }
+  // The office buildings of every kind and their firms (data-offices.js, issue #27): a save from before gets none of the
+  // new places on its tiles or its crawls' blocks, and its office towers no firm (shops.js legacyOffices), so its
+  // points of interest regenerate as they were.
+  if (!state.officesV) { state.officesLegacy = true; state.officesV = 1; }
   if (!state.woodcutting) {
     for (const b of state.bases || []) if (b.stock && !Number.isFinite(b.stock.wood)) b.stock.wood = 0;
     for (const r of (state.work && state.work.roles) || []) if (r.pri && r.pri.wood == null && r.pri.forage > 0) r.pri.wood = r.pri.forage;
