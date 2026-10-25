@@ -69,6 +69,8 @@ export const SCENES = {
     police: 0.8, firestation: 0.6, school: 0.7, church: 0.4, barracks: 0.75, cellblock: 0.6, messhall: 0.5,
     grocery: 0.55, supermarket: 0.6, deptstore: 0.55, offices: 0.6, library: 0.45, bank: 0.5,
     warehouse: 0.35, factory: 0.35, barn: 0.25, garage: 0.35, gasstation: 0.45, diner: 0.45,
+    // a campus's buildings (issue #28: campuslayout.js; each rolls its own on a campus)
+    dorm: 0.7, lecturehall: 0.55, sciencehall: 0.6, dininghall: 0.65, studentunion: 0.55, univlibrary: 0.5, athletics: 0.5, admin: 0.45, security: 0.6,
   },
   COUNT: [0.35, 0.12],   // a second scene, a third (of a building with scenes)
   ALIVE: 0.3,            // an upper floor's barricaded room: nobody died there (floorfolk.js's survivors may hold it)

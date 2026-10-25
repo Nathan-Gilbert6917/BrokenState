@@ -2002,6 +2002,26 @@ function roofSprite(mat, top, edges, fog, sn = 0, v = 0) {
   return s;
 }
 
+// Overhead on the active floor (drawIso): per cell the art height of what covers it (0 none) and its roof's look: a
+// covered walkway's canopy (c.canopy, sim/compound.js connect: a metal roof a storey up), a bridge's deck on a floor
+// above (c.bridge: its underside the storeys up it is). Cached by the battle, its floor and the cells' revision.
+let overCache = null;
+function overheadFor(b) {
+  const fl = floorNo(b), key = `${b.w}x${b.h}:${fl}:${b.rev || 0}:${b.floors ? b.floors.length : 1}`;
+  if (overCache && overCache.b === b && overCache.key === key) return overCache;
+  const n = b.w * b.h, top = new Int16Array(n), mat = new Uint8Array(n);
+  let cnt = 0;
+  const cur = b.cells;
+  for (let i = 0; i < n; i++) if (cur[i].canopy) { top[i] = LV + 6; mat[i] = 1; cnt++; }
+  const F = floorsOf(b);
+  if (F) for (let g = F.length - 1; g > fl; g--) {
+    const cs = F[g].cells;
+    for (let i = 0; i < n; i++) if (cs[i].bridge || (cs[i].k === "rail" && cs[i].f === "floor")) { top[i] = (g - fl) * LV - 3; mat[i] = 3; cnt++; }
+  }
+  overCache = { b, key, top, mat, n: cnt };
+  return overCache;
+}
+const focusNear = (focus, x, y) => !!focus && focus.some(([fx, fy]) => Math.max(Math.abs(fx - x), Math.abs(fy - y)) <= 2);
 // The storeys below the active floor (floorsOf): the building's outer wall mass under one footprint cell, from the
 // ground up to the floor's base, no interior. faces: 1 the east (+u) side, 2 the south (+v) side, only where the
 // neighbour in that direction is outside the footprint (the faces inside are hidden by the raised floor in front).
@@ -2031,6 +2051,7 @@ const FLOORC = {
   tile: hex("#7a7668"), conc: hex("#5e5d5a"), carpet: hex("#4e3e44"), barn: hex("#5e5040"), straw: hex("#8a7440"),
   // The room-appropriate floors of 2026-10-25 (issue #13): kitchens' and wards' lino, a bathroom's checker, a home's
   // hardwood (narrow, warm) and a cabin's or a barn's planks (the old floorboards), a gym's rubber, the bays' steel plate.
+  pool: hex("#4a7a94"), track: hex("#8a4a3a"), // a campus's drained pool and running track (issue #28)
   lino: hex("#8a8a76"), checkA: hex("#8e8a80"), checkB: hex("#34322e"), hardwood: hex("#7a5636"), rubber: hex("#3a3c3e"), steel: hex("#6a6e72"),
 };
 // Which way the roads run on a map (the user's request 2026-10-22: "In base view and raids fix road tiles to look
@@ -2133,9 +2154,11 @@ function floorColor(c, k, x, y, lx, ly, mud, R = null, lf = 0, pd = 0, pe = 0) {
       else if (c.fl === "checker") col = ((tx >> 2) + (ty >> 2)) % 2 ? mul(FLOORC.checkA, 0.92 + q * 0.08) : mul(FLOORC.checkB, 0.9 + q * 0.12); // 4 px checks
       else if (c.fl === "hardwood") { const row = ty >> 2, off = hash3(x, y * 4 + row, 8) * 16; col = ty % 4 === 0 ? mul(FLOORC.hardwood, 0.7) : (tx + off) % 16 < 1 ? mul(FLOORC.hardwood, 0.76) : mul(FLOORC.hardwood, 0.9 + hash3(x * 2 + Math.floor((tx + off) / 16), y * 4 + row, 3) * 0.18 + q * 0.04); } // narrow boards, joints staggered
       else if (c.fl === "rubber") col = (tx % 4 === 1 && ty % 4 === 1) ? mul(FLOORC.rubber, 1.25) : mul(FLOORC.rubber, 0.92 + q * 0.08); // studded mats
+      else if (c.fl === "pool") col = tx % 6 === 0 || ty % 6 === 0 ? mul(FLOORC.pool, 0.78) : mul(FLOORC.pool, 0.94 + q * 0.08); // a drained pool's blue tiles (sim/campuslayout.js)
       else if (c.fl === "steel") col = ((tx + ty) % 6 === 0 && (tx >> 1) % 2 === 0) || ((tx - ty + 16) % 6 === 3 && (tx >> 1) % 2 === 1) ? mul(FLOORC.steel, 1.22) : tx === 0 || ty === 0 ? mul(FLOORC.steel, 0.7) : mul(FLOORC.steel, 0.9 + q * 0.08); // diamond plate
       else col = ty % 4 === 0 ? mul(FLOORC.floor, 0.68) : mul(FLOORC.floor, 0.88 + hash3(x * 4 + Math.floor((tx + (Math.floor(ty / 4) % 2) * 8) / 16), y * 4 + Math.floor(ty / 4), 3) * 0.2);
       break;
+    case "track": col = ty === 7 || ty === 8 ? mul(FLOORC.track, 1.35) : mul(FLOORC.track, 0.9 + q * 0.12); break; // a running track's red surface, its lane line (sim/campus.js)
     case "rubble": col = q > 0.82 ? mul(FLOORC.rubble, 1.35) : q < 0.1 ? mul(FLOORC.rubble, 0.6) : mul(FLOORC.rubble, 0.92 + v * 0.1); break;
     case "roof": col = mul(FLOORC.roof, 0.86 + q * 0.2); break;
     default: col = mul(FLOORC.grass, 0.92 + q * 0.12);
@@ -3471,6 +3494,9 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   const nbOn = !!(b.layout && b.deployPlan && b.deployPlan.fort); // the base map's layout mode: its no-build margin (nbMark)
   if (bdb) for (const d of [...beyond.keys()].filter((k) => k < 0).sort((p, q) => p - q)) drawBeyond(d);
   // By diagonal (u + v) from the back; in a straight view by row (v).
+  // What is overhead (a compound's links, issue #28: sim/compound.js): a covered walkway's canopy on the active floor,
+  // and the deck of a bridge on a floor above it seen from under it (its own roof); none with Roofs off.
+  const over = iso.roofs ? overheadFor(b) : null;
   for (let d = 0; d <= lastD; d++) {
     drawBeyond(d);
     const uLo = st ? 0 : Math.max(0, d - (Hv - 1)), uHi = st ? Wv - 1 : Math.min(Wv - 1, d);
@@ -3537,6 +3563,20 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
       VD.forEach(([du, dv], k) => { const nu = uu + du, nv = vv + dv; if (nu < 0 || nv < 0 || nu >= Wv || nv >= Hv) { edges |= 1 << k; return; } const [nx, ny] = fromView(nu, nv, r, b.w, b.h); if (scene.comp[ny * b.w + nx] !== bid) edges |= 1 << k; });
       const B = scene.blds[bid], spr = roofSprite(B.mat, B.top, edges, !seenB.has(bid), snowLook, snowLook ? Math.floor(hash3(x, y, 61) * 4) : 0); // snow on it, its drifts by the cell
       if (fade.has(i)) ctx.globalAlpha = 0.35;
+      ctx.drawImage(spr.cv, Math.round(sx + spr.ox * S), Math.round(sy + spr.oy * S), Math.ceil(spr.w * S), Math.ceil(spr.h * S));
+      ctx.globalAlpha = 1;
+    }
+    if (over && over.n) for (let uu = uLo; uu <= uHi; uu++) {
+      const vv = st ? d : d - uu;
+      const [x, y] = fromView(uu, vv, r, b.w, b.h), i = y * b.w + x, top = over.top[i];
+      if (!top) continue;
+      const sx = artX(uu, vv, st) * S + FR.X0, sy = artY(uu, vv, st) * S + FR.Y0 - (lift && !isVoid(b.cells[i]) ? lift : 0) * S;
+      if (sx < -margin || sx > cw + margin || sy < -margin || sy > ch + margin * 2) continue;
+      let edges = 0;
+      VD.forEach(([du, dv], k) => { const nu = uu + du, nv = vv + dv; if (nu < 0 || nv < 0 || nu >= Wv || nv >= Hv) { edges |= 1 << k; return; } const [nx, ny] = fromView(nu, nv, r, b.w, b.h); if (over.top[ny * b.w + nx] !== top) edges |= 1 << k; });
+      const spr = roofSprite(over.mat[i], top, edges, !vis[i], snowLook, snowLook ? Math.floor(hash3(x, y, 62) * 4) : 0);
+      // Under it or close in front of one of your people: see-through, as a cut-away roof.
+      ctx.globalAlpha = fade.has(i) || focusNear(focus, x, y) ? 0.3 : 0.92;
       ctx.drawImage(spr.cv, Math.round(sx + spr.ox * S), Math.round(sy + spr.oy * S), Math.ceil(spr.w * S), Math.ceil(spr.h * S));
       ctx.globalAlpha = 1;
     }

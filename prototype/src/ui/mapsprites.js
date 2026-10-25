@@ -2372,7 +2372,7 @@ function paintLiquor(arg) {
 const POI_PAINT = {
   city: paintCityCenter, town: paintTownCenter, police: paintPolice, hospital: paintHospital, pharmacy: paintPharmacy,
   supermarket: paintSupermarket, gunstore: paintGunStore, hardware: paintHardware, autoshop: paintAutoShop, apartments: paintApartments,
-  office: paintOffice, school: paintSchool, firestation: paintFireStation, warehouse: paintWarehouse, mall: paintMall, univ: paintUniversity,
+  office: paintOffice, school: paintSchool, firestation: paintFireStation, warehouse: paintWarehouse, mall: paintMall, univ: paintUniversity, college: paintUniversity,
   grocery: paintGrocery, clinic: paintClinic, gas: paintGas, diner: paintDiner, motel: paintMotel, church: paintChurch, feedstore: paintFeedStore,
   farm: paintFarm, barn: paintBarn, ranch: paintRanch, cabin: paintCabin, lodge: paintLodge, campground: paintCampground, ranger: paintRanger,
   radiotower: paintRadioTower, truckstop: paintTruckStop, quarry: paintQuarry, crashsite: paintCrashSite,

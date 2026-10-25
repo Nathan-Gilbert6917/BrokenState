@@ -37,12 +37,12 @@
 //     names their maps); every other one, and every new run's, is a campus.
 import { Rng } from "./rng.js";
 import { hash01 } from "./skills.js";
-import { BUILDINGS, assemble, DOOR_KINDS, STREET } from "./buildingmaps.js"; // call-time only (buildingmaps.js imports this module)
-import { CELL, AREAS, placeCar, placeVehicle, CAR_LEN, enemyUnit, setFloor } from "./combat.js";
+import { BUILDINGS, assemble, DOOR_KINDS } from "./buildingmaps.js"; // call-time only (buildingmaps.js imports this module)
+import { CELL, enemyUnit, setFloor } from "./combat.js";
+import { compoundGrid, placeBuilding, link, guard, parkingLot, compoundResult, compoundVehicle } from "./compound.js"; // #30's shared multi-building code
 import { raidLootShare, raidHeatRate } from "./battlesize.js";
 import { legacyRooms } from "./worldcfg.js";
 import { rollScenes, sceneRng } from "./interiorscenes.js";
-import { rollWin } from "./windows.js";
 import { applyZType, siteList } from "./zombietypes.js";
 import { CAMPUS_NAMES } from "./campuslayout.js";
 
@@ -60,7 +60,7 @@ export const CAMPUS = {
   PATH: 2,             // the promenade's width (and every path's)
   QUAD: [18, 30],      // a quad's depth
   YARD: 10,            // the lawn between two rows of dorms
-  LOT: [16, 20],       // a parking lot's depth
+  LOT: [24, 28],       // a parking lot's depth (compound.js parkingLot: two double rows of bays and their aisles)
   FIELD: { w: 64, h: 42, track: 3 }, // the sports field with its running track round it
   TREES: 0.012,        // trees on a quad, a share of its cells
   BENCH: 0.004,        // benches likewise
@@ -161,11 +161,12 @@ function campusPlan(state, tileId, option) {
 
 /**
  * The map of a campus (buildingmaps.js buildingMap, for BUILDINGS.campus): the same every visit (its dice from the
- * world seed, the tile and the option id).
+ * world seed, the tile and the option id). Built on compound.js (#30's shared multi-building code): the grid, the
+ * buildings copied in, the links between them, the guard over the dressing, the parking lots, the result.
  * @param {any} state @param {number} tileId @param {{ id: string, key: string, name: string }} option @param {any} withVehicle
  */
 export function campusMap(state, tileId, option, withVehicle) {
-  const C = CAMPUS;
+  const CP = CAMPUS;
   const { kind, K, rng, legacy, MAXW, MAXH, built, layout } = campusPlan(state, tileId, option);
   // ---------- the buildings, each its own plan and map, its signs of survival on it (copied in with it) ----------
   for (const B of built) {
@@ -182,192 +183,160 @@ export function campusMap(state, tileId, option, withVehicle) {
     B.name = named[base] > 1 ? `${base} ${["", "", "II", "III", "IV", "V", "VI"][named[base]] || named[base]}` : base;
   }
   const { rows, strips } = layout;
-  const W = MAXW, H = Math.min(C.MAX, Math.max(layout.H, Math.min(MAXH, layout.H + 40)));
+  const W = MAXW, H = Math.min(CP.MAX, Math.max(layout.H, Math.min(MAXH, layout.H + 40)));
   // Stretch the quads to the map's depth (a deeper map: roomier quads, never past their range).
   let spare = H - layout.H;
-  for (const s of strips) if (spare > 0 && s.kind === "quad") { const add = Math.min(spare, C.QUAD[1] - s.h); if (add > 0) { s.h += add; spare -= add; } }
-  // Put the rows and strips at their y, top to bottom.
-  let y = C.EDGE;
-  const order = [];
-  for (let i = 0; i < rows.length; i++) { order.push({ row: rows[i] }); if (strips[i]) order.push({ strip: strips[i] }); }
-  for (const o of order) {
-    if (o.row) { o.row.y0 = y; y += o.row.D + C.FRONT; o.row.walk = y; y += C.PATH; }
-    else { o.strip.y0 = y; y += o.strip.h; }
+  for (const st of strips) if (spare > 0 && st.kind === "quad") { const add = Math.min(spare, CP.QUAD[1] - st.h); if (add > 0) { st.h += add; spare -= add; } }
+  // The rows and strips at their y, top to bottom.
+  let y = CP.EDGE;
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    row.y0 = y; y += row.D + CP.FRONT; row.walk = y; y += CP.PATH;
+    if (strips[i]) { strips[i].y0 = y; y += strips[i].h; }
   }
-  const roadY = H - C.ROAD - 2; // the campus road's top row
-  // Rows across: buildings left to right, the slack shared out as wider gaps (a joined pair keeps its link's length).
+  const roadY = H - CP.ROAD - 2; // the campus road's top row
+  // Across: the buildings left to right, the slack shared out as wider gaps (a joined pair keeps its link's length).
   for (const row of rows) {
     const used = row.list.reduce((a, B) => a + B.bw, 0) + row.gaps.reduce((a, g) => a + g, 0);
     const extra = Math.max(0, AVAIL(W) - used), free = row.gaps.map((g, j) => !row.list[j].link);
     const slots = free.filter(Boolean).length + 2, each = Math.min(14, Math.floor(extra / slots));
-    let x = C.EDGE + 1 + Math.floor((extra - each * (slots - 2)) / 2);
+    let x = CP.EDGE + 1 + Math.floor((extra - each * (slots - 2)) / 2);
     row.list.forEach((B, j) => { B.x0 = x; B.y0 = row.y0 + row.D - B.bh; x += B.bw + (j < row.gaps.length ? row.gaps[j] + (free[j] ? each : 0) : 0); });
   }
+  const storeys = Math.max(...built.map((B) => B.storeys));
+  const C = compoundGrid(W, H, storeys, () => "grass");
+  const cells = C.cells, keep = C.keep;
   const I = (x, yy) => yy * W + x;
   const inside = (x, yy) => x >= 0 && yy >= 0 && x < W && yy < H;
-  /** @type {any[]} */
-  const cells = Array.from({ length: W * H }, () => ({ k: "open", f: "grass" }));
-  const storeys = Math.max(...built.map((B) => B.storeys));
-  const floors = [{ cells, name: "Ground floor" }];
-  for (let g = 1; g < storeys; g++) floors.push({ cells: Array.from({ length: W * H }, () => ({ k: "void", f: "air" })), name: g === storeys - 1 ? "Top floor" : `Floor ${g + 1}` });
-  const keep = new Uint8Array(W * H); // stays clear: the ring round each building, the paths, the roads, the zones
   const paint = (x0, y0, w, h, f, mark = true) => { for (let yy = y0; yy < y0 + h; yy++) for (let x = x0; x < x0 + w; x++) if (inside(x, yy)) { cells[I(x, yy)].f = f; if (mark) keep[I(x, yy)] = 1; } };
   // ---------- the roads and the paths ----------
-  paint(0, roadY, W, C.ROAD, "road");
-  paint(0, roadY - 1, W, 1, "gravel"); paint(0, roadY + C.ROAD, W, 1, "gravel"); // its sidewalks
-  const sx = W - C.EDGE - C.SERVICE + 1; // the service road down the east side
-  paint(sx, 0, C.SERVICE, roadY, "road");
+  paint(0, roadY, W, CP.ROAD, "road");
+  paint(0, roadY - 1, W, 1, "gravel"); paint(0, roadY + CP.ROAD, W, 1, "gravel"); // its sidewalks
+  const sx = W - CP.EDGE - CP.SERVICE + 1; // the service road down the east side
+  paint(sx, 0, CP.SERVICE, roadY, "road");
   for (const row of rows) {
-    paint(C.EDGE - 2, row.walk, sx - C.EDGE + 2, C.PATH, "gravel"); // the promenade along the row's fronts
-    // Paths north between the buildings (and past the row's ends) to the strip behind the row.
-    const xs = [C.EDGE - 1, ...row.list.slice(0, -1).map((B, j) => (row.list[j].link ? -1 : Math.floor((B.x0 + B.bw + row.list[j + 1].x0) / 2) - 1)), sx - 3].filter((x) => x >= 0);
-    for (const x of xs) paint(x, row.y0 - 1, C.PATH, row.walk - row.y0 + 1, "gravel");
+    paint(CP.EDGE - 2, row.walk, sx - CP.EDGE + 2, CP.PATH, "gravel"); // the promenade along the row's fronts
+    // Paths north between the buildings standing apart (and past the row's ends) to the strip behind the row.
+    const xs = [CP.EDGE - 1, ...row.list.slice(0, -1).map((B, j) => (B.link ? -1 : Math.floor((B.x0 + B.bw + row.list[j + 1].x0) / 2) - 1)), sx - 3].filter((x) => x >= 0);
+    for (const x of xs) paint(x, row.y0 - 1, CP.PATH, row.walk - row.y0 + 1, "gravel");
   }
-  // ---------- the buildings copied in ----------
-  const areas = [], containers = [], lockedDoors = [], stairs = [], runs = [];
+  // ---------- the buildings copied in (compound.js placeBuilding: rooms, containers, doors, runs; c.house) ----------
   const sceneList = [], sceneBodies = [], scenePiles = [], scenePieces = [];
-  let cid = 1;
   for (const B of built) {
-    const m = B.m, R = m.building, base = areas.length;
-    const tx = (x) => B.x0 + (x - R.x0), ty = (yy) => B.y0 + (yy - R.y0);
-    B.rect = { x0: B.x0, y0: B.y0, w: R.w, h: R.h };
-    (m.floors || [{ cells: m.cells }]).forEach((F, g) => {
-      const dst = floors[g].cells, cars = new Map();
-      for (let yy = R.y0; yy < R.y0 + R.h; yy++) for (let x = R.x0; x < R.x0 + R.w; x++) {
-        const c = { ...F.cells[yy * m.w + x] }, X = tx(x), Y = ty(yy);
-        if (c.pc) c.pc += 10000 * (B.k + 1); // roomlayout.js: a piece's number, the campus's own
-        if (c.car) { c.car = { ...c.car }; const e = cars.get(c.car.id) || { x: X, y: Y, list: [] }; e.x = Math.min(e.x, X); e.y = Math.min(e.y, Y); e.list.push(c.car); cars.set(c.car.id, e); }
-        dst[I(X, Y)] = c;
-      }
-      for (const e of cars.values()) for (const car of e.list) car.id = I(e.x, e.y) + 1;
-    });
-    for (const a of m.rooms) {
-      if (a.outdoor) continue;
-      areas.push({ ...a, x0: tx(a.x0), y0: ty(a.y0), id: base + a.id, name: `${a.name}, ${B.name}`, doors: (a.doors || []).map(([x, yy]) => [tx(x), ty(yy)]), house: B.k });
-    }
-    for (const c of m.containers) {
-      const area = areas[base + c.area];
-      const what = String(c.label || "").split(": ").slice(1).join(": ") || c.kind;
-      containers.push({ ...c, id: cid++, x: tx(c.x), y: ty(c.y), area: base + c.area, house: B.k, label: `${area ? area.name : B.name}: ${what}` });
-    }
-    for (const d of m.lockedDoors) lockedDoors.push({ ...d, x: tx(d.x), y: ty(d.y), area: d.area == null ? null : base + d.area });
-    for (const [x, yy] of m.stairs || []) stairs.push([tx(x), ty(yy)]);
-    for (const r of m.runs || []) runs.push({ ...r, x: tx(r.x), y: ty(r.y), house: B.k });
-    // Its scenes (interiorscenes.js, rolled on its own map): moved with it.
+    const m = B.m, R = m.building;
+    const part = placeBuilding(C, m, { x0: B.x0, y0: B.y0, face: "s", k: B.k, name: B.name, key: B.key });
+    B.part = part;
+    B.rect = { x0: part.x0, y0: part.y0, w: part.w, h: part.h };
+    // Its scenes (interiorscenes.js, rolled on its own map): moved with it, their rooms by the new ids.
     const S = m.scenes;
     if (S) {
-      for (const s of S.list) sceneList.push({ ...s, x: tx(s.x), y: ty(s.y), room: s.room == null ? null : base + s.room, house: B.k });
+      const tx = (x) => B.x0 + (x - R.x0), ty = (yy) => B.y0 + (yy - R.y0);
+      const ids = new Map(m.rooms.filter((a) => !a.outdoor).map((a, j) => [a.id, part.rooms[j]]));
+      for (const sc of S.list) sceneList.push({ ...sc, x: tx(sc.x), y: ty(sc.y), room: sc.room == null ? null : ids.get(sc.room) ?? null, house: B.k });
       for (const o of S.bodies) sceneBodies.push({ ...o, x: tx(o.x), y: ty(o.y) });
-      for (const p of S.piles) scenePiles.push({ ...p, x: tx(p.x), y: ty(p.y), area: p.area == null ? null : base + p.area });
-      for (const p of S.pieces) scenePieces.push({ ...p, x: tx(p.x), y: ty(p.y) });
+      for (const q of S.piles) scenePiles.push({ ...q, x: tx(q.x), y: ty(q.y), area: q.area == null ? null : ids.get(q.area) ?? null });
+      for (const q of S.pieces) scenePieces.push({ ...q, x: tx(q.x), y: ty(q.y) });
     }
-    // The ring round the building stays clear; a path from its front door (and a roller door's drive) to the promenade.
-    for (let yy = B.y0 - 1; yy <= B.y0 + R.h; yy++) for (let x = B.x0 - 1; x <= B.x0 + R.w; x++) if (inside(x, yy) && !(x >= B.x0 && x < B.x0 + R.w && yy >= B.y0 && yy < B.y0 + R.h)) keep[I(x, yy)] = 1;
+    // A path from its front door (and its doors on the front: a roller door's drive) to the promenade, a plaza before it.
     const row = rows.find((r) => r.list.includes(B));
     const toWalk = (x, yy) => { for (let q = yy + 1; q < row.walk && inside(x, q); q++) { keep[I(x, q)] = 1; if (cells[I(x, q)].f === "grass") cells[I(x, q)].f = "gravel"; } };
-    for (const [x, yy] of (m.front && m.front.cells) || []) toWalk(tx(x), ty(yy));
-    for (const ex of m.exits || []) if (ex.side === "front") for (const [x, yy] of ex.cells || []) toWalk(tx(x), ty(yy));
-    B.front = m.front ? { x: tx(m.front.x), y: ty(m.front.y) } : null;
-    // A plaza before the front door (paved, kept clear).
+    for (const [x, yy] of (part.front && part.front.cells) || []) toWalk(x, yy);
+    for (const ex of part.exits) if (ex.side === "s") for (const [x, yy] of ex.cells) toWalk(x, yy);
+    B.front = part.front ? { x: part.front.x, y: part.front.y } : null;
     if (B.front) paint(B.front.x - 2, B.y0 + R.h + 1, 5, Math.max(0, row.walk - (B.y0 + R.h + 1)), "gravel");
   }
-  // ---------- the links between joined buildings ----------
+  // ---------- the links between joined buildings (compound.js link: the row both walls open onto a room) ----------
   const links = [];
   for (const row of rows) for (let j = 0; j + 1 < row.list.length; j++) {
     const A = row.list[j], Bb = row.list[j + 1];
     if (!A.link) continue;
-    const L = makeLink(A, Bb, A.link, { W, floors, areas, rng, I, keep, seed: seedOf(state, "link", tileId, option.id, A.k) });
-    if (L) links.push(L); else A.link = null;
+    const type = A.link.type, near = Math.max(A.y0, Bb.y0) + 3; // toward their backs: the courtyard in front of it
+    const area = link(C, A.part, Bb.part, { kind: type, f: A.link.f, width: 2, near, name: `${LINK_NAME[type]}: ${A.name} – ${Bb.name}`, dk: type === "corridor" ? "steel" : "glass" });
+    if (!area) { A.link = null; continue; }
+    for (const [dx, dy] of area.doors) { const c = C.floors[area.f].cells[I(dx, dy)]; if (c && c.dk && DOOR_KINDS[c.dk] && c.hp == null) { c.hp = c.mhp = DOOR_KINDS[c.dk].hp; if (DOOR_KINDS[c.dk].see) delete c.t; } }
+    area.link = type;
+    // A corridor's side door onto the courtyard (the lawn either side stays joined up).
+    if (type === "corridor") {
+      const mx = Math.floor((area.x0 + area.x0 + area.w - 1) / 2), my = area.y0 + area.h - 1, c = cells[I(mx, my)];
+      if (c && c.k === "wall") { cells[I(mx, my)] = { ...c, k: "idoor", dk: "steel", hp: DOOR_KINDS.steel.hp, mhp: DOOR_KINDS.steel.hp }; area.doors.push([mx, my]); }
+    }
+    links.push({ type, f: area.f, a: A.k, b: Bb.k, x0: area.x0, y0: area.y0, w: area.w, h: area.h, area: area.id, doors: area.doors.map((d) => d.slice()) });
   }
+  // The ground's guard (compound.js: nothing put on the ground cuts a walkable cell off from the way in).
+  const entry0 = [1, roadY + 2];
+  const G = guard(C, entry0[0], entry0[1]);
+  const piece = (x, yy, k, w = 1, h = 1) => { // a piece of w × h on the lawn: all its cells or none
+    const done = [];
+    for (let q = yy; q < yy + h; q++) for (let p = x; p < x + w; p++) {
+      if (cells[I(p, q)] && cells[I(p, q)].f === "floor") break;
+      if (G.block(p, q, k)) done.push(I(p, q)); else { for (const i of done) { cells[i].k = "open"; G.passAt(i); } return false; }
+    }
+    if (done.length < w * h) { for (const i of done) { cells[i].k = "open"; G.passAt(i); } return false; }
+    for (const i of done) keep[i] = 1;
+    return true;
+  };
   // The enclosed courtyards: the ground between two joined buildings in front of their link, hedged along the
   // promenade with a gate in the middle.
   /** @type {any[]} */
   const grounds = [];
   for (const L of links) {
     const A = built[L.a], Bb = built[L.b], row = rows.find((r) => r.list.includes(A));
-    const x0 = A.x0 + A.bw + 1, x1 = Bb.x0 - 2, y0 = L.y1 + 1, y1 = row.walk - 1;
+    const x0 = A.x0 + A.bw + 1, x1 = Bb.x0 - 2, y0 = L.y0 + L.h, y1 = row.walk - 1;
     if (x1 - x0 < 2 || y1 - y0 < 2) continue;
-    for (let yy = y0; yy <= y1; yy++) for (let x = x0; x <= x1; x++) if (cells[I(x, yy)].f === "gravel" && !keep[I(x, yy)]) cells[I(x, yy)].f = "grass";
     const gate = Math.floor((x0 + x1) / 2);
-    for (let x = x0; x <= x1; x++) if (Math.abs(x - gate) > 1 && !keep[I(x, y1)]) { const c = cells[I(x, y1)]; if (c.k === "open") { c.k = "fence"; c.hedge = true; } }
+    for (let x = x0; x <= x1; x++) if (Math.abs(x - gate) > 1 && !keep[I(x, y1)] && G.block(x, y1, "fence")) cells[I(x, y1)].hedge = true;
     grounds.push({ kind: "courtyard", name: `Courtyard, ${A.name}`, x0, y0, w: x1 - x0 + 1, h: y1 - y0 + 1 });
+    if (rng.chance(0.5)) { const cx = Math.floor((x0 + x1) / 2), cy = Math.floor((y0 + y1) / 2); piece(cx, cy, rng.chance(0.5) ? "statue" : "campusbench", 1, 1); }
   }
   // ---------- the strips: quads, the dorms' yards, the fields, the lots ----------
-  const lotsAreas = [];
-  const scatterOK = (x, yy, w = 1, h = 1) => {
-    for (let q = yy - 1; q <= yy + h; q++) for (let p = x - 1; p <= x + w; p++) { if (!inside(p, q)) return false; const c = cells[I(p, q)]; if (c.k !== "open" || c.f === "floor") return false; if (p >= x && p < x + w && q >= yy && q < yy + h && keep[I(p, q)]) return false; }
-    return true;
-  };
-  const put = (x, yy, k, w = 1, h = 1) => { if (!scatterOK(x, yy, w, h)) return false; for (let q = yy; q < yy + h; q++) for (let p = x; p < x + w; p++) { cells[I(p, q)].k = k; keep[I(p, q)] = 1; } return true; };
+  const lots = [];
   let quadNo = 0;
-  for (const s of strips) {
-    if (!s) continue;
-    const x0 = C.EDGE, x1 = sx - 2, w = x1 - x0 + 1;
-    if (s.kind === "quad" || s.kind === "yard") {
-      quadNo += s.kind === "quad" ? 1 : 0;
-      const name = s.kind === "yard" ? "Residence yard" : quadNo === 1 ? "Main quad" : ["", "", "North quad", "South quad", "East quad", "West quad"][quadNo] || `Quad ${quadNo}`;
-      grounds.push({ kind: s.kind, name, x0, y0: s.y0, w, h: s.h });
-      const midY = s.y0 + Math.floor(s.h / 2) - 1, midX = x0 + Math.floor(w / 2) - 1;
-      paint(x0, midY, w, C.PATH, "gravel"); // the cross paths
-      if (s.kind === "quad") {
-        for (const px of [midX, x0 + Math.floor(w / 4), x0 + Math.floor((3 * w) / 4)]) paint(px, s.y0, C.PATH, s.h, "gravel");
-        // The centre: a fountain (a 2 × 2 basin) or a statue on its plinth, at the crossing of the paths.
-        const cx = midX, cy = midY;
-        for (const [p, q] of [[cx, cy], [cx, cy + 1], [cx + 1, cy], [cx + 1, cy + 1]]) keep[I(p, q)] = 0;
-        const fountain = rng.chance(0.5);
-        if (fountain) { for (const [p, q] of [[cx, cy], [cx, cy + 1], [cx + 1, cy], [cx + 1, cy + 1]]) { const c = cells[I(p, q)]; c.k = "fountain"; c.f = "gravel"; keep[I(p, q)] = 1; } }
-        else { const c = cells[I(cx, cy)]; c.k = "statue"; c.f = "gravel"; keep[I(cx, cy)] = 1; }
-        for (let p = cx - 3; p <= cx + 4; p++) for (let q = cy - 3; q <= cy + 4; q++) if (inside(p, q) && cells[I(p, q)].k === "open") { cells[I(p, q)].f = "gravel"; keep[I(p, q)] = 1; } // the plaza round it
+  for (const st of strips) {
+    if (!st) continue;
+    const x0 = CP.EDGE, x1 = sx - 2, w = x1 - x0 + 1;
+    if (st.kind === "quad" || st.kind === "yard") {
+      quadNo += st.kind === "quad" ? 1 : 0;
+      const name = st.kind === "yard" ? "Residence yard" : quadNo === 1 ? "Main quad" : ["", "", "North quad", "South quad", "East quad", "West quad"][quadNo] || `Quad ${quadNo}`;
+      const q = { kind: st.kind, name, x0, y0: st.y0, w, h: st.h };
+      grounds.push(q);
+      const midY = st.y0 + Math.floor(st.h / 2) - 1, midX = x0 + Math.floor(w / 2) - 1;
+      paint(x0, midY, w, CP.PATH, "gravel"); // the cross paths
+      if (st.kind === "quad") {
+        for (const px of [midX, x0 + Math.floor(w / 4), x0 + Math.floor((3 * w) / 4)]) paint(px, st.y0, CP.PATH, st.h, "gravel");
+        // The centre: a fountain (a 2 × 2 basin) or a statue on its plinth, on a plaza where the paths cross.
+        for (let p = midX - 3; p <= midX + 4; p++) for (let r = midY - 3; r <= midY + 4; r++) if (inside(p, r) && cells[I(p, r)].k === "open") cells[I(p, r)].f = "gravel";
+        for (let p = midX; p <= midX + 1; p++) for (let r = midY; r <= midY + 1; r++) keep[I(p, r)] = 0;
+        if (rng.chance(0.5)) { piece(midX, midY, "fountain", 2, 2); q.centre = "fountain"; } else { piece(midX, midY, "statue"); q.centre = "statue"; }
+        for (let p = midX - 3; p <= midX + 4; p++) for (let r = midY - 3; r <= midY + 4; r++) if (inside(p, r)) keep[I(p, r)] = 1;
       }
       // Trees round the lawns, benches along the paths.
-      const nT = Math.round(w * s.h * C.TREES), nB = Math.max(2, Math.round(w * s.h * C.BENCH));
-      for (let t = 0, n = 0; t < nT * 6 && n < nT; t++) { const p = rng.int(x0, x1), q = rng.int(s.y0, s.y0 + s.h - 1); if (cells[I(p, q)].f === "grass" && put(p, q, "tree")) n++; }
+      const nT = Math.round(w * st.h * CP.TREES), nB = Math.max(2, Math.round(w * st.h * CP.BENCH));
+      for (let t = 0, n = 0; t < nT * 6 && n < nT; t++) { const p = rng.int(x0, x1), r = rng.int(st.y0, st.y0 + st.h - 1); if (cells[I(p, r)].f === "grass" && !keep[I(p, r)] && G.block(p, r, "tree")) { keep[I(p, r)] = 1; n++; } }
       for (let t = 0, n = 0; t < nB * 12 && n < nB; t++) {
-        const p = rng.int(x0, x1 - 1), q = rng.int(s.y0, s.y0 + s.h - 1);
-        const nearPath = (cells[I(p, q - 1)] || {}).f === "gravel" || (cells[I(p, q + 1)] || {}).f === "gravel";
-        if (!nearPath || cells[I(p, q)].f !== "grass" || cells[I(p + 1, q)].f !== "grass") continue;
-        if (put(p, q, "campusbench", 2, 1)) n++;
+        const p = rng.int(x0, x1 - 1), r = rng.int(st.y0 + 1, st.y0 + st.h - 2);
+        const nearPath = cells[I(p, r - 1)].f === "gravel" || cells[I(p, r + 1)].f === "gravel";
+        if (nearPath && cells[I(p, r)].f === "grass" && cells[I(p + 1, r)].f === "grass" && piece(p, r, "campusbench", 2, 1)) n++;
       }
-      s.quad = grounds[grounds.length - 1];
-    } else if (s.kind === "south") {
+    } else if (st.kind === "south") {
       // The fields (a sports field inside its running track, a stadium stand at a state university) to the west, the
-      // parking lots to the east.
+      // parking lots to the east (compound.js parkingLot: bays in double rows, cars to search in some).
       let lx0 = x0;
-      if (s.field) {
-        const F = C.FIELD, fx = x0 + 2, fy = s.y0 + 2 + (K.stadium ? 3 : 0);
+      if (st.field) {
+        const F = CP.FIELD, fx = x0 + 2, fy = st.y0 + 2 + (K.stadium ? 3 : 0);
         paint(fx, fy, F.w, F.h, "track", false);
         paint(fx + F.track, fy + F.track, F.w - 2 * F.track, F.h - 2 * F.track, "grass", false);
         grounds.push({ kind: "field", name: K.stadium ? "Stadium" : "Sports field", x0: fx, y0: fy, w: F.w, h: F.h });
-        if (K.stadium) for (let p = fx + 4; p + 1 < fx + F.w - 4; p += 3) { keep[I(p, fy - 3)] = 0; put(p, fy - 3, "bleachers", 2, 2); } // the stand along the north side
+        if (K.stadium) for (let p = fx + 4; p + 1 < fx + F.w - 4; p += 3) piece(p, fy - 3, "bleachers", 2, 2); // the stand along the north side
         lx0 = fx + F.w + 4;
       }
-      // The lots: rows of stalls facing the aisles, cars left in some (each a container to search).
       const nl = K.lots, lw = Math.floor((x1 - lx0 + 1 - (nl - 1) * 4) / nl);
       for (let l = 0; l < nl && lw >= 16; l++) {
-        const ax0 = lx0 + l * (lw + 4), ay0 = s.y0 + 1, ah = s.h - 2;
-        paint(ax0, ay0, lw, ah, "road", false);
-        const lot = { id: -1, type: "wreck", name: nl > 1 ? `Parking lot ${String.fromCharCode(65 + l)}` : "Parking lot", outdoor: true, f: 0, x0: ax0, y0: ay0, w: lw, h: ah, lot: true };
-        lotsAreas.push(lot);
-        grounds.push({ kind: "lot", name: lot.name, x0: ax0, y0: ay0, w: lw, h: ah });
-        // An aisle round the lot's edge and across it every other stall row (kept clear).
-        for (let p = ax0; p < ax0 + lw; p++) for (const q of [ay0, ay0 + ah - 1]) keep[I(p, q)] = 1;
-        for (let q = ay0; q < ay0 + ah; q++) for (const p of [ax0, ax0 + lw - 1]) keep[I(p, q)] = 1;
+        const r = { x0: lx0 + l * (lw + 4), y0: st.y0 + 1, w: lw, h: st.h - 2 };
+        const lot = parkingLot(C, G, r, rng, { name: nl > 1 ? `Parking lot ${String.fromCharCode(65 + l)}` : "Parking lot", parked: CP.CARS });
+        if (lot) { lots.push(lot); grounds.push({ kind: "lot", name: lot.name, x0: r.x0, y0: r.y0, w: r.w, h: r.h }); }
       }
     }
   }
-  // Cars left in the lots' stalls (placeCar keeps a free ring round each, so nothing is cut off): CAMPUS.CARS of the
-  // stalls, each a container to search.
-  lotsAreas.forEach((lot, l) => { lot.id = areas.length + l; });
-  for (const lot of lotsAreas) {
-    for (let q = lot.y0 + 1; q + 4 <= lot.y0 + lot.h; q += 5) for (let p = lot.x0 + 1; p + 2 <= lot.x0 + lot.w; p += CAMPUS.STALL) {
-      if (!rng.chance(CAMPUS.CARS)) continue;
-      const rect = placeCar(cells, W, H, p, q, "y", rng.pick(CAR_LEN.car), "car", (x, yy) => cells[I(x, yy)].k === "open" && !keep[I(x, yy)], rng.int(0, 1e6));
-      if (!rect) continue;
-      for (let yy = rect.y0; yy < rect.y0 + rect.h; yy++) for (let x = rect.x0; x < rect.x0 + rect.w; x++) keep[I(x, yy)] = 1;
-      containers.push({ id: cid++, x: rect.x0, y: rect.y0, w: rect.w, h: rect.h, f: 0, area: lot.id, kind: "car", searched: false, label: `${lot.name}: car` });
-    }
-  }
-  for (const lot of lotsAreas) areas.push(lot);
   // ---------- the ways out ----------
   const Z = 3, zy = roadY + 1;
   const zones = [
@@ -377,52 +346,39 @@ export function campusMap(state, tileId, option, withVehicle) {
     { x0: 0, y0: Math.floor(roadY / 2), w: Z, h: Z, side: "west", exit: "west", name: "West edge of the campus", vehicle: false },
     { x0: W - Z, y0: Math.floor(roadY / 2), w: Z, h: Z, side: "east", exit: "east", name: "East edge of the campus", vehicle: false },
   ];
-  for (const lot of lotsAreas) zones.push({ x0: lot.x0 + Math.floor(lot.w / 2) - 1, y0: H - Z, w: Z, h: Z, side: "south", exit: "south", name: `South of ${lot.name.toLowerCase()}`, vehicle: false, lot: true });
-  for (const z of zones) for (let q = z.y0 - 1; q <= z.y0 + z.h; q++) for (let p = z.x0 - 1; p <= z.x0 + z.w; p++) if (inside(p, q)) { keep[I(p, q)] = 1; const c = cells[I(p, q)]; if (c.k === "tree" || c.k === "fence") { c.k = "open"; delete c.hedge; } }
-  // A lot's way out reaches the map's south edge across the road's verge (paved).
-  for (const z of zones.filter((q) => q.lot)) paint(z.x0, roadY + C.ROAD, Z, H - roadY - C.ROAD, "gravel");
-  // ---------- the quarantine tent on a quad (an outdoor scene) ----------
+  for (const lot of lots) { paint(lot.x0 + Math.floor(lot.w / 2) - 1, roadY + CP.ROAD, Z, H - roadY - CP.ROAD, "gravel"); zones.push({ x0: lot.x0 + Math.floor(lot.w / 2) - 1, y0: H - Z, w: Z, h: Z, side: "south", exit: "south", name: `South of ${lot.name.toLowerCase()}`, vehicle: false, lot: true }); }
+  for (const z of zones) for (let q = z.y0 - 1; q <= z.y0 + z.h; q++) for (let p = z.x0 - 1; p <= z.x0 + z.w; p++) if (inside(p, q)) { keep[I(p, q)] = 1; const c = cells[I(p, q)]; if (c.k === "tree" || c.k === "fence") { c.k = "open"; delete c.hedge; G.passAt(I(p, q)); } }
+  // ---------- the quarantine tent on a quad (an outdoor scene: its own dice) ----------
   const qrng = new Rng(seedOf(state, "quarantine", tileId, option.id) || 1);
   const quads = grounds.filter((g) => g.kind === "quad");
-  if (quads.length && qrng.chance(C.QUARANTINE)) {
+  if (quads.length && qrng.chance(CP.QUARANTINE)) {
     const q = qrng.pick(quads), tw = 7, th = 5;
     for (let t = 0; t < 40; t++) {
       const p = qrng.int(q.x0 + 2, q.x0 + q.w - tw - 2), r = qrng.int(q.y0 + 1, q.y0 + q.h - th - 1);
       let ok = true;
-      for (let yy = r - 1; yy <= r + th && ok; yy++) for (let x = p - 1; x <= p + tw && ok; x++) if (!inside(x, yy) || cells[I(x, yy)].k !== "open" || keep[I(x, yy)] && cells[I(x, yy)].f !== "grass") ok = false;
+      for (let yy = r - 1; yy <= r + th && ok; yy++) for (let x = p - 1; x <= p + tw && ok; x++) if (!inside(x, yy) || cells[I(x, yy)].k !== "open" || cells[I(x, yy)].f !== "grass") ok = false;
       if (!ok) continue;
-      // The tent's floor (canvas over the lawn), cots in two rows, the bodies of those it was for.
+      // The tent's canvas over the lawn (its long sides, the ends open), cots in two rows, the bodies of those it was for.
       for (let yy = r; yy < r + th; yy++) for (let x = p; x < p + tw; x++) { const c = cells[I(x, yy)]; c.k = yy === r || yy === r + th - 1 ? "tent" : "open"; c.f = "dirt"; keep[I(x, yy)] = 1; }
       const cots = [];
-      for (let x = p + 1; x < p + tw - 1; x += 2) for (const yy of [r + 1, r + 3]) { const c = cells[I(x, yy)]; c.k = "cot"; cots.push([x, yy]); scenePieces.push({ f: 0, x, y: yy, k: "cot" }); }
+      for (let x = p + 1; x < p + tw - 1; x += 2) for (const yy of [r + 1, r + 3]) { if (G.block(x, yy, "cot", null)) { cots.push([x, yy]); scenePieces.push({ f: 0, x, y: yy, k: "cot" }); } }
       const nb = qrng.int(3, 6);
       let made = 0;
-      for (const [x, yy] of qrng.shuffle(cots)) { if (made >= nb) break; const by = yy === r + 1 ? r + 2 : r + 2; if (cells[I(x, by)].k !== "open") continue; sceneBodies.push({ f: 0, x, y: by, human: true, quiet: true, r: qrng.next(), weapon: null, patient: true }); made++; }
+      for (const [x] of qrng.shuffle(cots)) { if (made >= nb) break; if (cells[I(x, r + 2)].k !== "open" || sceneBodies.some((o) => o.f === 0 && o.x === x && o.y === r + 2)) continue; sceneBodies.push({ f: 0, x, y: r + 2, human: true, quiet: true, r: qrng.next(), weapon: null, patient: true }); made++; }
       sceneList.push({ kind: "quarantine", f: 0, room: null, x: p + 3, y: r + 2, text: `A quarantine tent on the ${q.name.toLowerCase()}: cots in rows under the canvas, and ${made} who were brought here and never left.`, seen: false });
       q.quarantine = true;
       break;
     }
   }
-  // ---------- the team's vehicle at the west end of the road ----------
-  let vehicle = null;
-  if (withVehicle) {
-    const z = zones[0]; z.vehicle = true;
-    vehicle = placeVehicle(cells, W, H, z, withVehicle, (x, yy) => inside(x, yy) && cells[I(x, yy)].k === "open");
-    if (!vehicle) { const c = cells[I(z.x0 + 1, z.y0 + 1)]; c.k = "vehicle"; c.f = "road"; }
-  }
-  // ---------- the result (as streetMap's: plan.houses are the buildings) ----------
-  const zoneExits = () => zones.slice(1).map((z, j) => ({ side: z.side, name: z.name, x: z.x0 + 1, y: z.y0 + 1, cells: [], locked: null, roller: false, zone: j + 1 }));
-  const houses = built.map((B) => ({ k: B.k, key: B.key, name: B.name, row: rows.findIndex((r) => r.list.includes(B)), ...B.rect, storeys: B.storeys, front: B.front, rooms: areas.filter((a) => a.house === B.k).map((a) => a.id) }));
-  const scenes = sceneList.length ? { list: sceneList.map((s, i) => ({ ...s, id: i + 1 })), bodies: sceneBodies, piles: scenePiles, pieces: scenePieces, seed: seedOf(state, "scenebattle", tileId, option.id) % 2147483646 + 1 } : null;
-  const plan = {
-    key: option.key, id: option.id, name: option.name, w: W, h: H, street: true, campus: true, kind, kindName: K.name,
-    building: built[0].rect, buildings: built.map((B) => ({ ...B.rect })), houses, links: links.map((L) => ({ ...L })), grounds,
-    tall: true, storeys, stairs: stairs.map((s) => s.slice()), runs: runs.map((r) => ({ ...r })),
-    rooms: areas.filter((a) => !a.outdoor).map((a) => ({ id: a.id, f: a.f, name: a.name, role: a.role, type: a.type, x0: a.x0, y0: a.y0, w: a.w, h: a.h, locked: a.locked, up: a.up, hub: a.hub, entry: a.entry, house: a.house, ...(a.civic ? { civic: a.civic } : {}), ...(a.campus ? { campus: a.campus } : {}) })),
-    front: built[0].front, exits: zoneExits(),
-  };
-  return { w: W, h: H, cells, rooms: areas, containers, zones, vehicle, exits: zoneExits(), front: built[0].front, lockedDoors, plan, building: plan.building, buildings: plan.buildings, floors, stairs, runs, storeys, street: true, campus: true, scenes };
+  // ---------- the result (compound.js compoundResult: streetMap's shape; plan.houses are the buildings) ----------
+  const vehicle = compoundVehicle(C, zones[0], withVehicle);
+  const scenes = sceneList.length ? { list: sceneList.map((sc, i) => ({ ...sc, id: i + 1 })), bodies: sceneBodies, piles: scenePiles, pieces: scenePieces, seed: (seedOf(state, "scenebattle", tileId, option.id) % 2147483646) + 1 } : null;
+  const map = compoundResult(C, { key: option.key, id: option.id, name: option.name, zones, vehicle, kind: "campus", extra: { street: true, campus: true, campusKind: kind, kindName: K.name, links, grounds } });
+  for (const h of map.plan.houses) { const B = built[h.k]; h.row = rows.findIndex((r) => r.list.includes(B)); }
+  for (const r of map.plan.rooms) { const a = map.rooms[r.id]; if (a.campus) r.campus = a.campus; if (a.link) r.link = a.link; }
+  return Object.assign(map, { street: true, campus: true, scenes });
 }
+const LINK_NAME = { bridge: "Glass bridge", walkway: "Covered walkway", corridor: "Connecting corridor" };
 
 // The rows: the buildings grouped by zone (north to south), packed left to right within the row's width, a joined pair
 // (CAMPUS.LINKS) a link's length apart, else a gap; the strip behind each row (a yard between two rows of dorms, a quad
@@ -471,56 +427,6 @@ function setLink(rng, row, j) {
   A.link = { type, f: type === "bridge" ? rng.int(1, up - 1) : 0 };
   row.gaps[j] = rng.int(C.LINK[0], C.LINK[1]);
 }
-// A link between A (west) and B (east) on floor link.f: a row band within both buildings' depths, toward their backs,
-// where a door fits in each one's side wall (a room's floor inside it); its cells across the gap, the doors, a room of
-// its own in areas. Returns { type, f, a, b, x0, y0, w, h, y1 (the band's south row), area, doors } or null.
-function makeLink(A, B, link, ctx) {
-  const { W, floors, areas, I, keep } = ctx;
-  const g = link.f, F = floors[g] && floors[g].cells;
-  if (!F) return null;
-  const ax = A.x0 + A.bw - 1, bx = B.x0; // the side walls
-  const top = Math.max(A.y0, B.y0) + 2, bot = Math.min(A.y0 + A.bh, B.y0 + B.bh) - 3;
-  const roomFloor = (x, y) => { const c = F[I(x, y)]; return c && c.k === "open" && c.f === "floor" && !c.landing; };
-  const wallish = (x, y) => { const c = F[I(x, y)]; return c && (c.k === "wall" || c.k === "window"); };
-  const walls = link.type !== "walkway";
-  for (let y = top + (walls ? 1 : 0); y <= bot - (walls ? 1 : 0); y++) {
-    const dy = [y, y + 1].find((q) => wallish(ax, q) && wallish(bx, q) && roomFloor(ax - 1, q) && roomFloor(bx + 1, q));
-    if (dy == null) continue;
-    // Clear across the gap on the ground (a walkway, a corridor: nothing already there but lawn and paths).
-    let clear = true;
-    for (let x = ax + 1; x < bx && clear; x++) for (let q = y - (walls ? 1 : 0); q <= y + 1 + (walls ? 1 : 0); q++) { const c = F[I(x, q)]; if (g === 0 ? c.k !== "open" || c.f === "floor" : c.k !== "void") clear = false; }
-    if (!clear) continue;
-    const name = link.type === "bridge" ? "Glass bridge" : link.type === "walkway" ? "Covered walkway" : "Connecting corridor";
-    const id = areas.length;
-    for (let x = ax + 1; x < bx; x++) {
-      for (const q of [y, y + 1]) { F[I(x, q)] = { k: "open", f: "floor", fl: link.type === "corridor" ? "lino" : "conc", ...(link.type === "walkway" ? { canopy: true } : {}), ...(link.type === "bridge" ? { bridge: true } : {}) }; keep[I(x, q)] = 1; }
-      if (walls) for (const q of [y - 1, y + 2]) {
-        const glass = link.type === "bridge" || (x - ax) % 3 === 0;
-        F[I(x, q)] = glass ? { k: "window", f: "floor", win: link.type === "bridge" ? { open: false, lock: "fixed", known: true } : rollWin(ctx.seed, null, g, x, q) } : { k: "wall", f: "floor" };
-        keep[I(x, q)] = 1;
-      }
-    }
-    // A corridor's side door in the middle of its south wall (the lawn either side stays joined up).
-    const doors = [[ax, dy], [bx, dy]];
-    if (link.type === "corridor") { const mx = Math.floor((ax + bx) / 2); doors.push([mx, y + 2]); }
-    const dk = link.type === "corridor" ? "steel" : "glass";
-    for (const [x, q] of doors) {
-      const c = F[I(x, q)];
-      c.k = "idoor"; c.dk = dk; c.hp = c.mhp = DOOR_KINDS[dk].hp; delete c.win;
-      if (DOOR_KINDS[dk].see) delete c.t;
-    }
-    // The rooms the doors open into know them (scenes, the occupants read area.doors).
-    for (const [x, q, Bd] of [[ax - 1, dy, A], [bx + 1, dy, B]]) {
-      const r = areas.find((a) => a.house === Bd.k && (a.f || 0) === g && !a.outdoor && x > a.x0 && x < a.x0 + a.w - 1 && q > a.y0 && q < a.y0 + a.h - 1);
-      if (r) r.doors = [...(r.doors || []), x === ax - 1 ? [ax, dy] : [bx, dy]];
-    }
-    const area = { id, f: g, type: null, role: "corridor", name: `${name}: ${A.name} – ${B.name}`, x0: ax, y0: walls ? y - 1 : y, w: bx - ax + 1, h: walls ? 4 : 2, doors, hub: true, locked: null, up: false, entry: false, link: link.type, house: null };
-    areas.push(area);
-    return { type: link.type, f: g, a: A.k, b: B.k, x0: area.x0, y0: area.y0, w: area.w, h: area.h, y1: walls ? y + 2 : y + 1, area: id, doors };
-  }
-  return null;
-}
-
 // ---------- in the raid ----------
 // The dead on a campus (buildingmaps.js placeInterior for a campus map): the site's roster × CAMPUS.DEAD_AREA's scale,
 // spread over the buildings by their floor area × CAMPUS.DENSE (a dorm and the dining hall densest) and over the open

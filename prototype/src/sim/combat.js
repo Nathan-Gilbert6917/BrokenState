@@ -2464,7 +2464,7 @@ function genMap(rng, tile, opts = {}) {
     case "farm": building(6, 4); fenceLine(rx(X(3), X(6)), rng.int(1, Y(3)), X(8), true); fenceLine(rx(X(3), X(6)), rng.int(Y(9), Y(11)), X(8), true); scatter("hay", 6); break;
     case "gas": building(4, 3); scatter("pump", 3, X(6), X(11)); scatter("car", 2); break;
     case "mall": building(8, 5); scatter("car", 6); break;
-    case "hospital": case "univ": case "factory": building(7, 5); scatter("crate", 4); scatter("car", 2); break;
+    case "hospital": case "univ": case "college": case "factory": building(7, 5); scatter("crate", 4); scatter("car", 2); break;
     case "police": building(5, 4); scatter("car", 4); scatter("crate", 2); break;
     case "military": building(5, 4); fenceLine(rx(X(5), X(7)), rng.int(1, Y(4)), X(6), true, "sandbag"); fenceLine(rx(X(5), X(7)), rng.int(Y(8), Y(11)), X(6), true, "sandbag"); if (!(opts.trucks && opts.trucks.length)) scatter("truck", 2); scatter("crate", 3); break;
     case "prison": building(6, 5); fenceLine(X(5), 0, Y(9), false); fenceLine(X(12), Y(2), Y(9), false); break;
@@ -6884,6 +6884,9 @@ export const AREAS = {
   // A school corridor lined with narrow lockers (issue #15): many small draws, a snack, a bat, a knife, a bag, a phone.
   schoolhall: { name: "School lockers", boxes: ["schoollocker"],      loot: { food: [0.12, 1, 2], water: [0.08, 1, 1] }, gear: [["bat", 0.015], ["knife", 0.01], ["backpack", 0.015], ["slingbag", 0.015], ["sportspads", 0.01]] },
   enginebay: { name: "Engine bay",     boxes: ["locker", "crate", "shelf"],    loot: { fuel: [0.75, 4, 10], parts: [0.55, 1, 3], scrap: [0.5, 2, 6] }, gear: [["fireaxe", 0.08], ["prybar", 0.06], ["crowbar", 0.04], ["sledge", 0.03], ["ladder", 0.04], ["hatchet", 0.03], ["leatherjacket", 0.04], ["bikehelmet", 0.03], ["kneeguards", 0.03], ["flashlight", 0.05]] },
+  // A residence hall's rooms (issue #28, campuslayout.js): what students kept: snacks, drinks, a few meds, a bag, a bat
+  // or a stick under the bed; the phones and laptops are its finds (loot.js AREA_FINDS.dormroom). No guns.
+  dormroom:  { name: "Dorm room",      boxes: ["cabinet", "shelf", "locker"],  loot: { food: [0.55, 1, 4], water: [0.45, 1, 3], meds: [0.09, 1, 1], scrap: [0.2, 1, 2] }, gear: [["bat", 0.03], ["backpack", 0.05], ["slingbag", 0.04], ["flashlight", 0.03], ["bottle", 0.06], ["sportspads", 0.02], ["golfclub", 0.01], ["knife", 0.02]] },
   cargodrop: { name: "Scattered cargo",  outdoor: true, boxes: ["crate", "crate", "crate"], loot: { food: [0.6, 3, 8], water: [0.5, 2, 6], meds: [0.25, 1, 2], preserved: [0.35, 2, 6], ammo: [0.25, 5, 15] }, gear: [["assaultpack", 0.03], ["bandagekit", 0.05], ["rucksack", 0.03], ["stove", 0.03]] },
 };
 // What a piece of furniture holds (the user's request 2026-10-25, issue #10: homes furnished room by room,
@@ -6974,6 +6977,15 @@ export const BOX_LOOT = {
   "nightstand@clinic": { rest: 0.25, loot: { water: [0.3, 1, 1] }, gear: [["flashlight", 0.03], ["knife", 0.02]] },
   "medcab@vet":        { rest: 0.5, loot: { meds: [0.75, 1, 4] }, gear: [["dewormer", 0.08]] },
   "crate@vet":         { rest: 0, loot: { food: [0.75, 1, 4] }, gear: [] }, // the food store's sacks of feed: food, at a low worth
+  // College campuses (issue #28, campuslayout.js): a dorm desk's drawers (snacks, a phone, a laptop now and then), a mini
+  // fridge's drinks, a study carrel's left-behind things, a mailbox wall's parcels, the maintenance truck's tools and
+  // fuel, a lab cabinet's reagents (meds and parts: the game has no chemicals).
+  dormdesk:            { rest: 0.4, loot: { food: [0.3, 1, 2] }, gear: [["laptop", 0.05], ["phone", 0.05], ["bat", 0.02], ["flashlight", 0.02]] },
+  minifridge:          { rest: 0, loot: { food: [0.3, 1, 2], water: [0.65, 1, 4], preserved: [0.12, 1, 1] }, gear: [["bottle", 0.06]] },
+  carrel:              { rest: 0.3, loot: {}, gear: [["laptop", 0.03], ["phone", 0.03]] },
+  mailboxes:           { rest: 0, loot: { food: [0.15, 1, 2], meds: [0.06, 1, 1] }, gear: [["photos", 0.08], ["batteries", 0.05], ["phone", 0.02]] },
+  maintruck:           { rest: 0, loot: { fuel: [0.75, 3, 8], parts: [0.6, 1, 3], scrap: [0.6, 2, 6] }, gear: [["sledge", 0.2], ["crowbar", 0.25], ["prybar", 0.2], ["hammer", 0.25], ["flashlight", 0.2], ["toolbox", 0.1]] },
+  "cabinet@lab":       { rest: 0.5, loot: { meds: [0.35, 1, 2], parts: [0.35, 1, 2] }, gear: [["bandagekit", 0.03]] },
 };
 const boxDefs = new Map();
 // The table a container rolls: its room's (AREAS[type]), or its kind's (BOX_LOOT) with the room's rows at `rest` times
@@ -6997,7 +7009,7 @@ export const AREA_SETS = {
   farm: ["farmhouse", "barn", "barn", "campsite"], gas: ["store", "garage", "pumps", "wreck"], mall: ["store", "store", "lockers", "kitchen", "warehouse"],
   hospital: ["clinic", "clinic", "pharmacy", "office", "kitchen"], police: ["armory", "office", "garage", "cellblock"],
   military: ["armory", "barracks", "motorpool", "warehouse"], prison: ["cellblock", "cellblock", "kitchen", "armory", "clinic"],
-  univ: ["lab", "lab", "office", "kitchen"], dam: ["control", "workshop", "warehouse"], airport: ["hangar", "warehouse", "store", "office"],
+  univ: ["lab", "lab", "office", "kitchen"], college: ["office", "lab", "kitchen", "lockers"], dam: ["control", "workshop", "warehouse"], airport: ["hangar", "warehouse", "store", "office"],
   factory: ["workshop", "warehouse", "office", "garage"], quarry: ["workshop", "garage", "campsite"],
   forest: ["cabin", "campsite", "wreck"], hills: ["cabin", "campsite"], mountain: ["campsite", "cabin"], plains: ["farmhouse", "barn", "wreck"],
   suburb: ["house", "house", "house", "garage"], water: ["campsite", "wreck"],

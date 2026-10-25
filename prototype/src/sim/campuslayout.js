@@ -92,15 +92,15 @@ function dorm(rng, o = {}) {
   const { bw, bh } = footOf(rng, "dorm", o), n = storeysOf(rng, "dorm", o);
   const suite = o.suite != null ? !!o.suite : rng.chance(CAMPUSL.SUITE);
   const inner = bw - 2, fd = 6;
-  const rooms = (k, f, side) => Array.from({ length: Math.max(1, k) }, (_, i) => ["*", room("bedroom", "Dorm room", "dormroom", { type: "house", maxBoxes: CAMPUSL.DORM_BOXES, boxTarget: CAMPUSL.DORM_BOXES, fl: "carpet", dorm: `${f}${side}${i}` })]);
+  const rooms = (k, f, side) => Array.from({ length: Math.max(1, k) }, (_, i) => ["*", room("bedroom", "Dorm room", "dormroom", { type: "dormroom", maxBoxes: CAMPUSL.DORM_BOXES, boxTarget: CAMPUSL.DORM_BOXES, fl: "carpet", dorm: `${f}${side}${i}` })]);
   // Suites along the front: two bedrooms either side of a common room, one unit (assemble: its doors stay inside it).
   const suites = (k, f, side) => Array.from({ length: Math.max(1, k) }, (_, i) => {
     const unit = `s${f}${side}${i}`, nm = `Suite ${f + 1}${side}${i + 1}`;
-    return ["*", { split: "x", parts: [[CAMPUSL.DORM_ROOM, room("bedroom", `${nm}: bedroom`, "dormroom", { type: "house", unit, maxBoxes: 2, boxTarget: 2, fl: "carpet" })], ["*", room("apt", `${nm}: common room`, "suitecommon", { type: "house", unit, maxBoxes: 1, fl: "carpet" })], [CAMPUSL.DORM_ROOM, room("bedroom", `${nm}: bedroom`, "dormroom", { type: "house", unit, maxBoxes: 2, boxTarget: 2, fl: "carpet" })]] }];
+    return ["*", { split: "x", parts: [[CAMPUSL.DORM_ROOM, room("bedroom", `${nm}: bedroom`, "dormroom", { type: "dormroom", unit, maxBoxes: 2, boxTarget: 2, fl: "carpet" })], ["*", room("apt", `${nm}: common room`, "suitecommon", { type: "dormroom", unit, maxBoxes: 1, fl: "carpet" })], [CAMPUSL.DORM_ROOM, room("bedroom", `${nm}: bedroom`, "dormroom", { type: "dormroom", unit, maxBoxes: 2, boxTarget: 2, fl: "carpet" })]] }];
   });
   const lobbyW = 7, perRoom = CAMPUSL.DORM_ROOM + 1, perSuite = 3 * CAMPUSL.DORM_ROOM + 3;
   const frontRow = (f) => {
-    const mid = f === 0 ? [lobbyW, room("lobby", "Front desk", "dormlobby", { entry: true, type: "office", maxBoxes: 1 })] : [lobbyW, room("dayroom", "Lounge", "lounge", { hub: false, type: "house", maxBoxes: 2 })];
+    const mid = f === 0 ? [lobbyW, room("lobby", "Front desk", "dormlobby", { entry: true, type: "office", maxBoxes: 1 })] : [lobbyW, room("dayroom", "Lounge", "lounge", { hub: false, type: "dormroom", maxBoxes: 2 })];
     const k = Math.floor((inner - lobbyW - 1) / (suite ? perSuite : perRoom));
     const L = Math.ceil(k / 2), R = Math.max(1, k - L);
     const make = suite ? suites : rooms;
@@ -108,10 +108,10 @@ function dorm(rng, o = {}) {
   };
   const backRow = (f) => {
     /** @type {[number, any][]} */
-    const fixed = f === 0 ? [[5, room("bath", "Bathroom", "dormbath", { maxBoxes: 1 })], [5, room("laundry", "Laundry", "laundry")], [4, room("bedroom", "RA's room", "raroom", { type: "house", maxBoxes: 2, fl: "carpet", ra: true })]]
-      : [[5, room("bath", "Bathroom", "dormbath", { maxBoxes: 1 })], [4, room("bedroom", "RA's room", "raroom", { type: "house", maxBoxes: 2, fl: "carpet", ra: true })]];
+    const fixed = f === 0 ? [[5, room("bath", "Bathroom", "dormbath", { maxBoxes: 1, type: "dormroom" })], [5, room("laundry", "Laundry", "laundry")], [4, room("bedroom", "RA's room", "raroom", { type: "dormroom", maxBoxes: 2, fl: "carpet", ra: true })]]
+      : [[5, room("bath", "Bathroom", "dormbath", { maxBoxes: 1, type: "dormroom" })], [4, room("bedroom", "RA's room", "raroom", { type: "dormroom", maxBoxes: 2, fl: "carpet", ra: true })]];
     /** @type {[number, any]} */
-    const end = f === 0 ? [6, room("dayroom", "Lounge", "lounge", { hub: false, type: "house", maxBoxes: 2 })] : [5, room("office", "Study room", "study", { type: "office", maxBoxes: 2 })];
+    const end = f === 0 ? [6, room("dayroom", "Lounge", "lounge", { hub: false, type: "dormroom", maxBoxes: 2 })] : [5, room("office", "Study room", "study", { type: "office", maxBoxes: 2 })];
     const used = fixed.reduce((a, [s]) => a + s + 1, 0) + end[0] + 1;
     const k = Math.max(1, Math.floor((inner - used) / perRoom));
     return [...fixed, ...rooms(k, f, "C"), end];
@@ -167,8 +167,8 @@ function studentunion(rng, o = {}) {
   return {
     bw, bh, front: { width: 2 }, ground: "town", storeys: n, foot: "large", stairs: ENDS,
     program: hallPlan([["*", room("sales", "Campus bookstore", "bookstore", { type: "store", hub: false, maxBoxes: 6 })], [7, room("lobby", "Lobby", "hallobby", { entry: true, type: "office", maxBoxes: 1 })], ["*", room("dining", "Food court", "foodcourt", { type: "kitchen", maxBoxes: 3 })]],
-      [["*", room("dayroom", "Games room", "games", { hub: false, type: "house", maxBoxes: 2 })], [4, room("office", "Club office", "faculty", { type: "office", maxBoxes: 2 })], [3, restroom()], [7, room("kitchen", "Kitchen", "kitchen", { maxBoxes: 3 })], [3, room("pantry", "Walk-in", "walkin", { type: "kitchen", dk: "steel", maxBoxes: 2 })]], 9),
-    upper: () => hallPlan([["*", room("dining", "Ballroom", "ballroom", { type: "kitchen", maxBoxes: 2, fl: "hardwood" })], [6, room("dayroom", "Lounge", "lounge", { hub: false, type: "house", maxBoxes: 2 })]],
+      [["*", room("dayroom", "Games room", "games", { hub: false, type: "dormroom", maxBoxes: 2 })], [4, room("office", "Club office", "faculty", { type: "office", maxBoxes: 2 })], [3, restroom()], [7, room("kitchen", "Kitchen", "kitchen", { maxBoxes: 3 })], [3, room("pantry", "Walk-in", "walkin", { type: "kitchen", dk: "steel", maxBoxes: 2 })]], 9),
+    upper: () => hallPlan([["*", room("dining", "Ballroom", "ballroom", { type: "kitchen", maxBoxes: 2, fl: "hardwood" })], [6, room("dayroom", "Lounge", "lounge", { hub: false, type: "dormroom", maxBoxes: 2 })]],
       [["*", room("office", "Club office", "faculty", { type: "office", maxBoxes: 2 })], ["*", room("office", "Student newspaper", "faculty", { type: "office", maxBoxes: 2 })], [4, room("storage", "Storeroom", "drystore", { type: "warehouse", maxBoxes: 2 })], [3, restroom()]], 9),
     exits: [{ side: "back", roles: ["kitchen", "pantry", "dayroom"], chance: 0.8, lock: 0.3 }, ...fireExits(0.3)],
   };
@@ -180,7 +180,7 @@ function dininghall(rng, o = {}) {
     program: { split: "y", parts: [["*", civ("cafeteria", "Dining room", "cafeteria", { entry: true, maxBoxes: 3 })],
       [4, { split: "x", parts: leaves([["*", room("kitchen", "Servery", "servery", { maxBoxes: 3 })], [5, room("kitchen", "Dish room", "dishroom", { maxBoxes: 1 })]]) }],
       [6, { split: "x", parts: leaves([["*", room("kitchen", "Kitchen", "kitchen", { maxBoxes: 3 })], [4, room("pantry", "Walk-in cooler", "walkin", { type: "kitchen", dk: "coldroom", maxBoxes: 2 })], [4, room("pantry", "Walk-in freezer", "freezerroom", { type: "kitchen", dk: "coldroom", maxBoxes: 3 })], [4, room("storage", "Dry store", "drystore", { type: "kitchen", maxBoxes: 3 })]]) }]] },
-    upper: () => ({ split: "y", parts: [["*", room("dining", "Private dining room", "ballroom", { type: "kitchen", maxBoxes: 2 })], [5, { split: "x", parts: leaves([["*", room("office", "Catering office", "faculty", { type: "office", maxBoxes: 2 })], [4, room("storage", "Linen store", "drystore", { type: "house", maxBoxes: 2 })], [3, restroom()]]) }]] }),
+    upper: () => ({ split: "y", parts: [["*", room("dining", "Private dining room", "ballroom", { type: "kitchen", maxBoxes: 2 })], [5, { split: "x", parts: leaves([["*", room("office", "Catering office", "faculty", { type: "office", maxBoxes: 2 })], [4, room("storage", "Linen store", "drystore", { type: "dormroom", maxBoxes: 2 })], [3, restroom()]]) }]] }),
     exits: [{ side: "back", roles: ["kitchen", "storage"], chance: 0.9, lock: 0.3, roller: true, width: 2, name: "Loading dock" }, { side: "left", roles: ["cafeteria"], chance: 0.6, lock: 0.3 }, { side: "right", roles: ["cafeteria"], chance: 0.6, lock: 0.3 }],
   };
 }
@@ -231,7 +231,7 @@ function maintenance(rng, o = {}) {
 }
 function theatre(rng, o = {}) {
   const { bw, bh } = footOf(rng, "theatre", o), n = storeysOf(rng, "theatre", o);
-  const back = { split: "y", parts: leaves([["*", room("workshop", "Scene shop", "sceneshop", { maxBoxes: 2 })], ["*", room("dayroom", "Green room", "greenroom", { hub: false, type: "house", maxBoxes: 2 })]]) };
+  const back = { split: "y", parts: leaves([["*", room("workshop", "Scene shop", "sceneshop", { maxBoxes: 2 })], ["*", room("dayroom", "Green room", "greenroom", { hub: false, type: "dormroom", maxBoxes: 2 })]]) };
   return {
     bw, bh, front: { width: 2 }, ground: "town", storeys: n, foot: "large", stairs: { roles: ["lobby", "corridor"], n: 1, len: 2 },
     program: hallPlan([[4, room("office", "Box office", "faculty", { type: "office", maxBoxes: 1 })], ["*", room("lobby", "Lobby", "hallobby", { entry: true, type: "office", maxBoxes: 1 })], [3, restroom()]],

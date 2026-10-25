@@ -93,12 +93,12 @@ const RULES = {
 // Chance of a locked room at a site (one building with every door locked), by site type.
 const ROOM = {
   police: 0.6, pharmacy: 0.5, gunstore: 0.5, pawnshop: 0.35, military: 0.6, hospital: 0.4, clinic: 0.3, prison: 0.5, warehouse: 0.3, factory: 0.3,
-  univ: 0.35, office: 0.3, airport: 0.3, dam: 0.35, autoshop: 0.2, supermarket: 0.2, hardware: 0.25, firestation: 0.25, crash_cargo: 0.5,
+  univ: 0.35, college: 0.3, office: 0.3, airport: 0.3, dam: 0.35, autoshop: 0.2, supermarket: 0.2, hardware: 0.25, firestation: 0.25, crash_cargo: 0.5,
 };
 const VAULT_AREAS = ["armory", "gunshop"];
 // Keys are cut for these site types.
-export const KEY_SITES = ["police", "pharmacy", "gunstore", "military", "hospital", "clinic", "prison", "warehouse", "factory", "univ", "office", "airport", "dam", "hardware", "supermarket", "firestation", "autoshop"];
-const KEY_WORD = { police: "evidence room key", pharmacy: "back room key", gunstore: "gun cage key", military: "arms vault key", hospital: "pharmacy store key", clinic: "drug store key", prison: "cell block keys", warehouse: "loading bay key", factory: "office key", univ: "lab key", office: "manager's key", airport: "hangar key", dam: "control room key", hardware: "stockroom key", supermarket: "stockroom key", firestation: "station key", autoshop: "shop key" };
+export const KEY_SITES = ["police", "pharmacy", "gunstore", "military", "hospital", "clinic", "prison", "warehouse", "factory", "univ", "college", "office", "airport", "dam", "hardware", "supermarket", "firestation", "autoshop"];
+const KEY_WORD = { police: "evidence room key", pharmacy: "back room key", gunstore: "gun cage key", military: "arms vault key", hospital: "pharmacy store key", clinic: "drug store key", prison: "cell block keys", warehouse: "loading bay key", factory: "office key", univ: "lab key", college: "maintenance key", office: "manager's key", airport: "hangar key", dam: "control room key", hardware: "stockroom key", supermarket: "stockroom key", firestation: "station key", autoshop: "shop key" };
 
 // ---------- the key ring ----------
 export const keyRing = (state) => state.keys || (state.keys = []);
@@ -517,12 +517,12 @@ export const botDone = (c) => c.searched || !!c.botSkip;
 // ---------- the hour-by-hour search (scavenge.js searchHour) ----------
 // How often a search hour turns up something locked, by site type (× loot left).
 const SEARCH_LOCK = {
-  police: 0.35, gunstore: 0.3, pawnshop: 0.2, pharmacy: 0.3, military: 0.4, hospital: 0.3, clinic: 0.2, prison: 0.3, univ: 0.25, office: 0.2,
+  police: 0.35, gunstore: 0.3, pawnshop: 0.2, pharmacy: 0.3, military: 0.4, hospital: 0.3, clinic: 0.2, prison: 0.3, univ: 0.25, college: 0.2, office: 0.2,
   warehouse: 0.2, factory: 0.2, airport: 0.2, dam: 0.2, crash_mil: 0.5, crash_med: 0.5, crash_cargo: 0.5, crash_news: 0.4, airdrop: 0.4,
 };
 const SEARCH_KIND = {
   police: "evidence", gunstore: "cage", pawnshop: "cage", pharmacy: "drugs", military: "cage", hospital: "drugs", clinic: "drugs", prison: "evidence",
-  univ: "safe", office: "safe", warehouse: "crate", factory: "safe", airport: "crate", dam: "safe", crash_mil: "case", crash_med: "case",
+  univ: "safe", college: "safe", office: "safe", warehouse: "crate", factory: "safe", airport: "crate", dam: "safe", crash_mil: "case", crash_med: "case",
   crash_cargo: "case", crash_news: "case", airdrop: "case",
 };
 // e: the engagement; members: the team. Adds finds to e.found, Heat to e.heat. Returns a line for the log ("" if none).
