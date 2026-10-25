@@ -124,13 +124,14 @@ const port = 5300 + Math.floor(Math.random() * 600);
     await page.screenshot({ path: wholeShot });
     console.log(JSON.stringify({ shot: wholeShot, ...top, note: "the whole campus from above: its ground-floor plan, the links outlined (yellow: walkways and corridors, magenta: bridges), the ways out green" }));
     await page.evaluate(() => { const cv = [...document.querySelectorAll("canvas")].find((c) => c.style.zIndex === "99999"); if (cv) cv.remove(); });
-    const L = plan.links[0];
-    if (L) {
+    for (const type of ["walkway", "corridor", "bridge"]) {
+      const L = plan.links.find((q) => q.type === type);
+      if (!L) continue;
       const a = plan.houses[L.a], c = plan.houses[L.b];
       const mx = Math.floor((a.x0 + c.x0 + c.w) / 2), my = Math.floor(L.y0 + L.h / 2) + 6;
-      await shot("link-roofs", { x: mx, y: my, zoom: 3, roofs: true, f: 0, team: [mx, my + 14], note: `${L.type} joining ${a.name} and ${c.name}` });
-      await shot("link-open", { x: mx, y: my, zoom: 3, roofs: false, f: 0, team: [mx, my + 14], note: `${L.type}, roofs off` });
-      if (L.f > 0) await shot("bridge-floor", { x: mx, y: my - 6, zoom: 3, roofs: false, f: L.f, team: [L.x0 + 1, L.y0 + 1], note: `the bridge on floor ${L.f + 1}` });
+      await shot(`${type}-roofs`, { x: mx, y: my, zoom: 3, roofs: true, f: 0, team: [mx, my + 14], note: `a ${type} joining ${a.name} and ${c.name}${L.f ? ` on floor ${L.f + 1}` : ""}, roofs on` });
+      await shot(`${type}-open`, { x: mx, y: my, zoom: 3, roofs: false, f: 0, team: [mx, my + 14], note: `the ${type}, roofs off` });
+      if (L.f > 0) await shot(`${type}-floor`, { x: mx, y: my - 6, zoom: 3, roofs: false, f: L.f, team: [L.x0 + 2, L.y0 + 1], note: `the bridge on floor ${L.f + 1}` });
     }
     const dorm = plan.houses.find((h) => h.key === "dorm");
     if (dorm) await shot("dorm-floor", { x: dorm.x0 + Math.floor(dorm.w / 2), y: dorm.y0 + Math.floor(dorm.h / 2), zoom: 4, roofs: false, f: Math.min(1, dorm.storeys - 1), note: `${dorm.name}, floor ${Math.min(2, dorm.storeys)}` });

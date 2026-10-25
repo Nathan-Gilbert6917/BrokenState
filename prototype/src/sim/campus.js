@@ -526,6 +526,24 @@ export function campusIntro(b) {
   const ways = R.zones.map((z) => (z.name || z.side).toLowerCase());
   return `${P.kindName}: ${names.length} buildings (${names.join(", ")}) round ${(P.grounds || []).filter((g) => g.kind === "quad").length || "no"} quads.${links.length ? ` ${links.join("; ").replace(/^./, (c) => c.toUpperCase())}.` : ""} Ways out: ${ways.join(", ")}.${been.length ? ` Your people have been through ${been.join(", ")} before: what you left there is as you left it.` : ""}${robbed.length ? ` ${robbed.join(", ")} ${robbed.length === 1 ? "looks" : "look"} ransacked.` : ""} The stairs are inside each building; peek through a door (K) before you go in, shut doors behind you (Shift+E).`;
 }
+// The raid plan's lines for a campus (ui/raidplan.js "Before you go in"): its buildings by row, north to south, each
+// row with the way in nearest it, and the links; the team picks the side to go in from by the building it heads for.
+export function campusBriefing(b) {
+  const R = b && b.raid, P = R && R.plan;
+  if (!P || !P.campus) return [];
+  const rows = [];
+  for (const h of P.houses) (rows[h.row] = rows[h.row] || []).push(h);
+  const near = (hs) => {
+    const cx = hs.reduce((a, h) => a + h.x0 + h.w / 2, 0) / hs.length, cy = hs.reduce((a, h) => a + h.y0 + h.h / 2, 0) / hs.length;
+    const z = R.zones.slice().sort((p, q) => Math.hypot(p.x0 - cx, p.y0 - cy) - Math.hypot(q.x0 - cx, q.y0 - cy))[0];
+    return z ? (z.name || z.side).toLowerCase() : "";
+  };
+  const out = [`${P.kindName}: ${P.houses.length} buildings round ${(P.grounds || []).filter((g) => g.kind === "quad").length} quads.`];
+  rows.forEach((hs, i) => { if (hs && hs.length) out.push(`${i === 0 ? "North" : i === rows.length - 1 ? "South" : "Middle"}: ${hs.map((h) => `${h.name}${h.storeys > 1 ? ` (${h.storeys})` : ""}`).join(", ")}; nearest way in: ${near(hs)}.`); });
+  const L = (P.links || []).map((q) => `${P.houses[q.a].name}–${P.houses[q.b].name} (${q.type === "bridge" ? `a bridge, floor ${q.f + 1}` : q.type === "walkway" ? "a covered walkway" : "a corridor"})`);
+  if (L.length) out.push(`Joined: ${L.join(", ")}.`);
+  return out;
+}
 // How many buildings a campus at this tile has (poicont.js poiHouses: the headless search goes through it a building
 // at a time). Builds no map: the list's own dice.
 const countCache = new Map();
