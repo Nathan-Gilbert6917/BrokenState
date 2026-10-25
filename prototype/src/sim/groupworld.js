@@ -28,7 +28,8 @@
 // out of what they know (hiding.js forgetDaily). Scouted (seen or not), a
 // group raids you KNOW.SCOUTED × as often for KNOW.SCOUTED_DAYS days and knows your defences.
 // Vehicles (f.vehicles, vehicles.js records): a group takes vehicles left on the map within VEH.TAKE_RANGE of its bases
-// (yours too: a card; VEH.TAKE a day × its vehicles weight), now and then brings one home from a scavenging trip
+// (yours too: a card; VEH.TAKE a day × its vehicles weight) with what is in them (bikes stay: only what is on their
+// racks is taken, stripRacks), now and then brings one home from a scavenging trip
 // (VEH.FIND, wrecked: condition 25–60, repaired at its workshop: groupcare.js), steals one parked at a base of yours
 // with nobody there (VEH.STEAL × steal weight; a card), or from another group (VEH.STEAL_GROUP; found out half the
 // time: relations fall), sells a spare to a group that wants one (VEH.SELL; the military never sells), and with a
@@ -57,7 +58,7 @@ import { day, log, addCard, atBase, supplyValue } from "./world.js";
 import { sameBloc, betray } from "./blocs.js"; // AI blocs: theft between members is betrayal
 import { hash01 } from "./skills.js";
 import { siteCost } from "./buildmats.js"; // a plating's metal sheets made from scrap when short
-import { factionVehicles, vehicleValue, upgradesOf, upgradeCost, groupCost, VEHICLE_TYPES, TURRET_KG, TURRET_FIT, VEH_UPGRADES, WRECK, carryCargo, cargoToBase } from "./vehicles.js";
+import { factionVehicles, vehicleValue, upgradesOf, upgradeCost, groupCost, VEHICLE_TYPES, TURRET_KG, TURRET_FIT, VEH_UPGRADES, WRECK, carryCargo, cargoToBase, cargoIn, vehicleLabel } from "./vehicles.js";
 import { workshopFactor, worksAt, groupSkill, groupFreeParts } from "./groupworks.js";
 import { weightOf, tickOf, fitPeople } from "./groupcare.js";
 import { removeFromArsenal, issueKit, unloadVehicle } from "./arsenal.js"; // unloadVehicle: what is in a vehicle into their stores
@@ -72,6 +73,7 @@ import { surrenderPrisoners } from "./prisoners.js"; // a captured scout goes to
 import { groupNetwork, netCovers } from "./radio.js"; // ai-locks: radio gossip needs a station on the air
 import { sightCut } from "./weather.js"; // fog and blizzards: their parties see your bases from a tile less far
 import { note, roundsIn } from "./ledger.js"; // the conservation test's ledger (off in play): an abandoned base's rounds
+import { markAbandonedVehicle } from "./markers.js"; // a stripped bike's marker relabelled
 
 export const KNOW = {
   START: 18, WATCH: 12, WATCH_DAYS: 10, RANGE: 30, SCOUT: 0.06, SEE: 3, QUESTION: 7, AVOID: 1.5,
@@ -281,12 +283,21 @@ export function takeVehicle(state, f, v, why = "took") {
   f.vehiclesTaken = (f.vehiclesTaken || 0) + 1;
   return rec;
 }
+// Bikes they leave where they stand (no group keeps bikes), but what is on the racks (parties.js leaveVehicle, a lost
+// team's: wipeParty) they take home into their stores as a car's cargo (arsenal.js unloadVehicle); its marker loses
+// "cargo inside" (2026-10-25).
+function stripRacks(state, f, v) {
+  unloadVehicle(state, f, carryCargo(v, { cargo: null }), "taken from you");
+  if (state.markers.some((m) => m.key === `vehicle:${v.id}`)) markAbandonedVehicle(state, v, "its racks stripped");
+  if (f.known || state.live.has(v.loc.tile)) log(state, `${f.known ? f.name : "Another group"} stripped what was on the ${vehicleLabel(v)} that stood at ${tileName(state, v.loc.tile)}.`, "danger");
+}
 function vehicleDaily(state, f, d) {
   const W = weightOf(f, "vehicles"), S = weightOf(f, "steal");
-  // Left on the map near them.
+  // Left on the map near them: a car taken with what is in it; bikes only stripped of their cargo.
   for (const v of [...state.vehicles]) {
-    if (v.loc.kind !== "abandoned" || v.type === "bike" || nearOwn(state, f, v.loc.tile) > VEH.TAKE_RANGE) continue;
+    if (v.loc.kind !== "abandoned" || (v.type === "bike" && !cargoIn(v)) || nearOwn(state, f, v.loc.tile) > VEH.TAKE_RANGE) continue;
     if (h(state, f.name, tickOf(f), "take", v.loc.tile, v.type) >= VEH.TAKE * W) continue;
+    if (v.type === "bike") { stripRacks(state, f, v); return; }
     takeVehicle(state, f, v);
     if (f.known || state.live.has(v.loc.tile)) log(state, `${f.known ? f.name : "Another group"} took the ${v.name} that stood at ${tileName(state, v.loc.tile)}.`, "danger");
     return;

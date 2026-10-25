@@ -35,6 +35,7 @@ import {
   vehicleById, partyVehicle, partyFuel, useFuel, wear, abandonVehicle, tank, createVehicle, travelMode, tileFuel, isBike, isCar,
   partyVehicles, partyVehicleIds, partyFleet, fleetOf, fleetProblem, setPartyVehicles, roadPace, MAX_VEHICLES,
   takeBikes, parkBikes, vehicleLabel, VEHICLE_TYPES, typeOffroad, isLoud, assignRaidHumvee, wreckCost, carPartsText, WRECK, stripYield, carSpares,
+  vehicleCapacity,
 } from "./vehicles.js";
 import { convoysHour, truckEngineNoise } from "./miltrucks.js";
 import { fixableAt, runnerAt, fixOption, driveHomeOption, startFixCar, driveHome } from "./foundcars.js"; // vehicles found on a map: repair, drive home // Army trucks: the convoy event, a running Army truck's engine
@@ -63,7 +64,7 @@ import { siegeGearHome } from "./arsenal.js"; // a group's raid brings its ladde
 import { packLights, unpackLights } from "./lights.js"; // a light each from the armory on the way out
 import { crossingsFrom } from "./crossing.js";
 import { carryBonus, itemLoad, ownKit } from "./inventory.js";
-import { cartSupOf, cartToArms, cartLotsIn } from "./carry.js"; // carts.js: the supplies in the carts (the weight), a cart fetched into someone's arms (call-time only)
+import { cartSupOf, cartToArms, cartLotsIn, leaveOnGround } from "./carry.js"; // carts.js: the supplies in the carts (the weight), a cart fetched into someone's arms (call-time only); leaveOnGround: a recovered vehicle's cargo with no room in the team
 import { isCart, cartWearStep, cartRouteWear } from "./carts.js";
 import { openTrade, routeExchange } from "./trade.js";
 import { caravanArrive, caravanHour, caravanStop } from "./caravans.js";
@@ -1139,9 +1140,10 @@ export function movePartiesHour(state) {
   pruneCards(state);
 }
 
-// A player team with no living members is always wiped the same way (wipeParty): what it carried stays at a
-// death site and the vehicle is left there, marked on the map. Called after any loss of a member, when a team
-// reports in or arrives, and every hour for every team as a safety net. Returns true if the team is gone.
+// A player team with no living members is always wiped the same way (wipeParty): its vehicles are left there with
+// what it carried inside as far as they take it, the rest at a death site, marked on the map. Called after any loss
+// of a member, when a team reports in or arrives, and every hour for every team as a safety net. Returns true if the
+// team is gone.
 /** @param {State} state @param {Party} p */
 export function wipeIfEmpty(state, p) {
   if (!p || !state.parties.includes(p)) return true;
@@ -2285,6 +2287,13 @@ function takeVehicleCargo(state, p, v) {
   return { got, left };
 }
 
+// A vehicle back with a team: what of its cargo the team had no room for is set down on the tile's ground (carry.js
+// leaveOnGround: Pick up… or Recover it later), not lost. A lost team's vehicle comes full to its payload (wipeParty).
+function unloadLeft(state, tile, v) {
+  const c = vehicleCargo(v);
+  delete v.cargo;
+  if (c) leaveOnGround(state, tile, c.supplies, c.gear);
+}
 /** @param {State} state @param {Party} p */
 function recoverVehicle(state, p) {
   const tile = partyTile(p);
@@ -2327,10 +2336,10 @@ function recoverVehicle(state, p) {
     setPartyVehicles(state, p, [v]);
     shedSurplusVehicles(state, p); // walkers.js: a bike each, the spare ones stay
     const c = takeVehicleCargo(state, p, v);
-    delete v.cargo;
+    unloadLeft(state, tile, v);
     spot(p, { key: `vehicle:${v.id}`, type: "vehicle", tile, hour: state.hour, label: v.name, remove: true });
     weighTeam(state, p);
-    awaitOrders(state, p, `The team is back on its ${vehicleLabel(v)} (condition ${Math.round(v.condition)}%).${c.got.length ? ` Cargo back on the racks: ${c.got.join(", ")}.` : ""}${(v.count || 1) < partyMembers(state, p).length ? " Not everyone has a bike: the others ride double or run alongside (no change to the pace)." : ""}`);
+    awaitOrders(state, p, `The team is back on its ${vehicleLabel(v)} (condition ${Math.round(v.condition)}%).${c.got.length ? ` Cargo back on the racks: ${c.got.join(", ")}.` : ""}${c.left.length ? ` No room for ${c.left.join(", ")}: left on the ground there.` : ""}${(v.count || 1) < partyMembers(state, p).length ? " Not everyone has a bike: the others ride double or run alongside (no change to the pace)." : ""}`);
     return "";
   }
   // The tank counts: the team only pours in what it carries on top.
@@ -2349,10 +2358,10 @@ function recoverVehicle(state, p) {
   delete v.found; // a vehicle found on a map (foundcars.js) is just the team's now
   // What was left inside it is cargo again (the vehicle carries it).
   const c = takeVehicleCargo(state, p, v);
-  delete v.cargo;
+  unloadLeft(state, tile, v);
   weighTeam(state, p);
   spot(p, { key: `vehicle:${v.id}`, type: "vehicle", tile, hour: state.hour, label: v.name, remove: true });
-  log(state, `The ${v.name} is running again${c.got.length ? `, with the ${c.got.join(", ")} left in it` : ""}.${c.left.length ? ` No room for ${c.left.join(", ")}: left behind.` : ""}`, "good");
+  log(state, `The ${v.name} is running again${c.got.length ? `, with the ${c.got.join(", ")} left in it` : ""}.${c.left.length ? ` No room for ${c.left.join(", ")}: left on the ground there.` : ""}`, "good");
   awaitOrders(state, p, `The ${v.name} is running again (fuel ${Math.round(v.fuel)}, condition ${Math.round(v.condition)}%).${c.got.length ? ` Cargo back on board: ${c.got.join(", ")}.` : ""}`);
   return "";
 }
@@ -2611,14 +2620,29 @@ export function wipeParty(state, p) {
     base.armory.push(...p.cargo.gear);
     for (const x of vs) x.loc = { kind: "base", baseId: base.id };
     if (vs.some(isBike)) parkBikes(state, base);
+    bodiesHome(state, p, base); // carriers.js: the bodies in the car laid out there
     log(state, `The last of a team died at ${base.name}. What it carried went into the stores there.`, "death");
   } else {
+    // What it carried stays in its vehicles (the user's request 2026-10-25: "If a whole team is lost keep the vehicles
+    // in the tile lost to be recovered with whatever was in them as long as other groups do not loot it first"):
+    // stowLost fills each up to its own room, the lead first. Whatever has no place in one (more than the racks or the
+    // payload take, or a team with no vehicle) lies on the ground as before, with the things of the bodies in the car
+    // (carriers.js endBodies: a car nobody keeps). The dead's own kit is there already (world.js killSurvivor).
+    // Recovered with the vehicle (Recover vehicle: recoverVehicle), or taken first: a group near it drives a car off
+    // with its cargo, and strips the bikes' racks (groupworld.js vehicleDaily).
     const items = [];
+    /** @type {Stock} */
     const sup = {};
-    for (const pool of [p.supplies, p.cargo.supplies]) for (const [k, q] of Object.entries(pool)) if (SUPPLIES[k] && Number.isFinite(q) && q >= 1) sup[k] = (sup[k] || 0) + Math.floor(q);
-    for (const [k, q] of Object.entries(sup)) items.push({ kind: "supply", key: k, name: SUPPLIES[k].name, qty: q, value: q * supValue(k) });
+    for (const pool of [p.supplies, p.cargo.supplies]) for (const [k, q] of Object.entries(pool)) if (SUPPLIES[k] && Number.isFinite(q) && q > 0) sup[k] = (sup[k] || 0) + q;
+    const gear = [...p.cargo.gear];
+    stowLost(vs, sup, gear);
+    for (const [k, q0] of Object.entries(sup)) { const q = Math.floor(q0 + 1e-9); if (q >= 1) items.push({ kind: "supply", key: k, name: SUPPLIES[k].name, qty: q, value: q * supValue(k) }); }
     // item: the real object, so a pack keeps its contents and a worn weapon its condition when recovered.
-    for (const g of p.cargo.gear) items.push({ kind: "gear", key: g.key, name: g.name, qty: 1, value: (GEAR[g.key]?.value || 0) * (g.quality || 1), item: g });
+    for (const g of gear) items.push({ kind: "gear", key: g.key, name: g.name, qty: 1, value: (GEAR[g.key]?.value || 0) * (g.quality || 1), item: g });
+    for (const body of p.cargo.bodies || []) {
+      for (const g of body.items || []) items.push({ kind: "gear", key: g.key, name: `${String(body.name).split(" ")[0]}'s ${g.name}`, qty: 1, value: (GEAR[g.key]?.value || 0) * (g.quality || 1), item: g });
+      for (const [k, q] of Object.entries(body.supplies || {})) if (SUPPLIES[k] && q >= 1) items.push({ kind: "supply", key: k, name: SUPPLIES[k].name, qty: Math.floor(q), value: Math.floor(q) * supValue(k) });
+    }
     let site = state.deathSites.find((d) => d.tile === tile);
     if (site) site.items.push(...items);
     else if (items.length) {
@@ -2631,8 +2655,11 @@ export function wipeParty(state, p) {
       x.loc = { kind: "abandoned", tile, since: state.hour };
       if (!quiet) markAbandonedVehicle(state, x, "its team was lost");
     }
+    const ground = !!(site && site.items.length);
+    const left = vs.length > 1 ? `its ${vs.length} vehicles stand abandoned` : v ? `the ${v.name} stands abandoned` : "";
+    const what = vs.some(vehicleCargo) ? `${left[0].toUpperCase()}${left.slice(1)} with what it carried inside${items.length ? ", the rest on the ground there" : ground ? ", the dead's things on the ground there" : ""}` : `${ground ? "What it carried lies there" : "Nothing it carried is left"}${left ? `, and ${left}` : ""}`;
     if (quiet) envoyLostQuiet(state, p);
-    else log(state, `A whole team was lost near ${tileLabel(state, tile)}. ${site && site.items.length ? "What it carried lies there" : "Nothing it carried is left"}${vs.length > 1 ? `, and its ${vs.length} vehicles stand abandoned` : v ? `, and the ${v.name} stands abandoned` : ""}: marked on the map.`, "death");
+    else log(state, `A whole team was lost near ${tileLabel(state, tile)}. ${what}: marked on the map.`, "death");
   }
   p.cargo = { supplies: {}, gear: [] };
   p.supplies = {};
@@ -2640,6 +2667,36 @@ export function wipeParty(state, p) {
   p.vehicleId = null;
   p.vehicleIds = [];
   removeParty(state, p);
+}
+
+// A lost team's supplies and cargo into its vehicles (wipeParty), each up to its own room (vehicles.js vehicleCapacity:
+// a car's payload, the bikes' racks; what is in it already counts), the lead first, the most worth a kilo first
+// (trimCargo's order turned round). What goes in comes out of sup and gear; what is left there has no place in one.
+/** @param {Vehicle[]} vs @param {Stock} sup @param {Item[]} gear */
+function stowLost(vs, sup, gear) {
+  const worth = (g) => (GEAR[g.key]?.value || 0) * (g.quality || 1);
+  const stacks = [...Object.keys(sup).map((k) => ({ k, g: null, per: supValue(k) / Math.max(1e-3, supWeight(k)) })), ...gear.map((g) => ({ k: "", g, per: worth(g) / Math.max(1e-3, itemLoad(g)) }))].sort((a, b) => b.per - a.per);
+  for (const v of vs) {
+    const c = (v.cargo = v.cargo || { supplies: {}, gear: [] });
+    let room = vehicleCapacity(v) - cargoLoad(c);
+    for (const s of stacks) {
+      if (room <= 1e-9) break;
+      if (s.g) {
+        if (!gear.includes(s.g) || itemLoad(s.g) > room + 1e-9) continue;
+        gear.splice(gear.indexOf(s.g), 1);
+        c.gear.push(s.g);
+        room -= itemLoad(s.g);
+        continue;
+      }
+      const fit = room / Math.max(1e-3, supWeight(s.k));
+      const n = Math.min(sup[s.k] || 0, FOODS[s.k] ? fit : Math.floor(fit + 1e-9)); // food by the kilo, the rest whole units
+      if (!(n > 0)) continue;
+      sup[s.k] -= n;
+      c.supplies[s.k] = (c.supplies[s.k] || 0) + n;
+      room -= n * supWeight(s.k);
+    }
+    if (!vehicleCargo(v)) delete v.cargo;
+  }
 }
 
 // ---------- player trade-route convoys ----------

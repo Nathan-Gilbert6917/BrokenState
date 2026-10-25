@@ -142,7 +142,7 @@ section("An outpost on a bridge barricades it (T-15, changed: parties.js bridgeC
 }
 
 // ---------------------------------------------------------------------------------------------------------
-section("A team with nobody left is always wiped: cargo to a death site, vehicle marked (T-3, C-25, P-2, B-30)");
+section("A team with nobody left is always wiped: cargo in its vehicle (else a death site), vehicle marked (T-3, C-25, P-2, B-30)");
 {
   // Shot dead at the gates of a hostile group (the old crash: rng.pick([]) on the next orders card).
   const state = mk(7);
@@ -169,13 +169,14 @@ section("A team with nobody left is always wiped: cargo to a death site, vehicle
   check(truck.loc.kind === "abandoned" && truck.loc.tile === f.bases[0], `the truck is ${JSON.stringify(truck.loc)}, not abandoned at the gates`);
   check(orphans(state) === 0, "a vehicle points at a team that is gone");
   check(state.markers.some((m) => m.key === `vehicle:${truck.id}`), "no map marker for the truck of the lost team");
+  // Its cargo stays in the truck (parties.js stowLost; the user's request 2026-10-25), the truck marked "cargo inside".
+  const inTruck = truck.cargo || { supplies: {}, gear: [] };
+  check((inTruck.supplies.scrap || 0) >= 40, "the lost team's cargo is not in its truck");
+  check(state.markers.some((m) => m.key === `vehicle:${truck.id}` && /cargo inside/.test(m.label)), "the truck's marker does not say cargo inside");
   const site = state.deathSites.find((d) => d.tile === f.bases[0]);
-  check(site && site.items.some((i) => i.key === "scrap" && i.qty >= 40), "the lost team's cargo is not at the death site");
-  check(site && state.markers.some((m) => m.key === `death:${site.tile}`), "no map marker for the death site of the lost team");
-  const left = site && site.items.find((i) => i.key === "assaultpack");
-  check(left && left.item === pack && left.item.contents[0], "the pack in the cargo lost its contents at the death site");
-  const bow = site && site.items.find((i) => i.key === "crossbow");
-  check(bow && bow.item === worn && bow.item.quality === 0.6 && bow.item.dur === 2, "the worn crossbow lost its condition at the death site");
+  check(!site || state.markers.some((m) => m.key === `death:${site.tile}`), "no map marker for the death site of the lost team");
+  check(inTruck.gear.includes(pack) && pack.contents[0], "the pack in the cargo lost its contents in the truck");
+  check(inTruck.gear.includes(worn) && worn.quality === 0.6 && worn.dur === 2, "the worn crossbow lost its condition in the truck");
   tick(state, 3, null);
   check(!state.gameOver && orphans(state) === 0, "ticking on after the wipe broke something");
 }
@@ -193,7 +194,7 @@ section("A team with nobody left is always wiped: cargo to a death site, vehicle
   tick(state, 1, null);
   check(!state.parties.includes(p), "a team of the dead was not swept after an hour");
   check(truck.loc.kind === "abandoned" && truck.loc.tile === at && state.markers.some((m) => m.key === `vehicle:${truck.id}`), "the swept team's truck is not abandoned with a marker");
-  check(state.deathSites.some((d) => d.tile === at && d.items.some((i) => !!FOODS[i.key])), "the swept team's cargo is not at a death site");
+  check(!!truck.cargo && Object.keys(truck.cargo.supplies).some((k) => !!FOODS[k] && truck.cargo.supplies[k] > 0), "the swept team's cargo is not in its truck");
 }
 {
   // "Cold feet" on a one-person team: the team turns around with everything, nobody is teleported.
