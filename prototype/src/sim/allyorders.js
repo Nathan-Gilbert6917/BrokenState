@@ -54,6 +54,7 @@
 // THIS FILE IS THE CONTRACT the UI is written against (ui/combat.js, ui/isoview.js, ui/battlebar.js): keep the
 // exported names and the shapes they return.
 import { say, active, activeAny, canSee, canSeeAt, playerSees, playerVision, setFloor, unitById, moveAlong, reachable, pathTo, distField, bestShot, fire, strike, meleeReach, canFire, isRanged, coverSides, moveMob, zoneAt, moveToFloor, reloadAI, CELL } from "./combat.js";
+import { stairTop } from "./buildingmaps.js"; // the cell of a stair run that changes floor (call-time only)
 import { faceToward, inArc, hasFront, VISION } from "./vision.js";
 import { lootLayer } from "./raidloot.js";
 import { doorsOf } from "./locks.js";
@@ -480,7 +481,7 @@ export function allyTurn(b, u) {
     }
     case "retreat": {
       if (atExit(b, u)) return leave(b, u);
-      if ((u.f || 0) > 0 && b.cells[u.y * b.w + u.x].k === "stairs") { moveToFloor(b, u, (u.f || 0) - 1); u.ap = 0; return true; }
+      if ((u.f || 0) > 0 && stairTop(b.cells[u.y * b.w + u.x])) { moveToFloor(b, u, (u.f || 0) - 1); u.ap = 0; return true; } // a stair run's top step (buildingmaps.js)
       const cells = exitCells(b, u);
       const before = [u.x, u.y];
       if (cells.length) goTo(b, u, cells);
