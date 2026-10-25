@@ -86,9 +86,10 @@ export function setRoofs(on) {
 let mkCanvas = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
 export function setIsoCanvas(fn) { mkCanvas = fn; clearIsoCache(); setEdgeCanvas(fn); setLightsCanvas(fn); setMarksCanvas(fn); setWxCanvas(fn); setVehicleCanvas(fn); }
 const spriteCache = new Map();
-const groundCaches = new Map(), GROUNDS = 6; // groundFor: key -> picture, of one battle (dropped with a new one), least recently used first
-let fogCache = null, sceneCache = null, fogMaskCache = null, flatGroundCache = null;
-export function clearIsoCache() { spriteCache.clear(); groundCaches.clear(); fogCache = sceneCache = fogMaskCache = flatGroundCache = null; for (const k of Object.keys(looksCache)) delete looksCache[k]; }
+const GROUNDS = 6; // flatGroundFor: the pictures kept, of one battle (dropped with a new one), least recently used first
+let sceneCache = null;
+const flatGroundCaches = new Map(); // flatGroundFor: key -> tiled picture, of one battle
+export function clearIsoCache() { spriteCache.clear(); sceneCache = null; flatGroundCaches.clear(); fogMasks.clear(); for (const k of Object.keys(looksCache)) delete looksCache[k]; }
 export const isoCacheSize = () => spriteCache.size;
 export const isoSpriteKeys = () => [...spriteCache.keys()]; // the cached sprites' keys (tools/decortest.js)
 
@@ -154,7 +155,32 @@ export function project(wx, wy, z = 0) {
 function setFrame(b, cw, ch) {
   const S = ISO_ZOOMS[iso.zoom];
   FR = { S, X0: cw / 2 - iso.cx * S, Y0: ch / 2 - iso.cy * S, r: iso.rot, st: iso.straight, W: b.w, H: b.h, cw, ch };
+  FR.win = viewWin(b, cw, ch);
   return FR;
+}
+// The map cells that can show on the cw × ch screen this frame, { x0, y0, x1, y1 } (inclusive, clamped to the map): the
+// screen's corners taken back to the ground, the bottom ones from as far below the screen as the tallest thing drawn
+// rises (an upper floor's lift and a tall wall), and a few cells more all round. The per-cell loops over the ground
+// (fillCells, outlineCells, the door marks) go over these only (issue #24: on a 300 × 224 map they went over every
+// cell every frame). Without a size (the tools) the whole map.
+const WIN_RISE = 10 * 20 + 2 * 20 + 14 + 60; // art px: ten storeys' lift (LV a storey), a two-storey wall, a roof
+function viewWin(b, cw, ch) {
+  if (!(cw > 0) || !(ch > 0)) return { x0: 0, y0: 0, x1: b.w - 1, y1: b.h - 1 };
+  const { S, X0, Y0, r, st } = FR;
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const [X, Y] of [[0, 0], [cw, 0], [0, ch + WIN_RISE * S], [cw, ch + WIN_RISE * S]]) {
+    const [u, v] = artUV((X - X0) / S, (Y - Y0) / S, st);
+    const [wx, wy] = ptWorld(u, v, r, b.w, b.h);
+    if (wx < x0) x0 = wx; if (wx > x1) x1 = wx; if (wy < y0) y0 = wy; if (wy > y1) y1 = wy;
+  }
+  const P = 3;
+  return { x0: Math.max(0, Math.floor(x0) - P), y0: Math.max(0, Math.floor(y0) - P), x1: Math.min(b.w - 1, Math.ceil(x1) + P), y1: Math.min(b.h - 1, Math.ceil(y1) + P) };
+}
+// Every cell index in the frame's window (FR.win; the whole map before a frame is set up for this battle).
+const winOf = (b) => (FR.win && FR.W === b.w && FR.H === b.h ? FR.win : { x0: 0, y0: 0, x1: b.w - 1, y1: b.h - 1 });
+function forWin(b, fn) {
+  const w = winOf(b);
+  for (let y = w.y0; y <= w.y1; y++) for (let x = w.x0, i = y * b.w + w.x0; x <= w.x1; x++, i++) fn(i, x, y);
 }
 
 // ---------- the scene: buildings, heights, what each cell looks like ----------
@@ -375,6 +401,17 @@ function fogPixels(buf) {
 
 // ---------- materials ----------
 const n2 = (X, Y, k = 0) => hash3(Math.floor(X), Math.floor(Y), k);
+// The stairs up blocked (sim/buildingmaps.js OPEN_STOREYS: a tall building's floors above are not built): a heap of
+// rubble and broken concrete, or a barricade of a desk and a filing cabinet, on the top step (z: its tread).
+function sealPrims(out, part, z) {
+  if (part === "seal:rubble") {
+    const rk = (f, s, t, X, Y) => mul(f === "top" ? [150, 146, 138] : [118, 112, 104], 0.8 + n2(X, Y, 9) * 0.35);
+    out.push({ u0: 0.12, u1: 0.62, v0: 0.18, v1: 0.78, z0: z, z1: z + 9, m: rk }, { u0: 0.45, u1: 0.88, v0: 0.3, v1: 0.86, z0: z, z1: z + 6, m: rk }, { u0: 0.28, u1: 0.7, v0: 0.12, v1: 0.48, z0: z + 6, z1: z + 14, m: rk });
+  } else if (part === "seal:barricade") {
+    const wd = (f) => (f === "top" ? PAL.woodLt : PAL.woodDk), mt = (f) => (f === "top" ? [150, 156, 160] : [96, 102, 108]);
+    out.push({ u0: 0.1, u1: 0.9, v0: 0.18, v1: 0.55, z0: z, z1: z + 10, m: wd }, { u0: 0.55, u1: 0.86, v0: 0.5, v1: 0.86, z0: z, z1: z + 18, m: mt }, { u0: 0.14, u1: 0.5, v0: 0.55, v1: 0.82, z0: z, z1: z + 7, m: wd });
+  }
+}
 const tex = (base, amt = 0.12, k = 0) => (f, s, t, X, Y) => mul(base, 1 - amt + n2(X, Y, k) * amt * 2);
 const flatM = (c) => () => c;
 const PAL = {
@@ -1038,6 +1075,40 @@ const FURN_DRAW = {
     return [run(ax, 0.24, 0.76, 0, 24, face, 0.16, 0.84)];
   } },
   stanchion: { top: 16, p: () => [{ cyl: [0.5, 0.5, 0.14], z0: 0, z1: 1, m: flatM(FURNC.chrome) }, { cyl: [0.5, 0.5, 0.04], z0: 1, z1: 15, m: flatM(FURNC.chrome) }, { cyl: [0.5, 0.5, 0.07], z0: 15, z1: 16, m: flatM(FURNC.gold) }, fbox(0.5, 1, 0.47, 0.53, 12, 13, flatM(FURNC.red))] },
+  // ---------- hotels (issue #29, sim/hotellayout.js) ----------
+  // The reception desk: a long panelled wood front with a pale marble top, a monitor on it; a suitcase standing on its
+  // end with its handle up; a minibar: a little brown fridge with a glass door; the luggage cart: a brass frame on a
+  // carpeted deck, a bag on it; a round banquet table in its white cloth (the lift doors are #27's below); a lounge chair; a white pool lounger; a tennis net on its two posts.
+  frontdesk: { top: 16, p: (o) => {
+    const ax = along(o), panel = (f, s, t, X, Y) => (f === "top" ? PAL.woodDk : Math.floor(X) % 6 < 1 ? mul(PAL.woodDk, 0.8) : mul(PAL.wood, 0.9 + n2(Math.floor(X / 3), Y, 140) * 0.1));
+    return [run(ax, 0.24, 0.76, 0, 11, panel, 0.02, 0.98), run(ax, 0.2, 0.8, 11, 12.5, (f) => (f === "top" ? mul(FURNC.cream, 1.15) : FURNC.cream), 0, 1), run(ax, 0.42, 0.58, 12.5, 16, (f, s, t) => (f === "top" ? FURNC.black : t > 13.5 ? FURNC.screen : FURNC.black), 0.36, 0.56)];
+  } },
+  suitcase: { top: 14, p: (o) => {
+    const ax = along(o), shell = (f, s, t, X, Y) => (f === "top" ? mul(FURNC.fabricDk, 1.2) : Math.floor(t) % 4 < 1 ? mul(FURNC.fabricDk, 0.7) : mul(FURNC.fabricDk, 1 + n2(X, Y, 141) * 0.08));
+    return [run(ax, 0.38, 0.62, 0.5, 11, shell, 0.24, 0.76), run(ax, 0.48, 0.52, 11, 14, flatM(FURNC.chrome), 0.36, 0.4), run(ax, 0.48, 0.52, 11, 14, flatM(FURNC.chrome), 0.6, 0.64), run(ax, 0.48, 0.52, 13.5, 14, flatM(FURNC.black), 0.36, 0.64)];
+  } },
+  minifridge: { top: 12, p: (o) => {
+    const ax = along(o), face = (f, s, t, X, Y, sw) => (f === "top" ? mul(PAL.woodDk, 1.1) : s > 1.2 && s < (sw || 10) - 1.2 && t > 1.5 && t < 10.5 ? (Math.floor(t) % 3 < 1 ? FURNC.chrome : mul(fgoods(Math.floor(X / 2), Math.floor(t / 3), 142), 0.9)) : mul(PAL.woodDk, 0.95));
+    return [run(ax, 0.3, 0.7, 0, 12, face, 0.22, 0.78)];
+  } },
+  luggagecart: { top: 26, p: (o) => {
+    const ax = along(o), brass = flatM(FURNC.gold);
+    return [run(ax, 0.2, 0.8, 1, 3, flatM(FURNC.red), 0.12, 0.88), fcyl(ax, 0.22, 0.14, 0.06, 0, 1, flatM(FURNC.black)), fcyl(ax, 0.78, 0.86, 0.06, 0, 1, flatM(FURNC.black)),
+      run(ax, 0.2, 0.26, 3, 26, brass, 0.12, 0.18), run(ax, 0.2, 0.26, 3, 26, brass, 0.82, 0.88), run(ax, 0.2, 0.26, 24, 26, brass, 0.12, 0.88), run(ax, 0.3, 0.7, 3, 11, flatM(FURNC.fabricDk), 0.3, 0.7)];
+  } },
+  banquet: { top: 10, p: () => [{ cyl: [0.5, 0.5, 0.06], z0: 0, z1: 8, m: flatM(FURNC.steel) }, { cyl: [0.5, 0.5, 0.42], z0: 6, z1: 10, m: (f, s, t, X, Y) => mul(FURNC.cloth, (f === "top" ? 1.1 : 0.95) + n2(X, Y, 143) * 0.04) }] },
+  loungechair: { top: 12, p: (o) => {
+    const ax = along(o), cloth = (f) => (f === "top" ? mul(FURNC.fabric, 1.15) : FURNC.fabric);
+    return [run(ax, 0.26, 0.38, 0, 12, flatM(FURNC.fabricDk), 0.24, 0.76), run(ax, 0.38, 0.76, 0, 6, cloth, 0.24, 0.76), run(ax, 0.38, 0.76, 6, 9, flatM(FURNC.fabricDk), 0.24, 0.3), run(ax, 0.38, 0.76, 6, 9, flatM(FURNC.fabricDk), 0.7, 0.76)];
+  } },
+  lounger: { top: 8, p: (o) => {
+    const ax = along(o), white = (f, s, t, X) => (f === "top" ? (Math.floor(X) % 3 < 1 ? mul(FURNC.white, 0.8) : mul(FURNC.white, 1.12)) : FURNC.white);
+    return [...flegs(0.3, 0.66, 0.06, 0.9, 3, flatM(FURNC.chrome), 0.04), run(ax, 0.3, 0.7, 3, 4, white, 0.04, 0.72), run(ax, 0.3, 0.7, 4, 8, white, 0.72, 0.96)];
+  } },
+  tennisnet: { top: 9, p: (o) => {
+    const ax = along(o), mesh = (f, s, t, X) => (f === "top" || t > 7.5 ? FURNC.cloth : (Math.floor(X) + Math.floor(t)) % 2 ? FURNC.black : mul(FURNC.black, 1.8));
+    return [run(ax, 0.47, 0.53, 1, 8, mesh, 0, 1), fcyl(ax, 0.5, 0.04, 0.04, 0, 9, flatM(FURNC.steel)), fcyl(ax, 0.5, 0.96, 0.04, 0, 9, flatM(FURNC.steel))];
+  } },
   // ---------- grocery stores by size (issue #22, sim/shoplayout.js) ----------
   freezercase: { top: 28, p: (o) => {
     const ax = along(o), face = (f, s, t, X, Y, sw) => { if (f === "top") return mul(FURNC.chrome, 0.9); if (t > 25) return mul(FURNC.steel, 0.8); if (t < 3 || s < 1 || s > (sw || 16) - 1) return FURNC.white; if (Math.floor(t) % 6 < 1 || Math.floor(s) % 8 < 1) return FURNC.chrome; return n2(Math.floor(X), Math.floor(t / 6), 160) > 0.55 ? mul(fgoods(Math.floor(X), Math.floor(t / 6), 161), 0.85) : mul(FURNC.bag, 1.05 + n2(X, Y, 162) * 0.1); };
@@ -1285,6 +1356,35 @@ const FURN_DRAW = {
     return [run(ax, 0.42, 0.58, 0, 1, flatM(PAL.woodDk), 0, 1), run(ax, 0.45, 0.55, 1, 10, bal, 0, 1)];
   } },
   galleryvoid: { top: 1, p: () => [fbox(0, 1, 0, 1, 0, 0.5, (f, s, t, X, Y) => mul(PAL.woodDk, 0.28 + n2(Math.floor(X / 4), Math.floor(Y / 4), 146) * 0.06))] },
+  // ---------- warehouses, factories and labs (issue #37, sim/industrylayout.js) ----------
+  // A fume hood: a steel cabinet below, the glass sash above the work surface, its duct up to the ceiling; a conveyor's
+  // belt on its frame with the rollers' lines; a process tank's white steel cylinder banded and capped; a kiln's
+  // firebrick dome with its iron door; a loom's wooden frame, its warp of threads and the beam; a grain bin's ribbed
+  // steel with its cone roof; a fuel drum's red steel with its two rolling hoops; a lab freezer, white enamel with its
+  // handle and the display's green.
+  fumehood: { top: 30, p: (o) => {
+    const ax = along(o), sash = (f, s, t) => (f === "top" ? FURNC.steel : t > 20 ? FURNC.steel : mul(FURNC.glassDk, 1.3));
+    return [run(ax, 0.2, 0.8, 0, 11, fappl(FURNC.white, [5]), 0.04, 0.96), run(ax, 0.18, 0.82, 11, 12, flatM(FURNC.black), 0.02, 0.98), run(ax, 0.2, 0.8, 12, 24, sash, 0.04, 0.96), run(ax, 0.2, 0.5, 24, 30, flatM(FURNC.steel), 0.3, 0.7)];
+  } },
+  conveyor: { top: 8, p: (o) => {
+    const ax = along(o), belt = (f, s, t, X) => (f === "top" ? (Math.floor(X) % 3 < 1 ? mul(FURNC.black, 1.6) : FURNC.black) : FURNC.steel);
+    return [...flegs(0.24, 0.72, 0.06, 0.9, 6, flatM(FURNC.steel), 0.04), run(ax, 0.2, 0.8, 6, 8, belt, 0, 1)];
+  } },
+  vat: { top: 30, p: () => [{ cyl: [0.5, 0.5, 0.4], z0: 0, z1: 26, m: (f, s, t) => (f === "top" ? mul(FURNC.white, 1.05) : Math.floor(t) % 9 < 1 ? FURNC.steel : FURNC.white) }, { cyl: [0.5, 0.5, 0.18], z0: 26, z1: 30, m: flatM(FURNC.steel) }] },
+  kiln: { top: 24, p: () => {
+    const brick = (f, s, t, X) => (f === "top" ? mul(hex("#a0503a"), 1.1) : Math.floor(t) % 3 < 1 || (Math.floor(X + Math.floor(t / 3) * 2) % 5 < 1) ? hex("#6a3a2a") : hex("#a0503a"));
+    return [fbox(0.06, 0.94, 0.06, 0.94, 0, 18, brick), { cyl: [0.5, 0.5, 0.3], z0: 18, z1: 24, m: brick }, fbox(0.35, 0.65, 0.92, 0.96, 3, 12, flatM(PAL.metalDk))];
+  } },
+  loom: { top: 18, p: (o) => {
+    const ax = along(o), wd = fwood(PAL.woodDk), warp = (f, s, t, X) => (Math.floor(X) % 2 < 1 ? FURNC.cloth : FURNC.cream);
+    return [run(ax, 0.2, 0.28, 0, 18, wd, 0.02, 0.98), run(ax, 0.72, 0.8, 0, 18, wd, 0.02, 0.98), run(ax, 0.28, 0.72, 9, 10, warp, 0.06, 0.94), run(ax, 0.2, 0.8, 16, 18, wd, 0.02, 0.98), run(ax, 0.2, 0.8, 0, 2, wd, 0.02, 0.98)];
+  } },
+  grainbin: { top: 36, p: () => [{ cyl: [0.5, 0.5, 0.46], z0: 0, z1: 28, m: (f, s, t, X) => (f === "top" ? FURNC.chrome : Math.floor(t) % 3 < 1 ? mul(FURNC.chrome, 0.8) : mul(FURNC.chrome, 0.95 + n2(Math.floor(X), 0, 107) * 0.05)) }, { cyl: [0.5, 0.5, 0.3], z0: 28, z1: 33, m: flatM(mul(FURNC.chrome, 0.9)) }, { cyl: [0.5, 0.5, 0.1], z0: 33, z1: 36, m: flatM(FURNC.steel) }] },
+  drum: { top: 14, p: () => [{ cyl: [0.5, 0.5, 0.3], z0: 0, z1: 14, m: (f, s, t) => (f === "top" ? mul(FURNC.red, 0.8) : Math.floor(t) === 4 || Math.floor(t) === 9 ? mul(FURNC.red, 0.6) : FURNC.red) }] },
+  labfreezer: { top: 28, p: (o) => {
+    const ax = along(o), front = (f, s, t, X) => (f === "top" ? mul(FURNC.white, 1.05) : t > 23 && t < 25 && Math.floor(X) % 6 < 2 ? FURNC.led : fappl(FURNC.white, [21], [[8, 18]])(f, s, t, X, 0));
+    return [run(ax, 0.2, 0.8, 0, 28, front, 0.08, 0.92)];
+  } },
   // ---------- restaurants by kind of food (issue #33, sim/eaterylayout.js) ----------
   flattop: { top: 13, p: (o) => {
     const ax = along(o), plate = (f, s, t, X, Y) => (f === "top" ? mul(FURNC.black, 1.3 + n2(X, Y, 180) * 0.3) : FURNC.steel);
@@ -1761,6 +1861,7 @@ function primsOf(k, o) {
           const post = (p) => (across ? { u0: e[0], u1: e[1], v0: p, v1: p + 0.08, z0: 0, z1: top, m: rail } : { u0: p, u1: p + 0.08, v0: e[0], v1: e[1], z0: 0, z1: top, m: rail });
           out.push(post(0.46), across ? { u0: e[0], u1: e[1], v0: 0, v1: 1, z0: top - 2, z1: top, m: rail } : { u0: 0, u1: 1, v0: e[0], v1: e[1], z0: top - 2, z1: top, m: rail });
         }
+        if (o.part) sealPrims(out, o.part, zAt(N - 1));
         return out.sort((p, q) => p.u0 + p.v0 - q.u0 - q.v0);
       }
       // Four steps rising towards the higher neighbour; separate boxes, drawn from the back to the front.
@@ -1770,6 +1871,7 @@ function primsOf(k, o) {
         const a0 = d === 0 || d === 2 ? i / 4 : 1 - (i + 1) / 4, a1 = a0 + 0.25, z1 = (i + 1) * (LV / 4);
         out.push(d < 2 ? { u0: a0, u1: a1, v0: 0.1, v1: 0.9, z0: 0, z1, m } : { u0: 0.1, u1: 0.9, v0: a0, v1: a1, z0: 0, z1, m });
       }
+      if (o.part) sealPrims(out, o.part, LV / 2);
       return out.sort((p, q) => p.u0 + p.v0 - q.u0 - q.v0);
     }
     case "ladder": {
@@ -2301,6 +2403,9 @@ const FLOORC = {
   // The room-appropriate floors of 2026-10-25 (issue #13): kitchens' and wards' lino, a bathroom's checker, a home's
   // hardwood (narrow, warm) and a cabin's or a barn's planks (the old floorboards), a gym's rubber, the bays' steel plate.
   lino: hex("#8a8a76"), checkA: hex("#8e8a80"), checkB: hex("#34322e"), hardwood: hex("#7a5636"), rubber: hex("#3a3c3e"), steel: hex("#6a6e72"),
+  // A hotel's grounds (issue #29, sim/hotellayout.js): the pool deck's paving, the empty pool's pale tiles (leaves and
+  // a dark puddle at its deep end), a tennis court's green with its white lines.
+  paving: hex("#8a8478"), pool: hex("#7aa8b8"), court: hex("#3e6a4e"),
   // A tower's, a city hall's and a courthouse's lobby (issue #27, sim/officeplans.js): pale polished marble in big slabs, grey veins.
   marble: hex("#b4b0a6"),
 };
@@ -2410,6 +2515,9 @@ function floorColor(c, k, x, y, lx, ly, mud, R = null, lf = 0, pd = 0, pe = 0) {
       break;
     case "rubble": col = q > 0.82 ? mul(FLOORC.rubble, 1.35) : q < 0.1 ? mul(FLOORC.rubble, 0.6) : mul(FLOORC.rubble, 0.92 + v * 0.1); break;
     case "roof": col = mul(FLOORC.roof, 0.86 + q * 0.2); break;
+    case "paving": col = tx % 8 === 0 || ty % 8 === 0 ? mul(FLOORC.paving, 0.78) : mul(FLOORC.paving, 0.9 + q * 0.12); break;
+    case "pool": col = tx % 4 === 0 || ty % 4 === 0 ? mul(FLOORC.pool, 0.8) : q > 0.94 ? mul(FLOORC.dirt, 1.1) : c.deep && v > 0.5 && q > 0.6 ? mul(FLOORC.road, 0.9) : mul(FLOORC.pool, 0.92 + q * 0.1); break; // c.deep: the deep end, rain standing in it
+    case "court": col = c.line && ((c.line & 1 && ty < 2) || (c.line & 2 && ty > 13) || (c.line & 4 && tx < 2) || (c.line & 8 && tx > 13)) ? hex("#d8d8d0") : mul(FLOORC.court, 0.94 + q * 0.08); break; // c.line: the court's white lines on its sides (bits n, s, w, e)
     default: col = mul(FLOORC.grass, 0.92 + q * 0.12);
   }
   if (c.deco) col = decoTexel(col, c.deco, x, y, tx, ty); // rugs, clutter, a light's pool (sim/decor.js)
@@ -2482,59 +2590,10 @@ function wartTexel(k, s, t, sw, v) {
   }
   return null;
 }
-// The whole map's ground at art resolution (one canvas; the view origin's top vertex at (Hv × 16, 0); in a straight
-// view the origin at (0, 0): ox, the art x of its left edge).
-// Kept for a few floors and views (groundCaches: the key as the one-slot cache had, the view and the floor's ground
-// key, of this battle only), so going up and down the storeys does not paint each floor again (76-250 ms a switch).
-function groundFor(b, scene) {
-  const r = iso.rot, st = iso.straight, key = `${viewKey()}:${groundKeyOf(b, scene)}`;
-  const hit = groundCaches.get(key);
-  if (hit && hit.b === b) { groundCaches.delete(key); groundCaches.set(key, hit); return hit; }
-  for (const [k, g] of groundCaches) if (g.b !== b) groundCaches.delete(k);
-  const [Wv, Hv] = viewDims(b, r);
-  // An upper floor (floorsOf): the canvas grows by the lift at the top (oy rows) and is painted twice: the ground
-  // floor's surface at level 0, dimmed (looking down from the windows), then the footprint's cells raised.
-  const lift = liftOf(b);
-  const gw = st ? Wv * SW : (Wv + Hv) * HW, gh = (st ? Hv * SH : (Wv + Hv) * HH) + lift, ox = st ? 0 : -Hv * HW;
-  const buf = new Uint8ClampedArray(gw * gh * 4);
-  // Mud and blood around the hive's flesh.
-  const mud = new Float32Array(b.w * b.h);
-  for (let i = 0; i < b.cells.length; i++) if (b.cells[i].k === "hivewall") {
-    const x = i % b.w, y = (i / b.w) | 0;
-    for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) { const nx = x + dx, ny = y + dy; if (nx >= 0 && ny >= 0 && nx < b.w && ny < b.h) mud[ny * b.w + nx] = Math.max(mud[ny * b.w + nx], 1 - Math.hypot(dx, dy) / 3); }
-  }
-  const passes = lift ? [[b.floors[0].cells, 0, 0.55, false], [b.cells, lift, 1, true]] : [[b.cells, 0, 1, false]];
-  const lfF = leafField(b, treeLook, scene.key, groundCells(b)); // autumn's leaves (ui/groundlook.js)
-  const pF = puddleField(b, puddleGround, groundCells(b)); // puddles after rain (ui/groundlook.js, sim/puddles.js)
-  for (const [cells, up, dim, footOnly] of passes) for (let py = 0, R = roadRuns(cells, b.w, b.h), PE = plotEdges(cells, b.w, b.h); py < gh; py++) for (let px = 0; px < gw; px++) {
-    const [u, v] = artUV(px + 0.5 + ox, py + 0.5 - lift + up, st);
-    if (u < 0 || v < 0 || u >= Wv || v >= Hv) continue;
-    const iu = Math.floor(u), iv = Math.floor(v), fu = u - iu, fv = v - iv;
-    const [x, y] = fromView(iu, iv, r, b.w, b.h);
-    const [lx, ly] = ptWorld(fu, fv, r, 1, 1);
-    const c = cells[y * b.w + x];
-    if (footOnly && isVoid(c)) continue;
-    const pd = pF && !up && pF.ok[y * b.w + x] ? puddleAt(pF, x, y, lx, ly) : 0;
-    let col = floorColor(c, c.k, x, y, lx, ly, mud[y * b.w + x], R, lfF && !up ? lfF[y * b.w + x] : 0, pd, PE ? PE[y * b.w + x] : 0);
-    if (fu < 0.055 || fv < 0.055) col = mul(col, 0.86); // the grid, faintly
-    if (dim < 1) col = mul(col, dim);
-    const i = (py * gw + px) * 4;
-    buf[i] = col[0]; buf[i + 1] = col[1]; buf[i + 2] = col[2]; buf[i + 3] = 255;
-  }
-  const cv = mkCanvas(gw, gh), c = cv.getContext("2d"), img = c.createImageData(gw, gh);
-  img.data.set(buf);
-  c.putImageData(img, 0, 0);
-  const g = toBitmap({ b, key, cv, gw, gh, Hv, ox, oy: lift });
-  groundCaches.delete(key);
-  groundCaches.set(key, g);
-  while (groundCaches.size > GROUNDS) groundCaches.delete(groundCaches.keys().next().value);
-  iso.builds.ground++;
-  return g;
-}
 // The ground on one storey (no floor raised), painted once per battle in map space: 16 × 16 texels a tile, the
 // texels floorColor works in, so the colours are the same; drawIso stretches it onto the diamonds with one affine
 // transform for the view's rotation (groundXform). Half the pixels of the view-space picture and no repaint when the
-// view turns (groundFor took about 300 ms on a 72 × 72 fort, at the open and on every turn of the view).
+// view turns (a view-space picture took about 300 ms on a 72 × 72 fort, at the open and on every turn of the view).
 const TEX = 16;
 // The ground's pictures' key: the cells' floors (sceneFor groundKey) and the season on them (ui/groundlook.js: the
 // mud or snow, sim/seasonground.js b.ground; autumn's leaves by the look).
@@ -2554,34 +2613,74 @@ function skirtColor(b) {
   skirtFn = { b, key, fn };
   return fn;
 }
-function flatGroundFor(b, scene) {
-  const key = groundKeyOf(b, scene);
-  if (flatGroundCache && flatGroundCache.b === b && flatGroundCache.key === key) return flatGroundCache;
-  const tw = b.w * TEX, th = b.h * TEX;
+// The ground's pictures are cut into tiles of TILE_CELLS × TILE_CELLS cells (512 px a side at 16 texels a tile:
+// issue #24, raid maps up to 300 × 300 would make one 4800 px picture, past what a browser keeps a canvas at
+// comfortably); drawn under the same transform (drawTiles), each at its own cell offset, only the tiles on screen
+// (drawing the whole map's picture every frame was most of a 300 × 224 map's frame).
+const TILE_CELLS = 32;
+// The ground of a whole storey in map space (cells: the active floor's, or the ground floor's under an upper floor),
+// `void` cells left transparent (an upper floor's open air: the ground floor shows through it). ground: the ground
+// floor's own (autumn's leaves and puddles on it).
+function flatGroundFor(b, scene, cells = b.cells, which = "act") {
+  const ground = cells === groundCells(b);
+  const key = `${which}:${groundKeyOf(b, scene)}`;
+  const hit = flatGroundCaches.get(key);
+  if (hit && hit.b === b && hit.cells === cells) return hit;
+  for (const [k, g] of flatGroundCaches) if (g.b !== b) flatGroundCaches.delete(k);
   const mud = new Float32Array(b.w * b.h);
-  for (let i = 0; i < b.cells.length; i++) if (b.cells[i].k === "hivewall") {
+  for (let i = 0; i < cells.length; i++) if (cells[i].k === "hivewall") {
     const x = i % b.w, y = (i / b.w) | 0;
     for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) { const nx = x + dx, ny = y + dy; if (nx >= 0 && ny >= 0 && nx < b.w && ny < b.h) mud[ny * b.w + nx] = Math.max(mud[ny * b.w + nx], 1 - Math.hypot(dx, dy) / 3); }
   }
-  const R = roadRuns(b.cells, b.w, b.h); // which way the roads run (the paint follows them)
-  const PE = plotEdges(b.cells, b.w, b.h); // the crop plots' wood edges
-  const lfF = leafField(b, treeLook, scene.key, groundCells(b)); // autumn's leaves (ui/groundlook.js)
-  const pF = b.cells === groundCells(b) ? puddleField(b, puddleGround) : null; // puddles after rain (ui/groundlook.js, sim/puddles.js)
-  const cv = mkCanvas(tw, th), c = cv.getContext("2d"), img = c.createImageData(tw, th), buf = img.data;
-  for (let y = 0; y < b.h; y++) for (let x = 0; x < b.w; x++) {
-    const cell = b.cells[y * b.w + x], m = mud[y * b.w + x], lf = lfF ? lfF[y * b.w + x] : 0, wet = pF && pF.ok[y * b.w + x];
-    for (let ty = 0; ty < TEX; ty++) for (let tx = 0; tx < TEX; tx++) {
-      const lx = (tx + 0.5) / TEX, ly = (ty + 0.5) / TEX;
-      let col = floorColor(cell, cell.k, x, y, lx, ly, m, R, lf, wet ? puddleAt(pF, x, y, lx, ly) : 0, PE ? PE[y * b.w + x] : 0);
-      if (tx === 0 || ty === 0) col = mul(col, 0.86); // the grid, faintly
-      const i = ((y * TEX + ty) * tw + x * TEX + tx) * 4;
-      buf[i] = col[0]; buf[i + 1] = col[1]; buf[i + 2] = col[2]; buf[i + 3] = 255;
+  const R = roadRuns(cells, b.w, b.h); // which way the roads run (the paint follows them)
+  const PE = plotEdges(cells, b.w, b.h); // the crop plots' wood edges
+  const lfF = ground ? leafField(b, treeLook, scene.key, groundCells(b)) : null; // autumn's leaves (ui/groundlook.js)
+  const pF = ground ? puddleField(b, puddleGround) : null; // puddles after rain (ui/groundlook.js, sim/puddles.js)
+  const tiles = [];
+  for (let y0 = 0; y0 < b.h; y0 += TILE_CELLS) for (let x0 = 0; x0 < b.w; x0 += TILE_CELLS) {
+    const cw = Math.min(TILE_CELLS, b.w - x0), chh = Math.min(TILE_CELLS, b.h - y0), tw = cw * TEX, th = chh * TEX;
+    let any = false;
+    for (let y = y0; y < y0 + chh && !any; y++) for (let x = x0; x < x0 + cw; x++) if (!isVoid(cells[y * b.w + x])) { any = true; break; }
+    if (!any) continue; // all open air: nothing to draw
+    const cv = mkCanvas(tw, th), c = cv.getContext("2d"), img = c.createImageData(tw, th), buf = img.data;
+    for (let y = y0; y < y0 + chh; y++) for (let x = x0; x < x0 + cw; x++) {
+      const cell = cells[y * b.w + x];
+      if (isVoid(cell)) continue;
+      const m = mud[y * b.w + x], lf = lfF ? lfF[y * b.w + x] : 0, wet = pF && pF.ok[y * b.w + x];
+      for (let ty = 0; ty < TEX; ty++) for (let tx = 0; tx < TEX; tx++) {
+        const lx = (tx + 0.5) / TEX, ly = (ty + 0.5) / TEX;
+        let col = floorColor(cell, cell.k, x, y, lx, ly, m, R, lf, wet ? puddleAt(pF, x, y, lx, ly) : 0, PE ? PE[y * b.w + x] : 0);
+        if (tx === 0 || ty === 0) col = mul(col, 0.86); // the grid, faintly
+        const i = (((y - y0) * TEX + ty) * tw + (x - x0) * TEX + tx) * 4;
+        buf[i] = col[0]; buf[i + 1] = col[1]; buf[i + 2] = col[2]; buf[i + 3] = 255;
+      }
     }
+    c.putImageData(img, 0, 0);
+    tiles.push(toBitmap({ cv, x: x0 * TEX, y: y0 * TEX }));
   }
-  c.putImageData(img, 0, 0);
-  flatGroundCache = toBitmap({ b, key, cv });
+  const g = { b, cells, key, tiles };
+  flatGroundCaches.delete(key);
+  flatGroundCaches.set(key, g);
+  while (flatGroundCaches.size > GROUNDS) flatGroundCaches.delete(flatGroundCaches.keys().next().value);
   iso.builds.ground++;
-  return flatGroundCache;
+  return g;
+}
+// A tiled picture drawn under the current transform (each tile at its texel offset), the tiles wholly off the canvas
+// left out (their corners through the context's transform, in the canvas's own pixels).
+function drawTiles(ctx, pic) {
+  const m = typeof ctx.getTransform === "function" && ctx.canvas ? ctx.getTransform() : null, CW = m ? ctx.canvas.width : 0, CH = m ? ctx.canvas.height : 0;
+  for (const t of pic.tiles) {
+    if (m) {
+      const w = t.cv.width, h = t.cv.height;
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      for (const [px, py] of [[t.x, t.y], [t.x + w, t.y], [t.x, t.y + h], [t.x + w, t.y + h]]) {
+        const X = m.a * px + m.c * py + m.e, Y = m.b * px + m.d * py + m.f;
+        if (X < x0) x0 = X; if (X > x1) x1 = X; if (Y < y0) y0 = Y; if (Y > y1) y1 = Y;
+      }
+      if (x1 < 0 || y1 < 0 || x0 > CW || y0 > CH) continue;
+    }
+    ctx.drawImage(t.cv, t.x, t.y);
+  }
 }
 // The affine map from a map-space picture (`per` pixels a tile) to the screen: map (x, y) → view (u, v) for the
 // rotation (toView, continuous) → the diamond's art px (ax = (u − v)·HW + Hv·HW, ay = (u + v)·HH; a straight view's
@@ -2601,55 +2700,34 @@ function toBitmap(o) {
   }
   return o;
 }
-// Fog of war over the ground: every tile none of your people see.
-function fogFor(b, vis) {
-  let sig = 0;
-  for (let i = 0; i < vis.length; i++) sig = (Math.imul(sig, 31) + vis[i] + i * 3) | 0;
-  const r = iso.rot, st = iso.straight, lift = liftOf(b), key = `${b.w}x${b.h}:${viewKey()}:${floorNo(b)}:${sig}:${b.night ? 1 : 0}`;
-  if (fogCache && fogCache.b === b && fogCache.key === key) return fogCache;
-  const [Wv, Hv] = viewDims(b, r);
-  const gw = st ? Wv * SW : (Wv + Hv) * HW, gh = (st ? Hv * SH : (Wv + Hv) * HH) + lift, ox = st ? 0 : -Hv * HW; // an upper floor: the footprint's diamonds raised (oy rows on top); ox as groundFor's
-
-  const cv = fogCache && fogCache.canvas.width === gw && fogCache.canvas.height === gh ? fogCache.canvas : mkCanvas(gw, gh);
-  const c = cv.getContext("2d");
-  c.clearRect(0, 0, gw, gh);
-  c.fillStyle = b.night ? "rgba(4,6,16,0.72)" : "rgba(10,12,18,0.58)";
-  c.beginPath();
-  for (let i = 0; i < vis.length; i++) {
-    if (vis[i]) continue;
-    const [u, v] = toView(i % b.w, (i / b.w) | 0, r, b.w, b.h);
-    const x = artX(u, v, st) - ox, y = artY(u, v, st) + lift - liftAt(b, i);
-    if (st) c.rect(x, y, SW, SH);
-    else { c.moveTo(x, y); c.lineTo(x + HW, y + HH); c.lineTo(x, y + 2 * HH); c.lineTo(x - HW, y + HH); } // filled: no closePath (diamond)
-  }
-  c.fill();
-  fogCache = toBitmap({ b, key, cv, canvas: cv, ox, oy: lift });
-  iso.builds.fog++;
-  return fogCache;
-}
-
 // The fog on one storey (no floor raised): a picture one pixel a tile in view order, stretched onto the diamonds when
 // it is drawn (drawIso: an affine transform takes the unit square (u, v) onto that tile's diamond, nearest pixel).
 // Rebuilt with what your people see after every move, so it must be cheap: a few thousand pixels, not a path of
 // thousands of diamonds filled on a canvas the size of the whole map (about 100 ms on a 72 × 72 fort, every action).
-const FOG_DAY = [10, 12, 18, 148], FOG_NIGHT = [4, 6, 16, 184]; // fogFor's rgba(10,12,18,0.58) and rgba(4,6,16,0.72)
-function fogMaskFor(b, vis) {
+const FOG_DAY = [10, 12, 18, 148], FOG_NIGHT = [4, 6, 16, 184]; // rgba(10,12,18,0.58) and rgba(4,6,16,0.72)
+// part (an upper floor, issue #24: no view-sized picture of the whole map): "low" only the cells at level 0 (outside the
+// footprint), "high" only the raised ones; null every cell.
+const fogMasks = new Map();
+function fogMaskFor(b, vis, part = null) {
   let sig = 0;
   for (let i = 0; i < vis.length; i++) sig = (Math.imul(sig, 31) + vis[i] + i * 3) | 0;
-  const r = iso.rot, key = `${b.w}x${b.h}:${r}:${sig}:${b.night ? 1 : 0}`;
-  if (fogMaskCache && fogMaskCache.b === b && fogMaskCache.key === key) return fogMaskCache;
+  const r = iso.rot, key = `${b.w}x${b.h}:${r}:${sig}:${b.night ? 1 : 0}:${part ? `${part}${floorNo(b)}` : ""}`;
+  const prev = fogMasks.get(part || "");
+  if (prev && prev.b === b && prev.key === key) return prev;
   const [Wv, Hv] = viewDims(b, r);
-  const cv = fogMaskCache && fogMaskCache.Wv === Wv && fogMaskCache.Hv === Hv ? fogMaskCache.cv : mkCanvas(Wv, Hv);
+  const cv = prev && prev.Wv === Wv && prev.Hv === Hv ? prev.cv : mkCanvas(Wv, Hv);
   const c = cv.getContext("2d"), img = c.createImageData(Wv, Hv), d = img.data, col = b.night ? FOG_NIGHT : FOG_DAY;
   for (let i = 0; i < vis.length; i++) {
     if (vis[i]) continue;
+    if (part && (part === "high") !== !!liftAt(b, i)) continue;
     const [u, v] = toView(i % b.w, (i / b.w) | 0, r, b.w, b.h), p = (v * Wv + u) * 4;
     d[p] = col[0]; d[p + 1] = col[1]; d[p + 2] = col[2]; d[p + 3] = col[3];
   }
   c.putImageData(img, 0, 0);
-  fogMaskCache = { b, key, cv, Wv, Hv };
+  const m = { b, key, cv, Wv, Hv };
+  fogMasks.set(part || "", m);
   iso.builds.fog++;
-  return fogMaskCache;
+  return m;
 }
 
 // ---------- per-cell looks ----------
@@ -2851,7 +2929,8 @@ function lookOf(b, scene, x, y, cut, focus = null) {
       if (!WALLISH.has(nk) && nk !== "stairs" && nk !== "window" && nk !== "smashed" && nk !== "void") o.rail |= 1 << viewDir(dx, dy, r);
       else if (nk === "void") o.rail |= 1 << viewDir(dx, dy, r); // an outside stair over open air
     }
-    if (floorsOf(b) && floorNo(b) === b.floors.length - 1) o.well = true;
+    if (floorsOf(b) && floorNo(b) === b.floors.length - 1 && !c.sealUp) o.well = true;
+    if (c.sealUp && c.top) o.part = `seal:${c.sealUp}`; // a taller building's floors above are not built: the way up blocked (prims stairs)
   } else if (k === "ladder" || k === "stairs" || k === "slope") {
     // Towards the higher neighbour (the walkway, the loft, the roof).
     let best = -1, bh = hAt(b, x, y);
@@ -2862,6 +2941,7 @@ function lookOf(b, scene, x, y, cut, focus = null) {
       if (hh > bh) { bh = hh; best = viewDir(dx, dy, r); }
     });
     o.dir = best < 0 ? 0 : best;
+    if (c.sealUp) o.part = `seal:${c.sealUp}`; // the stairs up blocked: rubble or a barricade (prims stairs)
   }
   if (snowLook && SNOW_ON.has(k) && bid < 0 && !(c.h > 0 && FURNITURE.has(k))) o.sn = snowLook; // snow on it out in the open (snowPrims; a building's roof carries its own: roofSprite)
   if (c.car && (k === "car" || k === "truck" || k === "vehicle")) o.car = c.car; // one piece of a 2 × 3–4 cell car (sim/combat.js placeCar): carPieces draws its share
@@ -3264,13 +3344,13 @@ function fillCells(ctx, b, test, fill, raised = true) {
   ctx.fillStyle = fill;
   ctx.beginPath();
   let any = false;
-  for (let i = 0; i < b.w * b.h; i++) {
-    if (!test(i)) continue;
-    const x = i % b.w, y = (i / b.w) | 0, z = tileTop(b, x, y);
-    if (z && !raised) continue;
+  forWin(b, (i, x, y) => {
+    if (!test(i)) return;
+    const z = tileTop(b, x, y);
+    if (z && !raised) return;
     diamond(ctx, x, y, z, 0, false); // filled, so no closePath (diamond)
     any = true;
-  }
+  });
   if (any) ctx.fill();
 }
 // The deploy step's green cells (sim/deploy.js canPlace at every cell), worked out once per battle revision instead of
@@ -3290,9 +3370,9 @@ function outlineCells(ctx, b, test, color, width = 2) {
   ctx.strokeStyle = color;
   ctx.lineWidth = width;
   ctx.beginPath();
-  for (let i = 0; i < b.w * b.h; i++) {
-    if (!test(i)) continue;
-    const x = i % b.w, y = (i / b.w) | 0, z = tileTop(b, x, y);
+  forWin(b, (i, x, y) => {
+    if (!test(i)) return;
+    const z = tileTop(b, x, y);
     const edge = (nx, ny) => nx < 0 || ny < 0 || nx >= b.w || ny >= b.h || !test(ny * b.w + nx);
     const P = (wx, wy) => project(wx, wy, z);
     const seg = (a, c) => { ctx.moveTo(...a); ctx.lineTo(...c); };
@@ -3300,7 +3380,7 @@ function outlineCells(ctx, b, test, color, width = 2) {
     if (edge(x, y + 1)) seg(P(x, y + 1), P(x + 1, y + 1));
     if (edge(x - 1, y)) seg(P(x, y), P(x, y + 1));
     if (edge(x + 1, y)) seg(P(x + 1, y), P(x + 1, y + 1));
-  }
+  });
   ctx.stroke();
 }
 // The doors, so they are found at any zoom and turn of the view: a padlock badge over every locked door (sim/locks.js:
@@ -3310,7 +3390,8 @@ function outlineCells(ctx, b, test, color, width = 2) {
 function drawDoorMarks(ctx, b, scene, cut, looks, vis, S, topFloor) {
   const locked = new Set(((b.raid ? b.raid.doors : b.doors) || []).filter((d) => !d.lock.open && onFloor(b, d)).map((d) => d.y * b.w + d.x));
   const s = Math.max(4, 2.2 * S);
-  for (let i = 0; i < b.w * b.h; i++) {
+  const Wn = winOf(b);
+  for (let wy = Wn.y0; wy <= Wn.y1; wy++) for (let i = wy * b.w + Wn.x0; i <= wy * b.w + Wn.x1; i++) {
     const c = b.cells[i], k = c.k;
     if (k !== "door" && k !== "idoor" && k !== "odoor") continue;
     const x = i % b.w, y = (i / b.w) | 0, bid = scene.comp[i], roofed = topFloor && bid >= 0 && !cut.has(bid);
@@ -3416,20 +3497,26 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   const lift = liftOf(b), F = floorsOf(b); // an upper floor of a building with storeys: the footprint raised `lift`
   const gx = (-Hv * HW - iso.cx) * S + cw / 2, gy = (0 - iso.cy) * S + ch / 2;
   const gxf = groundXform(b, iso.rot, TEX, S, gx, gy, Hv);
-  const skirt = skirtFor(b, fog, skirtColor(b), groundKeyOf(b, scene)); // the ground running on past the edges into the fog (the season on it too)
-  if (skirt) { ctx.save(); ctx.imageSmoothingEnabled = false; ctx.transform(...gxf); ctx.drawImage(skirt.cv, -skirt.K * TEX, -skirt.K * TEX); ctx.restore(); }
-  let g = null;
-  if (!lift) { // painted in map space, stretched onto the diamonds (flatGroundFor)
-    const fg0 = flatGroundFor(b, scene);
+  const skirt = skirtFor(b, fog, skirtColor(b), groundLookKey(b, treeLook), groundCells(b)); // the ground running on past the edges into the fog (the season on it too)
+  if (skirt) { ctx.save(); ctx.imageSmoothingEnabled = false; ctx.transform(...gxf); drawTiles(ctx, skirt); ctx.restore(); }
+  // Painted in map space, stretched onto the diamonds (flatGroundFor). An upper floor: the ground floor's ground
+  // dimmed (looking down from the windows), then this floor's footprint raised `lift` (its open air transparent).
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
+  ctx.transform(...gxf);
+  if (lift) {
+    drawTiles(ctx, flatGroundFor(b, scene, b.floors[0].cells, "f0"));
+    const Wn = winOf(b);
+    ctx.fillStyle = "rgba(0,0,0,0.45)";
+    ctx.fillRect(Wn.x0 * TEX, Wn.y0 * TEX, (Wn.x1 - Wn.x0 + 1) * TEX, (Wn.y1 - Wn.y0 + 1) * TEX); // only what is on screen
+    ctx.restore();
     ctx.save();
     ctx.imageSmoothingEnabled = false;
+    ctx.translate(0, -lift * S);
     ctx.transform(...gxf);
-    ctx.drawImage(fg0.cv, 0, 0);
-    ctx.restore();
-  } else {
-    g = groundFor(b, scene);
-    ctx.drawImage(g.cv, gx + (g.ox + Hv * HW) * S, gy - (g.oy || 0) * S, g.gw * S, g.gh * S);
   }
+  drawTiles(ctx, flatGroundFor(b, scene));
+  ctx.restore();
   const vis = v.vis;
   // Marks left on the ground (ui/battlemarks.js: blood, brass, scorch, glass), and the bodies lying on open ground
   // (drawn here, under the fog and every living unit; the rest in the painter's pass).
@@ -3445,16 +3532,15 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
       flatDead.add(t);
     }
   }
-  if (!lift) { // one pixel a tile, stretched onto the diamonds (fogMaskFor)
-    const m = fogMaskFor(b, vis);
+  // One pixel a tile, stretched onto the diamonds (fogMaskFor); an upper floor's in two: the ground below, the
+  // footprint raised.
+  for (const part of lift ? ["low", "high"] : [null]) {
+    const m = fogMaskFor(b, vis, part);
     ctx.save();
     ctx.imageSmoothingEnabled = false;
-    ctx.transform(S * artX(1, 0, st), S * artY(1, 0, st), S * artX(0, 1, st), S * artY(0, 1, st), gx + S * Hv * HW, gy);
+    ctx.transform(S * artX(1, 0, st), S * artY(1, 0, st), S * artX(0, 1, st), S * artY(0, 1, st), gx + S * Hv * HW, gy - (part === "high" ? lift * S : 0));
     ctx.drawImage(m.cv, 0, 0);
     ctx.restore();
-  } else {
-    const fg = fogFor(b, vis);
-    ctx.drawImage(fg.cv, gx + (fg.ox + Hv * HW) * S, gy - (fg.oy || 0) * S, g.gw * S, g.gh * S);
   }
 
   if (known) fillCells(ctx, b, unknownCell, "rgba(4,5,9,0.78)"); // never seen inside: dark (drawn on the floor; nothing stands there)
@@ -3843,7 +3929,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
       const x = i % b.w, y = (i / b.w) | 0;
       if (!vis[i] && !(sel && sel.x === x && sel.y === y)) continue;
       const here = !!(sel && sel.x === x && sel.y === y && onFloor(b, sel));
-      const up = floorNo(b) < F.length - 1, down = floorNo(b) > 0;
+      const up = floorNo(b) < F.length - 1 || !!b.cells[i].sealUp, down = floorNo(b) > 0; // a blocked way up still shows (Go up says why it will not do)
       const [X, Y] = project(x + 0.5, y + 0.5, standZ(b, x, y) + LV / 2 + 4);
       isoTag(ctx, X, Y, `${up ? "▲" : ""}${down ? "▼" : ""}`, here ? "#ffe296" : "rgba(255,226,150,0.55)", S * 0.8);
     }

@@ -525,7 +525,7 @@ export function libraryPlan(rng, o = {}) {
   return {
     bw, bh, front: { width: variant === "rural" || variant === "strip" ? 1 : 2 }, ground: variant === "rural" ? "rural" : variant === "central" ? "city" : "town",
     storeys: n, upper: n > 1 ? p.upper || null : null, foot: footOf(bw, bh), program: p.program, exits: p.exits || [], openDoors: variant === "modern" || variant === "strip" ? 0.3 : 0.1,
-    ...(p.stairs ? { stairs: p.stairs } : {}), lib: { variant, plan },
+    ...(p.stairs ? { stairs: p.stairs } : {}), lib: { variant, plan }, real: true, // real: drawn at its real size (buildingmaps.js realScale leaves it, every floor built: #24)
   };
 }
 

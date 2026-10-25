@@ -73,6 +73,7 @@
 //   yard behind the cell block (its own fence, weight benches).
 // The scenes (registerScene, their own dice; only on maps these styles laid out: when): gatestand, barracksoverrun,
 // armorybarricade, helipadevac, cellsopen, terminalshelter (below).
+import { REAL_SIZE } from "./data-buildingsize.js"; // the sizes (issue #24 took over MIL_SIZE)
 import { hash01 } from "./skills.js";
 import { pieceDef } from "./data-furniture.js";
 import { registerScene, SCENES } from "./interiorscenes.js";
@@ -87,21 +88,8 @@ export const MIL = {
   TOWERS: 4,            // watchtowers at a compound's corners
 };
 // The buildings' real sizes (metres, at CELL_M ≈ 1 m a cell) and storeys: [min, max] each. See the header.
-export const MIL_SIZE = {
-  hq:         { w: [26, 32], d: [17, 20], storeys: [2, 2] },
-  barracks:   { w: [40, 50], d: [15, 17], storeys: [2, 3] },
-  armorybldg: { w: [17, 21], d: [12, 14], storeys: [1, 1] },
-  messhall:   { w: [26, 32], d: [17, 20], storeys: [1, 1] },
-  motorpool:  { w: [40, 48], d: [26, 30], storeys: [1, 1] },
-  supply:     { w: [40, 48], d: [25, 29], storeys: [1, 1] },
-  aidstation: { w: [17, 21], d: [13, 15], storeys: [1, 1] },
-  gatehouse:  { w: [8, 10], d: [6, 7], storeys: [1, 1] },
-  hangar:     { w: [50, 58], d: [40, 46], storeys: [1, 1] },
-  tower:      { w: [9, 11], d: [9, 11], storeys: [4, 5] },
-  flightops:  { w: [24, 28], d: [15, 17], storeys: [1, 2] },
-  terminal:   { w: [80, 90], d: [40, 44], storeys: [1, 2] },
-  cellblock:  { w: [40, 48], d: [24, 27], storeys: [2, 2] },
-};
+// #24's real-world size table holds these rows now (data-buildingsize.js REAL_SIZE, planned: drawn at that size).
+export const MIL_SIZE = Object.fromEntries(["hq", "barracks", "armorybldg", "messhall", "motorpool", "supply", "aidstation", "gatehouse", "hangar", "tower", "flightops", "terminal", "cellblock"].map((k) => [k, REAL_SIZE[k]]));
 // The archetypes (buildingmaps.js BUILDINGS keys) these styles lay out in a new save.
 export const MIL_KEYS = new Set(["hq", "barracks", "armorybldg", "messhall", "motorpool", "aidstation", "gatehouse", "hangar", "tower", "flightops", "terminal", "cellblock"]);
 
