@@ -11,6 +11,8 @@
 // - on a raid's map the team's vehicle carries its type (sim/combat.js fitMapVehicle) and the fleet's others theirs
 //   (placeRaidConvoy); the view draws them as models (vehicleArtStats) in the diagonal views and the straight one (its own
 //   projection: a share placed from the cell's top-left corner); a car on one cell (no c.car) as the model shrunk onto it;
+// - the windows' pictures: vehicleImg gives every type its own <img> from a vehicle record (its upgrades, a wreck, a bike
+//   stack, another group's colour), kept by look; the trip planner's vehicle buttons carry them;
 // - the State Map: pieces for an SUV, a van and a Hummer that differ from each other and from the sedan's; the flat
 //   sprites and the parked markers for them paint; render.js vehicleKind maps a vehicle's type to its piece.
 // Usage: node tools/vehiclemodeltest.js [seed]   (a few seconds)
@@ -169,6 +171,31 @@ section("The State Map: pieces and sprites by type");
   check(ok, "the flat sprites and the parked markers for an SUV, a van and a Hummer paint, with upgrades");
   const map = Object.fromEntries(["truck", "sedan", "suv", "hummer", "van", "miltruck", "bike"].map((t) => [t, R.vehicleKind({ type: t })]));
   check(map.truck === "truck" && map.sedan === "sedan" && map.suv === "suv" && map.hummer === "hummer" && map.van === "van" && map.miltruck === "miltruck" && map.bike === "truck" && R.vehicleKind(null) === "truck", `render.js vehicleKind: ${JSON.stringify(map)}`);
+}
+
+section("The windows' pictures");
+{
+  const urlOf = (html) => (html.match(/src="([^"]*)"/) || [])[1] || "";
+  const types = ["truck", "sedan", "suv", "hummer", "van", "miltruck", "bike"];
+  const n0 = VM.vehicleArtStats.painted;
+  const imgs = types.map((t, i) => VM.vehicleImg({ id: 10 + i, type: t, upgrades: {} }, 2));
+  check(imgs.every((h) => /^<img class="sprite vehimg" src="data:/.test(h) && /height:2rem;width:[0-9.]+rem/.test(h)), "every type an <img> of its model, 2 rem tall, its width to match");
+  const cars = types.map((t) => VM.carImgURL(VM.vehicleCar({ id: 1, type: t })));
+  check(new Set(cars.map((c) => `${c.w}x${c.h}`)).size >= 5 && VM.vehicleArtStats.painted === n0 + types.length, `each type its own painting (${cars.map((c) => `${c.w}×${c.h}`).join(", ")} art px)`);
+  VM.vehicleImg({ id: 12, type: "suv", upgrades: {} }, 3);
+  check(VM.vehicleArtStats.painted === n0 + types.length, "asked again at another size: the picture kept, nothing painted anew");
+  const armed = VM.carImgURL(VM.vehicleCar({ id: 1, type: "suv", upgrades: { plating: 1, glass: 1, turret: { gun: "m2hb" } } })), wreck = VM.carImgURL(VM.vehicleCar({ id: 1, type: "suv", destroyed: true })), theirs = VM.carImgURL(VM.vehicleCar({ id: 1, type: "suv" }, { color: "#7a1a1a" }));
+  check(VM.vehicleArtStats.painted === n0 + types.length + 3 && armed.h > cars[2].h, `with upgrades (the gun on the roof: ${armed.h} vs ${cars[2].h} art px tall), blown up, and in another group's colour: their own paintings`);
+  check(wreck.w === cars[2].w && theirs.w === cars[2].w, "the same car otherwise");
+  const bike = VM.vehicleCar({ id: 2, type: "bike", count: 3 });
+  check(bike.body === "bike" && VM.modelOf(bike) === "bicycle" && VM.vehicleCar({ id: 3, type: "miltruck" }).body === "m35" && VM.vehicleCar({ id: 4 }).type === "truck", "a bike stack a bicycle, the Army truck the M35, an unknown type a pickup");
+  check(urlOf(imgs[0]) === urlOf(VM.vehicleImg({ id: 99, type: "truck", upgrades: {} }, 1)), "two pickups alike share one picture (kept by look, not by vehicle)");
+  // The trip planner's vehicle buttons carry the pictures.
+  const FP = await import("../src/ui/fleetpick.js");
+  const st = createWorld({ seed: SEED, factionCount: 6 }), h = hub(st);
+  const suv = createVehicle(st, "suv", { kind: "base", baseId: h.id }, { fuel: 20, condition: 80 });
+  const html = FP.fleetPicker(st, { base: h, ids: [], crewN: 2, cans: 0, action: "tf-vehicle" });
+  check((html.match(/<img class="sprite vehimg"/g) || []).length >= 1 && html.includes(suv.name), `the trip planner's vehicle buttons carry their pictures (${(html.match(/<img class="sprite vehimg"/g) || []).length} on the hub's)`);
 }
 
 console.log(`\n${pass} passed, ${fail} failed.`);

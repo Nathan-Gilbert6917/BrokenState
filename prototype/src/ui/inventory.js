@@ -26,7 +26,8 @@ import { figureSpinImg } from "./figures.js"; // the survivor as a low-poly figu
 import { cui } from "./combat.js";
 import { shortName } from "./names.js";
 import { useItemOn, useText } from "../sim/comforts.js";
-import { partyFleet, vehicleLabel, isBike } from "../sim/vehicles.js";
+import { partyFleet, partyVehicles, vehicleLabel, isBike } from "../sim/vehicles.js";
+import { vehicleImg } from "./vehiclemodel.js"; // the team's vehicles' pictures, their low-poly models, over the cargo and the trunk
 import { raidMove, raidItemAt, parseRaidLoc, raidTakeAll, stashAll, personalLoad, trunkInfo, atVehicle, raidParty, quickTarget, matesOf, hauled, haulBudget, HAUL, supplyFit } from "../sim/raidloot.js";
 import { combatAct, INV_AP, HANDOVER_AP, handoverRefusal, handoverTargets } from "../sim/combat.js"; // INV_AP: a move in the fight's inventory window (combatAct "inv"); HANDOVER_AP: one to the survivor next to you (combatAct "handover")
 import { lootLayer } from "../sim/raidloot.js";
@@ -257,7 +258,8 @@ export function storageBox(state, ui, place, user) {
   if (st.o === "cargo") {
     const cap = partyCapacity(state, st.party), load = poolLoad(st.party);
     const v = partyFleet(state, st.party); // a car or bikes (or several: sim/vehicles.js fleets): the cargo rides in it (on a raid map its trunk is opened at the vehicle, sim/raidloot.js)
-    head = `<div class="spread"><b${tip(v ? `The team's cargo rides in the ${vehicleLabel(v).toLowerCase()}${isBike(v) ? " (15 kg a rack; the rest is shared out among the people)" : ""}. Drag things from a survivor into it, or out of it onto them. On a raid map the vehicle waits in its zone: walk to it to load or unload.` : "Found cargo the team carries, by weight (a pack also weighs what is in it). It is shared out with the packed supplies among the team (sim/load.js). Moving things between the cargo and the people weighs nothing extra: it is the same team.")}>${v ? `${esc(vehicleLabel(v))} (team cargo)` : "Team cargo"}</b><span class="small ${load > cap ? "danger" : "muted"}"${tip("Supplies and cargo against what the team can carry on top of what it wears (and its vehicle)")}>load ${Math.round(load)}/${Math.round(cap)} kg</span></div>
+    const pics = partyVehicles(state, st.party).map((x) => vehicleImg(x, 2.2)).join(""); // each of them, as its model
+    head = `${pics ? `<div class="vehpics">${pics}</div>` : ""}<div class="spread"><b${tip(v ? `The team's cargo rides in the ${vehicleLabel(v).toLowerCase()}${isBike(v) ? " (15 kg a rack; the rest is shared out among the people)" : ""}. Drag things from a survivor into it, or out of it onto them. On a raid map the vehicle waits in its zone: walk to it to load or unload.` : "Found cargo the team carries, by weight (a pack also weighs what is in it). It is shared out with the packed supplies among the team (sim/load.js). Moving things between the cargo and the people weighs nothing extra: it is the same team.")}>${v ? `${esc(vehicleLabel(v))} (team cargo)` : "Team cargo"}</b><span class="small ${load > cap ? "danger" : "muted"}"${tip("Supplies and cargo against what the team can carry on top of what it wears (and its vehicle)")}>load ${Math.round(load)}/${Math.round(cap)} kg</span></div>
       <div class="bar"><i style="width:${Math.min(100, (load / Math.max(1, cap)) * 100)}%;background:${load > cap * 0.9 ? "var(--danger)" : "var(--info)"}"></i></div>`;
   } else {
     // Junk with wood in it (sim/woodcutting.js): the bulk button breaks it all down (marked "keep" stays).
@@ -810,7 +812,8 @@ function raidModal(state, ui) {
     const tl = `trunk:${p.id}`;
     const keys = [...new Set([...Object.keys(p.cargo.supplies), ...Object.keys(p.supplies)])].filter((k) => SUPPLIES[k]);
     const sups = keys.map((k) => [k, Math.floor(Math.max(0, p.cargo.supplies[k] || 0)) + Math.floor(Math.max(0, p.supplies[k] || 0))]).filter(([, v]) => v >= 1);
-    right = `<div${mid || gnd ? ' style="margin-top:0.9rem"' : ""}><div class="spread"><b${tip(trunk.bike ? "The bikes' racks: 15 kg each. What does not fit on them is shared out among the people." : "The team's supplies and cargo ride in the car. It also has to take home everything your people carry, so their loads count against what it has left.")}>${esc(trunk.name)}</b><span class="small ${trunk.space < 2 ? "warn" : "muted"}">${kg(trunk.cap - Math.max(0, trunk.space))}/${kg(trunk.cap)} kg · ${kg(Math.max(0, trunk.space))} free</span></div>
+    const pics = partyVehicles(state, p).map((x) => vehicleImg(x, 2.2)).join(""); // the team's vehicles, as their models
+    right = `<div${mid || gnd ? ' style="margin-top:0.9rem"' : ""}>${pics ? `<div class="vehpics">${pics}</div>` : ""}<div class="spread"><b${tip(trunk.bike ? "The bikes' racks: 15 kg each. What does not fit on them is shared out among the people." : "The team's supplies and cargo ride in the car. It also has to take home everything your people carry, so their loads count against what it has left.")}>${esc(trunk.name)}</b><span class="small ${trunk.space < 2 ? "warn" : "muted"}">${kg(trunk.cap - Math.max(0, trunk.space))}/${kg(trunk.cap)} kg · ${kg(Math.max(0, trunk.space))} free</span></div>
       ${loadBar(trunk.cap - Math.max(0, trunk.space), trunk.cap)}
       <div class="istore" data-action="inv-click" data-loc="${tl}:list" data-drop="${tl}:list"${tip("Drop here to put it in the vehicle")}>${sups.map(([k, v]) => supTile(ui, `${tl}:sup:${k}`, k, v, " From the vehicle: the team's packed supplies and what it found.")).join("")}${gearTiles(ui, p.cargo.gear, tl, s) || (sups.length ? "" : `<span class="small muted">Empty.</span>`)}</div>
       <div class="row" style="margin-top:0.4rem"><button class="mini" data-action="rl-stash"${tip(`Everything ${first} carries loose goes in the vehicle (what fits). What is worn, held, in pockets and the pack stays on them.`)} ${hsup.length || (u.haul && u.haul.gear.length) ? "" : "disabled"}>Unload what ${first} carries</button></div></div>`;

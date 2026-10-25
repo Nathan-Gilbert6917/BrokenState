@@ -5,6 +5,7 @@
 // sim/teamform.js pickProblem / fleetPlan, the same checks the launch makes.
 import { vehiclesAtBase, carsAtBase, bikesAtBase, isBike, isCar, vehicleById, payloadOf, tank, upgradeText, VEHICLE_TYPES, MAX_VEHICLES, SEATS, seatsOf, vehicleCapacity, fleetOf } from "../sim/vehicles.js";
 import { fleetPlan } from "../sim/teamform.js";
+import { vehicleImg } from "./vehiclemodel.js"; // each vehicle's picture, its low-poly model, on its button
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -30,7 +31,7 @@ export function fleetPicker(state, { base, ids = [], crewN = 0, cans = 0, action
   const opts = [btn("", !picked.length, "On foot", "Slow, silent, goes anywhere but water. The people carry everything: a heavy load slows them and makes them eat and drink more (load bands).", "no vehicle")];
   if (bikeStack && nBikes) {
     const on = isOn(bikeStack);
-    opts.push(btn(bikeStack.id, on, "Bicycles", `Faster than walking on roads, walking pace off them. No fuel, quiet. Each rack carries ${VEHICLE_TYPES.bike.rack} kg; riding takes most of the load's slow-down away. A bike each, or with cars a bike for each person not driving one (every vehicle needs its own person); with cars the convoy keeps to the bikes' pace on roads.`,
+    opts.push(btn(bikeStack.id, on, `${vehicleImg(bikeStack, 1.8)}Bicycles`, `Faster than walking on roads, walking pace off them. No fuel, quiet. Each rack carries ${VEHICLE_TYPES.bike.rack} kg; riding takes most of the load's slow-down away. A bike each, or with cars a bike for each person not driving one (every vehicle needs its own person); with cars the convoy keeps to the bikes' pace on roads.`,
       `${nBikes} at ${esc(where)} · ${bikeNeed} needed · rack ${VEHICLE_TYPES.bike.rack} kg each · condition ${Math.round(bikeStack.condition)}%`, !on && full ? `${MAX_VEHICLES} vehicles already` : !on && nBikes < bikeNeed ? `Only ${nBikes} bike${nBikes === 1 ? "" : "s"} for ${bikeNeed}` : bikeStack.condition <= 0 ? "Needs repairs" : ""));
   }
   for (const v of cars) {
@@ -38,7 +39,7 @@ export function fleetPicker(state, { base, ids = [], crewN = 0, cans = 0, action
     const seats = SEATS[v.type] || 4;
     const noFuel = !on && v.fuel < 1 && !(cans >= 1) ? `The ${v.name} has no fuel: refuel it at the base, or pack fuel cans` : "";
     const noDriver = !on && picked.reduce((a, x) => a + (isBike(x) ? 0 : 1), 0) + 1 > n && crewN > 0 ? `Every vehicle needs its own person: ${crewN} ${crewN === 1 ? "person" : "people"} for ${nCars + 1} cars` : "";
-    opts.push(btn(v.id, on, esc(v.name), `Fast on roads, cannot cross mountains. Burns about 0.6 fuel a road tile, 1.5 off-road, more when loaded past 60%. Payload ${payloadOf(v)} kg, riders (80 kg each) included: they feel none of their load. ${seats} seats. Each car needs its own driver; with two or more vehicles everyone needs a seat.${driverWords(state, v)}${upgradeText(v) ? ` ${upgradeText(v)}.` : ""}`,
+    opts.push(btn(v.id, on, `${vehicleImg(v, 1.8)}${esc(v.name)}`, `Fast on roads, cannot cross mountains. Burns about 0.6 fuel a road tile, 1.5 off-road, more when loaded past 60%. Payload ${payloadOf(v)} kg, riders (80 kg each) included: they feel none of their load. ${seats} seats. Each car needs its own driver; with two or more vehicles everyone needs a seat.${driverWords(state, v)}${upgradeText(v) ? ` ${upgradeText(v)}.` : ""}`,
       `${seats} seats · ${payloadOf(v)} kg payload · fuel ${n0(v.fuel)}/${tank(v)} · condition ${Math.round(v.condition)}%${upgradeText(v) ? ` · ${esc(upgradeText(v))}` : ""}`, v.condition <= 0 ? "Needs repairs first" : !on && full ? `${MAX_VEHICLES} vehicles already` : noFuel || noDriver));
   }
   const plan = picked.length ? fleetPlan(state, base, party, picked.map((x) => x.id), n) : null;
