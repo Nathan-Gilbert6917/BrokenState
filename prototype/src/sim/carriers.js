@@ -256,6 +256,7 @@ export function swarmBite(b, t, by) {
 // The bodies within reach get up. None of the living next to it: it walks to the nearest body within CARRIER.SEEK
 // and raises what it reaches.
 export function carrierTurn(b, u) {
+  if (u.nesting) return false; // one of a nest's dead (floorfolk.js) keeps still with the rest until the nest wakes
   raiseNear(b, u);
   if (b.units.some((f) => f.side !== u.side && f.kind !== "zombie" && active(f) && adjacent(u, f))) return false;
   const bodies = b.units.filter((c) => wormable(c) && cheb(u, c.x, c.y) > CARRIER.RANGE && cheb(u, c.x, c.y) <= CARRIER.SEEK);
