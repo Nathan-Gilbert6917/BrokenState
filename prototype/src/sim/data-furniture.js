@@ -151,6 +151,19 @@ export const FURNITURE_KINDS = {
   deposit:      P("Safe-deposit boxes", STEEL, 60, 160, "two", S1, true, ["office"], "storage:20", true),
   atm:          P("ATM",                STEEL, 80, 400, "fixed", S1, false, ["shop", "office"], "none", true),
   stanchion:    P("Queue post",         POLE, 3, 6, "one", S1, false, ["office", "shop"], "none"),
+  // ---------- hotels (issue #29: hotellayout.js lays them) ----------
+  // The reception desk (its drawers searched; the key rack stands behind it), a guest's suitcase (a luggage room's or a
+  // room's: clothes, toiletries, a phone, now and then a pistol or meds: combat.js BOX_LOOT), a room's minibar (snacks,
+  // drinks, little bottles), the luggage cart, the ballroom's round banquet tables (the lift lobby's lift doors are
+  // #27's liftdoor below), the lobby's lounge chairs, the pool deck's loungers and a tennis court's net.
+  frontdesk:   P("Reception desk",    HALF, 35, 80, "two", S21, true, ["office"], "storage:40"),
+  suitcase:    P("Suitcase",          HALF, 8, 12, "one", S1, true, ["bedroom", "office"], "storage:30"),
+  minifridge:  P("Mini fridge",       HALF, 15, 20, "one", S1, true, ["bedroom", "office"], "storage:15", true),
+  luggagecart: P("Luggage cart",      HALF, 15, 25, "one", S1, false, ["office", "bedroom"], "storage:60"),
+  banquet:     P("Banquet table",     HALF, 20, 30, "one", S1, false, ["dining"], "work:table"),
+  loungechair: P("Lounge chair",      HALF, 15, 25, "one", S1, false, ["living", "office"], "comfort:0.5"),
+  lounger:     P("Pool lounger",      HALF, 8, 12, "one", S1, false, ["yard"], "comfort:0.3"),
+  tennisnet:   P("Tennis net",        POLE, 5, 15, "fixed", S1, false, ["yard"], "none"),
   // ---------- grocery stores by size (issue #22: shoplayout.js cornerstore, grocerfloor, superstore, the back of house) ----------
   // The freezer case (an upright glass-door freezer), the island freezer and the butcher's case are appliances at a base
   // (data-appliances.js freezer_case, island_freezer, meat_case: #19's rules through their use); each holds its own table
@@ -259,6 +272,20 @@ export const FURNITURE_KINDS = {
   footlocker:   P("Footlocker",             HALF, 20, 18, "one", S1, true, ["bunker", "bedroom", "cells"], "storage:40"),
   batteries:    P("Solar battery rack",     HALF, 30, 80, "two", S1, false, ["bunker", "cellar"], "none", true),
   genset:       P("Military generator",     STEEL, 80, 140, "two", S22, false, ["bunker", "bay"], "none"),
+  // ---------- warehouses, factories and labs (issue #37: industrylayout.js lays them) ----------
+  // Fixed: a fume hood (ducted up through the roof), a conveyor (a section of a bolted line), a process tank (a dye vat,
+  // a reactor, a fermenter, a syrup tank, a tank farm's fuel or a water works' settling tank), a kiln (firebrick), a
+  // power loom and a grain bin (corrugated steel on its slab). Liftable: the lab freezer (an upright −80 freezer, two
+  // people; with no power since the fall it holds nothing cold, so at a base it is a steel cabinet: storage) and a fuel
+  // drum (a fuel depot's: what is left in it, then a drum to keep things in).
+  fumehood:   P("Fume hood",     FULL, 40, 250, "fixed", S1, false, ["lab"], "none", true),
+  conveyor:   P("Conveyor",      C(false, 1, false), 40, 200, "fixed", S1, false, ["bay"], "none"),
+  vat:        P("Process tank",  FULL, 70, 800, "fixed", S1, false, ["bay", "yard"], "none"),
+  kiln:       P("Kiln",          FULL, 120, 3000, "fixed", S1, false, ["bay"], "none", true),
+  loom:       P("Loom",          HALF, 60, 900, "fixed", S21, false, ["bay"], "none"),
+  grainbin:   P("Grain bin",     STEEL, 150, 4000, "fixed", S1, false, ["yard"], "none"),
+  labfreezer: P("Lab freezer",   FULL, 40, 120, "two", S1, true, ["lab"], "storage:40", true),
+  drum:       P("Fuel drum",     HALF, 25, 40, "two", S1, true, ["bay", "yard"], "storage:60"),
   // ---------- military bases, air bases, airports and prisons laid out like the real thing (issue #25: militarylayout.js) ----------
   // A suitcase in an airport's baggage hall, an ammo crate (rounds and grenades), a fuel bladder (fuel) and an inmate's
   // property locker (what was taken off them at intake) hold their own tables (combat.js BOX_LOOT). The barrier gate, the

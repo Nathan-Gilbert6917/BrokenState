@@ -405,6 +405,20 @@ Issue #26 (the user's request 2026-10-25: "Add bunker buildings"). Points of int
   - Where (mapgen.js, at the end of the land's making): some of the military sites are air bases, one in six of them and never the first (a Normal map's 11–12: two; Small one; Large three), picked by hash dice of the tile, so nothing else on the map changes; named "<nearest town> Air base". They stay in `state.militaryIds` (military sites: the soldiers' dead, the groups that hold a base); Custom's "Military sites" count includes them (one once it asks for two or more). Crashlanding's unit falls back only to a Guard base (crashstart.js).
   - Test `tools/interiortest.js` (air bases on generated maps at a sensible rate; the site's buildings).
 
+## Hotels and their chains
+
+The user's request 2026-10-25 (issue #29 of the interiors epic #7): "add hotel 200x200 max". A new site type `hotel` (data-shops.js `NEW_KINDS.hotel`: LOCATIONS "Hotel", glyph "Ht", danger 2, richness 0.6; its raid rooms, tags and map size merged like the shops'), four kinds by its chain, its building and map in [combat.md](combat.md#raids-into-building-interiors) ("Special buildings: hotels"). Tests `tools/hoteltest.js` (the rates over 300 seeds, the crawl, a raid on each kind), `tools/interiortest.js` ("Hotels room by room").
+
+- **The chains** (`FRANCHISES.hotel`, fictional; `plan.hotel` the kind, `plan.fl` the guest floors' floor, `look` the map sprite's colours and the lobby's wall; `w` by setting, `w.scenic` in scenic land):
+  - roadside inns: **Willow Creek Inn** (town 1, suburb 0.4), **Old Mill Bed & Breakfast** (town 0.9, suburb 0.2);
+  - business hotels: **Interstate Inn & Suites** (suburb 1, town 0.7, city 0.5), **Meridian Business Hotel** (city 1, suburb 0.8, town 0.3);
+  - resorts: **Pinecrest Lodge Resort** (scenic 1, town 0.12), **Lakeshore Grand Resort** (scenic 0.8, suburb and town 0.08);
+  - city towers: **Calder Grand Hotel** (city 1), **Harbor View Tower** (city 0.8).
+- **As points of interest** (hotels.js `hotelExtra`, from pois.js `generatePois` last, on dice of its own after the shops, so a world's lists and a save's changes to them stay as they were): a tile holds a hotel at `HOTELS.AT` by its setting (`hotelSetting`: shops.js `settingOf`'s city block, city suburb or town ring; else **scenic land** on or by a road: forest, hills, a mountain, or any land by water): a city block 9%, a city's suburb 6%, a town's ring 4.5%, scenic land 0.6%; never past `POI.MAX` (4), never two on a tile, never beside a site it would out-rank; known in the known zone `SHOP.KNOWN` of the time (a survey finds the rest). Its chain by the setting's weights: a town's 62% inns, 32% business hotels, 6% resorts; a suburb's 73% business hotels, 24% inns, 3% resorts; a city's 54% towers, 46% business hotels; scenic land's resorts only (tools/hoteltest.js over 300 seeds: 9.1%, 5.9%, 4.6%, 0.6%). Three generated worlds held 285 hotels (town 158, scenic 72, suburb 36, city 19: city blocks are often full). Its building: buildingmaps.js `SITES.hotel` (poiraid.js `poiPlace`: the chain's name and layout).
+- **In the crawl** (hotels.js `hotelPlace`, from citycrawl.js `genBlock` after the shops, on dice of its own): a block with room for one more place (`CRAWL.PLACES[1]`) holds a hotel at `HOTELS.CRAWL` (a city's 7%, a town's 6%, +1.5% a block deeper, at most 15%; measured 7.9% / 9.1% / 15.4% at blocks 1, 3, 6 of a city); its place's richness 1.05 and its dead 1.2 (`HOTELS.PLACE`); its chain the crawl's (shops.js `crawlFranchise`: downtown 55% towers, 45% business hotels; a town's 60% inns, 34% business hotels, 6% resorts). Its upper floors hold survivors or raiders (floorfolk.js: the penthouse first).
+- **The map sprite** (ui/mapsprites.js `paintHotel`, by the chain's kind in its colours): a gabled inn with its porch and sign, a business hotel's slab of windows and porte-cochere, a resort's long low lodge with the pool in front, a tower with its crown and sign.
+- Modules: [hotels, hotellayout, data-shops, pois, citycrawl genBlock, shops franchiseFor, buildingmaps SITES; ui/mapsprites].
+
 ## POI surveys and the per-POI raid flow
 Survey and Quick look find and rate the places on a tile; a scavenge or raid goes into one POI at a time.
 - **Survey** (8h, the team's own tile, one roll at the end, the ring of tiles with optics that reach; stamps "surveyed" and a perceived threat on every place known) and **Quick look** (2h, the kind only; the old Look around, a recon's look too) [survey `LOOK`, `fullSurveyDone`, `quickLook`; parties `MISSIONS.fullsurvey` / `survey`; orders task `fullsurvey`; fieldheat ACTIVITY].
@@ -449,7 +463,21 @@ Block-by-block roguelike extraction in a city or town, with multi-storey buildin
 - Multi-storey buildings with who lives on each floor (survivors barricaded upstairs, raiders holed up) [floorfolk].
 - **Stair runs** (the user's request 2026-10-25, issue #9: "Make the layouts make sense"): a stairwell is a straight
   flight against a wall with a landing at each end, drawn as steps rising toward the floor above. Details below.
-- Test `tools/citycrawltest.js`; the stairs `tools/storeytest.js`.
+- **Buildings at real size, towers to 10 storeys** (the user's request 2026-10-25, issue #24): a crawl's buildings are
+  their real size (a city's hospital 60–100 m across, its towers 6–10 storeys), each building's map as big as it needs
+  (up to 300 × 300); only the first 4 floors of a taller building are built (5 from the deeper blocks), its stairs up
+  from there collapsed or barricaded. Details below.
+- Test `tools/citycrawltest.js`; the stairs `tools/storeytest.js`; the sizes `tools/scaletest.js`.
+
+### Buildings at real size in the crawl (issue #24, 2026-10-25)
+The user's request 2026-10-25: "All buildings should scale based on how large buildings are in real life with unique layouts and 1 to 3 stories tall and city buildings can be 10 stories tall make the raid maps larger if needed up to 300x300", and "to prevent needing to make really tall cities just block off or have destroyed stairs to prevent going to higher stories though they dont actually exist". The rules are in [combat.md "Buildings at real size"](combat.md#buildings-at-real-size-issue-24-2026-10-25) and [docs/multi-storey-crawl.md](../multi-storey-crawl.md#up-to-10-storeys-the-floors-above-blocked-off-issue-24-2026-10-25).
+
+- **The setting**: a city crawl's buildings are "city" (buildingmaps.js `settingOf`: the crawl's tile is the city's), so offices, apartments and a hospital stand 6–10 storeys; a town's crawl "town" (2–4, 3–6). The depth bonus (`STOREY_BONUS`: +1 from block 4, +2 from block 7) adds to the height, within 10, and one more floor is built from block 4 (`openStoreys`).
+- **The block card**: the hint says the floors open and the height ("Office building: 4 floors open of 9, offices", citycrawl `placeHint`, `placeHeight`); the tip under it that the stairs above floor 4 have collapsed or been barricaded. `placeStoreys` stays the floors built (who lives on which floor: floorfolk, the Look around).
+- **The maps**: a place's building map is its footprint plus margins, at least the run's largest raid map dial, at most 300 × 300; the dead inside go by its floor area (`deadK`, at most 120 a group), its containers as full as a small building's (`R.natMap`), the quick search's the same (`placeProfile`).
+- **Snapshots** are packed floor by floor (citycrawl `packCells`: each distinct cell once, runs of them): five big buildings left as they were add about 100 KB to a gzipped save (`tools/bigmapbench.js --save5`).
+- **Other groups** strip the city's buildings no faster an hour, but they hold more (aiscav.js `siteSizeK`: a city 2.4 times what it did; docs/adr/0001-ai-parity.md).
+- **The balance gate** (`tools/crawlbalance.js city --depth 2,4 --squad early,solid,rifles --trials 20`, [docs/crawl-balance.md](../crawl-balance.md)): 6 of 6 rows inside their targets before and after (2026-10-25). Every squad still comes out (100%, none wiped); losses within 3 points of before (depth 4 rifles 17% → 21%); loot value within 10% (depth 2 solid 241 → 227, rifles 272 → 244; depth 4 rifles 377 → 376); hours the same (8–20).
 
 ### Parity with the raid tickets (issue #21, 2026-10-25)
 The user's request 2026-10-25 (the interiors epic #7, its last ticket): "I want the interiors of buildings during raids and crawls to make sense. […] Improve the building, furniture, appliances etc fidelity for raids and crawls." The crawl keeps up with what the raid tickets added (#8–#13, #18).

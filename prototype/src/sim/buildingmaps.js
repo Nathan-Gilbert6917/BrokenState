@@ -46,19 +46,23 @@ import { armFromArsenal } from "./arsenal.js"; // a person given the weapon the 
 import { noiseAt, detectRange, isBehind, throwablesOf, THROWABLES } from "./stealth.js";
 import { FRANCHISES } from "./data-shops.js"; // a franchise's layout (plan): the floor, the front room's depth and name, the width, a flat above
 import { applyZType, siteList } from "./zombietypes.js";
-import { fitMargins, buildingTarget, densifyOutside, densify, coverTarget, buildingDeadScale, streetDeadScale, raidMaxDims, raidDims, SIZE_CLASSES } from "./battlesize.js";
-import { legacyRaids, legacyRooms, legacyOffices } from "./worldcfg.js"; // an older save: a neighbourhood's street laid out as it always was; its buildings furnished as they were
+import { fitMargins, buildingTarget, densifyOutside, densify, coverTarget, buildingDeadScale, streetDeadScale, raidMaxDims, raidDims, SIZE_CLASSES, mapCap } from "./battlesize.js";
+import { legacyRaids, legacyRooms, legacyScale, legacyOffices } from "./worldcfg.js"; // an older save: a neighbourhood's street laid out as it always was; its buildings furnished as they were
 import { roomLayout, homeStyle, medicalStyle, LAYOUT } from "./roomlayout.js"; // homes furnished room by room (the placement helpers); hospitals, clinics and vets too (#14)
 import { commercialStyle, styleName as shopStyleName } from "./shoplayout.js";
 import { OFFICE_PLANS } from "./officeplans.js"; // the office buildings of every kind, the corporate tower (issue #27)
 import { officeStyle } from "./officelayout.js"; // their rooms' styles (a leaf's office mark) // shops, restaurants, bars, offices, motels, banks and big stores laid out for their kind (issue #16)
 import { civicStyle } from "./civiclayout.js"; // police stations, fire stations, schools and churches laid out for their kind (issue #15)
+import { hotelSpec } from "./hotellayout.js"; // hotels: their plans, rooms, grounds and scenes (issue #29)
 import { militaryStyle, militaryOutside, MIL_SIZE } from "./militarylayout.js"; // military bases, air bases, airports and prisons laid out like the real thing (issue #25)
 import { decorate, flipDecoY, placeDecorPieces } from "./decor.js"; // rugs, clutter, wall art, wall colours, light fixtures (cosmetic)
 import { rollWin, winMixOf, windowOpen } from "./windows.js"; // the windows' states (open, locked, fixed), a throw through an open one
 import { rollScenes, sceneRng } from "./interiorscenes.js"; // signs of survival: barricades, blood, bodies (dice of their own)
-import { BUNKER_PLANS, bunkerStyle, levelName } from "./bunkerlayout.js";
-import { eateryPlan, eateryOf } from "./eaterylayout.js"; // restaurants by kind of food, format and size (issue #33) // bunkers: the plans, their rooms, their levels below ground (issue #26)
+import { realFoot, realStoreys, storeyRange, REAL_SIZE } from "./data-buildingsize.js"; // buildings at real size (issue #24)
+import { BUNKER_PLANS, bunkerStyle, levelName } from "./bunkerlayout.js"; // bunkers: the plans, their rooms, their levels below ground (issue #26)
+import { eateryPlan, eateryOf } from "./eaterylayout.js"; // restaurants by kind of food, format and size (issue #33)
+import { industryPlan, industryStyle, INDUSTRY_ROLES, INDUSTRY_KEYS } from "./industrylayout.js"; // warehouses, factories and labs: a dozen plans each (issue #37)
+import { pieceDef } from "./data-furniture.js"; // a yard piece that holds loot (spec.yardPieces)
 
 export const BMAP = {
   MARGIN: { front: 5, back: 4, left: 4, right: 4 }, // cells of outside around the building
@@ -70,6 +74,7 @@ export const BMAP = {
   CLIMB: { ap: 1, heat: 3, radius: 6 },   // climbing through a window (combat.js "climb")
   ROLLER: { heat: 3, radius: 8 },         // hauling a roller door up
   DEAD_SCALE: [0.35, 0.85],               // the dead at a site × the map's area over the street raid's, clamped (indoors they are closer together); past the old Large 40 × 30 more with the ground (battlesize.js BIG)
+  DEAD_CAP: 120,       // a building at real size (realScale): its dead by its floor area, at most this many of a group (a turn with 60 stays well under a second: tools/bigmapbench.js)
   OUTSIDE_DEAD: 0.25,  // share of the dead outside the building
   LOCKED_DEAD: 0.15,   // chance one of the dead is shut in a locked room (one a room)
   CUT_R: 6,            // the isometric cutaway: walls lowered within this many tiles of your people
@@ -227,6 +232,10 @@ export const ROLES = {
   genroom:     role("Generator room", "motorpool", "none", { fl: "steel", maxBoxes: 2 }),
   waterstore:  role("Water store", "kitchen", "shelves", { fl: "conc", maxBoxes: 2 }),
   medbay:      role("Med bay", "clinic", "beds", { fl: "lino", maxBoxes: 3 }),
+  // Warehouses, factories and labs (issue #37: industrylayout.js INDUSTRY_ROLES): a loading dock, a cold room, a
+  // self-storage unit, a sorting hall, a production line, a process hall, a kiln hall, a clean room, a gowning room, a
+  // greenhouse.
+  ...INDUSTRY_ROLES,
 };
 
 // ---------- the outside ----------
@@ -267,7 +276,17 @@ const clampN = (v, a, b) => Math.max(a, Math.min(b, v));
 const planOf = (kind, o) => { const id = o && o.variant; const f = id ? (FRANCHISES[(o && o.kind) || kind] || []).find((x) => x.id === id) : null; return f ? { ...(f.plan || {}), look: f.look } : {}; }; // o.kind: the place's kind when its building is another's archetype (a pizza place is a diner)
 /** The front room with the franchise's floor and name over it. @param {any} leaf @param {any} plan */
 const withPlan = (leaf, plan) => (leaf && leaf.role ? { ...leaf, ...(plan.fl ? { fl: plan.fl } : {}), ...(plan.room ? { name: plan.room } : {}), ...(plan.look ? { wallc: plan.look.wall } : {}) } : leaf); // wallc: its inside walls in the franchise's colour (decor.js)
-export const MAX_STOREYS = 8;
+// The most storeys a building has (a city's towers, issue #24: 6–10), and the most of them that are real floors: a
+// building taller than OPEN_STOREYS is built up to OPEN_STOREYS floors (one more deeper in the city crawl: opts.
+// storeyBonus) and its stairs up from the top one are blocked (collapsed into rubble or barricaded: the cell's sealUp),
+// so the floors above never need to exist (the user's word 2026-10-25: "just block off or have destroyed stairs to
+// prevent going to higher stories though they dont actually exist"). spec.height: the building's storeys (its look,
+// the block card); spec.storeys: the floors built.
+export const MAX_STOREYS = 10;
+export const OPEN_STOREYS = 4;
+const OLD_MAX = 8; // the cap before (an older save's offices and apartments keep their storeys and footprints)
+/** The floors built of a building `height` storeys tall (a crawl's deeper block: bonus > 0, one more). */
+export const openStoreys = (height, bonus = 0) => (height <= OPEN_STOREYS ? height : Math.min(height - 1, OPEN_STOREYS + (bonus > 0 ? 1 : 0)));
 
 // o.legacy: an older save's plan (worldcfg.js legacyRooms). Since rooms are furnished room by room (roomlayout.js) a
 // kitchen keeps room for its fridge, sink and stove: a farmhouse's pantry only when it is wide enough, and a house's or
@@ -632,11 +651,14 @@ function institution(rng, v, o = {}) {
       // a factory's, a campus's offices); an older save's (o.officesLegacy: worldcfg.js legacyOffices) as below.
       const firm = o.legacy ? null : planOf("office", o);
       if (firm && firm.look) return OFFICE_PLANS.tower(rng, o, firm, MAX_STOREYS);
-      if (firm && !o.officesLegacy) return OFFICE_PLANS.tower(rng, o, { storeys: [3, 6] }, MAX_STOREYS);
+      if (firm && !o.officesLegacy) { // a firm-less tower: one of the named plans, as tall as the setting's offices stand (realScale restorey: a city's 6–10)
+        const spec = OFFICE_PLANS.tower(rng, o, { storeys: [3, 6] }, MAX_STOREYS);
+        return { ...spec, restorey: (h) => OFFICE_PLANS.tower(rng, { ...o, storeyBonus: 0, plan: spec.variant }, { storeys: [h, h] }, MAX_STOREYS) };
+      }
       // A tower: the taller, the smaller its footprint (3 storeys on about 20 × 14, 8 on about 13 × 11). The city crawl
       // adds storeys deeper in (o.storeyBonus).
-      const n = clampN(rng.int(3, 8) + (o.storeyBonus || 0), 3, MAX_STOREYS);
-      const t = (n - 3) / (MAX_STOREYS - 3);
+      const n = clampN(rng.int(3, 8) + (o.storeyBonus || 0), 3, OLD_MAX);
+      const t = (n - 3) / (OLD_MAX - 3);
       const bw = Math.round(20 - 7 * t) + rng.int(-1, 1), bh = Math.round(14 - 3 * t) + rng.int(0, 1);
       const small = bw < 16;
       const records = { role: "storage", name: "Records room", type: "office", lock: ["door", 0.4], boxLock: ["safe", 0.3] };
@@ -900,12 +922,13 @@ function churchPlan(rng) {
 // (bunkerlayout.js).
 // Plans with no rectangle beyond their own (no #23 shapes on dev yet): each is a split tree, so a part can become a
 // wing of a shape once spec.shape lands.
-const milSize = (rng, k) => { const s = MIL_SIZE[k]; return { bw: rng.int(s.w[0], s.w[1]), bh: rng.int(s.d[0], s.d[1]) }; };
+const milSize = (rng, k) => realFoot(rng, k); // data-buildingsize.js REAL_SIZE (#24's table: #25's rows, planned)
 const milStoreys = (rng, k) => rng.int(MIL_SIZE[k].storeys[0], MIL_SIZE[k].storeys[1]);
 const WASH = { role: "restroom", name: "Washroom", civic: "washroom", type: "lockers", maxBoxes: 1 };
 // Rooms of `unit` cells along a band `width` cells wide, the last taking the rest.
 const rowRooms = (width, unit, leaf) => { const n = Math.max(1, Math.floor(width / (unit + 1))); return Array.from({ length: n }, (_, i) => [i === n - 1 ? "*" : unit, leaf(i)]); };
-function milPlan(rng, v, o = {}) {
+function milPlan(rng, v, o = {}) { const spec = milPlanOf(rng, v, o); spec.real = true; return spec; } // drawn at its real size already (realScale leaves it)
+function milPlanOf(rng, v, o = {}) {
   const site = o.site || null;
   switch (v) {
     case "hq": { // the command building: ops, the commander, briefing, comms; a helipad outside
@@ -1179,10 +1202,17 @@ function vet(rng, o = {}) {
   };
 }
 
+// A hotel (issue #29, hotellayout.js): a roadside inn, a business hotel, a resort or a city tower by its franchise
+// (data-shops.js FRANCHISES.hotel plan.hotel; a sample plan's by the dice), its grounds round it; its map up to
+// battlesize.js MAP_CAP.hotel (200 × 200).
+function hotel(rng, o = {}) {
+  return hotelSpec(rng, { ...o, plan: planOf("hotel", o), maxStoreys: MAX_STOREYS });
+}
+
 function apartments(rng, o = {}) {
   const bw = rng.int(18, 22), bh = rng.int(14, 16);
   // 3–6 floors of flats (deeper city blocks taller: o.storeyBonus), a lobby and the maintenance room on the ground floor.
-  const n = clampN(rng.int(3, 6) + (o.storeyBonus || 0), 3, MAX_STOREYS);
+  const n = clampN(rng.int(3, 6) + (o.storeyBonus || 0), 3, OLD_MAX);
   const lobby = rng.int(4, 5);
   // A flat (roomlayout.js): a kitchen-living room with a bedroom and a bathroom beside it when it is wide enough (w:
   // its width as the plan will cut it), a studio and a bathroom when not, a studio alone when narrower still; its rooms
@@ -1205,6 +1235,210 @@ function apartments(rng, o = {}) {
     upper: (f) => corridorPlan([["*", flat(f, "A", uw)], [2, { role: "stairwell" }], [lobby, { role: "hall", name: "Landing" }], ["*", flat(f, "B", uw)]], [["*", flat(f, "C", ub)], ["*", flat(f, "D", ub)], [3, { role: "storage", name: f === 1 ? "Laundry" : "Utility room", type: "house" }]], 5),
     exits: [{ side: "back", roles: ["hgarage"], chance: 0.8, lock: 0.3 }, { side: "left", roles: ["corridor"], chance: 0.4, lock: 0.4 }, { side: "right", roles: ["corridor"], chance: 0.4, lock: 0.4 }],
   };
+}
+
+// ---------- buildings at real size (issue #24) ----------
+// realScale: every archetype's spec goes through here (makeSpec) in a world made since (an older save's do not:
+// worldcfg.js legacyScale). The archetype's own plan stays what it is, made by its own dice for its own footprint (the
+// plan's natural size, natW × natH; an older save's footprint); the building's footprint is its real size (data-
+// buildingsize.js REAL_SIZE, realFoot: 1 m a cell), and its storeys its kind's:
+//   - footprint: from SCALE.TILE × the plan's width or depth the plan is laid out in wings: nx × ny copies of it, each
+//     at least the plan's own size (one more each way where they stay SCALE.SQUASH of it, whichever comes nearer),
+//     a SCALE.CORRIDOR wide corridor between them (a hub: the doors join every wing to it), each copy turned left for
+//     right by the dice; then the stretched rooms are split (splitUp, every wing alike) until the plan holds as many
+//     rooms to the square metre of footprint as at its own size (planCount: carve's own cuts, no dice), and a room's
+//     most containers × boxK the same way: rooms, containers and the dead keep today's density (tools/scaletest.js);
+//   - row kinds (REAL_SIZE wings): "along" (a motel) side by side wall to wall, "back" (a church) deeper by its back strip;
+//   - storeys: the kinds that grow in a city (REAL_SIZE city: offices, apartments, a hospital) roll their height from
+//     the setting's range (a city's towers 6–10, a town's 2–4 or 3–6), plus the city crawl's depth bonus; the others
+//     keep their own storeys within their row's range. A building taller than OPEN_STOREYS is built up to openStoreys
+//     floors (spec.height: what it stands; spec.storeys: the floors built), its stairs up from the top one blocked;
+//     from 6 storeys it has two stairwells;
+//   - floors that differ: an office tower's floors between the lobby and the top are open plan, cubicles, meeting
+//     rooms or a canteen floor by the floor (OFFICE_FLOORS);
+//   - deadK: the floor area built over the plan's own (the dead in it go by it: placeInterior, at most BMAP.DEAD_CAP).
+// A kind whose size another ticket owns (REAL_SIZE own: #22's groceries, #23's school) keeps its archetype's footprint;
+// a spec with a shape of its own (#23's footprints: spec.shape) keeps its plan and is not laid out in wings.
+// TILE: wings from this many times the plan's width or depth; SQUASH: a wing never narrower or shallower than this of the
+// plan; BOX_MAX / BOX_MIN: a room's containers at most / at least this many times its own; TWINS: a room split into at
+// most this many more.
+export const SCALE = { TILE: 1.7, CORRIDOR: 2, TWO_STAIRS: 6, BOX_MAX: 4, BOX_MIN: 0.5, SQUASH: 0.8, TWINS: 3 };
+// An office floor's plan by its kind (open plan, cubicles, meeting rooms, a canteen floor), for a floor fd deep in front.
+const OFFICE_FLOORS = {
+  open: (fd) => ({ split: "x", parts: [["*", { role: "office", name: "Open-plan office", hub: true, maxBoxes: 6 }], [4, { split: "y", parts: leaves([["*", { role: "storage", name: "Records", type: "office" }], [3, "restroom"]]) }]] }),
+  cubicles: (fd) => corridorPlan([["*", { role: "office", name: "Cubicles" }], [4, "office"], ["*", { role: "office", name: "Cubicles" }]], [["*", "office"], [4, "breakroom"], [4, { role: "storage", name: "Records", type: "office" }], ["*", "office"]], fd),
+  meeting: (fd) => corridorPlan([["*", { role: "office", name: "Meeting room" }], [5, { role: "office", name: "Meeting room" }], ["*", { role: "office", name: "Boardroom" }]], [["*", "office"], [4, "breakroom"], ["*", { role: "office", name: "Meeting room" }]], fd),
+  canteen: () => ({ split: "y", parts: [["*", { role: "dining", name: "Canteen", type: "store", hub: true, maxBoxes: 4 }], [5, { split: "x", parts: leaves([["*", "kitchen"], [4, "breakroom"], [3, "restroom"]]) }]] }),
+};
+// A room split in two (realScale splitUp): its twin the same room, or for a few kinds the room that goes beside it (a
+// kitchen's pantry, a gym's equipment store), so a stretched plan reads as one: not "Kitchen 1, Kitchen 2".
+const TWIN_OF = { kitchen: { role: "pantry", type: "kitchen" }, gym: { role: "storage", name: "Equipment store", type: "lockers" }, dayroom: { role: "office" } };
+function twinOf(leaf) {
+  const t = TWIN_OF[leaf.role];
+  if (!t || leaf.unit) return structuredClone(leaf);
+  const out = { ...structuredClone(leaf), ...t };
+  if (!t.name) delete out.name; // the role's own name
+  delete out.civic; delete out.entry; delete out.hub; delete out.fry; delete out.pizza; // the original's own style and marks (the way in, the hub) stay with it
+  return out;
+}
+const OFFICE_ORDER = ["cubicles", "open", "meeting", "cubicles", "open", "canteen"];
+/** @param {any} rng @param {any} spec @param {string} key @param {{ setting?: string, storeyBonus?: number }} [o] */
+export function realScale(rng, spec, key, o = {}) {
+  const R = REAL_SIZE[key];
+  if (!R || !spec) return spec;
+  if (spec.real) return { ...spec, height: Math.max(1, spec.storeys || 1) }; // planned at its real size by its archetype (#25's military plans): as it is, every floor built
+  const out = { ...spec, natW: spec.bw, natH: spec.bh, natStoreys: Math.max(1, spec.storeys || 1) };
+  const bonus = o.storeyBonus || 0;
+  // A plan drawn at its own size by its archetype (REAL_SIZE planned: #27's office buildings, a firm's corporate tower
+  // with its floorKinds; #37's named warehouses, factories and labs): its footprint and plan as they are, its height its
+  // own, only the floors the tall rule builds.
+  if (spec.restorey && R.city) { // #27's firm-less tower: its plan redrawn at the setting's height (realStoreys: a city's towers up to MAX_STOREYS)
+    const height = clampN((realStoreys(rng, key, o.setting) || out.natStoreys) + bonus, 1, MAX_STOREYS), re = spec.restorey(height);
+    delete re.restorey;
+    return { ...re, height, storeys: openStoreys(height, bonus) };
+  }
+  if (R.planned || spec.floorKinds || (spec.vid && spec.vid !== "general")) { // #37's named industrial plans (spec.vid): their own sizes (industrylayout.js INDUSTRY.SIZE)
+    const height = out.natStoreys, built = openStoreys(height, bonus);
+    return { ...spec, height, storeys: built };
+  }
+  // Storeys: the height it stands, the floors built.
+  let height = out.natStoreys;
+  if (R.city) height = clampN((realStoreys(rng, key, o.setting) || height) + bonus, 1, MAX_STOREYS);
+  else { const r = storeyRange(key, o.setting); if (r) height = clampN(height, r[0], r[1]); }
+  const built = openStoreys(height, bonus);
+  out.height = height; out.storeys = built;
+  if (height >= SCALE.TWO_STAIRS) out.stairs = { ...(spec.stairs || {}), n: 2 };
+  // The footprint, and the plan over it (realFoot; a kind with no size of its own here: the archetype's footprint and plan).
+  const foot = R.own || spec.shape ? null : realFoot(rng, key);
+  const flips = Array.from({ length: 64 }, () => !R.wings && rng.chance(0.5)); // each wing turned left for right
+  let lay = (prog) => prog, fill = (prog) => prog;
+  if (foot) {
+    out.bw = foot.bw; out.bh = foot.bh;
+    const iw = foot.bw - 2, ih = foot.bh - 2, natIw = spec.bw - 2, natIh = spec.bh - 2, ratio = (foot.bw * foot.bh) / (spec.bw * spec.bh); // by the footprint, walls and all (a small plan's walls are more of it)
+    const C = R.wings === "along" ? 0 : SCALE.CORRIDOR;
+    const hasEntry = (n) => !!n && (n.role ? !!n.entry : n.parts.some((p) => hasEntry(p[1])));
+    const mirror = (node) => (node && node.split === "x" ? { ...node, parts: node.parts.slice().reverse() } : node);
+    const topNum = (n) => (!n ? 0 : n.role ? Number((/ (\d+)$/.exec(n.name || "") || [0, 0])[1]) : Math.max(0, ...n.parts.map((p) => topNum(p[1]))));
+    const renum = (n, by) => { if (!n) return; if (n.role) { if (n.name && / \d+$/.test(n.name)) n.name = n.name.replace(/ (\d+)$/, (_, d) => ` ${Number(d) + by}`); return; } for (const p of n.parts) renum(p[1], by); };
+    // The copy of a plan for wing k (k ≥ 1): "along" without the entry's part, its numbered rooms numbered on (Room 6…);
+    // "back" only the plan's back strip (the last part of its front-to-back split).
+    const copyOf = (prog, k) => {
+      const c = structuredClone(prog);
+      if (!k || !R.wings) return c;
+      if (R.wings === "back") return c.split === "y" ? c.parts[c.parts.length - 1][1] : c;
+      const kept = c.split === "x" ? { ...c, parts: c.parts.filter((p) => !hasEntry(p[1])) } : c;
+      renum(kept, topNum(prog) * k);
+      return kept;
+    };
+    // nx × ny wings of a plan, a corridor between them (along the front: wall to wall, a back corridor strip whole).
+    const layOut = (nx, ny) => (prog) => {
+      if (nx * ny <= 1) return prog;
+      const tail = prog.split === "y" && prog.parts.length > 1 ? prog.parts[prog.parts.length - 1] : null;
+      if (R.wings === "along" && tail && tail[1].role && ROLES[tail[1].role] && ROLES[tail[1].role].hub) {
+        const head = prog.parts.length > 2 ? { split: "y", parts: prog.parts.slice(0, -1) } : prog.parts[0][1];
+        return { split: "y", parts: [["*", layOut(nx, ny)(head)], tail] };
+      }
+      const corridor = () => [SCALE.CORRIDOR, { role: "corridor" }];
+      const band = (j) => { const parts = []; for (let i = 0; i < nx; i++) { if (i && R.wings !== "along") parts.push(corridor()); const c = copyOf(prog, j * nx + i); parts.push(["*", flips[(j * nx + i) % flips.length] ? mirror(c) : c]); } return nx > 1 ? { split: "x", parts } : parts[0][1]; };
+      const rows = []; for (let j = 0; j < ny; j++) { if (j) rows.push(corridor()); rows.push(["*", band(j)]); }
+      return ny > 1 ? { split: "y", parts: rows } : rows[0][1];
+    };
+    // A plan's stretched rooms ("*" or a share; no hub, corridor, room with its own door outside, or entry, unless its twin
+    // is another room: TWIN_OF, the hub and the entry staying with the original) split in two one
+    // at a time, every wing alike, while that brings the plan laid out nearer the rooms its own size would have over
+    // this floor (planCount: carve's own sizes, no dice).
+    const splitUp = (prog, L) => {
+      const c = structuredClone(prog), cands = []; // [the split node, the part itself]
+      const stretchy = ([sz, ch]) => !!ch && !!ch.role && (typeof sz !== "number" || sz < 1) && ch.role !== spec.unitDoors && (!!TWIN_OF[ch.role] || (!ch.hub && !ch.entry && !(ROLES[ch.role] && ROLES[ch.role].hub))); // a motel room: a twin behind it would have no door
+      const walk = (node) => { if (!node || node.role) return; for (const part of node.parts) { if (stretchy(part)) cands.push([node, part]); walk(part[1]); } };
+      walk(c);
+      const target = planCount(prog, natIw, natIh).rooms * ratio;
+      let now = planCount(L(c), iw, ih).rooms;
+      for (let k = 0; now < target && cands.length && k < cands.length * SCALE.TWINS; k++) { // round the candidates again while more are wanted
+        const [node, part] = cands[k % cands.length], at = node.parts.indexOf(part);
+        if (at < 0) continue;
+        const was = node.parts.slice();
+        node.parts[at] = ["*", part[1]];
+        node.parts.splice(at + 1, 0, ["*", twinOf(part[1])]);
+        const next = planCount(L(c), iw, ih).rooms;
+        if (next <= now || Math.abs(next - target) > Math.abs(now - target)) { node.parts.splice(0, node.parts.length, ...was); if (next <= now) continue; break; } // no gain, or past the mark by more than short of it
+        cands[k % cands.length] = [node, node.parts[at]];
+        now = next;
+      }
+      return { prog: c, rooms: now, target };
+    };
+    // How many wings: as many as fit at the plan's own size, or one more each way where the wings stay at least
+    // SCALE.SQUASH of it; the choice whose plan, rooms split, comes nearest the rooms its own size would have here.
+    const fits = (n0, n1) => (n1 >= n0 * SCALE.TILE ? Math.max(1, Math.floor((n1 + C) / (n0 + C))) : 1);
+    let ox = R.wings === "back" ? [1] : [fits(natIw, iw)], oy = R.wings === "along" ? [1] : [fits(natIh, ih)];
+    const room = (n0, n1, k) => (n1 - (k - 1) * C) / k >= n0 * SCALE.SQUASH;
+    if (R.wings !== "back" && room(natIw, iw, ox[0] + 1) && iw >= natIw * SCALE.TILE) ox.push(ox[0] + 1);
+    if (R.wings !== "along" && room(natIh, ih, oy[0] + 1) && ih >= natIh * SCALE.TILE) oy.push(oy[0] + 1);
+    const P = spec.program;
+    if (R.wings === "along" && P.split === "x") { // the copies after the first are the plan's parts without the entry's (a motel's rooms): as many as fill the front
+      const unitsW = P.parts.filter((p) => !hasEntry(p[1])).reduce((a, p) => a + (typeof p[0] === "number" && p[0] >= 1 ? p[0] : 4) + 1, 0);
+      ox = [1 + Math.max(0, Math.round((foot.bw - spec.bw) / Math.max(1, unitsW)))];
+    }
+    const strip = P.split === "y" && P.parts.length > 1 ? P.parts[P.parts.length - 1] : null;
+    if (R.wings === "back" && strip && typeof strip[0] === "number") { // deeper by back strips while the rest keeps its depth: any number of them
+      oy = []; for (let k = 1; k <= 1 + Math.floor((foot.bh - spec.bh) / (strip[0] + C)); k++) oy.push(k);
+    }
+    let best = null;
+    for (const nx of ox) for (const ny of oy) {
+      const L = layOut(nx, ny), r = splitUp(P, L), miss = Math.abs(r.rooms - r.target) / Math.max(1, r.target);
+      if (!best || miss < best.miss - 1e-9) best = { nx, ny, L, miss };
+    }
+    lay = best.L;
+    fill = (prog) => lay(splitUp(prog, lay).prog);
+    out.wings = best.nx * best.ny;
+  } else out.wings = 1;
+  out.program = fill(spec.program);
+  const up = spec.upper, offices = key === "offices";
+  if (built > 1 && (up || offices || out.wings > 1 || foot)) out.upper = (f, r, ctx) => {
+    const nat = { ...(ctx || {}), bw: spec.bw, bh: spec.bh };
+    if (offices && !(ctx && ctx.top)) return fill(OFFICE_FLOORS[OFFICE_ORDER[(f - 1) % OFFICE_ORDER.length]](Math.max(3, Math.floor((spec.bh - 3) / 2))));
+    return fill(up ? up(f, r, nat) : spec.program);
+  };
+  // A room's most containers × boxK (assemble boxCap): the step nearest as many containers to the square metre as the
+  // plan at its own size.
+  if (foot) {
+    const want = planCount(spec.program, spec.bw - 2, spec.bh - 2).boxes * (foot.bw * foot.bh) / (spec.bw * spec.bh);
+    let k = 1, got = planCount(out.program, foot.bw - 2, foot.bh - 2, 1).boxes;
+    const dir = got < want ? 1 : -1; // more to a room, or (a plan laid out in many wings) fewer
+    for (let t = 1 + dir * 0.05; t <= SCALE.BOX_MAX + 1e-9 && t >= SCALE.BOX_MIN - 1e-9; t += dir * 0.05) {
+      const g = planCount(out.program, foot.bw - 2, foot.bh - 2, t).boxes;
+      if (Math.abs(g - want) < Math.abs(got - want)) { k = t; got = g; }
+      if (dir > 0 ? g >= want : g <= want) break;
+    }
+    out.boxK = Math.round(k * 100) / 100;
+  }
+  out.deadK = (out.bw * out.bh * built) / (spec.bw * spec.bh * out.natStoreys);
+  return out;
+}
+
+// How much more floor a site's buildings have at real size than their plans had (the mean of realScale's deadK over a
+// few samples of each, by the site's setting; 1 in an older save, or a site with no buildings): the other groups'
+// abstract raids go by it (aiscav.js, docs/adr/0001-ai-parity.md): a site holds this many times what it did, stripped
+// no faster an hour.
+const sizeKCache = new Map();
+export function siteSizeK(state, tile) {
+  if (!tile || legacyScale(state)) return 1;
+  const sb = siteBuildings(tile);
+  if (!sb || !sb.options.length) return 1;
+  const setting = settingOf(tile);
+  let sum = 0;
+  for (const o of sb.options) {
+    const ck = `${o.key}|${setting}`;
+    let k = sizeKCache.get(ck);
+    if (k == null) {
+      k = 0;
+      for (let i = 0; i < 6; i++) { const r = new Rng(4409 + i * 7919); const sp = realScale(r, BUILDINGS[o.key].make(r, {}), o.key, { setting }); k += sp.deadK || 1; }
+      k /= 6;
+      sizeKCache.set(ck, k);
+    }
+    sum += k;
+  }
+  return Math.max(1, sum / sb.options.length);
 }
 
 // The buildings: key → { name, make(rng, opts) }. Location types use these through SITES. opts.storeyBonus: extra
@@ -1249,7 +1483,7 @@ export const BUILDINGS = {
   police:      { name: "Police station", make: (r, o) => institution(r, "police", o) },
   school:      { name: "School", make: (r, o) => institution(r, "school", o) },
   offices:     { name: "Office building", make: (r, o) => institution(r, "offices", o) },
-  lab:         { name: "Lab building", make: (r) => institution(r, "lab") },
+  lab:         { name: "Lab building", make: (r, o = {}) => (o.legacy ? institution(r, "lab") : industryPlan("lab", r, o, () => institution(r, "lab"))) }, // a dozen plans (industrylayout.js, issue #37); an older save today's
   barracks:    { name: "Barracks", make: (r, o) => institution(r, "barracks", o) },
   armorybldg:  { name: "Armory", make: (r, o) => institution(r, "armorybldg", o) },
   cellblock:   { name: "Cell block", make: (r, o) => institution(r, "cellblock", o) },
@@ -1264,8 +1498,8 @@ export const BUILDINGS = {
   gatehouse:   { name: "Gatehouse", make: (r, o) => milPlan(r, "gatehouse", o) },
   tower:       { name: "Control tower", make: (r, o) => milPlan(r, "tower", o) },
   flightops:   { name: "Flight operations", make: (r, o) => milPlan(r, "flightops", o) },
-  warehouse:   { name: "Warehouse", make: (r, o) => openfloor(r, "warehouse", o) },
-  factory:     { name: "Factory", make: (r) => openfloor(r, "factory") },
+  warehouse:   { name: "Warehouse", make: (r, o = {}) => (o.legacy || o.site === "military" ? openfloor(r, "warehouse", o) : industryPlan("warehouse", r, o, () => openfloor(r, "warehouse", o))) }, // a dozen plans (industrylayout.js, issue #37); a base's supply warehouse #25's; an older save today's
+  factory:     { name: "Factory", make: (r, o = {}) => (o.legacy ? openfloor(r, "factory") : industryPlan("factory", r, o, () => openfloor(r, "factory"))) }, // a dozen plans (industrylayout.js, issue #37)
   hangar:      { name: "Hangar", make: (r, o) => openfloor(r, "hangar", o) },
   motorpool:   { name: "Motor pool", make: (r, o) => openfloor(r, "motorpool", o) },
   autoshop:    { name: "Auto shop", make: (r) => openfloor(r, "autoshop") },
@@ -1276,6 +1510,7 @@ export const BUILDINGS = {
   church:      { name: "Church", make: (r, o) => church(r, o) },
   motel:       { name: "Motel", make: (r, o) => motel(r, o) },
   apartments:  { name: "Apartment block", make: (r, o) => apartments(r, o) },
+  hotel:       { name: "Hotel", make: (r, o) => hotel(r, o) },
   // The office buildings of every kind (issue #27: officeplans.js, their firms' plans; the tower is "offices" above).
   storefront:  { name: "Storefront office", make: (r, o) => OFFICE_PLANS.storefront(r, o || {}, planOf("storefront", o), MAX_STOREYS) },
   bizpark:     { name: "Business park offices", make: (r, o) => OFFICE_PLANS.bizpark(r, o || {}, planOf("bizpark", o), MAX_STOREYS) },
@@ -1303,8 +1538,8 @@ export const STOREYS_BY_TYPE = {
   clinic: [1, 3], infirmary: [1, 3], hospital: [3, 5], police: [2, 3], school: [2, 3], offices: [3, MAX_STOREYS], lab: [1, 3], barracks: [2, 3], armorybldg: [1, 1],
   cellblock: [1, 2], messhall: [1, 2], control: [1, 3], radio: [1, 1], terminal: [1, 3], firestation: [2, 2], // issue #25: a new save's cell block two tiers, its mess hall one storey
   hq: [2, 2], aidstation: [1, 1], gatehouse: [1, 1], tower: [4, 5], flightops: [1, 2],
-  warehouse: [1, 1], factory: [1, 1], hangar: [1, 1], motorpool: [1, 1], autoshop: [1, 1], garage: [1, 1], workshop: [1, 1], machineshed: [1, 1], barn: [1, 1],
-  church: [1, 1], motel: [2, 2], apartments: [3, 6], neighbourhood: [2, 2],
+  warehouse: [1, 3], factory: [1, 3], hangar: [1, 1], motorpool: [1, 1], autoshop: [1, 1], garage: [1, 1], workshop: [1, 1], machineshed: [1, 1], barn: [1, 1],
+  church: [1, 1], motel: [2, 2], apartments: [3, 6], neighbourhood: [2, 2], hotel: [2, 10], // a hotel: an inn 2–3, a resort 2–4, a business hotel 4–6, a tower 8–10 (within MAX_STOREYS)
   // the shops and services of data-shops.js (a franchise's plan can add a flat above or more floors)
   sportshop: [1, 2], electronics: [1, 2], radioshop: [1, 2], bookstore: [1, 2], petstore: [1, 2], garden: [1, 2], clothing: [1, 2], liquor: [1, 2],
   restaurant: [1, 2], bar: [1, 2], dealer: [1, 2], bank: [1, 3], library: [1, 3], vet: [1, 2], pizza: [1, 1],
@@ -1320,7 +1555,7 @@ export const SITES = {
   // One building.
   pharmacy: ["pharmacy"], gunstore: ["gunstore"], pawnshop: ["pawnshop"], hardware: ["hardware"], grocery: ["grocery"], diner: ["diner"], supermarket: ["supermarket"],
   police: ["police"], clinic: ["clinic"], hospital: ["hospital"], school: ["school"], office: ["offices"], firestation: ["firestation"],
-  church: ["church"], motel: ["motel"], apartments: ["apartments"], autoshop: ["autoshop"], feedstore: ["feedstore"], cabin: ["cabin"],
+  church: ["church"], motel: ["motel"], hotel: ["hotel"], apartments: ["apartments"], autoshop: ["autoshop"], feedstore: ["feedstore"], cabin: ["cabin"],
   lodge: ["lodge"], ranger: ["ranger"], radiotower: ["radio"], barn: ["barn"], truckstop: ["truckstop"], gas: ["gasstation"], quarry: ["workshop"],
   // A choice of buildings.
   town: ["house", "corner", "garage", "pharmacy", ["house", "House on the corner"]], city: ["grocery", "pharmacy", "offices", "apartments", "warehouse"],
@@ -1351,6 +1586,7 @@ export const SITES = {
 };
 
 // The buildings at a tile: { single, options: [{ id, key, name }] } or null (the street map only).
+const INDUSTRIAL = new Set(INDUSTRY_KEYS); // a warehouse, a factory, a lab: their plan by their setting (issue #37)
 export function siteBuildings(tile) {
   if (!tile) return null;
   const entry = (tile.loc && SITES[tile.loc.type]) || (!tile.loc && SITES[tile.terrain]) || null;
@@ -1363,7 +1599,7 @@ export function siteBuildings(tile) {
   const options = list.map((e) => {
     const [key, name] = Array.isArray(e) ? e : [e, null];
     const n = (seen[key] = (seen[key] || 0) + 1);
-    return { id: n > 1 ? `${key}:${n}` : key, key, name: name || BUILDINGS[key].name, ...(fr || {}), ...(tile.loc ? { site: tile.loc.type } : {}) }; // site: the place's type (issue #25: an air base's hangar, a base's warehouse)
+    return { id: n > 1 ? `${key}:${n}` : key, key, name: name || BUILDINGS[key].name, ...(fr || {}), ...(tile.loc ? { site: tile.loc.type } : INDUSTRIAL.has(key) ? { site: tile.terrain } : {}) }; // site: the place's type (issue #25: an air base's hangar, a base's warehouse; issue #37: an industrial building's setting, industrylayout.js settingOf, the terrain where there is no place)
   });
   return { single: !entry.multi && options.length === 1, options };
 }
@@ -1388,7 +1624,9 @@ export function buildingOptions(tile, state = null) {
   const sb = siteBuildings(tile);
   if (!sb || sb.single) return null;
   const [bw, bh] = buildingTarget(tile, false, state), [sw, sh] = raidDims(tile, state);
-  const out = sb.options.map((o) => ({ ...o, ...buildingHint(o.key), map: `${bw} × ${bh}+` }));
+  // An industrial building by its plan's name (industrylayout.js: "Cold-storage warehouse"), where the site has not named it.
+  const named = (o) => (state && INDUSTRIAL.has(o.key) && o.name === BUILDINGS[o.key].name && tile.id != null ? { name: buildingSpec(state, tile.id, o).vname || o.name } : {});
+  const out = sb.options.map((o) => ({ ...o, ...buildingHint(o.key), map: `${bw} × ${bh}+`, ...named(o) }));
   out.push({ id: "street", key: "street", name: "The street", hint: "Search the area around the buildings: small buildings, cars, the open ground (the usual raid map).", size: "", rooms: 0, map: `${sw} × ${sh}` });
   return out;
 }
@@ -1398,7 +1636,7 @@ const hintCache = new Map();
 export function buildingHint(key) {
   let h = hintCache.get(key);
   if (h) return h;
-  const spec = BUILDINGS[key].make(new Rng(7919));
+  const sr = new Rng(7919), spec = realScale(sr, BUILDINGS[key].make(sr), key, { setting: REAL_SIZE[key] ? REAL_SIZE[key].set : "town" }); // at real size (issue #24)
   const plan = assemble(new Rng(104729), spec, { key, name: BUILDINGS[key].name });
   const types = plan.rooms.filter((r) => r.type && AREAS[r.type] && !r.outdoor).map((r) => r.type);
   const score = {};
@@ -1416,7 +1654,7 @@ export function buildingHint(key) {
     const o = sig.find((x) => x.name === name);
     if (o) o.n++; else sig.push({ name, n: 1 });
   }
-  h = { hint: `Likely: ${sup.join(", ")}${gear ? ", maybe gear" : ""}. Rooms: ${named.join(", ")}.`, size: cells < 140 ? "small" : cells < 300 ? "medium" : "large", rooms: plan.rooms.filter((r) => !r.outdoor).length, holds: [...new Set(types)], sig };
+  h = { hint: `Likely: ${sup.join(", ")}${gear ? ", maybe gear" : ""}. Rooms: ${named.join(", ")}.`, size: cells < 200 ? "small" : cells < 800 ? "medium" : "large", rooms: plan.rooms.filter((r) => !r.outdoor).length, holds: [...new Set(types)], sig };
   hintCache.set(key, h);
   return h;
 }
@@ -1424,22 +1662,37 @@ export function buildingHint(key) {
 // The map for a raid on a building: the site's own layout (its dice from the world seed, the tile and the building).
 // option.storeyBonus: extra storeys (the city crawl's deeper blocks, offices and apartments).
 const specSeed = (state, tileId, option) => Math.floor(hash01(state.seed, "bmap", tileId, option.id) * 4294967296);
-const makeSpec = (rng, option, legacy = false, officesOld = false) => BUILDINGS[option.key].make(rng, { storeyBonus: option.storeyBonus || 0, variant: option.variant || null, kind: option.kind || null, legacy: legacy && !NEW_KEYS.has(option.key), site: option.site || null, ...(officesOld ? { officesLegacy: true } : {}), ...(option.plan != null ? { plan: option.plan } : {}) }); // plan: one of the kind's named plans (bunkerlayout.js BUNKER_VARIANTS: a city hall's shelter, #27)
+// scale: the real-size step (realScale: { setting }); null for an older save's buildings (worldcfg.js legacyScale: the
+// archetype's own footprint and storeys, as they were).
+const makeSpec = (rng, option, legacy = false, scale = null, officesOld = false) => { // officesOld: an older save's firm-less office tower as it was (worldcfg.js legacyOffices, #27) // variant, kind: the place's franchise and kind (data-shops.js plans); legacy: an older save's plan (worldcfg.js legacyRooms: an apartment's flats one room each)
+  const spec = BUILDINGS[option.key].make(rng, { storeyBonus: option.storeyBonus || 0, variant: option.variant || null, kind: option.kind || null, legacy: legacy && !NEW_KEYS.has(option.key), site: option.site || null, ...(officesOld ? { officesLegacy: true } : {}), ...(option.plan != null ? { plan: option.plan } : {}) }); // plan: one of the kind's named plans (bunkerlayout.js BUNKER_VARIANTS: a city hall's shelter, #27; industrylayout.js INDUSTRY_PLANS, #37)
+  return scale ? realScale(rng, spec, option.key, { ...scale, storeyBonus: option.storeyBonus || 0 }) : spec;
+};
 // The archetypes issue #25 added (no older plan): laid out the new way in an older save too.
-const NEW_KEYS = new Set(["hq", "aidstation", "gatehouse", "tower", "flightops"]); // variant, kind: the place's franchise and kind (data-shops.js plans); legacy: an older save's plan (worldcfg.js legacyRooms: an apartment's flats one room each)
+const NEW_KEYS = new Set(["hq", "aidstation", "gatehouse", "tower", "flightops", "hotel"]); // hotel: issue #29, no older save had one
+// The setting a site's buildings stand in (data-buildingsize.js REAL_SIZE city: a city's towers): "city" on a city's
+// tile (its crawl too) or a site-less city tile, "town" on a town's, else "rural".
+export function settingOf(tile) {
+  if (!tile) return "town";
+  const t = tile.loc ? tile.loc.type : null;
+  return t === "city" || (!tile.loc && tile.terrain === "city") ? "city" : t === "town" || (!tile.loc && tile.terrain === "suburb") ? "town" : "rural";
+}
+const scaleOf = (state, tileId) => (legacyScale(state) ? null : { setting: settingOf(state.tiles[tileId]) });
 // The archetype's spec for a building at a site (its storeys and footprint) without building the map: the same dice
 // buildingMap rolls, so the block card can say how many storeys a place has.
 export function buildingSpec(state, tileId, option) {
-  return makeSpec(new Rng(specSeed(state, tileId, option)), option, legacyRooms(state), legacyOffices(state)); // legacyOffices: an older save's firm-less office tower as it was (#27)
+  return makeSpec(new Rng(specSeed(state, tileId, option)), option, legacyRooms(state), scaleOf(state, tileId), legacyOffices(state));
 }
 export function buildingMap(state, tileId, option, withVehicle) {
   if (BUILDINGS[option.key] && BUILDINGS[option.key].street) { const m = streetMap(state, tileId, option, withVehicle); rollScenes(m, sceneRng(state, tileId, option), option.key); return m; } // a street of houses (the neighbourhood); its scenes (interiorscenes.js) through the houses
   const rng = new Rng(specSeed(state, tileId, option));
-  const spec = makeSpec(rng, option, legacyRooms(state), legacyOffices(state));
+  const spec = makeSpec(rng, option, legacyRooms(state), scaleOf(state, tileId), legacyOffices(state));
   // battlesize.js: at least the site's raid map (more outside around a single-building site's plan, a city's or a
   // town's building the run's largest), the new ground topped up with cover. The floor plan itself is the archetype's.
   const tile = state.tiles[tileId], sb = siteBuildings(tile);
-  spec.margins = fitMargins(spec.bw, spec.bh, { ...BMAP.MARGIN, ...(spec.margins || {}) }, buildingTarget(tile, !!(sb && sb.single), state));
+  const target = buildingTarget(tile, !!(sb && sb.single), state), cap = mapCap(option.key); // mapCap: a hotel's map at most 200 × 200
+  if (spec.natW) { const nm = fitMargins(spec.natW, spec.natH, { ...BMAP.MARGIN, ...(spec.margins || {}) }, target, cap); spec.natMap = [spec.natW + nm.left + nm.right, spec.natH + nm.front + nm.back]; } // the map its plan would have had at its own size: the dead go by it (placeInterior)
+  spec.margins = fitMargins(spec.bw, spec.bh, { ...BMAP.MARGIN, ...(spec.margins || {}) }, target, cap);
   const map = assemble(rng, spec, { key: option.key, id: option.id, name: option.name, withVehicle, legacy: legacyRooms(state) && !NEW_KEYS.has(option.key) });
   densifyOutside(map, rng, tile ? tile.terrain : "plains");
   rollScenes(map, sceneRng(state, tileId, option), option.key, option.scenes || null); // interiorscenes.js: signs of survival (their own dice: the map is as it was); option.scenes: a city crawl place's say (citycrawl.js placeOption)
@@ -1476,6 +1729,7 @@ export const STREET = {
   ROAD: 4,          // the road (a lane each way: a parked car never closes it); a sidewalk of one cell each side
   BW: [10, 14],     // a house's width (what three in a row leave), and BH its depth at most: two rows fit 34 cells
   BH: 10,
+  REAL_BW: [10, 16], REAL_BH: 13, // a world made since buildings at real size (data-buildingsize.js): the houses' own sizes, two rows in 40 cells
   CARS: [1, 3],     // cars parked along the kerb (searchable)
   TREES: [3, 6], BINS: [1, 3],
   DEAD: 1.0,        // the dead: the site's roster × this
@@ -1501,9 +1755,11 @@ export function streetMap(state, tileId, option, withVehicle) {
     const row = k < perRow[0] ? 0 : 1, col = row ? k - perRow[0] : k;
     const id = `${option.id}#${k + 1}`;
     const hr = new Rng(specSeed(state, tileId, { id }));
-    const spec = BUILDINGS.house.make(hr, { legacy: legacyRooms(state) });
-    spec.bw = Math.max(S.BW[0], Math.min(spec.bw, S.BW[1], Math.floor((MAXW - 2 * S.SIDE - (perRow[row] - 1) * S.GAP) / perRow[row])));
-    spec.bh = Math.min(spec.bh, S.BH);
+    const real = !legacyScale(state); // a world made since buildings at real size (issue #24): its houses 10–16 m wide, up to 13 deep
+    const spec0 = BUILDINGS.house.make(hr, { legacy: legacyRooms(state) }), spec = real ? realScale(hr, spec0, "neighbourhood", { setting: "town" }) : spec0;
+    const BW = real ? S.REAL_BW : S.BW, BH = real ? S.REAL_BH : S.BH;
+    spec.bw = Math.max(BW[0], Math.min(spec.bw, BW[1], Math.floor((MAXW - 2 * S.SIDE - (perRow[row] - 1) * S.GAP) / perRow[row])));
+    spec.bh = Math.min(spec.bh, BH);
     spec.margins = { front: 1, back: 1, left: 1, right: 1 };
     spec.ground = "none";
     const m = assemble(hr, spec, { key: "house", id, name: BUILDINGS.house.name, legacy: legacyRooms(state) });
@@ -1697,6 +1953,55 @@ export function streetMap(state, tileId, option, withVehicle) {
 // ======================================================================================
 // Assembling a building's map
 // ======================================================================================
+// A split's part sizes along len cells (walls between them): fixed sizes, shares and "*" for the rest; null when they do not
+// fit (assemble's carve drops the last part and tries again). No dice: realScale counts a plan's rooms with it.
+function fitParts(parts, len) {
+  const n = parts.length, avail = len - (n - 1);
+  const mins = parts.map(([s]) => (typeof s === "number" && s >= 1 ? Math.min(2, Math.round(s)) : 2)); // a corridor or a hall can be 1 wide
+  if (avail < mins.reduce((a, v) => a + v, 0)) return null;
+  const sz = parts.map(([s]) => (typeof s === "number" ? (s >= 1 ? Math.round(s) : Math.max(2, Math.round(s * avail))) : 0));
+  const flex = parts.map(([s], i) => (typeof s === "number" ? -1 : i)).filter((i) => i >= 0);
+  let rest = avail - sz.reduce((a, v) => a + v, 0);
+  const need = 2 * flex.length;
+  while (rest < need) { // too tight: shrink the biggest fixed part
+    let bi = -1;
+    sz.forEach((v, i) => { if (!flex.includes(i) && v > mins[i] && (bi < 0 || v > sz[bi])) bi = i; });
+    if (bi < 0) return null;
+    sz[bi]--; rest++;
+  }
+  if (flex.length) {
+    const each = Math.floor(rest / flex.length);
+    let extra = rest - each * flex.length;
+    for (const i of flex) { sz[i] = each + (extra > 0 ? 1 : 0); extra--; }
+  } else if (rest) {
+    let bi = 0;
+    sz.forEach((v, i) => { if (v > sz[bi]) bi = i; });
+    sz[bi] += rest;
+  }
+  return sz.every((v, i) => v >= mins[i]) ? sz : null;
+}
+// What a plan carved over an iw × ih rectangle holds, as carve would cut it: { rooms (the labelled ones: no corridors or
+// halls), boxes (each room's container target: its maxBoxes × boxK, else 4, against a box a 10 cells) }. No dice.
+export function planCount(node, iw, ih, boxK = 1) {
+  const out = { rooms: 0, boxes: 0 };
+  const leaf = (n) => (n.role ? n : leaf(n.parts[0][1]));
+  const add = (n, w, h) => {
+    const r = { ...ROLES[n.role], ...n };
+    if (r.label !== false) out.rooms++;
+    if (r.type && AREAS[r.type]) out.boxes += Math.max(1, Math.min(Math.round((r.maxBoxes ?? 4) * boxK), Math.round((w * h) / 10)));
+  };
+  const go = (n, w, h) => {
+    if (!n) return;
+    if (n.role) return add(n, w, h);
+    const len = n.split === "x" ? w : h;
+    let parts = n.parts.slice(), sizes = fitParts(parts, len);
+    while (!sizes && parts.length > 1) { parts = parts.slice(0, -1); sizes = fitParts(parts, len); }
+    if (!sizes) return add(leaf(n), w, h);
+    parts.forEach(([, ch], i) => (n.split === "x" ? go(ch, sizes[i], h) : go(ch, w, sizes[i])));
+  };
+  go(node, iw, ih);
+  return out;
+}
 const FLOOR_KINDS = new Set(["open", "loft"]);
 const DOORISH = new Set(["idoor", "odoor", "door"]);
 
@@ -1750,6 +2055,7 @@ export function assemble(rng, spec, opts = {}) {
   const G = GROUNDS[spec.ground] || GROUNDS.town;
   const f = opts._floor || 0, upper = f > 0;
   const storeys = Math.max(1, typeof spec.storeys === "number" ? Math.min(MAX_STOREYS, Math.round(spec.storeys)) : 1);
+  const height = Math.max(storeys, typeof spec.height === "number" ? Math.min(MAX_STOREYS, Math.round(spec.height)) : storeys); // the storeys it stands (the floors above `storeys` are not built)
   const cells = Array.from({ length: W * H }, (_, i) => {
     if (upper) return { k: "void", f: "air" };
     const y = (i / W) | 0;
@@ -1761,6 +2067,8 @@ export function assemble(rng, spec, opts = {}) {
   const at = (x, y) => (inside(x, y) ? cells[I(x, y)] : null);
   const inBldg = (x, y) => x >= bx0 && x <= bx1 && y >= by0 && y <= by1;
   const rooms = [];
+  // A room's most containers (maxBoxes, 4 by default); a building at real size: × realScale's boxK.
+  const boxCap = (room) => Math.round((room.maxBoxes ?? 4) * (spec.boxK || 1));
   for (let y = by0; y <= by1; y++) for (let x = bx0; x <= bx1; x++) {
     const edge = x === bx0 || x === bx1 || y === by0 || y === by1;
     const c = cells[I(x, y)];
@@ -1770,31 +2078,7 @@ export function assemble(rng, spec, opts = {}) {
 
   // ---------- the floor plan ----------
   const wallLine = (x0, y0, x1, y1) => { for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) { cells[I(x, y)].k = "wall"; rid[I(x, y)] = -1; } };
-  function fit(parts, len) {
-    const n = parts.length, avail = len - (n - 1);
-    const mins = parts.map(([s]) => (typeof s === "number" && s >= 1 ? Math.min(2, Math.round(s)) : 2)); // a corridor or a hall can be 1 wide
-    if (avail < mins.reduce((a, v) => a + v, 0)) return null;
-    const sz = parts.map(([s]) => (typeof s === "number" ? (s >= 1 ? Math.round(s) : Math.max(2, Math.round(s * avail))) : 0));
-    const flex = parts.map(([s], i) => (typeof s === "number" ? -1 : i)).filter((i) => i >= 0);
-    let rest = avail - sz.reduce((a, v) => a + v, 0);
-    const need = 2 * flex.length;
-    while (rest < need) { // too tight: shrink the biggest fixed part
-      let bi = -1;
-      sz.forEach((v, i) => { if (!flex.includes(i) && v > mins[i] && (bi < 0 || v > sz[bi])) bi = i; });
-      if (bi < 0) return null;
-      sz[bi]--; rest++;
-    }
-    if (flex.length) {
-      const each = Math.floor(rest / flex.length);
-      let extra = rest - each * flex.length;
-      for (const i of flex) { sz[i] = each + (extra > 0 ? 1 : 0); extra--; }
-    } else if (rest) {
-      let bi = 0;
-      sz.forEach((v, i) => { if (v > sz[bi]) bi = i; });
-      sz[bi] += rest;
-    }
-    return sz.every((v, i) => v >= mins[i]) ? sz : null;
-  }
+  const fit = fitParts;
   const firstLeaf = (n) => (n.role ? n : firstLeaf(n.parts[0][1]));
   function carve(node, r) {
     if (node.role === "rock") { // solid rock (a bunker's footprint round its portal): the hillside's crag, no room
@@ -1924,6 +2208,9 @@ export function assemble(rng, spec, opts = {}) {
       c.k = "stairs"; c.step = s + 1; c.len = run.len;
       if (!run.single) c.dir = stairDir(run.dx, run.dy);
       if (s === run.len - 1) c.top = true;
+      // The top floor built of a taller building (OPEN_STOREYS): the run still rises, but the way up is blocked,
+      // collapsed or barricaded (no dice: by its place; every step of the run carries it, the top step is the one tried).
+      if (f === storeys - 1 && height > storeys) c.sealUp = (run.x * 7 + run.y * 3 + height) % 3 === 0 ? "barricade" : "rubble";
       stepAt[I(x, y)] = 1;
     });
     for (const [x, y] of lands) { const c = cells[I(x, y)]; c.k = "open"; c.landing = true; }
@@ -2169,13 +2456,38 @@ export function assemble(rng, spec, opts = {}) {
   // The walk runs on every blocking thing put down (hundreds a building): over a byte a cell, passable(cells[i]) kept
   // in step by everything below that changes a cell's kind from here on (block, the cars: passAt).
   const pass = new Uint8Array(W * H);
-  const passAt = (i) => { pass[i] = passable(cells[i]) ? 1 : 0; };
+  // known / whole: the last answer of the whole walk, still good while nothing was opened since (a cell turning passable
+  // can join what was cut off); connected(i) with the one cell just blocked answers from its ring when it can.
+  let known = false, whole = false;
+  const passAt = (i) => { const p = passable(cells[i]) ? 1 : 0; if (p && !pass[i]) known = false; pass[i] = p; };
   const passRect = (r) => { for (let y = r.y0; y < r.y0 + r.h; y++) for (let x = r.x0; x < r.x0 + r.w; x++) passAt(I(x, y)); };
   let total = 0;
   for (let i = 0; i < cells.length; i++) { passAt(i); total += pass[i]; }
   let stamp = 0;
   const marks = new Uint32Array(W * H), stack = new Int32Array(W * H), N = W * H;
-  function connected() {
+  // The cell i just blocked keeps everything joined when its open neighbours (4-way) are one run round its ring of eight
+  // (each two along the ring touch 4-way): any way through it goes round it instead. Then the answer is the last whole
+  // walk's (issue #24: a walk of the whole map for every piece put down was most of a 300 × 224 map's making).
+  const RING = [[0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1]];
+  function ringKeeps(i) {
+    const x = i % W, y = (i / W) | 0, open = RING.map(([dx, dy]) => inside(x + dx, y + dy) && pass[I(x + dx, y + dy)] === 1);
+    if (open.every(Boolean)) return true;
+    let runs = 0; // the runs of open ring cells that hold a 4-way neighbour (even k)
+    for (let k = 0; k < 8; k++) {
+      if (!open[k] || open[(k + 7) % 8]) continue; // not the start of a run
+      let four = false;
+      for (let j = k; open[j % 8]; j++) if (j % 2 === 0) four = true;
+      if (four) runs++;
+    }
+    return runs <= 1;
+  }
+  function connected(i = -1) {
+    if (i >= 0 && known && ringKeeps(i)) return whole;
+    known = true;
+    whole = walkAll();
+    return whole;
+  }
+  function walkAll() {
     stamp++;
     let a = anchor;
     if (!passable(cells[a])) { a = cells.findIndex((c, i) => passable(c) && !inBldg(i % W, (i / W) | 0)); if (a < 0) return false; }
@@ -2207,7 +2519,7 @@ export function assemble(rng, spec, opts = {}) {
     passAt(i);
     if (!passable(c)) {
       total--;
-      if (!connected()) { c.k = was; passAt(i); total++; return false; }
+      if (!connected(i)) { c.k = was; passAt(i); total++; return false; }
     }
     if (room && room.up) c.h = 1;
     return true;
@@ -2238,7 +2550,7 @@ export function assemble(rng, spec, opts = {}) {
   }
   // Homes room by room (roomlayout.js): which bedroom is the master, which a child's, a great room with no kitchen on
   // its floor, a flat with no bedroom (a studio). An older save (opts.legacy) furnishes every room as it did.
-  const styleOf = (room) => bunkerStyle(room) || (opts.legacy ? null : officeStyle(room) || militaryStyle(room) || commercialStyle(room, opts.key) || homeStyle(room, opts.key) || medicalStyle(room, opts.key) || civicStyle(room)); // shoplayout.js first (a motel's rooms, a shop's back rooms; a flat above stays a home), a hospital's, a clinic's, a vet's rooms (#14), civiclayout.js a civic building's rooms (their leaf's civic mark); bunkerlayout.js a bunker's (their leaf's bunker mark: new kinds, so an older save lays them out the same way) // officelayout.js: a leaf's office mark (issue #27: the office buildings, the corporate tower)
+  const styleOf = (room) => bunkerStyle(room) || (opts.legacy ? null : officeStyle(room) || militaryStyle(room) || industryStyle(room) || commercialStyle(room, opts.key) || homeStyle(room, opts.key) || medicalStyle(room, opts.key) || civicStyle(room)); // shoplayout.js first (a motel's rooms, a shop's back rooms; a flat above stays a home), a hospital's, a clinic's, a vet's rooms (#14), civiclayout.js a civic building's rooms (their leaf's civic mark); bunkerlayout.js a bunker's (their leaf's bunker mark: new kinds, so an older save lays them out the same way) // officelayout.js: a leaf's office mark (issue #27: the office buildings, the corporate tower) // industrylayout.js: a leaf's ind mark (issue #37)
   if (!opts.legacy) {
     for (const r of rooms) if (r.role === "bedroom" && styleOf(r) && r.iw * r.ih <= 4) Object.assign(r, { role: "storage", name: "Box room", furnish: "shelves" }); // too small for a bed and a wardrobe
     const beds = rooms.filter((r) => r.role === "bedroom" && styleOf(r)).sort((a, b) => b.iw * b.ih - a.iw * a.ih);
@@ -2261,7 +2573,7 @@ export function assemble(rng, spec, opts = {}) {
     (FURNISH[room.furnish] || FURNISH.none)(ctx);
     // Top up the containers along the walls.
     if (room.type && AREAS[room.type]) {
-      const target = Math.max(1, Math.min(room.maxBoxes ?? 4, Math.round((room.iw * room.ih) / 10)));
+      const target = Math.max(1, Math.min(boxCap(room), Math.round((room.iw * room.ih) / 10)));
       const kinds = AREAS[room.type].boxes;
       for (const [x, y] of ctx.wallSpots()) {
         if (containers.filter((c) => c.area === room.id).length >= target) break;
@@ -2292,7 +2604,7 @@ export function assemble(rng, spec, opts = {}) {
       unblock: (x, y) => { const i = I(x, y), c = cells[i]; const was = pass[i]; c.k = "open"; delete c.fc; delete c.pc; passAt(i); if (!was && pass[i]) total++; },
       container: (x, y, k, lane = true) => (free(x, y) && box(room, x, y, k, null, lane) ? containers[containers.length - 1] : null),
       boxes: () => containers.filter((q) => q.area === room.id),
-      target: canBox ? room.boxTarget ?? Math.max(1, Math.min(room.maxBoxes ?? 4, Math.round((room.iw * room.ih) / 10))) : 0, // boxTarget: a plan's own count (a school corridor's lockers)
+      target: canBox ? room.boxTarget ?? (spec.boxScale ? Math.max(1, Math.round(Math.max(1, Math.min(boxCap(room), Math.round((room.iw * room.ih) / 10))) * spec.boxScale)) : Math.max(1, Math.min(boxCap(room), Math.round((room.iw * room.ih) / 10)))) : 0, // boxTarget: a plan's own count (a school corridor's lockers); boxScale: an industrial plan's share × (industrylayout.js loot: each kind holds what it did a floor cell); boxCap: × realScale's boxK
       roomAt: (x, y) => (inside(x, y) && rid[I(x, y)] >= 0 ? rooms[rid[I(x, y)]] : null), // civiclayout.js: the room next door (an interview room's observation nook)
       decor: !opts.noDecor, // civiclayout.js: a whiteboard on the wall the desks face (decor.js's wall art), not on a bare map
       seed: hash01(layoutSeed, "rooms", f) * 0x7fffffff, canBox, piece: () => ++pieceNo,
@@ -2366,7 +2678,7 @@ export function assemble(rng, spec, opts = {}) {
       const i = I(x, y), c = cells[i];
       if (c.k !== "open" || rid[i] !== -2 || pathCells[i] || keep[i] || inZone(x, y) || nearDoor(x, y)) continue;
       c.k = "crag"; passAt(i); total--;
-      if (!connected()) { c.k = "open"; passAt(i); total++; }
+      if (!connected(i)) { c.k = "open"; passAt(i); total++; }
     }
   }
   // The vent stack on the rock over the bunker: the footprint's rock cell nearest its middle.
@@ -2414,6 +2726,30 @@ export function assemble(rng, spec, opts = {}) {
       break;
     }
   }
+  // An industrial plan's yard (industrylayout.js spec.yardPieces: a tank farm, grain bins, lumber stacks, steel stock): its
+  // pieces in rows a cell apart behind and beside the building, never on a path, a zone's ring or a door's step (block's
+  // guard keeps every way open); an outdoor area of its own, searched where the pieces hold loot (yard.loot, its type).
+  if (!upper && spec.yardPieces) {
+    const Yd = spec.yardPieces, a = { id: rooms.length + outdoor.length, type: Yd.loot && Yd.type && AREAS[Yd.type] ? Yd.type : null, name: Yd.name, outdoor: true };
+    const spots = [];
+    for (let y = 1; y <= by1; y += 2) for (let x = 1; x < W - 1; x += 2) if (y < by0 - 1 || x < bx0 - 1 || x > bx1 + 1) spots.push([x, y]);
+    const order = rng.shuffle(spots).sort((p, q) => (p[1] < by0 ? 0 : 1) - (q[1] < by0 ? 0 : 1)); // behind first, then the sides
+    const got = [];
+    for (const [k, n] of Yd.pieces) {
+      const want = Array.isArray(n) ? rng.int(n[0], n[1]) : n;
+      let made = 0;
+      for (const [x, y] of order) {
+        if (made >= want) break;
+        if (!outsideFree(x, y) || got.some(([gx, gy]) => gx === x && gy === y)) continue;
+        if (a.type && pieceDef(k) && pieceDef(k).loot ? box(null, x, y, k, a) : block(x, y, k)) { got.push([x, y]); made++; }
+      }
+    }
+    if (got.length) {
+      const xs = got.map(([x]) => x), ys = got.map(([, y]) => y);
+      Object.assign(a, { x0: Math.min(...xs) - 1, y0: Math.min(...ys) - 1, w: Math.max(...xs) - Math.min(...xs) + 3, h: Math.max(...ys) - Math.min(...ys) + 3 });
+      outdoor.push(a);
+    }
+  }
   // Wrecked cars on the street (towns and cities): an outdoor area to search (car alarms, AREAS.wreck).
   if (!upper && (spec.ground === "town" || spec.ground === "city") && rng.chance(0.45)) {
     const a = { id: rooms.length + outdoor.length, type: "wreck", name: AREAS.wreck.name, outdoor: true };
@@ -2431,6 +2767,10 @@ export function assemble(rng, spec, opts = {}) {
       outdoor.push(a);
     }
   }
+  // A building's own grounds (spec.yard: a hotel's drive, car park, pool deck, tennis courts and gardens, hotellayout.js),
+  // before the outside is dressed.
+  if (!upper && spec.yard) spec.yard({ rng, W, H, b: { x0: bx0, y0: by0, x1: bx1, y1: by1 }, front, exits, cell: (x, y) => cells[I(x, y)], outside: (x, y) => inside(x, y) && rid[I(x, y)] === -2,
+    free: outsideFree, block: (x, y, k) => block(x, y, k), car: (x, y, kind, test) => carAt(x, y, kind, test), area: (a) => outdoor.push({ id: rooms.length + outdoor.length, type: null, outdoor: true, ...a }) });
   // What stands outside a restaurant (issue #33, eaterylayout.js eateryOutside: the drive-through lane and its cars, a
   // patio, a BBQ's smokers, a food truck, the grease trap by the back door), every piece keeping the lot one walk.
   if (!upper && spec.outside) spec.outside({
@@ -2522,7 +2862,7 @@ export function assemble(rng, spec, opts = {}) {
   }));
   rooms.forEach((r, i) => { if (r.gunSafe) areas[i].gunSafe = r.gunSafe.slice(); }); // locks.js placeGunSafes: a gun safe may stand here
   rooms.forEach((r, i) => { if (r.kennel) areas[i].kennel = true; });
-  rooms.forEach((r, i) => { if (r.bunker) areas[i].bunker = r.bunker; }); // bunkerlayout.js: a bunker's room (its scenes, its dark, who holds it) // deadbeasts.js shutInPets: a vet's locked kennels hold dead pets
+  rooms.forEach((r, i) => { if (r.bunker) areas[i].bunker = r.bunker; if (r.ind) areas[i].ind = r.ind; }); // ind: industrylayout.js's room (its scenes) // bunkerlayout.js: a bunker's room (its scenes, its dark, who holds it) // deadbeasts.js shutInPets: a vet's locked kennels hold dead pets
   if (!opts.legacy) rooms.forEach((r, i) => { if (r.flat) areas[i].flat = true; if (r.unit) areas[i].unit = r.unit; if (r.civic) areas[i].civic = r.civic; if (r.office) areas[i].office = r.office; if (r.aisle != null) areas[i].aisle = r.aisle; const sn = shopStyleName(r, opts.key); if (sn) areas[i].shop = sn; }); // shoplayout.js: a room's style (its scenes' when); roomlayout.js: a shop's flat above, an apartment's rooms; civiclayout.js: a room's style, a nave's aisle
   rooms.forEach((r, i) => { if (r.mix) areas[i].mix = r.mix; if (r.eat) areas[i].eat = r.eat; }); // eaterylayout.js: a restaurant's rooms hold its cuisine's food (combat.js boxFinds)
   for (const a of outdoor) areas.push({ ...a, id: idBase + a.id, f: 0 });
@@ -2530,24 +2870,25 @@ export function assemble(rng, spec, opts = {}) {
   for (const d of lockedDoors) { d.f = f; if (d.area != null) d.area += idBase; }
   if (upper) return { cells, rooms: areas, containers, lockedDoors, nextCid: cid, nextPiece: pieceNo };
   // The upper floors (storeys): each built on its own grid from spec.upper's plan, the same stairwell cells.
-  const floorName = (g) => (spec.below ? levelName(g) : g === 0 ? "Ground floor" : g === storeys - 1 ? "Top floor" : `Floor ${g + 1}`); // a bunker's go down: the Entrance level, Level −1...
+  const floorName = (g) => (spec.below ? levelName(g) : g === 0 ? "Ground floor" : g === storeys - 1 && height === storeys ? "Top floor" : `Floor ${g + 1}`); // a bunker's go down: the Entrance level, Level −1...; a taller building's top floor built is not its top
   const floors = [{ cells, name: floorName(0) }];
   let base = areas.length, nextCid = cid;
   for (let g = 1; g < storeys; g++) {
-    const program = spec.upper ? spec.upper(g, rng, { top: g === storeys - 1, storeys, bw, bh }) : spec.program;
+    const program = spec.upper ? spec.upper(g, rng, { top: g === storeys - 1 && height === storeys, storeys, bw, bh }) : spec.program; // top: the roof is over it (a taller building's top floor built is not its plant room)
     const up = assemble(rng, spec, { ...opts, _floor: g, _program: program, _runs: runs, _idBase: base, _cid: nextCid, _piece: pieceNo });
     areas.push(...up.rooms); containers.push(...up.containers); lockedDoors.push(...up.lockedDoors);
     floors.push({ cells: up.cells, name: floorName(g) });
     base += up.rooms.length; nextCid = up.nextCid; pieceNo = up.nextPiece;
   }
   const plan = { // ground: what militarylayout.js put outside (issue #25: tools/interiortest.js)
-    key: opts.key, id: opts.id || opts.key, name: opts.name, w: W, h: H, building: { x0: bx0, y0: by0, w: bw, h: bh }, tall, storeys, ...(milGround ? { ground: milGround } : {}), stairs: stairCells.map((s) => s.slice()), runs: runs.map((r) => ({ ...r })),
+    key: opts.key, id: opts.id || opts.key, name: opts.name, w: W, h: H, building: { x0: bx0, y0: by0, w: bw, h: bh }, tall, storeys, height, ...(milGround ? { ground: milGround } : {}), stairs: stairCells.map((s) => s.slice()), runs: runs.map((r) => ({ ...r })),
     rooms: areas.filter((a) => !a.outdoor).map((a) => ({ id: a.id, f: a.f, name: a.name, role: a.role, type: a.type, x0: a.x0, y0: a.y0, w: a.w, h: a.h, locked: a.locked, up: a.up, hub: a.hub, entry: a.entry, ...(a.civic ? { civic: a.civic } : {}), ...(a.bunker ? { bunker: a.bunker } : {}) })), // civic, bunker: wanderers.js interiorOccupants' rooms by kind
     front: { x: front.x, y: front.y },
     ...(spec.variant ? { variant: spec.variant } : {}), // a plan's name among its kind's (bunkerlayout.js BUNKER_VARIANTS)
     exits: exits.map((e) => ({ side: e.side, name: e.name, x: e.x, y: e.y, cells: e.cells, locked: e.locked, roller: e.roller, zone: e.zone })),
+    ...(spec.vname ? { variant: spec.vname, vid: spec.vid } : {}), // the plan's name (industrylayout.js: a warehouse's, a factory's, a lab's)
   };
-  return { w: W, h: H, cells, rooms: areas, containers, zones, vehicle, exits, front, lockedDoors, plan, building: plan.building, floors, stairs: plan.stairs, runs: plan.runs, storeys };
+  return { w: W, h: H, cells, rooms: areas, containers, zones, vehicle, exits, front, lockedDoors, plan, building: plan.building, floors, stairs: plan.stairs, runs: plan.runs, storeys, height, deadK: spec.deadK || 0, natMap: spec.deadK ? spec.natMap || [spec.natW + BMAP.MARGIN.left + BMAP.MARGIN.right, spec.natH + BMAP.MARGIN.front + BMAP.MARGIN.back] : null };
 }
 
 // ======================================================================================
@@ -2744,14 +3085,18 @@ export function placeInterior(state, b, map, groups) {
   // A street of houses: the whole roster (more past the old Extra-large); a building's by its map's area (more past the
   // old Large). The big-map scales only on a map that has them (battlesize.js raidBig, b.raid.big; an older save's never).
   const base = map.street ? STREET.DEAD : Math.max(BMAP.DEAD_SCALE[0], Math.min(BMAP.DEAD_SCALE[1], (W * H) / (RAID_W * RAID_H)));
-  const scale = !(b.raid && b.raid.big) ? base : map.street ? base * streetDeadScale(W, H) : buildingDeadScale(base, W, H);
+  // A building at real size (realScale, issue #24): what its plan's map would have held at its own size (map.natMap, the
+  // same rules), times its floor area over its plan's (map.deadK): as many to the square metre as before, whatever the
+  // ground round it; at most BMAP.DEAD_CAP of a group.
+  const oldScale = (w, h) => { const b0 = Math.max(BMAP.DEAD_SCALE[0], Math.min(BMAP.DEAD_SCALE[1], (w * h) / (RAID_W * RAID_H))); return b.raid && b.raid.big ? buildingDeadScale(b0, w, h) : b0; };
+  const scale = map.deadK ? oldScale(map.natMap[0], map.natMap[1]) * map.deadK : !(b.raid && b.raid.big) ? base : map.street ? base * streetDeadScale(W, H) : buildingDeadScale(base, W, H);
   let pod = 0, zn = 0, hn = 0;
   const lockedDead = new Set();
   const put = (u, c, home = null) => { u.x = c[0]; u.y = c[1]; u.home = home || [c[0], c[1]]; b.units.push(u); };
   for (const g of groups) {
     if (!(g.count > 0)) continue;
     if (g.kind === "zombies") {
-      const n = Math.max(1, Math.round(g.count * scale));
+      const n = Math.min(map.deadK ? BMAP.DEAD_CAP : Infinity, Math.max(1, Math.round(g.count * scale)));
       const zl = siteList(rng, g.mix, n); // dead soldiers in a barracks, riot police in a station (deadsoldiers.js); the bred kinds met exploring
       // Storeys: most of the dead on the ground floor, the rest spread over the upper floors (a share of those by the stairwell).
       const SD = BMAP.STOREY.dead;
@@ -3102,7 +3447,7 @@ export function interiorIntro(b) {
   const lockedEx = (R.plan.exits || []).filter((e) => e.locked).length;
   const names = ["the front", ...ex.map((e) => e.name.toLowerCase())];
   const st = R.storeys > 1 ? ` ${R.storeys} storeys: ${stairsText(R)}; the ways out are on the ground floor.` : "";
-  return `Ways out: ${names.join(", ")}${lockedEx ? ` (${lockedEx} locked)` : ""}.${st} Rooms, walls and closed doors block sight (a glass or a screen door is seen through): peek through a door (K) before you go in, shut doors behind you (Shift+E): the dead have to batter them down. Windows: check one from next to it (free), open it if it is unlocked (or from inside if it is locked: 1 action, quiet), then climb or vault through; a fixed one only breaks (loud).`;
+  return `${R.plan.variant ? `${R.plan.variant}. ` : ""}Ways out: ${names.join(", ")}${lockedEx ? ` (${lockedEx} locked)` : ""}.${st} Rooms, walls and closed doors block sight (a glass or a screen door is seen through): peek through a door (K) before you go in, shut doors behind you (Shift+E): the dead have to batter them down. Windows: check one from next to it (free), open it if it is unlocked (or from inside if it is locked: 1 action, quiet), then climb or vault through; a fixed one only breaks (loud).`;
 }
 // A street of houses (streetMap): the houses, the ways out, and the houses your side has been into before (the
 // containers the POI's ledger brought back as you left them: poicont.js poiRaidStart marks them mine).

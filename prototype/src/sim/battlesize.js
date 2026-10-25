@@ -82,7 +82,7 @@ export function baseSide(base, nStructures) {
 export const CONTACT = { PLAYER_X: 5, HUMANS: [15, 21], DEAD: [14, 20], CONE: 0.55, POD: [11, 18], FLANK: [6, 10], NEAR: 18 };
 // Cover density: the share of open ground with something to hide behind within R tiles (Chebyshev) that densify tops
 // a map up to (TARGET; OPEN on plains and by water, which stay more open), never more than MAX_ADD props a 100 tiles.
-export const COVER = { R: 3, TARGET: 0.82, OPEN: 0.72, CITY: 0.86, MAX_ADD: 7 };
+export const COVER = { R: 3, TARGET: 0.82, OPEN: 0.72, CITY: 0.86, MAX_ADD: 7, FAST: 80 * 60 }; // FAST: densify's quick draw past this many cells
 // Raid maps (raidDims): a site's SIZES scale from LO to HI is its place between the run's smallest and largest raid
 // map (worldcfg.js raidMin / raidMax: tiles across, ASPECT of that deep); LARGEST always the largest (a city's or a
 // town's, a site-less city tile's too: the crawl's buildings and its street events), a bridge never under Large (its
@@ -222,6 +222,8 @@ const PROPS = {
   grass: ["tree", "rock", "rock", "tree", "fence", "boulder"], field: ["hay", "hay", "fence", "tree"], dirt: ["rock", "rock", "boulder", "crate"],
   gravel: ["boulder", "rock", "rock"], rubble: ["crate", "rock", "barrel", "crate", "rock"], road: ["crate", "barrel"], // no single-cell cars: cars are 2 × 3–4 cells (combat.js placeCar)
   floor: ["crate", "counter", "cabinet"],
+  // A hotel's grounds (hotellayout.js): a planter on the paving, never a rock in the empty pool or on a court.
+  paving: ["plant"], pool: [], court: [],
 };
 // Tops a map up with props until COVER's share of its open ground has cover within R tiles (opts.target), placing
 // each one where cover is furthest, on a cell whose eight neighbours are all open ground (so a prop never closes a
@@ -240,24 +242,33 @@ export function densify(cells, W, H, rng, opts = {}) {
   let open = 0, covered = 0;
   for (let i = 0; i < W * H; i++) if (groundK(cells[i])) { open++; if (d[i] <= R) covered++; }
   let placed = 0, far = 0, cand = [];
+  const fast = W * H > COVER.FAST;
   for (let guard = 0; guard < cap * 4 && placed < cap && open && covered / open < target; guard++) {
     // The open cells furthest from cover; one of them, or a cell next to it, takes a prop. A cell's distance only
     // falls and open ground only goes, so while some of the last ones are still that far they are all there is (in
     // the same order): the whole map is looked over again only when the furthest step down (interior.js
     // groundsBeyond's woodlot spent most of the yard map's making scanning it every prop: sizetest).
-    cand = cand.filter((i) => groundK(cells[i]) && d[i] === far);
+    // A map past COVER.FAST cells (the raid map dials past 80 across, issue #24: none an older save has): the stale ones
+    // are dropped as they are drawn instead of the list filtered for every prop (that was most of a 300 × 224 map's
+    // making); a smaller map keeps the filter, so its props fall where they always did.
+    let i0 = -1;
+    if (fast) {
+      while (cand.length) { const j = rng.int(0, cand.length - 1), i = cand[j]; if (groundK(cells[i]) && d[i] === far) { i0 = i; break; } cand[j] = cand[cand.length - 1]; cand.pop(); }
+    } else cand = cand.filter((i) => groundK(cells[i]) && d[i] === far);
     if (!cand.length) {
       far = 0;
       for (let i = 0; i < W * H; i++) if (groundK(cells[i]) && d[i] > far) far = d[i];
       if (far <= R) break;
       for (let i = 0; i < W * H; i++) if (groundK(cells[i]) && d[i] === far) cand.push(i);
     }
-    const i0 = cand[rng.int(0, cand.length - 1)], x0 = i0 % W, y0 = (i0 / W) | 0;
+    if (i0 < 0) i0 = cand[rng.int(0, cand.length - 1)];
+    const x0 = i0 % W, y0 = (i0 / W) | 0;
     let spot = null;
     for (const [dx, dy] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]]) if (ok(x0 + dx, y0 + dy)) { spot = [x0 + dx, y0 + dy]; break; }
     if (!spot) { d[i0] = 0; continue; } // no room for a prop here: leave it be
     const [x, y] = spot, c = cells[y * W + x];
     const list = (opts.props && opts.props(c.f)) || PROPS[c.f] || PROPS.grass;
+    if (!list.length) { d[i0] = 0; continue; } // ground that takes no prop (an empty pool, a court)
     const was = c.k;
     c.k = list[rng.int(0, list.length - 1)];
     if (!coverK(c)) { c.k = was; d[i0] = 0; continue; }
@@ -321,13 +332,22 @@ export function fledFarEnough(b, u) {
 // round the back) and densify covers the new ground. At a site with several buildings each is at least the run's
 // smallest raid map; in a city or a town (a crawl's buildings) the largest.
 // margins: the archetype's own; returns the grown margins.
-export function fitMargins(bw, bh, margins, [tw, th]) {
+// cap: the biggest map the building may have (mapCap), the target cut down to it (never below the building and its own
+// margins: those are the archetype's, sized to it).
+export function fitMargins(bw, bh, margins, [tw, th], cap = null) {
   const m = { ...margins };
+  if (cap) { tw = Math.min(tw, cap); th = Math.min(th, cap); }
   const ew = Math.max(0, tw - (bw + m.left + m.right)), eh = Math.max(0, th - (bh + m.front + m.back));
   m.left += Math.floor(ew / 2); m.right += Math.ceil(ew / 2);
   m.front += Math.ceil(eh / 2); m.back += Math.floor(eh / 2);
   return m;
 }
+// The biggest raid map a building may have, by its kind (buildingmaps.js BUILDINGS key), W and H: MAP_CAP's, else none
+// (the run's raid map dials and the building's own size decide). A hotel's 200 × 200 (issue #29, the user's request
+// 2026-10-25: "add hotel 200x200 max"): the hotel and its grounds (parking, the drive, the pool, the gardens) within it
+// (hotellayout.js sizes its grounds to fit).
+export const MAP_CAP = { hotel: 200 };
+export const mapCap = (key) => MAP_CAP[key] || null;
 export function buildingTarget(tile, single, state = null) {
   if (legacyRaids(state)) return single ? raidDims(tile, state) : dimsAt(S); // an older save: the old targets
   return single || largestRaid(tile) ? raidDims(tile, state) : raidMinDims(state);
