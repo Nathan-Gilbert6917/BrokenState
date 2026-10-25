@@ -234,4 +234,428 @@ export function station(rng, o, plan, max) {
   };
 }
 
-export const OFFICE_PLANS = { storefront, bizpark, tower, cityhall, courthouse, callcenter, techoffice, station };
+
+// ======================================================================================
+// The variants (the user's request 2026-10-25: "for buildings with no to only a few varients create a dozen varients
+// per building type"; issue #32's rule: a variant is a distinct plan, its room list and arrangement, not a recolour).
+// Each kind has OFFICE_VARIANTS[kind]: twelve named plans, picked by the building's dice (o.plan: a given one, by name
+// or index; the tests'). The first of each is the plan above (its dice as they were after the pick). The others are
+// data for build(): a footprint, storeys, the ground floor's plan and the floors' above from the shared rooms (SLOTS),
+// the exits. The tower's are towerVariant(): its ground floor's bands and the kinds of floor it stacks (TOWER_FLOORS).
+// spec.variant: the plan's name (the raid plan shows it).
+// ======================================================================================
+const N = (list) => list.map(([sz, r]) => [sz, typeof r === "string" ? { role: r } : r]);
+const X = (...parts) => ({ split: "x", parts: N(parts) });
+const Y = (...parts) => ({ split: "y", parts: N(parts) });
+/** The footprint class by its area (tools/storeytest.js). */
+const footOf = (bw, bh) => { const a = bw * bh; return a <= 190 ? "small" : a <= 360 ? "medium" : "large"; };
+const exitBack = (roles = ["corridor", "storage", "breakroom"], chance = 0.7) => ({ side: "back", roles, chance, lock: 0.3 });
+const exitSide = (side, roles = ["corridor", "lobby"], chance = 1) => ({ side, roles, chance, lock: 0.3 });
+// The rooms every kind's plans share, as leaves (each its role, its style, its name; o: overrides).
+/** @param {any} plan */
+function SLOTS(plan) {
+  const k = plan.office || "insurance", media = plan.media || "tv";
+  const med = k === "dentist" ? "dentist" : k === "doctor" ? "doctor" : null;
+  return {
+    lobby: (o = {}) => front(O("lobby", med ? "waiting" : "reception", { entry: true, name: med === "doctor" ? "Waiting room" : "Reception", type: med === "doctor" ? "clinic" : med ? "dental" : "office", ...o }), plan),
+    hall: (name = "Corridor") => ({ role: "corridor", name }),
+    wc: () => O("restroom", "restroom"),
+    kit: (name = "Kitchenette") => O("breakroom", "kitchenette", { name }),
+    brk: (name = "Break room") => O("breakroom", "breakroom", { name }),
+    priv: (name = "Office", o = {}) => O("office", "privoffice", { name, ...o }),
+    // A storefront's own room by the firm's kind: an office, a dentist's operatory, a doctor's exam room.
+    room: (name) => (med === "dentist" ? O("exam", "operatory", { name: name || "Operatory", type: "dental", maxBoxes: 2 }) : med === "doctor" ? O("exam", "exam", { name: name || "Exam room", type: "clinic" }) : O("office", "privoffice", { name: name || (k === "law" ? "Attorney's office" : k === "realty" ? "Agent's office" : "Office") })),
+    store: () => (med === "dentist" ? O("storage", "sterile", { name: "Sterilization", type: "dental", lock: ["door", 0.3], boxLock: ["drugs", 0.3], windows: false }) : med === "doctor" ? O("pharmroom", "drugroom", { name: "Drug cupboard", lock: ["door", 0.5], boxLock: ["drugs", 0.5] }) : O("storage", "fileroom", { name: "File room", type: "office", lock: ["door", 0.3], windows: false })),
+    meet: (name = "Meeting room") => O("office", "meeting", { name }),
+    open: (name = "Open-plan office", o = {}) => O("office", "openplan", { name, ...o }),
+    files: (name = "Records room") => O("storage", "records", { name, type: "office", lock: ["door", 0.3] }),
+    mail: () => O("storage", "mailroom", { name: "Mail room", type: "office" }),
+    it: (name = "IT closet") => O("storage", "itcloset", { name, type: "techfloor", lock: ["door", 0.4], windows: false }),
+    server: (name = "Server room") => O("storage", "serverroom", { name, type: "techfloor", lock: ["door", 0.4], windows: false }),
+    train: (name = "Training room") => O("classroom", "training", { name, type: "office" }),
+    lounge: (name = "Lounge", o = {}) => O("dayroom", "lounge", { name, type: "office", hub: false, ...o }),
+    atrium: (name = "Atrium") => O("dayroom", "atrium", { name, type: "office", hub: true }),
+    canteen: (name = "Cafeteria") => O("cafeteria", "canteen", { name, hub: false }),
+    kitchen: (name = "Kitchen") => O("kitchen", "canteenkitchen", { name }),
+    gym: (name = "Fitness room") => O("gym", "fitness", { name, type: "lockers" }),
+    lockers: (name = "Locker room") => O("lockerroom", "towerlockers", { name, type: "lockers" }),
+    shop: (name = "Shop") => O("sales", "shopunit", { name, type: "store", hub: false, maxBoxes: 3 }),
+    cafe: (name = "Café") => O("sales", "cafe", { name, type: "kitchen", hub: false, maxBoxes: 2 }),
+    bay: (name = "Loading bay") => O("bays", "loadingbay", { name, type: "warehouse", maxBoxes: 3 }),
+    ware: (name = "Warehouse") => O("warefloor", "pallets", { name, type: "warehouse" }),
+    shopfloor: (name = "Workshop") => O("workshop", "workshoproom", { name, type: "workshop" }),
+    plant: (name = "Plant room") => O("workshop", "plant", { name, type: "workshop" }),
+    lab: (name = "Lab") => O("lab", "labroom", { name, type: "techfloor" }),
+    exam: (name = "Exam room") => O("exam", "exam", { name, type: "clinic" }),
+    drugs: () => O("pharmroom", "drugroom", { name: "Drug cupboard", lock: ["door", 0.5], boxLock: ["drugs", 0.5] }),
+    secure: (name = "Security office") => O("office", "security", { name }),
+    vault: (name = "Vault") => O("armory", "vault", { name, type: "bankvault", lock: ["vault", 0.8], boxLock: ["safe", 0.5], windows: false, fl: "conc" }),
+    bank: (name = "Banking hall") => O("lobby", "bankhall", { name, type: "office", hub: true, maxBoxes: 2 }),
+    cells: (name = "Holding cell") => ({ role: "cells", name, civic: "cells", maxBoxes: 1 }),
+    exec: (name = "Executive office") => O("office", "execoffice", { name, type: "execsuite" }),
+    suite: (name = "Executive suite") => O("office", "execsuite", { name, type: "execsuite" }),
+    board: (name = "Boardroom") => O("office", "boardroom", { name }),
+    call: (name = "Call floor") => O("office", "callfloor", { name, type: "callfloor" }),
+    bench: (name = "Open-plan floor") => O("office", "benches", { name, type: "techfloor" }),
+    booths: () => O("office", "phonebooths", { name: "Phone booths", type: "techfloor" }),
+    techkit: (name = "Kitchen", role = "kitchen") => O(role, "techkitchen", { name, type: "techfloor" }),
+    court: (name = "Courtroom") => O("office", "courtroom", { name, type: "courtoffice", maxBoxes: 2 }),
+    chambers: (name = "Judge's chambers") => O("office", "chambers", { name, type: "courtoffice" }),
+    jury: (name = "Jury room") => O("office", "jury", { name }),
+    clerks: (name = "Clerk of court") => O("office", "clerks", { name, type: "courtoffice" }),
+    lawlib: (name = "Law library") => O("storage", "lawlibrary", { name, type: "courtoffice" }),
+    evidence: (name = "Evidence room") => O("armory", "evidence", { name, type: "courtev", lock: ["door", 0.6], boxLock: ["evidence", 0.5], dk: "steel" }),
+    screen: (o = {}) => front(O("lobby", "screening", { entry: true, name: "Security screening", fl: "marble", ...o }), plan),
+    council: (name = "Council chambers") => O("office", "council", { name, type: "civichall", maxBoxes: 3 }),
+    clerk: (name = "Clerk's office") => O("office", "clerk", { name }),
+    permits: (name = "Permits office") => O("office", "permits", { name }),
+    mayor: (name = "Mayor's office") => O("office", "mayor", { name, type: "execsuite", boxLock: ["safe", 0.3] }),
+    rotunda: (o = {}) => front(O("lobby", "rotunda", { entry: true, name: "Lobby", fl: "marble", ...o }), plan),
+    engine: () => ({ role: "bays", name: "Engine bay", type: "enginebay", maxBoxes: 4, civic: "enginebay" }),
+    sally: () => ({ role: "bays", name: "Sally port", type: "garage", maxBoxes: 2, civic: "sallyport" }),
+    newsroom: (name = "Newsroom") => O("office", "newsroom", { name, type: "studio" }),
+    // A station's studio by its firm's media: a TV studio, a radio station's booth, a newspaper's press room.
+    studio: (name) => (media === "tv" ? O("office", "studio", { name: name || "Studio", type: "studio", windows: false, maxBoxes: 2 }) : media === "radio" ? O("office", "booth", { name: name || "Broadcast booth", type: "studio", windows: false }) : O("workshop", "press", { name: name || "Press room", type: "workshop" })),
+    control: (name) => O("office", "control", { name: name || (media === "paper" ? "Layout room" : "Control room"), type: "studio", windows: false }),
+    archive: (name) => O("storage", "archive", { name: name || (media === "paper" ? "Back issues" : "Tape library"), type: "office" }),
+    xmit: (name) => O("workshop", "transmitter", { name: name || (media === "paper" ? "Darkroom" : "Transmitter room"), type: "studio", windows: false }),
+  };
+}
+/**
+ * A spec from a variant's data: v.size (w, h ranges), v.storeys (or the firm's, or the kind's), v.bonus (the crawl's
+ * storeys add), v.plan(D, c, rng) the ground floor's tree, v.up(D, c, rng) the floors' above (c.f the floor, c.top),
+ * v.exits, v.stairs, v.ground, v.door (the front door's width). @param {string} kind @param {any} v @param {any} rng @param {any} o @param {any} plan @param {number} max
+ */
+function build(kind, v, rng, o, plan, max) {
+  const S = v.size || SIZE[kind], bw = roll(rng, S.w), bh = roll(rng, S.h);
+  const n = clampN(roll(rng, v.storeys || plan.storeys || SIZE[kind].storeys) + (v.bonus ? o.storeyBonus || 0 : 0), 1, Math.min(max, v.most || max));
+  const D = SLOTS(plan), c = { bw, bh, n, fd: v.fd ? roll(rng, v.fd) : 6, left: rng.chance(0.5) };
+  return {
+    bw, bh, front: { width: v.door || 2 }, ground: v.ground || (kind === "bizpark" || kind === "callcenter" ? "lot" : kind === "techoffice" ? "city" : "town"), storeys: n, foot: footOf(bw, bh), variant: v.name,
+    stairs: v.stairs || { roles: ["corridor", "lobby", "dayroom"], n: 1 },
+    program: v.plan(D, c, rng),
+    upper: n > 1 ? (f, r, ctx) => (v.up || v.plan)(D, { ...c, f, top: ctx.top }, r) : null,
+    exits: v.exits || [exitBack(), ...fire(0.4)],
+  };
+}
+const V = (name, def) => ({ name, make: (kind) => (rng, o, plan, max) => build(kind, def, rng, o, plan, max) });
+
+// ---------- a storefront office: twelve plans ----------
+const STOREFRONT = [
+  { name: "Main street office", make: () => storefront },
+  V("Corner office", { size: { w: [12, 15], h: [12, 15] }, storeys: [1, 1], exits: [exitSide("left", ["lobby", "office", "exam"]), exitBack(["breakroom", "storage"])],
+    plan: (D) => Y([5, X(["*", D.lobby()], [4, D.room()])], ["*", X(["*", D.room()], ["*", D.room()], [4, Y(["*", D.kit()], [2, D.wc()])])]) }),
+  V("Walk-up office", { size: { w: [9, 11], h: [15, 19] }, storeys: [2, 2], stairs: { roles: ["corridor", "lobby"], n: 1 },
+    plan: (D) => Y([6, D.lobby()], [1, D.hall("Stair hall")], ["*", X(["*", D.lounge("Waiting room")], [3, Y(["*", D.store()], [2, D.wc()])])]),
+    up: (D) => Y([6, X(["*", D.room()], ["*", D.room()])], [1, D.hall("Landing")], ["*", X(["*", D.room()], [4, D.kit()])]) }),
+  V("Strip-mall unit", { size: { w: [8, 10], h: [17, 22] }, storeys: [1, 1], door: 1, exits: [exitBack(["storage", "breakroom", "restroom"], 1)],
+    plan: (D) => Y([5, D.lobby()], [1, D.hall()], ["*", X(["*", D.room()], ["*", D.room()])], [4, D.store()], [3, X(["*", D.kit()], [2, D.wc()])]) }),
+  V("Converted house", { size: { w: [11, 13], h: [12, 15] }, storeys: [2, 2], ground: "town", stairs: { roles: ["hall", "lobby"], n: 1 },
+    plan: (D) => Y([5, X(["*", D.lobby({ name: "Front parlour" })], [4, D.room()])], ["*", X(["*", D.kitchen("Old kitchen")], [3, { role: "hall", name: "Hall" }], ["*", D.store()])]),
+    up: (D) => Y([5, X(["*", D.room()], ["*", D.room()])], ["*", X(["*", D.room()], [3, { role: "hall", name: "Landing" }], [3, D.wc()])]) }),
+  V("Open-plan agency", { size: { w: [12, 15], h: [14, 18] }, storeys: [1, 1],
+    plan: (D) => Y([5, D.lobby()], ["*", D.open("Agents' floor")], [4, X(["*", D.meet("Conference room")], [4, D.room()], [3, D.kit()])]) }),
+  V("Partners' suite", { size: { w: [14, 16], h: [15, 18] }, storeys: [1, 1],
+    plan: (D) => Y([5, X(["*", D.lobby()], [5, D.meet("Conference room")])], [1, D.hall()], ["*", X(["*", D.room()], ["*", D.room()], ["*", D.room()])], [3, X(["*", D.store()], [4, D.kitchen("Partners' kitchen")], [2, D.wc()])]) }),
+  V("Office over a shop", { size: { w: [10, 13], h: [14, 17] }, storeys: [2, 2], stairs: { roles: ["corridor", "lobby"], n: 1 },
+    plan: (D) => Y([6, X(["*", D.shop("Shop")], [4, D.lobby({ name: "Stair lobby" })])], [1, D.hall("Back passage")], ["*", X(["*", D.store()], [3, D.wc()])]),
+    up: (D) => Y([6, X(["*", D.room()], ["*", D.room()])], [1, D.hall("Landing")], ["*", X(["*", D.meet("Conference room")], [4, D.kit()])]) }),
+  V("Records office", { size: { w: [11, 14], h: [16, 20] }, storeys: [1, 1],
+    plan: (D) => Y([5, D.lobby()], [1, D.hall()], ["*", X(["*", D.files("Archive")], ["*", D.room()])], [5, X(["*", D.files("Records vault")], [4, D.lounge("Client lounge")])]) }),
+  V("Courtyard office", { size: { w: [13, 16], h: [14, 17] }, storeys: [1, 1],
+    plan: (D) => Y([5, X(["*", D.room()], [5, D.lobby()], ["*", D.room()])], ["*", X(["*", D.room()], [5, D.lounge("Waiting hall", { hub: true })], ["*", D.store()])], [3, X(["*", D.kit()], [2, D.wc()])]) }),
+  V("Office with a garage", { size: { w: [13, 16], h: [15, 18] }, storeys: [1, 1], exits: [{ side: "back", roles: ["bays"], chance: 1, roller: true, width: 2, lock: 0.3 }],
+    plan: (D) => Y([5, D.lobby()], [1, D.hall()], ["*", X(["*", D.room()], ["*", D.bay("Garage")])], [3, X(["*", D.kit()], [3, D.store()], [2, D.wc()])]) }),
+  V("Two-door office", { size: { w: [14, 17], h: [13, 16] }, storeys: [1, 1], exits: [exitSide("left", ["lounge", "dayroom", "lobby"]), exitSide("right", ["lounge", "dayroom", "lobby"]), exitBack()],
+    plan: (D) => Y([5, X(["*", D.lobby()], ["*", D.lounge("Second waiting room")])], [1, D.hall()], ["*", X(["*", D.room()], ["*", D.room()], [4, Y(["*", D.store()], [3, D.kit()])])]) }),
+];
+
+// ---------- a business park's building: twelve plans ----------
+const BIZPARK = [
+  { name: "Low-rise office", make: () => bizpark },
+  V("Flex space", { storeys: [1, 1], exits: [{ side: "back", roles: ["warefloor"], chance: 1, roller: true, width: 2, lock: 0.3 }, exitSide("left", ["corridor"], 0.5)],
+    plan: (D) => Y([6, X(["*", D.open()], [6, D.lobby({ name: "Lobby" })], [5, D.meet()])], [1, D.hall()], ["*", X(["*", D.ware()], [4, Y(["*", D.brk()], [2, D.wc()])])]) }),
+  V("Research park building", { storeys: [1, 2],
+    plan: (D) => Y([6, X(["*", D.lab()], [6, D.lobby({ name: "Lobby" })], ["*", D.lab()])], [2, D.hall()], ["*", X(["*", D.lab()], [5, D.server()], [5, D.brk()], restroom)]),
+    up: (D) => Y([6, X(["*", D.open("Researchers' offices")], [5, D.meet()], ["*", D.lab()])], [2, D.hall()], ["*", X(["*", D.lab()], [4, D.files()], restroom)]) }),
+  V("Training center", { storeys: [1, 2],
+    plan: (D) => Y([6, X(["*", D.train("Classroom")], [6, D.lobby({ name: "Lobby" })], ["*", D.train("Classroom")])], [2, D.hall()], ["*", X(["*", D.train("Lecture room")], [6, D.canteen("Lunch room")], [4, D.kitchen()], restroom)]),
+    up: (D) => Y([6, X(["*", D.train("Classroom")], ["*", D.train("Computer lab")])], [2, D.hall()], ["*", X(["*", D.open("Instructors' office")], [4, D.files()], restroom)]) }),
+  V("Medical office building", { storeys: [2, 3],
+    plan: (D) => Y([6, X(["*", D.lounge("Waiting room", { type: "clinic" })], [6, D.lobby({ name: "Lobby" })], ["*", D.exam()])], [2, D.hall()], ["*", X(["*", D.exam()], ["*", D.exam()], [4, D.drugs()], restroom)]),
+    up: (D) => Y([6, X(["*", D.exam()], [5, D.priv("Doctor's office")], ["*", D.exam()])], [2, D.hall()], ["*", X(["*", D.exam()], [4, D.files("Patient records")], [4, D.brk()], restroom)]) }),
+  V("Atrium building", { storeys: [2, 3], stairs: { roles: ["dayroom", "corridor"], n: 1 },
+    plan: (D) => Y([6, X(["*", D.open()], [8, D.lobby({ name: "Lobby" })], ["*", D.meet()])], ["*", X(["*", D.open()], [8, D.atrium()], ["*", Y(["*", D.brk()], [3, D.wc()])])]),
+    up: (D) => Y([6, X(["*", D.open()], [8, D.atrium("Atrium gallery")], ["*", D.priv("Manager's office")])], ["*", X(["*", D.open()], [8, D.lounge("Breakout space", { hub: true })], ["*", D.files()])]) }),
+  V("Data center", { storeys: [1, 1], exits: [exitBack(["storage", "workshop"], 1)],
+    plan: (D) => Y([6, X(["*", D.secure()], [6, D.lobby({ name: "Lobby" })], ["*", D.open("Operations room")])], [2, D.hall()], ["*", X(["*", D.server("Data hall")], ["*", D.server("Data hall")], [5, D.plant("Generator room")], restroom)]) }),
+  V("Back-office park building", { storeys: [2, 3], stairs: { roles: ["corridor"], n: 1, ends: true },
+    plan: (D, c) => Y([6, X(["*", D.open("Claims floor")], [6, D.lobby({ name: "Lobby" })], [4, D.mail()])], [1, D.hall()], ["*", X(["*", D.open("Accounts floor")], [5, D.files()], [4, D.brk()], restroom)]),
+    up: (D) => Y([6, X(["*", D.open("Processing floor")], ["*", D.open("Processing floor")])], [1, D.hall()], ["*", X(["*", D.open()], [5, D.files()], restroom)]) }),
+  V("Showroom offices", { storeys: [1, 2],
+    plan: (D) => Y([7, X(["*", D.shop("Showroom")], [6, D.lobby({ name: "Lobby" })])], [2, D.hall()], ["*", X(["*", D.open("Sales office")], [5, D.meet()], [5, D.ware("Stockroom")], restroom)]),
+    up: (D) => Y([6, X(["*", D.open()], [5, D.priv("Manager's office")])], [2, D.hall()], ["*", X(["*", D.files()], [4, D.brk()], restroom)]) }),
+  V("Corporate campus building", { storeys: [2, 3],
+    plan: (D) => Y([6, X(["*", D.canteen()], [6, D.lobby({ name: "Lobby" })], ["*", D.gym()])], [2, D.hall()], ["*", X(["*", D.kitchen()], [5, D.lockers()], ["*", D.open()], restroom)]),
+    up: (D) => Y([6, X(["*", D.open()], [5, D.meet()], ["*", D.open()])], [2, D.hall()], ["*", X(["*", D.open()], [4, D.brk()], [4, D.it()], restroom)]) }),
+  V("Courier depot", { storeys: [1, 1], exits: [{ side: "back", roles: ["bays"], chance: 1, roller: true, width: 2, lock: 0.3 }, { side: "left", roles: ["bays"], chance: 0.6, roller: true, width: 2, lock: 0.3 }],
+    plan: (D) => Y([6, X(["*", D.mail()], [6, D.lobby({ name: "Customer counter" })], ["*", D.open("Dispatch office")])], [1, D.hall()], ["*", X(["*", D.bay("Sorting bay")], [5, D.lockers("Drivers' room")], [4, D.brk()], restroom)]) }),
+  V("Startup incubator", { storeys: [1, 2],
+    plan: (D) => Y([5, X(["*", D.priv("Suite")], ["*", D.priv("Suite")], [6, D.lobby({ name: "Lobby" })], ["*", D.priv("Suite")])], [1, D.hall()], ["*", X(["*", D.priv("Suite")], ["*", D.priv("Suite")], [6, D.kitchen("Shared kitchen")], [5, D.lounge("Shared lounge")])]),
+    up: (D) => Y([5, X(["*", D.priv("Suite")], ["*", D.priv("Suite")], ["*", D.meet()])], [1, D.hall()], ["*", X(["*", D.priv("Suite")], ["*", D.priv("Suite")], [4, D.wc()])]) }),
+];
+
+// ---------- city hall: twelve plans ----------
+const CITYHALL = [
+  { name: "City hall", make: () => cityhall },
+  V("Domed capitol", { storeys: [2, 3], stairs: { roles: ["lobby", "corridor"], n: 2 },
+    plan: (D) => Y([7, X(["*", D.clerk()], [9, D.rotunda({ name: "Rotunda" })], ["*", D.permits()])], [2, D.hall()], ["*", X(["*", D.council()], [6, D.mayor()], [5, D.files()], restroom)]),
+    up: (D) => Y([7, X(["*", D.open("Council offices")], [9, D.atrium("Rotunda gallery")], ["*", D.priv("City manager's office")])], [2, D.hall()], ["*", X(["*", D.council("Committee chamber")], [6, D.files("Archives")], restroom)]) }),
+  V("Town hall with fire bay", { storeys: [2, 2], exits: [{ side: "front", roles: ["bays"], chance: 1, roller: true, width: 3, lock: 0.2 }, exitBack()],
+    plan: (D) => Y([7, X(["*", D.clerk()], [7, D.rotunda()], [8, D.engine()])], [2, D.hall()], ["*", X(["*", D.council()], [6, D.mayor()], [4, D.kit()], restroom)]),
+    up: (D) => Y([7, X(["*", D.open("Town offices")], [7, D.meet("Committee room")], ["*", D.lounge("Firemen's day room")])], [2, D.hall()], ["*", X(["*", D.files("Archives")], [5, D.lockers("Turnout room")], restroom)]) }),
+  V("Town hall with police office", { storeys: [2, 2],
+    plan: (D) => Y([7, X(["*", D.clerk()], [7, D.rotunda()], ["*", D.priv("Police office")])], [2, D.hall()], ["*", X(["*", D.council()], [6, D.cells("Lockup")], [6, D.mayor()], restroom)]),
+    up: (D) => Y([7, X(["*", D.permits()], [6, D.meet("Committee room")], ["*", D.open("Planning department")])], [2, D.hall()], ["*", X(["*", D.files("Archives")], [5, D.brk()], restroom)]) }),
+  V("Municipal annex", { storeys: [3, 3], stairs: { roles: ["corridor"], n: 2, ends: true },
+    plan: (D) => Y([7, X(["*", D.clerk("Tax office")], [7, D.rotunda()], ["*", D.permits()])], [2, D.hall()], ["*", X(["*", D.open("Utilities billing")], [5, D.files()], [5, D.brk()], restroom)]),
+    up: (D, c) => (c.top ? Y([7, X(["*", D.council()], [6, D.mayor()])], [2, D.hall()], ["*", X(["*", D.priv("City attorney")], [5, D.files("Archives")], restroom)])
+      : Y([7, X(["*", D.open("Planning department")], [6, D.meet("Committee room")], ["*", D.open("Engineering")])], [2, D.hall()], ["*", X(["*", D.open("Parks and recreation")], [5, D.canteen("Staff canteen")], restroom)])) }),
+  V("City hall and library", { storeys: [2, 2],
+    plan: (D) => Y([7, X(["*", D.lawlib("Public library")], [7, D.rotunda()], ["*", D.clerk()])], [2, D.hall()], ["*", X(["*", D.council()], [6, D.mayor()], [5, D.lounge("Reading room")], restroom)]),
+    up: (D) => Y([7, X(["*", D.lawlib("Stacks")], [6, D.permits()])], [2, D.hall()], ["*", X(["*", D.files("Archives")], [5, D.brk()], restroom)]) }),
+  V("Hall with municipal court", { storeys: [2, 3],
+    plan: (D) => Y([7, X(["*", D.clerk()], [7, D.screen({ name: "Lobby" })], ["*", D.permits()])], [2, D.hall()], ["*", X(["*", D.council()], ["*", D.court("Municipal court")], [5, D.cells()], restroom)]),
+    up: (D) => Y([7, X(["*", D.mayor()], [6, D.chambers("Magistrate's chambers")], ["*", D.open("Town offices")])], [2, D.hall()], ["*", X(["*", D.files("Archives")], [5, D.evidence()], restroom)]) }),
+  V("Modern civic center", { storeys: [2, 3], stairs: { roles: ["dayroom", "corridor"], n: 1 },
+    plan: (D) => Y([7, X(["*", D.clerk("Service counter")], [9, D.rotunda({ name: "Civic lobby", fl: "tile" })], ["*", D.cafe("Coffee bar")])], ["*", X(["*", D.council()], [8, D.atrium("Civic atrium")], ["*", Y(["*", D.mayor()], [3, D.wc()])])]),
+    up: (D) => Y([7, X(["*", D.open("City departments")], [9, D.atrium("Atrium gallery")], ["*", D.meet("Committee room")])], ["*", X(["*", D.open("Planning department")], [8, D.lounge("Breakout space", { hub: true })], ["*", D.it()])]) }),
+  V("Town hall with auditorium", { storeys: [2, 2],
+    plan: (D) => Y([7, X(["*", D.clerk()], [7, D.rotunda()], ["*", D.lounge("Cloakroom")])], [2, D.hall()], ["*", X(["*", D.council("Auditorium")], [6, D.lockers("Dressing room")], [5, D.mayor()], restroom)]),
+    up: (D) => Y([7, X(["*", D.council()], [6, D.meet("Committee room")])], [2, D.hall()], ["*", X(["*", D.files("Archives")], [5, D.kit()], restroom)]) }),
+  V("Public works hall", { storeys: [1, 2], exits: [{ side: "back", roles: ["bays"], chance: 1, roller: true, width: 2, lock: 0.3 }, exitSide("left", ["corridor"], 0.6)],
+    plan: (D) => Y([7, X(["*", D.clerk("Water and power office")], [7, D.rotunda()], ["*", D.council()])], [2, D.hall()], ["*", X(["*", D.bay("Public works garage")], [6, D.shopfloor("Utility workshop")], [5, D.mayor()], restroom)]),
+    up: (D) => Y([7, X(["*", D.open("Engineering")], [6, D.meet("Committee room")])], [2, D.hall()], ["*", X(["*", D.files("Plans room")], [5, D.brk()], restroom)]) }),
+  V("City hall with records vault", { storeys: [2, 3],
+    plan: (D) => Y([7, X(["*", D.clerk("Recorder's office")], [7, D.rotunda()], ["*", D.permits()])], [2, D.hall()], ["*", X(["*", D.council()], [5, D.vault("Records vault")], [6, D.mayor()], restroom)]),
+    up: (D) => Y([7, X(["*", D.files("Deeds room")], [6, D.meet("Committee room")], ["*", D.open("Treasurer's office")])], [2, D.hall()], ["*", X(["*", D.files("Archives")], [5, D.brk()], restroom)]) }),
+  V("Village hall", { size: { w: [18, 22], h: [15, 18] }, storeys: [1, 1], exits: [exitBack(["kitchen", "corridor"])],
+    plan: (D) => Y([6, X(["*", D.clerk()], [5, D.rotunda({ fl: "hardwood", name: "Entrance hall" })], [5, D.mayor()])], [1, D.hall()], ["*", X(["*", D.council("Village hall")], [5, D.kitchen()], restroom)]) }),
+];
+
+// ---------- the courthouse: twelve plans ----------
+const COURTHOUSE = [
+  { name: "County courthouse", make: () => courthouse },
+  V("Courthouse and jail", { storeys: [2, 3], exits: [{ side: "back", roles: ["bays"], chance: 1, roller: true, width: 2, lock: 0.5 }, ...fire(0.5)],
+    plan: (D) => Y([6, X(["*", D.clerks()], [8, D.screen()], ["*", D.priv("Sheriff's office")])], [2, D.hall()], ["*", X(["*", D.court()], [6, D.cells("Cell block")], [7, D.sally()])]),
+    up: (D) => Y([6, X(["*", D.chambers()], [6, D.jury()], ["*", D.lockers("Deputies' locker room")])], [2, D.hall()], ["*", X(["*", D.court("Courtroom 2")], [5, D.evidence()], restroom)]) }),
+  V("Twin-courtroom courthouse", { storeys: [2, 3],
+    plan: (D) => Y([6, X(["*", D.clerks()], [8, D.screen()], ["*", D.files("Records office")])], [2, D.hall()], ["*", X(["*", D.court("Courtroom A")], [5, D.cells()], ["*", D.court("Courtroom B")])]),
+    up: (D) => Y([6, X(["*", D.chambers()], [6, D.jury()], ["*", D.chambers()])], [2, D.hall()], ["*", X(["*", D.lawlib()], [5, D.lounge("Witness room")], restroom)]) }),
+  V("Family court", { storeys: [2, 2],
+    plan: (D) => Y([6, X(["*", D.lounge("Waiting room")], [8, D.screen()], ["*", D.lounge("Children's room")])], [2, D.hall()], ["*", X(["*", D.court("Family courtroom")], [5, D.meet("Mediation room")], [4, D.cells()], restroom)]),
+    up: (D) => Y([6, X(["*", D.chambers()], [6, D.priv("Social workers")], ["*", D.clerks()])], [2, D.hall()], ["*", X(["*", D.files("Case files")], [5, D.brk()], restroom)]) }),
+  V("Federal courthouse", { size: { w: [28, 32], h: [22, 25] }, storeys: [3, 3], stairs: { roles: ["corridor"], n: 2, ends: true },
+    plan: (D) => Y([6, X(["*", D.clerks()], [9, D.screen()], ["*", D.lockers("Marshals' office")])], [2, D.hall()], ["*", X(["*", D.court("Ceremonial courtroom")], [6, D.cells()], [5, D.evidence()], restroom)]),
+    up: (D, c) => (c.top ? Y([6, X(["*", D.chambers()], [6, D.lawlib()], ["*", D.chambers()])], [2, D.hall()], ["*", X(["*", D.lawlib("Law library")], [5, D.brk()], restroom)])
+      : Y([6, X(["*", D.jury()], [6, D.chambers()])], [2, D.hall()], ["*", X(["*", D.court("District courtroom")], [5, D.cells("Holding cell")], restroom)])) }),
+  V("Traffic court", { size: { w: [28, 32], h: [18, 21] }, storeys: [1, 1],
+    plan: (D) => Y([6, X(["*", D.clerk("Payment windows")], [7, D.screen()])], [1, D.hall()], ["*", X(["*", D.court("Traffic courtroom")], [5, D.cells()], [5, D.chambers()], [4, D.files()], restroom)]) }),
+  V("Old courthouse", { storeys: [2, 2],
+    plan: (D) => Y([6, X(["*", D.clerks("Recorder of deeds")], [8, D.screen({ name: "Entrance hall" })], ["*", D.files("Probate office")])], [2, D.hall()], ["*", X(["*", D.priv("County assessor")], [5, D.vault("Deeds vault")], ["*", D.priv("County treasurer")], restroom)]),
+    up: (D) => Y([6, X(["*", D.chambers()], [6, D.jury()])], [2, D.hall()], ["*", X(["*", D.court("Upper courtroom")], [5, D.evidence()], restroom)]) }),
+  V("Justice center", { storeys: [2, 3],
+    plan: (D) => Y([6, X(["*", D.canteen("Cafeteria")], [8, D.screen()], ["*", D.clerks()])], [2, D.hall()], ["*", X(["*", D.court()], [4, D.kitchen()], [5, D.cells()], [5, D.evidence()])]),
+    up: (D) => Y([6, X(["*", D.chambers()], [6, D.jury()], ["*", D.priv("Prosecutor's office")])], [2, D.hall()], ["*", X(["*", D.court("Courtroom 2")], [5, D.priv("Public defender")], restroom)]) }),
+  V("Courthouse with law library", { storeys: [2, 2],
+    plan: (D) => Y([6, X(["*", D.lawlib("Law library")], [8, D.screen()], ["*", D.clerks()])], [2, D.hall()], ["*", X(["*", D.court()], [5, D.cells()], [6, D.lounge("Reading room")], restroom)]),
+    up: (D) => Y([6, X(["*", D.chambers()], [6, D.jury()])], [2, D.hall()], ["*", X(["*", D.lawlib("Stacks")], [5, D.evidence()], restroom)]) }),
+  V("Probate court", { storeys: [1, 2],
+    plan: (D) => Y([6, X(["*", D.clerks("Probate clerk")], [8, D.screen()])], [2, D.hall()], ["*", X(["*", D.court("Probate courtroom")], [5, D.vault("Wills vault")], [4, D.cells()], restroom)]),
+    up: (D) => Y([6, X(["*", D.chambers()], [6, D.files("Estate files")])], [2, D.hall()], ["*", X(["*", D.meet("Hearing room")], [4, D.brk()], restroom)]) }),
+  V("Courthouse with sally port", { storeys: [2, 3], exits: [{ side: "left", roles: ["bays"], chance: 1, roller: true, width: 2, lock: 0.5 }, exitBack()],
+    plan: (D) => Y([6, X([7, D.sally()], ["*", D.clerks()], [8, D.screen()])], [2, D.hall()], ["*", X(["*", D.court()], [6, D.cells()], [5, D.evidence()], restroom)]),
+    up: (D) => Y([6, X(["*", D.chambers()], [6, D.jury()], ["*", D.chambers()])], [2, D.hall()], ["*", X(["*", D.court("Courtroom 2")], [5, D.lawlib()], restroom)]) }),
+  V("Magistrate's court", { size: { w: [24, 28], h: [18, 21] }, storeys: [1, 1],
+    plan: (D) => Y([6, X(["*", D.clerks()], [6, D.screen()])], [1, D.hall()], ["*", X(["*", D.court("Magistrate's courtroom")], [5, D.cells()], [5, D.chambers("Magistrate's chambers")], restroom)]) }),
+];
+
+// ---------- a call center: twelve plans ----------
+const CALLCENTER = [
+  { name: "Contact center", make: () => callcenter },
+  V("Open-floor contact center", { storeys: [1, 1], stairs: { roles: ["lobby"], n: 1 },
+    plan: (D) => Y([6, X(["*", D.call()], [6, D.lobby()], ["*", D.call()])], ["*", D.call("Main call floor")], [5, X(["*", D.brk()], [5, D.priv("Team leads' office")], restroom)]) }),
+  V("Two-floor support center", { storeys: [2, 2], stairs: { roles: ["corridor"], n: 1, ends: true },
+    plan: (D) => Y([6, X(["*", D.call("Support floor")], [6, D.lobby()], ["*", D.train()])], [1, D.hall()], ["*", X(["*", D.call("Main call floor")], [7, D.brk()], [5, D.gym("Wellness room")], restroom)]),
+    up: (D) => Y([6, X(["*", D.call("Escalations floor")], [5, D.meet()], ["*", D.call("Support floor")])], [1, D.hall()], ["*", X(["*", D.call("Night floor")], [6, D.brk()], restroom)]) }),
+  V("Night-shift center", { storeys: [1, 1],
+    plan: (D) => Y([6, X(["*", D.call()], [6, D.lobby()], ["*", D.lounge("Quiet room")])], [1, D.hall()], ["*", X(["*", D.call("Main call floor")], [6, D.kitchen("Kitchen")], [5, D.lockers()], restroom)]) }),
+  V("Telemarketing office", { size: { w: [18, 22], h: [14, 17] }, storeys: [1, 1],
+    plan: (D) => Y([5, X(["*", D.call("Phone room")], [5, D.lobby()], ["*", D.call("Phone room")])], [1, D.hall()], ["*", X(["*", D.call("Main call floor")], [4, D.priv("Manager's office")], [4, D.kit()], restroom)]) }),
+  V("Help desk", { storeys: [1, 2],
+    plan: (D) => Y([6, X(["*", D.call("Help desk floor")], [6, D.lobby()], ["*", D.shopfloor("Repair bench")])], [1, D.hall()], ["*", X(["*", D.call("Main call floor")], [5, D.server()], [5, D.brk()], restroom)]),
+    up: (D) => Y([6, X(["*", D.call("Second-line floor")], [5, D.meet()])], [1, D.hall()], ["*", X(["*", D.it("Parts store")], [5, D.brk()], restroom)]) }),
+  V("Dispatch center", { storeys: [1, 2], exits: [exitBack(["corridor"], 1), exitSide("left", ["corridor"], 1)],
+    plan: (D) => Y([6, X(["*", D.secure("Dispatch supervisor")], [6, D.lobby()], ["*", D.call("Dispatch floor")])], [1, D.hall()], ["*", X(["*", D.call("Main call floor")], [5, D.server("Radio room")], [5, D.lockers()], restroom)]),
+    up: (D) => Y([6, X(["*", D.train()], [5, D.meet()])], [1, D.hall()], ["*", X(["*", D.lounge("Rest room")], [5, D.kit()], restroom)]) }),
+  V("Survey center", { storeys: [1, 1],
+    plan: (D) => Y([6, X(["*", D.train("Interviewer training")], [6, D.lobby()], ["*", D.call("Survey floor")])], [1, D.hall()], ["*", X(["*", D.call("Main call floor")], [5, D.lounge("Respondents' lounge")], [6, D.brk()], restroom)]) }),
+  V("Order desk and warehouse", { storeys: [1, 1], exits: [{ side: "back", roles: ["warefloor"], chance: 1, roller: true, width: 2, lock: 0.3 }],
+    plan: (D) => Y([6, X(["*", D.call("Order desk")], [6, D.lobby()], [5, D.mail()])], [1, D.hall()], ["*", X(["*", D.call("Main call floor")], ["*", D.ware("Fulfilment warehouse")], restroom)]) }),
+  V("Call center with cafeteria", { storeys: [1, 2],
+    plan: (D) => Y([6, X(["*", D.call()], [6, D.lobby()], ["*", D.canteen()])], [1, D.hall()], ["*", X(["*", D.call("Main call floor")], [5, D.kitchen()], [5, D.lockers()], restroom)]),
+    up: (D) => Y([6, X(["*", D.call()], ["*", D.call()])], [1, D.hall()], ["*", X(["*", D.call("Upper call floor")], [5, D.brk()], restroom)]) }),
+  V("Strip-mall call center", { size: { w: [14, 17], h: [20, 24] }, storeys: [1, 1], door: 1,
+    plan: (D) => Y([5, D.lobby()], [1, D.hall()], ["*", D.call("Main call floor")], [5, X(["*", D.brk()], [4, D.lounge("Smoking room")])], [3, X(["*", D.it()], [2, D.wc()])]) }),
+  V("Converted big-box call center", { size: { w: [32, 38], h: [20, 24] }, storeys: [1, 1], exits: [exitBack(["corridor"], 1), exitSide("left", ["corridor"], 1), exitSide("right", ["corridor"], 1)],
+    plan: (D) => Y([6, X(["*", D.call()], [7, D.lobby()], ["*", D.gym("Wellness room")])], [1, D.hall()], ["*", X(["*", D.call("Main call floor")], ["*", D.call("Main call floor 2")], [7, D.canteen("Break hall")], restroom)]) }),
+];
+
+// ---------- a tech office: twelve plans ----------
+const TECHOFFICE = [
+  { name: "Tech office", make: () => techoffice },
+  V("Loft office", { storeys: [2, 4], bonus: true, stairs: { roles: ["lobby", "office"], n: 1 },
+    plan: (D) => Y([6, X(["*", D.bench()], [6, D.lobby()])], ["*", X(["*", D.bench("Loft floor")], [5, Y(["*", D.techkit("Kitchen", "breakroom")], [3, D.wc()])])]),
+    up: (D) => Y([6, X(["*", D.bench("Loft floor")], [6, D.lounge()])], ["*", X(["*", D.bench("Loft floor")], [5, Y(["*", D.booths()], [3, D.wc()])])]) }),
+  V("Garage startup", { size: { w: [19, 23], h: [15, 18] }, storeys: [1, 2], ground: "town", exits: [{ side: "front", roles: ["bays"], chance: 1, roller: true, width: 2, lock: 0.3 }],
+    plan: (D) => Y([7, X([7, D.bay("Garage lab")], ["*", D.lobby({ name: "Front room" })])], [1, D.hall()], ["*", X(["*", D.bench()], [5, D.techkit()], [3, D.wc()])]),
+    up: (D) => Y([7, X(["*", D.bench("Loft")], [5, D.lounge()])], [1, D.hall()], ["*", X(["*", D.server("Server closet")], [4, D.wc()])]) }),
+  V("Game studio", { storeys: [2, 3],
+    plan: (D) => Y([6, X(["*", D.bench("Dev floor")], [6, D.lobby()], ["*", D.lounge("Games corner")])], [1, D.hall()], ["*", X(["*", D.studio("Motion-capture stage")], [5, D.techkit()], [4, D.server()], restroom)]),
+    up: (D) => Y([6, X(["*", D.bench("Art floor")], [5, D.meet("Playtest room")], ["*", D.bench("Dev floor")])], [1, D.hall()], ["*", X(["*", D.lounge("Sound studio")], [4, D.booths()], restroom)]) }),
+  V("Hardware lab", { storeys: [1, 2],
+    plan: (D) => Y([6, X(["*", D.lab("Electronics lab")], [6, D.lobby()], ["*", D.bench()])], [1, D.hall()], ["*", X(["*", D.shopfloor("Prototype shop")], [5, D.it("Parts store")], [5, D.techkit()], restroom)]),
+    up: (D) => Y([6, X(["*", D.bench()], [5, D.meet()])], [1, D.hall()], ["*", X(["*", D.lab("Test lab")], [4, D.booths()], restroom)]) }),
+  V("Data company", { storeys: [2, 4], bonus: true,
+    plan: (D) => Y([6, X(["*", D.bench()], [6, D.lobby()], ["*", D.secure()])], [1, D.hall()], ["*", X(["*", D.server("Data hall")], [6, D.plant("Cooling plant")], [5, D.techkit()], restroom)]),
+    up: (D) => Y([6, X(["*", D.bench("Analysts' floor")], [5, D.meet()], ["*", D.bench()])], [1, D.hall()], ["*", X(["*", D.server()], [4, D.booths()], restroom)]) }),
+  V("Coworking space", { storeys: [2, 3],
+    plan: (D) => Y([6, X(["*", D.cafe("Coffee bar")], [6, D.lobby()], ["*", D.bench("Hot desks")])], [1, D.hall()], ["*", X(["*", D.priv("Private office")], ["*", D.priv("Private office")], [4, D.booths()], restroom)]),
+    up: (D) => Y([6, X(["*", D.bench("Hot desks")], [5, D.meet()], ["*", D.priv("Private office")])], [1, D.hall()], ["*", X(["*", D.priv("Private office")], [5, D.lounge()], [4, D.booths()], restroom)]) }),
+  V("Design agency", { storeys: [1, 2],
+    plan: (D) => Y([6, X(["*", D.bench("Studio floor")], [6, D.lobby()], ["*", D.meet("Pitch room")])], [1, D.hall()], ["*", X(["*", D.shop("Print shop")], [5, D.lounge()], [5, D.techkit()], restroom)]),
+    up: (D) => Y([6, X(["*", D.bench("Studio floor")], [5, D.priv("Creative director")])], [1, D.hall()], ["*", X(["*", D.files("Archive")], [4, D.booths()], restroom)]) }),
+  V("Fintech office", { storeys: [2, 4], bonus: true,
+    plan: (D) => Y([6, X(["*", D.bench("Trading floor")], [6, D.lobby({ fl: "marble" })], ["*", D.secure()])], [1, D.hall()], ["*", X(["*", D.vault("Secure room")], [5, D.server()], [5, D.techkit()], restroom)]),
+    up: (D) => Y([6, X(["*", D.bench()], [5, D.board()], ["*", D.exec("Founder's office")])], [1, D.hall()], ["*", X(["*", D.bench("Quant floor")], [4, D.booths()], restroom)]) }),
+  V("Robotics startup", { storeys: [1, 2], exits: [{ side: "back", roles: ["warefloor"], chance: 1, roller: true, width: 2, lock: 0.3 }],
+    plan: (D) => Y([6, X(["*", D.bench()], [6, D.lobby()], ["*", D.lab("Robotics lab")])], [1, D.hall()], ["*", X(["*", D.ware("Assembly floor")], [6, D.shopfloor("Machine shop")], restroom)]),
+    up: (D) => Y([6, X(["*", D.bench()], [5, D.meet()])], [1, D.hall()], ["*", X(["*", D.techkit("Snack bar", "breakroom")], [4, D.booths()], restroom)]) }),
+  V("Campus building", { storeys: [2, 3],
+    plan: (D) => Y([6, X(["*", D.canteen("Café")], [6, D.lobby()], ["*", D.gym()])], [1, D.hall()], ["*", X(["*", D.kitchen()], [5, D.lockers()], ["*", D.bench()], restroom)]),
+    up: (D) => Y([6, X(["*", D.bench()], [5, D.lounge("Games room")], ["*", D.bench()])], [1, D.hall()], ["*", X(["*", D.bench()], [4, D.booths()], [4, D.techkit("Snack bar", "breakroom")], restroom)]) }),
+  V("Biotech startup", { storeys: [2, 3],
+    plan: (D) => Y([6, X(["*", D.lab("Wet lab")], [6, D.lobby()], ["*", D.bench()])], [1, D.hall()], ["*", X(["*", D.lab("Wet lab")], [4, O("pantry", "coldstore", { name: "Cold room", type: "kitchen", dk: "coldroom" })], [5, D.techkit()], restroom)]),
+    up: (D) => Y([6, X(["*", D.bench()], [5, D.meet()])], [1, D.hall()], ["*", X(["*", D.lab("Tissue culture lab")], [4, D.server()], restroom)]) }),
+];
+
+// ---------- a station: twelve plans (the firm's media picks the studio: TV, radio, the paper) ----------
+const STATION = [
+  { name: "News station", make: () => station },
+  V("Small-market station", { size: { w: [18, 22], h: [14, 16] }, storeys: [1, 1], stairs: { roles: ["corridor"], n: 1 },
+    plan: (D) => Y([6, X(["*", D.newsroom()], [5, D.lobby()], ["*", D.studio()])], [1, D.hall()], ["*", X(["*", D.control()], [5, D.archive()], [4, D.kit()], restroom)]) }),
+  V("Radio house", { size: { w: [12, 15], h: [12, 15] }, storeys: [2, 2], ground: "town", stairs: { roles: ["hall", "lobby"], n: 1 },
+    plan: (D) => Y([5, X(["*", D.lobby({ name: "Front parlour" })], ["*", D.studio()])], ["*", X(["*", D.kitchen("Old kitchen")], [3, { role: "hall", name: "Hall" }], ["*", D.control()])]),
+    up: (D) => Y([5, X(["*", D.newsroom("Bedroom newsroom")], ["*", D.archive()])], ["*", X(["*", D.xmit()], [3, { role: "hall", name: "Landing" }], [3, D.wc()])]) }),
+  V("Broadcast center", { size: { w: [26, 30], h: [17, 19] }, storeys: [3, 3], stairs: { roles: ["corridor"], n: 2, ends: true },
+    plan: (D) => Y([6, X(["*", D.studio("Studio A")], [6, D.lobby()], ["*", D.studio("Studio B")])], [1, D.hall()], ["*", X(["*", D.control("Master control")], [5, D.lockers("Dressing room")], [5, D.brk()], restroom)]),
+    up: (D, c) => (c.top ? Y([6, X(["*", D.exec("General manager's office")], [5, D.board()])], [1, D.hall()], ["*", X(["*", D.xmit()], [5, D.archive()], restroom)])
+      : Y([6, X(["*", D.newsroom()], [5, D.meet()], ["*", D.newsroom("Sports desk")])], [1, D.hall()], ["*", X(["*", D.server("Edit suites")], [5, D.kit()], restroom)])) }),
+  V("Paper with printing hall", { storeys: [1, 2], exits: [{ side: "back", roles: ["warefloor"], chance: 1, roller: true, width: 2, lock: 0.3 }],
+    plan: (D) => Y([6, X(["*", D.newsroom()], [5, D.lobby()], ["*", D.priv("Advertising office")])], [1, D.hall()], ["*", X(["*", D.ware("Printing hall")], [6, D.studio("Press room")], [4, D.brk()], restroom)]),
+    up: (D) => Y([6, X(["*", D.newsroom("Editorial floor")], [5, D.exec("Editor's office")])], [1, D.hall()], ["*", X(["*", D.archive()], [4, D.xmit()], restroom)]) }),
+  V("Station with satellite yard", { storeys: [1, 2], exits: [{ side: "back", roles: ["bays"], chance: 1, roller: true, width: 2, lock: 0.3 }],
+    plan: (D) => Y([6, X(["*", D.newsroom()], [5, D.lobby()], ["*", D.studio()])], [1, D.hall()], ["*", X(["*", D.bay("Truck bay")], [5, D.control()], [4, D.shopfloor("Engineering shop")], restroom)]),
+    up: (D) => Y([6, X(["*", D.newsroom("Assignment desk")], [5, D.meet()])], [1, D.hall()], ["*", X(["*", D.archive()], [4, D.brk()], restroom)]) }),
+  V("Public radio station", { storeys: [1, 2],
+    plan: (D) => Y([6, X(["*", D.train("Community room")], [5, D.lobby()], ["*", D.studio()])], [1, D.hall()], ["*", X(["*", D.control()], [5, D.archive("Record library")], [4, D.kit()], restroom)]),
+    up: (D) => Y([6, X(["*", D.priv("Membership office")], [5, D.meet()])], [1, D.hall()], ["*", X(["*", D.newsroom()], [4, D.xmit()], restroom)]) }),
+  V("Station with weather center", { storeys: [2, 2],
+    plan: (D) => Y([6, X(["*", D.newsroom()], [5, D.lobby()], ["*", D.studio()])], [1, D.hall()], ["*", X(["*", D.control()], [5, D.server("Weather center")], [4, D.lockers("Crew room")], restroom)]),
+    up: (D) => Y([6, X(["*", D.priv("Meteorologists")], [5, D.meet()], ["*", D.exec("Station manager's office")])], [1, D.hall()], ["*", X(["*", D.archive()], [4, D.xmit()], restroom)]) }),
+  V("News bureau", { size: { w: [16, 20], h: [13, 15] }, storeys: [1, 1],
+    plan: (D) => Y([5, X(["*", D.newsroom("Bureau newsroom")], [5, D.lobby()])], [1, D.hall()], ["*", X(["*", D.studio()], [5, D.priv("Bureau chief")], [3, D.kit()], [2, D.wc()])]) }),
+  V("Studio complex", { size: { w: [26, 30], h: [17, 19] }, storeys: [2, 2],
+    plan: (D) => Y([6, X(["*", D.studio("Studio A")], [5, D.lobby()], ["*", D.studio("Studio B")])], [1, D.hall()], ["*", X(["*", D.lockers("Dressing rooms")], [5, D.lounge("Green room")], [5, D.control()], restroom)]),
+    up: (D) => Y([6, X(["*", D.newsroom()], [5, D.meet()])], [1, D.hall()], ["*", X(["*", D.server("Edit suites")], [4, D.archive()], restroom)]) }),
+  V("Transmitter site", { size: { w: [16, 20], h: [13, 16] }, storeys: [1, 1], ground: "town", exits: [exitBack(["workshop", "corridor"], 1)],
+    plan: (D) => Y([5, X(["*", D.studio()], [5, D.lobby()])], [1, D.hall()], ["*", X(["*", D.xmit()], [5, D.plant("Generator room")], [3, D.wc()])]) }),
+  V("Station with tape vault", { storeys: [2, 2],
+    plan: (D) => Y([6, X(["*", D.newsroom()], [5, D.lobby()], ["*", D.studio()])], [1, D.hall()], ["*", X(["*", D.control()], [5, D.vault("Tape vault")], [4, D.brk()], restroom)]),
+    up: (D) => Y([6, X(["*", D.archive()], [5, D.exec("Station manager's office")])], [1, D.hall()], ["*", X(["*", D.files("Music library")], [4, D.xmit()], restroom)]) }),
+];
+
+// ---------- the corporate tower: twelve plans ----------
+// A tower variant: its ground floor's front band and back band (its stairwells SW at the ends, else at the core), the
+// kinds of floor it stacks (TOWER_FLOORS: the first floor up, the specials it draws from, the one under the top) and its
+// top floor. Every floor keeps the stairwells where the ground floor has them.
+const TOWER_FLOORS = {
+  open: (D) => [["*", D.open()], ["*", D.open()], [["*", D.open()], [4, D.brk()], restroom, ["*", D.meet()]]],
+  exec: (D) => [["*", D.exec()], ["*", D.board()], [["*", D.exec()], [4, D.priv("Assistants' office")], restroom, ["*", D.exec()]]],
+  canteen: (D) => [["*", D.canteen("Canteen")], ["*", D.canteen("Canteen")], [["*", D.kitchen("Canteen kitchen")], [3, O("pantry", "coldstore", { name: "Cold store", type: "kitchen", dk: "coldroom" })], restroom, ["*", D.open()]]],
+  fitness: (D) => [["*", D.gym("Fitness center")], ["*", D.lockers()], [["*", D.gym("Fitness center")], [4, D.brk()], restroom, ["*", D.open()]]],
+  it: (D) => [["*", D.server()], ["*", D.open("IT department", { type: "techfloor" })], [["*", D.open("IT department", { type: "techfloor" })], [4, D.it("IT stores")], restroom, ["*", D.server()]]],
+  medical: (D) => [["*", D.exam("Clinic suite")], ["*", D.lounge("Clinic waiting room", { type: "clinic" })], [["*", D.exam("Clinic suite")], [4, D.drugs()], restroom, ["*", D.exam("Clinic suite")]]],
+  law: (D) => [["*", D.priv("Partner's office")], ["*", D.lawlib("Firm library")], [["*", D.priv("Associates' offices")], [4, D.files()], restroom, ["*", D.meet("Conference room")]]],
+  claims: (D) => [["*", D.call("Claims floor")], ["*", D.call("Claims floor")], [["*", D.files("Claims files")], [4, D.brk()], restroom, ["*", D.call("Claims floor")]]],
+  media: (D) => [["*", D.studio("Studio")], ["*", D.newsroom()], [["*", D.control()], [4, D.archive()], restroom, ["*", D.newsroom()]]],
+  gov: (D) => [["*", D.open("Agency offices")], ["*", D.clerk("Service counter")], [["*", D.files()], [4, D.brk()], restroom, ["*", D.open("Agency offices")]]],
+  tech: (D) => [["*", D.bench()], ["*", D.lounge("Games corner")], [["*", D.bench()], [4, D.booths()], restroom, ["*", D.techkit("Snack bar", "breakroom")]]],
+  cells: (D) => [["*", D.priv("Office")], ["*", D.priv("Office")], [["*", D.priv("Office")], [4, D.files()], restroom, ["*", D.priv("Office")]]],
+  top: (D) => [["*", D.suite()], ["*", D.board()], [["*", D.plant("Roof plant")], [4, D.brk("Executive kitchen")], restroom, ["*", D.exec("Chairman's office")]]],
+};
+/** @type {any[]} */
+const TOWER_VARIANTS = [
+  { name: "Glass slab tower" }, // the plan above (tower)
+  { name: "Centre-core tower", core: true, ground: (D) => [[["*", D.cafe()], "SW", "LOBBY", "SW", ["*", D.mail()]], [["*", D.bay()], [5, D.lockers("Couriers' room")], restroom, ["*", D.brk("Staff room")]]], floors: ["open", "exec", "it", "canteen"] },
+  { name: "Atrium tower", ground: (D) => [["SW", ["*", D.cafe()], "LOBBY", ["*", D.shop("Newsstand")], "SW"], [["*", D.atrium()], [5, D.secure()], restroom, ["*", D.bay()]]], floors: ["open", "open", "exec", "fitness"] },
+  { name: "Bank tower", ground: (D) => [["SW", ["*", D.bank()], "LOBBY", ["*", D.priv("Loan office")], "SW"], [["*", D.vault()], [5, D.secure()], restroom, ["*", D.bay()]]], floors: ["open", "exec", "claims", "it"] },
+  { name: "Retail podium tower", ground: (D) => [["SW", ["*", D.shop()], "LOBBY", ["*", D.shop("Shop 2")], "SW"], [["*", D.canteen("Food court")], [5, D.kitchen()], restroom, ["*", D.bay()]]], floors: ["open", "fitness", "exec", "canteen"] },
+  { name: "Medical office tower", ground: (D) => [["SW", ["*", D.drugs()], "LOBBY", ["*", D.lounge("Patient lounge", { type: "clinic" })], "SW"], [["*", D.exam("Urgent care")], [5, D.secure()], restroom, ["*", D.bay()]]], floors: ["medical", "medical", "open", "exec"] },
+  { name: "Law firm tower", ground: (D) => [["SW", ["*", D.cafe()], "LOBBY", ["*", D.lawlib("Reading room")], "SW"], [["*", D.mail()], [5, D.secure()], restroom, ["*", D.bay()]]], floors: ["law", "law", "exec", "cells"] },
+  { name: "Insurance headquarters", ground: (D) => [["SW", ["*", D.call("Claims counter")], "LOBBY", ["*", D.mail()], "SW"], [["*", D.files("Claims archive")], [5, D.secure()], restroom, ["*", D.bay()]]], floors: ["claims", "claims", "open", "exec"] },
+  { name: "Media tower", ground: (D) => [["SW", ["*", D.cafe()], "LOBBY", ["*", D.studio("Street-level studio")], "SW"], [["*", D.control()], [5, D.lockers("Dressing room")], restroom, ["*", D.bay()]]], floors: ["media", "open", "media", "exec"] },
+  { name: "Government office tower", ground: (D) => [["SW", ["*", D.clerk("Service center")], "LOBBY", ["*", D.lounge("Waiting hall")], "SW"], [["*", D.files()], [5, D.secure()], restroom, ["*", D.bay()]]], floors: ["gov", "gov", "open", "cells"] },
+  { name: "Brutalist office block", wide: true, ground: (D) => [["SW", ["*", D.open("Plaza offices")], "LOBBY", ["*", D.canteen("Staff canteen")], "SW"], [["*", D.plant("Boiler room")], [5, D.secure()], restroom, ["*", D.kitchen()]]], floors: ["cells", "cells", "open", "gov"] },
+  { name: "Tech campus tower", ground: (D) => [["SW", ["*", D.cafe("Coffee bar")], "LOBBY", ["*", D.lounge("Games corner")], "SW"], [["*", D.gym()], [5, D.secure()], restroom, ["*", D.bay()]]], floors: ["tech", "tech", "it", "canteen"] },
+];
+/** @param {any} v @param {any} rng @param {any} o @param {any} plan @param {number} max */
+function towerVariant(v, rng, o, plan, max) {
+  const S = v.wide ? { w: [28, 32], h: [16, 18] } : SIZE.tower;
+  const n = storeysOf(rng, "tower", plan, o, max);
+  const bw = roll(rng, S.w), bh = roll(rng, S.h), fd = 6, lw = rng.int(5, 6);
+  const D = SLOTS(plan), SW = [2, { role: "stairwell" }];
+  const lobby = front(O("lobby", "towerlobby", { entry: true, name: "Lobby", fl: "marble", maxBoxes: 1 }), plan);
+  const fill = (list, mid) => list.map((x) => (x === "SW" ? SW : x === "LOBBY" ? [lw + 2, lobby] : x === "LIFT" ? mid : x));
+  const [gf, gb] = v.ground(D);
+  // The floors above: the first of v.floors first, the one under the top the second-last (5+ storeys), the rest drawn.
+  const kinds = ["ground"], pool = rng.shuffle(v.floors.slice(1));
+  for (let f = 1; f < n; f++) kinds.push(f === n - 1 ? "top" : f === 1 ? v.floors[0] : pool.length && rng.chance(0.7) ? pool.pop() : "open");
+  const lift = [lw, O("lobby", "liftlobby", { name: "Lift lobby", hub: true, maxBoxes: 0, type: null })];
+  const floorOf = (f) => {
+    const [a, b, back] = (TOWER_FLOORS[kinds[f]] || TOWER_FLOORS.open)(D);
+    const frontBand = v.core ? [a, SW, lift, SW, b] : [SW, a, lift, b, SW];
+    return corridorPlan(frontBand, back, fd);
+  };
+  return {
+    bw, bh, front: { width: 2 }, ground: "city", storeys: n, foot: "large", stairs: { roles: ["stairwell"], n: 2, len: 3 }, floorKinds: kinds, variant: v.name,
+    program: corridorPlan(fill(gf), gb, fd),
+    upper: (f) => floorOf(f),
+    exits: [{ side: "back", roles: ["bays"], chance: 1, roller: true, width: 2, lock: 0.4, name: "Loading dock" }, ...fire(0.4)],
+  };
+}
+
+/** @type {Record<string, { name: string, make: (kind: string) => (rng: any, o: any, plan: any, max: number) => any }[]>} */
+export const OFFICE_VARIANTS = {
+  storefront: STOREFRONT, bizpark: BIZPARK, cityhall: CITYHALL, courthouse: COURTHOUSE, callcenter: CALLCENTER, techoffice: TECHOFFICE, station: STATION,
+  tower: TOWER_VARIANTS.map((v, i) => (i === 0 ? { name: v.name, make: () => tower } : { name: v.name, make: () => (rng, o, plan, max) => towerVariant(v, rng, o, plan, max) })),
+};
+// The plan a building takes: o.plan (a name or an index), else by its dice.
+/** @param {string} kind @param {any} rng @param {any} o */
+export function pickVariant(kind, rng, o) {
+  const L = OFFICE_VARIANTS[kind];
+  if (o && o.plan != null) { const i = typeof o.plan === "number" ? o.plan : L.findIndex((v) => v.name === o.plan); if (i >= 0 && L[i]) return L[i]; }
+  return L[rng.int(0, L.length - 1)];
+}
+const dispatch = (kind) => (rng, o, plan, max) => { const v = pickVariant(kind, rng, o || {}); const spec = v.make(kind)(rng, o || {}, plan, max); spec.variant = v.name; return spec; };
+export const OFFICE_PLANS = { storefront: dispatch("storefront"), bizpark: dispatch("bizpark"), tower: dispatch("tower"), cityhall: dispatch("cityhall"), courthouse: dispatch("courthouse"), callcenter: dispatch("callcenter"), techoffice: dispatch("techoffice"), station: dispatch("station") };

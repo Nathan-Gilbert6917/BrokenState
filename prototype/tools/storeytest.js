@@ -172,8 +172,9 @@ console.log(`Generation: every type (${Object.keys(BUILDINGS).length}), ${SEEDS}
   }
   check(!bad, `every type assembles with its storeys, footprint class and map size; every floor connected to the stairwell, the stairwell to the front; stair runs against a wall, their steps on every floor, landings walkable, every room reached from a landing, no door onto a step (${bad} bad of ${Object.keys(BUILDINGS).length * SEEDS}; ${multi} multi-storey, ${floorsSeen} floors)`);
   console.log(`    storeys seen: ${Object.entries(storeysBy).map(([k, v]) => `${k} ${[...v].sort().join("/")}`).join(", ")}`);
-  // Towers: the taller, the smaller the footprint (forced with the crawl's bonus to see the tall ones).
-  for (let s = 0; s < SEEDS * 4; s++) { const spec = BUILDINGS.offices.make(new Rng(9000 + s), { storeyBonus: s % 3 }); towers.push([spec.storeys, spec.bw * spec.bh]); }
+  // Towers: the taller, the smaller the footprint (forced with the crawl's bonus to see the tall ones). The old tower's
+  // rule: an older save's (officesLegacy; a new save's towers are officeplans.js's twelve plans, issue #27).
+  for (let s = 0; s < SEEDS * 4; s++) { const spec = BUILDINGS.offices.make(new Rng(9000 + s), { storeyBonus: s % 3, officesLegacy: true }); towers.push([spec.storeys, spec.bw * spec.bh]); }
   const lowT = towers.filter(([n]) => n <= 4).map(([, a]) => a), highT = towers.filter(([n]) => n >= 7).map(([, a]) => a);
   const avg = (l) => l.reduce((a, v) => a + v, 0) / Math.max(1, l.length);
   check(lowT.length && highT.length && avg(highT) < avg(lowT) * 0.8, `office towers shrink as they grow (3–4 storeys ${avg(lowT).toFixed(0)} cells, 7–8 storeys ${avg(highT).toFixed(0)})`);
