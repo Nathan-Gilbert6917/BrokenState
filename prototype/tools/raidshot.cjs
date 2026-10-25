@@ -4,6 +4,8 @@
 // e.g. raidshot.cjs /tmp/shots 80 80 farm (a street map 80 × 60) or 80 80 hospital (a building's map). Starts the
 // prototype's server on a free port and drives headless Chromium; prints one JSON line a shot. A 6th argument "scene":
 // then the team is set in a barricaded room (or another scene) of the building and the view centred on it (scene.png).
+// Site "furniture" (issue #8): a town raid with one of every kind of the furniture catalogue laid out on its map
+// (tools/isobattles.js showroom), shot close up in two turns of the view as well (furniture-*.png).
 const { chromium } = require("playwright");
 const { spawn } = require("child_process");
 const path = require("path");
@@ -11,7 +13,8 @@ const fs = require("fs");
 
 const outDir = path.resolve(process.argv[2] || path.join(__dirname, "..", "..", "docs", "shots"));
 const [rawMin, rawMax] = [Number(process.argv[3] || 80), Number(process.argv[4] || 80)];
-const site = process.argv[5] || "farm";
+const show = process.argv[5] === "furniture"; // the furniture showroom on a town's raid map
+const site = show ? "town" : process.argv[5] || "farm";
 const wantScene = process.argv[6] === "scene"; // a building's signs of survival (sim/interiorscenes.js): the team set in a scene's room, the view on it (scene.png)
 const port = 5300 + Math.floor(Math.random() * 600);
 
@@ -60,6 +63,40 @@ const port = 5300 + Math.floor(Math.random() * 600);
     // Go in from the first side offered.
     await page.evaluate(() => document.querySelector('[data-action="cb-plan"][data-v="enter"]').click());
     await page.waitForTimeout(1200);
+    if (show) {
+      const placed = await page.evaluate(async () => {
+        const T = await import("/tools/isobattles.js"), I = await import("/src/ui/isoview.js"), b = game.state.combat;
+        const at = T.showroom(b, 2, 2);
+        I.clearIsoCache();
+        game.refresh();
+        return at;
+      });
+      console.log("showroom:", placed.length, "pieces");
+      // Close up over the showroom, the rows in turn, from two turns of the view.
+      const rowsY = [...new Set(placed.map((p) => p.y))];
+      for (const [r, turn] of [[0, 0], [1, 2]]) {
+        for (let i = 0; i < rowsY.length; i++) {
+          await page.evaluate(async ({ y, turn, mid }) => {
+            const I = await import("/src/ui/isoview.js"), b = game.state.combat;
+            // The team in the aisle under these rows, spread along it, so they see the pieces (the fog); roofs off: the
+            // showroom's floor reads as one building.
+            const mine = b.units.filter((u) => u.side === "player");
+            mine.forEach((u, n) => { const x = Math.max(1, Math.min(b.w - 2, mid - 12 + n * 8)); u.x = x; u.y = y + 2; });
+            I.setRoofs(false);
+            b.losCache.fill(0);
+            for (let g = 0; g < 8 && (I.iso.rot !== turn || I.iso.straight); g++) I.isoRotate(b, 1);
+            while (I.iso.zoom < 6) I.isoZoom(b, 1);
+            I.isoCenterOn(b, mid, y + 1, false);
+            b.rev = (b.rev || 0) + 1;
+            game.refresh();
+          }, { y: rowsY[i], turn, mid: Math.round(placed.filter((p) => p.y === rowsY[i]).reduce((a, p) => a + p.x, 0) / Math.max(1, placed.filter((p) => p.y === rowsY[i]).length)) });
+          await page.waitForTimeout(500);
+          const f = path.join(outDir, `furniture-view${r}-rows${i}.png`);
+          await page.screenshot({ path: f });
+          console.log(f);
+        }
+      }
+    }
     const info = await page.evaluate(async () => {
       const I = await import("/src/ui/isoview.js"), b = game.state.combat;
       const cv = document.querySelector("canvas#battle, #battle canvas, canvas.battle") || [...document.querySelectorAll("canvas")].sort((a, c) => c.width * c.height - a.width * a.height)[0];

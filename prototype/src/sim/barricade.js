@@ -5,7 +5,8 @@
 //     A person with their arms free, standing right next to a piece (not diagonally), moves it one tile for both
 //     actions: pushed to any free open cell next to the piece, or pulled onto their own cell while they step back a
 //     cell (the pull). What can be shoved: the raid maps' shelves, cabinets, counters, tables, beds, crates, lockers,
-//     tall shelving, barrels, hay bales and sandbags (FURNITURE); never a car, a gun safe, a wall. A raid's container
+//     tall shelving, barrels, hay bales, sandbags and every piece of the furniture catalogue that is not fixed (FURNITURE,
+//     data-furniture.js); never a car, a gun safe or anything fixed, a wall. A raid's container
 //     goes with its piece (b.raid.containers keep their cell). A shoved piece gets hit points (FURNITURE[k].hp) so the
 //     dead can batter it when it stands in their way (combat.js siegeTarget, bash: at 0 it is rubble). The scrape is
 //     a little noise (SHOVE.NOISE on the raid's noise) and the unaware within SHOVE.RADIUS turn toward it.
@@ -52,6 +53,7 @@ import { dropToGround } from "./ground.js";
 import { trunkVehicle, atVehicle } from "./raidloot.js";
 import { hasTrait } from "./traits.js";
 import { hash01 } from "./skills.js";
+import { furnitureHp } from "./data-furniture.js"; // the furniture catalogue: what is shoved, its hit points
 import { cartBoxes, shoveCart, cartAt } from "./carts.js"; // a parked cart is shoved as furniture is; nothing is shoved onto one (call-time only)
 
 export const SHOVE = { AP: 2, NOISE: 1, RADIUS: 3, HELP_AP: 1, STRONG_MELEE: 6 }; // HELP_AP: each of two people; STRONG_MELEE: Melee at which one person shoves a tall piece alone (or a Strong back)
@@ -61,11 +63,10 @@ export const BOARD = {
   KIT: { guards: 0.4, militia: 0.4, fighters: 0.3, survivalists: 0.3, preppers: 0.5, soldiers: 0.2, drifters: 0.15 }, // the chance a human of this kit carries a bundle (the AI's boards: u.boards)
   AI: { MAX: 6, WOOD: 30, SCRAP: 1 }, // a group's base boarded before an assault: at most this many bundles, each paid from their stock at the player's recipe
 };
-// What can be shoved, and the hit points a shoved piece gets (the dead batter it: combat.js bash, SIEGE).
-export const FURNITURE = {
-  shelf: { hp: 25 }, cabinet: { hp: 25 }, counter: { hp: 30 }, table: { hp: 15 }, bed: { hp: 20 }, crate: { hp: 20 },
-  rack: { hp: 35 }, locker: { hp: 40 }, barrel: { hp: 15 }, hay: { hp: 15 }, sandbag: { hp: 20 },
-};
+// What can be shoved, and the hit points a shoved piece gets (the dead batter it: combat.js bash, SIEGE): every piece of
+// the furniture catalogue that is not fixed (data-furniture.js furnitureHp: a bathtub, a bar counter, cell bars, a safe
+// are never shoved), and the sandbags.
+export const FURNITURE = { ...furnitureHp(), sandbag: { hp: 20 } };
 const NEXT4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 const DIR_WORD = { "1,0": "east", "-1,0": "west", "0,1": "south", "0,-1": "north" };
 const cellOf = (b, x, y) => (x < 0 || y < 0 || x >= b.w || y >= b.h ? null : b.cells[y * b.w + x]);
