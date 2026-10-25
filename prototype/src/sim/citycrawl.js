@@ -26,6 +26,7 @@
 // autopilot.js idleTeams (crawlAutoStep every hour), aiscav.js (mem.aiLoot), main.js / ui.js (the crawl window and
 // its map, ui/citycrawl.js).
 import { crashSiphon } from "./crashstart.js"; // Crashlanding (2026-10-24): limited fuel can be siphoned
+import { legacyRooms } from "./worldcfg.js"; // an older save: the checkpoint as it always was (issue #25)
 import { typeFind } from "./foods.js"; // a crawl's food finds as items
 import { keyWord } from "./water.js"; // supplies as words: "9mm FMJ", "rounds"
 import { Rng } from "./rng.js";
@@ -69,8 +70,10 @@ import { crawlGuns } from "./gunfinds.js";
 import { deepShift, cacheChance, isFine, valuePerKg, wantOf, DEEP } from "./deeploot.js"; // deeper blocks hold what is dear by the kilo; a full team swaps
 import { itemValue } from "./valuation.js";
 import { atBase } from "./world.js";
-import { shopPlaces, crawlFranchise, franchiseName } from "./shops.js"; // the shops and services on a block besides its own (their own dice), a place's franchise
+import { shopPlaces, civicPlaces, crawlFranchise, franchiseName } from "./shops.js"; // the shops and services on a block besides its own (their own dice), a place's franchise
 import { PLACE_W } from "./data-shops.js"; // a shop's crawl place stats (rich, dead, rare)
+import { hotelPlace, HOTELS } from "./hotels.js"; // a hotel on a block now and then (issue #29), its place stats
+import { OFFICE_CIVIC } from "./data-offices.js"; // city hall's and the courthouse's (issue #27)
 import { piecesOut, piecesText, crawlPieces as homePieces } from "./furnihome.js"; // furniture carried out of a building: the vehicle or exhaustion at the rim (issue #18; the walk's pace: carryPace, by pairs)
 import { gridOf, inGrid, isEdge, levelOf, ringOf, maxLevel, entryOf, headingToward, turn, rimOf, pathToRim, dirTo, keyOf, xyOf, DIRS, DIR_NAMES, cellsOf } from "./citygrid.js"; // the round grid of blocks (2026-10-13)
 
@@ -441,6 +444,18 @@ export function threatOf(state, c, key = c.cell, ...salt) {
 }
 // The heat on a block's streets: the city's Alert and the block's own trail, × its activity.
 export const blockHeat = (state, c, key = c.cell, mult = threatOf(state, c, key).mult) => (c.alert + ((c.trail || {})[key] || 0)) * mult;
+// The civic block of a crawl (shops.js civicPlaces: city hall, the courthouse): one of the blocks at its heart (the
+// deepest level), by the city's own dice; the same every visit.
+export function civicBlock(state, c) {
+  const top = maxLevel(c.grid);
+  let best = null, bh = 2;
+  for (const [x, y] of cellsOf(c.grid)) {
+    if (levelOf(c.grid, x, y) !== top) continue;
+    const h = hash01(state.seed, "civicblock", c.tile, x, y);
+    if (h < bh) { bh = h; best = keyOf(x, y); }
+  }
+  return best;
+}
 // A block's level (1-8: the danger and loot tables' "block") from its place on the grid.
 export const levelAt = (c, key) => { const [x, y] = xyOf(key); return levelOf(c.grid, x, y); };
 // ---------- blocks ----------
@@ -474,14 +489,20 @@ export function genBlock(state, c, cell = c.cell) {
     place.folk = rollFolk(rng, { key, n, storeys: placeStoreys(state, c, place, n), danger: placeDanger(state, c, place, n).level, raiders });
     places.push(place);
   };
-  for (let j = 0; j < nPlaces; j++) {
+  // shops.js: the civic block (the heart of a town or a city) holds city hall and the courthouse, in the slots after
+  // its own places (as many fewer of those, so the block keeps to its most); every other block as it was.
+  const civic = civicPlaces(state, c.tile, cell === civicBlock(state, c), setting, (k) => !!BUILDINGS[k]);
+  for (let j = 0; j < Math.min(nPlaces, CRAWL.PLACES[1] - civic.length); j++) {
     const left = pool.filter((k) => !places.some((pl) => pl.key === k));
     const key = rng.weighted(left, (k) => Math.max(0.02, PLACE_POOL[k].w + PLACE_POOL[k].deep * (n - 1)));
     addPlace(rng, key, PLACE_POOL[key], j);
   }
+  civic.forEach((key, j) => addPlace(new Rng(seedOf(state.seed, "crawlcivic", c.tile, cell, j)), key, OFFICE_CIVIC[key].crawl, places.length));
   // shops.js: up to two shops or services besides, on their own dice (the places above are as they were).
   const extra = shopPlaces(state, c.tile, cell, places, CRAWL.PLACES[1], n, setting, (k) => !!BUILDINGS[k]);
   extra.forEach((key, j) => addPlace(new Rng(seedOf(state.seed, "crawlshop", c.tile, cell, j)), key, PLACE_W[key].crawl, places.length));
+  // hotels.js: a hotel now and then, on dice of its own after the shops (the places above are as they were).
+  if (BUILDINGS.hotel && hotelPlace(state, c.tile, cell, places, CRAWL.PLACES[1], n, setting)) addPlace(new Rng(seedOf(state.seed, "crawlhotel", c.tile, cell)), "hotel", HOTELS.PLACE, places.length);
   // This visit: a place may be shut.
   if (places.length > 2 && vr.chance(CRAWL.BLOCKED)) {
     const pl = vr.pick(places);
@@ -978,7 +999,7 @@ function enterStreet(state, p, ev, areas, groups, gunSite = "city") {
   const setup = {
     mode: "raid", tile: c.tile, partyId: p.id, canRetreat: true, ambush: null, handler: "crawl",
     enemy: { kind: groups.length > 1 ? "mixed" : groups[0]?.kind || "zombies", count: total, power: 3, name: groups.map((g) => g.name).join(" and ") || "nobody", groups },
-    raid: { heat0, building: "street", areas, gunSite },
+    raid: { heat0, building: "street", areas, gunSite, ...(ev.key === "checkpoint" && !legacyRooms(state) ? { checkpoint: true } : {}) }, // checkpoint: its guard shack, arms store and truck get the military pieces (militarylayout.js dressCheckpoint, issue #25; an older save's as it was)
     context: { factionIds: [], crawl: { kind: "street", event: ev.id, block: n, heat0 } },
   };
   const veh = p.vehicle;
