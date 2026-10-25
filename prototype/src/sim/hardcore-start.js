@@ -529,12 +529,12 @@ export function rollCustom(state, s, A) {
 }
 
 // ---------- a normal start (2026-10-07, user request) ----------
-// The six at the hub have a background too: who they were before Calder fell, six years ago. Drawn as a hardcore crew
+// The six at the hub have a background too: who they were before Calder fell, a year ago. Drawn as a hardcore crew
 // is (no two alike, a pick from the new-run screen in its seat), with dice of their own (the seed's, NORMAL_BG.SALT) so
 // the world's dice, the map and the groups stay where they were. A preset reshapes their skills and keeps the total
 // (a normal start stays as strong as it was): its bumps go on, then as many points come off their other skills, more
 // often from the higher ones; it pushes a fitting trait as in Hardcore. What they grabbed and the car are a hardcore
-// start's: six years on the hub's kit is theirs. A custom background (custombg.js, picked: not in Ironman) gives exactly
+// start's: a year on the hub's kit is theirs. A custom background (custombg.js, picked: not in Ironman) gives exactly
 // what it says, its kit too (normalStartKit).
 // ON: false starts the six without backgrounds (the tools compare against it).
 export const NORMAL_BG = { SALT: 0x6b67, ON: true };

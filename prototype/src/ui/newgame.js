@@ -106,7 +106,7 @@ function backgroundPicker(state, s) {
   const mine = Object.values(customLibrary()).map((b) => `<option value="${b.id}" ${cur === b.id ? "selected" : ""}>${esc(b.name)}</option>`).join("");
   const what = isHardcore(state)
     ? "it adds to their skills, may give a trait, and decides what they grabbed and the car if it is theirs"
-    : "it shapes their skills (the same total: more where the background is, less elsewhere) and may give a trait; six years on, the hub's kit is theirs";
+    : "it shapes their skills (the same total: more where the background is, less elsewhere) and may give a trait; a year on, the hub's kit is theirs";
   return `<label class="small"${tip(`Who they were before Calder fell: ${what}. A custom background (Backgrounds…) gives exactly what it says${isHardcore(state) ? "" : ", its kit and supplies too (its car parks at the hub)"}. Changing it builds the world again on the same seed; this colonist's skills and traits start over from it.`)}>Background <select data-action="nr-bg" data-id="${s.id}"><option value="" ${cur ? "" : "selected"}>Dice${drawn ? ` (${esc(drawn.name)})` : ""}</option><optgroup label="Presets">${presets}</optgroup>${mine ? `<optgroup label="Custom">${mine}</optgroup>` : ""}</select></label>`;
 }
 
@@ -386,11 +386,11 @@ function introText(state) {
   const who = people.length === 1 ? "You get out alone" : `${countWord(people.length).replace(/^./, (c) => c.toUpperCase())} of you get out`;
   const full = (custom ? `Custom: a normal start with the counts you set (${people.length} ${people.length === 1 ? "survivor" : "survivors"}, ${state.custom.groups} AI ${state.custom.groups === 1 ? "group" : "groups"}, ${state.custom.hives} ${state.custom.hives === 1 ? "hive" : "hives"}, ${state.custom.cities} ${state.custom.cities === 1 ? "city" : "cities"}, ${state.custom.towns} ${state.custom.towns === 1 ? "town" : "towns"} and ${state.custom.military} military ${state.custom.military === 1 ? "site" : "sites"}). ` : "") + (hard
     ? `Hardcore. The day the State of Calder falls. ${who} with whatever you can grab: no hub, food and water for a day or three, and the outbreak just starting. Gather what a hub takes and found your own. ${groupsOf(state)} other groups are out there, starting out just like you.`
-    : `Six years after the outbreak. Your survivors hold a homestead out in the open in the State of Calder, well clear of the towns: a main house (a well, a cellar, no wall yet), a lodge with four beds, a two-person tent and eight crop plots dug, and nothing else built yet. What to put up first, with a woodpile of ${startWood(state).toLocaleString("en-US")} wood, ${HUB_START.scrap} scrap and ${HUB_START.parts} parts, is yours to choose: beds, a crafting bench, fields, walls. ${groupsOf(state)} other groups are out there, starting bare as well, along with the hordes.`) + foot
+    : `One year after the outbreak. Your survivors hold a homestead out in the open in the State of Calder, well clear of the towns: a main house (a well, a cellar, no wall yet), a lodge with four beds, a two-person tent and eight crop plots dug, and nothing else built yet. What to put up first, with a woodpile of ${startWood(state).toLocaleString("en-US")} wood, ${HUB_START.scrap} scrap and ${HUB_START.parts} parts, is yours to choose: beds, a crafting bench, fields, walls. ${groupsOf(state)} other groups are out there, starting bare as well, along with the hordes.`) + foot
     + ` Customize your starting colonists (name, skills, look) and choose your leader. The game starts paused: give your first orders, then ${keyHint({ key: "press Space", touch: "tap ▶ Run", pad: "press ☰" })}.`;
   const line = custom ? `Custom: a normal start with the counts you set.`
     : hard ? `Hardcore: the day Calder falls, ${who.toLowerCase()} with what you can grab.`
-    : `Six years after the outbreak: a homestead in the State of Calder, ${groupsOf(state)} other groups out there.`;
+    : `One year after the outbreak: a homestead in the State of Calder, ${groupsOf(state)} other groups out there.`;
   return { line: line + foot, full };
 }
 
