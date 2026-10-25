@@ -2318,7 +2318,7 @@ function lightGlow(state, p, x, y) {
   ctx.fill();
 }
 // The pill over a team waiting on its way (glideAt sit kinds).
-const SIT_LABEL = { road: "Clearing road", repair: "Repairing", delay: "Held up" };
+const SIT_LABEL = { road: "Clearing road", repair: "Repairing", delay: "Held up", mud: "Stuck in mud", cold: "Cold start" }; // mud, cold: sim/weather.js VEHICLE_WX
 function drawPlayerParty(state, p) {
   const g = state.grid;
   const color = p.kind === "convoy" ? "#c9e07a" : p.phase === "waiting" ? "#ffd166" : p.phase === "task" ? PAL.task : "#7fd0ff";

@@ -7,7 +7,7 @@ import { keyWord } from "./water.js"; // supplies as words: "9mm FMJ", "rounds"
 import { log, survivorById, baseById, hub } from "./world.js";
 import {
   MISSIONS, partyMembers, partyTile, tileLabel, teamName, bestSkill, orderMove, giveOrder, startReturn, awaitOrders,
-  survey, orderOptions, planPath, travelHours, hoursLeft, partySpeed, clockFrac, byMinute, carried, takeSupply, starving, paceOpts, modeSpeed, cargoRoom, pitchHoursFor, pitchDone,
+  survey, orderOptions, planPath, travelHours, hoursLeft, partySpeed, clockFrac, byMinute, carried, takeSupply, starving, paceOpts, modeSpeed, cargoRoom, pitchHoursFor, pitchDone, stuckText,
 } from "./parties.js";
 import { SUPPLIES } from "./data.js";
 import { partyVehicle, partyVehicles, partyFuel } from "./vehicles.js";
@@ -85,11 +85,12 @@ const qtyNote = (o) => (o.qty != null && COLLECT[o.type] ? `, at most ${o.qty} $
 // The order the team is busy with right now.
 export function orderLabel(state, p) {
   if (p.phase === "task" && p.task) return describeOrder(state, p.task);
-  if (p.phase === "back") return "Return home";
+  if (p.phase === "back") return stuckText(state, p) ? `Return home · ${stuckText(state, p)}` : "Return home";
   if (p.phase === "waiting") return "Waiting for orders";
   if (p.phase === "holding") return "Holding";
   const m = MISSIONS[p.mission]?.name || "Team";
-  if (p.phase === "out") return p.mission === "move" ? `Move to ${tileLabel(state, p.dest)}` : `${m} at ${tileLabel(state, p.dest)}`;
+  const mud = stuckText(state, p); // parties.js: bogged down off the road (weather.js VEHICLE_WX)
+  if (p.phase === "out") return `${p.mission === "move" ? `Move to ${tileLabel(state, p.dest)}` : `${m} at ${tileLabel(state, p.dest)}`}${mud ? ` · ${mud}` : ""}`;
   return m;
 }
 

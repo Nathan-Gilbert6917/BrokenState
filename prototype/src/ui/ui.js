@@ -253,9 +253,10 @@ export function topbarParts(state, ui) {
 // The planner's weather note: hours the weather adds to the trip compared with fair weather.
 function weatherEta(est) {
   const out = est.weatherOut || 0, all = out + (est.weatherBack || 0);
-  if (!out && !all) return "";
+  const look = est.outlook && est.outlook.text ? ` <span class="${est.outlook.mud || est.outlook.cold ? "warn" : "muted"}"${tip("The route's weather outlook for the vehicle, from what you can know now (sim/weather.js roadOutlook): mud off the roads in spring or after hours of rain (a car may get stuck for a few hours; four-wheel drive and Army vehicles less), a cold start in a blizzard or a hard frost (not from a garage), and the fuel snow and frost add (already in the fuel needed).")}>${est.outlook.text}</span>` : "";
+  if (!out && !all) return look;
   const sg = (h) => `${h > 0 ? "+" : "−"}${Math.abs(h)}h`;
-  return ` <span class="${out > 0 ? "warn" : "muted"}"${tip(`Weather (mud, snow, storms, fog) changes this trip by ${sg(out)} on the way out and ${sg(all)} over the round trip, compared with fair weather. The estimate already includes it, as far as anyone can tell: the ground and the storm, rain, snow and fog fronts already on the map (they keep their course). A front that forms later can still slow the team.`)}>${sg(out)} weather</span>`;
+  return ` <span class="${out > 0 ? "warn" : "muted"}"${tip(`Weather (mud, snow, storms, fog) changes this trip by ${sg(out)} on the way out and ${sg(all)} over the round trip, compared with fair weather. The estimate already includes it, as far as anyone can tell: the ground and the storm, rain, snow and fog fronts already on the map (they keep their course). A front that forms later can still slow the team.`)}>${sg(out)} weather</span>${look}`;
 }
 
 // Season and the weather at the hub next to the clock, and a storm or blizzard front on its way there (within 12
