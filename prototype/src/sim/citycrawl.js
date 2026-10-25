@@ -71,7 +71,7 @@ import { itemValue } from "./valuation.js";
 import { atBase } from "./world.js";
 import { shopPlaces, crawlFranchise, franchiseName } from "./shops.js"; // the shops and services on a block besides its own (their own dice), a place's franchise
 import { PLACE_W } from "./data-shops.js"; // a shop's crawl place stats (rich, dead, rare)
-import { piecesOut, piecesText } from "./furnihome.js"; // furniture carried out of a building: the vehicle or exhaustion at the rim (issue #18; the walk's pace: carryPace, by pairs)
+import { piecesOut, piecesText, crawlPieces as homePieces } from "./furnihome.js"; // furniture carried out of a building: the vehicle or exhaustion at the rim (issue #18; the walk's pace: carryPace, by pairs)
 import { gridOf, inGrid, isEdge, levelOf, ringOf, maxLevel, entryOf, headingToward, turn, rimOf, pathToRim, dirTo, keyOf, xyOf, DIRS, DIR_NAMES, cellsOf } from "./citygrid.js"; // the round grid of blocks (2026-10-13)
 
 // ---------- tuning ----------
@@ -724,14 +724,8 @@ const addAlert = (c, v) => {
 // remembers it, mem.left) and a "one" piece goes on in the carrier's arms alone (keepPairs).
 // The team's pieces: [{ s (the carrier), item, kind, def (furnicarry.js liftDef), mate (the other end's survivor or null) }].
 export function crawlPieces(state, p) {
-  const c = p.crawl, mates = (c && c.mates) || {}, members = partyMembers(state, p);
-  const out = [];
-  for (const s of members) {
-    const item = s.gear && s.gear.carry, kind = item && item.crawl ? pieceKindOf(item) : ""; // furnihome.js (#18): marked as carried out of a crawl's building (a piece carried in from the road keeps the road's rules)
-    if (!kind) continue;
-    out.push({ s, item, kind, def: liftDef(kind), mate: mates[s.id] != null ? members.find((x) => x.id === mates[s.id]) || null : null });
-  }
-  return out;
+  const mates = (p.crawl && p.crawl.mates) || {}, members = partyMembers(state, p);
+  return homePieces(state, p).filter((P) => P.def).map((P) => ({ ...P, kind: P.def.kind, mate: mates[P.s.id] != null ? members.find((x) => x.id === mates[P.s.id]) || null : null })); // furnihome.js crawlPieces (#18: it.crawl), with the other end
 }
 const first = (s) => String(s.name).split(" ")[0];
 const aWord = (w) => `${/^[aeiou]/i.test(w) ? "an" : "a"} ${w}`;
