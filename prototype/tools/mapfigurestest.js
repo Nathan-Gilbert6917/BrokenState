@@ -23,16 +23,18 @@ const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log("  FA
 const section = (s) => console.log(`\n${s}`);
 
 // A stub 2D context: fillRect records the painted cells (the painter's output), drawImage the pieces drawn on the map.
-const images = [];
+const images = [], arcs = [];
 let nan = 0;
 const noop = () => {};
 function stubCtx(cv) {
-  const off = { x: 0, y: 0 }, stack = [];
+  const off = { x: 0, y: 0 }, stack = [], path = [];
   const o = {
     measureText: (t) => ({ width: String(t).length * 5 }), getTransform: () => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 }),
     createRadialGradient: () => ({ addColorStop: noop }), createLinearGradient: () => ({ addColorStop: noop }), createPattern: () => null,
     save: () => stack.push({ ...off }), restore: () => Object.assign(off, stack.pop() || { x: 0, y: 0 }), translate: (x, y) => { off.x += x; off.y += y; },
     fillRect: (x, y, w, h) => { if ([x, y, w, h].some((v) => !Number.isFinite(v))) nan++; if (cv) cv.ops.push(`${o.fillStyle}:${x},${y},${w},${h}`); },
+    beginPath: () => { path.length = 0; }, arc: (x, y, r, a0, a1) => { path.push({ x: x + off.x, y: y + off.y, r, a0, a1 }); },
+    stroke: () => { for (const a of path) arcs.push({ ...a, color: o.strokeStyle }); }, // an arc with the colour it is stroked in
     drawImage: (img, ...a) => { if (a.some((v) => !Number.isFinite(v))) nan++; images.push({ cv: img, x: a[0] + off.x, y: a[1] + off.y, w: a[2], h: a[3] }); },
   };
   return new Proxy(o, { get: (t, k) => (k in t ? t[k] : noop), set: (t, k, v) => ((t[k] = v), true) });
@@ -70,7 +72,8 @@ for (const [k, s, esc] of [["raiders", "", null], ["raiders", "", null], ["merch
 for (const [k, s] of [["raiders", ""], ["explorers", "scouts"], ["explorers", "refugees"], ["explorers", "wanderers"]]) for (const i of [0, 1]) add(`outsider ${k} ${s} ${i}`, (y, f) => M.mapOutsiderSoloCanvas(k, s, i, y, f));
 for (const n of [2, 3, 4, 5, 6, 7]) add(`horde ${n}`, (y, f) => M.mapHordeCanvas(n, y, f));
 for (const k of ["deer", "hog"]) for (const n of [1, 2, 3]) add(`herd ${k} ${n}`, (y, f) => M.mapHerdCanvas(k, n, y, f));
-for (const j of ["wood", "hunt", "fish", "forage", "scavenge", "water"]) for (const l of ["", "logs", "game", "fish", "basket", "sack", "buckets", "small"]) add(`worker ${j} ${l}`, (y, f) => M.mapWorkerCanvas(j, BLUE, y, f, l));
+for (const j of ["wood", "hunt", "fish", "forage", "scavenge", "water", "stone"]) for (const l of ["", "logs", "game", "fish", "basket", "sack", "buckets", "small"]) add(`worker ${j} ${l}`, (y, f) => M.mapWorkerCanvas(j, BLUE, y, f, l));
+for (const j of ["wood", "stone", "fish", "water"]) add(`worker ${j} at work`, (y, f) => M.mapWorkerCanvas(j, BLUE, y, f, "", true)); // a team at a gathering order (the user's request 2026-10-25)
 for (const k of ["walkers", "raid", "scouts", "relief"]) for (const [l, g] of [["", ""], ["torch", ""], ["lamp", ""], ["", "limp"], ["", "heavy"], ["torch", "limp"]]) add(`one ${k} ${l} ${g}`, (y, f) => M.mapSoloCanvas(k, BLUE, y, f, l, g));
 add("cyclist", (y, f) => M.mapCyclistCanvas(BLUE, y, f));
 let built = 0, bad = [];
@@ -101,6 +104,15 @@ console.log(`  ${built} canvases built in ${Math.round(performance.now() - t0)} 
 { // the near hand: a lone raider's rifle is in whichever hand shows, so the raid piece differs from a walker heading east and west alike
   const diff = (y) => M.mapSoloCanvas("raid", BLUE, y, 3).ops.join() !== M.mapSoloCanvas("walkers", BLUE, y, 3).ops.join();
   check(diff(315) && diff(135) && diff(45) && diff(225), "the rifle shows at every heading");
+}
+
+{ // at work (a team at a gathering order, 2026-10-25): its own pose, a cycle of its own
+  for (const j of ["wood", "stone", "fish", "water"]) {
+    const seen = new Set();
+    for (let f = 1; f <= M.FRAMES; f++) seen.add(M.mapWorkerCanvas(j, BLUE, 315, f, "", true).ops.join());
+    check(seen.size >= M.FRAMES / 2 && M.mapWorkerCanvas(j, BLUE, 315, 3, "", true).ops.join() !== M.mapWorkerCanvas(j, BLUE, 315, 3).ops.join(), `${j} at work: a pose of its own (not the walk), moving through its cycle (${seen.size} pictures)`);
+  }
+  check(M.mapWorkerCanvas("hunt", BLUE, 315, 3, "", true) === M.mapWorkerCanvas("hunt", BLUE, 315, 3), "a hunter at work walks (the roaming jobs keep the walk)");
 }
 
 section("drawPiece puts the ground point where asked");
@@ -146,6 +158,27 @@ section("In the renderer: a team on the road and a horde are drawn as pieces");
   const hp = pieces.find((i) => Math.abs(i.x + i.cv.grid.ox * (i.w / i.cv.grid.w) - hx) < 24 && Math.abs(i.y + i.cv.grid.oy * (i.h / i.cv.grid.h) - hy) < 24);
   check(!!hp, "the horde is drawn as a piece at its tile");
   check(nan === 0, "no NaN reached the map canvas");
+
+  // A team at a gathering order (the user's request 2026-10-25): its people at the job, and a ring over them filling.
+  const { startTask } = await import("../src/sim/orders.js");
+  const { RING } = await import("../src/ui/workermap.js");
+  p.path = [partyTile(p)]; p.idx = 0;
+  startTask(st, p, { type: "wood", hours: 8 });
+  p.task.done = 4; delete p.task.owed;
+  arcs.length = 0;
+  frame(partyTile(p));
+  const [wx, wy] = st.grid.toPixel(partyTile(p), R.HEX);
+  const at = images.filter((i) => i.cv && i.cv.grid && Math.abs(i.x + i.cv.grid.ox * (i.w / i.cv.grid.w) - wx) < 30 && Math.abs(i.y + i.cv.grid.oy * (i.h / i.cv.grid.h) - wy) < 30);
+  const choppers = at.filter((i) => Array.from({ length: 24 }, (_, j) => j * 15).some((y) => [1, 2, 3, 4, 5, 6, 7, 8].some((f) => i.cv === M.mapWorkerCanvas("wood", BLUE, y, f, "", true))));
+  check(choppers.length === 2, `Cut wood: the team's two people drawn with axes, at work (${choppers.length} of ${at.length} pieces there)`);
+  check(!at.some((i) => i.cv === M.mapPartyCanvas("walkers", BLUE, 2, "", 315, 0) || i.cv === M.mapPartyCanvas("walkers", BLUE, 2, "", 315, 3)), "not the party's walking piece");
+  const ring = arcs.filter((a) => a.color === RING.wood && Math.abs(a.x - wx) < 30 && a.y < wy);
+  const sweep = ring.length ? Math.max(...ring.map((a) => a.a1 - a.a0)) : 0;
+  check(ring.length >= 1 && Math.abs(sweep - Math.PI) < 0.3, `a ring over them in the job's colour, half full at 4 of 8 hours (${ring.length} arcs, ${(sweep / Math.PI).toFixed(2)}π)`);
+  p.task.type = "survey"; p.task.hours = 2;
+  arcs.length = 0;
+  frame(partyTile(p));
+  check(!arcs.some((a) => Object.values(RING).includes(a.color)), "a Quick look is no gathering order: no ring");
 }
 
 console.log(`\n${passes} passed, ${fails} failed`);

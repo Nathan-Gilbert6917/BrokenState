@@ -61,7 +61,7 @@ import { initCombatUI, drawCombat, renderCombatPanel, renderCombatBar, raidLayou
 import { defaultCustom, cleanCustom, clampCustomCount, isCustomRun, startsWithVehicle } from "./sim/custommode.js"; // Custom mode and Start with a vehicle (2026-10-24)
 import { defaultFleet, fleetText } from "./sim/startfleet.js"; // the starting vehicles: each its kind, point limit and back (2026-10-24)
 import { isCrashRun } from "./sim/crashmode.js"; // Crashlanding (2026-10-24): a normal-mode run with state.crash, the screen's fourth mode
-import { LOOK_ACTIONS, LOOK_CHANGE_ACTIONS, crewSnapshot, randomizeAllCrew, randomizeEverything, randomizeGear, randomizeOne, randomBackground, rollRandomRun, ironmanCrew, crewCustomized, crewWithBackground, crewWithBackgrounds, blankCrew, backToSetup, stashModeSet, takeModeSet, crashSizeDef, generating } from "./ui/newgame.js"; // crashSizeDef: Crashlanding's map defaults (runOpts); generating: the "Generating map…" box over every world build (gen)
+import { LOOK_ACTIONS, LOOK_CHANGE_ACTIONS, crewSnapshot, randomizeAllCrew, randomizeEverything, randomizeGear, randomizeOne, rerollCarried, randomBackground, rollRandomRun, ironmanCrew, crewCustomized, crewWithBackground, crewWithBackgrounds, blankCrew, backToSetup, stashModeSet, takeModeSet, crashSizeDef, generating } from "./ui/newgame.js"; // crashSizeDef: Crashlanding's map defaults (runOpts); generating: the "Generating map…" box over every world build (gen)
 import { CUSTOM_POINTS, clampMax, overText } from "./sim/custompoints.js"; // Customize: everything costs points
 import { BG_ACTIONS, BG_CHANGE, BG_INPUT, customLibrary } from "./ui/backgrounds.js"; // custom backgrounds (sim/custombg.js), not in Ironman
 import { WC_ACTIONS, WC_CHANGE, uiCfg, wcChanged } from "./ui/worldcfg.js"; // World…: the run's dials (sim/worldcfg.js), into the world as it is built
@@ -199,6 +199,8 @@ const freshUi = () => ({
   lookEdit: null, zombieLook: false, nrMsg: "", timelapse: null, bgEditor: null, // bgEditor: the custom backgrounds window (ui/backgrounds.js)
   gearEdit: null, // the new-run screen's starting gear window (ui/startgear.js): { i: the colonist's place in the crew }
   fleetEdit: null, // the new-run screen's window for a starting vehicle's back (ui/startgear.js fleetEditor): { i: its place in the fleet, msg, tsel, tqty }
+  fleetView: null, // the new-run screen's look at a starting vehicle's back as rolled (ui/startgear.js fleetViewer): { i }
+  crewInv: null, // a crew card's 👁 Inventory window (ui/newgame.js crewInvViewer): { i: the survivor's place in the crew }
   nrMap: false, // the new-run screen put aside to look at the map (ui/newgame.js View map; the banner or Esc brings it back)
   nrPick: false, // with nrMap: a click on the map picks where you start (ui/newgame.js Pick start on map; main.js pickStartAt)
   wcOpen: false, wcWas: null, // the World… window (ui/worldcfg.js) and the dials as they were when it opened
@@ -1412,6 +1414,9 @@ const actions = {
   // either way: a draw that builds nothing lets it go within two frames).
   "nr-rand-gear": (d) => gen(() => { state = randomizeGear(state, ui, survivorById(state, Number(d.id)), cardRebuild); }),
   "nr-all": (d) => gen(() => { state = randomizeOne(state, ui, survivorById(state, Number(d.id)), cardRebuild); }),
+  // 👁 Inventory's 🎲 Reroll what they carry (ui/newgame.js rerollCarried): the world again as the card's Gear builds it,
+  // the window still open on the same survivor with what they carry now.
+  "crew-inv-reroll": (d) => gen(() => { const keep = ui.crewInv; state = rerollCarried(state, ui, state.survivors[Number(d.i)], cardRebuild); ui.crewInv = keep && state.survivors[keep.i] ? keep : null; }),
   "bg-close": () => closeBackgrounds(), // Done in the custom backgrounds window: the world is built again if a colonist's background changed
   pickleader: (d) => { state.survivors.forEach((s) => (s.leader = s.id === Number(d.id))); ui.crewEdited = true; },
   // A new game starts paused: look around and give the first orders, then press Space.
@@ -1447,6 +1452,8 @@ const actions = {
     loadUpAll(state); // sim/itemacts.js: every gun and magazine your people carry loaded with real rounds (what each carries, then the hub's stores): the badges count only rounds that are in them (2026-10-20)
     ui.gearEdit = null;
     ui.fleetEdit = null;
+    ui.fleetView = null;
+    ui.crewInv = null;
     assignStartingRoles(state); // jobs by skill, after any edits made on this screen (world.js)
     centerOn(state, playerTile(state));
     const lead = state.survivors.find((s) => s.leader) || state.survivors[0];
@@ -1730,6 +1737,8 @@ const changeActions = {
     if (!ui.ironman) { if (backs && !ui.started) gen(() => newWorld(state.seed, true)); return; }
     ui.freeEdit = false;
     ui.fleetEdit = null;
+    ui.fleetView = null;
+    ui.crewInv = null; // its reroll is off in Ironman: the window shut with the rest
     if (crewCustomized(state)) {
       // The crew's dice as they were before the first pick (pickRoll: main.js gave them dice of their own for it).
       gen(() => {
@@ -1978,11 +1987,13 @@ function pointsLoad(list) {
 // vehicle changed (its kind, the count, its back: sim/startfleet.js), the crew as it stands (edited or not), the vehicle's
 // back window still open.
 function gearRebuild(fleet = false) {
-  const keep = ui.gearEdit, keepFleet = ui.fleetEdit;
+  const keep = ui.gearEdit, keepFleet = ui.fleetEdit, keepView = ui.fleetView, keepInv = ui.crewInv;
   if (!fleet) ui.crewEdited = true;
   newWorld(state.seed, true);
   ui.gearEdit = keep;
   ui.fleetEdit = keepFleet && state.fleet && state.fleet[keepFleet.i] && state.fleet[keepFleet.i].vid != null ? keepFleet : null; // an emptied slot: closed
+  ui.fleetView = keepView && state.fleet && state.fleet[keepView.i] && state.fleet[keepView.i].vid != null ? keepView : null; // the look at a back: open on the new dice
+  ui.crewInv = keepInv && state.survivors[keepInv.i] ? keepInv : null; // a crew card's 👁 Inventory: open on what they carry now
 }
 
 // A loaded world (ui/settings.js): like a new world, but already started, paused, and remembering its save slot.
@@ -2946,6 +2957,8 @@ function closeTopLayer() {
   if (ui.bgEditor) { closeBackgrounds(); return true; }
   if (ui.gearEdit) { ui.gearEdit = null; return true; } // the starting gear window (ui/startgear.js)
   if (ui.fleetEdit) { ui.fleetEdit = null; return true; } // a starting vehicle's back window (ui/startgear.js)
+  if (ui.fleetView) { ui.fleetView = null; return true; } // the look at a starting vehicle's back (ui/startgear.js)
+  if (ui.crewInv) { ui.crewInv = null; return true; } // a crew card's 👁 Inventory (ui/newgame.js)
   if (!ui.started && ui.nrMap) { backToSetup(ui); return true; } // looking at the map from the new-run screen: back to it
   if (ui.settings) { // a question first, then the menu itself (not while a save or load is running)
     if (ui.settings.confirm) ui.settings.confirm = null;
@@ -3033,7 +3046,7 @@ window.addEventListener("keydown", (e) => {
   if (ui.title) { if (!ui.settings && !ui.zombieLook && !ui.hall && titleKey(ui, e)) e.preventDefault(); return; } // the title screen (ui/title.js): only the menu's keys
   if (e.code === "Escape" && !state.combat) { e.preventDefault(); openSettings(ui); refresh(); return; }
   if (ui.inv && ui.inv.form && !ui.gunb && !ui.settings && teamFormKey(state, ui, e)) { e.preventDefault(); refresh(); return; } // ui/teamform.js: tabs, picking people, Enter
-  if (ui.zombieLook || ui.wcOpen || ui.bgEditor || ui.gearEdit || ui.fleetEdit || ui.inv || ui.gunb || ui.settings || ui.hall) return; // these screens take the keyboard
+  if (ui.zombieLook || ui.wcOpen || ui.bgEditor || ui.gearEdit || ui.fleetEdit || ui.fleetView || ui.crewInv || ui.inv || ui.gunb || ui.settings || ui.hall) return; // these screens take the keyboard
   if (state.combat) {
     if (combatKey(state, e)) { e.preventDefault(); refresh(); }
     return;

@@ -3,7 +3,8 @@
 import { SKILLS, SKILL_NAMES, TRAITS, GEAR } from "../sim/data.js";
 import { MAGAZINES } from "../sim/data-kit.js"; // Crashlanding's spare magazines, by name
 import { survivorById, skill, rollTraits, HUB_START, START_WEAPONS, isPreview } from "../sim/world.js";
-import { newItem, START_DUR } from "../sim/inventory.js"; // the card's Everything: a new starting weapon
+import { newItem, START_DUR, SLOT_NAMES, carriedSpots, rigOf, itemLoad } from "../sim/inventory.js"; // the card's Everything: a new starting weapon; 👁 Inventory: what they carry
+import { countOf } from "../sim/itemstack.js"; // 👁 Inventory: a stack's count
 import { randomStarterMods } from "../sim/gunmods.js";
 import { WORLD_SIZES, SIZE_KEYS, sizeDef, customDef, isCustom, CUSTOM, GROUPS_MAX, HIVES_MAX, clampGroups, clampHives } from "../sim/worldsize.js";
 import { MODES, isHardcore, peopleRange, clampStartPeople } from "../sim/hardcore.js";
@@ -15,7 +16,7 @@ import { isCustomBg } from "../sim/custombg.js"; // custom backgrounds (sim/cust
 import { FAMILY } from "../sim/family.js"; // the Children box shows only while children are on
 import { sanitizeStartGear, hasPicks } from "../sim/startgear.js"; // starting gear picked under Customize
 import { gearRow, pointsBar, fleetSection, uiFleet } from "./startgear.js"; // its Gear… button, load and kit points, and the points bar, on the crew card; the Starting vehicles
-import { cleanFleet, fleetRoom, openLoads } from "../sim/startfleet.js"; // the starting vehicles: each its point limit and back (2026-10-24)
+import { cleanFleet, fleetRoom, openLoads, fleetVehicle, fleetName } from "../sim/startfleet.js"; // the starting vehicles: each its point limit and back (2026-10-24)
 import { gunCals } from "../sim/ammo.js"; // a random back's rounds: the crew's guns' calibres
 import { traitPickerHtml, traitBlock, traitChips, traitWords } from "./traitpick.js"; // Customize: the traits, good and bad, none that clash; the chips
 import { randomBuild, randomEverything, randomTraits, randomKit, randomTrunk, kitBudget } from "../sim/randomkit.js"; // Customize: a whole random colonist within the points; the crew and the vehicles' backs
@@ -106,7 +107,7 @@ function backgroundPicker(state, s) {
   const mine = Object.values(customLibrary()).map((b) => `<option value="${b.id}" ${cur === b.id ? "selected" : ""}>${esc(b.name)}</option>`).join("");
   const what = isHardcore(state)
     ? "it adds to their skills, may give a trait, and decides what they grabbed and the car if it is theirs"
-    : "it shapes their skills (the same total: more where the background is, less elsewhere) and may give a trait; six years on, the hub's kit is theirs";
+    : "it shapes their skills (the same total: more where the background is, less elsewhere) and may give a trait; a year on, the hub's kit is theirs";
   return `<label class="small"${tip(`Who they were before Calder fell: ${what}. A custom background (Backgrounds…) gives exactly what it says${isHardcore(state) ? "" : ", its kit and supplies too (its car parks at the hub)"}. Changing it builds the world again on the same seed; this colonist's skills and traits start over from it.`)}>Background <select data-action="nr-bg" data-id="${s.id}"><option value="" ${cur ? "" : "selected"}>Dice${drawn ? ` (${esc(drawn.name)})` : ""}</option><optgroup label="Presets">${presets}</optgroup>${mine ? `<optgroup label="Custom">${mine}</optgroup>` : ""}</select></label>`;
 }
 
@@ -154,6 +155,7 @@ function crewCard(state, ui, s) {
           <button class="mini" data-action="nr-name" data-id="${s.id}"${tip("A random name")}>🎲</button></div>
         <div class="row nrlead">
           <button class="mini ${s.leader ? "active" : ""}" data-action="pickleader" data-id="${s.id}"${tip("The leader's Leadership lifts morale at their base. If they die, you pick a new one.")}>${s.leader ? "★ Leader" : "Make leader"}</button>
+          <button class="mini" data-action="crew-inv" data-i="${i}"${tip(`What ${s.name.split(" ")[0]} wears and holds, and what is in their pockets, rig and pack${crash ? " (Crashlanding: to look at; the kit is the unit's issue)" : ", with a button to reroll what they carry"}`)}>👁 Inventory</button>
           <span class="small muted nrheld"${held ? tip(`What they start with: ${held}${crash ? ". Crashlanding: the unit's issue, which cannot be changed, with rations, purified water, spare rounds and meds in the party's supplies" : ""}`) : ""}>${held}</span></div>
         <div class="small nrchips">${bgChip(state, s)}${traitChips(s)}</div>
         ${free ? pointsBar(state, s) : ""}
@@ -383,14 +385,17 @@ function introText(state) {
   const people = state.survivors, hard = isHardcore(state), custom = isCustomRun(state);
   if (isCrashRun(state)) return crashIntro(state);
   const foot = startsWithVehicle(state) ? "" : hard ? " No car: you go on foot." : " No vehicle: your people go on foot until they find, take or fix one.";
+  // A normal or Custom start's vehicles, rolled by whose they are (2026-10-25): named in the yard, their backs in the stores.
+  const parked = hard ? [] : (state.fleet || []).map((f, i) => (fleetVehicle(state, i) ? fleetName(state, i) : null)).filter(Boolean);
+  const yard = parked.length ? ` In the yard: ${parked.length === 1 ? parked[0] : `${parked.slice(0, -1).join(", ")} and ${parked[parked.length - 1]}`}, what was in ${parked.length === 1 ? "its back" : "their backs"} unloaded into the stores.` : "";
   const who = people.length === 1 ? "You get out alone" : `${countWord(people.length).replace(/^./, (c) => c.toUpperCase())} of you get out`;
   const full = (custom ? `Custom: a normal start with the counts you set (${people.length} ${people.length === 1 ? "survivor" : "survivors"}, ${state.custom.groups} AI ${state.custom.groups === 1 ? "group" : "groups"}, ${state.custom.hives} ${state.custom.hives === 1 ? "hive" : "hives"}, ${state.custom.cities} ${state.custom.cities === 1 ? "city" : "cities"}, ${state.custom.towns} ${state.custom.towns === 1 ? "town" : "towns"} and ${state.custom.military} military ${state.custom.military === 1 ? "site" : "sites"}). ` : "") + (hard
     ? `Hardcore. The day the State of Calder falls. ${who} with whatever you can grab: no hub, food and water for a day or three, and the outbreak just starting. Gather what a hub takes and found your own. ${groupsOf(state)} other groups are out there, starting out just like you.`
-    : `Six years after the outbreak. Your survivors hold a homestead out in the open in the State of Calder, well clear of the towns: a main house (a well, a cellar, no wall yet), a lodge with four beds, a two-person tent and eight crop plots dug, and nothing else built yet. What to put up first, with a woodpile of ${startWood(state).toLocaleString("en-US")} wood, ${HUB_START.scrap} scrap and ${HUB_START.parts} parts, is yours to choose: beds, a crafting bench, fields, walls. ${groupsOf(state)} other groups are out there, starting bare as well, along with the hordes.`) + foot
+    : `One year after the outbreak. Your survivors hold a homestead out in the open in the State of Calder, well clear of the towns: a main house (a well, a cellar, no wall yet), a lodge with four beds, a two-person tent and eight crop plots dug, and nothing else built yet. What to put up first, with a woodpile of ${startWood(state).toLocaleString("en-US")} wood, ${HUB_START.scrap} scrap and ${HUB_START.parts} parts, is yours to choose: beds, a crafting bench, fields, walls. ${groupsOf(state)} other groups are out there, starting bare as well, along with the hordes.`) + foot + yard
     + ` Customize your starting colonists (name, skills, look) and choose your leader. The game starts paused: give your first orders, then ${keyHint({ key: "press Space", touch: "tap ▶ Run", pad: "press ☰" })}.`;
   const line = custom ? `Custom: a normal start with the counts you set.`
     : hard ? `Hardcore: the day Calder falls, ${who.toLowerCase()} with what you can grab.`
-    : `Six years after the outbreak: a homestead in the State of Calder, ${groupsOf(state)} other groups out there.`;
+    : `One year after the outbreak: a homestead in the State of Calder, ${groupsOf(state)} other groups out there.`;
   return { line: line + foot, full };
 }
 
@@ -476,7 +481,7 @@ export function newRunScreen(state, ui) {
 // Overrides to carry the edited crew into a rebuilt world (seed or group count changed).
 // A normal start's weapon and armor go along (a Hardcore start's gear is what they grabbed, rolled with the world).
 // Who they were goes when picked, or kept through an earlier rebuild (rolled: still the dice's; sim/hardcore-start.js bgKept). Hardcore:
-// what they grabbed and the car go with their dice (grabRoll, carRoll, carOwner), so a rebuild hands them out as they were.
+// what they grabbed and the car go with their dice (grabRoll, stuffRoll, carRoll, carOwner), so a rebuild hands them out as they were.
 // Gear picked under Customize (sim/startgear.js, both modes) goes as the picks, put on again after the dice; for a picked
 // weapon or armor the dice's item is carried (s.startDice), not the picked one, so clearing the pick gives it back.
 export function crewSnapshot(state) {
@@ -487,7 +492,7 @@ export function crewSnapshot(state) {
     for (const k of ["weapon", "armor"]) { const it = k in dice ? dice[k] : s.gear[k]; out[k] = it ? { ...it } : null; }
     return out;
   };
-  return state.survivors.map((s) => ({ name: s.name, skills: { ...s.skills }, traits: [...s.traits], traitTier: { ...(s.traitTier || {}) }, budget: s.skillBudget ?? skillTotal(s.skills), appearance: s.appearance ? { ...s.appearance } : null, gear: kit(s), leader: !!s.leader, background: s.bgPicked || s.bgKept ? s.background : null, rolled: !s.bgPicked && !!s.bgKept, custom: !!s.startCustom, points: !!s.startPoints, startGear: sanitizeStartGear(s.startGear), grabRoll: s.grabRoll ?? null, grabPick: !!s.grabPick, carRoll: s.carRoll ?? null, carOwner: !!(state.hardcore && state.hardcore.start && state.hardcore.start.carOwner === s.id), ownMax: Number.isFinite(s.ownMax) ? s.ownMax : null }));
+  return state.survivors.map((s) => ({ name: s.name, skills: { ...s.skills }, traits: [...s.traits], traitTier: { ...(s.traitTier || {}) }, budget: s.skillBudget ?? skillTotal(s.skills), appearance: s.appearance ? { ...s.appearance } : null, gear: kit(s), leader: !!s.leader, background: s.bgPicked || s.bgKept ? s.background : null, rolled: !s.bgPicked && !!s.bgKept, custom: !!s.startCustom, points: !!s.startPoints, startGear: sanitizeStartGear(s.startGear), grabRoll: s.grabRoll ?? null, grabPick: !!s.grabPick, stuffRoll: s.stuffRoll ?? null, carRoll: s.carRoll ?? null, carOwner: !!(state.hardcore && state.hardcore.start && state.hardcore.start.carOwner === s.id), ownMax: Number.isFinite(s.ownMax) ? s.ownMax : null }));
 }
 // Customize ticked (main.js): every colonist blank (skills 0, no traits, nothing worn or carried), built on points.
 // Names, looks, the leader and a picked background stay.
@@ -653,7 +658,7 @@ export function randomizeGear(state, ui, s, rebuild) {
   if (isHardcore(state)) {
     if (ui.ironman) return state;
     const crew = crewSnapshot(state);
-    Object.assign(crew[state.survivors.indexOf(s)], { grabRoll: newRoll(rng), grabPick: true });
+    Object.assign(crew[state.survivors.indexOf(s)], { grabRoll: newRoll(rng), grabPick: true, stuffRoll: null }); // the whole grab again: the pocket and bag things too (rerollCarried's dice go)
     return rebuild(crew, false);
   }
   const o = tradePartner(state, s, rng);
@@ -701,7 +706,7 @@ export function randomizeOne(state, ui, s, rebuild) {
   c.budget = budget;
   c.traits = rollTraits(rng);
   delete c.traitTier;
-  if (isHardcore(state)) { c.grabRoll = newRoll(rng); c.grabPick = true; }
+  if (isHardcore(state)) { c.grabRoll = newRoll(rng); c.grabPick = true; c.stuffRoll = null; }
   else if (!isCrashRun(state)) c.gear = { ...(crewSnapshot(state)[i].gear || {}), weapon: startWeapon(rng, s) }; // their vest as it was (a background change leaves out the kit); Crashlanding keeps the unit's issue
   return rebuild(crew, !!key);
 }
@@ -712,6 +717,70 @@ function startWeapon(rng, s) {
   const item = newItem(rng.pick(START_WEAPONS.filter((k) => k !== now)), 1, rng.next(), START_DUR);
   randomStarterMods(rng, item, newRoll(rng));
   return item;
+}
+
+// ---------- 👁 Inventory (the user's request 2026-10-25: "add a way to see each survivors inventory view with a button
+// to reroll the gear inside pockets packs rigs etc") ----------
+// A crew card's window over the new-run screen (ui.crewInv = { i }: their place in the crew, so it stays on them through
+// the world being built again): what they wear and hold, slot by slot, and what is in their pockets, their rig's
+// pouches and their pack (sim/inventory.js carriedSpots), each thing a chip with its description and weight in the
+// hover, with 🎲 Reroll what they carry (rerollCarried). Every mode; Crashlanding to look at only.
+// Whether 🎲 Reroll what they carry can be had for s: { why } when not (its hover), else { tip }.
+export function carriedDice(state, ui, s) {
+  if (ui.started) return { why: "The run has started" };
+  if (isCrashRun(state)) return { why: "Crashlanding: what they carry is the unit's issue, which cannot be changed" };
+  if (ui.ironman) return { why: "Ironman: what they carry stays as rolled" };
+  if (freeEdit(ui)) return { tip: "Empty what they wear, hold and carry, then a new random kit for the points they have left after their skills and traits (as the card's Gear does). Each click is a new draw" };
+  if (isCustomBg(s.background)) return { why: "A custom background's kit is fixed: they carry exactly what it says (Backgrounds… to change it)" };
+  if (isHardcore(state) && s.background === "prepper") return { why: "A prepper's bag was packed by the door: the kit is fixed (the card's Gear draws their whole grab again)" };
+  if (isHardcore(state)) return { tip: "Draw again the things in their pockets and bag, from the same kind of things for who they were. The bag, the weapon, the armor and what they wear and hold stay; nobody else's grab changes. Each click is a new draw" };
+  return { tip: "A year on they carry little: their starting weapon, maybe a box of its rounds and spare magazines. This draws a new starting weapon with its load; the vest stays. Each click is a new draw" };
+}
+// 🎲 Reroll what they carry. Customize: the card's Gear (randomizeGear: a random kit within their points). Hardcore:
+// the pocket and bag things on dice of their own (crew[i].stuffRoll: sim/hardcore-start.js regrabStuff), the rest of the
+// grab as it was. Normal and Custom: a new starting weapon with its load, as Everything draws it (startWeapon), the
+// vest kept. The world again on the same seed (rebuild: main.js cardRebuild).
+export function rerollCarried(state, ui, s, rebuild) {
+  if (!s || carriedDice(state, ui, s).why) return state;
+  if (freeEdit(ui)) return randomizeGear(state, ui, s, rebuild);
+  const rng = freshRng(), crew = crewSnapshot(state), c = crew[state.survivors.indexOf(s)];
+  if (isHardcore(state)) c.stuffRoll = newRoll(rng);
+  else c.gear = { ...(c.gear || {}), weapon: startWeapon(rng, s) };
+  return rebuild(crew, false);
+}
+// The window (main.js pickModal via ui.js: ui.crewInv over the new-run screen; Done or Esc shuts it).
+const invName = (it) => it.name || (GEAR[it.key] && GEAR[it.key].name) || (MAGAZINES[it.key] && MAGAZINES[it.key].name) || it.key;
+function invChip(it, where, n = 1) {
+  const d = GEAR[it.key] || MAGAZINES[it.key] || {}, kg = Math.round(itemLoad(it) * 10) / 10;
+  return `<span class="chip" data-where="${where}"${tip(`${d.desc || invName(it)} (${kg} kg${n > 1 ? " each" : ""})`)}>${esc(invName(it))}${n > 1 ? ` ×${n}` : ""}</span>`;
+}
+// A worn or held slot's spot (carriedSpots loc "s:id:slot"), not a thing in a pocket, pouch or pack ("s:id:rig:0": a
+// rig's pouch has where "rig" as the chest rig's slot has).
+const isWorn = (x) => x.loc.split(":").length === 3;
+// One container's things (where: pocket, rig or pack; the chips' data-where "pouch" for the rig's), repeats counted
+// (countOf: a stack's own count too).
+function invChips(spots, where, none) {
+  const seen = new Map();
+  for (const x of spots) if (!isWorn(x) && x.where === where) { const k = `${x.item.key}|${invName(x.item)}`; const e = seen.get(k); if (e) e.n += countOf(x.item); else seen.set(k, { it: x.item, n: countOf(x.item) }); }
+  return seen.size ? [...seen.values()].map((e) => invChip(e.it, where === "rig" ? "pouch" : where, e.n)).join("") : `<span class="small muted">${none}</span>`;
+}
+export function crewInvViewer(state, ui) {
+  const i = ui.crewInv ? ui.crewInv.i : -1, s = state.survivors[i];
+  const done = `<button class="primary" data-action="crew-inv-close"${tip("Close (Esc)")}>Done</button>`;
+  if (!s) return `<div class="box"><h1>Inventory</h1><div class="small muted">No such survivor in this start.</div><div class="row" style="margin-top:0.8rem;justify-content:flex-end">${done}</div></div>`;
+  const spots = carriedSpots(s), rig = rigOf(s), pack = s.gear.backpack, dice = carriedDice(state, ui, s);
+  const worn = spots.filter(isWorn).map((x) => `<div>${esc(SLOT_NAMES[x.where] || x.where)}</div><div>${invChip(x.item, x.where)}</div>`).join("");
+  const kgAll = spots.filter((x) => isWorn(x) || x.where === "pocket").reduce((a, x) => a + itemLoad(x.item), 0); // a rig's and a pack's things in theirs
+  return `<div class="box"><h1>${esc(s.name)}</h1>
+    <div class="small muted">What they ${isCrashRun(state) ? "were issued" : isHardcore(state) ? "grabbed as they fled" : "start with"}: ${Math.round(kgAll * 10) / 10} kg on them in all.</div>
+    <h3 style="margin-top:0.6rem">Worn and held</h3>${worn ? `<div class="kv small">${worn}</div>` : `<div class="small muted">Nothing worn or held.</div>`}
+    <h3 style="margin-top:0.6rem">Pockets</h3><div>${invChips(spots, "pocket", "Empty pockets.")}</div>
+    <h3 style="margin-top:0.6rem">${rig ? `Rig: ${esc(rig.name)}` : "Rig"}</h3><div>${rig ? invChips(spots, "rig", "Nothing in its pouches.") : `<span class="small muted">No rig.</span>`}</div>
+    <h3 style="margin-top:0.6rem">${pack ? `Pack: ${esc(pack.name)}` : "Pack"}</h3><div>${pack ? invChips(spots, "pack", "Nothing in it.") : `<span class="small muted">No bag.</span>`}</div>
+    <div class="row" style="margin-top:0.8rem;gap:0.4rem;justify-content:flex-end">
+      <button data-action="crew-inv-reroll" data-i="${i}"${dice.why ? " disabled" : ""}${tip(dice.why || dice.tip)}>🎲 Reroll what they carry</button>
+      ${done}
+    </div></div>`;
 }
 
 // ---------- zombie look settings ----------
@@ -766,6 +835,9 @@ export const LOOK_ACTIONS = {
   // A crew card's fold (Traits ▸ under Customize): open or shut, kept by colonist in ui.nrOpen ("id:traits") through the
   // world being built again (it is not in main.js freshUi), so a background picked does not fold the picker away.
   "nr-fold": (state, ui, d) => { const o = ui.nrOpen || (ui.nrOpen = {}); const k = `${Number(d.id)}:${d.k}`; if (o[k]) delete o[k]; else o[k] = true; },
+  // 👁 Inventory on a crew card (crewInvViewer): opened on their place in the crew, shut by Done (or Esc, main.js).
+  "crew-inv": (state, ui, d) => { const i = Number(d.i); if (ui.started || !state.survivors[i]) return; ui.gearEdit = null; ui.fleetEdit = null; ui.fleetView = null; ui.crewInv = { i }; },
+  "crew-inv-close": (state, ui) => { ui.crewInv = null; },
   "look-edit": (state, ui, d) => { ui.lookEdit = ui.lookEdit === Number(d.id) ? null : Number(d.id); },
   "look-done": (state, ui) => { ui.lookEdit = null; },
   "look-set": (state, ui, d) => setLook(state, ui, d.id, d.k, d.v),

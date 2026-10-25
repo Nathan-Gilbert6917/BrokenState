@@ -39,7 +39,9 @@ Older design docs: [docs/base-building/plan.md](../base-building/plan.md), [docs
 - **Bare start**: bases start with empty plots; the normal hub starts with a Lodge of four beds, a tent and eight crop plots, away from towns [world, startpick]. [details](../features/campaign.md#bare-start-and-the-hubs-start-layout)
 - **Custom mode and starting vehicles**: Custom sets survivor, group, hive, city, town and military site counts; every mode a vehicle toggle [custommode] `tools/custommodetest.js`. [details](../features/campaign.md#custom-mode-and-starting-vehicles)
   - Up to one vehicle a survivor (＋ Add, ✕ Remove, kind), each with a point limit and back set under Customize only, on nobody's points [startfleet, startgear, ui/startgear] `tools/startfleettest.js`.
+  - Every mode: each vehicle rolled by whose it is (kind, tank, back; 👁 Back, 🎲 Reroll) and named so; Hardcore's account splits the crew between them [hardcore-start, startfleet, ui/startgear] `tools/fleetbackstest.js`.
   - Each has a driver, at its wheel on the team and in battle; every vehicle on raid maps; too few drivers after a raid, you pick which go on [vehicles, combat, walkers] `tools/fleetdrivertest.js`.
+- **Crew inventory**: 👁 Inventory on each crew card lists what they wear and carry; 🎲 rerolls what is inside [ui/newgame, hardcore-start, main] `tools/crewinvtest.js`. [details](../features/campaign.md#a-survivors-inventory-on-the-new-run-screen)
 - **Crashlanding**: 3 years on, 300 × 200, lone survivor of a downed Guard heli, no base or car; the unit's base turns hive, then a secret bunker [crashmode, crashstart] `tools/crashlandingtest.js`. [details](../features/campaign.md#crashlanding)
 - **New-run shortcuts**: Random run, New start position and Pick start on map [ui/newgame, startpick, main] `tools/startpicktest.js`. [details](../features/campaign.md#new-run-shortcuts)
 - **World configuration**: the new-run *World…* window's dials and presets, kept in `state.worldCfg` [worldcfg, ui/worldcfg]. [details](../features/campaign.md#world-configuration)
@@ -63,6 +65,7 @@ Older design docs: [docs/base-building/plan.md](../base-building/plan.md), [docs
 ## 3. Bases and economy
 Base detail: [bases.md](../features/bases.md). Economy detail: [economy.md](../features/economy.md).
 - **Base tiers**: camp, shelter, outpost and hub, every yard 76 × 76 to start; camps set up, struck and upgraded [staging, basemap, basescatter, buildings, ui/campsite] `tools/campspottest.js`. [details](../features/bases.md#base-tiers)
+  - No base yet: the team panel's card lists the camp fire's wood and stone carried, then the shelter shack's needs [ui/hardcore, staging] `tools/campcardtest.js`.
 - **A camp on a hill**: the camp's 5 × 5 whole on one level, buildings on any level ground [basescatter, basemap, combat] `tools/campspottest.js`. [details](../features/bases.md#a-camp-on-a-hill-stands-on-it-and-buildings-stand-on-the-hills)
 - **What a camp's spot is like**: the picker's facts for a 5 × 5 (ground, sight, room, wood, water) and the game's pick scored on them [siteinfo, basemap, ui/campsite] `tools/campspottest.js`. [details](../features/bases.md#what-a-camps-spot-is-like)
 - **Scouting before a camp**: scout first, or set up blind on a random spot, fogged, its dead attacking until cleared [campscout, staging, survey, poiraid] `tools/campscouttest.js`. [details](../features/bases.md#scouting-before-a-camp)
@@ -89,6 +92,7 @@ Base detail: [bases.md](../features/bases.md). Economy detail: [economy.md](../f
 - **Winter's lean months**: frost kills crops; forage, game, fish and wood yield less in winter [winter, weather, farming]. [details](../features/economy.md#winters-lean-months)
 - **Stone**: field stone cleared on the build map, the Gather stone job and team order; a camp's fire takes 20 wood and 8 stone [stone, work, orders, buildings, staging] `tools/stonetest.js`. [details](../features/economy.md#stone)
 - **Land order box**: Forage, Hunt, Fish, Cut wood, Gather stone ask the hours (2–24), with the expected yield [landest, ui/landorder, ui/teamctx] `tools/landordertest.js`. [details](../features/economy.md#the-land-order-box-hours-and-expected-yield)
+- **Teams gathering on the map**: axes and picks swung, rods worked, buckets filled, a ring filling over them [ui/render, ui/mapfigures, ui/workermap] `tools/mapfigurestest.js`. [details](../features/economy.md#a-team-at-a-gathering-order-on-the-map)
 - **Woodcutting and heating**: wood is fuel and a building material; wooden builds cost wood; felling on the base map [woodcutting, woodwork, upkeep, needs] `tools/woodworktest.js`. [details](../features/economy.md#woodcutting-and-heating)
 - **Job trips**: outdoor workers walk out to the base's land, with events and trip gear [jobtrips, tripland, tripevents, tripgear].
 - **Teamwork on job trips**: workers on the same job and tile are a crew sharing load, events, battles and loot [teamwork, jobtrips, tripevents, loneattack]. [details](../features/economy.md#teamwork-on-job-trips)
