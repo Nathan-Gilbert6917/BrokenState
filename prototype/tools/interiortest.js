@@ -66,7 +66,7 @@ import { COMMERCIAL_KEYS, styleName } from "../src/sim/shoplayout.js";
 import { CIVIC_STYLES } from "../src/sim/civiclayout.js";
 import { MIL_KEYS, MILITARY_STYLES, MIL_SIZE } from "../src/sim/militarylayout.js";
 import { BUNKER_STYLES, BUNKER_KEYS, BUNKER_VARIANTS } from "../src/sim/bunkerlayout.js"; // bunkers (issue #26)
-import { BUNKER_POI } from "../src/sim/pois.js";
+import { BUNKER_POI, POI } from "../src/sim/pois.js";
 import { pieceDef } from "../src/sim/data-furniture.js";
 import { boxLoot, FLOOR_RICH } from "../src/sim/combat.js";
 import { GEAR, supValue } from "../src/sim/data.js";
@@ -1082,9 +1082,10 @@ console.log("\nBunkers (bunkerlayout.js)");
   const seen = {}, expect = {};
   for (const t of st.tiles) {
     for (const p of t.pois || []) if (p.extra === "bunker") seen[p.kind] = (seen[p.kind] || 0) + 1;
-    for (const k of ["bunker", "govbunker", "shelter", "prepper"]) expect[k] = (expect[k] || 0) + (BUNKER_POI[k][t.terrain] || 0);
+    const room = (t.pois || []).filter((p) => p.extra !== "bunker").length < POI.MAX; // a tile its other places leave room on (POI.MAX)
+    for (const k of ["bunker", "govbunker", "shelter", "prepper"]) expect[k] = (expect[k] || 0) + (room ? BUNKER_POI[k][t.terrain] || 0 : 0);
   }
-  console.log(`    on a ${st.grid.width} × ${st.grid.height} world: ${Object.keys(expect).map((k) => `${k} ${seen[k] || 0} (${expect[k].toFixed(1)} at the base rate)`).join(", ")}`);
+  console.log(`    on a ${st.grid.width} × ${st.grid.height} world: ${Object.keys(expect).map((k) => `${k} ${seen[k] || 0} (${expect[k].toFixed(1)} at the base rate on the tiles with room)`).join(", ")}`);
   check(["shelter", "prepper"].every((k) => (seen[k] || 0) >= expect[k] * 0.5 && (seen[k] || 0) <= expect[k] * 1.6) && (seen.bunker || 0) >= 1 && (seen.bunker || 0) <= expect.bunker * BUNKER_POI.NEAR, "the shelters and prepper bunkers at their rates, a military bunker or more (more often near a military site)");
   check(SITES.bunker_mil && SITES.bunker_mil[0] === "mountainbunker" && ["bunker", "govbunker", "shelter", "prepper"].every((k) => SITES[k] && BUILDINGS[SITES[k][0]]), "the bunker sites and points of interest open their bunkers");
 }
