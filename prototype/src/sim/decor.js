@@ -91,6 +91,33 @@ export const DECOR = {
   tack:       { clutter: [["straw", 0.15]], art: [["shelf"], 1] },
   gunroom:    { ...HOME, rug: 0.3, art: [["picture", "shelf"], 1] },
 };
+// The civic rooms by their style (civiclayout.js, issue #15: a room's leaf's civic mark, the new saves' plans): the
+// decor of their kind in place of their role's. A classroom's or a briefing room's whiteboard is put by its style on the
+// wall the desks face; these add the rest (notice boards, a crucifix, the station's posters and clocks).
+export const DECOR_CIVIC = {
+  frontdesk:  { ...WORK, clutter: [["papers", 0.05]], art: [["notice", "notice", "clock", "picture"], 3] },
+  squad:      { ...WORK, clutter: [["papers", 0.16], ["trash", 0.04]], art: [["whiteboard", "notice", "clock"], 3] },
+  interview:  { ...WORK, clutter: [["papers", 0.04]], art: [["clock"], 1] },
+  observation: { ...WORK },
+  chief:      { ...HOME, rug: 0.5, clutter: [["papers", 0.08]], art: [["picture", "picture", "clock"], 2] },
+  dispatch:   { ...WORK, clutter: [["papers", 0.1]], art: [["notice", "clock", "whiteboard"], 2] },
+  records:    { ...WORK, clutter: [["papers", 0.2]], art: [["notice"], 1] },
+  briefing:   { ...WORK, clutter: [["papers", 0.06]], art: [["notice", "clock"], 2] },
+  cells:      { ...WORK, clutter: [["trash", 0.06], ["papers", 0.02]], art: [["notice"], 1] },
+  sallyport:  { ...WORK, clutter: [["oil", 0.1]], art: [["notice"], 1] },
+  enginebay:  { ...WORK, clutter: [["oil", 0.08]], art: [["notice", "clock"], 2] },
+  watch:      { ...WORK, clutter: [["papers", 0.08]], art: [["notice", "notice", "clock"], 2] }, // the map board
+  fgym:       { ...WORK, clutter: [["trash", 0.02]], art: [["poster", "mirror"], 2] },
+  classroom:  { ...WORK, clutter: [["papers", 0.12], ["books", 0.05]], art: [["notice", "poster", "clock"], 2] },
+  sciencelab: { ...WORK, clutter: [["papers", 0.06], ["crack", 0.02]], art: [["poster", "notice"], 1] },
+  schoolhall: { ...WORK, clutter: [["papers", 0.04], ["trash", 0.03]], art: [["notice", "poster"], 3] },
+  library:    { ...WORK, clutter: [["books", 0.12], ["papers", 0.05]], art: [["notice", "clock"], 1] },
+  gym:        { ...WORK, clutter: [["trash", 0.03]], art: [["notice", "clock", "poster"], 2] },
+  narthex:    { ...HOME, clutter: [["papers", 0.06]], art: [["notice", "notice", "crucifix"], 2] }, // the parish notices
+  nave:       { ...HOME, clutter: [["papers", 0.02]], art: [["crucifix", "picture"], 3] },
+  parishhall: { ...WORK, clutter: [["tins", 0.06], ["trash", 0.04]], art: [["notice", "crucifix", "clock"], 2] },
+  cpantry:    { ...WORK, clutter: [["tins", 0.12]], art: [["notice"], 1] },
+};
 // Named rooms that are something else under the same role (a library's stacks are a stockroom, a child's bedroom).
 const BOOKISH = /stacks|reading|library/i;
 // Wall art kinds: their names (ui/isoview.js WARTC draws each).
@@ -147,7 +174,7 @@ export function decorate(cells, W, H, rooms, rid, o) {
   const at = (x, y) => (x >= 0 && y >= 0 && x < W && y < H ? cells[y * W + x] : null);
   const ridAt = (x, y) => (x >= 0 && y >= 0 && x < W && y < H ? rid[y * W + x] : -2);
   for (const room of rooms) {
-    const D = DECOR[room.role] || {};
+    const D = (room.civic && DECOR_CIVIC[room.civic]) || DECOR[room.role] || {}; // a civic room's decor by its style
     const wc = wallColour(seed, room);
     room.wallc = wc || undefined;
     const x0 = room.ix0, y0 = room.iy0, x1 = x0 + room.iw - 1, y1 = y0 + room.ih - 1;
