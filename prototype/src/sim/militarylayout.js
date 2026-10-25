@@ -79,7 +79,7 @@
 import { hash01 } from "./skills.js";
 import { pieceDef } from "./data-furniture.js";
 import { registerScene, SCENES } from "./interiorscenes.js";
-import { quietWall, whiteboard, rowsFacing, deskWithChair, tableSet, rowOf, washCorner, kitchen, vehicleIn, cellBlock, line } from "./civiclayout.js";
+import { quietWall, whiteboard, rowsFacing, deskWithChair, tableSet, rowOf, kitchen, vehicleIn, cellBlock } from "./civiclayout.js";
 
 export const MIL = {
   PRISON_CELLS: 12,     // cells along a prison block's back wall, at most
@@ -894,7 +894,6 @@ registerScene("armorybarricade", { w: 2, place: armoryBarricade, kinds: ["armory
 registerScene("helipadevac", { w: 3, place: helipadEvac, kinds: ["hq"], when: styled });
 registerScene("cellsopen", { w: 3, place: cellsOpen, kinds: ["cellblock"], when: styled });
 registerScene("terminalshelter", { w: 3, place: terminalShelter, kinds: ["terminal"], when: styled });
-void line; void hash01;
 
 // ======================================================================================
 // The city crawl's checkpoint (citycrawl.js street event "checkpoint": a street map with a barracks and an armory as

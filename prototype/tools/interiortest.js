@@ -1128,8 +1128,6 @@ console.log("\nMilitary bases, air bases, airports, prisons and the bunker laid 
   check(want.every((kk) => seenKinds.has(kk)), `the military scenes turn up (${want.filter((kk) => seenKinds.has(kk)).join(", ")} of ${want.join(", ")})`);
   // The crawl's checkpoint (a street map) gets the new pieces: footlockers, gun racks, the Army truck, the barrier.
   const cw = createWorld({ seed: 4, factionCount: 2 }), ct = cw.tiles.find((t) => t.loc && t.loc.type === "city");
-  const cmap = { w: 0 };
-  void cmap;
   const cb = createBattle(cw, { mode: "raid", tile: ct.id, partyId: null, canRetreat: true, ambush: null, handler: "itest", enemy: { kind: "zombies", count: 2, power: 2 }, raid: { heat0: 0, building: "street", areas: ["barracks", "armory", "wreck", "campsite"], gunSite: "military", checkpoint: true }, context: { factionIds: [] } });
   const ck = new Set(cb.cells.map((c) => c.k));
   check(ck.has("footlocker") && (ck.has("gunrack") || ck.has("ammocrate")) && cb.cells.some((c) => c.car && c.car.body === "m35"), `the crawl's checkpoint: footlockers, gun racks or ammo crates, the Army truck (${["footlocker", "gunrack", "ammocrate", "radioconsole", "barrier", "guardbooth"].filter((kk) => ck.has(kk)).join(", ")})`);
