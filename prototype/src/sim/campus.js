@@ -48,7 +48,7 @@ import { CAMPUS_NAMES } from "./campuslayout.js";
 import { placeFolk } from "./floorfolk.js"; // students holed up in a dorm (the city crawl's survivors upstairs)
 
 export const CAMPUS = {
-  MAX: 300,            // a campus map's side at most: 500 once #24's engine work (windowed pathing, tiled canvases, compact saves) is on dev
+  MAX: 500,            // a campus map's side at most (the issue's 500 × 500; #24's big-map engine on dev: tiled, culled rendering, 32-bit paths, packed snapshots)
   EDGE: 6,             // the grounds between the map's edges and the buildings (the north, west and east ways out)
   ROAD: 5,             // the campus road along the south edge (the way in)
   SERVICE: 3,          // the service road down the east side
