@@ -50,6 +50,7 @@
 // there; they thin the dead to SQUAT_DEAD). The same threat for everyone (AI parity): your Occupy order (occupy.js)
 // fights it; a group moving in pays ABANDON.AI_LOSS of its count in people (rounded by the dice), coarse, and the group
 // whose base it was (still standing elsewhere) takes it ill: relations ABANDON.FORMER_REL.
+import { lootedBefore, noteVehicleLooted } from "./causes.js"; // "Why?": a vehicle lost to a group (recording only)
 import { noteTaken } from "./convoyrecover.js"; // a vehicle of yours taken from the map, remembered (call-time only)
 import { foodIn, takeFood, addFoodsTo, DAY_VALUE, typeGoods, groupMix } from "./foods.js"; // food paid in days
 import { SUPPLIES, GEAR } from "./data.js";
@@ -299,9 +300,10 @@ function vehicleDaily(state, f, d) {
     if (v.loc.kind !== "abandoned" || (v.type === "bike" && !cargoIn(v)) || nearOwn(state, f, v.loc.tile) > VEH.TAKE_RANGE) continue;
     if (h(state, f.name, tickOf(f), "take", v.loc.tile, v.type) >= VEH.TAKE * W) continue;
     noteTaken(state, f, v, v.type === "bike" ? "stripped" : "took"); // convoyrecover.js: remembered (who, when), recording only
-    if (v.type === "bike") { stripRacks(state, f, v); return; }
+    const seen = f.known || state.live.has(v.loc.tile), was = seen ? lootedBefore(state, v) : null; // causes.js: the "Why?" of it, read before it goes
+    if (v.type === "bike") { stripRacks(state, f, v); if (was) noteVehicleLooted(state, f, v, "stripped", was); return; }
     takeVehicle(state, f, v);
-    if (f.known || state.live.has(v.loc.tile)) log(state, `${f.known ? f.name : "Another group"} took the ${v.name} that stood at ${tileName(state, v.loc.tile)}.`, "danger");
+    if (seen) { log(state, `${f.known ? f.name : "Another group"} took the ${v.name} that stood at ${tileName(state, v.loc.tile)}.`, "danger"); noteVehicleLooted(state, f, v, "took", was); }
     return;
   }
   // Parked at a base of yours with nobody there.

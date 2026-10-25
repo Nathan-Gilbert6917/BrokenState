@@ -12,6 +12,7 @@ import {
 import { rec, daysWith } from "../sim/relations.js";
 import { diaryEntries } from "../sim/diary.js";
 import { openDiary } from "./diary.js";
+import { setbackList } from "./causes.js"; // the setbacks with their "Why?" (sim/causes.js)
 import { keyAction } from "./keymap.js"; // the key table (Menu → Controls)
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -435,6 +436,10 @@ export function runSummaryHTML(state, opts = {}) {
   const causes = deathsByCause(state);
   const dead = causes.reduce((a, c) => a + c.n, 0);
   parts.push(`<h3>Deaths by cause</h3>${dead ? `<div class="rs-causes">${causes.map((c) => `<div class="rs-cause"${tip(`${c.names.join(", ")}${c.n > c.names.length ? "…" : ""}`)}><span>${esc(c.label)}</span><span class="rs-bar"><i style="width:${Math.max(3, Math.round((c.n / causes[0].n) * 100))}%"></i></span><b>${c.n}</b></div>`).join("")}</div>` : `<div class="muted">Nobody has died.</div>`}`);
+
+  // Setbacks (sim/causes.js): vehicles left behind or lost to a group, teams wiped out, missions that failed, people
+  // who walked out; the latest with their "Why?".
+  parts.push(`<h3${tip("What else went wrong: each with its chain of causes (Why?)")}>Setbacks</h3>${setbackList(state)}`);
 
   // Notable events (the timelapse's captions: sim/chronicle.js), spread over the run.
   const ev = notableEvents(state, 14);

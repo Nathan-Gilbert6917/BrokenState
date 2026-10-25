@@ -63,6 +63,7 @@ import { isMember } from "./alliance.js";
 import { sendCaravan } from "./caravans.js";
 import { cardFromGroup } from "./envoys.js";
 import { tickHour } from "./world.js";
+import { noteMissionFailed } from "./causes.js"; // "Why?": a convoy not recovered (recording only)
 
 // Every number of the recovery in one place.
 export const RECOVER = {
@@ -154,6 +155,7 @@ function convoyGone(state, p, tile) {
   const text = `The convoy at ${tileLabel(state, tile)} is gone. ${who} The team turns for home.`;
   log(state, text, "danger");
   p.convoyFailed = { tile, why: known.length ? `taken by ${list([...new Set(known.map((x) => x.f.name))])}` : "gone before the team got there", fid: known.length ? known[0].f.id : null };
+  noteMissionFailed(state, teamName(state, p), tile, `${teamName(state, p)} found the convoy at ${tileLabel(state, tile)} gone`, known.length ? `${list([...new Set(known.map((x) => x.f.name))])} took it before the team got there.` : took.length ? "A group took it before the team got there; the team could not tell which." : "It was gone before the team got there.");
   addCard(state, { title: "The convoy is gone", text, partyId: p.id, choices: [{ label: "Understood", ai: () => 1, resolve: () => "" }] });
   startReturn(state, p);
   return "";
@@ -195,6 +197,7 @@ function convoyAfter(state, result, setup) {
     : `The team got out of ${tileLabel(state, tile)} without the convoy.${left.length ? ` Nobody to drive ${list(left)}: left there, marked.` : ""}`;
   if (!brought.length) p.convoyFailed = { tile, why: left.length ? "too few left to drive" : "nobody got back to the vehicles", fid: null };
   log(state, text, brought.length ? "good" : "danger");
+  if (!brought.length) noteMissionFailed(state, teamName(state, p), tile, `${teamName(state, p)} came out of ${tileLabel(state, tile)} without the convoy`, p.convoyFailed.why === "too few left to drive" ? `Too few were left to drive: ${list(left)} stayed.` : "Nobody got back to the vehicles before the team left.");
   if (brought.length) earnAch(state, "convoy"); // achievements.js: a lost convoy back on the road
   startReturn(state, p); // home to its base of origin
 }
@@ -272,8 +275,9 @@ export function sendRecovery(state, f, msg) {
   return p;
 }
 // Word to you from the group (by radio now, else by their envoy) and a diary line.
-function tell(state, f, text, kind = "info") {
+function tell(state, f, text, kind = "info", failed = null) {
   log(state, `${f.name}: ${text}`, kind);
+  if (failed) noteMissionFailed(state, `${f.name}'s recovery party`, failed.tile, `${f.name} did not bring your convoy back`, failed.why); // causes.js
   cardFromGroup(state, f, "recovery", { text });
 }
 // Half the fee back by their caravan (to your hub).
@@ -304,7 +308,7 @@ export function recoveryArrive(state, p) {
     const t = state.tiles[R.tile];
     const vs = convoyAt(state, R.tile);
     if (!vs.length) {
-      tell(state, f, `our party reached ${tileLabel(state, R.tile)} and your convoy was gone.${refund(state, f, R)}`, "danger");
+      tell(state, f, `our party reached ${tileLabel(state, R.tile)} and your convoy was gone.${refund(state, f, R)}`, "danger", { tile: R.tile, why: "The vehicles were gone before their party got there (half the fee back)." });
       R.failed = "gone";
       return goHome(state, p);
     }
@@ -317,8 +321,8 @@ export function recoveryArrive(state, p) {
       p.strength *= Math.max(0, A.length - lost.dead.length) / A.length;
       if (!fight.attWon || p.strength < 1) {
         R.failed = "dead";
-        if (p.strength < 1) { tell(state, f, `the party we sent for your convoy at ${tileLabel(state, R.tile)} was lost to the dead there. The vehicles still stand there.`, "danger"); removeParty(state, p); return; }
-        tell(state, f, `the dead at ${tileLabel(state, R.tile)} were too many: our party pulled back without your convoy.`, "danger");
+        if (p.strength < 1) { tell(state, f, `the party we sent for your convoy at ${tileLabel(state, R.tile)} was lost to the dead there. The vehicles still stand there.`, "danger", { tile: R.tile, why: `Their party was lost to the dead at ${tileLabel(state, R.tile)} (${n} of them).` }); removeParty(state, p); return; }
+        tell(state, f, `the dead at ${tileLabel(state, R.tile)} were too many: our party pulled back without your convoy.`, "danger", { tile: R.tile, why: `The dead at ${tileLabel(state, R.tile)} were too many for their party (${n} of them).` });
         return goHome(state, p);
       }
     }
@@ -326,7 +330,7 @@ export function recoveryArrive(state, p) {
     const res = to != null ? planPath(state, R.tile, to, true, f.id) : null;
     if (!res) {
       R.failed = "noroad";
-      tell(state, f, `there is no road for the vehicles from ${tileLabel(state, R.tile)} to ${destName(state, R.dest)}: they stay where they are.${refund(state, f, R)}`, "danger");
+      tell(state, f, `there is no road for the vehicles from ${tileLabel(state, R.tile)} to ${destName(state, R.dest)}: they stay where they are.${refund(state, f, R)}`, "danger", { tile: R.tile, why: `No road for the vehicles from ${tileLabel(state, R.tile)} to ${destName(state, R.dest)}.` });
       return goHome(state, p);
     }
     for (const v of vs) v.loc = { kind: "towed", partyId: p.id, factionId: f.id };
