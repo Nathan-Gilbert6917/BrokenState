@@ -96,13 +96,13 @@ export const OFFICE_AREAS = {
   execsuite: { tags: ["office", "crime", "home"], def: { name: "Executive suite", boxes: ["cabinet", "cabinet", "shelf"],
     loot: { scrap: [0.35, 1, 3], water: [0.35, 1, 3] }, gear: [["whiskey", 0.1], ["watch", 0.04], ["goldring", 0.02], ["laptop", 0.05], ["phone", 0.04], ["pistol", 0.02], ["compact9", 0.015], ["cashbox", 0.03]] } },
   civichall: { tags: ["office", "books", "school"], def: { name: "Council chambers", boxes: ["cabinet", "shelf", "counter"],
-    loot: { scrap: [0.4, 1, 3], water: [0.35, 1, 3], food: [0.15, 1, 2] }, gear: [["flashlight", 0.02], ["slingbag", 0.02]] } },
+    loot: { scrap: [0.5, 1, 4], water: [0.4, 1, 3], food: [0.25, 1, 2], meds: [0.04, 1, 1] }, gear: [["flashlight", 0.03], ["slingbag", 0.03], ["phone", 0.02]] } },
   courtoffice: { tags: ["office", "books", "crime"], def: { name: "Court offices", boxes: ["cabinet", "cabinet", "shelf"],
-    loot: { scrap: [0.45, 1, 4], water: [0.3, 1, 3], meds: [0.04, 1, 1] }, gear: [["talkbook", 0.015], ["leadbook", 0.01], ["phone", 0.02], ["slingbag", 0.02]] } },
+    loot: { scrap: [0.5, 1, 4], water: [0.35, 1, 3], meds: [0.05, 1, 1], parts: [0.08, 1, 1] }, gear: [["talkbook", 0.015], ["leadbook", 0.01], ["phone", 0.03], ["slingbag", 0.03], ["flashlight", 0.02]] } },
   courtev: { tags: ["crime", "police", "office"], def: { name: "Evidence room", boxes: ["locker", "cabinet", "shelf"],
     loot: { scrap: [0.25, 1, 2], meds: [0.15, 1, 2], ammo: [0.2, 4, 12] }, gear: [["knife", 0.05], ["pistol", 0.03], ["revolver", 0.015], ["compact9", 0.02], ["baton", 0.02], ["cuffs", 0.04]] } },
   callfloor: { tags: ["office", "tech", "kitchen"], def: { name: "Call floor", boxes: ["cabinet", "shelf", "counter"],
-    loot: { scrap: [0.35, 1, 3], water: [0.3, 1, 2], food: [0.25, 1, 2], parts: [0.1, 1, 1] }, gear: [["phone", 0.02], ["slingbag", 0.02]] } },
+    loot: { scrap: [0.45, 1, 3], water: [0.4, 1, 3], food: [0.35, 1, 2], parts: [0.15, 1, 1] }, gear: [["phone", 0.03], ["slingbag", 0.02], ["batteries", 0.03]] } },
 };
 
 // ---------- where each stands (shops.js) ----------
@@ -125,19 +125,21 @@ export const COUNTY_SEAT = 0.4;
 
 // ---------- the firms ----------
 // Colours as data-shops.js FRANCHISES: walls, the sign board, its letters, an accent; style the painter's shape (0 a
-// flat front with an awning, 1 a sign on the roof, 2 a pylon sign by the door, 3 a big glass front).
+// flat front with an awning, 1 a sign on the roof, 2 a pylon sign by the door, 3 a big glass front); icon (a storefront's
+// and a station's) the emblem on its sign (ui/mapsprites.js: a briefcase, the scales, a house, a plane, a tooth, a
+// cross, a TV, a radio mast, a newspaper).
 export const OFFICE_FIRMS = {
   storefront: [
-    { id: "caldermutual", name: "Calder Mutual Insurance", w: G(1, 0.8, 1), look: L("#e8e4d8", "#1f3550", "#1f3550", "#ffffff", "#d9a520", 0), plan: { office: "insurance", fl: "carpet" } },
-    { id: "keystone", name: "Keystone Family Insurance", w: G(0.4, 0.8, 1), look: L("#b9a98a", "#6b5434", "#c8402f", "#ffffff", "#e8e4d8", 2), plan: { office: "insurance", fl: "carpet" } },
-    { id: "halewhitcombe", name: "Hale & Whitcombe, Attorneys", w: G(1, 0.6, 0.8), look: L("#7a3b32", "#3a1c18", "#2d4a3c", "#e8e4d8", "#d9a520", 1), plan: { office: "law", fl: "hardwood", storeys: [1, 2] } },
-    { id: "brandtlaw", name: "Brandt Law Office", w: G(0.6, 0.8, 1), look: L("#c9c2b0", "#5d6168", "#3c3a36", "#e8e4d8", "#8a8780", 0), plan: { office: "law", fl: "carpet" } },
-    { id: "pruittlowe", name: "Pruitt & Lowe Accounting", w: G(1, 1, 0.8), look: L("#d9d4c8", "#3a6fb0", "#3a6fb0", "#ffffff", "#9cc46e", 3), plan: { office: "accounts", fl: "carpet" } },
-    { id: "bluegate", name: "Bluegate Realty", w: G(0.8, 1, 1), look: L("#e8e4d8", "#2d4a5e", "#3a6fb0", "#ffffff", "#e8c04a", 2), plan: { office: "realty", fl: "tile" } },
-    { id: "wanderway", name: "Wanderway Travel", w: G(1, 0.8, 0.6), look: L("#5d8aa8", "#2d4a5e", "#e8c04a", "#2d4a5e", "#e2826f", 0), plan: { office: "travel", fl: "tile" } },
-    { id: "brightsmile", name: "Bright Smile Dental", w: G(1, 1, 0.6), look: L("#e8e4d8", "#2aa0a0", "#2aa0a0", "#ffffff", "#7fe6ff", 3), plan: { office: "dentist", fl: "lino" } },
-    { id: "ostrander", name: "Dr. Ostrander, DDS", w: G(0.3, 0.6, 1), look: L("#b9a98a", "#5d6168", "#3a6fb0", "#ffffff", "#e8e4d8", 2), plan: { office: "dentist", fl: "lino" } },
-    { id: "mercerpractice", name: "Mercer Family Practice", w: G(0.5, 0.8, 1), look: L("#c9c2b0", "#3f6b3a", "#3f6b3a", "#ffffff", "#e8e4d8", 0), plan: { office: "doctor", fl: "lino" } },
+    { id: "caldermutual", name: "Calder Mutual Insurance", w: G(1, 0.8, 1), look: { ...L("#e8e4d8", "#1f3550", "#1f3550", "#ffffff", "#d9a520", 0), icon: "case" }, plan: { office: "insurance", fl: "carpet" } },
+    { id: "keystone", name: "Keystone Family Insurance", w: G(0.4, 0.8, 1), look: { ...L("#b9a98a", "#6b5434", "#c8402f", "#ffffff", "#e8e4d8", 2), icon: "case" }, plan: { office: "insurance", fl: "carpet" } },
+    { id: "halewhitcombe", name: "Hale & Whitcombe, Attorneys", w: G(1, 0.6, 0.8), look: { ...L("#7a3b32", "#3a1c18", "#2d4a3c", "#e8e4d8", "#d9a520", 1), icon: "scales" }, plan: { office: "law", fl: "hardwood", storeys: [1, 2] } },
+    { id: "brandtlaw", name: "Brandt Law Office", w: G(0.6, 0.8, 1), look: { ...L("#c9c2b0", "#5d6168", "#3c3a36", "#e8e4d8", "#8a8780", 0), icon: "scales" }, plan: { office: "law", fl: "carpet" } },
+    { id: "pruittlowe", name: "Pruitt & Lowe Accounting", w: G(1, 1, 0.8), look: { ...L("#d9d4c8", "#3a6fb0", "#3a6fb0", "#ffffff", "#9cc46e", 3), icon: "case" }, plan: { office: "accounts", fl: "carpet" } },
+    { id: "bluegate", name: "Bluegate Realty", w: G(0.8, 1, 1), look: { ...L("#e8e4d8", "#2d4a5e", "#3a6fb0", "#ffffff", "#e8c04a", 2), icon: "house" }, plan: { office: "realty", fl: "tile" } },
+    { id: "wanderway", name: "Wanderway Travel", w: G(1, 0.8, 0.6), look: { ...L("#5d8aa8", "#2d4a5e", "#e8c04a", "#2d4a5e", "#e2826f", 0), icon: "plane" }, plan: { office: "travel", fl: "tile" } },
+    { id: "brightsmile", name: "Bright Smile Dental", w: G(1, 1, 0.6), look: { ...L("#e8e4d8", "#2aa0a0", "#2aa0a0", "#ffffff", "#7fe6ff", 3), icon: "tooth" }, plan: { office: "dentist", fl: "lino" } },
+    { id: "ostrander", name: "Dr. Ostrander, DDS", w: G(0.3, 0.6, 1), look: { ...L("#b9a98a", "#5d6168", "#3a6fb0", "#ffffff", "#e8e4d8", 2), icon: "tooth" }, plan: { office: "dentist", fl: "lino" } },
+    { id: "mercerpractice", name: "Mercer Family Practice", w: G(0.5, 0.8, 1), look: { ...L("#c9c2b0", "#3f6b3a", "#3f6b3a", "#ffffff", "#e8e4d8", 0), icon: "cross" }, plan: { office: "doctor", fl: "lino" } },
   ],
   bizpark: [
     { id: "lakeview", name: "Lakeview Business Park", w: G(0.6, 1, 0.6), look: L("#c9ced3", "#5d6168", "#2d4a5e", "#ffffff", "#5d8aa8", 3), plan: { storeys: [2, 3] } },
@@ -186,12 +188,12 @@ export const OFFICE_FIRMS = {
     { id: "hexdata", name: "Hexagon Data", w: G(1, 0.6, 0.2), look: L("#3a5f6e", "#20363f", "#9cc46e", "#20363f", "#e8e4d8", 3), plan: { storeys: [3, 5] } },
   ],
   station: [
-    { id: "channel9", name: "Channel 9 News", w: G(1, 0.8, 0.8), look: L("#2d4a6e", "#1c2a3a", "#c8402f", "#ffffff", "#e8c04a", 1), plan: { media: "tv" } },
-    { id: "valley12", name: "Valley 12 Eyewitness News", w: G(0.5, 0.8, 1), look: L("#e8e4d8", "#3a6fb0", "#3a6fb0", "#ffffff", "#c8402f", 2), plan: { media: "tv" } },
-    { id: "radiocalder", name: "Radio Calder 1240 AM", w: G(0.6, 0.8, 1), look: L("#b9a98a", "#6b5434", "#c8402f", "#ffffff", "#e8c04a", 0), plan: { media: "radio" } },
-    { id: "rivercountry", name: "River Country 98.5 FM", w: G(0.3, 0.8, 1), look: L("#7a5230", "#4a3424", "#e8a020", "#2a2a2a", "#3f6b3a", 2), plan: { media: "radio" } },
-    { id: "caldercourier", name: "The Calder Courier", w: G(1, 0.6, 0.8), look: L("#d9d4c8", "#3c3a36", "#2a2a2e", "#e8e4d8", "#8a8780", 1), plan: { media: "paper" } },
-    { id: "valleygazette", name: "The Valley Gazette", w: G(0.3, 0.6, 1), look: L("#8e4f3c", "#4a2a20", "#e8e4d8", "#4a2a20", "#d9a520", 0), plan: { media: "paper" } },
+    { id: "channel9", name: "Channel 9 News", w: G(1, 0.8, 0.8), look: { ...L("#2d4a6e", "#1c2a3a", "#c8402f", "#ffffff", "#e8c04a", 1), icon: "tv" }, plan: { media: "tv" } },
+    { id: "valley12", name: "Valley 12 Eyewitness News", w: G(0.5, 0.8, 1), look: { ...L("#e8e4d8", "#3a6fb0", "#3a6fb0", "#ffffff", "#c8402f", 2), icon: "tv" }, plan: { media: "tv" } },
+    { id: "radiocalder", name: "Radio Calder 1240 AM", w: G(0.6, 0.8, 1), look: { ...L("#b9a98a", "#6b5434", "#c8402f", "#ffffff", "#e8c04a", 0), icon: "radio" }, plan: { media: "radio" } },
+    { id: "rivercountry", name: "River Country 98.5 FM", w: G(0.3, 0.8, 1), look: { ...L("#7a5230", "#4a3424", "#e8a020", "#2a2a2a", "#3f6b3a", 2), icon: "radio" }, plan: { media: "radio" } },
+    { id: "caldercourier", name: "The Calder Courier", w: G(1, 0.6, 0.8), look: { ...L("#d9d4c8", "#3c3a36", "#2a2a2e", "#e8e4d8", "#8a8780", 1), icon: "paper" }, plan: { media: "paper" } },
+    { id: "valleygazette", name: "The Valley Gazette", w: G(0.3, 0.6, 1), look: { ...L("#8e4f3c", "#4a2a20", "#e8e4d8", "#4a2a20", "#d9a520", 0), icon: "paper" }, plan: { media: "paper" } },
   ],
 };
 
@@ -200,11 +202,12 @@ export const OFFICE_FIRMS = {
 // parcels (scrap, now and then something worth having); a liquor cabinet: the executive's bottles; a tech office's
 // kitchen fridge: drinks (the fridge's own row is the house's).
 export const OFFICE_BOX = {
-  headsetdesk:  { rest: 0.4, loot: { food: [0.12, 1, 1] }, gear: [["phone", 0.015], ["batteries", 0.02]] },
+  headsetdesk:  { rest: 0.6, loot: { food: [0.15, 1, 1] }, gear: [["phone", 0.02], ["batteries", 0.03]] },
   newsdesk:     { rest: 0.5, loot: { scrap: [0.3, 1, 2] }, gear: [["phone", 0.04], ["watch", 0.01], ["camera", 0.02]] },
   sorter:       { rest: 0.3, loot: { scrap: [0.6, 1, 4], food: [0.08, 1, 2] }, gear: [["batteries", 0.03], ["phone", 0.015], ["flashlight", 0.02]] },
   liquorcab:    { rest: 0, loot: { water: [0.3, 1, 2] }, gear: [["whiskey", 0.55], ["silverware", 0.04]] },
   "fridge@techfloor": { rest: 0, loot: { water: [0.9, 3, 8], food: [0.35, 1, 3], preserved: [0.2, 1, 2] }, gear: [] },
+  "instcab@dental": { rest: 0.3, loot: { meds: [0.6, 1, 3] }, gear: [["surgkit", 0.04], ["bandagekit", 0.05], ["knife", 0.02]] }, // a dentist's instruments: not a hospital theatre's
   "evlocker@courtev": { rest: 0, loot: { meds: [0.18, 1, 2], ammo: [0.2, 4, 10] }, gear: [["knife", 0.06], ["pistol", 0.03], ["compact9", 0.025], ["revolver", 0.012], ["cuffs", 0.04], ["phone", 0.05], ["watch", 0.008]] },
 };
 

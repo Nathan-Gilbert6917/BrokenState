@@ -57,6 +57,10 @@ export const OFFICE = {
   SAFE: 0.3,        // an executive office's safe
   LIQUOR: 0.5,      // an executive office's liquor cabinet
   BENCH: 4,         // a tech office's bench: desks end to end, up to this many
+  // The containers a room holds: one every this many cells of its floor (at least one), by the building (the old
+  // tower's few big rooms held two at most; these keep a building's loot per cell where the old tower's was: tuned
+  // with tools/officestest.js, ±10%).
+  CELLS: { storefront: 18, bizpark: 10.5, offices: 12.5, cityhall: 10.5, courthouse: 8, callcenter: 10.5, techoffice: 15, station: 20, default: 14 },
 };
 
 /** @typedef {ReturnType<typeof roomLayout>} Lay */
@@ -275,7 +279,7 @@ export const OFFICE_STYLES = {
   towerlobby(L) {
     const c = L.c;
     some(L, "liftdoor", 3, { sides: ["n"] });
-    if (c.h >= 5) rowOf(L, c.y0 + 2, "turnstile", { from: 1, to: 1, face: "s" });
+    for (let y = c.y0 + 2; c.h >= 5 && y <= c.y1 - 2; y++) if (rowOf(L, y, "turnstile", { from: 1, to: 1, face: "s" }).length) break; // the first row a side door's lane leaves free
     L.wall("secdesk", P(L, { sides: ["w", "e"], near: [c.x0, c.y1] }));
     L.run(["counter", "counter"], ["e", "w"], { plain: () => full(L) });
     some(L, "chair", 2, { sides: ["s"] });
@@ -345,8 +349,8 @@ export const OFFICE_STYLES = {
     const c = L.c, mid = Math.floor((c.x0 + c.x1) / 2);
     for (let x = c.x0 + 1; x + 1 <= c.x1 - 1; x += 2) if (L.place("dais", [[x, c.y0 + 1], [x + 1, c.y0 + 1]], { face: "s" })) for (const cx of [x, x + 1]) if (L.ok(cx, c.y0)) L.place("chair", [[cx, c.y0]], { face: "s" });
     if (!L.has("dais")) L.need("dais", { sides: ["n"] });
-    L.place("podium", [[mid, c.y0 + 3]], { face: "n" }) || L.centre("podium");
-    seatRows(L, "chair", c.y0 + 5, c.y1 - 1, "n", 1);
+    L.place("podium", [[mid, c.y0 + 2]], { face: "n" }) || L.place("podium", [[mid + 1, c.y0 + 2]], { face: "n" }) || L.centre("podium");
+    seatRows(L, "chair", c.y0 + 4, c.y1, "n", 1);
     fill(L, ["cabinet", "shelf"]);
   },
   // The mayor's office: the executive office's (a safe by its own dice, the desk, a sofa), a flag stand's corner.
@@ -478,7 +482,14 @@ export const OFFICE_STYLES = {
 // The style of a room (buildingmaps.js assemble): its leaf's office mark, else null (the other styles).
 /** @param {any} room */
 export function officeStyle(room) {
-  return room && room.office && OFFICE_STYLES[room.office] ? OFFICE_STYLES[room.office] : null;
+  const fn = room && room.office ? OFFICE_STYLES[room.office] : null;
+  return fn ? (L) => { density(L); fn(L); } : null;
+}
+// The room's share of containers by its floor (OFFICE.CELLS by the building), where it holds any.
+/** @param {Lay} L */
+function density(L) {
+  if (!L.c.canBox) return;
+  L.c.target = Math.max(1, Math.round((L.c.w * L.c.h) / (OFFICE.CELLS[L.c.key] ?? OFFICE.CELLS.default)));
 }
 
 // ======================================================================================

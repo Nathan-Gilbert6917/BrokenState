@@ -42,7 +42,7 @@ export const SIZE = {
   storefront: { w: [10, 14], h: [15, 20], storeys: [1, 2] },
   bizpark:    { w: [26, 32], h: [17, 21], storeys: [1, 3] },
   tower:      { w: [24, 28], h: [16, 18], storeys: [6, 10] }, // capped by buildingmaps.js MAX_STOREYS (#24 raises it to 10)
-  cityhall:   { w: [26, 30], h: [19, 22], storeys: [2, 3] },
+  cityhall:   { w: [26, 30], h: [21, 24], storeys: [2, 3] },
   courthouse: { w: [26, 30], h: [21, 24], storeys: [2, 3] },
   callcenter: { w: [26, 32], h: [17, 20], storeys: [1, 2] },
   techoffice: { w: [20, 24], h: [15, 18], storeys: [2, 5] },
@@ -177,10 +177,10 @@ export function courthouse(rng, o, plan, max) {
   return {
     bw, bh, front: { width: 2 }, ground: "town", storeys: n, foot: "large", stairs: { roles: ["corridor"], n: 2, len: 3, ends: true },
     program: corridorPlan([["*", O("office", "clerks", { name: "Clerk of court", type: "courtoffice" })], [rng.int(7, 8), lobby], ["*", O("office", "clerks", { name: "Records office", type: "courtoffice" })]],
-      [["*", court()], [5, { role: "cells", name: "Holding cell", civic: "cells", maxBoxes: 1 }], [5, O("armory", "evidence", { name: "Evidence room", type: "courtev", lock: ["door", 0.6], boxLock: ["evidence", 0.5], dk: "steel" })], restroom], fd, 2),
+      [["*", court()], [6, { role: "cells", name: "Holding cell", civic: "cells", maxBoxes: 1 }], [5, O("armory", "evidence", { name: "Evidence room", type: "courtev", lock: ["door", 0.6], boxLock: ["evidence", 0.5], dk: "steel" })], restroom], fd, 2),
     upper: () => corridorPlan([["*", O("office", "chambers", { name: "Judge's chambers", type: "courtoffice", boxLock: ["safe", 0.25] })], [6, O("office", "jury", { name: "Jury room" })], ["*", O("office", "chambers", { name: "Judge's chambers", type: "courtoffice" })]],
       [["*", court("Courtroom 2")], [6, O("storage", "lawlibrary", { name: "Law library", type: "courtoffice" })], restroom], fd, 2),
-    exits: [{ side: "back", roles: ["cells", "corridor"], chance: 0.8, lock: 0.6, name: "Sally port" }, ...fire(0.5)],
+    exits: [{ side: "back", roles: ["armory", "corridor"], chance: 0.6, lock: 0.6 }, ...fire(0.5)], // never through the holding cell (its cells keep off a door: civiclayout.js)
   };
 }
 
