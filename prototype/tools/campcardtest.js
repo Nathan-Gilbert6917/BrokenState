@@ -8,7 +8,7 @@ import { stockTools } from "./toolset.js"; // every tool a build or recipe can n
 import { createWorld, tickHour } from "../src/sim/world.js";
 import { roadTeam } from "../src/sim/hardcore-start.js";
 import { establishArrive, tierInfo } from "../src/sim/staging.js";
-import { BUILDINGS, queueBuild, tierUpJob, tierUpType } from "../src/sim/buildings.js";
+import { BUILDINGS, CAMP, queueBuild, tierUpJob, tierUpType } from "../src/sim/buildings.js";
 import { campStatusCard, buildBar, stageSteps, stageRows, stagingTileCard } from "../src/ui/hardcore.js";
 import { renderExpedition } from "../src/ui/expedition.js";
 import { renderRight } from "../src/ui/ui.js";
@@ -27,8 +27,15 @@ check(!!p, "a team on the road");
 let card = campStatusCard(st, p);
 check(/No base yet/.test(card), "no camp: 'No base yet'");
 check(/Establish base/.test(card), "no camp: points at the order");
-check(/Scrap/.test(card) && /Building materials/.test(card) && /Team has/.test(card), "no camp: the supplies and what the team has (the step up's scrap and building materials)");
-check(/on the spot you pick on its map: the camp fire built and a 5 × 5 cleared round it/.test(card) && /nothing carried/.test(card), "setting up: the camp fire and a 5 × 5 cleared, nothing carried");
+check(/Scrap/.test(card) && /Building materials/.test(card) && /Team has/.test(card), "no camp: the supplies and what the team has (the step up's scrap, building materials and wood)");
+check(/1\. Camp/.test(card) && /2\. Shelter/.test(card) && /shelter shack/i.test(card), "two steps: the camp, then its Shelter shack placed from the Build list (the user's request 2026-10-25)");
+check(/Wood/.test(text(card)) && /Stone/.test(text(card)) && text(card).includes(`${CAMP.fireCost.wood}`) && text(card).includes(`${CAMP.fireCost.stone}`), "the camp fire's wood and stone listed against what the team has");
+check(!/nothing carried/.test(card), "no 'nothing carried': the camp fire takes wood and stone");
+for (const k of ["wood", "stone"]) { p.supplies[k] = 0; if (p.cargo && p.cargo.supplies) p.cargo.supplies[k] = 0; }
+check(/First the camp fire/.test(campStatusCard(st, p)) && /Cut wood and Gather stone/.test(campStatusCard(st, p)), "short of the fire's wood and stone: says so first, and how to get them");
+Object.assign(p.supplies, { ...CAMP.fireCost });
+card = campStatusCard(st, p);
+check(/set up camp right here/.test(card) && /builds the camp fire from what it carries and clears a 5 × 5 round it/.test(card) && (card.match(/✓ /g) || []).length >= 2, "carrying them: set up camp right here, the fire's rows ticked");
 check(renderExpedition(st, { xpQueue: false, expedition: p.id }, p).includes("campcard"), "the team panel carries the card");
 check(/data-mission="camp"/.test(renderExpedition(st, { xpQueue: false, expedition: p.id }, p)), "the team panel offers Set up camp");
 const was = { mission: p.mission, phase: p.phase, path: p.path };

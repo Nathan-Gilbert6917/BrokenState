@@ -19,7 +19,7 @@ import { ROLES } from "../sim/economy.js";
 import { mapWorkerCanvas, pieceBox, yawOf } from "./mapfigures.js";
 
 export const LOADS = { wood: "logs", hunt: "game", fish: "fish", forage: "basket", scavenge: "sack", water: "buckets" };
-const RING = { wood: "#d8a860", hunt: "#e07a50", fish: "#5aa8e0", forage: "#9ad06a", scavenge: "#d8c890", water: "#7ac0f0" };
+export const RING = { wood: "#d8a860", hunt: "#e07a50", fish: "#5aa8e0", forage: "#9ad06a", scavenge: "#d8c890", water: "#7ac0f0", stone: "#b8b4aa" }; // the work ring's colour by job (a team at a gathering order too: ui/render.js)
 const MAX_FIGS = 5;        // figures a base at most; more workers are drawn in groups with a ×N tag
 const POP_LIFE = 0.45;     // game hours a deposit's "+18 food" rises over the base
 const SOLO_PX = 1.2;       // world px per grid px of a worker's figure (a lone team walker is 1.25: these a touch smaller)
@@ -138,8 +138,8 @@ function alertMark(ctx, x, y, mark, s, live) {
   ctx.fillStyle = "#fff"; ctx.font = `bold ${Math.round(8 * s)}px Segoe UI`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
   ctx.fillText(mark, x, y + 0.5);
 }
-// A small ring over a worker at work, filling with the work done.
-function workRing(ctx, x, y, f, color, s) {
+// A small ring over a worker at work, filling with the work done (ui/render.js: over a team at a gathering order).
+export function workRing(ctx, x, y, f, color, s) {
   const r = 4 * s;
   ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
   ctx.fillStyle = "rgba(10,12,16,0.6)"; ctx.fill();

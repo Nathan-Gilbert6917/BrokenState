@@ -199,6 +199,7 @@ const freshUi = () => ({
   lookEdit: null, zombieLook: false, nrMsg: "", timelapse: null, bgEditor: null, // bgEditor: the custom backgrounds window (ui/backgrounds.js)
   gearEdit: null, // the new-run screen's starting gear window (ui/startgear.js): { i: the colonist's place in the crew }
   fleetEdit: null, // the new-run screen's window for a starting vehicle's back (ui/startgear.js fleetEditor): { i: its place in the fleet, msg, tsel, tqty }
+  fleetView: null, // the new-run screen's look at a starting vehicle's back as rolled (ui/startgear.js fleetViewer): { i }
   nrMap: false, // the new-run screen put aside to look at the map (ui/newgame.js View map; the banner or Esc brings it back)
   nrPick: false, // with nrMap: a click on the map picks where you start (ui/newgame.js Pick start on map; main.js pickStartAt)
   wcOpen: false, wcWas: null, // the World… window (ui/worldcfg.js) and the dials as they were when it opened
@@ -1447,6 +1448,7 @@ const actions = {
     loadUpAll(state); // sim/itemacts.js: every gun and magazine your people carry loaded with real rounds (what each carries, then the hub's stores): the badges count only rounds that are in them (2026-10-20)
     ui.gearEdit = null;
     ui.fleetEdit = null;
+    ui.fleetView = null;
     assignStartingRoles(state); // jobs by skill, after any edits made on this screen (world.js)
     centerOn(state, playerTile(state));
     const lead = state.survivors.find((s) => s.leader) || state.survivors[0];
@@ -1730,6 +1732,7 @@ const changeActions = {
     if (!ui.ironman) { if (backs && !ui.started) gen(() => newWorld(state.seed, true)); return; }
     ui.freeEdit = false;
     ui.fleetEdit = null;
+    ui.fleetView = null;
     if (crewCustomized(state)) {
       // The crew's dice as they were before the first pick (pickRoll: main.js gave them dice of their own for it).
       gen(() => {
@@ -1978,11 +1981,12 @@ function pointsLoad(list) {
 // vehicle changed (its kind, the count, its back: sim/startfleet.js), the crew as it stands (edited or not), the vehicle's
 // back window still open.
 function gearRebuild(fleet = false) {
-  const keep = ui.gearEdit, keepFleet = ui.fleetEdit;
+  const keep = ui.gearEdit, keepFleet = ui.fleetEdit, keepView = ui.fleetView;
   if (!fleet) ui.crewEdited = true;
   newWorld(state.seed, true);
   ui.gearEdit = keep;
   ui.fleetEdit = keepFleet && state.fleet && state.fleet[keepFleet.i] && state.fleet[keepFleet.i].vid != null ? keepFleet : null; // an emptied slot: closed
+  ui.fleetView = keepView && state.fleet && state.fleet[keepView.i] && state.fleet[keepView.i].vid != null ? keepView : null; // the look at a back: open on the new dice
 }
 
 // A loaded world (ui/settings.js): like a new world, but already started, paused, and remembering its save slot.
@@ -2946,6 +2950,7 @@ function closeTopLayer() {
   if (ui.bgEditor) { closeBackgrounds(); return true; }
   if (ui.gearEdit) { ui.gearEdit = null; return true; } // the starting gear window (ui/startgear.js)
   if (ui.fleetEdit) { ui.fleetEdit = null; return true; } // a starting vehicle's back window (ui/startgear.js)
+  if (ui.fleetView) { ui.fleetView = null; return true; } // the look at a starting vehicle's back (ui/startgear.js)
   if (!ui.started && ui.nrMap) { backToSetup(ui); return true; } // looking at the map from the new-run screen: back to it
   if (ui.settings) { // a question first, then the menu itself (not while a save or load is running)
     if (ui.settings.confirm) ui.settings.confirm = null;
@@ -3033,7 +3038,7 @@ window.addEventListener("keydown", (e) => {
   if (ui.title) { if (!ui.settings && !ui.zombieLook && !ui.hall && titleKey(ui, e)) e.preventDefault(); return; } // the title screen (ui/title.js): only the menu's keys
   if (e.code === "Escape" && !state.combat) { e.preventDefault(); openSettings(ui); refresh(); return; }
   if (ui.inv && ui.inv.form && !ui.gunb && !ui.settings && teamFormKey(state, ui, e)) { e.preventDefault(); refresh(); return; } // ui/teamform.js: tabs, picking people, Enter
-  if (ui.zombieLook || ui.wcOpen || ui.bgEditor || ui.gearEdit || ui.fleetEdit || ui.inv || ui.gunb || ui.settings || ui.hall) return; // these screens take the keyboard
+  if (ui.zombieLook || ui.wcOpen || ui.bgEditor || ui.gearEdit || ui.fleetEdit || ui.fleetView || ui.inv || ui.gunb || ui.settings || ui.hall) return; // these screens take the keyboard
   if (state.combat) {
     if (combatKey(state, e)) { e.preventDefault(); refresh(); }
     return;

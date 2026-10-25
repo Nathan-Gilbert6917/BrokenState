@@ -7,7 +7,7 @@ import { SUPPLIES } from "../sim/data.js";
 import { partyMembers, partyTile, carried, planPath, partySpeed, tileLabel, teamName } from "../sim/parties.js";
 import { teamUpkeep } from "./needs.js"; // what the team has, uses a day and how long it lasts
 import { roadTeam, hubSites } from "../sim/hardcore-start.js";
-import { stagingView, needText, ESTABLISH_LABEL, STAGING, STAGES, waterText, establishProblem, strikeProblem } from "../sim/staging.js";
+import { stagingView, needText, ESTABLISH_LABEL, STAGING, STAGES, waterText, establishProblem, strikeProblem, fireCostProblem } from "../sim/staging.js";
 import { BUILDINGS, CAMP, isCamp, tierUpJob, tierUpType, gatherCap } from "../sim/buildings.js";
 import { atBase } from "../sim/world.js";
 import { fireLit } from "../sim/fieldheat.js";
@@ -23,7 +23,7 @@ const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
 const n0 = (v) => Math.floor((v || 0) + 1e-9);
 const r1 = (v) => Math.round((v || 0) * 10) / 10;
 const pct = (f) => `${Math.round((f || 0) * 100)}%`;
-const NEED_KEYS = ["scrap", "parts", "buildmat", "food", "water"]; // sim/staging.js stagingRows
+const NEED_KEYS = ["scrap", "parts", "buildmat", "wood", "stone", "food", "water"]; // sim/staging.js stagingRows (wood: the shelter shack's 200; wood and stone: the camp fire's)
 const clamp01 = (f) => Math.max(0, Math.min(1, f || 0));
 // A construction bar with its % written on it. cap: the lighter part, as far as the materials in the stores allow.
 export function buildBar(f, { cap = null, done = false, text = "" } = {}) {
@@ -34,16 +34,18 @@ export function buildBar(f, { cap = null, done = false, text = "" } = {}) {
 export function stageSteps(stage) {
   return `<span class="stagesteps">${STAGES.map((s, i) => `<span class="${i < stage ? "past" : i === stage ? "now" : ""}">${i < stage ? "✓ " : ""}${esc(s)}</span>`).join("<b>→</b>")}</span>`;
 }
-// The camp's needs against its stores, and (with a team) what that team carries toward each.
-function suppliesTable(state, v, p = null) {
-  const rows = v.camp ? v.rows : NEED_KEYS.filter((k) => v.needs[k]).map((k) => ({ key: k, need: v.needs[k], have: 0, short: v.needs[k], ok: false }));
-  const carry = (k) => (p ? n0(k === "food" ? carried(p, "food") : k === "water" ? carried(p, "water") + carried(p, RAW) : carried(p, k)) : 0);
-  const head = `<div class="muted">Supply</div><div class="muted">${v.camp ? "At the camp" : "Needed"}</div>${p ? `<div class="muted"${tip("What this team carries now. Food and water: it keeps two days of each for the road and unloads the rest.")}>Team has</div>` : ""}`;
+// The camp's needs against its stores, and (with a team) what that team carries toward each. needs: in place of the
+// step up's (the camp fire's, CAMP.fireCost: carried by the team, so ticked by what it carries).
+const carriedOf = (p, k) => (p ? n0(k === "food" ? carried(p, "food") : k === "water" ? carried(p, "water") + carried(p, RAW) : carried(p, k)) : 0);
+function suppliesTable(state, v, p = null, needs = null) {
+  const rows = v.camp && !needs ? v.rows : NEED_KEYS.filter((k) => (needs || v.needs)[k]).map((k) => { const need = (needs || v.needs)[k], ok = !!needs && carriedOf(p, k) >= need; return { key: k, need, have: 0, short: need, ok }; });
+  const ticks = v.camp || !!needs;
+  const head = `<div class="muted">Supply</div><div class="muted">${v.camp && !needs ? "At the camp" : "Needed"}</div>${p ? `<div class="muted"${tip(needs ? "What this team carries now: the camp fire takes it when the camp goes up." : "What this team carries now. Food and water: it keeps two days of each for the road and unloads the rest.")}>Team has</div>` : ""}`;
   const body = rows.map((r) => {
-    const c = carry(r.key), fills = !r.ok && c >= r.short;
-    return `<div>${v.camp ? (r.ok ? "✓ " : "✗ ") : ""}${esc(SUPPLIES[r.key].name)}</div>
-      <div class="${r.ok ? "good" : "warn"}">${v.camp ? `${r.have} / ${r.need}${r.ok ? "" : ` <span class="muted">(${r.short} more)</span>`}` : r.need}</div>
-      ${p ? `<div class="${r.ok ? "muted" : fills ? "good" : c ? "" : "muted"}">${c}</div>` : ""}`;
+    const c = carriedOf(p, r.key), fills = !r.ok && c >= r.short;
+    return `<div>${ticks ? (r.ok ? "✓ " : "✗ ") : ""}${esc(SUPPLIES[r.key].name)}</div>
+      <div class="${r.ok ? "good" : "warn"}">${v.camp && !needs ? `${r.have} / ${r.need}${r.ok ? "" : ` <span class="muted">(${r.short} more)</span>`}` : r.need}</div>
+      ${p ? `<div class="${r.ok ? (needs ? "good" : "muted") : fills ? "good" : c ? "" : "muted"}">${c}</div>` : ""}`;
   }).join("");
   return `<div class="suptable${p ? " three" : ""}">${head}${body}</div>`;
 }
@@ -96,19 +98,29 @@ export function stageRows(t) {
   return `<div${tip("Your home grows in three stages: a camp (the barest base: your people live there from the start), a shelter (tier 0), then a base (the hub). Each step up takes materials and work.")}>Stage</div><div>${stageSteps(t.stage)}</div>${t.next ? `<div>Next: ${esc(t.next)}</div><div class="muted">${q ? buildBar(f, { text: `${t.next} ${pct(f)} built` }) : esc(t.needs)}</div>` : ""}`;
 }
 
-// The team panel's card while you have no base (ui/expedition.js): is there a camp yet, how far it is built, what it
-// still needs against what this team carries, and what the team should do about it.
+// The team panel's card while you have no base (ui/expedition.js): the two steps of a home as they are built now (the
+// user's request 2026-10-25: "update the No base yet to align with the current building a camp with the campfire
+// needs"): 1. the camp (Establish base: its camp fire takes CAMP.fireCost carried, sim/staging.js fireCostProblem, ticked
+// against what this team carries, with what to do when it is short), 2. its Shelter shack placed from the camp's Build
+// list (camp_up: brought in, then the work).
 export function campStatusCard(state, p) {
   const v = view(state);
   if (!v) return "";
   const at = partyTile(p);
   const heading = p.mission === "establish" && (p.phase === "out" || p.phase === "back") && p.path && p.path.length ? p.path[p.path.length - 1] : null;
   const why = heading == null ? establishProblem(state, at) : null;
-  const line = heading != null ? `On the way to set up camp ${esc(tileLabel(state, heading))}.`
-    : why ? `Not here: ${esc(why)}` : `Give the order <b>${ESTABLISH_LABEL}</b> (Orders, below) to set up camp right here (on the spot you pick on its map: the camp fire built and a 5 × 5 cleared round it, the hours by what stands there, nothing carried): a camp is the barest base, and your people live there from the start.`;
+  const short = fireCostProblem(state, p);
+  const line = heading != null ? `On the way to set up camp ${esc(tileLabel(state, heading))}.${short ? ` ${esc(short)}.` : ""}`
+    : why ? `Not here: ${esc(why)}`
+    : short ? `First the camp fire: ${esc(short.replace(/^The camp fire needs /, "").replace(/: Cut wood.*$/, ""))}. Cut wood and Gather stone (the Land orders, below), then give the order <b>${ESTABLISH_LABEL}</b> where your home should stand.`
+    : `Give the order <b>${ESTABLISH_LABEL}</b> (Orders, below) to set up camp right here: you pick its spot on the tile's map, the team builds the camp fire from what it carries and clears a 5 × 5 round it (the hours by what stands there). A camp is the barest base, and your people live there from the start.`;
+  const shack = BUILDINGS.camp_up.name;
   return `<div class="card small attn campcard">
     <div class="spread"><b>No base yet</b>${stageSteps(-1)}</div>
-    <div style="margin-top:0.3rem">${line} Building it up into a shelter takes these brought in, then ${BUILDINGS.camp_up.hours} work-hours by its builders:</div>
+    <div style="margin-top:0.3rem">${line}</div>
+    <div style="margin-top:0.4rem"${tip(`Establish base: the camp fire is built from ${needText(CAMP.fireCost)} the team carries, taken when the camp goes up. Cut wood and Gather stone (the team's Land orders) bring them in.`)}><b>1. Camp</b> <span class="muted">the camp fire, carried:</span></div>
+    ${suppliesTable(state, v, p, CAMP.fireCost)}
+    <div style="margin-top:0.4rem"${tip(`Once the camp stands, pick the ${shack.toLowerCase()} from its Build list and place it on the build map (nothing is placed for you). The materials are taken from the camp's stores as they come in; its builders do the work.`)}><b>2. Shelter</b> <span class="muted">place its ${esc(shack.toLowerCase())} from the camp's Build list: these brought in, then ${BUILDINGS.camp_up.hours} work-hours by its builders:</span></div>
     ${suppliesTable(state, v, p)}
   </div>`;
 }
@@ -134,10 +146,17 @@ export function firstHubCard(state) {
     <div class="spread"><h2 style="margin:0">${v.title}</h2><span class="muted small">${v.first ? "Hardcore" : "On the road"}</span></div>
     <div class="small" style="margin-top:0.3rem">${intro}</div>
     ${d ? `<div class="kv small" style="margin-top:0.4rem"><div${tip("Days the team's food and water last at today's rate. Thirst kills in a few days: rivers and lakes (Fetch water) and shops, diners and churches have water. Workers at the camp eat from its stores once theirs run out.")}>Team lasts</div><div class="${Math.min(d.food, d.water) < 2 ? "danger" : ""}">food ${r1(d.food)} days · water ${r1(d.water)} days</div></div>` : ""}
+    ${v.p ? fireRow(state, v.p) : ""}
     ${v.p && d && d.food < 3 ? landFoodRows(state, v.p) : ""}
     ${spots.length ? `<div class="small muted" style="margin-top:0.4rem"${tip("Spots within 4 tiles of the team rated for a hub: water beside or near, sites to scavenge around, few of the dead and no hive close by.")}>Good spots nearby:</div>${spotRows}` : ""}
     <div class="row" style="margin-top:0.5rem">${v.p ? `<button class="primary" data-action="xp-open" data-id="${v.p.id}"${tip("People, gear, supplies and orders")}>Team panel</button><button data-action="center" data-tile="${v.tile}"${tip("Center the map on the team")}>Locate team</button>` : ""}</div>
   </div>`;
+}
+
+// The camp fire's wood and stone against what the road team carries (sim/staging.js fireCostProblem).
+function fireRow(state, p) {
+  const F = CAMP.fireCost, short = fireCostProblem(state, p);
+  return `<div class="kv small" style="margin-top:0.4rem"><div${tip(`Establish base builds the camp fire from ${needText(F)} the team carries. Short: Cut wood and Gather stone (the team's Land orders), or bring some.`)}>Camp fire</div><div class="${short ? "warn" : "good"}">${Object.entries(F).map(([k, n]) => `${Math.min(n, carriedOf(p, k))} / ${n} ${k}`).join(" · ")}${short ? "" : " ✓ carried"}</div></div>`;
 }
 
 // Food from the land around the road team when its food runs low (under 3 days): forage, hunt and fish, here and

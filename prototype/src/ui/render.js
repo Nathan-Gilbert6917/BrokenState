@@ -5,7 +5,7 @@ import { hub, day, factionById, RADIO_RANGE, isNight } from "../sim/world.js";
 import { setPoiReveal, poisOf, poiKnown, knownPois, poiLootBand, POI } from "../sim/pois.js"; // points of interest: a bare tile's top POI drawn once known, the known-count pip; the dev tools' Reveal map shows every one (resetView puts the fog back)
 import { poiHeading, poiTipLines } from "./poiview.js"; // the hover text's lines on a tile's POIs
 import { partyTile, plannedPos, outpostScrap, glideAt, partyMembers, clockText, reportsLive } from "../sim/parties.js";
-import { contactable } from "../sim/orders.js";
+import { contactable, orderStatus } from "../sim/orders.js";
 import { walkPos } from "../sim/poiwalk.js"; // a team walking to a place on its tile, or standing at it
 import { LIGHTS, lightOf } from "../sim/lights.js"; // a team's lights glow at night
 import { holdsNextHour } from "./pacing.js"; // a team holding for a tray card does not glide
@@ -45,7 +45,7 @@ import { OUTSIDER_COLORS, ruinSpriteCanvas, emptyBaseSpriteCanvas } from "./maps
 import { cartMarkerCanvas } from "./cartmodel.js"; // a cart left on a tile: its marker
 import { cartSpec, cartInKg } from "../sim/carts.js";
 // The moving pieces as low-poly figures with a heading and a cycle frame (people walking, wheels turning, oars pulling).
-import { mapPartyCanvas, mapGroupPartyCanvas, mapSoloCanvas, mapGroupSoloCanvas, mapOutsiderSoloCanvas, mapCyclistCanvas, mapOutsiderPartyCanvas, mapHordeCanvas, mapHerdCanvas, drawPiece, pieceBox, yawOf, dirOf, FRAMES, soloKind } from "./mapfigures.js";
+import { mapPartyCanvas, mapGroupPartyCanvas, mapSoloCanvas, mapGroupSoloCanvas, mapOutsiderSoloCanvas, mapCyclistCanvas, mapOutsiderPartyCanvas, mapHordeCanvas, mapHerdCanvas, mapWorkerCanvas, drawPiece, pieceBox, yawOf, dirOf, FRAMES, soloKind } from "./mapfigures.js";
 import { occupyPreview } from "../sim/occupy.js"; // empty bases: the tooltip
 import { redSkullCanvas, wallbreakerMapCanvas, siteSpriteCanvas, growthCanvas } from "./hivesprites.js";
 import {
@@ -56,7 +56,7 @@ import { deco, decoAlpha, decoAtlas, decoScale, waterTexture, waterPattern, plac
 import { pondIce, pondTileWord } from "../sim/ponds.js"; // the pond tiles' ponds frozen or not (the decor, the tooltip)
 import { drawMapNotes, noteTip, notesHash } from "./mapnotes.js"; // the player's own notes on the map (sim/mapnotes.js)
 import { blocOf, blocColorOf } from "../sim/blocs.js"; // AI blocs: a ring in the bloc's colour round its members' bases
-import { drawWorkers } from "./workermap.js"; // your bases' people out on job trips (sim/jobtrips.js), the groups' walkers
+import { drawWorkers, workRing, RING } from "./workermap.js"; // your bases' people out on job trips (sim/jobtrips.js), the groups' walkers
 import { drawNight } from "./nightfx.js"; // the time-of-day shade and the lights through it
 import { lightningFrame, drawLightning, lightningWants } from "./lightningfx.js"; // lightning in storms: lifts the night shade, flashes after it
 import { onForgetPictures, watchCanvas } from "./pictures.js"; // the map's chunks are drawn again after a lost GPU context
@@ -2161,6 +2161,50 @@ function soloGait(p, s) {
   if (s && (s.health < WOUNDED_BELOW || s.woundInfected || conditionsOf(s).some((c) => CONDITIONS[c.key] && CONDITIONS[c.key].kind === "injury"))) return "limp";
   return p.burden && p.burden.band >= 2 ? "heavy" : "";
 }
+// A team of yours at a gathering order (the user's request 2026-10-25: "Add animations to the group sprites when being
+// sent out to do gathering orders"): its people, up to GATHER_FIGS, in the job's kit at work on the tile (ui/mapfigures.js
+// mapWorkerCanvas work): an axe or a pick swung (Cut wood, Gather stone), a rod worked at the water's edge (Fish), buckets
+// filled there (Fetch water), hunters and foragers roaming round the spot. The task's type is the job.
+const GATHER = { wood: "wood", stone: "stone", hunt: "hunt", fish: "fish", forage: "forage", water: "water" };
+export const gatherJob = (p) => (p && p.phase === "task" && p.task ? GATHER[p.task.type] || null : null);
+const GATHER_FIGS = 3;
+const GATHER_MS = { wood: 420, stone: 480, fish: 900, water: 700 }; // half a cycle: a swing, the rod worked, a bucket filled
+const GATHER_AT = [[[0, 0]], [[-7, 0], [7, 1.5]], [[0, -3], [-11, 2], [11, 2.5]]]; // world px (× size) round the spot, by how many
+const ROAMS = new Set(["hunt", "forage"]);
+// The way to the water from a tile (a neighbour that is water), as a unit screen direction, or null.
+function waterWay(state, tile) {
+  const g = state.grid, [x, y] = g.toPixel(tile, HEX);
+  for (const n of g.neighbors(tile)) {
+    const t = state.tiles[n];
+    if (!t || t.terrain !== "water") continue;
+    const [nx, ny] = g.toPixel(n, HEX), l = Math.hypot(nx - x, ny - y) || 1;
+    return [(nx - x) / l, (ny - y) / l];
+  }
+  return null;
+}
+// Draws them round (cx, fy), s the size; returns where the work ring goes: { x, top } (world px).
+function drawGatherers(state, p, color, job, cx, fy, s, count) {
+  const n = Math.max(1, Math.min(GATHER_FIGS, count || 1)), k = p.id * 11 + 3;
+  const ww = job === "fish" || job === "water" ? waterWay(state, partyTile(p)) : null;
+  if (ww) { cx += ww[0] * HEX * 0.3; fy += ww[1] * HEX * 0.3; } // at the water's edge
+  const figs = GATHER_AT[n - 1].map(([ox, oy], i) => {
+    if (ROAMS.has(job)) { // round the spot, each its own way along an oval
+      const a = (animOn() ? animNow / 5200 : 0.1) * Math.PI * 2 + i * 2.09 + phaseOf(k) * Math.PI * 2, rx = (7 + n) * s, ry = 3.5 * s;
+      return { x: cx + Math.cos(a) * rx, y: fy + Math.sin(a) * ry, yaw: yawOf(-Math.sin(a) * rx, Math.cos(a) * ry), frame: cycleFrame(k + i * 5, true, 380) };
+    }
+    return { x: cx + ox * s, y: fy + oy * s, yaw: ww ? yawOf(ww[0], ww[1]) : ox > 0 ? 135 : 345, frame: cycleFrame(k + i * 5, true, GATHER_MS[job] || 500) }; // side on (the swing reads), the two outer ones facing each other
+  }).sort((a, b) => a.y - b.y);
+  let top = Infinity;
+  for (const f of figs) {
+    const cv = mapWorkerCanvas(job, color, f.yaw, f.frame, "", true), u = SOLO_PX * s;
+    ctx.beginPath(); ctx.ellipse(f.x, f.y + 1 * s, 4.5 * s, 1.8 * s, 0, 0, Math.PI * 2); ctx.fillStyle = "rgba(0,0,0,0.3)"; ctx.fill();
+    piece(cv, f.x, f.y, u);
+    notePiece(cv, f.x, f.y, u);
+    top = Math.min(top, pieceBox(cv, f.x, f.y, u)[1]);
+  }
+  return { x: cx, top };
+}
+
 // Who goes beside a team's vehicle (a mixed team): people without a seat walk beside it (sim/walkers.js p.walkers), or
 // the bikes ride along with the cars (a fleet: vehicles.js). "walker" | "cyclist" | "".
 function sideFigure(state, p) {
@@ -2414,14 +2458,22 @@ function drawPlayerParty(state, p) {
     const onWay = ((p.phase === "out" || p.phase === "back") && p.path && p.idx < p.path.length - 1) || !!(wk && wk.walking && wk.exit);
     const [cvp, u1, bob] = teamCanvas(state, p, look, onWay, hd.yaw, isNight(state)), up = u1 * k2, sz = zoomBoost(), fy = py + GROUND * sz; // fy: where the figures stand
     const wp = pieceBox(cvp, px, fy, up)[2];
-    if (onWay && MOTOR.has(look.kind)) dustTrail(p.id, px, fy, sz, hd.dir, wp * 0.6);
-    piece(cvp, px, fy + bob, up);
-    const side = sideFigure(state, p); // a mixed team: someone walking (or riding a bike) behind the vehicle
-    if (side) drawSideFigure(p, side, look.color, px, fy, wp, hd, onWay, k2);
-    notePiece(cvp, px, fy, up);
+    const job = gatherJob(p), afoot = !!job && !MOTOR.has(look.kind); // at a gathering order: on foot its people at the job in place of the party's piece
+    if (!afoot) {
+      if (onWay && MOTOR.has(look.kind)) dustTrail(p.id, px, fy, sz, hd.dir, wp * 0.6);
+      piece(cvp, px, fy + bob, up);
+      const side = sideFigure(state, p); // a mixed team: someone walking (or riding a bike) behind the vehicle
+      if (side && !job) drawSideFigure(p, side, look.color, px, fy, wp, hd, onWay, k2);
+      notePiece(cvp, px, fy, up);
+    }
+    const work = job ? drawGatherers(state, p, look.color, job, afoot ? px : px + wp * 0.5 + 8 * sz, fy, sz * k2, look.count) : null; // with a vehicle: beside it
     if (p.kind !== "convoy" && (p.heat || 0) >= 5 && !state.timelapse) heatBar(px, py, p.heat); // fieldheat.js: standing still draws attention
     if (p.phase === "waiting") badge(px, py, "alert", "#ffd166");
-    else if (p.phase === "task" && !camping && !(wk && wk.walking)) badge(px, py, "work"); // walking to a place: its pill says so
+    else if (work) { // the order's hours as a ring filling over them, as over the base workers (ui/workermap.js)
+      const f = orderStatus(state, p).pct;
+      if (f != null) workRing(ctx, work.x, work.top - 5 * sz, f, RING[job] || "#fff", sz * 1.3);
+      if (!state.timelapse) glidingNow = true; // it fills as the minutes go by
+    } else if (p.phase === "task" && !camping && !(wk && wk.walking)) badge(px, py, "work"); // walking to a place: its pill says so
     else if (p.kind !== "convoy" && p.radioLive && !state.timelapse) badge(px, py, "radio"); // timelapse: everything is live
     // A wait on the way, with the minutes left of it (sim/parties.js glideAt: the same course the hour will take):
     // a road blockage being cleared, a repair, another delay. Above a crew's name.

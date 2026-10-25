@@ -74,10 +74,11 @@ export const STAGING = {
   // 2026-10-09: "upgrading to shelter 20 hours 20 scrap 2 building materials"). Kept here for the panels and the
   // governor (autopilot.js roadMissing).
   // (getters: buildings.js and this file import each other)
-  get HARDCORE() { return { needs: { ...BUILDINGS.camp_up.cost }, work: BUILDINGS.camp_up.hours }; },
+  get HARDCORE() { return { needs: { ...BUILDINGS.camp_up.cost }, work: BUILDINGS.camp_up.hours, name: BUILDINGS.camp_up.name }; },
   get EXILE() { return { needs: { ...BUILDINGS.camp_up.cost }, work: BUILDINGS.camp_up.hours }; },
-  // Setting up a camp: nothing carried; at least the camp fire's work (siteSetup: the clearing of the spot on top).
+  // Setting up a camp: no scrap; at least the camp fire's work (siteSetup: the clearing of the spot on top).
   get PITCH() { return { scrap: 0, hours: CAMP.fireHours }; },
+  get FIRE() { return { ...CAMP.fireCost }; }, // the camp fire's wood and stone, carried by the team (fireCostProblem; for the panels and the opening card)
   get RUIN_SCRAP() { return CAMP.ruinScrap; }, // on the ruins of a burned base: less scrap for the step up (salvage)
   ABANDON: 10,                   // days with nobody there before looters may come
   LOOT_CHANCE: 0.35,             // a day, once abandoned
