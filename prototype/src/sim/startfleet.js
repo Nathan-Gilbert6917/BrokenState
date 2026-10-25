@@ -40,6 +40,10 @@
 //   f.diceTrunk (the car's on its owner, s.diceTrunk), shown by 👁 Back (fleetViewer). backRoll (the user's request
 //   2026-10-25: "ADD A BUTTON TO REROLL WHAT IS IN THE BACK PER VEHICLE"): the back's own dice (the screen's 🎲 Reroll
 //   back, fleet-reroll-back), its kind and tank kept; null: the back on the vehicle's dice after them.
+// - owner (the user's request 2026-10-25: "make each vehicle keep its own dice when removing NEW vehicle new dice"): whose
+//   it is, a place in the crew, pinned on the screen once rolled (with its roll: ui/startgear.js uiFleet), so a vehicle
+//   keeps its owner, kind and back when one before it is removed; null: the next of the crew without one. ＋ Add gives
+//   a new vehicle new dice (newRoll).
 import { VEHICLE_TYPES, RIDER_KG } from "./vehicles.js";
 import { wornLoad } from "./load.js";
 import { sanitizeStartVehicle, trunkKg } from "./startgear.js";
@@ -77,7 +81,7 @@ export const fleetMode = (state) => (isCustomRun(state) ? "custom" : state && st
  * pickup when none; Hardcore's first: null, as the dice roll it). Each its limit, its load (null: as rolled) and empty
  * (no vehicle in the slot). None given: the initial vehicle alone.
  * @param {any} raw @param {string} mode "normal" | "hardcore" | "custom" @param {number} [max]
- * @returns {{ type: string | null, limit: number, load: { items: any[], supplies: Record<string, number> } | null, empty: boolean, driver: number | null, roll: number | null, backRoll: number | null }[]}
+ * @returns {{ type: string | null, limit: number, load: { items: any[], supplies: Record<string, number> } | null, empty: boolean, driver: number | null, roll: number | null, backRoll: number | null, owner: number | null }[]}
  */
 export function cleanFleet(raw, mode, max = START_FLEET.COUNT.MAX) {
   const list = Array.isArray(raw) ? raw : [];
@@ -89,7 +93,7 @@ export function cleanFleet(raw, mode, max = START_FLEET.COUNT.MAX) {
     const r = list[i] && typeof list[i] === "object" ? list[i] : {};
     const type = kinds.includes(r.type) ? r.type : null; // as rolled unless a kind is set: by whose it is (2026-10-25, every mode)
     const empty = !!r.empty;
-    out.push({ type, limit: clampLimit(r.limit), load: r.load && !empty ? sanitizeStartVehicle(r.load, custom) : null, empty, driver: cleanDriver(r.driver, max), roll: cleanRoll(r.roll), backRoll: cleanRoll(r.backRoll) });
+    out.push({ type, limit: clampLimit(r.limit), load: r.load && !empty ? sanitizeStartVehicle(r.load, custom) : null, empty, driver: cleanDriver(r.driver, max), roll: cleanRoll(r.roll), backRoll: cleanRoll(r.backRoll), owner: cleanDriver(r.owner, max) });
   }
   return out;
 }
@@ -98,7 +102,7 @@ export function cleanFleet(raw, mode, max = START_FLEET.COUNT.MAX) {
 export function fitFleet(fleet, n, mode) {
   const want = Math.max(START_FLEET.COUNT.MIN, Math.min(START_FLEET.COUNT.MAX, Math.round(n) || START_FLEET.COUNT.MIN));
   const list = cleanFleet(fleet, mode, want);
-  while (list.length < want) list.push({ type: START_FLEET.KIND, limit: START_FLEET.LIMIT, load: null, empty: true, driver: null, roll: null, backRoll: null });
+  while (list.length < want) list.push({ type: START_FLEET.KIND, limit: START_FLEET.LIMIT, load: null, empty: true, driver: null, roll: null, backRoll: null, owner: null });
   return list;
 }
 /** The slot's vehicle is the one the riders sit in (Hardcore: the first vehicle there is). @param {any} state @param {number} i */

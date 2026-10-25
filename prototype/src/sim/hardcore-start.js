@@ -698,8 +698,11 @@ function extraCars(state, p, people, carOwner) {
 // car kind; a kind set on the screen: that kind, the dice cast all the same), its tank and condition in R's ranges,
 // on its slot's own dice (f.roll, else backSeed). Notes the slot (vid, type, rolledType, ownerId). Returns { v, owner, rng }.
 function rollVehicle(state, f, i, people, owned, loc, R) {
-  const rng = new Rng(f.roll != null ? f.roll : backSeed(state, i));
-  const owner = people.find((s) => !owned.has(s.id)) || people[i % people.length];
+  if (f.roll == null) f.roll = backSeed(state, i); // its dice from here on (the screen pins them: a vehicle keeps them when one before it goes)
+  const rng = new Rng(f.roll);
+  const reserved = new Set((state.fleet || []).filter((x) => x !== f && !x.empty && x.owner != null && people[x.owner]).map((x) => people[x.owner].id)); // pinned to another vehicle
+  const pinned = f.owner != null ? people[f.owner] : null;
+  const owner = (pinned && !owned.has(pinned.id) ? pinned : null) || people.find((s) => !owned.has(s.id) && !reserved.has(s.id)) || people.find((s) => !owned.has(s.id)) || people[i % people.length];
   owned.add(owner.id);
   const A = archetypeOf(state, owner.background) || {};
   const rolledType = A.custom && A.car.type ? A.car.type : pickW(rng, !A.custom && A.cars ? A.cars : { sedan: 2, truck: 1 });

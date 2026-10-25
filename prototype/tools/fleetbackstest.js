@@ -183,5 +183,23 @@ section("7. 🎲 Reroll back: the back alone");
   check(SG_ACTIONS["fleet-reroll-back"](st, UI({ started: true, fleet: ui.fleet }), { i: "1" }) === false, "not once started");
 }
 
+section("8. Each vehicle keeps its own dice when one before it goes; a new one new dice");
+{
+  // The user's request 2026-10-25: "make each vehicle keep its own dice when removing NEW vehicle new dice".
+  for (const mode of ["normal", "hardcore"]) {
+    const mk = (fleet) => createWorld({ seed: 7, factionCount: 5, mode, startPeople: 4, fleet });
+    let st = mk([{}, {}, {}]);
+    const ui = UI({ mode, fleet: null });
+    const third = { name: fleetName(st, 2), type: fleetVehicle(st, 2).type, back: J(st.fleet[2].diceTrunk) };
+    check(SG_ACTIONS["fleet-remove"](st, ui, { i: "1" }) === "fleet", `${mode}: the second removed`);
+    st = mk(ui.fleet);
+    check(fleetName(st, 1) === third.name && fleetVehicle(st, 1).type === third.type && J(st.fleet[1].diceTrunk) === third.back, `${mode}: the third, now second, the same (${third.name}, its back)`);
+    const before = st.fleet.map((f) => f.roll);
+    check(SG_ACTIONS["fleet-add"](st, ui, {}) === "fleet" && Number.isInteger(ui.fleet[2].roll) && !before.includes(ui.fleet[2].roll) && ui.fleet[2].owner === null, `${mode}: ＋ Add: new dice, whose it is still to roll`);
+    st = mk(ui.fleet);
+    check(fleetName(st, 1) === third.name && !!fleetVehicle(st, 2) && st.fleet[2].ownerId !== st.fleet[1].ownerId, `${mode}: the new one beside it, someone else's (${fleetName(st, 2)})`);
+  }
+}
+
 console.log(`\n${passes} passed, ${fails} failed`);
 process.exit(fails ? 1 : 0);
