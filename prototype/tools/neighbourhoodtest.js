@@ -4,7 +4,7 @@
 // - generation: 3–5 houses (streetHouses), the map the run's largest raid map (battlesize.js raidMaxDims; World… Raid map, largest), a small dial never narrower than its houses, the same street every
 //   time (and with a vehicle, from another side), houses apart and inside the map, rooms and containers numbered on
 //   (areas[id] is the room with that id, container ids 1..n), every house with rooms, a stairwell and containers
-// - every house reachable: from the west end every walkable cell of the ground floor (locked doors as ways through),
+// - every house reachable: from the west end every walkable cell of the ground floor (locked doors and a scene's barricades as ways through),
 //   every house's front door, every container; upstairs every container from a stairwell; every zone
 // - the raid on it (createBattle): one POI map ("poi<i>:neighbourhood"), its storeys, the upper floors' reach from
 //   every house's stairs, the intro naming the houses, the dead of the whole roster (more than one house's map)
@@ -80,7 +80,7 @@ const sigBattle = (b) => boxesOf(b).map((c) => `${c.id}:${c.kind}:${c.x},${c.y},
 // Flood over walkable cells (and locked doors, "door": ways through once opened) from (x, y).
 function floodFrom(cells, w, h, starts) {
   const seen = new Uint8Array(w * h), q = [];
-  const pass = (c) => !!(CELL[c.k] && CELL[c.k].walk) || c.k === "door";
+  const pass = (c) => !!(CELL[c.k] && CELL[c.k].walk) || c.k === "door" || c.k === "boarded" || (!!c.moved && c.hp > 0); // a locked door, and a room a scene barricaded (sim/interiorscenes.js: boards, a shoved piece: torn down or shoved), as ways through
   for (const [x, y] of starts) if (pass(cells[y * w + x]) && !seen[y * w + x]) { seen[y * w + x] = 1; q.push(y * w + x); }
   while (q.length) {
     const i = q.pop(), x = i % w, y = (i / w) | 0;

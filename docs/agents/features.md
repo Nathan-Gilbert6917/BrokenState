@@ -171,6 +171,7 @@ Detail: [combat.md](../features/combat.md).
 - **Windows and the kinds of door**: window states (open, locked, broken) and door kinds with their own hit points, sight and locks [windows, buildingmaps, locks]. [details](../features/combat.md#windows-and-the-kinds-of-door)
 - **Raiders and the dead fight each other in a raid**; unseen shots are heard and marked in the fog [crossfire] `tools/crossfiretest.js`. [details](../features/combat.md#raiders-and-the-dead-fight-each-other-in-a-raid)
 - **Barricades**: shove furniture, board up doors and windows; the dead crawl over half cover [barricade] `tools/barricadetest.js`. [details](../features/combat.md#barricades)
+- **Signs of survival**: rooms barricaded from inside, overrun rooms, hallway piles, last stands, quiet deaths, blood [interiorscenes, barricade, ui/battlemarks] `tools/scenestest.js`. [details](../features/combat.md#signs-of-survival)
 - **Shoving people and the dead**: push back or floor a foe; the dead grapple [shoving] `tools/shovetest.js` `tools/shoveviewtest.js`. [details](../features/combat.md#shoving-people-and-the-dead)
 - **Soft cover: bushes and tents**: conceal but never stop bullets; tents tear and are mended [softcover] `tools/softcovertest.js`. [details](../features/combat.md#soft-cover-bushes-and-tents)
 - **Taking tents down and slashing them** in a fight, and stealing the bag [tentfight, softcover] `tools/campsitetest.js`. [details](../features/combat.md#taking-tents-down-and-slashing-them)
@@ -216,6 +217,7 @@ Detail: [dead.md](../features/dead.md).
 - **Hive crawl**: chamber by chamber down to the Hivemind on a round grid of chambers [hivecrawl, citygrid]. [details](../features/dead.md#hive-crawl)
 - **Hordes**: roles (guard, build, attack, roam) that merge on the State Map, drawn as a shuffling crowd of the dead [hordes, ui/mapfigures]. [details](../features/dead.md#hordes)
 - **Special dead**: runners, brutes, spitters, screamers, crawlers, elites, Boneback, carriers, soldier dead, sleepers, dead beasts [zombietypes, acid, middead, carriers, deadbeasts]. [details](../features/dead.md#special-dead-and-the-dead-beasts)
+- **Bodies on every floor**: a building's bodies on all its storeys, a scene's dead and survivors' bodies [sleepers, interiorscenes] `tools/scenestest.js`. [details](../features/dead.md#bodies-on-every-floor)
 - **Attacked alone**: a lone worker or walker set upon by the dead [loneattack, tripevents]. [details](../features/dead.md#attacked-alone-2026-10-19)
 - **Shepherd's aura** [decoys].
 - **The counter-dead**: Digger, Melter, Husk, Tripper and Dark-walker bred against the defences a hive meets [counterdead, hivetech] `tools/counterdeadtest.js`. [details](../features/dead.md#the-counter-dead)
