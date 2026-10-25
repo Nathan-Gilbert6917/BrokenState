@@ -1240,10 +1240,50 @@ function placeConvoy(b, party, others, W, H, inside) {
       if (!vr) continue;
       const reach = flood(b.cells, 0, Math.floor(H / 2));
       b.reach = reach;
-      const u = upgradesOf(x);
-      b.convoy.push({ ...vr, vid: x.id, name: x.name, cond0: x.condition, wear: 0, up: isBike(x) ? null : { glass: u.glass, mesh: u.mesh, plating: u.plating, scrapPlate: u.scrapPlate, turret: u.turret ? { gun: u.turret.gun } : null } });
-      const tag = isBike(x) ? null : carUpTag(u);
-      if (tag) for (let cy = vr.y; cy < vr.y + vr.h; cy++) for (let cx = vr.x; cx < vr.x + vr.w; cx++) { const c = b.cells[idx(cx, cy)]; if (c && c.car) c.car.up = tag; }
+      b.convoy.push(convoyCar(b.cells, vr, x));
+      break;
+    }
+  }
+}
+// One of the team's other vehicles put down at vr (placeVehicle): its b.convoy entry, its upgrades on its cells.
+function convoyCar(cells, vr, x) {
+  const u = upgradesOf(x);
+  const tag = isBike(x) ? null : carUpTag(u);
+  if (tag) for (let cy = vr.y; cy < vr.y + vr.h; cy++) for (let cx = vr.x; cx < vr.x + vr.w; cx++) { const c = cells[idx(cx, cy)]; if (c && c.car) c.car.up = tag; }
+  return { ...vr, vid: x.id, name: x.name, cond0: x.condition, wear: 0, up: isBike(x) ? null : { glass: u.glass, mesh: u.mesh, plating: u.plating, scrapPlate: u.scrapPlate, turret: u.turret ? { gun: u.turret.gun } : null } };
+}
+// The team's other vehicles on a raid map (map.convoy, b.convoy as on a field map; 2026-10-25, the user's report: "My
+// team has two vehicles but only one showed in the raid"): parked along the edge the team comes in at, beside the
+// entry zone the lead one waits in, turned as it is, nearest first. Never on a zone or the ring round it (the team
+// starts there), indoors, beside a container, nor where it would shut off ground the team could reach (map.reach,
+// flooded again from the entry); laid before the relief, which keeps a car's cells level (relief.js). No dice: the
+// same map from the same dice (raidplan.js rebuild).
+function placeRaidConvoy(map, party, others) {
+  map.convoy = [];
+  const cells = map.cells, z = map.zones[0];
+  const from = others.length ? (() => { for (let y = z.y0; y < z.y0 + z.h; y++) for (let x = z.x0; x < z.x0 + z.w; x++) if (map.reach[idx(x, y)]) return [x, y]; return null; })() : null;
+  if (!from) return;
+  const count = (r) => r.reduce((a, v) => a + v, 0);
+  const nearZone = (x, y) => map.zones.some((q) => x >= q.x0 - 1 && y >= q.y0 - 1 && x <= q.x0 + q.w && y <= q.y0 + q.h);
+  const nearBoxes = (x, y) => (map.containers || []).some((c) => !c.f && boxGap(c, x, y) <= 1); // its way to be searched kept open
+  const ok = (x, y) => inside(x, y) && cells[idx(x, y)].k === "open" && !!map.reach[idx(x, y)] && cells[idx(x, y)].f !== "floor" && !nearZone(x, y) && !nearBoxes(x, y);
+  const edge = (x, y) => (z.side === "east" ? W - 1 - x : z.side === "north" ? y : z.side === "south" ? H - 1 - y : x); // cells in from the entry's edge
+  const spots = [];
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (edge(x, y) < 6) spots.push([x, y, edge(x, y) * 4 + Math.hypot(x - z.x0 - 1, y - z.y0 - 1)]);
+  spots.sort((a, c) => a[2] - c[2]);
+  for (const x of others) {
+    const kind = vehicleBody(party, x);
+    for (const [sx, sy] of spots) {
+      const was = []; // the ground under it, put back if it comes up again (placeVehicle lays road under the car)
+      for (let yy = sy - 1; yy <= sy + 5; yy++) for (let xx = sx - 1; xx <= sx + 5; xx++) if (inside(xx, yy)) was.push([idx(xx, yy), cells[idx(xx, yy)].f]);
+      const vr = placeVehicle(cells, W, H, { x0: sx, y0: sy, side: z.side }, kind, ok);
+      if (!vr) continue;
+      const reach = flood(cells, from[0], from[1]);
+      let under = 0;
+      for (let cy = vr.y; cy < vr.y + vr.h; cy++) for (let cx = vr.x; cx < vr.x + vr.w; cx++) under += map.reach[idx(cx, cy)] ? 1 : 0;
+      if (count(reach) < count(map.reach) - under) { removeCar(cells, W, { x0: vr.x, y0: vr.y, w: vr.w, h: vr.h }); for (const [i, f] of was) cells[i].f = f; continue; } // it would wall ground off
+      map.reach = reach;
+      map.convoy.push(convoyCar(cells, vr, x));
       break;
     }
   }
@@ -4058,8 +4098,13 @@ export function createBattle(state, setup) {
       const roadRows = [];
       for (let y = 0; y < H; y++) if (b.cells[idx(1, y)].f === "road") roadRows.push(y);
       const ys = roadRows.length ? [roadRows[Math.floor(roadRows.length / 2) - 1] ?? roadRows[0], roadRows[0], roadRows[roadRows.length - 2] ?? roadRows[0]] : [Math.floor(H / 2) - 1, Math.floor(H / 2) + 1, 2, H - 4];
-      for (const y of ys) {
-        const vr = placeVehicle(b.cells, W, H, { x0: 1, y0: y, side: "north" }, kind, (x, yy) => inside(x, yy) && b.cells[idx(x, yy)].k === "open" && b.reach[idx(x, yy)]);
+      // None of those free (trees or rocks at the edge: a forest's): any row by the west edge, the middle's first, a
+      // little further in if need be (as placeConvoy parks the others; 2026-10-25: else no vehicle of the team's came).
+      const more = [];
+      for (let y = 1; y < H - 2; y++) more.push(y);
+      more.sort((a, c) => Math.abs(a - H / 2) - Math.abs(c - H / 2));
+      for (const [x0, y] of [...ys.map((y) => [1, y]), ...[1, 4, 7].flatMap((x0) => more.map((y) => [x0, y]))]) {
+        const vr = placeVehicle(b.cells, W, H, { x0, y0: y, side: "north" }, kind, (x, yy) => inside(x, yy) && b.cells[idx(x, yy)].k === "open" && b.reach[idx(x, yy)]);
         if (vr) { b.vehicle = vr; break; }
       }
       if (b.vehicle) { b.vehicle.seats = SEATS[kind === "bike" ? "bike" : (pv && pv.type) || "sedan"] ?? 4; b.reach = flood(b.cells, 0, Math.floor(H / 2)); fitMapVehicle(b, pv, state, party); }
@@ -7161,6 +7206,10 @@ export function createRaid(state, setup) {
     if (entryFrom(map, entrySide, withVehicle)) { const z = map.zones[0]; map.reach = flood(map.cells, z.x0 + 1, z.y0 + 1); }
     if (campPoi) { campRaidMap(state, tileId, poiI, map, W, H, mrng); map.reach = flood(map.cells, map.zones[0].x0 + 1, map.zones[0].y0 + 1); } // campsite.js: the clearing, the fire and the tents round it
   }
+  // The team's other vehicles (vehicles.js fleets): parked along the edge beside the entry zone, the team's own (blue),
+  // cover and theirs to lose as on a field map (vehicleBlast, settleVehicle). Only the lead one is driven; they stay or
+  // go with it (scavenge.js afterRaid: R.vehicleKept).
+  if (withVehicle) placeRaidConvoy(map, party, partyVehicles(state, party).filter((x) => x !== pv));
   // The lie of the land on a raid on a hills or mountain tile (relief.js): its hills and hollows round the buildings,
   // the entry zones level; no crag (the ways in stay open).
   { const zs = map.zones || []; applyRelief(map.cells, W, H, tile, { keep: (x, y) => zs.some((z) => x >= z.x0 - 2 && y >= z.y0 - 2 && x < z.x0 + z.w + 2 && y < z.y0 + z.h + 2) }); }
@@ -7169,6 +7218,7 @@ export function createRaid(state, setup) {
     setup, tileId: party ? partyTile(party) : tileId, w: W, h: H, cells: map.cells, reach: map.reach,
     place: placeName(tile),
     units: [], turn: 1, phase: "player", log: [], fx: [], fxSeq: 0, rev: 1, nextId: 1000, vehicle: map.vehicle || null, // the team's car or truck (placeVehicle, driveTo)
+    ...(map.convoy && map.convoy.length ? { convoy: map.convoy } : {}), // the team's other vehicles, parked (placeRaidConvoy)
     pools: party ? [party.supplies, party.cargo ? party.cargo.supplies : {}] : [{}],
     ammoUsed: 0, arrowsUsed: 0, medsUsed: 0, noise: 0, reinf: 0, infection: tile ? tile.infection || 0 : 0,
     evacCols: 0, over: false, result: null, acted: true, queue: [],
