@@ -60,8 +60,9 @@ export const SHOP = {
   DESKS: 1.5,         // an open-plan floor's desks to search: up to its share of containers × this (the rest: tables)
   // The containers a style's room holds: the area's share (c.target, as roomlayout.js), × this where the old furnishing
   // held more (the aisles' and the racks' every-few boxes), "full" for the room's maxBoxes; "style:key" for one
-  // building's. Tuned with tools/shopstest.js: each kind within ±10% of before (a truck stop's shop by tools/shopvarianttest.js since its diner is #33's, issue #35). A lootable piece placed past the share
-  // stands plain (not searched: roomlayout.js place's plain).
+  // building's. Tuned with tools/shopstest.js: each kind within ±10% of before (a truck stop's shop by
+  // tools/shopvarianttest.js since its diner is #33's, issue #35). A lootable piece placed past the share stands plain
+  // (not searched: roomlayout.js place's plain).
   BOXES: {
     superfloor: 1.6, deptfloor: 1.75, cornerstore: 1.9, "stock:corner": 2, grocerfloor: 1.2, superstore: 1, warehouse: 1, pallets: 1.3, "pallets:warehouse": 1.1, "pallets:deptstore": 1, machines: 1.1, stacks: 1.05, bookfront: 1.2,
     aislefront: "full", "aislefront:deptstore": 1.3, "minimart:truckstop": 1.5, guncounter: 1.25, guncage: 1.7, "stock:electronics": 1.25, walkin: 2,
