@@ -134,6 +134,7 @@ import { cfgOf } from "./worldcfg.js"; // the run's dials: Base yard to start / 
 import { terraBusy, terraJobs, terraLeft, terraPct, terraModeOf, terraPlan, terraLevels, queueTerra, cancelTerra, dirtProblem, shovelCrew, unEdit, TERRA, TERRA_PICK, TERRA_NAME, TERRA_VERB } from "./terraform.js"; // terraforming: hollows dug, hills raised (call-time only)
 import { storageOf, coreStoreKg, vehicleStoreKg, woodpileOf } from "./basestorage.js"; // the base's room and what lies outside (call-time only)
 import { BED_FOOT } from "./data-beds.js"; // beds as furniture: a cot, bed or bunk bed 1 × 2, a large bed 2 × 2, on a general building's floor
+import { FURN_FOOT, FURN_STORES } from "./data-basefurniture.js"; // furniture at the base (#20): the found pieces on a general building's floor; the storage ones a store on the battle map
 import { setFurnitureAt, furnitureInStores } from "./beds.js"; // beds as furniture: set from the stores where the ghost is (call-time only)
 import { POWER_FOOT, SPOT } from "./data-power.js"; // the power grid: found generators, spotlights (on a wall stand or the ground), fridges, the panel, the press, the pump, the charger
 import { isSetPiece, setPlacedAt, placedInStores, spotOn, fenceCharged } from "./electric.js"; // set from the stores; a spotlight lit, the wire charged (call-time only)
@@ -272,6 +273,7 @@ export const FOOT = {
   // in the open ground): barbed_wire, razor_wire, guard_towers, minefield.
 };
 Object.assign(FOOT, BED_FOOT); // beds as furniture (data-beds.js, beds.js): fittings set from the stores, drawn as bed cells
+Object.assign(FOOT, FURN_FOOT); // furniture at the base (data-basefurniture.js, furniture.js): the same, each drawn as its kind's cell
 Object.assign(FOOT, POWER_FOOT); // the power grid (data-power.js): a spotlight may stand on a wall stand's cell (mount), a fridge on a floor (fit)
 export const FIELD = FOOT.farm_plot; // a crop plot's footprint
 // Soil (the user's request 2026-10-22: "Farm plots can only be set on soil tiles in a base map"): a crop plot (a field)
@@ -281,6 +283,7 @@ export const NOT_SOIL = new Set(["road", "gravel", "rubble", "floor", "roof", "d
 export const SOIL_WHY = "Crop plots go on soil only: not on the road or paved ground";
 // What holds the base's goods on the map (makeStores): a weight for the share of the stores each takes.
 const STORES = { warehouse: 4, storehouse: 3, cellar: 2, coldstore: 2, freezer: 2, shed: 1.5, crates: 1, storebox: 0.5, armory: 1, shelves: 1, lockers: 1 }; // the armory: two locked containers of its own kind (pushStore), no share of the rest; shelves and lockers: the fittings that keep goods (base building)
+Object.assign(STORES, FURN_STORES); // furniture at the base (#20): a found shelving unit, wardrobe or crate is a store raiders search
 const BUILD_KINDS = new Set(["house", "roof", "prop", "pen", "field", "vehicle"]); // the kinds the yard grows for (footCount) and the cover props keep off
 export const WALL_KINDS = new Set(["wall", "gate", "stand"]); // the wall pieces: anywhere, the ring too
 export const hasFootprint = (type) => !!FOOT[type];
@@ -2854,6 +2857,7 @@ export function buildMenu(state, base) {
   for (const [type, d] of Object.entries(BUILDINGS)) {
     const f = FOOT[type];
     if (!f || d.upgradeOnly) continue; // an upgrade in place (the reloading bench) is queued from the building it upgrades
+    if (d.found && !furnitureInStores(base, type)) continue; // furniture at the base (#20): a found piece is listed while one is in the stores
     const group = type === "tent" ? "Tents" : d.general ? "General buildings" : d.grid ? "Power" : d.furniture ? "Furniture" : d.fit ? "Fittings" : f.kind === "defence" || WALL_KINDS.has(f.kind) ? "Defences" : f.kind === "prop" || f.kind === "pen" ? "Yard things" : "Buildings";
     const opts = pieceOpts(base, type);
     /** @type {any} */

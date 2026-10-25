@@ -34,7 +34,7 @@
 // Saves: base.bins and item.store are plain data on records that save already; an old save has neither (read as empty).
 import { SUPPLIES, GEAR, supWeight } from "./data.js";
 import { FOODS } from "./foods.js";
-import { storageOf, byWorth, supGood, itemGood, itemRoomKg, storedKey, isStoreBuilding } from "./basestorage.js";
+import { storageOf, byWorth, supGood, itemGood, itemRoomKg, storedKey, isStoreBuilding, storeRule, fitsClass } from "./basestorage.js";
 
 export const OUTSIDE = "outside"; // the pseudo-container of what lies outside (storageOf outside)
 export const LOOSE = "loose";     // the pseudo-container of what is inside but in no container (storageOf loose)
@@ -66,6 +66,14 @@ const PREFER = {
   plain: { warehouse: 0, storehouse: 1, shed: 2, shelves: 3, crates: 4, storebox: 5, core: 6, lockers: 7, cellar: 8, coldstore: 9, freezer: 10 },
 };
 const typeOf = (c) => (c.kind === "core" ? "core" : c.type);
+// Furniture at the base (#20, furniture.js; data-basefurniture.js FURN_STORE: basestorage.js storeRule): a storage
+// piece takes its `first` class of item before any other container (a shelving unit gear, a wardrobe clothing and
+// bags, a bookshelf books), an `only` piece nothing but its class (a gun rack guns, at most `max`; a tool chest tools;
+// a filing cabinet papers) and no supplies; otherwise it ranks as the shelves fitting does. Food only where `food`.
+const isPiece = (type) => !!(GEAR[type] && GEAR[type].furniture);
+const foodOkType = (type) => !NO_FOOD.has(type) && (!isPiece(type) || !!storeRule(type).food);
+const rankOf = (cls, type) => (isPiece(type) ? (storeRule(type).only ? null : PREFER[cls].shelves) : PREFER[cls][type]);
+const ONLY_WORD = { guns: "guns", tools: "tools", paper: "papers, books and manuals" };
 
 // ---------- the records ----------
 export const binsOf = (base) => (base.bins && typeof base.bins === "object" ? base.bins : (base.bins = {}));
@@ -122,7 +130,7 @@ export function containersOf(state, base) {
     return {
       key: c.key, label: `${c.name}${n[c.name] > 1 ? ` ${of.get(c)}` : ""}`, kind, type: typeOf(c), cap: c.cap,
       bid: kind === "building" || kind === "tent" ? Number(c.key.slice(2)) : null, vid: kind === "vehicle" ? Number(c.key.slice(2)) : null,
-      foodOk: assignable && !NO_FOOD.has(c.type), assignable,
+      foodOk: assignable && foodOkType(c.type), assignable,
       gear: c.gear.map((ai) => ({ item: armory[ai], ai })), sup: { ...c.sup }, kg, free: Math.max(0, c.cap - kg),
     };
   });
@@ -147,6 +155,9 @@ export function putItem(state, base, item, key) {
   if (!c || !c.assignable) return "That is not a container here";
   if (item.store === key) return "";
   if (itemGood(item, 0).dens === Infinity) return "An opened box is storage of its own: it holds goods, it is not put away";
+  const rule = c.kind === "building" ? storeRule(c.type) : {};
+  if (rule.only && !fitsClass(item, rule.only)) return `The ${c.label.toLowerCase()} takes ${ONLY_WORD[rule.only] || rule.only} only`;
+  if (rule.max && c.gear.length >= rule.max) return `The ${c.label.toLowerCase()} holds ${rule.max} at most`;
   const kg = itemRoomKg(item);
   if (kg > c.free + EPS) return `No room in the ${c.label.toLowerCase()} for that`;
   item.store = key;
@@ -165,6 +176,7 @@ export function putSupply(state, base, k, qty, toKey, fromKey = null) {
   for (const c of L) by[c.key] = c;
   const to = toKey != null ? by[toKey] : null;
   if (toKey != null && (!to || !to.assignable)) return "That is not a container here";
+  if (to && to.kind === "building" && storeRule(to.type).only) return `The ${to.label.toLowerCase()} takes ${ONLY_WORD[storeRule(to.type).only] || storeRule(to.type).only} only`;
   if (fromKey && (!by[fromKey] || !by[fromKey].assignable)) return "That is not a container here";
   const bins = binsOf(base);
   const have = Math.floor((base.stock && base.stock[k]) || 0);
@@ -207,8 +219,11 @@ export function autoStore(state, base, { all = false } = {}) {
   const st = storageOf(state, base);
   const armory = base.armory || [];
   const bins = binsOf(base);
-  const shells = st.containers.filter((c) => ASSIGNABLE.has(c.kind) && c.kind !== "vehicle").map((c) => ({ key: c.key, type: typeOf(c), foodOk: !NO_FOOD.has(c.type), free: c.cap - heldKg(base, c) }));
-  const ranked = (cls) => shells.filter((c) => PREFER[cls][c.type] != null && (cls !== "food" || c.foodOk)).sort((a, b) => PREFER[cls][a.type] - PREFER[cls][b.type] || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+  const shells = st.containers.filter((c) => ASSIGNABLE.has(c.kind) && c.kind !== "vehicle").map((c) => ({ key: c.key, type: typeOf(c), foodOk: foodOkType(c.type), free: c.cap - heldKg(base, c), rule: c.kind === "building" ? storeRule(c.type) : {}, n: c.gear.length }));
+  const byKey = (a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
+  const ranked = (cls) => shells.filter((c) => rankOf(cls, c.type) != null && (cls !== "food" || c.foodOk)).sort((a, b) => rankOf(cls, a.type) - rankOf(cls, b.type) || byKey(a, b));
+  // An item: the pieces that take its kind first (FURN_STORE first / only), then its class's ranking.
+  const forItem = (it) => [...shells.filter((c) => { const cl = c.rule.first || c.rule.only; return !!cl && fitsClass(it, cl); }).sort(byKey), ...ranked(itemClass(it)).filter((c) => !(c.rule.first && fitsClass(it, c.rule.first)))];
   // The unassigned goods: units in no bin, items with no container (an opened box is room, not a good to put away).
   const inBins = {};
   for (const bin of Object.values(bins)) for (const [k, q] of Object.entries(bin)) inBins[k] = (inBins[k] || 0) + q;
@@ -230,9 +245,9 @@ export function autoStore(state, base, { all = false } = {}) {
       }
     } else {
       const it = armory[/** @type {number} */ (g.i)];
-      const c = ranked(itemClass(it)).find((x) => g.kg <= x.free + EPS);
+      const c = forItem(it).find((x) => g.kg <= x.free + EPS && !(x.rule.max && x.n >= x.rule.max));
       if (!c) continue;
-      it.store = c.key; c.free -= g.kg;
+      it.store = c.key; c.free -= g.kg; c.n++;
       out.gear++; out.kg += g.kg;
     }
   }

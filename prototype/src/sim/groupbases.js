@@ -23,6 +23,7 @@ import { membersAt, homeMembers, MEMBER } from "./members.js";
 import { weightOf } from "./groupcare.js";
 import { SUPPLIES } from "./data.js";
 import { BED_WORKS_BUILDING } from "./data-beds.js"; // beds as furniture: their hall a Lodge, each piece itself (beds.js)
+import { FURN_WORKS_BUILDING } from "./data-basefurniture.js"; // furniture at the base (#20): the pieces they set in their hall, each itself (furniture.js)
 
 // A works count of theirs as your building (groupworld.js PLAYER_WORKS the other way round). The storage works
 // (groupworks.js storageWork: a storage box, crates, a shed, the storehouse, a warehouse) are your storage buildings, so
@@ -34,7 +35,8 @@ export const WORKS_BUILDING = { ...BED_WORKS_BUILDING, walls: "walls", farms: "f
   // fitRoom: your fittingRoom when they want one); a fitting the floor has no room for by the time the layout lays it
   // (their furniture crafted after it can take the cells: basemap.js autoLayout's order) is left off the map (layoutOf
   // at: null), as any fitting without a floor is, and nothing breaks; the sim's effect does not depend on the map.
-  solar: "solar_array", bank: "battery_bank", alarm: "perimeter_alarm", charger: "charging_station", heaters: "elec_heater" };
+  solar: "solar_array", bank: "battery_bank", alarm: "perimeter_alarm", charger: "charging_station", heaters: "elec_heater",
+  ...FURN_WORKS_BUILDING }; // furniture at the base (#20, furniture.js groupFurnitureDaily): the found pieces set in their hall, after the beds
 // What a base that is not built up by hand holds (the hardcore military: groupworks.js groupsBuild false); its storehouse
 // (2000 kg on top of the main house's 1200: basestorage.js) keeps an army base's stores in.
 export const BUILT_UP = { walls: 6, farms: 2, water: 1, beds: 2, bench: 1, store: 1, gate: 1 };

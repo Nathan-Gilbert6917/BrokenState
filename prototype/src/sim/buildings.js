@@ -28,6 +28,7 @@ import { carryPlacement, fittingRoom, fittingsIn, wallInfo, ringPlan, ensureRing
 import { buildTools, buildToolProblem, wearBaseTools } from "./toolreqs.js"; // the tools a build needs (data-tools.js BUILD_TOOLS, WALL_TOOLS)
 import { withBuildmat, siteShort, payCost, siteCost, SITE_MAKE, MADE_KEYS, madeText } from "./buildmats.js"; // building materials in every build, metal sheets in the roofed and reinforced ones (made on site from scrap when short)
 import { BED_BUILDINGS } from "./data-beds.js"; // beds as furniture: the placed cot, bed, bunk bed and large bed (beds.js)
+import { FURN_BUILDINGS, FURN_STORE_KG } from "./data-basefurniture.js"; // furniture at the base (#20): the found pieces set from the stores (furniture.js)
 import { TENT_TYPES, TENT_S } from "./data-tents.js"; // the one tent table (TENTS below)
 import { strikeTentAtBase } from "./tents.js"; // a bag's tent pulled down: struck back into its bag (call-time only)
 import { furnitureBeds, furnitureProblem, canSetFurniture, setFurniture, pickUpFurniture, RETIRED_WHY, furnitureText } from "./beds.js"; // beds as furniture (call-time only)
@@ -84,7 +85,7 @@ const BENCH_GATE = "Hand crafting at a base needs a bench for everything but the
 // the warehouse 40 scrap, 4 building materials and a part, 48 hours, Mechanics 2.
 // Base building's fittings (2026-10-19): storage shelves and lockers stand inside a general building's floor and count
 // as storage buildings do.
-export const STORE_KG = { storebox: 60, crates: 150, shed: 600, storehouse: 2000, warehouse: 6000, cellar: 400, coldstore: 300, freezer: 300, armory: 400, shelves: 150, lockers: 100 };
+export const STORE_KG = { storebox: 60, crates: 150, shed: 600, storehouse: 2000, warehouse: 6000, cellar: 400, coldstore: 300, freezer: 300, armory: 400, shelves: 150, lockers: 100, ...FURN_STORE_KG }; // FURN_STORE_KG: the found storage pieces (#20: a shelving unit 150, a crate 40, a pallet rack 300...)
 
 // Wood in the costs (woodwork, 2026-10-20: "Raise the wood costs for builds including walls", "Add wood to the cost of
 // builds that makes sense"): a wooden build's cost is mostly wood, with scrap (or parts) for the nails, hinges, tin
@@ -374,6 +375,7 @@ export const BUILDINGS = {
                   desc: "The outpost camp's next step, a building you place on the build map (5 × 4): a house with a roof. When it stands the camp is a real outpost: a dug spring (3 water a day), 6 building plots and 6 utility plots (walls are built on the Defenses tab). The materials are taken from the camp's stores as they come in (bring them with a team or a supply run); the builders here do the work, never more of it than the materials delivered allow." },
 };
 Object.assign(BUILDINGS, BED_BUILDINGS); // beds as furniture (data-beds.js, beds.js): set from the stores inside a general building, never queued
+Object.assign(BUILDINGS, FURN_BUILDINGS); // furniture at the base (data-basefurniture.js, furniture.js): the same, for the found storage, comfort and work pieces
 Object.assign(BUILDINGS, POWER_BUILDINGS); // the power grid (data-power.js, electric.js): pieces set from the stores (furniture + set), the panel, the press, the pump, the charger
 
 // ---------- building materials and metal sheets (buildmats.js; the user's calls 2026-10-21) ----------
