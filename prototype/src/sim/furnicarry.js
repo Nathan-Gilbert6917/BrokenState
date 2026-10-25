@@ -199,6 +199,7 @@ export function liftTargets(b, u) {
     const x = u.x + dx, y = u.y + dy, c = cellOf(b, x, y);
     const def = c && CELL[c.k] ? liftDef(c.k) : null;
     if (def) out.push({ x, y, def, cell: c });
+    else if (c && c.wart && c.wart.piece && liftDef(c.wart.k)) out.push({ x, y, def: liftDef(c.wart.k), wall: c }); // decor.js: a painting or a clock on the wall
   }
   for (const p of groundPiles(b)) {
     if ((p.f || 0) !== (u.f || 0) || cheb(u.x, u.y, p.x, p.y) > 1 || !pileCount(p)) continue;
@@ -229,6 +230,7 @@ export function liftPlan(b, u, t, helperId = null) {
   if (!t) return { helper: null, why: "Lift which piece?" };
   const d = t.def;
   if (d.carry === "fixed") return { helper: null, why: `The ${word(d)} is fixed in place: it cannot be lifted (shove it, or leave it).` };
+  if (t.wall) return { helper: null, why: u.ap < LIFT.AP ? `Lifting takes both actions (${LIFT.AP}).` : "" }; // off the wall: one person
   if (t.cell) {
     if (unitAt(b, t.x, t.y)) return { helper: null, why: `Someone is on the ${word(d)}.` };
     if (burning(b, t.x, t.y)) return { helper: null, why: `The ${word(d)} is on fire.` };
@@ -250,14 +252,18 @@ export function liftAct(state, b, u, act) {
   if (why) return why;
   const list = liftTargets(b, u);
   const at = act.x != null ? list.filter((t) => t.x === Number(act.x) && t.y === Number(act.y)) : list;
-  const t = act.item != null ? at.find((o) => o.pile && o.pile.contents.gear.indexOf(o.item) === Number(act.item)) || null : at.find((o) => o.cell) || (at.length === 1 ? at[0] : null);
+  const t = act.item != null ? at.find((o) => o.pile && o.pile.contents.gear.indexOf(o.item) === Number(act.item)) || null : at.find((o) => o.cell) || at.find((o) => o.wall) || (at.length === 1 ? at[0] : null);
   if (!t) return at.length > 1 || list.length > 1 ? "Several pieces within reach: say which." : "Stand right next to the piece.";
   const plan = liftPlan(b, u, t, act.helper);
   if (plan.why) return plan.why;
   const d = t.def, s = survivorById(state, u.sid);
   if (!s) return "That unit cannot act.";
   let item = null, emptied = 0;
-  if (t.cell) {
+  if (t.wall) { // decor.js: taken down off the wall; it is never hung again in a raid (set down, it stands on the floor)
+    item = d.item ? newItem(d.item) : null;
+    if (!item) return `The ${word(d)} cannot be carried.`;
+    delete t.wall.wart;
+  } else if (t.cell) {
     // A piece of 2+ cells (a bed, a sofa) takes its other cells along.
     const cells = pieceCells(b, t.x, t.y, d);
     const kind = t.cell.k;

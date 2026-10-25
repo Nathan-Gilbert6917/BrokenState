@@ -255,6 +255,18 @@ console.log("a fixed piece is never lifted; a lootable one leaves its contents o
   check(combatAct(st, { type: "setPiece", unit: u.id, x: x0 + 8, y: y0 + 10 }) === "" && dbox.x === x0 + 8 && dbox.y === y0 + 10 && dbox.w === 1 && dbox.h === 2, `set down south of them, turned: its container ${dbox.w} × ${dbox.h} over both cells`);
 }
 
+console.log("a painting off the wall (decor.js c.wart.piece): lifted, set down on the floor");
+{
+  const { st, b, us, x0, y0 } = raid();
+  const u = us[0];
+  stand(b, u, x0, y0 + 5); // against the room's west wall
+  at(b, x0 - 1, y0 + 5).wart = { k: "painting", d: 1, piece: true };
+  check(combatAct(st, { type: "liftPiece", unit: u.id, x: x0 - 1, y: y0 + 5 }) === "" && u.bag && u.bag.key === "f_painting", "taken down: the f_painting item in the arms (2 actions)");
+  check(!at(b, x0 - 1, y0 + 5).wart && at(b, x0 - 1, y0 + 5).k === "wall", "the wall is bare, still a wall");
+  fresh(b);
+  check(combatAct(st, { type: "setPiece", unit: u.id, x: x0 + 1, y: y0 + 5 }) === "" && at(b, x0 + 1, y0 + 5).k === "painting", "set down: a painting stands on the floor");
+}
+
 console.log("the orders: Lift, its chooser, Set down, Load into vehicle (ui/combat.js on stub canvases)");
 {
   const silent = () => new Proxy({ createImageData: (w, h) => ({ data: new Uint8ClampedArray(w * h * 4) }), measureText: (t) => ({ width: String(t).length * 6 }) }, { get: (o, k) => (k in o ? o[k] : () => {}), set: (o, k, v) => { o[k] = v; return true; } });
