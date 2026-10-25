@@ -70,7 +70,7 @@ Raids go into generated buildings and neighbourhood streets to search, past lock
   - A safe, a steel security door and the gun safes are beyond them. The crowbar's picks are used first.
   - Modules: [locks `MAKESHIFT_PICK`, `picksOf`, `crowbarOf`, `makeshiftPicksOf`, `isMakeshiftPicks`, `makeshiftPickable`, `pickChance`, `wearPicks`, `openOdds` (pick.makeshift / left), `openLock`, `lockedSearchHour`; foundcars (cars), rescueraid `pickOdds` (a cell's lock); ui/locks `lockPanel` "Pick (makeshift)", ui/carpanel].
 - **Furniture and appliance catalogue** (issue #8 of the interiors epic #7, the user's request 2026-10-25: "Make the layouts make sense and filled with appliances, furniture and decor that makes it feel lived in. […] I want all reasonable appliances, furniture and some decor to be lootable and taken to your base for use […] some will require two survivors to carry"). Test `tools/furnituretest.js`.
-  - One table, `FURNITURE_KINDS` in [data-furniture], keyed by cell kind: the twelve old kinds (their cover, sight, names and shove hit points unchanged) and 49 new ones. Each row: `name`, `cell` { walk, cover, los }, `hp`, `kg`, `carry` (`one`, `two`, `fixed`), `size` [w, h], `loot` (also a container), `tags` (room roles), `use` (the base-use key), `wall` (stands against a wall).
+  - One table, `FURNITURE_KINDS` in [data-furniture], keyed by cell kind: the twelve old kinds (their cover, sight, names and shove hit points unchanged) and 49 new ones; since issue #13 four lootable decor pieces more (plant, floor lamp, painting, wall clock: placed by sim/decor.js, the painting and the clock hung on a wall as `c.wart` marked `piece`; see [ui.md](ui.md#interior-decor)). Each row: `name`, `cell` { walk, cover, los }, `hp`, `kg`, `carry` (`one`, `two`, `fixed`), `size` [w, h], `loot` (also a container), `tags` (room roles), `use` (the base-use key), `wall` (stands against a wall).
   - Driven from it: combat `CELL` (`furnitureCells`, merged at load), barricade `FURNITURE` (`furnitureHp`: every piece that is not fixed shoves and is battered; sandbags kept), ui/isoview's `FURNITURE` and `FLOORED` sets, the outlines, the joins and the wall-facing turn (`WALL_FURN`), `structureName` tooltips, and the codex's Barricades entry ("What shoves", "Two people", "Never shoved").
   - Rules picked (the issue's numbers were starting points): a "one" piece weighs at most 30 kg, a "two" piece at least 35 kg (`CARRY_KG`). Nothing that holds loot is fixed. Fixed pieces are plumbed in, bolted down or built in, and are never shoved: cell bars, the gun safe, the safe, water heater, boiler, sink, toilet, bathtub, shower, altar, booth, bar counter, bleachers. The gun safe and the safe are not area boxes (their own locks), so they are `loot: false`. The counter stays shoveable, so it is a "two" piece (70 kg), not fixed. The fridge is 60 kg like the Refrigerator item.
   - Uses: `fridge`, `freezer`, `stove`, `oven`, `microwave`, `storage:<kg>`, `comfort:<mood>`, `work:<station>`, `bed:<BED_SPEC kind>` (beds, bunks, hospital beds and gurneys sleep as data-beds' kinds), `none`. Helpers: `pieceDef(k)` (the row or null), `useOf`, `furnitureFor(tag, loot)`, `isFurniture`.
@@ -142,6 +142,10 @@ Raids go into generated buildings and neighbourhood streets to search, past lock
 | Server rack | `serverrack` | two | 120 | 1 × 1 | 50 | full, blocks sight | yes | none |
 | Photocopier | `copier` | two | 80 | 1 × 1 | 30 | half |  | none |
 | Safe | `safe` | fixed | 200 | 1 × 1 | 80 | full |  | storage:20 |
+| Potted plant | `plant` | one | 8 | 1 × 1 | 5 | none |  | comfort:0.2 |
+| Floor lamp | `floorlamp` | one | 6 | 1 × 1 | 5 | none |  | comfort:0.1 |
+| Painting | `painting` | one | 4 | 1 × 1 | 5 | none |  | comfort:0.2 |
+| Wall clock | `wallclock` | one | 2 | 1 × 1 | 3 | none |  | comfort:0.05 |
 
 
 ## Vaulting half cover
