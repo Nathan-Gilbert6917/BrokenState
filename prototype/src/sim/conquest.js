@@ -398,7 +398,7 @@ function behindWall(ctx, u, X) {
 }
 
 // ---------- taking a base ----------
-const emptyStock = () => ({ water: 0, rawwater: 0, fuel: 0, meds: 0, ammo: 0, arrows: 0, parts: 0, scrap: 0, jars: 0, wood: 0, buildmat: 0, metalsheet: 0 }); // arrows, wood: every base keeps the count (farmtest 43: an outpost moved into read arrows = undefined)
+const emptyStock = () => ({ water: 0, rawwater: 0, fuel: 0, meds: 0, ammo: 0, arrows: 0, parts: 0, scrap: 0, jars: 0, wood: 0, stone: 0, buildmat: 0, metalsheet: 0 }); // arrows, wood, stone: every base keeps the count (farmtest 43: an outpost moved into read arrows = undefined; stone = undefined in a camp the governor set up: farmtest's long run, 2026-10-25)
 function newOutpost(state, tile) {
   return { id: newId(), tile, type: "outpost", name: outpostName(state, tile), stock: emptyStock(), radio: false, watchtower: false, buildings: [], construction: [], armory: [] };
 }
