@@ -13,9 +13,12 @@
 // The state is plain data on the team (p.crawl), so a game can be saved on a block card or inside a building:
 //   { tile, city, visit, grid { size, r }, choosing (no block picked yet: cell null), cell, heading, path, block (the
 //     level), deepest, alert, blocks: { cell: { places, events, threat } }, buildings: { placeId: snapshot }, trail: {
-//     cell: heat }, enc, inside, goingOut (the autopilot heads for the rim), tally, log }
+//     cell: heat }, enc, inside, goingOut (the autopilot heads for the rim), tally, log, mates (a piece of furniture's
+//     carrier → the other end, issue #21), atVehicle (pieces the quick search sent out to the vehicle) }; a place keeps
+//     its building's profile for the quick search (place.profile) and pieceTaken.
 // The site remembers between crawls (tile.crawlMem): visits, how picked over each place is, the buildings as you left
-// them, the blocks you have been to (the map), and what other groups took (aiscav.js: blocks near the rim picked over).
+// them, the blocks you have been to (the map), what other groups took (aiscav.js: blocks near the rim picked over) and
+// the pieces of furniture left on a block (left: { cell: [{ key, kind, item, day }] }, issue #21).
 //
 // Hooks elsewhere (small): scavenge.js startScavenge (a city or town tile: in the browser, the player picking the start
 // block, or on autopilot → startCrawl), combat.js (finishCombat hands the battle to the handler; setup.raid.areas: a
