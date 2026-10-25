@@ -73,41 +73,41 @@ const SHOP_SET = new Set(SHOPS);
 /** @typedef {ReturnType<typeof import("./roomlayout.js").roomLayout>} Lay */
 // A piece of shelving that is not searched (the stock between the shelves that are): blocked as before, off the lanes.
 /** @param {Lay} L */
-const shelving = (L, x, y, k) => L.ok(x, y) && L.c.block(x, y, k);
+export const shelving = (L, x, y, k) => L.ok(x, y) && L.c.block(x, y, k);
 /** The room holds its share of containers: a lootable piece now stands plain. @param {Lay} L */
-const full = (L) => L.boxes() >= L.target();
+export const full = (L) => L.boxes() >= L.target();
 /** A placement's options with plain set as the room stands. @param {Lay} L */
-const P = (L, o = {}) => ({ ...o, plain: full(L) });
+export const P = (L, o = {}) => ({ ...o, plain: full(L) });
 /**
  * Lootable pieces of these kinds (in turn) until the room holds its share: against the walls while they take one (a
  * corner first), then off them (roomlayout.js fill stops after a couple of tries; a shop's long walls take many).
  * @param {Lay} L
  */
-function fill(L, kinds) {
+export function fill(L, kinds) {
   for (let i = 0, miss = 0; !full(L) && miss < kinds.length; i++) { if (L.wall(kinds[i % kinds.length], { prefer: "corner" })) miss = 0; else miss++; }
   for (let i = 0, miss = 0; !full(L) && miss < kinds.length; i++) { if (L.centre(kinds[i % kinds.length])) miss = 0; else miss++; }
 }
 /** The room cell inside the front door (or the front wall's middle). @param {Lay} L */
-function frontDoor(L) {
+export function frontDoor(L) {
   const c = L.c, d = (L.room.doors || []).find(([, y]) => y === c.y1 + 1);
   return d ? [d[0], d[1] - 1] : [Math.floor((c.x0 + c.x1) / 2), c.y1];
 }
 /** A checkout counter and its register by the front door. @param {Lay} L */
-const checkout = (L) => L.wall("checkout", P(L, { sides: ["s", "w", "e"], near: frontDoor(L) })) || L.need("checkout", P(L, { near: frontDoor(L) }));
+export const checkout = (L) => L.wall("checkout", P(L, { sides: ["s", "w", "e"], near: frontDoor(L) })) || L.need("checkout", P(L, { near: frontDoor(L) }));
 /** The style's share of containers (SHOP.BOXES). @param {Lay} L */
-function share(L, name) {
+export function share(L, name) {
   const b = SHOP.BOXES[`${name}:${L.c.key}`] ?? SHOP.BOXES[name];
   if (b === "full") L.c.target = Math.max(L.c.target, L.room.maxBoxes ?? 4);
   else if (b) L.c.target = Math.max(L.c.target, Math.round(L.c.target * b));
 }
 /** n pieces of k along a wall (the longest free one when not given). @param {Lay} L */
-function along(L, k, n, sides) {
+export function along(L, k, n, sides) {
   const ws = sides || L.walls().map((w) => w.side);
   if (!ws.length) return [];
   return L.run(Array(n).fill(k), ws, { plain: () => full(L) }).placed;
 }
 /** Up to n of piece k against the walls (each the best spot left). @param {Lay} L */
-function some(L, k, n, opts = {}) { const out = []; for (let i = 0; i < n; i++) { const r = L.wall(k, P(L, opts)); if (!r) break; out.push(r); } return out; }
+export function some(L, k, n, opts = {}) { const out = []; for (let i = 0; i < n; i++) { const r = L.wall(k, P(L, opts)); if (!r) break; out.push(r); } return out; }
 /**
  * Rows of shelving across the room from the back (every other row: a 1-cell walk between): a container of `box` at each
  * end of a run (the end cap) and every `every` cells while the room has its share to come, the rest `k` (not searched);
@@ -211,15 +211,15 @@ function frontEnd(L, x0, x1, y, n) {
   return { lanes, kiosks };
 }
 /** The cells of row y between x0 and x1 that take a piece (off the lanes). @param {Lay} L */
-function freeIn(L, y, x0, x1) { let n = 0; for (let x = x0; x <= x1; x++) if (L.ok(x, y)) n++; return n; }
+export function freeIn(L, y, x0, x1) { let n = 0; for (let x = x0; x <= x1; x++) if (L.ok(x, y)) n++; return n; }
 /** Row y if it is mostly off the lanes, else the freest of the next row and the back wall's. @param {Lay} L */
-function rowFrom(L, y) {
+export function rowFrom(L, y) {
   const c = L.c, free = (r) => (r >= c.y0 && r <= c.y1 ? freeIn(L, r, c.x0 + 1, c.x1 - 1) : -1);
   if (free(y) * 2 >= c.w - 2) return y;
   return [y + 1, c.y0, y].reduce((a, b) => (free(b) > free(a) ? b : a));
 }
 /** A counter run across the room at row y (display cases, a bar), every `every`-th a container of `box`; `ends` at its ends. @param {Lay} L */
-function counterRow(L, y, k, o = {}) {
+export function counterRow(L, y, k, o = {}) {
   const c = L.c, every = o.every || 3, out = [];
   for (let x = c.x0 + (o.from ?? 1); x <= c.x1 - (o.to ?? 1); x++) {
     if (!L.ok(x, y)) continue;
@@ -231,32 +231,32 @@ function counterRow(L, y, k, o = {}) {
   return out;
 }
 /** Bar stools in front of a counter run (on a lane only when none fits off one: the counter needs its stool). @param {Lay} L */
-function stools(L, row) {
+export function stools(L, row) {
   let n = 0;
   for (const p of row) { const [x, y] = p.cells[0]; if (L.ok(x, y + 1) && L.place("barstool", [[x, y + 1]], { face: "n" })) n++; }
   for (const p of row) { if (n) break; const [x, y] = p.cells[0]; if (L.place("barstool", [[x, y + 1]], { face: "n", force: true })) n++; }
   return n;
 }
 /** Tables with chairs round them over the floor. @param {Lay} L */
-function tables(L, n, chairs = 2, k = "table") {
+export function tables(L, n, chairs = 2, k = "table") {
   let made = 0;
   for (let i = 0; i < n; i++) { const t = L.centre(k); if (!t) break; L.around(t, "chair", chairs); made++; }
   return made;
 }
 /** Booths along the walls. @param {Lay} L */
-function booths(L, n, sides) {
+export function booths(L, n, sides) {
   let made = 0;
   for (let i = 0; i < n; i++) { if (!L.wall("booth", { sides, prefer: "corner" })) break; made++; }
   return made;
 }
 /** A desk with its chair (its drawers searched while the room has its share to come). @param {Lay} L */
-function deskSet(L, opts = {}) {
+export function deskSet(L, opts = {}) {
   const d = L.wall("desk", P(L, opts)) || L.centre("desk", P(L, opts));
   if (d) L.around(d, "chair", 1);
   return d;
 }
 /** A fixed piece that is its own locked container (the safe: a manager's till, a corner office's; the ATM). @param {Lay} L */
-function lockedPiece(L, k, opts = {}) {
+export function lockedPiece(L, k, opts = {}) {
   const r = L.wall(k, { prefer: "corner", ...opts });
   if (!r) return null;
   const [x, y] = r.cells[0];
@@ -267,7 +267,7 @@ function lockedPiece(L, k, opts = {}) {
   return box;
 }
 /** A toilet and a sink (two toilets in a long restroom). @param {Lay} L */
-function toiletAndSink(L) {
+export function toiletAndSink(L) {
   const n = Math.max(L.c.w, L.c.h) >= 5 ? 2 : 1;
   for (let i = 0; i < n; i++) L.wall("toilet", { prefer: "corner" }) || (i === 0 && L.need("toilet", { prefer: "corner" }));
   L.wall("sink", { prefer: "middle" });
