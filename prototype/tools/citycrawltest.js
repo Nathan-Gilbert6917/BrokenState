@@ -824,7 +824,8 @@ const outAndBack = (state, p, c, pl) => { const b = state.combat; walkOut(state)
   CC.nextBlock(state, p, ways[0].dir);
   const plain = state.hour - t0h;
   if (c.enc) c.enc = null;
-  a.gear.carry = newItem("fridge");
+  const crawlFridge = () => Object.assign(newItem("fridge"), { crawl: true }); // furnihome.js (#18): carried out of a crawl's building
+  a.gear.carry = crawlFridge();
   c.mates = { [a.id]: m.id };
   check(CC.carryLine(state, p) === `Carrying: a refrigerator (${a.name.split(" ")[0]}, ${m.name.split(" ")[0]})`, `the card: "${CC.carryLine(state, p)}"`);
   const pace = CC.carryPace(state, p);
@@ -844,7 +845,7 @@ const outAndBack = (state, p, c, pl) => { const b = state.combat; walkOut(state)
   const foe = b.units.some((e) => e.side === "enemy" && !e.dead && (e.f || 0) === 0 && Math.max(Math.abs(e.x - ua.x), Math.abs(e.y - ua.y)) <= CC.CRAWL.CARRY.fightRange);
   check(foe ? !ua.piece && b.log.some((l) => /down at the door to fight/.test(l.text || l)) : ua.piece === "fridge" && ua.bag === a.gear.carry && ua.tether === um.id && um.tether === ua.id && um.shareKg > 0, foe ? "the dead right inside: the fridge is set down at the door (a log line)" : "the fridge is in the arms at the entry, the two tethered at half the weight each");
   walkOut(state); finishCombat(state, b.setup, b.result);
-  if (foe) { a.gear.carry = newItem("fridge"); c.mates = { [a.id]: m.id }; }
+  if (foe) { a.gear.carry = crawlFridge(); c.mates = { [a.id]: m.id }; }
   else check(a.gear.carry && a.gear.carry.key === "fridge" && c.mates[a.id] === m.id, "carried back out: still in the arms, the pair kept for the next block");
   // Forced: the dead within reach of the door (fightRange stretched).
   const fr = CC.CRAWL.CARRY.fightRange;
@@ -856,7 +857,7 @@ const outAndBack = (state, p, c, pl) => { const b = state.combat; walkOut(state)
   const hasFoe = b.units.some((e) => e.side === "enemy" && !e.dead);
   check(!hasFoe || (b.units.every((x) => !x.piece) && c.log.some((l) => /down at the door to fight/.test(l.text))), "a fight on entry: the piece is set down at the door, a line in the log");
   state.combat = null; c.inside = null;
-  if (!a.gear.carry) { a.gear.carry = newItem("fridge"); c.mates = { [a.id]: m.id }; }
+  if (!a.gear.carry) { a.gear.carry = crawlFridge(); c.mates = { [a.id]: m.id }; }
   // The pair must both be on the team: the other end gone, a "two" piece is left on the block.
   const party0 = p.members.slice();
   {
@@ -881,7 +882,7 @@ const outAndBack = (state, p, c, pl) => { const b = state.combat; walkOut(state)
     p.vehicleId = car.id; p.vehicleIds = [car.id]; p.vehicle = true;
     const [a, m] = partyMembers(state, p);
     ensureInv(a);
-    a.gear.carry = newItem("fridge"); c.mates = { [a.id]: m.id };
+    a.gear.carry = Object.assign(newItem("fridge"), { crawl: true }); c.mates = { [a.id]: m.id };
     if (!sameBlock) { const rim = rimOf(c.grid).map(([x, y]) => keyOf(x, y)).find((k) => k !== c.entry); c.cell = rim; c.block = CC.levelAt(c, rim); CC.genBlock(state, c, rim); }
     const cell = c.cell;
     c.alert = 0;
@@ -890,9 +891,11 @@ const outAndBack = (state, p, c, pl) => { const b = state.combat; walkOut(state)
     return { p, a, cell, mem, log: c.log.map((l) => l.text).join(" ") };
   };
   const one = run(true);
-  check(!one.a.gear.carry && one.p.cargo.gear.some((g) => g.key === "fridge") && /into the vehicle/.test(one.log), "out at the block the vehicles wait at: the fridge goes into the vehicle");
+  check(!one.a.gear.carry && one.p.cargo.gear.some((g) => g.key === "fridge"), "out at the block the vehicles wait at: the fridge goes into the vehicle (furnihome.js piecesOut, #18)");
   const two = run(false);
-  check(!two.a.gear.carry && !(two.p.cargo && two.p.cargo.gear.some((g) => g.key === "fridge")) && /exhaustion/.test(two.log) && (two.mem.left[two.cell] || []).some((o) => o.kind === "fridge"), "out at another rim block: dropped from exhaustion there, the block remembers it");
+  check(!two.a.gear.carry && !(two.p.cargo && two.p.cargo.gear.some((g) => g.key === "fridge")) && /Exhausted, the team dropped what it was carrying: a refrigerator/.test(two.log) && (two.mem.left[two.cell] || []).some((o) => o.kind === "fridge"), "out at another rim block: dropped from exhaustion there (#18's message), the block remembers it");
+  const roadOne = (() => { const { state, p } = crawlIn(2107); const [a] = partyMembers(state, p); ensureInv(a); a.gear.carry = newItem("fridge"); return CC.carryLine(state, p) === "" && CC.carryPace(state, p).mob == null; })();
+  check(roadOne, "a fridge carried in from the road is not the crawl's (#18: the road's rules)");
 }
 {
   // 10e. The hint line from the archetype; the quick search's parity with the laid-out building; its pieces.

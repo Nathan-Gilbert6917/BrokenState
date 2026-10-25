@@ -41,6 +41,7 @@ import { clearEnough } from "../sim/battlesize.js";
 import { SUPPLIES, GEAR } from "../sim/data.js";
 import { rescueOptions } from "../sim/rescueraid.js"; // a rescue raid on a group's base: captives, the cell, the armory
 import { LIFT, liftTargets, liftRefusal as pieceLiftRefusal, liftPlan, liftHelpers, setTargets, setRefusal, stowRefusal, carriedPiece } from "../sim/furnicarry.js"; // furniture and appliances lifted, carried, set down, loaded into the vehicle (issue #12)
+import { extractNote } from "../sim/furnihome.js"; // what becomes of a piece in the arms at the way out (issue #18)
 import { PUSH, pushTargets, pushRefusal, pushOdds, pushHazard } from "../sim/shoving.js"; // a foe shoved back a tile or flat on their back (the user's request 2026-10-20)
 import { subdueOdds, canSubdue, throwablesOf, THROWABLES, THROW_KEYS, dragable, heldDown, STEALTH } from "../sim/stealth.js";
 import { flashCells, flashReach, stunLabel, FRAG, BLAST, SMOKE } from "../sim/throwables.js"; // a flashbang's reach and stun; the throw preview
@@ -3067,10 +3068,11 @@ function raidButtons(state, b, u, btn) {
   const byCar = vehicleExit(b, u);
   const exTip = byCar ? "Leave the raid in your vehicle from right beside it (any cell around it). Everyone who extracts at the vehicle keeps it." : zone ? (zone.vehicle ? "Leave the raid in your vehicle. Everyone who extracts here keeps it." : (b.raid.hasVehicle ?? b.raid.vehicleZone >= 0) ? "Leave the raid on foot from here. If nobody extracts at the vehicle, it is left behind." : "Leave the raid from this zone.") :
     "Move into a green extraction zone first. Anyone still on the map when the last person leaves is lost.";
+  const exNote = extractNote(state, b, u); // sim/furnihome.js: a piece of furniture in the arms (issue #18)
   const veh = b.raid.hasVehicle ?? b.raid.vehicleZone >= 0;
   const vehTip = atVehicle(b, u) ? "Free: open the vehicle. Drag what you carry into it to free your hands, or take things out." : "Walk to the vehicle (its zone, or next to it) to load or unload it.";
   const searchWhy = !sb ? "Stand next to an unsearched container (yellow box marker) to search it." : !facesBox(u, sb) ? faceRefusal(sb.label ? `the ${sb.label.toLowerCase()}` : "it") : u.ap > 0 ? "" : NO_AP; // the sim's own (sim/combat.js "search")
-  let html = `${btn("search", "Search", searchTip, !searchWhy, "⇧S", { why: searchWhy, ap: sb && sb.contents && !sb.quick ? 0 : SEARCH.ap })}${btn("quick", "Quick search", quickTip, !qWhy, "⇧Q", { why: qWhy })}${veh ? btn("vehicle", "Vehicle", vehTip, atVehicle(b, u), "N") : ""}${btn("extract", byCar || (zone && zone.vehicle) ? "Extract (vehicle)" : "Extract", exTip, u.ap > 0 && (!!zone || byCar), "X")}`;
+  let html = `${btn("search", "Search", searchTip, !searchWhy, "⇧S", { why: searchWhy, ap: sb && sb.contents && !sb.quick ? 0 : SEARCH.ap })}${btn("quick", "Quick search", quickTip, !qWhy, "⇧Q", { why: qWhy })}${veh ? btn("vehicle", "Vehicle", vehTip, atVehicle(b, u), "N") : ""}${btn("extract", byCar || (zone && zone.vehicle) ? "Extract (vehicle)" : "Extract", exNote ? `${exTip} ${exNote}` : exTip, u.ap > 0 && (!!zone || byCar), "X")}`;
   // A building's doors and windows (sim/buildingmaps.js): peek, close, brace; climb through a window next to you.
   if (b.raid.interior) {
     const first = u.name.split(" ")[0];

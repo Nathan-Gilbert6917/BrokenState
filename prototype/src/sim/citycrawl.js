@@ -71,6 +71,7 @@ import { itemValue } from "./valuation.js";
 import { atBase } from "./world.js";
 import { shopPlaces, crawlFranchise, franchiseName } from "./shops.js"; // the shops and services on a block besides its own (their own dice), a place's franchise
 import { PLACE_W } from "./data-shops.js"; // a shop's crawl place stats (rich, dead, rare)
+import { piecesOut, piecesText } from "./furnihome.js"; // furniture carried out of a building: the vehicle or exhaustion at the rim (issue #18; the walk's pace: carryPace, by pairs)
 import { gridOf, inGrid, isEdge, levelOf, ringOf, maxLevel, entryOf, headingToward, turn, rimOf, pathToRim, dirTo, keyOf, xyOf, DIRS, DIR_NAMES, cellsOf } from "./citygrid.js"; // the round grid of blocks (2026-10-13)
 
 // ---------- tuning ----------
@@ -726,7 +727,7 @@ export function crawlPieces(state, p) {
   const c = p.crawl, mates = (c && c.mates) || {}, members = partyMembers(state, p);
   const out = [];
   for (const s of members) {
-    const item = s.gear && s.gear.carry, kind = item ? pieceKindOf(item) : "";
+    const item = s.gear && s.gear.carry, kind = item && item.crawl ? pieceKindOf(item) : ""; // furnihome.js (#18): marked as carried out of a crawl's building (a piece carried in from the road keeps the road's rules)
     if (!kind) continue;
     out.push({ s, item, kind, def: liftDef(kind), mate: mates[s.id] != null ? members.find((x) => x.id === mates[s.id]) || null : null });
   }
@@ -781,6 +782,7 @@ function keepPairs(state, p) {
 function leavePiece(state, p, s, why = "") {
   const c = p.crawl, item = s.gear.carry, def = liftDef(pieceKindOf(item));
   s.gear.carry = null;
+  delete item.crawl; delete item.mate;
   if (c.mates) delete c.mates[s.id];
   const cell = c.cell, mem = memOf(state.tiles[c.tile]);
   (mem.left = mem.left || {})[cell] = [...(mem.left[cell] || []), { key: item.key, kind: def.kind, item, day: day(state) }];
@@ -803,6 +805,7 @@ export function takeLeft(state, p, i = 0) {
   if (free.length < need) return `The ${def.name.toLowerCase()} takes ${need === 2 ? "two people" : "someone"} with free arms.`;
   list.splice(i, 1);
   free[0].gear.carry = o.item;
+  o.item.crawl = true; // furnihome.js: carried on the crawl
   if (need === 2) (c.mates = c.mates || {})[free[0].id] = free[1].id;
   say2(c, `${free.slice(0, need).map(first).join(" and ")} take${need === 2 ? "" : "s"} up the ${def.name.toLowerCase()} left here.`, "info", state.hour);
   return "";
@@ -816,6 +819,12 @@ function notePieces(state, p, b) {
     if (u.side !== "player" || u.sid == null || !u.piece || !u.bag || !pieceKindOf(u.bag)) continue;
     const o = partnerOf(b, u);
     if (o && o.sid != null) c.mates[u.sid] = o.sid;
+  }
+  // Out through the extraction (furnihome.js piecesAtExtraction ends the tether, the item stays in the arms marked
+  // it.crawl): the other end it noted on the item.
+  for (const s of partyMembers(state, p)) {
+    const it = s.gear && s.gear.carry;
+    if (it && it.crawl && it.mate != null) { c.mates[s.id] = it.mate; delete it.mate; }
   }
 }
 // Going into a place (enterPlace) with a piece: it stays in the carrier's arms at the entry (the battle's staging would
@@ -859,20 +868,24 @@ function piecesBack(state, p, b, list) {
   return lines;
 }
 // Out of the city at a rim block with pieces still carried (finishCrawl): the one place the crawl's rim exit meets
-// issue #18's extraction rule (vehicles wait at the entry block: a team out at the block it came in by, with its
-// vehicles, loads them; at any other rim block the piece is dropped from exhaustion there and the block remembers it).
+// issue #18's extraction rule. The vehicles wait at the entry block: out there, furnihome.js piecesOut (into the
+// vehicle, else dropped from exhaustion with its message). Out at any other rim block they are not there: the pieces are
+// dropped from exhaustion there (#18's words), and the block remembers them for a later crawl (leavePiece: mem.left),
+// unlike #18's lost. Returns { loaded, text } for the crawl's summary.
 function rimExitPieces(state, p) {
-  const c = p.crawl, lines = [];
+  const c = p.crawl;
   keepPairs(state, p);
-  const atVehicles = c.cell === c.entry && !!p.vehicleId;
-  for (const P of crawlPieces(state, p)) {
-    const name = P.def.name.toLowerCase();
-    if (atVehicles && addGearToCargo(state, p, P.item)) { P.s.gear.carry = null; lines.push(`${[P.s, P.mate].filter(Boolean).map(first).join(" and ")} load${P.mate ? "" : "s"} the ${name} into the vehicle.`); continue; }
-    lines.push(leavePiece(state, p, P.s, `${first(P.s)} drops the ${name} from exhaustion at the edge of the city:`.replace(/:$/, ";")));
-  }
+  const list = crawlPieces(state, p);
   c.mates = {};
-  for (const l of lines) say2(c, l, "info", state.hour);
-  return lines;
+  if (!list.length) return { loaded: [], text: "" };
+  if (c.cell === c.entry && p.vehicleId) return piecesOut(state, p);
+  const names = list.map((P) => P.def.name.toLowerCase());
+  for (const P of list) leavePiece(state, p, P.s);
+  const one = names.length === 1, street = (c.blocks[c.cell] || {}).street || "the street";
+  const text = `Exhausted, the team dropped what it was carrying: ${piecesText(names)}. ${one ? "It stands" : "They stand"} on ${street} at the edge of the city${c.cell !== c.entry && p.vehicleId ? ", far from the vehicle" : ""}: a later crawl can take ${one ? "it" : "them"} up again.`;
+  say2(c, text, "info", state.hour);
+  log(state, `${teamName(state, p)}: ${text}`, "warn");
+  return { loaded: [], text };
 }
 
 // ---------- going into a place ----------
@@ -1461,7 +1474,7 @@ export function autoWayOut(state, p, c = p.crawl, way = CRAWL.AUTO.way) {
 function finishCrawl(state, p) {
   const c = p.crawl;
   if (!c) return "";
-  if (!c.choosing && c.cell) rimExitPieces(state, p); // a piece still carried: loaded at the vehicles, or dropped here (issue #21, #18)
+  const pc = !c.choosing && c.cell ? rimExitPieces(state, p) : { loaded: [], text: "" }; // a piece still carried: loaded at the vehicles, or dropped here (issue #21, furnihome.js #18)
   for (const it of c.atVehicle || []) if (!addGearToCargo(state, p, it)) say2(c, `No room in the vehicle for the ${it.name.toLowerCase()}: it stays at the edge of the city.`, "info", state.hour); // the quick search's pieces (issue #21)
   const t = state.tiles[c.tile];
   const mem = memOf(t);
@@ -1469,8 +1482,8 @@ function finishCrawl(state, p) {
   mem.hour = state.hour;
   Object.assign(mem.snaps, c.buildings); // the buildings as you left them, for the next visit (unless another group goes through)
   delete p.crawl;
-  const got = [...Object.entries(c.tally.supplies).map(([k, v]) => `${v} ${keyWord(k)}`), ...c.tally.gear];
-  const text = `Out of ${c.city} after ${state.hour - c.started} h, as deep as block ${c.deepest}${got.length ? `, with ${got.join(", ")}` : ", empty-handed"}.${c.lost.length ? ` Lost: ${c.lost.join(", ")}.` : ""}`;
+  const got = [...Object.entries(c.tally.supplies).map(([k, v]) => `${v} ${keyWord(k)}`), ...c.tally.gear, ...(pc.loaded.length ? [piecesText(pc.loaded)] : [])];
+  const text = `Out of ${c.city} after ${state.hour - c.started} h, as deep as block ${c.deepest}${got.length ? `, with ${got.join(", ")}` : ", empty-handed"}.${c.lost.length ? ` Lost: ${c.lost.join(", ")}.` : ""}${pc.text ? ` ${pc.text}` : ""}`;
   log(state, `${teamName(state, p)}: ${text}`, got.length ? "good" : "info");
   noteSearch(state, partyMembers(state, p));
   awaitOrders(state, p, text);
