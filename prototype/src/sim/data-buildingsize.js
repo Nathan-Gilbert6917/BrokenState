@@ -18,7 +18,8 @@
 //   own      the size belongs to another ticket (#22: the corner store, grocery, supermarket and department store;
 //            #23: the school; #26: the bunkers): its archetype's own dice are kept (only the storeys rule applies);
 //   planned  the archetype's own plan is drawn at this size (#25's military buildings: militarylayout.js MIL_SIZE is these
-//            rows, read through realFoot): realScale leaves its footprint and storeys as they are;
+//            rows, read through realFoot; #27's office buildings: officeplans.js SIZE): realScale leaves its footprint as
+//            it is (and #25's storeys; #27's tall towers keep only the floors the tall rule builds);
 //   wings    how a footprint much bigger than the plan is laid out (buildingmaps.js realScale), when not in whole copies:
 //            "along" side by side along the front only, wall to wall, never turned, the copies after the first without the
 //            entry's part (a motel: more rooms down the row, every door on the lot, one office and its outside stair);
@@ -100,6 +101,16 @@ export const REAL_SIZE = {
   tower:       { w: [9, 11], d: [9, 11], storeys: [4, 5], set: "rural", planned: true },
   flightops:   { w: [24, 28], d: [15, 17], storeys: [1, 2], set: "rural", planned: true },
   supply:      { w: [40, 48], d: [25, 29], storeys: [1, 1], set: "rural", planned: true }, // a military base's warehouse (no archetype of its own: the warehouse's plan at a base)
+  // #27's office buildings of every kind (officeplans.js: its SIZE is these rows; a firm's corporate tower the
+  // officetower row, an "offices" archetype with a firm): planned at these sizes, their storeys built by the tall rule
+  storefront:  { w: [10, 14], d: [15, 20], storeys: [1, 2], set: "town", planned: true },
+  bizpark:     { w: [26, 32], d: [17, 21], storeys: [1, 3], set: "town", planned: true },
+  officetower: { w: [24, 28], d: [16, 18], storeys: [6, 10], set: "city", planned: true }, // a firm's corporate tower (the offices archetype's, issue #27)
+  cityhall:    { w: [26, 30], d: [21, 24], storeys: [2, 3], set: "town", planned: true },
+  courthouse:  { w: [26, 30], d: [21, 24], storeys: [2, 3], set: "town", planned: true },
+  callcenter:  { w: [26, 32], d: [17, 20], storeys: [1, 2], set: "town", planned: true },
+  techoffice:  { w: [20, 24], d: [15, 18], storeys: [2, 5], set: "city", planned: true },
+  station:     { w: [22, 26], d: [15, 17], storeys: [2, 2], set: "town", planned: true },
   // Open floors
   warehouse:   { w: [40, 80], d: [25, 50], storeys: [1, 1], set: "town" }, // one tall storey
   factory:     { w: [50, 100], d: [30, 60], storeys: [1, 1], set: "town" },

@@ -171,6 +171,7 @@ import { strikeAct, slashAct, settleTentsDown } from "./tentfight.js"; // tents 
 import { campRaidMap, campRaidUnits, campSleeperTurn, tentBoxLoot, campAfter } from "./campsite.js"; // the campsite raid: its clearing, its tents and their loot, its campers (the user's request 2026-10-20)
 import { furnitureCells } from "./data-furniture.js"; // the furniture and appliance catalogue: its cells (merged into CELL below)
 import { NEW_KINDS, AREA_DEFS } from "./data-shops.js"; // the shops and services new as places: their raid rooms
+import { OFFICE_BOX } from "./data-offices.js"; // the office buildings' new pieces: their own tables (issue #27)
 
 // Result handlers by key. Other modules register theirs while they load (conflicts.js, scavenge.js), which can be
 // before this module's own body has run (the imports are circular), so the map is made on first use: a `var`
@@ -8208,3 +8209,4 @@ MED.setMedicHooks({ take, spendRounds, medsOf, spendMed, alertAll, foesOf, heal,
 // data-shops.js: the town's and the city's shops and services (their rows; this module's own rows win).
 for (const [k, d] of Object.entries(AREA_DEFS)) if (!AREAS[k]) AREAS[k] = d.def;
 for (const [k, d] of Object.entries(NEW_KINDS)) if (!AREA_SETS[k]) AREA_SETS[k] = d.areas;
+for (const [k, d] of Object.entries(OFFICE_BOX)) if (!BOX_LOOT[k]) BOX_LOOT[k] = d;

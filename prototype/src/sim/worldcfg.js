@@ -144,6 +144,9 @@ export const legacyRooms = (state) => !!(state && state.roomsLegacy);
 // A save from before buildings at real size (issue #24, save.js scaleLegacy; an older one still, roomsLegacy): every
 // building keeps the footprint and storeys its archetype gave it (buildingmaps.js realScale is not applied).
 export const legacyScale = (state) => !!(state && (state.scaleLegacy || state.roomsLegacy));
+// A save from before the office buildings of every kind (save.js officesLegacy, issue #27): its points of interest and
+// its crawls' blocks get none of them (shops.js), and its office towers no firm, so its places stay as they were.
+export const legacyOffices = (state) => !!(state && state.officesLegacy);
 // The run's raid map dials as [smallest, largest]: each clamped to its range, the two in order whatever was stored
 // (a hand-edited or older settings object can hold them the wrong way round: the range never runs backwards).
 /** @param {any} state */
