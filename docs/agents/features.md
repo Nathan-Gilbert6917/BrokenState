@@ -147,6 +147,7 @@ Detail: [travel.md](../features/travel.md).
 - **Other groups survey and raid POIs** with their own knowledge, picker and the shared ledger [grouppois, aiscav, visitors]. [details](../features/travel.md#other-groups-survey-and-raid-pois)
 - **Abstract scavenging**: hour-by-hour search with rising Heat [scavenge]; shared finite loot AI groups also scavenge [aiscav].
 - **City crawl**: block-by-block roguelike extraction on a round grid of blocks, walking back to the rim to get out; multi-storey buildings with who lives on each floor [citycrawl, floorfolk]. [details](../features/travel.md#city-crawl)
+- **Stair runs**: stairwells as flights against a wall with landings, the top step changes floor, by building kind [buildingmaps, combat, floorfolk, ui/isoview] `tools/storeytest.js`. [details](../features/travel.md#stair-runs-2026-10-25)
 - **Crash sites and supply drops**, contested [crashes].
 - **Wanderers**: neutral survivors and others met on the road [wanderers].
 - **Optics**: binoculars, thermal imager and others [optics]; **lights** carried for the dark [lights].

@@ -32,7 +32,8 @@
   floor: `active()` and `onMap()` get `&& u.f === b.floor` (a new flag, not `u.off`, which already means gone).
   Containers get `c.f`; `b.raid.containers` holds all floors, and the search/box helpers filter by the active floor.
 - **Stairwells**: one or two per building at fixed (x, y), on every floor the same cells: `stairs` on floor f leads
-  to the same cell on f + 1. Standing on a stairwell cell a unit can **Go up** / **Go down** (a battle action,
+  to the same cell on f + 1. Since 2026-10-25 each is a stair run against a wall with a landing at each end, and only
+  its top step changes floor (see "Stair runs" below). Standing on a stairwell cell a unit can **Go up** / **Go down** (a battle action,
   1 AP, like a climb; the dead pay `CLIMB_DEAD`). It moves the unit's `u.f`; position stays. A unit cannot end on a
   stairwell cell that is occupied on the target floor. The existing raised-room `loft` mechanic is retired for
   buildings that get real storeys (keep it for barns' haylofts).
@@ -125,3 +126,29 @@ All three phases are in dev: `ffb55dd` (sim and generation), `840ff17` + `16f65c
 - Open: a door-panel "Force the door" for a group already met (the barricade is otherwise opened only through
   the card); fires, smoke and acid have no floor yet (a Molotov upstairs also burns the same cell downstairs);
   each visited floor's sight cache is saved (a fully explored 5-storey hospital adds a few MB before gzip).
+
+## Stair runs (2026-10-25, issue #9)
+
+The user asked that interior layouts make sense (epic #7). A stairwell was one `stairs` cell at the centre of the
+biggest hub room; it is now a stair run. Detail: [docs/features/travel.md](features/travel.md#stair-runs-2026-10-25).
+
+- **Shape**: a straight run of 2 steps (3 in a hospital, school, office tower or apartment block) with a 1-cell landing
+  at the bottom and the top. It lies against a wall of its room, parallel to it, with a lane of the room beside it, and
+  no door opens onto a step. `b.raid.runs[i] = { x, y, dx, dy, len, f0, f1 }`; the step cells carry `c.dir`, `c.step`
+  and `c.top`. The same cells are the run on every floor it joins (a stacked stairwell); an upper floor's plan is opened
+  where it put a wall across a step or a landing.
+- **Changing floor**: Go up / Go down only from the top step, 1 action as before; position stays, so you arrive on the
+  top step with the upper landing beside it. `b.raid.stairs` is the list of top steps, so the bots, the dead's drift to
+  the stairs and everything else that walks to a stairwell work unchanged.
+- **By kind**: a house's from the hall or front room by the front door; a shop's from the back room to the flat
+  above; apartments and offices in a 2-wide stairwell room of their own beside the lobby, one door a floor; a
+  hospital's and a school's at each end of the main corridor; a police station's or fire station's from the lobby or
+  day room; a motel's an outside stair along a side wall up to the walkway. A footprint too small for a run keeps the
+  one-cell stairwell (none of today's multi-storey types needs it). No basements, cellar doors or attic hatches.
+- **Who waits there**: the dead by the stairs and the watchers stand on the landings, not on the steps. Survivors or
+  raiders holding an upper floor shove a piece of furniture onto that floor's top landing where the floor stays
+  connected round it.
+- **View**: steps rising toward the floor above, a railing on the open side, the top floor's run drawn as the opening
+  down; the floor marker and PageUp / PageDown unchanged.
+- **Saves**: an older save's one-cell stairwells (no runs, no `c.step`) still change floor from any stairs cell; an
+  older building snapshot restores its own stairwells from its cells.

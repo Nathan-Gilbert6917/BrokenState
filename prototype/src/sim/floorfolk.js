@@ -124,7 +124,7 @@ function landingPiece(state, b, f, who) {
     const [lx, ly] = runLandings(run)[1], top = runTop(run);
     const c = cells[I(b, lx, ly)];
     if (!c || c.k !== "open" || takenAt(b, f, lx, ly)) continue;
-    const before = reached(top), k = state.rng.pick(LANDING_PIECES);
+    const before = reached(top), k = LANDING_PIECES[(lx * 7 + ly * 13 + f * 5) % LANDING_PIECES.length]; // by the place, not the world's dice (the rolls after it are as before)
     c.k = k;
     if (reached(top) !== before - 1) { c.k = "open"; continue; }
     c.hp = c.mhp = FURNITURE[k].hp; c.shoved = who;
@@ -184,6 +184,8 @@ export function placeFolk(state, b, place, n, deps = {}) {
   if (folk.nest) R.folk.nest = makeNest(state, b, n, deps.kind);
   if (folk.survivors) R.folk.survivors = barricadeSurvivors(state, b);
   R.folk.raiders = holeUpRaiders(state, b, n, !!folk.raidersUp);
+  // A stash put down on the nest's floor after it (squatters holding a room up there) is as rich as the rest of it.
+  if (R.folk.nest) for (const box of R.containers) if ((box.f || 0) === R.folk.nest.f && box.kind !== "body" && !box.rich) box.rich = FOLK.NEST.rich;
   return R.folk;
 }
 

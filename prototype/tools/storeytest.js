@@ -536,13 +536,15 @@ console.log("The bot in multi-storey buildings");
     // Every other raid the ground floor is already picked clean: the bot has to go upstairs for anything.
     if (i % 2 === 1) for (const c of st.combat.raid.containers) if (!c.f) c.searched = true;
     try {
-      let g = 0;
-      while (!st.combat.over && g++ < 200) { autoPlayerTurn(st); runEnemyPhase(st); }
+      let g = 0, wentUp = false;
+      // A climb: the log line, looked for every turn (b.log keeps only its last 80 lines), or one of the team upstairs.
+      const upNow = () => st.combat.log.some((l) => /goes up the stairs/.test(l.text)) || st.combat.units.some((x) => x.side === "player" && (x.f || 0) > 0 && !x.dead);
+      while (!st.combat.over && g++ < 200) { autoPlayerTurn(st); if (upNow()) wentUp = true; runEnemyPhase(st); }
       const b = st.combat;
       if (!b.over) { timeouts++; continue; }
       raids++;
       if (b.result.outcome === "extracted") out++;
-      if (b.log.some((l) => /goes up the stairs/.test(l.text))) climbed++;
+      if (wentUp) climbed++;
       upSearched += b.raid.containers.filter((c) => c.f > 0 && c.searched).length;
       check(b.units.filter((x) => x.side === "player" && x.left).every((x) => x.f === 0), `whoever extracted did so from the ground floor (${b.raid.interior.name})`);
     } catch (e) { crashes++; if (crashes < 3) console.log(e.stack); }
