@@ -208,6 +208,7 @@ import { storageOf } from "./basestorage.js"; // storage: a base's room and what
 import { STORE_WISH } from "./autopilot.js"; // storage: your governor's ladder (call-time only)
 import { groupFillDaily } from "./tunnels.js"; // the dead's tunnels under their walls (call-time only)
 import { homesOf, stockTonight, worksBuildings, syncBuildings } from "./groupbases.js"; // storage: their bases as base objects (call-time only); groups-power-grid: in step for a fitting's floor (fitRoom)
+import { groupFurnitureDaily } from "./furniture.js"; // furniture at the base (#20): the pieces in their armory set in their hall (call-time only)
 import { hallDef, hallWork, groupBedsDaily, furnSleepers } from "./beds.js"; // beds as furniture: their hall, the furniture they craft and its sleepers (call-time only)
 import { groupTentSleepers } from "./tents.js"; // the tent bags on their shelf, pitched at their camps (call-time only)
 import { powerDayBudget, gridUsers, servedToday, alarmHour, heatingDay } from "./grouppower.js"; // groups-power-grid: their power budget by the hour (see the header)
@@ -995,6 +996,7 @@ export function groupWorksDaily(state, f) {
   groupTechDaily(state, f); // machines-2: their manuals, bought and studied
   groupPartsDaily(state, f); // machines-2: parts from their workshop before the day's machines and builds
   groupBedsDaily(state, f); // beds.js: a piece of furniture crafted and set in their hall
+  groupFurnitureDaily(state, f); // furniture.js: the shelves, crates, sofas they brought home set in their hall, as your governor would
   groupFillDaily(state, f, homesOf(state, f)); // tunnels.js: the dead's tunnels under their walls filled (coarse: so many work-hours a day)
   // A job at a base they no longer hold is dropped (the materials are lost with the base).
   if (f.job && !f.bases.includes(f.job.tile)) f.job = null;

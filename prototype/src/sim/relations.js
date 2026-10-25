@@ -35,6 +35,7 @@ import { count, isPiece } from "./buildings.js";
 import { GEAR } from "./data.js";
 import { allItems } from "./inventory.js";
 import { season, weatherOnDay } from "./weather.js";
+import { comfortLine } from "./furniture.js"; // furniture at the base (#20): the sofas, armchairs and decor where someone sleeps (call-time only)
 import { bedLine, roughColdDaily } from "./beds.js"; // beds as furniture: where someone sleeps (call-time only)
 import { powerMood } from "./electric.js"; // the breaker panel's circuits: lit or dark, cooled or heated (call-time only)
 import { crowdInfo, talker } from "./morale.js";
@@ -342,6 +343,7 @@ export function moodFactors(state, s) {
     if (base.rationing) add("Short rations", -3, false);
     else if (rationKey(state, base) === "lean") add("Lean rations (smaller portions)", RATION_LEVELS.lean.mood, false); // economy.js, eating.js
     if (!pl.route) { const bl = bedLine(state, s, base); if (bl) add(bl.label, bl.v, true, bl.tip); } // beds.js: the bed they sleep in (a cot, a bunk, a large bed) or none
+    if (!pl.route) { const fl = comfortLine(state, s, base); if (fl) add(fl.label, fl.v, true, fl.tip); } // furniture.js: the comfort pieces in the building they sleep in (COMFORT.MAX at most)
     if (!pl.route && s.role === "rest") add("Resting (Rest role)", 6, false);
     else if (!pl.route && s.inBed) add("In a hospital bed", 3, false);
     if (base.dog) add(`${base.dog.name} the dog`, 0.5, false);

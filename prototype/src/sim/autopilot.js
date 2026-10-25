@@ -72,6 +72,7 @@ import { siteCost } from "./buildmats.js"; // a wish's cost as the stores pay it
 import { nextWallTier, wallTier, underAttack, campMaterialsWork } from "./buildings.js"; // WALL_TIERS: one wall, built up a tier at a time
 import { WOODWORK, queueChop, queuedChopWood, clearAhead } from "./woodwork.js"; // woodwork: felling for wood, clearing the next sites ahead (govWoodwork)
 import { fittingRoom } from "./basemap.js"; // base building: a general building with floor for a fitting (bedWishes, storageWish, stoveWish)
+import { governFurniture, storedStorage } from "./furniture.js"; // furniture at the base (#20): the found storage, work and comfort pieces set from the stores (call-time only)
 import { governBeds } from "./beds.js"; // beds as furniture: set from the stores, crafted when beds are short (call-time only)
 import { governPower } from "./electric.js"; // the power grid: found generators, spotlights and fridges set from the stores (call-time only)
 import { rangeWaits } from "./appliances.js"; // a stored kitchen range is set before a Kitchen is wished for (#19; call-time only)
@@ -393,6 +394,7 @@ export function governBase(state, base, areas = ALL_AREAS) {
   if (areas.building && hourOfDay(state) === PLAN_HOUR) tidyStores(state, base); // containers.js: the goods into the containers, before the day's builds
   if (areas.building && hourOfDay(state) === PLAN_HOUR) for (const line of governPower(state, base)) say(state, line); // electric.js: generators set while the power falls short, spotlights and fridges once one runs
   if (areas.building && hourOfDay(state) === PLAN_HOUR) for (const line of governBeds(state, base)) say(state, line); // beds.js: furniture set from the stores, a bunk bed or a cot crafted when beds are short
+  if (areas.building && hourOfDay(state) === PLAN_HOUR) for (const line of governFurniture(state, base)) say(state, line); // furniture.js: the found storage pieces set (before storageWish queues crates), a found workbench, the comfort that counts
   if (areas.building && base.tunnels && base.tunnels.length) { const line = autoFillTunnels(state, base); if (line) say(state, line); } // tunnels.js: the dead's tunnels under the walls filled first
   if (areas.building) planBuilds(state, base, areas);
   if (areas.building && state.hour % WOODWORK.govEvery === 0) govWoodwork(state, base, areas); // woodwork: felling for wood when short, the next sites cleared ahead
@@ -3004,6 +3006,8 @@ export function storageWish(state, base) {
   const shortKg = Math.max(st.outsideKg, st.used - own);
   if (shortKg < STORE_WISH.minKg && !st.outside.gear.length) return null;
   const why = (t) => `${st.outsideKg >= STORE_WISH.minKg ? `${Math.round(st.outsideKg)} kg of the base's goods lie outside, weathering` : `${Math.round(st.used - own)} kg of the base's goods would lie outside with the cars away`} (room for ${BUILDINGS[t].storeKg} kg)`;
+  const piece = storedStorage(state, base); // furniture.js (#20): a found storage piece in the stores, set before anything is built
+  if (piece) return { type: piece, why: `${why(piece)}: a ${BUILDINGS[piece].name.toLowerCase()} from the stores, set inside a general building`, save: false };
   for (const t of STORE_WISH.fittings) if (BUILDINGS[t] && countAll(base, t) < BUILDINGS[t].max && fittingRoom(state, base, t) && canBuild(state, base, t).ok) return { type: t, why: `${why(t)}: ${BUILDINGS[t].name.toLowerCase()} inside a general building`, save: false };
   const size = isCamp(base) ? "camp" : isShelter(base) ? "shelter" : base.type === "hub" ? "hub" : "outpost";
   const ok = STORE_WISH.ladder[size].filter((t) => BUILDINGS[t] && canBuild(state, base, t).ok);

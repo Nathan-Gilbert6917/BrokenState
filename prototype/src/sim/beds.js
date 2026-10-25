@@ -1,7 +1,9 @@
 // @ts-check
 // Beds as furniture (2026-10-20, the user's request: "Cots 1x2 mood debuff, Beds 1x2, bunkbeds 1x2 mood debuff and
 // large beds 2x2 mood buff can be created and set in buildings to add beds for a base"). The numbers are
-// data-beds.js (BED_SPEC: size, sleepers, mood; BED_GEAR: the items; BED_CRAFTS: the recipes).
+// data-beds.js (BED_SPEC: size, sleepers, mood; BED_GEAR: the items; BED_CRAFTS: the recipes). Setting a piece and
+// picking it up is furniture.js since #20 (2026-10-25: the same machinery for the storage, comfort and work pieces),
+// re-exported here.
 //
 // THE PIECE. A cot, a bed, a bunk bed or a large bed is an item while it is in the stores (the base's armory) or on
 // the move (bulky, both arms: the In arms slot, a cart, the team's cargo, a vehicle): crafted at a crafting bench
@@ -59,9 +61,10 @@ import { siteCost } from "./buildmats.js"; // the Lodge's building materials and
 import { BED_SPEC, BED_KINDS, BED_MOOD, BED_FINDS, BED_CRAFTS, BEDS_AI, ROUGH_WEATHER } from "./data-beds.js";
 import { BUILDINGS, BEDS, addBuilding, count, plainBeds, baseBeds, queuedBeds, isShelter, canBuild } from "./buildings.js"; // (call-time only: the modules load in a circle)
 import { pitchArmoryBags, tentsText } from "./tents.js"; // (call-time only) the governor pitches spare bags first
-import { fittingRoom, placeItem, refreshBaseMap } from "./basemap.js"; // (call-time only)
+import { fittingRoom } from "./basemap.js"; // (call-time only)
 import { makeItem, canCraft, queueCraft, craftQueue } from "./crafting.js"; // (call-time only)
 import { residents } from "./world.js";
+import { furnitureSet, furnitureInStores, canSetFurniture, setFurniture, furnitureProblem, furnCells } from "./furniture.js"; // (call-time only) the pieces' machinery; furnCells: their hall's floor taken by every piece
 import { personKey } from "./members.js"; // (call-time only) a person's id for the dice: a member who joined keeps their own
 import { tentKind } from "./buildings.js"; // (call-time only) a pitched tent's kind
 import { TENT_TYPES } from "./data-tents.js"; // the one tent table: a pitched tent's sleepers and mood
@@ -74,93 +77,26 @@ import { siteSource } from "./itemcond.js";
 import { GROUP_WORKS, groupsBuild, canPayParts, payParts, groupPeopleAt } from "./groupworks.js"; // (call-time only)
 import { homesOf, syncBuildings } from "./groupbases.js"; // their bases as base objects: the hall's floor (call-time only)
 
-const HOSTS = "a hut, cabin, lodge, hall or barn";
 const nameOf = (type) => (BED_SPEC[type] ? BED_SPEC[type].name : BUILDINGS[type] ? BUILDINGS[type].name : type);
 const lower = (type) => nameOf(type).toLowerCase();
 const bedsWord = (n) => `${n} bed${n === 1 ? "" : "s"}`;
-/** @param {string} type */
-export const isFurniture = (type) => !!BED_SPEC[type];
+/** A bed (a cot, a bed, a bunk bed, a large bed); furniture.js isFurniture: any piece. @param {string} type */
+export const isBed = (type) => !!BED_SPEC[type];
 
 // ---------- the beds a base has ----------
 /** The beds the furniture set at a base adds (buildings.js baseBeds adds it to the plain beds). @param {any} base */
 export const furnitureBeds = (base) => ((base && base.buildings) || []).reduce((a, b) => a + (BED_SPEC[b.type] && !b.broken ? BED_SPEC[b.type].sleepers : 0), 0);
-/** Pieces of this kind in a base's stores (its armory). @param {any} base @param {string} type */
-export const furnitureInStores = (base, type) => ((base && base.armory) || []).filter((it) => it && it.key === type).length;
-/** The furniture set at a base, by kind: { cot: 2, bigbed: 1 }. @param {any} base */
-export function furnitureSet(base) {
-  /** @type {Record<string, number>} */
-  const out = {};
-  for (const b of (base && base.buildings) || []) if (BED_SPEC[b.type]) out[b.type] = (out[b.type] || 0) + 1;
-  return out;
-}
-
-// ---------- setting a piece and picking it up ----------
-// Why it cannot be set at this base now ("" when it can): a general building standing with free floor for it.
-/** @param {any} base @param {string} type */
-export function furnitureProblem(base, type) {
-  if (!BED_SPEC[type]) return "Not a piece of furniture";
-  if (fittingRoom(null, base, type)) return "";
-  const s = BED_SPEC[type];
-  return `Needs a building to stand in with ${s.w} × ${s.h} of free floor (${s.w > 1 && s.h > 1 ? "a lodge, hall or barn: a hut's or a cabin's floor has no room for it" : HOSTS})`;
-}
-// buildings.js canBuild for a piece of furniture: one in the stores, and a building with room for it.
-/** @returns {{ ok: boolean, reason?: string, short?: boolean }} */
-export function canSetFurniture(state, base, type) {
-  if (!BED_SPEC[type]) return { ok: false, reason: "Not a piece of furniture" };
-  if (!furnitureInStores(base, type)) return { ok: false, short: true, reason: `No ${lower(type)} in the stores: craft one at the bench (Crafting) or bring one home` };
-  const where = furnitureProblem(base, type);
-  if (where) return { ok: false, reason: where };
-  return { ok: true };
-}
+// Setting a piece and picking it up: furniture.js (the machinery made general for any piece, #20), re-exported here.
+export { isFurniture, furnitureInStores, furnitureSet, furnitureProblem, canSetFurniture, setFurniture, setFurnitureAt, pickUpFurniture } from "./furniture.js";
 // The makeshift cots are retired (buildings.js canBuild, the def's retired: the item that replaced it).
 export const RETIRED_WHY = (def) => `Superseded: craft a ${lower(def.retired)} at the bench and set it inside a building (the base map's Build list, Furniture)`;
 
-// Take one from the stores and set it: at = [x, y, r] on the map (placed by hand), else the game places it. The best
-// kept one first. Returns { rec, key, msg } or { err }.
-export function setFurniture(state, base, type, at = null) {
-  const chk = canSetFurniture(state, base, type);
-  if (!chk.ok) return { err: chk.reason || "It cannot be set here now." };
-  const list = base.armory.map((it, i) => [it, i]).filter(([it]) => it && it.key === type).sort(([a], [b]) => (b.quality || 0) - (a.quality || 0));
-  const [item, idx] = list[0];
-  base.armory.splice(idx, 1);
-  delete item.store; // containers.js: an assignment to a container goes with it out of the stores
-  const rec = addBuilding(base, type);
-  rec.item = item;
-  const key = `b:${rec.id}`;
-  if (at) {
-    const err = placeItem(state, base, key, at[0], at[1], at[2] || 0);
-    if (err) { base.buildings.splice(base.buildings.indexOf(rec), 1); base.armory.splice(idx, 0, item); return { err }; }
-  }
-  const n = BED_SPEC[type].sleepers;
-  return { rec, key, msg: `${nameOf(type)} set ${at ? "there" : "inside a building with room (placed by the game)"}: +${bedsWord(n)} at ${base.name} (${baseBeds(base)} in all).` };
-}
-// The base map's Build on a piece of furniture (basemap.js layoutAct build): set where the ghost is. Returns an error or "".
-export function setFurnitureAt(state, b, base, type, g) {
-  const L = b.layout;
-  const r = setFurniture(state, base, type, g.at);
-  if (r.err) return r.err;
-  L.msg = r.msg;
-  L.sel = r.key;
-  if (!furnitureInStores(base, type)) L.pickType = null; // none left to set
-  refreshBaseMap(state);
-  return "";
-}
-// Demolish on a set piece (buildings.js demolish), or its building pulled down: back into the stores, whole.
-export function pickUpFurniture(state, base, rec) {
-  const i = base.buildings.indexOf(rec);
-  if (i >= 0) base.buildings.splice(i, 1);
-  const item = rec.item && typeof rec.item === "object" ? rec.item : makeItem(rec.type, 0.8);
-  base.armory.push(item);
-  const n = BED_SPEC[rec.type] ? BED_SPEC[rec.type].sleepers : 0;
-  return `${nameOf(rec.type)} picked up and put back in the stores (−${bedsWord(n)}: ${baseBeds(base)} at ${base.name}).`;
-}
-
 // ---------- who sleeps where ----------
-// Every bed at a base, best first: { kind, mood } (kind: a furniture type, "bunks" for the bunk beds fitting, "plain"
+// Every bed at a base, best first: { kind, mood, bid? } (bid: a piece of furniture's record; kind: a furniture type, "bunks" for the bunk beds fitting, "plain"
 // for the rest). The children's beds (base.kidBeds) are the worst ones.
 export function bedSlots(base) {
   const slots = [];
-  for (const b of base.buildings || []) { const s = BED_SPEC[b.type]; if (s && !b.broken) for (let i = 0; i < s.sleepers; i++) slots.push({ kind: b.type, mood: s.mood }); }
+  for (const b of base.buildings || []) { const s = BED_SPEC[b.type]; if (s && !b.broken) for (let i = 0; i < s.sleepers; i++) slots.push({ kind: b.type, mood: s.mood, bid: b.id }); } // bid: the piece (furniture.js comfortLine: the building it stands in)
   for (const b of base.buildings || []) { if (b.type !== "tent" || b.broken) continue; const k = tentKind(b), T = TENT_TYPES[k]; for (let i = 0; i < T.sleepers; i++) slots.push({ kind: `tent:${k}`, mood: T.mood || 0 }); } // the pitched tents (buildings.js tentBeds)
   const bunks = count(base, "bunks") * BEDS.bunks;
   const plain = Math.max(0, plainBeds(base) - bunks);
@@ -293,7 +229,6 @@ export function governBeds(state, base) {
 const nW = (w, k) => (w && w[k]) || 0;
 /** The sleepers of a base's furniture (its works). @param {any} w */
 export const furnSleepers = (w) => BED_KINDS.reduce((a, k) => a + nW(w, k) * BED_SPEC[k].sleepers, 0);
-const furnCells = (w) => BED_KINDS.reduce((a, k) => a + nW(w, k) * BED_SPEC[k].w * BED_SPEC[k].h, 0);
 /** The floor a base's halls give furniture (cells). @param {any} w */
 export const hallRoom = (w) => nW(w, "hall") * BEDS_AI.room;
 /** Their hall work: your Lodge (BUILDINGS.gen_lodge), its cost, its hours as crew-days (groupworks.js storeDef's rule). */
