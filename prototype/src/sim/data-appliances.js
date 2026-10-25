@@ -25,7 +25,7 @@
 //                                                                               range in the same building (OVEN)
 //   microwave      f_microwave       microwave     microwave  12   one    1     reheats: ×1.1 on a meal's time (MICROWAVE)
 // Off (no power, switched off, short of power): a fridge, a freezer or a cold case still stands and is a cupboard (its
-// room at room temperature: the walk-in freezer's thaw, power.js freezerOffWhy says why); a range off the grid burns
+// room at room temperature: the walk-in freezer's thaw; the Power card says why); a range off the grid burns
 // propane, with neither it is idle; a microwave off does nothing. A broken one holds and does nothing.
 // The item rows wait for the catalogue (#8: data-furniture.js FURNITURE_KINDS, each liftable kind's item form a GEAR
 // row f_<kind> with bulky, twoHands, furniture: <kind>, weight: kg); until it lands they are made here.

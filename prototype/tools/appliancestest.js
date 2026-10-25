@@ -94,7 +94,7 @@ section("The chest freezer and the cold case");
   refreshPower(st, h);
   sp = storeSpaces(h);
   check(!!cc && sp.some((x) => x.key === "cold_case" && x.kind === "coldcase" && x.cap === 100) && near(storeFactor("coldcase", 20), 0.3), "a cold case: 100 days at 0.3×");
-  check(coldRooms(h).length === 2 && sp.some((x) => x.name === "Chest freezers") && sp.some((x) => x.name === "Cold cases"), "the Storage tab's rows: Chest freezers, Cold cases");
+  check(coldRooms(h).length === 2 && sp.some((x) => x.name === "Chest freezers") && sp.some((x) => x.name === "Cold cases"), "the Food tab's rooms: Chest freezers, Cold cases");
   fz.broken = true;
   check(!storeSpaces(h).some((x) => x.key.startsWith("chest_freezer")), "broken: it holds nothing");
 }

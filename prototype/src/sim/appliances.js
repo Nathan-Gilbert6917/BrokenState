@@ -16,8 +16,8 @@
 //
 // THE COLD ROOMS (coldRooms: storage.js storeSpaces). A chest freezer: COLD.chest_freezer.room days of food at the
 //   walk-in freezer's rate (0.05×) while powered; a cold case: its room at 0.3×. Off (no power, switched off, short of
-//   power), each is a pantry (its room at room temperature: the walk-in's thaw; power.js freezerOffWhy says why on
-//   the Storage tab); broken, it holds nothing.
+//   power), each is a pantry (its room at room temperature: the walk-in's thaw; the Food tab's food rooms show the
+//   "(off)" row, ui/food.js, and the Power card why); broken, it holds nothing.
 //
 // COOKING (cooking.js STATIONS.range). A range set and not broken is a cooking station of its own, its bills on the
 //   Farming tab's Cooking card. It burns no wood: rangeFuel is "power" while a range here is served, else "propane"
@@ -159,7 +159,7 @@ export function rangeStatus(state, base, rec = null) {
   if (!fuel) return { running: false, idle: true, reason: `No power and no propane: it cooks on ${RANGE.need} power, or ${RANGE.propane} propane a batch off the grid`, fuel };
   return { running: true, idle: false, reason: fuel === "power" ? "Cooking on the grid (no wood)" : `Cooking on propane (${RANGE.propane} a batch, ${Math.floor((base.stock.propane || 0) * 10) / 10} here)`, fuel };
 }
-/** One line for a set appliance (the Build list and the Storage tab). @param {string} type */
+/** One line for a set appliance (the setting message). @param {string} type */
 export function applianceLine(type) {
   if (type === "fridge") return `${FRIDGE.room} days of cold food room while it has power (${FRIDGE.need})`;
   if (COLD[type]) return `${COLD[type].room} days of food room at ${COLD[type].factor}× its shelf while it has power (${COLD[type].need})`;
