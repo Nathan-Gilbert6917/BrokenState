@@ -1160,6 +1160,7 @@ export function cardStale(state, card) {
   // A card about the team's vehicle (a breakdown) after the vehicle was left behind: a fast vehicle enters
   // several tiles in an hour, and can run dry on a later one in the same hour the breakdown came up.
   if (card.vehicleId != null && !partyVehicleIds(p).includes(card.vehicleId)) return true; // any of its vehicles (vehicles.js fleets)
+  if (card.vehiclePickFor != null && !p.vehiclePick) return true; // walkers.js vehiclePickCard: the pick already made (the team set off: the default)
   return (card.survivorIds || []).some((id) => {
     const s = survivorById(state, id);
     return !s || !s.alive || !p.members.includes(id);

@@ -27,6 +27,7 @@ import {
 } from "./parties.js";
 import { poiAt, poiPool, poiTake, poiName, knownPois, visitPoi, tileHeat, addTileHeat, exitHeat, shotsHere, noteTileHeat, TILE_HEAT } from "./pois.js"; // the place searched: its kind, its pool, its visits; the tile's heat
 import { poiRaidEnd, lootPoiAbstract, poiHouses, CONT } from "./poicont.js"; // the containers a place keeps between visits; a street of houses
+import { raidVehiclePick } from "./walkers.js"; // fewer people than vehicles after a raid: which go on
 import { poiTileRaid, poiPickFor, poiRaidSetup, raidBuildings, buildingPickFor } from "./poiraid.js"; // which place, and the raid map it opens (a site's building picked before it)
 import { attitude, changeGoodwill } from "./factions.js";
 import { noteLooked } from "./discovery.js";
@@ -283,6 +284,10 @@ export function afterRaid(state, result, setup, battle = null) {
     log(state, `The vehicle was left at ${tileLabel(state, setup.tile)}.`, "danger");
     leaveVehicle(state, p, setup.tile, "left at the raid site"); // cargo the people cannot carry stays in it (logged)
   }
+  // Fewer left than the vehicles need at the wheel: the player picks which go on on a card, the rest stay at the
+  // raid's tile (walkers.js raidVehiclePick; the autopilot and the tools: the worst-first rule, at once). Before the
+  // hours the raid took, so the hourly sweep (shedSurplusVehicles) does not pick for them.
+  raidVehiclePick(state, p, setup.tile);
   // Cuts and fevers from the hours spent searching (health.js), as in the hour-by-hour search.
   for (let i = 0; i < (r.hours || 1); i++) searchHazards(state, partyMembers(state, p), tileLabel(state, setup.tile));
   wormSearch(state, p, setup.tile, r.hours || 1); // worm.js: the eggs on what they handled, rolled tonight or at home
