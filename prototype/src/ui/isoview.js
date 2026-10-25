@@ -51,7 +51,7 @@ import { ringingCars } from "../sim/caralarms.js"; // a car alarm ringing (2026-
 import { groundTexel, leafField, leafBase, groundLookKey, snowShare, puddleField, puddleAt, puddleTexel } from "./groundlook.js"; // spring's mud, autumn's leaves, winter's snow on the ground (sim/seasonground.js); puddles after rain (sim/puddles.js)
 import { FURNITURE_KINDS } from "../sim/data-furniture.js"; // the furniture and appliance catalogue: the furniture set, its sprites (FURN_DRAW)
 import { puddleGround } from "../sim/puddles.js"; // where a puddle may run onto (ui/groundlook.js puddleField)
-import { vehicleCellSprite, setVehicleCanvas } from "./vehiclemodel.js"; // the cars and trucks as low-poly models, the State Map's look: a cell's share of one
+import { vehicleCellSprite, vehicleOneSprite, setVehicleCanvas } from "./vehiclemodel.js"; // the cars and trucks as low-poly models, the State Map's look: a cell's share of one, a car on one cell
 
 // ---------- constants ----------
 const HW = 16, HH = 8;          // half a tile in art px (a tile: 32 × 16)
@@ -408,9 +408,9 @@ const along = (o) => (o.j & 3 && !(o.j & 12) ? "u" : o.j & 12 && !(o.j & 3) ? "v
 // A box spanning the tile along an axis, thin across it.
 const run = (ax, c0, c1, z0, z1, m, a0 = 0, a1 = 1) => (ax === "u" ? { u0: a0, u1: a1, v0: c0, v1: c1, z0, z1, m } : { u0: c0, u1: c1, v0: a0, v1: a1, z0, z1, m });
 
-// One cell's share of a car that covers 2 × 3–4 cells (sim/combat.js placeCar: o.car = { i, j, L, ax, kind, v }), in a
-// straight view (iso.straight): the diagonal view draws the car as a low-poly model, the State Map's look, cut by cell
-// the same way (ui/vehiclemodel.js vehicleCellSprite; carModelSprite below). The
+// One cell's share of a car that covers 2 × 3–4 cells (sim/combat.js placeCar: o.car = { i, j, L, ax, kind, v }), as
+// prisms: the fallback when the car's low-poly model cannot be painted (no canvas: the tools); every view draws the
+// model, the State Map's look, cut by cell the same way (ui/vehiclemodel.js vehicleCellSprite; carModelSprite below). The
 // body is drawn in car-local units (a along its length 0..L, c across 0..2, z in art px) and clipped to this cell, so
 // the cells' pieces meet into one car: a low body, a cabin of glass in the middle (a van's longer, a pickup's bed
 // The Army trucks (sim/miltrucks.js TRUCK_KINDS body) in car-local units: [a0, a1, c0, c1, z0, z1, "body" | colour].
@@ -1488,7 +1488,7 @@ function sprite(k, o, fog) {
   const key = `${iso.straight ? "s|" : ""}${o.sea ? `${o.sea}|` : ""}${k}|${o.v}|${o.alt}|${o.j}|${o.n}|${o.top}|${o.stub ? 1 : 0}|${o.mat}|${o.dmg}|${o.barred ? 1 : 0}|${o.dir}|${o.part || ""}|${o.vault ? 1 : 0}|${o.roll ? 1 : 0}|${o.lit ? 1 : 0}|${o.spot || 0}|${fog ? 1 : 0}|${o.ter ? `${o.ter.key}${o.f}${o.wet ? `${o.wet}${o.wl}` : ""}${o.snow || ""}${o.gt ? `${o.gnd}${o.lf}` : ""}` : ""}|${o.car ? `${o.car.i},${o.car.j},${o.car.L},${o.car.ax},${o.car.kind},${o.car.v},${o.car.body || ""},${o.car.type || ""},${o.car.mil ? `${o.car.mil.cond}${o.car.mil.enemy ? "e" : ""}` : ""},${o.car.wrecked ? "w" : ""},${upKey(o.car.up)},${iso.rot & 3}` : ""}${o.sn ? `|n${o.sn}` : ""}${o.ie || o.is || o.art ? `|w${o.ie || ""}/${o.is || ""}/${o.art || ""}` : ""}`;
   let s = spriteGet(key);
   if (s === undefined) {
-    const car = o.car && CAR_CELLS.has(k) && !iso.straight ? carModelSprite(o.car, fog, o.sn) : null; // a car as its model (ui/vehiclemodel.js): this cell's share
+    const car = CAR_CELLS.has(k) ? carModelSprite(k, o, fog) : null; // a car as its model (ui/vehiclemodel.js): this cell's share, or a car on this one cell
     const p = car ? [] : prims(k, o);
     s = car ? toBitmap(car) : p.length ? paint(p, { fog, outline: OUTLINED.has(k) && !(k === "sandbag" && o.j) && !o.ter && !BARE.test(o.sea || "") }) : null; // BARE: a bare tree's twigs outlined would be a black mass // !o.ter: on a hill the outline would trace the ground's column and banks too // joined sandbags: no outline, or each cell's would cross the wall at the join
     iso.builds.sprites++;
@@ -1497,15 +1497,17 @@ function sprite(k, o, fog) {
   return s;
 }
 // A car's cell drawn from the car's low-poly model (ui/vehiclemodel.js: the State Map's vehicles' look, the user's ask
-// 2026-10-25), the car headed along its axis in the view (a yaw in the figures' degrees); null in a straight view (the
-// prisms draw it there) or without a canvas.
+// 2026-10-25), the car headed along its axis in the view (a yaw in the figures' degrees: the angle in the view's u, v),
+// in the diagonal views and the straight one (its own projection there); a car on one cell (no o.car) as the model
+// shrunk onto it. Null without a canvas: the prisms then.
 const CAR_CELLS = new Set(["car", "truck", "vehicle"]);
 function carYaw(ax, r) {
   const d = ax === "y" ? [0, 1] : [1, 0], [u0, v0] = ptView(0, 0, r, 0, 0), [u1, v1] = ptView(d[0], d[1], r, 0, 0);
   return (Math.atan2(v1 - v0, u1 - u0) * 180) / Math.PI;
 }
-function carModelSprite(car, fog, sn) {
-  try { return vehicleCellSprite(car, carYaw(car.ax, iso.rot), { fog, sn }); } catch (e) { void e; return null; } // a model that cannot be painted: the prisms
+function carModelSprite(k, o, fog) {
+  const opt = { fog, sn: o.sn, straight: iso.straight };
+  try { return o.car ? vehicleCellSprite(o.car, carYaw(o.car.ax, iso.rot), opt) : vehicleOneSprite(k, (o.v || 0) * 7 + (o.j || 0), o.v & 1 ? "v" : "u", opt); } catch (e) { void e; return null; } // a model that cannot be painted: the prisms
 }
 // Snow on the buildings (the user's request 2026-10-23: "In raid and base view: Winter has snow on buildings."), by
 // the snow lying (ui/roofsnow.js snowOnFor: quarters, 0 none; this frame's snowLook), in the sprites' cache keys only
