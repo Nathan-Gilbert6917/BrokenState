@@ -2,14 +2,14 @@
 // loaded straight onto a raid's map (setup.raid.place = { id, key, name, site }), the team in its entry zone, the fog
 // lifted (ui/combat.js cui.cache.vis and .known.cells filled after a refresh), the view zoomed to fit the building.
 // Usage: node tools/milshot.cjs [outdir] [key[:site] ...]   (default: a base's HQ and barracks, an air base's hangar
-// and tower, an airport terminal, a prison cell block, the bunker). Prints one JSON line a shot.
+// and tower, an airport terminal, a prison cell block). Prints one JSON line a shot.
 const { chromium } = require("playwright");
 const { spawn } = require("child_process");
 const path = require("path");
 const fs = require("fs");
 
 const outDir = path.resolve(process.argv[2] || path.join(__dirname, "..", "..", "docs", "shots", "issue-25"));
-const want = process.argv.slice(3).length ? process.argv.slice(3) : ["hq:military", "barracks:military", "armorybldg:military", "motorpool:military", "hangar:airbase", "tower:airbase", "terminal:airport", "cellblock:prison", "bunker:bunker_mil"];
+const want = process.argv.slice(3).length ? process.argv.slice(3) : ["hq:military", "barracks:military", "armorybldg:military", "motorpool:military", "hangar:airbase", "tower:airbase", "terminal:airport", "cellblock:prison"];
 const port = 5300 + Math.floor(Math.random() * 600);
 
 (async () => {
