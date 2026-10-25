@@ -203,7 +203,6 @@ function itemEntries() {
   const out = [];
   for (const [k, g] of Object.entries(GEAR)) {
     if (g.supKey) continue; // a supply held as an item (sim/supitems.js): the supply's own entry covers it
-    if (g.piece) continue; // a piece of furniture's item form (sim/furnicarry.js): the Carrying furniture entry covers it
     const cat = CATEGORIES[g.cat];
     const stats = [["Kind", cat ? cap(cat.name) : "—"], ["Slot", SLOT_NAMES[g.slot] || (g.slot === "pack" ? "Pocket or pack" : g.slot === "cargo" ? "Team cargo" : g.slot)]];
     if (g.power && ["weapon", "armor", "head", "arms", "legs"].includes(g.slot)) stats.push([g.slot === "weapon" ? "Power" : "Armor", g.power]);

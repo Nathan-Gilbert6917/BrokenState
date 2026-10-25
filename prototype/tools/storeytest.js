@@ -11,7 +11,12 @@
 //     an empty floor drift to the stairwell and arrive next turn; Heat is one number; fx carry their floor;
 //   - the city crawl: block depth adds storeys to offices and apartments (+1 at block 4, +2 at block 7, at most 8), the
 //     card's count is the building's; a building left on an upper floor and gone back into is as it was left;
-//   - save and load mid-raid on floor 2, then play to the end; the bot plays multi-storey buildings to the end.
+//   - save and load mid-raid on floor 2, then play to the end; the bot plays multi-storey buildings to the end;
+//   - stair runs (issue #9): every multi-storey type has a run of steps against a wall with a landing at each end; its
+//     steps are "stairs" on every floor it joins (the top step marked), its landings walkable on all of them, every room
+//     of every floor reachable from a landing, no step a door's approach; Go up only from the top step, arriving there
+//     a floor up with the upper landing next to it; a save from before (one-cell stairwells, no runs) still loads and
+//     plays, and a building's kept snapshot from before restores its one-cell stairwells.
 // Usage: node tools/storeytest.js [seeds=6]
 import { turnToBox } from "../src/sim/vision.js";
 import { createWorld, hub, atBase } from "../src/sim/world.js";
@@ -20,7 +25,7 @@ import {
   createBattle, autoPlayerTurn, runEnemyPhase, registerCombatHandler, combatAct, CELL, los, active, activeAny, unitAt, setFloor, stairOptions,
   searchableNear, boxAt, playerSees, reachable, endPlayerTurn, finishCombat, HEIGHT, zoneAt, FLOOR_RICH, enemyUnit,
 } from "../src/sim/combat.js";
-import { BUILDINGS, STOREYS_BY_TYPE, MAX_STOREYS, assemble, buildingSpec } from "../src/sim/buildingmaps.js";
+import { BUILDINGS, STOREYS_BY_TYPE, MAX_STOREYS, assemble, buildingSpec, siteBuildings, runSteps, runLandings, runTop, STAIR_DIRS } from "../src/sim/buildingmaps.js";
 import { sizeClass } from "../src/sim/battlesize.js";
 import { raidEnemies } from "../src/sim/scavenge.js";
 import { Rng } from "../src/sim/rng.js";
@@ -87,6 +92,37 @@ console.log(`Generation: every type (${Object.keys(BUILDINGS).length}), ${SEEDS}
       if ((spec.foot === "large" || spec.foot === "wide") && cls === "S") errs.push(`a ${spec.foot} building on a Small map`);
       if (m.storeys !== n || !m.floors || m.floors.length !== n) errs.push(`${m.floors && m.floors.length} floors for ${n} storeys`);
       if (n > 1 && !(m.stairs.length >= 1 && m.stairs.length <= 2)) errs.push(`${m.stairs.length} stairwells`);
+      // Stair runs: at least one, each against a wall (or the outside wall it climbs), its cells right on every floor.
+      const runs = m.runs || [];
+      const outCells = new Set(runs.filter((r) => r.out).flatMap((r) => [...runSteps(r), ...runLandings(r)]).map(([x, y]) => y * W + x));
+      if (n > 1) {
+        if (!runs.length || runs.length !== m.stairs.length || !runs.some((r) => !r.single && r.len >= 2)) errs.push(`no stair run (${runs.map((r) => (r.single ? "single" : r.len)).join(",")})`);
+        for (const r of runs) {
+          if (r.single) continue;
+          const steps = runSteps(r), lands = runLandings(r), [tx, ty] = runTop(r);
+          if (m.stairs.every(([x, y]) => x !== tx || y !== ty)) errs.push("a run's top step is not a stairwell cell");
+          if (r.f0 !== 0 || r.f1 !== n - 1) errs.push(`a run joins floors ${r.f0}–${r.f1}`);
+          const want = ["hospital", "school", "offices", "apartments"].includes(key) ? 3 : 2;
+          if (r.len > want || r.len < 2) errs.push(`a run of ${r.len} steps in a ${key}`);
+          for (let f = r.f0; f <= r.f1; f++) {
+            const C = m.floors[f].cells;
+            steps.forEach(([x, y], i) => { const c = C[y * W + x]; if (c.k !== "stairs" || c.step !== i + 1 || !!c.top !== (i === r.len - 1) || STAIR_DIRS[c.dir][0] !== r.dx || STAIR_DIRS[c.dir][1] !== r.dy) errs.push(`floor ${f}: run step ${i + 1} at ${x},${y} is ${c.k}`); });
+            for (const [x, y] of lands) if (!CELL[C[y * W + x].k].walk || C[y * W + x].k === "stairs") errs.push(`floor ${f}: a landing at ${x},${y} is ${C[y * W + x].k}`);
+          }
+          // Against a wall: every step has a wall on one side across the run (on the ground floor; the motel's the outside wall).
+          const G = m.floors[0].cells, across = r.dx ? [[0, 1], [0, -1]] : [[1, 0], [-1, 0]];
+          if (!steps.every(([x, y]) => across.some(([ax, ay]) => ["wall", "window", "smashed"].includes(G[(y + ay) * W + x + ax].k)))) errs.push("a run not against a wall");
+        }
+        // No step is a door's approach, on any floor.
+        for (let f = 0; f < n; f++) {
+          const C = m.floors[f].cells;
+          for (let i = 0; i < W * H; i++) {
+            if (!["idoor", "odoor", "door"].includes(C[i].k)) continue;
+            const x = i % W, y = (i / W) | 0;
+            if ([[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => { const c = C[(y + dy) * W + x + dx]; return c && c.k === "stairs" && c.step != null; })) errs.push(`floor ${f}: a door at ${x},${y} opens onto a step`);
+          }
+        }
+      }
       if (n > 1) multi++;
       const B = m.building;
       const inB = (x, y) => x >= B.x0 && x < B.x0 + B.w && y >= B.y0 && y < B.y0 + B.h;
@@ -95,11 +131,11 @@ console.log(`Generation: every type (${Object.keys(BUILDINGS).length}), ${SEEDS}
         floorsSeen++;
         if (F.cells.length !== W * H) { errs.push(`floor ${f} is not ${W}x${H}`); continue; }
         if (!F.name) errs.push(`floor ${f} has no name`);
-        for (const [sx, sy] of m.stairs) if (F.cells[sy * W + sx].k !== "stairs" || !inB(sx, sy)) errs.push(`floor ${f}: no stairwell at ${sx},${sy}`);
+        for (const [sx, sy] of m.stairs) if (F.cells[sy * W + sx].k !== "stairs" || (!inB(sx, sy) && !outCells.has(sy * W + sx))) errs.push(`floor ${f}: no stairwell at ${sx},${sy}`);
         if (f > 0) {
           // Void outside the footprint, nothing but void there; every walkable cell reachable from the stairwell; windows, no exits.
           let voidIn = 0, solidOut = 0;
-          for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const k = F.cells[y * W + x].k; if (inB(x, y) && k === "void") voidIn++; if (!inB(x, y) && k !== "void") solidOut++; }
+          for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const k = F.cells[y * W + x].k; if (inB(x, y) && k === "void") voidIn++; if (!inB(x, y) && k !== "void" && !outCells.has(y * W + x)) solidOut++; } // an outside stair (a motel's) stands beside the walls
           if (voidIn || solidOut) errs.push(`floor ${f}: ${voidIn} void cells inside, ${solidOut} cells outside the footprint`);
           const seen = walk(F.cells, W, H, m.stairs[0][0], m.stairs[0][1]);
           let cut = 0;
@@ -108,12 +144,20 @@ console.log(`Generation: every type (${Object.keys(BUILDINGS).length}), ${SEEDS}
           if (F.cells.some((c) => c.k === "smashed" || c.k === "vehicle")) errs.push(`floor ${f}: a smashed window or the vehicle upstairs`);
           const rooms = m.rooms.filter((a) => (a.f || 0) === f);
           if (!rooms.length) errs.push(`floor ${f}: no rooms`);
+          // Every room of this floor reachable from a landing (the run's top landing, where the stairs arrive).
+          const land = runs.find((r) => !r.single);
+          if (land) {
+            const [lx, ly] = runLandings(land)[1], fromL = walk(F.cells, W, H, lx, ly);
+            const lost = rooms.filter((a) => { for (let y = a.y0 + 1; y < a.y0 + a.h - 1; y++) for (let x = a.x0 + 1; x < a.x0 + a.w - 1; x++) if (fromL[y * W + x]) return false; return true; });
+            if (lost.length) errs.push(`floor ${f}: ${lost.map((a) => a.name).join(", ")} not reached from the landing`);
+          }
           if (!m.containers.some((c) => (c.f || 0) === f)) errs.push(`floor ${f}: nothing to search`);
         } else if (n > 1) {
           // The ground floor's stairwell is reached from the front zone.
           const z = m.zones[0];
           const seen = walk(F.cells, W, H, z.x0 + 1, z.y0 + (s % 2 === 1 ? 0 : 1));
           if (!m.stairs.every(([sx, sy]) => seen[sy * W + sx])) errs.push("the stairwell is cut off from the front");
+          if (!(m.runs || []).every((r) => runLandings(r).every(([x, y]) => seen[y * W + x]))) errs.push("a landing is cut off from the front");
           if (!F.cells.some((c) => c.k === "wall" && c.t === 2)) errs.push("ground-floor walls not two storeys tall");
         }
       }
@@ -125,7 +169,7 @@ console.log(`Generation: every type (${Object.keys(BUILDINGS).length}), ${SEEDS}
       if (errs.length) { bad++; if (bad <= 15) console.log(`  ${key} seed ${s}: ${errs.slice(0, 4).join("; ")}`); }
     }
   }
-  check(!bad, `every type assembles with its storeys, footprint class and map size; every floor connected to the stairwell, the stairwell to the front (${bad} bad of ${Object.keys(BUILDINGS).length * SEEDS}; ${multi} multi-storey, ${floorsSeen} floors)`);
+  check(!bad, `every type assembles with its storeys, footprint class and map size; every floor connected to the stairwell, the stairwell to the front; stair runs against a wall, their steps on every floor, landings walkable, every room reached from a landing, no door onto a step (${bad} bad of ${Object.keys(BUILDINGS).length * SEEDS}; ${multi} multi-storey, ${floorsSeen} floors)`);
   console.log(`    storeys seen: ${Object.entries(storeysBy).map(([k, v]) => `${k} ${[...v].sort().join("/")}`).join(", ")}`);
   // Towers: the taller, the smaller the footprint (forced with the crawl's bonus to see the tall ones).
   for (let s = 0; s < SEEDS * 4; s++) { const spec = BUILDINGS.offices.make(new Rng(9000 + s), { storeyBonus: s % 3 }); towers.push([spec.storeys, spec.bw * spec.bh]); }
@@ -150,7 +194,10 @@ function raidAt(types, opts = {}) {
     const p = res.party;
     p.path = [tile.id]; p.idx = 0; p.phase = "engaged";
     const groups = opts.groups || raidEnemies(st, tile.id);
-    const setup = { mode: "raid", tile: tile.id, partyId: p.id, canRetreat: true, ambush: null, handler: "stest", enemy: { kind: "mixed", count: 1, power: 3, groups }, raid: { heat0: 5 }, context: {} };
+    // opts.key: the site's building of that kind (a town's house), its option picked before the map.
+    const opt = opts.key ? (siteBuildings(tile) || { options: [] }).options.find((o) => o.key === opts.key) : null;
+    if (opts.key && !opt) continue;
+    const setup = { mode: "raid", tile: tile.id, partyId: p.id, canRetreat: true, ambush: null, handler: "stest", enemy: { kind: "mixed", count: 1, power: 3, groups }, raid: { heat0: 5, ...(opt ? { building: opt.id } : {}) }, context: {} };
     st.combat = createBattle(st, setup);
     if (opts.want && !opts.want(st.combat)) continue;
     return { st, b: st.combat, p, tile, setup, crew };
@@ -284,7 +331,7 @@ console.log("The enemy phase floor by floor, the drift to the stairs");
     const W = b.w;
     const openOn = (f, near, d0 = 2) => { const F = b.floors[f]; for (let d = d0; d < 12; d++) for (const [dx, dy] of [[d, 0], [-d, 0], [0, d], [0, -d], [d, d], [-d, -d]]) { const x = near[0] + dx, y = near[1] + dy; if (x > 0 && y > 0 && x < W - 1 && y < b.h - 1 && F.cells[y * W + x].k === "open") return [x, y]; } return null; };
     // A player on floor 2 (index 1) with an aware zombie 4+ tiles off on the same floor: the AI runs there, and the view comes back.
-    const cellU = openOn(1, [sx, sy], 1);
+    const cellU = openOn(1, [sx, sy], 3); // off the landings: the dead hunting them must not stand on the stairwell
     place(b, u, 1, cellU[0], cellU[1]);
     setFloor(b, 1);
     const zc = openOn(1, cellU, 4) || openOn(1, [sx, sy], 5);
@@ -406,6 +453,84 @@ console.log("Saved and loaded mid-raid on floor 3");
   }
 }
 
+console.log("Stair runs: up from the top step, the landings, a save from before the runs");
+{
+  for (const [types, label] of [[["hospital"], "hospital"], [["house", "town"], "house"]]) {
+    const r = raidAt(types, { seed: 640, key: label, want: (b) => b.floors && b.floors.length >= 2 && b.raid.runs && b.raid.runs.some((q) => !q.single) });
+    check(!!r, `test setup: a raid in a ${label} with a stair run`);
+    if (!r) continue;
+    const { st, b } = r;
+    const R = b.raid, run = R.runs.find((q) => !q.single);
+    const steps = runSteps(run), [lo, hi] = runLandings(run), [tx, ty] = runTop(run);
+    // The dead waiting upstairs by the stairwell start on the landings, not on the steps (looked at before anyone moves).
+    const onSteps = b.units.filter((o) => o.side === "enemy" && (o.f || 0) > 0 && !o.dead && R.runs.some((q) => runSteps(q).some(([x, y]) => o.x === x && o.y === y)));
+    check(!onSteps.length, `${label}: none of the dead upstairs start on a step (${onSteps.length})`);
+    const u = b.units.find((x) => x.side === "player");
+    for (const o of b.units) if (o !== u && !o.dead && [[lo[0], lo[1]], ...steps, hi].some(([x, y]) => o.x === x && o.y === y)) { o.x = 1; o.y = 1; }
+    // On the bottom step the stairs do not change floor yet: the floor changes at the top step.
+    place(b, u, 0, steps[0][0], steps[0][1]);
+    setFloor(b, 0);
+    u.ap = 2; b.phase = "player";
+    let err = combatAct(st, { type: "goup", unit: u.id });
+    check(err !== "" && /top step/.test(err) && u.f === 0 && u.ap === 2, `${label}: on the bottom step Go up is refused ("${err}")`);
+    check(!stairOptions(b, u).up, `${label}: no stair options off the top step`);
+    // Walked up the run from the bottom landing: along the steps to the top one (a move), then Go up.
+    place(b, u, 0, lo[0], lo[1]);
+    const res = combatAct(st, { type: "move", unit: u.id, x: tx, y: ty });
+    check(res === "" && u.x === tx && u.y === ty, `${label}: walks the run from the bottom landing to the top step (${res || "ok"})`);
+    u.ap = 2;
+    err = combatAct(st, { type: "goup", unit: u.id });
+    check(err === "" && u.f === 1 && u.x === tx && u.y === ty && b.floor === 1, `${label}: Go up from the top step: a floor up, the same cell (${err || "ok"})`);
+    const upHi = b.floors[1].cells[hi[1] * b.w + hi[0]];
+    check(CELL[upHi.k].walk && upHi.landing && Math.abs(hi[0] - u.x) + Math.abs(hi[1] - u.y) === 1, `${label}: the upper landing is next to it, walkable (${upHi.k})`);
+    const step = combatAct(st, { type: "move", unit: u.id, x: hi[0], y: hi[1] });
+    check(step === "" && u.x === hi[0] && u.y === hi[1] && u.f === 1, `${label}: steps off onto the upper landing (${step || "ok"})`);
+    check(/flight of \d steps|outside stair/.test(b.log.map((l) => l.text).join(" ")), `${label}: the opening lines say where the stairs are`);
+  }
+  // A save from before the runs: one-cell stairwells (no c.step), no b.raid.runs. It loads, any stairs cell changes floor, it plays on.
+  const r = raidAt(["office", "apartments"], { seed: 720, want: (b) => b.floors && b.floors.length >= 3 });
+  check(!!r, "test setup: a raid to turn into an older save");
+  if (r) {
+    const { st, b } = r;
+    const R = b.raid;
+    for (const F of b.floors) for (const run of R.runs) {
+      for (const [x, y] of [...runSteps(run), ...runLandings(run)]) { const c = F.cells[y * b.w + x]; if (c.k === "stairs") c.k = "open"; delete c.step; delete c.top; delete c.dir; delete c.len; delete c.landing; }
+      const [x, y] = runTop(run);
+      F.cells[y * b.w + x].k = "stairs";
+    }
+    delete R.runs;
+    const st2 = deserializeState(JSON.parse(JSON.stringify(serializeState(st))));
+    const b2 = st2.combat, [sx, sy] = b2.raid.stairs[0];
+    const u = b2.units.find((x) => x.side === "player");
+    place(b2, u, 0, sx, sy); setFloor(b2, 0);
+    u.ap = 2; b2.phase = "player";
+    const err = combatAct(st2, { type: "goup", unit: u.id });
+    check(!b2.raid.runs && err === "" && u.f === 1, `an older save (one-cell stairwells) loads and its stairwell takes you up (${err || "ok"})`);
+    let g = 0, crash = null;
+    try { while (!b2.over && g++ < 200) { autoPlayerTurn(st2); runEnemyPhase(st2); } } catch (e) { crash = e; console.log(e.stack); }
+    check(!crash && b2.over, `and plays on to the end (${b2.result && b2.result.outcome}, ${g} turns)`);
+  }
+  // A building's kept snapshot from before the runs (citycrawl.js snapshotBuilding: no stairs, one-cell stairwells in
+  // its cells) restored into a battle of today's runs: its own stairwells come back with it.
+  const r2 = raidAt(["office", "apartments"], { seed: 760, want: (b) => b.floors && b.floors.length >= 3 });
+  if (r2) {
+    const { st, b } = r2;
+    const snap = CC.snapshotBuilding(b);
+    delete snap.stairs; delete snap.runs;
+    const old = [];
+    for (const F of snap.floors) F.cells.forEach((c, i) => { if (c.k === "stairs") { c.k = "open"; } delete c.step; delete c.top; delete c.dir; delete c.landing; });
+    const room = b.raid.areas.find((a) => !a.outdoor && (a.f || 0) === 0 && a.entry);
+    const cx = room.x0 + Math.floor(room.w / 2), cy = room.y0 + Math.floor(room.h / 2);
+    for (const F of snap.floors) F.cells[cy * b.w + cx].k = "stairs";
+    old.push([cx, cy]);
+    const ok = CC.restoreBuilding(st, b, snap);
+    check(ok && b.raid.stairs.length === 1 && b.raid.stairs[0][0] === cx && b.raid.stairs[0][1] === cy && !(b.raid.runs || []).length, `an older building snapshot restores its own one-cell stairwell (${JSON.stringify(b.raid.stairs)})`);
+    const u = b.units.find((x) => x.side === "player");
+    place(b, u, 0, cx, cy); setFloor(b, 0); u.ap = 2; b.phase = "player";
+    check(stairOptions(b, u).up, "and it takes you up");
+  }
+}
+
 console.log("The bot in multi-storey buildings");
 {
   let raids = 0, out = 0, climbed = 0, crashes = 0, timeouts = 0, upSearched = 0;
@@ -417,13 +542,15 @@ console.log("The bot in multi-storey buildings");
     // Every other raid the ground floor is already picked clean: the bot has to go upstairs for anything.
     if (i % 2 === 1) for (const c of st.combat.raid.containers) if (!c.f) c.searched = true;
     try {
-      let g = 0;
-      while (!st.combat.over && g++ < 200) { autoPlayerTurn(st); runEnemyPhase(st); }
+      let g = 0, wentUp = false;
+      // A climb: the log line, looked for every turn (b.log keeps only its last 80 lines), or one of the team upstairs.
+      const upNow = () => st.combat.log.some((l) => /goes up the stairs/.test(l.text)) || st.combat.units.some((x) => x.side === "player" && (x.f || 0) > 0 && !x.dead);
+      while (!st.combat.over && g++ < 200) { autoPlayerTurn(st); if (upNow()) wentUp = true; runEnemyPhase(st); }
       const b = st.combat;
       if (!b.over) { timeouts++; continue; }
       raids++;
       if (b.result.outcome === "extracted") out++;
-      if (b.log.some((l) => /goes up the stairs/.test(l.text))) climbed++;
+      if (wentUp) climbed++;
       upSearched += b.raid.containers.filter((c) => c.f > 0 && c.searched).length;
       check(b.units.filter((x) => x.side === "player" && x.left).every((x) => x.f === 0), `whoever extracted did so from the ground floor (${b.raid.interior.name})`);
     } catch (e) { crashes++; if (crashes < 3) console.log(e.stack); }

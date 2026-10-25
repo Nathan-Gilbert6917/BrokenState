@@ -134,7 +134,7 @@ import { deepShift } from "./deeploot.js";
 import { typesOf, withHand, roundOf as roundOfKey } from "./rounds.js"; // shells and rounds at hand (takeHandRounds)
 import { ammoKey } from "./data-ammo.js";
 import { rescueAct, rescueRefusal, guardTurn, rescueRound, rescueBot, rescueDone, captiveStays, captiveHitMult } from "./rescueraid.js"; // a rescue raid on a group's base: captives on the map
-import { raidBuilding, buildingMap, placeInterior, windowsNear, interiorIntro, BMAP, doorNoise, doorBroken, doorAct, peekSees, rewardMult, botEscape, DOOR_KINDS, doorSees } from "./buildingmaps.js";
+import { raidBuilding, buildingMap, placeInterior, windowsNear, interiorIntro, BMAP, doorNoise, doorBroken, doorAct, peekSees, rewardMult, botEscape, DOOR_KINDS, doorSees, stairTop } from "./buildingmaps.js";
 import { WINDOW, windowOpen, windowAct, smashWindow, glassNoise, rollWin, winMixOf } from "./windows.js"; // the map's windows: open, locked, fixed or broken (the user's request 2026-10-17)
 import { wireStep, cutAct, kitCutter, cutterKeyOf, WIRE } from "./wire.js";
 import { FENCE } from "./data-power.js"; // the fence charger's bite (electric.js)
@@ -292,14 +292,15 @@ export function moveToFloor(b, u, f) {
   u.away = !!b.floors && f !== (b.floor || 0);
   delete u.brace; // a braced door is let go of
 }
-// Which way the stairs lead from where a unit stands: { up, down }. Only on a stairwell cell ("stairs") of a building
-// with storeys; the top floor's stairwell only leads down, the ground floor's only up; a stairwell cell that is taken
-// on the other floor (someone standing or lying on it) is no way through.
+// Which way the stairs lead from where a unit stands: { up, down }. Only on the top step of a stair run (buildingmaps.js
+// stairTop: the cell that changes floor; any stairs cell of an older save's one-cell stairwells) of a building with
+// storeys; the top floor's stairwell only leads down, the ground floor's only up; a stairwell cell that is taken on
+// the other floor (someone standing or lying on it) is no way through.
 export function stairOptions(b, u) {
   const none = { up: false, down: false };
   if (!b || !b.floors || !u) return none;
   const f = u.f || 0, F = b.floors[f];
-  if (!F || F.cells[u.y * b.w + u.x].k !== "stairs") return none;
+  if (!F || !stairTop(F.cells[u.y * b.w + u.x])) return none;
   // A teammate lying wounded on the landing is no wall: whoever comes through moves them aside (landingClear).
   const free = (g) => !!b.floors[g] && b.floors[g].cells[u.y * b.w + u.x].k === "stairs" && !b.units.some((o) => o !== u && (o.f || 0) === g && !o.dead && !o.left && !o.fled && !o.off && o.x === u.x && o.y === u.y && !(o.down && o.side === u.side && asideCell(b, o, g)));
   return { up: f + 1 < b.floors.length && free(f + 1), down: f > 0 && free(f - 1) };
@@ -5142,8 +5143,8 @@ export function combatAct(state, act) {
       if (!b.floors) return "There are no stairs to take here.";
       const so = stairOptions(b, u), up = act.type === "goup";
       if (!(up ? so.up : so.down)) {
-        const onStairs = b.cells[idx(u.x, u.y)].k === "stairs";
-        return !onStairs ? "Stand on a stairwell first." : up ? (u.f + 1 >= b.floors.length ? "This is the top floor." : "Someone is on the stairs above.") : (!u.f ? "This is the ground floor." : "Someone is on the stairs below.");
+        const here = b.cells[idx(u.x, u.y)], onStairs = here.k === "stairs";
+        return !onStairs ? "Stand on a stairwell first." : !stairTop(here) ? "Climb to the top step first: the stairs change floor there." : up ? (u.f + 1 >= b.floors.length ? "This is the top floor." : "Someone is on the stairs above.") : (!u.f ? "This is the ground floor." : "Someone is on the stairs below.");
       }
       { const why = pieceStairsRefusal(b, u, (u.f || 0) + (up ? 1 : -1)); if (why) return why; } // furnicarry.js: with a piece, both actions (each of two)
       u.ap -= stairsAp(u);
@@ -6200,7 +6201,7 @@ function evacTurnNow(state, b) {
       if (b.floors && (u.f || 0) !== (b.floor || 0)) setFloor(b, u.f || 0);
       bindDims(b);
       if ((u.f || 0) > 0) {
-        if (b.cells[idx(u.x, u.y)].k === "stairs") { if (combatAct(state, { type: "godown", unit: u.id })) break; moved++; continue; }
+        if (stairTop(b.cells[idx(u.x, u.y)])) { if (combatAct(state, { type: "godown", unit: u.id })) break; moved++; continue; }
       } else if (b.raid && (zoneAt(b, u.x, u.y) >= 0 || vehicleExit(b, u))) { if (!combatAct(state, { type: "extract", unit: u.id })) moved++; break; }
       else if (!b.raid && evacAt(b, u.x, u.y)) { if (!combatAct(state, { type: "retreat", unit: u.id })) moved++; break; }
       else if (b.vehicle && seatsLeft() > 0 && atVehicle(b, u)) { if (!combatAct(state, { type: "board", unit: u.id })) moved++; break; }
@@ -7364,8 +7365,9 @@ export function createRaid(state, setup) {
     b.floors = map.floors.map((F, i) => ({ cells: F.cells, reach: i === 0 ? map.reach : map.street ? upReach(F) : flood(F.cells, map.stairs[0][0], map.stairs[0][1]), losCache: i === 0 ? b.losCache : null, name: F.name }));
     b.floor = 0;
     b.raid.storeys = map.floors.length;
-    b.raid.stairs = map.stairs.map((s) => s.slice());
-  } else if (pick) { b.raid.storeys = 1; b.raid.stairs = []; }
+    b.raid.stairs = map.stairs.map((s) => s.slice()); // the cells that change floor: each stair run's top step
+    b.raid.runs = (map.runs || []).map((r) => ({ ...r })); // the runs themselves (buildingmaps.js STAIR_DIRS)
+  } else if (pick) { b.raid.storeys = 1; b.raid.stairs = []; b.raid.runs = []; }
   if (b.vehicle) { b.vehicle.seats = SEATS[b.vehicle.kind === "bike" ? "bike" : (pv && pv.type) || "sedan"] ?? 4; fitMapVehicle(b, pv, state, party); } // who can ride in it (boardVehicle); its upgrades; who drives it (wheelSid)
   pondsBattle(state, b, b.tileId); // ponds.js: the hollows' water, mud or ice by the tile's weather; the slopes in the rain or in winter
   seasonGround(state, b, b.tileId); // seasonground.js: spring's mud on the dirt, winter's snow on the ground
@@ -8022,7 +8024,7 @@ function autoRaidTurn(state) {
       // stairs toward the nearest floor with something left. On a stairwell: take it.
       const otherFloor = !leave && b.floors && !hereTodo ? nearestFloorWith(b, u, todo) : -1;
       const stairsTo = leave && (u.f || 0) > 0 ? (u.f || 0) - 1 : otherFloor >= 0 ? otherFloor : -1;
-      if (stairsTo >= 0 && b.cells[idx(u.x, u.y)].k === "stairs" && u.stairTurn !== b.turn) {
+      if (stairsTo >= 0 && stairTop(b.cells[idx(u.x, u.y)]) && u.stairTurn !== b.turn) {
         u.stairTurn = b.turn;
         if (!combatAct(state, { type: stairsTo > (u.f || 0) ? "goup" : "godown", unit: u.id })) continue;
       }
