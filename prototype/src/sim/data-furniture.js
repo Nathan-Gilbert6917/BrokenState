@@ -177,6 +177,32 @@ export const FURNITURE_KINDS = {
   compressor:  P("Air compressor",    HALF, 30, 45, "two", S1, false, ["bay"], "none", true),
   cot:         P("Cot",               HALF, 8, 7, "one", S12, false, ["school", "church", "ward"], "bed:cot"),
   candles:     P("Candlesticks",      POLE, 5, 6, "one", S1, true, ["church"], "comfort:0.1"),
+  // ---------- the office buildings of every kind (issue #27: officelayout.js lays them) ----------
+  // A dentist's chair; the tower lobby's turnstiles and lift doors (fixed: the doors are decor on a shaft that is not
+  // there); a courtroom's bench, jury box and witness stand, city hall's dais, a podium; a call center's headset desk; a
+  // tech office's beanbags and phone booths; a TV studio's camera on its tripod, its lights and the news desk; a mail
+  // room's sorter, a plotter; the courthouse's walk-through scanner and X-ray belt (a security checkpoint's: #25 may
+  // reuse them); an executive's liquor cabinet. The headset desk, the news desk, the sorter and the liquor cabinet hold
+  // their own tables (combat.js BOX_LOOT, data-offices.js OFFICE_BOX).
+  dentalchair:  P("Dental chair",         HALF, 30, 120, "two", S12, false, ["ward", "office"], "comfort:0.3"),
+  turnstile:    P("Turnstile",            C(false, 1, false), 40, 150, "fixed", S1, false, ["office"], "none"),
+  liftdoor:     P("Lift doors",           FULL, 80, 300, "fixed", S1, false, ["office"], "none", true),
+  judgebench:   P("Judge's bench",        STEEL, 60, 400, "fixed", S21, false, ["office"], "none"),
+  jurybox:      P("Jury box",             HALF, 50, 300, "fixed", S21, false, ["office"], "none"),
+  witnessstand: P("Witness stand",        HALF, 40, 150, "fixed", S1, false, ["office"], "none"),
+  dais:         P("Council dais",         HALF, 50, 300, "fixed", S21, false, ["office"], "none"),
+  podium:       P("Podium",               HALF, 15, 35, "two", S1, false, ["office", "school", "church"], "none"),
+  headsetdesk:  P("Headset desk",         HALF, 15, 25, "one", S1, true, ["office"], "work:desk"),
+  beanbag:      P("Beanbag",              HALF, 8, 5, "one", S1, false, ["living", "office"], "comfort:0.4"),
+  camera:       P("TV camera",            POLE, 15, 25, "one", S1, false, ["office"], "none"),
+  studiolight:  P("Studio light",         POLE, 5, 8, "one", S1, false, ["office"], "comfort:0.1"),
+  newsdesk:     P("News desk",            HALF, 35, 90, "two", S21, true, ["office"], "work:desk"),
+  sorter:       P("Mail sorter",          HALF, 30, 50, "two", S1, true, ["office"], "storage:40", true),
+  plotter:      P("Plotter",              HALF, 30, 90, "two", S21, false, ["office"], "none", true),
+  screener:     P("Walk-through scanner", POLE, 30, 120, "fixed", S1, false, ["office"], "none"),
+  xraybelt:     P("X-ray belt",           HALF, 50, 350, "fixed", S21, false, ["office"], "none"),
+  liquorcab:    P("Liquor cabinet",       HALF, 25, 30, "one", S1, true, ["office", "living", "bar"], "storage:30", true),
+  phonebooth:   P("Phone booth",          C(false, 1, false), 30, 200, "fixed", S1, false, ["office"], "none", true),
   // ---------- lootable decor (issue #13: decor.js places them; light comfort pieces for the base) ----------
   // The plant and the floor lamp stand on a room's floor cell; the painting and the wall clock hang on a wall (decor.js:
   // c.wart = { k, d, piece: true } on the wall cell, the wall's own kind unchanged) and stand on a cell only once set down.

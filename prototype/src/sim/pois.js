@@ -56,7 +56,7 @@ import { isPublicSite, siteKnown, nearRoad } from "./discovery.js";
 import { localId } from "./world.js";
 import { zombieToughness } from "./hives.js"; // hive land: the dead are more and tougher there (the threat's hive bonus)
 import { campsiteExtra, campDanger, noteCampSeen } from "./campsite.js"; // call-time only: the extra campsite a tile may hold, its state in the threat, a look at it
-import { shopExtras, franchiseFor, franchisesOf, franchiseName, settingOf } from "./shops.js"; // call-time only: the shops a suburb or city block may hold, a place's franchise
+import { shopExtras, franchiseFor, franchisesOf, franchiseName, settingOf, noFirm } from "./shops.js"; // call-time only: the shops a suburb or city block may hold, a place's franchise
 
 export const POI = {
   MAX: 4,                 // POIs a tile can hold, the site among them
@@ -128,7 +128,7 @@ export function inKnownZone(state, tile) {
 function makePoi(state, t, kind, site, slot, before = []) {
   const def = LOCATIONS[kind];
   const pool = site ? null : def.richness * (t.terrain === "city" ? POI.URBAN_RICH : 1) * (POI.POOL[0] + (POI.POOL[1] - POI.POOL[0]) * hash01(state.seed, "poipool", t.id, slot));
-  let v = franchiseFor(kind, settingOf(state, t), hash01(state.seed, "poifr", t.id, slot)); // shops.js: the franchise (a kind with none: null)
+  let v = noFirm(state, kind) ? null : franchiseFor(kind, settingOf(state, t), hash01(state.seed, "poifr", t.id, slot)); // shops.js: the franchise (a kind with none: null; an office tower in a save from before its firms: none)
   if (v) { // the same chain twice on a tile (a second corner store): the next franchise of the kind not on it yet, in the list's order
     const onTile = new Set(before.filter((p) => p.kind === kind && p.v).map((p) => p.v));
     if (onTile.has(v)) { const ids = franchisesOf(kind).map((f) => f.id), at = ids.indexOf(v); v = ids.map((_, i) => ids[(at + 1 + i) % ids.length]).find((id) => !onTile.has(id)) || v; }
