@@ -457,7 +457,9 @@ section("Laid out for their kind (shoplayout.js, issue #16)");
   const total = (key, legacy) => { let v = 0; for (let s = 0; s < 200; s++) { const m = make(key, s, legacy); for (const c of m.containers) { const a = m.rooms.find((r) => r.id === c.area); if (a && a.type) v += value(boxLoot(a.type, c.kind)); } } return v / 200; };
   const off = [], rows = [];
   // The supermarket is twice the store it was each way since issue #22: its own check below (by the area), not this one.
-  for (const key of KEYS.filter((k) => k !== "supermarket")) { const b = total(key, true), a = total(key, false), r = a / b - 1; rows.push(`${key} ${(r * 100).toFixed(0)}%`); if (Math.abs(r) > 0.1) off.push(`${key} ${a.toFixed(0)} against ${b.toFixed(0)}`); }
+  // The warehouse and the factory have a dozen plans of their own sizes since issue #37 (industrylayout.js): their loot
+  // is held to today's by the floor cell in tools/industryvarianttest.js, not by the building here.
+  for (const key of KEYS.filter((k) => k !== "supermarket" && k !== "warehouse" && k !== "factory")) { const b = total(key, true), a = total(key, false), r = a / b - 1; rows.push(`${key} ${(r * 100).toFixed(0)}%`); if (Math.abs(r) > 0.1) off.push(`${key} ${a.toFixed(0)} against ${b.toFixed(0)}`); }
   check(!off.length, `every kind holds what it did within ±10% (200 seeds each: ${off.join("; ") || rows.join(", ")})`);
   // An older save: furnished the old way (none of the new pieces, no style's marks).
   const NEWK = new Set(["freezercase", "islandfreezer", "meatcase", "freezershelf", "producebin", "breadrack", "selfcheckout", "cartcorral", "baler", "aislesign", "range", "fryer", "pizzaoven", "coldshelf", "jukebox", "pooltable", "clothesrack", "gunrack", "tank", "pottingbench", "palletrack", "tirerack", "compressor", "carlift", "machine", "forklift", "saddlerack", "cubicle", "whiteboard", "watercooler", "secdesk", "keyrack", "icemachine", "teller", "deposit", "atm", "stanchion", "checkout", "displaycase", "coldcase", "barcounter", "barstool", "desk", "filing", "bookshelf"]);
