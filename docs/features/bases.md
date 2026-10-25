@@ -4,9 +4,11 @@ Detail for section 3 of [docs/agents/features.md](../agents/features.md) (the ba
 
 Module names follow the index: `[name]` is `prototype/src/sim/name.js`, `ui/name` is `prototype/src/ui/name.js`. Related docs: [docs/base-building/plan.md](../base-building/plan.md) (the base-building contract), [ADR 0002](../adr/0002-base-building.md), [ADR 0001](../adr/0001-ai-parity.md) (AI parity), screenshots in [docs/base-defence/](../base-defence/).
 
+Contents: [Base tiers](#base-tiers) · [Buildings and construction queue](#buildings-and-construction-queue) · [Base storage limits](#base-storage-limits) · [The base map](#the-base-map) · [Base building](#base-building) · [Beds as furniture](#beds-as-furniture)
+
 ## Base tiers
 
-Camp, shelter, outpost and hub. Camps can be set up, struck and upgraded [staging].
+Camp, shelter, outpost and hub, every yard 76 × 76 to start (see [The grid](#the-grid)). Camps can be set up, struck and upgraded [staging].
 
 ### Where a base may stand
 - The user's requests 2026-10-22 and 2026-10-23: "The ban should be on the tiles for town and city crawls". No base of yours goes up on a town's or city's crawl tile (its centre, a bare city block: citycrawl crawlTile; checked by staging campProblem, parties missionProblem, startpick CRAWL_WHY).
@@ -49,6 +51,8 @@ Rules:
 - **The map** is laid from the camp's level (layLand lift; F.lv, the map's datum: combat mapLv): the camp's ground at c.h 0, the land round it higher or lower, the river's water at the plain's level (c.wet deep, wl), the crag's height less the lift. What the base puts on ground off that level stands on it (basemap groundBuilt): c.ter and c.h the ground's (drawn on its column, its floor's colour: ui/isoview terrainPrims), or for a loft, a wall stand, a watchtower its own height over the ground (c.gh the ground, c.h both: isoview groundLv, combat losTop); c.bld keeps ponds out of a building in a hollow (ponds pondsBattle).
 - **Heights from level ground** where they mean the land's: sight (combat sightH; ui/combat sightAt), the hover's hill and hollow lines (not a building's floor), the AI's liking for high ground (highground terrainScore), hollows (highground sunk), ponds (c.h + mapLv < 0, wl back in the map's levels). Line of sight, climbing and vehicles compare heights on the one map.
 - The picker's facts are from the spot's level (siteinfo gridsOf: higher, lower and sight layers a level each; ui/campsite Ground: "Level, on a hill, 1 level up: the camp stands on it").
+- Neither Establish base nor Build outpost queues its step up (see *Step ups are buildings*; the guide's Place the shelter step says so: ui/guide).
+- Modules: [basescatter siteLevel / landOf keepH / layLand lift, basemap siteProblem / landUnder / groundWhy / groundBuilt / levelOf, combat mapLv / sightH, highground, ponds, staging makeCamp, ui/guide].
 - `tools/campspottest.js` (section 1: an open hilltop, a spot over a hill's edge refused; section 6: a camp on a hilltop, built on on the hill and on the plain, never over the edge, its map); `tools/terraformtest.js`, `tools/terrainweathertest.js` (a hollow's floor built on as it is).
 
 ### What a camp's spot is like
@@ -100,19 +104,20 @@ Rules:
 - Modules: [staging askLayout / layoutAsks / layoutDone / buildMapChoice, ui/buildmap (buildMapAlerts, buildMapRow, BUILDMAP_ACTIONS, buildMapKey, selectedBase), ui/alerts SECTIONS.layout, ui/keymap base.buildmap]; test `tools/buildmapbtntest.js`.
 
 ## Buildings and construction queue
+What a base builds and the queue its builders work through.
 - Plots by base size, demolition refunds, water barrels, storage crates and the storage ladder (storage box, shed, warehouse; the Armory) [buildings].
 - General buildings (`general`, no plot: the map is the limit) and fittings built inside them (`fit`): bunk beds in BEDS, shelves (150 kg) and lockers (100 kg) as storage (storeKg), the wood stove `as: "cookhouse"`.
 - `count()` honours `as`; a camp's and a shelter's counts of them (CAMP.build, SHELTER.build). Demolishing a general building pulls its fittings down with it.
 - Field works outside the walls [fieldworks].
 
 ## Base storage limits
-The user's request 2026-10-19.
+Storage is kg of room by tier and buildings; what does not fit lies outside, weathers and is raided first. The user's request 2026-10-19.
 - **Room in kg.** Core by tier: camp 0, shelter 150, outpost 500, main hub 1200. Storage buildings (buildings STORE_KG): storage box 60, crates 150, root cellar 400, cold store and freezer 300, storage shed 600, storehouse 2000, warehouse 6000 (outpost or hub). A parked car adds its payload while parked; an opened lock box in the armory adds BOX_STORE_KG (data-boxes).
 - **Filling.** Stock and armory fill it by worth a kg; what the player or game put in a container fills that container first (see Containers). The rest lies **outside**: it wears every day (twice in rain or snow) and raiders find it easier.
 - **On the raid map** what lies outside is piles of crates in the yard (raiders go there first and grab twice as much a turn). A parked car used as storage is a container; it can be moved to any free cells it fits (Move: the base map with it picked).
 - The fire safe and rifle case are carried in both arms only (twoHands: no pocket, pack or pouch; both hands full) (inventory isTwoHands, carry handsCount).
 - Modules: [basestorage storageOf / storageSummary / storageLine / outsideShare / storageDaily, buildings STORE_KG, data-boxes BOX_STORE_KG, inventory isTwoHands, carry handsCount, basemap layPiles / makeStores / thiefTurn / carLen, ui/basemap moveCarButton]; tests `tools/basestoragetest.js`, `tools/basestoragemaptest.js`.
-- **UI**: the Overview's Storage row, the camp's Stores card, storage kg on the Construction tab, a parked car's storage and Move button on the Vehicles tab, the Armory's Storage card with "Outside: weathering" and "Both hands" badges [ui/ui, ui/armoryview, ui/itemlabels].
+- **UI**: the Overview's Storage row, the camp's Stores card, storage kg on the Construction tab, a parked car's storage and Move button on the Vehicles tab, the Armory's Storage card with "Outside: weathering" and "Both hands" badges [ui/ui, ui/armoryview, ui/itemlabels]; the Storage tab [ui/storage] (see *Containers*).
 - **Autopilot** queues the smallest storage that holds what lies outside, after its other priorities (shelves and lockers first while a general building has floor) [autopilot storageWish].
 - **AI groups** build storage by the same rules (ADR 0001): when goods lie outside one of their bases (measured as the supply run leaves the stores tonight; their camp has no core room, as yours) they put up your governor's choice from its ladder (storage box at an outpost camp; crates or a shed at an outpost; crates, shed, storehouse or warehouse at the main base), the smallest that holds it, else the biggest they can pay for. Your costs, your max counts, the warehouse's Mechanics 2 and size rule, your hours as crew-days, after water, fields, quarters and walls under threat. The buildings stand at their bases (raiders find what is inside or on the piles); the Groups card names them [groupworks storageWork / storeLock / storeDef / groupStorage, groupbases WORKS_BUILDING / stockTonight / worksBuildings]; test `tools/groupstoragetest.js`.
 - **Storming a group's base** puts its real stock and spare kit on the assault map in their storage (piles for what does not fit, a locked armory to force). Your people take from it through the raid search window; what they carry out leaves the group [assaultstores, fort, conquest, raidloot]; tests `tools/assaultstoretest.js`, `tools/groupstoragetest.js`.
@@ -120,6 +125,7 @@ The user's request 2026-10-19.
 - A pitched tent is an assignable container in the Storage tab (food or gear kept in it by hand).
 
 ## The base map
+Every base's own 500 × 500 grid and its 150 × 150 view: the land on it to clear, the rules for placing things, and Move.
 Modules: [basemap, ui/basemap, ui/combat]. Screens: [docs/map-layers/](../map-layers/).
 
 ### The grid
@@ -216,6 +222,7 @@ Modules: [basemap, ui/basemap, ui/combat]. Screens: [docs/map-layers/](../map-la
 - Dirt: 10 a dug cell-level, 10 a raised one (TERRA); a base stock key in a heap in the yard, no storage room, never carried, traded or raided (basestorage). A raise is refused when the heap less queued raises is short.
 - Kept in base.land.heightEdits ("x,y" → level), laid over the tile's relief in landOf after relaxHeights and dropNarrowHollows (a narrow hollow dug on purpose stays), then relaxed once more; on the base map, raids and hordes. A cleared cell is level again (finishClear, clearUnder, clearAllLand drop its edit). Uneven ground is levelled before building; nothing placed on ground being worked (occupancy work, placeProblemAt).
 - UI: amber wash with "Digging/Raising N%", the Terrain job list with Cancel, hover with size, hours and dirt (ui/basemap terraRow, terraPickCard, terraHover, terraList; basemap terraGhost, terraClick); activity "Digging a hollow (2 of 3 with shovels, 40%)". The governor does not terraform; AI groups have no base map. `tools/terraformtest.js`.
+- Modules: [terraform, basescatter landOf, basemap, buildings, ui/basemap]; test `tools/terraformtest.js`.
 
 ### Tents on the base map
 - The user's rules 2026-10-20, reconciled with tent bags, beds and soft cover in the pt-int merge. See also [travel.md, Tents](travel.md#tents).
@@ -239,6 +246,8 @@ Modules: [basemap, ui/basemap, ui/combat]. Screens: [docs/map-layers/](../map-la
 - Modules: [basemap TENT / pitchTent / strikeTent / tentCount / bagKindOf, buildings TENTS / tentBeds / legacyCampTents, morale crowdInfo, conquest]; tests `tools/baseviewtest.js`, `tools/ptinttest.js`.
 
 ## Base building
+What is built on a base and how: the no-build margin, general buildings and fittings, a way in and out, doorways, containers, the autopilot's base wishes and repair orders. The build map itself (150 × 150 round the base, fixed, nothing within VIEW_EDGE 3 cells of its edge, the limit drawn on every surface, its land running on past the edge into the fog: basemap VIEW_HALF / VIEW_EDGE / VIEW_ROOM, ui/isoview nbMark / beyondBoard, basescatter landBeyond) is under [The grid](#the-grid); the 5 × 5 as the only initial clearing (basemap landCompact) under [The land](#the-land).
+
 The user's request 2026-10-19; [docs/base-building/plan.md](../base-building/plan.md), [docs/adr/0002-base-building.md](../adr/0002-base-building.md). Tests: `tools/basebuildtest.js`, `tools/containerstest.js`, `tools/basebuilduitest.js`, `tools/repairorderstest.js`, `tools/basebuildautotest.js`.
 
 ### No-build margin and general buildings
@@ -285,6 +294,8 @@ The user's request 2026-10-19; [docs/base-building/plan.md](../base-building/pla
 - The user's pick 2026-10-20: bunks 2 scrap + 200 wood, shelves 2 + 150, lockers 5 + 40 (a plank plinth), crates 1 + 120, storage box 1 + 80, the Makeshift tent 80 wood + 1 scrap.
 
 ## Beds as furniture
+Cots, beds, bunk beds and large beds set in buildings as furniture, with one rough-sleeping rule for anyone without a bed.
+
 The user's request 2026-10-20: "Cots 1x2 mood debuff, Beds 1x2, bunkbeds 1x2 mood debuff and large beds 2x2 mood buff can be created and set in buildings to add beds for a base". Modules: [beds, data-beds; ui/basemap (the Furniture group, Pick up), ui/ui, ui/cmdpalette, ui/codex (furniture and retired cots hidden from the building lists)]; test `tools/bedstest.js`.
 
 ### The pieces [data-beds BED_SPEC]
