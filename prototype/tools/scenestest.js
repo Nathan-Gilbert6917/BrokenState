@@ -12,7 +12,9 @@
 //      kit), the intro line once when the room is seen, the piles; Sleepers among the dead by sleepers.js's share;
 //   6. the ledger: a smashed piece stays smashed (sceneLedger / applySceneLedger), the crawl's snapshot keeps the bodies
 //      and the blood; a save round-trips the scenes;
-//   7. the view: ui/battlemarks.js draws the pre-placed blood and brass by floor.
+//   7. the view: ui/battlemarks.js draws the pre-placed blood and brass by floor;
+//   8. a hospital's own (issue #14): the ER overrun (its pieces knocked over, a doctor's bag), the sealed ward and the
+//      morgue's dead roll; the patients' bodies are bare, the wormed ones get up at the turn of the dead (carriers.js).
 // Usage: node tools/scenestest.js
 import { createWorld, hub, atBase } from "../src/sim/world.js";
 import { launchExpedition } from "../src/sim/parties.js";
@@ -200,11 +202,11 @@ if (r) {
   check(sc.every((c) => typeof c.sleeper === "boolean"), `Sleepers among them at sleepers.js's share (${(odds * 100).toFixed(0)}% here: ${sc.filter((c) => c.sleeper).length} of ${sc.length})`);
   const dead = b.units.filter((u) => u.scene);
   const boxes = R.containers.filter((c) => c.kind === "body" && dead.some((u) => u.id === c.uid));
-  check(dead.every((u) => u.dead && u.kind === "human" && u.side === "neutral" && u.restored && typeof u.f === "number") && boxes.length === dead.length && boxes.every((c) => c.full && c.f === dead.find((u) => u.id === c.uid).f), `the survivors are dead people with a body container each, on their floor (${dead.length})`);
+  check(dead.every((u) => u.dead && u.kind === "human" && u.side === "neutral" && u.restored && typeof u.f === "number") && boxes.length === dead.length && boxes.every((c) => (c.full || c.bare) && c.f === dead.find((u) => u.id === c.uid).f), `the survivors are dead people with a body container each, on their floor (${dead.length}; a hospital's patients bare)`);
   check(b.units.filter((u) => u.side === "neutral" && !u.dead && u.scene).length === 0 && !R.containers.some((c) => c.scene && c.kind !== "ground"), "nobody of a scene is alive; their piles are ground piles");
   // Searching one: their kit always on them (box.full).
   const u0 = b.units.find((u) => u.side === "player");
-  const box = boxes[0];
+  const box = boxes.find((c) => c.full) || boxes[0];
   setFloor(b, box.f); u0.f = box.f; u0.away = false; u0.x = box.x; u0.y = box.y; u0.ap = 2;
   searchBox(S, b, u0, box, true);
   check(box.contents && box.contents.gear.length >= 1, `searched, a survivor's body has their kit on it (${box.contents ? box.contents.gear.map((g) => g.key).join(", ") : "nothing"})`);
@@ -265,6 +267,43 @@ if (r) {
   setFloor(b, 0);
   MK.revealMarks(b, vis);
   check(stm.list.filter((m) => m.seen).every((m) => m.f === 0), "seen from the ground floor, only the ground floor's marks are revealed");
+}
+
+// ---------- 8. a hospital's own (issue #14) ----------
+console.log("A hospital's own scenes (issue #14)");
+{
+  const kinds = {};
+  let patients = 0, wormed = 0;
+  for (const [, m] of maps.filter(([k]) => k === "hospital")) for (const x of (m.scenes && m.scenes.list) || []) kinds[x.kind] = (kinds[x.kind] || 0) + 1;
+  check(kinds.eroverrun > 0 && kinds.sealedward > 0 && kinds.morgue > 0, `among the hospitals: an ER overrun (${kinds.eroverrun || 0}), a sealed ward (${kinds.sealedward || 0}), the morgue's dead (${kinds.morgue || 0})`);
+  const h = raidAt(["hospital"], { seed: 900, want: (b) => b.raid.scenes && b.raid.scenes.list.some((x) => x.kind === "morgue" && x.rise) });
+  check(!!h, "test setup: a hospital raid with the morgue's dead, one of them rising");
+  if (h) {
+    const { st: S, b } = h;
+    const pat = b.units.filter((u) => u.scene && u.name === "A patient");
+    patients = pat.length; wormed = pat.filter((u) => u.wormed).length;
+    const boxes = b.raid.containers.filter((c) => c.kind === "body" && pat.some((u) => u.id === c.uid));
+    check(patients >= 2 && wormed >= 1 && boxes.length === patients && boxes.every((c) => c.bare && !c.full), `the morgue's patients lie dead with bare body containers (${patients}, ${wormed} with the worm in them)`);
+    const u0 = b.units.find((u) => u.side === "player"), pb = boxes[0];
+    setFloor(b, pb.f); u0.f = pb.f; u0.away = false; u0.x = pb.x; u0.y = pb.y; u0.ap = 2;
+    searchBox(S, b, u0, pb, true);
+    check(pb.contents && !pb.contents.gear.some((g) => g.key !== "flashbang" && g.key !== "smokegren"), `searched, a patient has nothing but their pockets (${pb.contents ? JSON.stringify(pb.contents.sup) + " " + pb.contents.gear.map((g) => g.key).join(", ") : "none"})`);
+    setFloor(b, 0); u0.f = 0;
+    const { carrierRound } = await import("../src/sim/carriers.js");
+    const zBefore = b.units.filter((u) => u.kind === "zombie").length;
+    carrierRound(S, b);
+    const rose = b.units.filter((u) => u.kind === "zombie").length - zBefore;
+    check(rose >= 1 && rose <= wormed, `at the turn of the dead the wormed ones get up (${rose} of ${wormed})`);
+  }
+  const e = raidAt(["hospital"], { seed: 1300, want: (b) => b.raid.scenes && b.raid.scenes.list.some((x) => x.kind === "eroverrun") });
+  check(!!e, "test setup: a hospital raid with its ER overrun");
+  if (e) {
+    const bag = e.b.raid.containers.find((c) => c.scene && c.label === "A doctor's bag");
+    check(bag && bag.contents.sup.meds >= 2 && bag.contents.gear.some((g) => g.key === "bandagekit"), `a doctor's bag beside their body: meds and a bandage kit (${bag ? JSON.stringify(bag.contents.sup) : "none"})`);
+    const pieces = e.b.raid.scenes.pieces.filter((p) => ["gurney", "ivstand", "curtain"].includes(p.k));
+    const cells = (f) => (e.b.floors ? e.b.floors[f].cells : e.b.cells);
+    check(pieces.length >= 1 && pieces.every((p) => cells(p.f)[p.y * e.b.w + p.x].moved), `the ER's gurneys, stands and curtains knocked over (${pieces.length} cells moved)`);
+  }
 }
 
 console.log(`\n${passed} passed, ${failed} failed (${((performance.now() - t0) / 1000).toFixed(1)} s)`);

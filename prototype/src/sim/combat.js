@@ -7620,7 +7620,7 @@ export function searchBox(state, b, u, box, open = false, quick = false) {
         say(b, `${u.name} gets acid on their hands from the burst sac (${eff}).`, "danger");
       }
     } else if (box.kind === "body") {
-      Object.assign(sup, bodyRounds(unitById(b, box.uid) || { weapon: box.weapon, kit: box.kit, id: box.uid }, rng.int(3, 10))); // ammo.js: their gun's calibre and load
+      if (!box.bare) Object.assign(sup, bodyRounds(unitById(b, box.uid) || { weapon: box.weapon, kit: box.kit, id: box.uid }, rng.int(3, 10))); // ammo.js: their gun's calibre and load (a patient: none)
       if (rng.chance(0.25)) sup.food = rng.int(1, 3);
       if (rng.chance(MEDS.BODY_HUMAN)) sup.meds = 1; // medfinds.js
       const kit = KITS[box.kit] || KITS.raiders;
@@ -7715,7 +7715,7 @@ export function searchBox(state, b, u, box, open = false, quick = false) {
         alertNear(b, box.x, box.y, 12, "The alarm wakes everything nearby.");
       }
     }
-    if (box.kind === "body" && !box.zombie) gear.push(...unitMagItems(box.uid != null ? unitById(b, box.uid) : null, kitSource(box.kit))); // carrykit.js: their spare magazines
+    if (box.kind === "body" && !box.zombie && !box.bare) gear.push(...unitMagItems(box.uid != null ? unitById(b, box.uid) : null, kitSource(box.kit))); // carrykit.js: their spare magazines
     else if (box.kind !== "body") withMags(gear, box.truck ? "military" : areaSource(R.areas[box.area] ? R.areas[box.area].type : "house", null), "box", b.tileId, bid); // carrykit.js: a gun found keeps 0-2 spare magazines (own dice)
     lockedLoot(state, b, u, box, sup, gear); // locks.js: more in locked things, keys, blueprints (its own dice)
     const site = poiKind || (state.tiles[b.tileId] && state.tiles[b.tileId].loc ? state.tiles[b.tileId].loc.type : null);
