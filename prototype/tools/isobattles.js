@@ -3,14 +3,15 @@
 // on the wall map (night, a manned tower) and after the fall back on the yard map (some of your people inside a
 // building), a base without walls, and the furniture showroom (one of every kind: showroom). Each is built the way the browser opens it (a window there: no auto-resolve).
 // battles(seed) → [{ name, st, b }]
-import { createWorld, hub, atBase, makeSurvivor } from "../src/sim/world.js";
+import { createWorld, hub, atBase, makeSurvivor, survivorById } from "../src/sim/world.js";
 import { createBattle, registerCombatHandler } from "../src/sim/combat.js";
 import { launchExpedition } from "../src/sim/parties.js";
 import { addBuilding } from "../src/sim/buildings.js";
 import { newItem } from "../src/sim/inventory.js";
 import { endDeploy } from "../src/sim/deploy.js";
 import { fallBack } from "../src/sim/interior.js";
-import { FURNITURE_KINDS } from "../src/sim/data-furniture.js";
+import { FURNITURE_KINDS, itemKey } from "../src/sim/data-furniture.js";
+import { reweigh, LIFT } from "../src/sim/furnicarry.js";
 
 registerCombatHandler("isotest", () => {});
 const BUILT = ["walls", "walls", "barricades", "barricades", "watchtower", "bunkhouse", "bunkhouse", "storehouse", "ammo_bench", "infirmary", "cistern", "well", "gate", "rain_catcher", "garage", "radio", "common_room", "cells", "cellar", "floodlights"];
@@ -70,6 +71,37 @@ export function showroom(b, x0 = 2, y0 = 2) {
   if (b.losCache) b.losCache.fill(0);
   b.rev = (b.rev || 0) + 1;
   return placed;
+}
+
+// Carrying furniture (sim/furnicarry.js, issue #17's carry poses): your people on a cleared floor near (x0, y0), in the
+// order [kind, partner?]: one alone with a fridge (60 kg: past 40 kg, the low pose), a pair with a sofa (two cells, the
+// piece between them), one alone with a table (the carry pose), a pair with a washer (one cell: the tether line), as
+// many of these as there are people. Each as liftAct leaves it (u.bag = s.gear.carry, u.piece, a pair's tether and
+// shareKg), reweighed. Used by the "carry" layout below, tools/carryviewtest.js and tools/raidshot.cjs (site "carry").
+// carryScene(st, b, x0?, y0?) → [{ k, ids: [carrier, partner?] }].
+export const CARRY_SET = [["fridge", false], ["sofa", true], ["table", false], ["washer", true]];
+export function carryScene(st, b, x0 = 3, y0 = 3) {
+  const mine = b.units.filter((u) => u.side === "player" && !u.dead && !u.down);
+  for (let y = y0 - 1; y <= y0 + 5; y++) for (let x = x0 - 1; x <= x0 + 4 * 3 + 1; x++) if (x >= 0 && y >= 0 && x < b.w && y < b.h) b.cells[y * b.w + x] = { k: "open", f: "floor" };
+  for (const u of b.units) if (u.side !== "player" && u.x >= x0 - 1 && u.x <= x0 + 13 && u.y >= y0 - 1 && u.y <= y0 + 5) u.x = Math.max(0, x0 - 2); // nobody else in the way
+  const out = [];
+  let n = 0;
+  CARRY_SET.forEach(([k, pair], i) => {
+    if (n + (pair ? 2 : 1) > mine.length) return;
+    const u = mine[n++], v = pair ? mine[n++] : null, s = survivorById(st, u.sid), it = newItem(itemKey(k));
+    u.x = x0 + i * 3; u.y = y0 + 1;
+    s.gear.carry = it; u.bag = it; u.piece = k; u.tether = null; u.shareKg = null; u.face = [1, 1];
+    if (v) {
+      v.x = u.x + (i % 2 ? 1 : 0); v.y = u.y + (i % 2 ? 0 : 1); // the sofa's pair one above the other, the washer's side by side
+      v.piece = k; v.tether = u.id; u.tether = v.id;
+      v.shareKg = u.shareKg = Math.round(FURNITURE_KINDS[k].kg * LIFT.SHARE * 100) / 100;
+    }
+    reweigh(st, b, u);
+    out.push({ k, ids: v ? [u.id, v.id] : [u.id] });
+  });
+  if (b.losCache) b.losCache.fill(0);
+  b.rev = (b.rev || 0) + 1;
+  return out;
 }
 
 export function battles(seed = 42, only = null) {
@@ -139,5 +171,7 @@ export function battles(seed = 42, only = null) {
   add("base-open", (st) => baseFight(st, false, ["barricades", "bunkhouse", "storehouse", "well", "ammo_bench"], false));
   // One of every piece of furniture and appliance (showroom above) on a field map.
   add("furniture", (st) => { const b = field(st, fakeTile(st, "plains", null), { kind: "zombies", count: 2, power: 2 }); b.showroom = showroom(b); return b; });
+  // Carrying furniture (carryScene above), on a field map: only when asked for by name (battles(seed, ["carry"])).
+  if (only && only.includes("carry")) add("carry", (st) => { const b = field(st, fakeTile(st, "plains", null), { kind: "zombies", count: 2, power: 2 }); b.carried = carryScene(st, b); return b; });
   return out;
 }
