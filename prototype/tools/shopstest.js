@@ -35,6 +35,7 @@ import { pieceDef } from "../src/sim/data-furniture.js";
 import { boxLoot, CELL } from "../src/sim/combat.js";
 import { supValue } from "../src/sim/data.js";
 import { rollScenes } from "../src/sim/interiorscenes.js";
+import { LAYOUTS } from "../src/sim/buildvariants.js"; // a type's layouts (issue #32): the loot is the classic's, furnished old and new
 import { SIZES } from "../src/sim/battlesize.js";
 import { SITE_KIT, AREA_KIT } from "../src/sim/carrykit.js";
 import { SURV_FINDS, AREA_SURV } from "../src/sim/data-survival.js";
@@ -366,9 +367,9 @@ section("Laid out for their kind (shoplayout.js, issue #16)");
   const N = process.env.BS_QUICK ? 10 : 30;
   const FK = { gasstation: "gas" };
   const KEYS = [...COMMERCIAL_KEYS];
-  const make = (key, s, legacy = false, noDecor = false) => {
+  const make = (key, s, legacy = false, noDecor = false, layout = null) => {
     const fr = FRANCHISES[FK[key] || key] || [], rng = new Rng(9000 + s * 104729 + key.length);
-    return assemble(rng, BUILDINGS[key].make(rng, { variant: fr.length ? fr[s % fr.length].id : null, legacy }), { key, name: key, legacy, noDecor });
+    return assemble(rng, BUILDINGS[key].make(rng, { variant: fr.length ? fr[s % fr.length].id : null, legacy, layout }), { key, name: key, legacy, noDecor });
   };
   const grid = (m, f) => (m.floors ? m.floors[f].cells : m.cells);
   const inside = (m, a) => { const out = []; for (let y = a.y0 + 1; y < a.y0 + a.h - 1; y++) for (let x = a.x0 + 1; x < a.x0 + a.w - 1; x++) out.push([x, y, grid(m, a.f)[y * m.w + x]]); return out; };
@@ -454,7 +455,8 @@ section("Laid out for their kind (shoplayout.js, issue #16)");
   check(KEYS.filter((k) => sig(make(k, 3)) !== sig(make(k, 4))).length >= KEYS.length - 1, "two of a kind lay out differently");
   // Loot per kind: the old layout (legacy) against the new over 200 seeds, by the tables' value (as tools/interiortest.js).
   const value = (def) => { let v = 0; for (const [k, [p, lo, hi]] of Object.entries(def.loot)) v += Math.min(0.95, p) * ((lo + hi) / 2) * supValue(k); for (const [k, p] of def.gear) v += p * ((GEAR[k] && GEAR[k].value) || 0); return v; };
-  const total = (key, legacy) => { let v = 0; for (let s = 0; s < 200; s++) { const m = make(key, s, legacy); for (const c of m.containers) { const a = m.rooms.find((r) => r.id === c.area); if (a && a.type) v += value(boxLoot(a.type, c.kind)); } } return v / 200; };
+  const classic = (key) => (LAYOUTS[key] ? LAYOUTS[key][0].id : null); // the plan the furnishing replaced (its other layouts' loot: tools/varianttest.js)
+  const total = (key, legacy) => { let v = 0; for (let s = 0; s < 200; s++) { const m = make(key, s, legacy, false, classic(key)); for (const c of m.containers) { const a = m.rooms.find((r) => r.id === c.area); if (a && a.type) v += value(boxLoot(a.type, c.kind)); } } return v / 200; };
   const off = [], rows = [];
   for (const key of KEYS) { const b = total(key, true), a = total(key, false), r = a / b - 1; rows.push(`${key} ${(r * 100).toFixed(0)}%`); if (Math.abs(r) > 0.1) off.push(`${key} ${a.toFixed(0)} against ${b.toFixed(0)}`); }
   check(!off.length, `every kind holds what it did within ±10% (200 seeds each: ${off.join("; ") || rows.join(", ")})`);

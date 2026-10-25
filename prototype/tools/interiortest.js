@@ -54,6 +54,9 @@ import { boxLoot, FLOOR_RICH } from "../src/sim/combat.js";
 import { GEAR, supValue } from "../src/sim/data.js";
 import { Rng } from "../src/sim/rng.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
+import { LAYOUTS } from "../src/sim/buildvariants.js"; // a type's layouts (issue #32): its first is the classic, the plan these checks were written for
+const CLASSIC = (key) => (LAYOUTS[key] ? LAYOUTS[key][0].id : null);
+const classicOf = (m) => !m.plan || !m.plan.variant || m.plan.variant.id === CLASSIC(m.plan.key); // a map built as its type's classic layout
 
 const SEEDS = Number(process.argv[2] || 6);
 const FURN = new Set(Object.keys(CELL).filter((k) => pieceDef(k)));
@@ -607,7 +610,7 @@ console.log("\nHomes room by room (roomlayout.js)");
     let v = 0, n = 0;
     for (let s = 0; s < 200; s++) {
       const rng = new Rng(9000 + s * 104729 + 5);
-      const m = assemble(rng, BUILDINGS.house.make(rng, { legacy }), { key: "house", name: "House", legacy });
+      const m = assemble(rng, BUILDINGS.house.make(rng, { legacy, layout: CLASSIC("house") }), { key: "house", name: "House", legacy }); // the classic two-storey house (its layouts: tools/varianttest.js)
       for (const c of m.containers) { const a = m.rooms.find((r) => r.id === c.area); if (a && a.type) { v += value(boxLoot(a.type, c.kind)); n++; } }
     }
     return { v: v / 200, n: n / 200 };
@@ -666,7 +669,7 @@ console.log("\nHospitals, clinics, infirmaries and vets room by room (roomlayout
     // The rooms by name on their floors (a hospital).
     if (key === "hospital") {
       const top = m.storeys - 1;
-      for (const [onF, role, re] of FLOORS) for (let f = 0; f <= top; f++) if (onF(f, top) && !rooms.some((a) => a.f === f && a.role === role && re.test(a.name))) err("rooms", `${tag} floor ${f}: no ${role} ${re}`);
+      if (classicOf(m)) for (const [onF, role, re] of FLOORS) // the regional hospital's floors (its other layouts: tools/varianttest.js) for (let f = 0; f <= top; f++) if (onF(f, top) && !rooms.some((a) => a.f === f && a.role === role && re.test(a.name))) err("rooms", `${tag} floor ${f}: no ${role} ${re}`);
       const ph = rooms.find((a) => a.role === "pharmroom");
       if (!ph || ph.locked !== "vault" || !m.lockedDoors.some((d) => d.area === ph.id)) err("pharmacy", `${tag} ${ph ? ph.locked : "none"}`);
       const safe = m.containers.find((c) => c.kind === "drugsafe");
@@ -735,7 +738,7 @@ console.log("\nHospitals, clinics, infirmaries and vets room by room (roomlayout
       const by = {};
       for (let s = 0; s < 200; s++) {
         const rng = new Rng(9000 + s * 104729 + 5);
-        const m = assemble(rng, BUILDINGS[key].make(rng, { legacy }), { key, name: key, legacy, noDecor: true });
+        const m = assemble(rng, BUILDINGS[key].make(rng, { legacy, layout: CLASSIC(key) }), { key, name: key, legacy, noDecor: true }); // the classic layout, furnished old and new
         for (const c of m.containers) { const a = m.rooms.find((r) => r.id === c.area); if (!a || !a.type) continue; const x = meds(boxLoot(a.type, c.kind)) * Math.min(FLOOR_RICH.cap, Math.pow(FLOOR_RICH.perFloor, c.f || 0)); v += x; by[a.role] = (by[a.role] || 0) + x; }
       }
       return { v: v / 200, by };
@@ -811,7 +814,7 @@ console.log("\nPolice stations, fire stations, schools and churches laid out for
     const cellsIn = (a) => { const out = []; for (let y = a.y0 + 1; y < a.y0 + a.h - 1; y++) for (let x = a.x0 + 1; x < a.x0 + a.w - 1; x++) out.push([x, y, at(a.f, x, y)]); return out; };
     const kinds = (a) => new Set(cellsIn(a).map(([, , c]) => c.k));
     const civ = (c) => rooms.filter((a) => a.civic === c);
-    const need = (c, list, what) => { const rs = civ(c); if (!rs.length) err(`${c}-room`, tag); for (const a of rs) { const k = kinds(a); if (!list.every((q) => (Array.isArray(q) ? q.some((z) => k.has(z)) : k.has(q)))) err(what, `${tag} ${a.name}: ${[...k].join(",")}`); } };
+    const need = (c, list, what) => { const rs = civ(c); if (!rs.length && classicOf(m)) err(`${c}-room`, tag); // the room is there in the classic layout; where a layout has it, its pieces for (const a of rs) { const k = kinds(a); if (!list.every((q) => (Array.isArray(q) ? q.some((z) => k.has(z)) : k.has(q)))) err(what, `${tag} ${a.name}: ${[...k].join(",")}`); } };
     if (!rooms.every((a) => !a.civic || CIVIC_STYLES[a.civic])) err("style", tag);
     // Every room's doors (and the stairs) reachable from each other on its floor; the containers are the pieces.
     for (const a of rooms) {
@@ -836,7 +839,7 @@ console.log("\nPolice stations, fire stations, schools and churches laid out for
       // The cells: each cell door a cell door (DOOR_KINDS.cell) with bars beside it, a bunk, a toilet and a sink inside.
       const cells = [];
       for (const a of civ("cells")) for (const [x, y, c] of cellsIn(a)) if (c.cellDoor) cells.push([a, x, y, c]);
-      if (cells.length < 2) err("cells: at least two", `${tag}: ${cells.length}`);
+      if (cells.length < 2 && classicOf(m)) err("cells: at least two", `${tag}: ${cells.length}`);
       for (const [a, x, y, c] of cells) {
         cellsN++;
         if (c.dk !== "cell") err("cell door", `${tag} ${x},${y} ${c.dk}`);
@@ -850,7 +853,8 @@ console.log("\nPolice stations, fire stations, schools and churches laid out for
         if (!win.length) err("interview: a one-way window", `${tag} ${a.name}`);
         if (!kinds(a).has("table") || cellsIn(a).filter(([, , c]) => c.k === "chair").length < 2) err("interview: a table and two chairs", `${tag} ${a.name}`);
       }
-      if (!m.containers.some((c) => c.kind === "policecar" && c.w * c.h >= 6)) err("sally port: a police car", tag);
+      if (civ("sallyport").length && !m.containers.some((c) => c.kind === "policecar" && c.w * c.h >= 6)) err("sally port: a police car", tag);
+      if (!civ("sallyport").length && classicOf(m)) err("sallyport-room", tag);
     }
     if (key === "firestation") {
       for (const a of civ("enginebay")) {
@@ -890,7 +894,7 @@ console.log("\nPolice stations, fire stations, schools and churches laid out for
         const ay = Math.max(...altar.map(([, y]) => y));
         for (let y = ay + 1; y < a.y0 + a.h - 1; y++) { const c = at(a.f, a.aisle, y); if (!c || !CELL[c.k].walk) err("nave: a clear centre aisle", `${tag} ${a.aisle},${y} ${c && c.k}`); }
       }
-      if (!rooms.some((a) => a.civic === "belltower" && a.up)) err("bell tower raised", tag);
+      if (classicOf(m) && !rooms.some((a) => a.civic === "belltower" && a.up)) err("bell tower raised", tag);
     }
   }
   for (const [what, list] of Object.entries(errs)) check(false, `${what}: ${list.length} bad, e.g. ${list.slice(0, 3).join("; ")}`);
@@ -902,7 +906,7 @@ console.log("\nPolice stations, fire stations, schools and churches laid out for
     let v = 0;
     for (let s = 0; s < 200; s++) {
       const rng = new Rng(9000 + s * 104729 + 5);
-      const m = assemble(rng, BUILDINGS[key].make(rng, { legacy }), { key, name: key, legacy });
+      const m = assemble(rng, BUILDINGS[key].make(rng, { legacy, layout: CLASSIC(key) }), { key, name: key, legacy });
       for (const c of m.containers) { const a = m.rooms.find((r) => r.id === c.area); if (a && a.type && pick(a)) v += value(boxLoot(a.type, c.kind)); }
     }
     return v / 200;
