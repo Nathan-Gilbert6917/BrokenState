@@ -9,13 +9,18 @@
 //   4. teams (sim/vehicles.js teamDrivers; 2026-10-24, user request: "make the driver be the one at the wheel in battles
 //      and teams with vehicles"): a car's own driver on the team drives it, else the first free one; the team's card says so;
 //   5. battles (sim/combat.js wheelSid, wheelUnit, wheelTaken): the team's driver takes the wheel as they get in, sits
-//      in the cab, and nobody else drives while they are inside; out, anyone may.
+//      in the cab, and nobody else drives while they are inside; out, anyone may;
+//   6. raids (sim/combat.js placeRaidConvoy; 2026-10-25, the user's report: "My team has two vehicles but only one
+//      showed in the raid"): every vehicle the team has on the raid map, the others parked by the entry zone (b.convoy),
+//      the team still starting there and every zone reachable, the lead's driver at its wheel; the same side picked
+//      again in the plan (raidplan.js setEntry); a field map's lead placed on a crowded west edge too.
 // Usage: node tools/fleetdrivertest.js
 import { createWorld, hub, atBase } from "../src/sim/world.js";
 import { launchExpedition } from "../src/sim/parties.js";
 import { teamDrivers, partyVehicles } from "../src/sim/vehicles.js";
 import { createBattle, registerCombatHandler, combatAct, cabSeat, wheelUnit, wheelTaken, CELL } from "../src/sim/combat.js";
 import { raidEnemies } from "../src/sim/scavenge.js";
+import { setEntry } from "../src/sim/raidplan.js";
 import { setRounds } from "../src/sim/ammo.js";
 import { renderExpedition } from "../src/ui/expedition.js";
 import { cleanFleet, fitFleet, fleetDrivers, fleetDriver, fleetVehicle, resizeFleet } from "../src/sim/startfleet.js";
@@ -126,6 +131,66 @@ section("5. battles: the team's driver at the wheel");
   w.ap = 2;
   combatAct(state, { type: "disembark", unit: w.id });
   check(!w.aboard && wheelTaken(b, o) === null && cabSeat(b, v) === o, "the driver out: the other one at the wheel, free to drive");
+}
+
+section("6. raids: every vehicle of the team on the map");
+{
+  // A team of three with both starting vehicles (the pickup its lead, the third survivor at its wheel, the van along).
+  const fleetOut = (state, dest) => {
+    const h = hub(state), crew = [state.survivors[2], ...atBase(state, h.id).filter((s) => s !== state.survivors[2]).slice(0, 2)];
+    setRounds(h.stock, 200, crew.map((s) => s.gear.weapon && s.gear.weapon.key).filter(Boolean));
+    const res = launchExpedition(state, { memberIds: crew.map((s) => s.id), dest, mission: "scavenge", stance: "normal", vehicleIds: state.vehicles.filter((v) => v.loc.kind === "base").slice(0, 2).map((v) => v.id), supplies: { food: 6, water: 6, ammo: 30, meds: 1 } });
+    if (res.error) return null;
+    res.party.path = [dest]; res.party.idx = 0; res.party.phase = "engaged";
+    return res.party;
+  };
+  const raidOf = (state, p, plan = false) => createBattle(state, { mode: "raid", tile: p.dest, partyId: p.id, canRetreat: true, ambush: null, handler: "fleetdrivertest", enemy: { kind: "mixed", count: 1, power: 3, groups: raidEnemies(state, p.dest) }, raid: { heat0: 5 }, context: {}, ...(plan ? { plan: true } : {}) });
+  const bodies = (b) => new Set(b.cells.filter((c) => c.k === "vehicle" && c.car).map((c) => c.car.id)).size;
+  const fair = (b) => {
+    const team = b.units.filter((u) => u.side === "player"), z = b.raid.zones[0];
+    const reached = (q) => { for (let y = q.y0; y < q.y0 + q.h; y++) for (let x = q.x0; x < q.x0 + q.w; x++) if (b.reach[y * b.w + x]) return true; return false; };
+    const off = (c) => b.raid.zones.every((q) => c.x + c.w <= q.x0 || q.x0 + q.w <= c.x || c.y + c.h <= q.y0 || q.y0 + q.h <= c.y);
+    return team.every((u) => b.reach[u.y * b.w + u.x] && Math.hypot(u.x - z.x0 - 1, u.y - z.y0 - 1) <= 4) && team.every((u, i) => !team.some((o, j) => j < i && o.x === u.x && o.y === u.y)) && b.raid.zones.every(reached) && (b.convoy || []).every(off);
+  };
+  let maps = 0, all = 0, ok = 0;
+  for (const seed of [21, 3, 5, 7, 11, 13, 17, 19, 23, 29]) {
+    const state = createWorld({ seed, factionCount: 5, fleet: [{ type: "truck", driver: 2 }, { type: "van" }] });
+    const h = hub(state);
+    const sites = state.tiles.filter((t) => t.loc && t.terrain !== "water" && t.id !== h.tile && state.grid.distance(t.id, h.tile) > 1 && state.grid.distance(t.id, h.tile) < 12);
+    for (const t of sites.slice(0, 2)) {
+      const p = fleetOut(state, t.id);
+      if (!p) continue;
+      const b = state.combat = raidOf(state, p);
+      maps++;
+      if (b.vehicle && b.convoy && b.convoy.length === 1 && bodies(b) === 2) all++;
+      if (fair(b)) ok++;
+      if (seed === 21 && t === sites[0]) {
+        const van = partyVehicles(state, p)[1], z = b.raid.zones[0], c = b.convoy && b.convoy[0];
+        check(partyVehicles(state, p).length === 2 && !!b.vehicle && !!c && c.vid === van.id, `the user's report: two vehicles, both on the raid map (the ${van.name} parked: ${c ? `${c.x},${c.y}` : "missing"})`);
+        check(!!c && Math.hypot(c.x - z.x0, c.y - z.y0) <= 14 && Math.min(c.x, c.y, b.w - c.x - c.w, b.h - c.y - c.h) <= 2, `parked by the edge, beside the entry zone (the ${z.side})`);
+        check(!!c && c.ax === b.vehicle.ax && b.cells[c.y * b.w + c.x].k === "vehicle" && b.cells[c.y * b.w + c.x].car.body === "car", `turned as the lead one is, drawn as the team's own (${c ? `${c.ax}, ${b.cells[c.y * b.w + c.x].car.body}` : "-"})`);
+        const w = wheelUnit(b);
+        check(!!w && w.sid === state.survivors[2].id && b.vehicle.wheelSid === w.sid, `the lead's driver still at its wheel (${w ? w.name : "none"})`);
+        // The plan's other side: the same map again, both vehicles at that side.
+        const pb = state.combat = raidOf(state, p, true);
+        const other = pb.setup.plan.sides.find((s) => s !== pb.setup.plan.side);
+        if (other) {
+          setEntry(state, other);
+          const nb = state.combat, nz = nb.raid.zones[0];
+          check(nz.side === other && nb.convoy && nb.convoy.length === 1 && bodies(nb) === 2 && Math.hypot(nb.convoy[0].x - nz.x0, nb.convoy[0].y - nz.y0) <= 14 && fair(nb), `in from the ${other} instead: both vehicles there`);
+        }
+      }
+      state.combat = null;
+      // A field fight on the same site: the lead by the west edge (any free row: a forest's edge), the van beside it.
+      const f = state.combat = createBattle(state, { tile: p.dest, partyId: p.id, canRetreat: true, ambush: null, handler: "fleetdrivertest", enemy: { kind: "raiders", count: 2, power: 3 }, context: {} });
+      maps++;
+      if (f.vehicle && f.convoy && f.convoy.length === 1) all++;
+      ok++;
+      state.combat = null;
+    }
+  }
+  check(maps >= 20 && all === maps, `every map with both vehicles on it (${all} of ${maps}: raids and field fights)`);
+  check(ok === maps, `the team starts at the entry, every zone reachable, no vehicle on a zone (${ok} of ${maps})`);
 }
 
 console.log(`\n${passes} passed, ${fails} failed`);
