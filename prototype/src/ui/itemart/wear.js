@@ -942,6 +942,11 @@ function pipewrench(p) { // a red cast-iron handle, the hook jaw and its knurled
   ], { s: "#8d959c", g: "#b4bcc3", n: "#6d7378", r: "#c8362e" });
   lit(p, "#c8362e");
 }
+function hazmat(p) { // a yellow hazmat suit: the hood with its dark visor, taped cuffs, black boots and gloves
+  R(p, 5, 0, 10, 4, "#d8c040"); R(p, 6, 1, 9, 3, "#2a3a44"); R(p, 3, 5, 12, 11, "#d8c040"); R(p, 1, 5, 2, 10, "#d8c040"); R(p, 13, 5, 14, 10, "#d8c040");
+  p.set(1, 11, "#26272a"); p.set(14, 11, "#26272a"); R(p, 4, 12, 6, 13, "#d8c040"); R(p, 9, 12, 11, 13, "#d8c040"); R(p, 4, 14, 6, 15, "#26272a"); R(p, 9, 14, 11, 15, "#26272a");
+  V(p, 7, 5, 11, "#a89020"); H(p, 3, 12, 8, "#a89020");
+}
 function leatherjacket(p) { // a black biker's jacket: the asymmetric zip, wide lapels, silver snaps
   rows(p, 1, [[4, 6, 9, 11], [2, 13], [1, 14], [1, 14], [0, 15], [0, 15], [0, 2, 3, 12, 13, 15], [0, 2, 3, 12, 13, 15], [0, 2, 3, 12, 13, 15], [0, 2, 3, 12, 13, 15], [0, 1, 3, 12, 14, 15], [3, 12], [3, 12], [3, 12]], "#2a2622");
   lit(p, "#2a2622");
@@ -1071,7 +1076,7 @@ function solderiron(p) { // a pen soldering iron: a black grip with a blue ring,
 }
 
 export const GEAR_ART = {
-  halligan, pipewrench, leatherjacket, chainsleeves, motopants, legrig, // survival gear
+  halligan, pipewrench, leatherjacket, chainsleeves, motopants, hazmat, legrig, // survival gear
   axe: felling, scrapaxe, shovel, scrapshovel, scraphammer, handsaw, bowsaw, scrapsaw, toolkit, welder, sewingkit, handdrill, solderiron, // tools (sim/data-tools.js)
   cashbox, firebox, toolbox, gearcase, // lock boxes and equipment cases
   wheelbarrow, handcart, // carts (sim/carts.js)
