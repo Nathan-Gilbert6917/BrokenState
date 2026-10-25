@@ -397,7 +397,7 @@ export const OFFICE_STYLES = {
   // (the security desk of monitors, the whiteboard of the numbers).
   callfloor(L) {
     const c = L.c;
-    if (/^Main/.test(L.room.name || "") && c.w * c.h >= 40) { const s = L.centre("secdesk", P(L)); if (s) L.around(s, "chair", 2); L.wall("whiteboard", { prefer: "middle" }); }
+    if (/^Main/.test(L.room.name || "")) { const s = L.centre("secdesk", P(L)) || L.wall("secdesk", P(L, { prefer: "middle" })) || L.need("secdesk", P(L)); if (s) L.around(s, "chair", 2); L.wall("whiteboard", { prefer: "middle" }); }
     L.wall("watercooler", { prefer: "corner" });
     pods(L, "headsetdesk", { every: 3 });
     fill(L, ["filing", "cabinet"]);

@@ -279,12 +279,14 @@ section("Where they stand: as points of interest, in the crawls; 300 towns and c
   const W = createWorld({ seed: seed + 5, factionCount: 3 }), h = hub(W);
   const crawl = { city: {}, town: {} };
   let blocks = { city: 0, town: 0 }, twice = 0, over = 0, civicSeen = { city: 0, town: 0 }, sameFirm = 0, pairs = 0;
-  for (const type of ["city", "town"]) for (const tile of W.tiles.filter((t) => t.loc && t.loc.type === type && t.id !== h.tile).slice(0, QUICK ? 2 : 4)) {
+  const crawls = { city: 0, town: 0 };
+  for (const type of ["town", "city"]) for (const tile of W.tiles.filter((t) => t.loc && t.loc.type === type && t.id !== h.tile).slice(0, 2)) { // two crews of two: the hub's people
     const res = launchExpedition(W, { memberIds: atBase(W, h.id).slice(0, 2).map((x) => x.id), dest: tile.id, mission: "scavenge", stance: "normal", vehicleId: null, supplies: { food: 2, water: 2 } });
     if (res.error) continue;
     const p = res.party;
     p.path = [tile.id]; p.idx = 0; p.dest = tile.id; p.phase = "engaged";
     CC.startCrawl(W, p);
+    crawls[type]++;
     const c = p.crawl, offices = [];
     for (const [x, y] of cellsOf(c.grid)) {
       const blk = CC.genBlock(W, c, keyOf(x, y));
@@ -300,9 +302,9 @@ section("Where they stand: as points of interest, in the crawls; 300 towns and c
     for (let i = 0; i < offices.length; i++) for (let j = i + 1; j < offices.length; j++) { pairs++; if (offices[i].key === offices[j].key && offices[i].v && offices[i].v === offices[j].v) sameFirm++; }
     c.blocks = {};
   }
-  for (const type of ["city", "town"]) console.log(`  ${type} crawls (${blocks[type]} blocks): ${Object.entries(crawl[type]).map(([k, n]) => `${k} ${n}`).join(", ")}; city hall ${civicSeen[type]}`);
+  for (const type of ["city", "town"]) console.log(`  ${type} crawls (${crawls[type]}, ${blocks[type]} blocks): ${Object.entries(crawl[type]).map(([k, n]) => `${k} ${n}`).join(", ")}; city hall ${civicSeen[type]}`);
   check(!twice && !over, `never two of a kind on a block, never past its most (${twice}, ${over})`);
-  check(civicSeen.city > 0 && civicSeen.town > 0, "city hall stands on the crawls' civic blocks");
+  check(crawls.city > 0 && crawls.town > 0 && civicSeen.city === crawls.city && civicSeen.town === crawls.town, "city hall stands once in each crawl, on its civic block");
   console.log(`  two office buildings in one crawl the same kind and firm: ${sameFirm} of ${pairs} pairs (${pairs ? ((100 * sameFirm) / pairs).toFixed(1) : 0}%)`);
   check(pairs > 20 && sameFirm / pairs < 0.1, "two office buildings in a crawl are rarely the same kind and firm");
   // The crawl's office roll on its own dice: the shops' places as they were.
