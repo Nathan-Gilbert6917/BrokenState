@@ -7450,7 +7450,7 @@ export function createRaid(state, setup) {
   if (pick) {
     const rooms = map.areas.filter((a) => !a.outdoor).length;
     const st = b.raid.storeys > 1 ? ` on ${b.raid.storeys} storeys (the stairs are marked; Go up / Go down takes an action)` : "";
-    if (map.street) say(b, `You reach the street at ${b.place}: ${map.plan.houses.length} houses. ${map.containers.length} places to search in ${rooms} rooms${st}.`, "info"); // buildingmaps.js streetMap: a neighbourhood
+    if (map.street) say(b, `You reach ${map.plan.word ? "" : "the street at "}${b.place}: ${map.plan.houses.length} ${map.plan.word || "houses"}. ${map.containers.length} places to search in ${rooms} rooms${st}.`, "info"); // buildingmaps.js streetMap: a neighbourhood
     else say(b, `You reach the ${pick.name.toLowerCase()} at ${b.place}. ${map.containers.length} places to search in ${rooms} rooms${st}.`, "info");
     say(b, interiorIntro(b), "info");
   } else say(b, `You slip into ${b.place}. ${map.containers.length} places to search across ${map.areas.length} areas.`, "info");
