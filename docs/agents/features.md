@@ -176,6 +176,7 @@ Detail: [combat.md](../features/combat.md).
 - **Bunkers**: military (Crashlanding's mountain bunker), government, fallout shelter, prepper; levels below ground, generator lights [bunkerlayout, buildingmaps, pois] `tools/interiortest.js`. [details](../features/combat.md#bunkers)
 - **Shops, offices, motels, banks laid out by kind**: aisles, checkouts, kitchens, walk-ins, bars, desks, vaults [shoplayout, buildingmaps, roomlayout] `tools/shopstest.js`. [details](../features/combat.md#raids-into-building-interiors)
 - **Grocery stores by size**: corner store, grocery, a supermarket twice the old each way, its warehouse and dock [shoplayout, buildingmaps, data-furniture] `tools/shopstest.js`. [details](../features/combat.md#raids-into-building-interiors)
+- **Industrial plans**: 12 named plans each for the warehouse, factory and lab, by dice and setting [industrylayout, buildingmaps] `tools/industryvarianttest.js`. [details](../features/combat.md#raids-into-building-interiors)
 - **Stealth**: takedowns, facing and view cones, sneaking, lights and darkness, indoor light switches [stealth, vision, indoorlight, ailights].
 - **Vaulting half cover**: over waist-high cells at extra cost, landing winded [combat]. [details](../features/combat.md#vaulting-half-cover)
 - **Windows and the kinds of door**: window states (open, locked, broken) and door kinds with their own hit points, sight and locks [windows, buildingmaps, locks]. [details](../features/combat.md#windows-and-the-kinds-of-door)

@@ -39,6 +39,8 @@
 //     named down, the Entrance level mostly rock, the stairs landing in the main tunnel, the escape hatch as a second
 //     exit, every door reachable and the containers on their pieces; the loot per kind (the prepper's pantry the
 //     richest food per area), the scenes, the POI rates on a world.
+//   - warehouses, factories and labs (industrylayout.js, issue #37): every one of their plans pinned is reached from the
+//     front and up its stairs, nothing cut off, with its signature pieces (tools/industryvarianttest.js goes further).
 // Usage: node tools/interiortest.js [seeds per archetype] [raids]
 import { createWorld, hub, atBase } from "../src/sim/world.js";
 import { launchExpedition } from "../src/sim/parties.js";
@@ -56,6 +58,7 @@ import { rollScenes } from "../src/sim/interiorscenes.js";
 import { COMMERCIAL_KEYS, styleName } from "../src/sim/shoplayout.js";
 import { CIVIC_STYLES } from "../src/sim/civiclayout.js";
 import { BUNKER_STYLES, BUNKER_KEYS } from "../src/sim/bunkerlayout.js"; // bunkers (issue #26)
+import { INDUSTRY_KEYS, plansOf } from "../src/sim/industrylayout.js"; // warehouses, factories and labs (issue #37)
 import { BUNKER_POI } from "../src/sim/pois.js";
 import { pieceDef } from "../src/sim/data-furniture.js";
 import { boxLoot, FLOOR_RICH } from "../src/sim/combat.js";
@@ -1064,6 +1067,35 @@ console.log("\nBunkers (bunkerlayout.js)");
   console.log(`    on a ${st.grid.width} × ${st.grid.height} world: ${Object.keys(expect).map((k) => `${k} ${seen[k] || 0} (${expect[k].toFixed(1)} at the base rate)`).join(", ")}`);
   check(["shelter", "prepper"].every((k) => (seen[k] || 0) >= expect[k] * 0.5 && (seen[k] || 0) <= expect[k] * 1.6) && (seen.bunker || 0) >= 1 && (seen.bunker || 0) <= expect.bunker * BUNKER_POI.NEAR, "the shelters and prepper bunkers at their rates, a military bunker or more (more often near a military site)");
   check(SITES.bunker_mil && SITES.bunker_mil[0] === "mountainbunker" && ["bunker", "govbunker", "shelter", "prepper"].every((k) => SITES[k] && BUILDINGS[SITES[k][0]]), "the bunker sites and points of interest open their bunkers");
+}
+
+// ======================================================================================
+console.log("\nWarehouses, factories and labs: a dozen plans each (industrylayout.js, issue #37)");
+{
+  // Every plan pinned (tools/industryvarianttest.js goes further: the distinct plans, loot, names, older saves): every
+  // room reached from the front (upstairs from the stairs), no cell cut off, its signature pieces (racks and docks, a
+  // production line, lab benches with fume hoods...).
+  const bad = [];
+  let n = 0;
+  for (const key of INDUSTRY_KEYS) for (const p of plansOf(key)) for (let s = 0; s < 3; s++) {
+    const rng = new Rng(7700 + s * 7919 + key.length);
+    const spec = BUILDINGS[key].make(rng, { plan: p.id });
+    const m = assemble(rng, spec, { key, name: BUILDINGS[key].name, withVehicle: s === 1 });
+    n++;
+    const z0 = m.zones[0];
+    const reach = m.floors.map((F, f) => walkFrom(m, f ? m.stairs[0][0] : z0.x0 + 1, f ? m.stairs[0][1] : z0.y0 + 1, true, F.cells));
+    for (const r of m.rooms.filter((a) => !a.outdoor)) {
+      let any = false;
+      for (let y = r.y0 + 1; y < r.y0 + r.h - 1 && !any; y++) for (let x = r.x0 + 1; x < r.x0 + r.w - 1; x++) if (reach[r.f || 0][y * m.w + x]) { any = true; break; }
+      if (!any) bad.push(`${p.name}: ${r.name} not reached`);
+    }
+    m.floors.forEach((F, f) => { for (let i = 0; i < m.w * m.h; i++) if ((CELL[F.cells[i].k].walk || F.cells[i].k === "door") && !reach[f][i]) { bad.push(`${p.name}: floor ${f} cut off`); break; } });
+    const kinds = new Set(m.floors.flatMap((F) => F.cells.map((c) => c.k)));
+    const rooms = m.rooms.filter((a) => !a.outdoor);
+    const miss = p.sig.filter((k) => (k === "dock" ? !rooms.some((a) => a.role === "dock") : k === "unit" ? !rooms.some((a) => a.role === "unit") : !kinds.has(k)));
+    if (miss.length) bad.push(`${p.name}: no ${miss.join(", ")}`);
+  }
+  check(!bad.length, `${n} industrial buildings (${INDUSTRY_KEYS.map((k) => `${plansOf(k).length} ${k} plans`).join(", ")}, 3 seeds each): all reached, each with its signature pieces${bad.length ? ` (${[...new Set(bad)].slice(0, 5).join("; ")})` : ""}`);
 }
 
 console.log(`\n${passes} passed, ${fails} failed. (${Math.round(performance.now() - t0)} ms)`);
