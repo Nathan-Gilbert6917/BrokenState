@@ -670,37 +670,44 @@ export function rollCar(state, p, people, keptOwner = null) {
   return { owner, car, trunk };
 }
 // The starting vehicles past the car (startfleet.js, 2026-10-24, user request: "add vehicles up to the number of
-// starting survivors"): each of state.fleet's filled slots after the first (a slot a survivor), with the team (a driver
-// each), the hub's pickup's tank (at most a full one) and condition; their backs once the drivers are seated
-// (extraBacks). No world dice: the world is the same as with the car alone. Returns the vehicles.
-/** @param {any} state @param {any} p */
-function extraCars(state, p) {
-  const out = [];
-  for (const f of (state.fleet || []).slice(1)) {
-    if (f.empty) continue;
-    const T = VEHICLE_TYPES[f.type] || VEHICLE_TYPES[START_FLEET.KIND];
-    const v = createVehicle(state, VEHICLE_TYPES[f.type] ? f.type : START_FLEET.KIND, { kind: "party", partyId: p.id }, { fuel: Math.min(START_FLEET.FUEL, T.tank), condition: START_FLEET.CONDITION });
+// starting survivors"), each of state.fleet's filled slots after the first (a slot a survivor), with the team. Since
+// the user's request 2026-10-25 ("When you add a vehicle roll it based on the remaining survivors"; "Instead of showing
+// name like vehicle 2 do what you do with the first rolled vehicle") each is rolled as the car is: whose it was (the
+// first of the crew who has none yet: the car's owner has the car; f.ownerId), its kind as rolled from their background
+// (its CARS; a kind set on the screen: that kind, the dice cast all the same), its tank and condition (HC_START.CAR),
+// then its back (extraBacks), all on dice of its own (f.roll, set by the screen's 🎲 Reroll; else from the seed and the
+// slot, backSeed), so the world's dice are untouched. Returns [{ v, owner, rng }] in slot order.
+const backSeed = (state, i) => ((Math.imul(state.seed | 0, 2654435761) + i * 40503 + 977) >>> 0) % 2147483646 + 1;
+/** @param {any} state @param {any} p @param {any[]} people @param {any} carOwner the car's owner (null: no car) */
+function extraCars(state, p, people, carOwner) {
+  const out = [], owned = new Set(carOwner ? [carOwner.id] : []), C = HC_START;
+  (state.fleet || []).forEach((f, i) => {
+    if (i === 0 || f.empty) return;
+    const rng = new Rng(f.roll != null ? f.roll : backSeed(state, i));
+    const owner = people.find((s) => !owned.has(s.id)) || people[(i - 1) % people.length];
+    owned.add(owner.id);
+    const A = archetypeOf(state, owner.background) || {};
+    const rolledType = A.custom && A.car.type ? A.car.type : pickW(rng, !A.custom && A.cars ? A.cars : { sedan: 2, truck: 1 });
+    const type = VEHICLE_TYPES[f.type] ? f.type : VEHICLE_TYPES[rolledType] ? rolledType : START_FLEET.KIND;
+    const T = VEHICLE_TYPES[type];
+    const fuel = Math.round(T.tank * rng.range(C.CAR.FUEL[0], C.CAR.FUEL[1]) * 10) / 10, condition = rng.int(C.CAR.CONDITION[0], C.CAR.CONDITION[1]);
+    const v = createVehicle(state, type, { kind: "party", partyId: p.id }, { fuel, condition });
     addPartyVehicle(state, p, v);
-    f.vid = v.id;
-    f.type = v.type;
-    out.push(v);
-  }
+    Object.assign(f, { vid: v.id, rolledType: !VEHICLE_TYPES[f.type], type: v.type, ownerId: owner.id });
+    out.push({ v, owner, rng });
+  });
   return out;
 }
 // Their backs (the user's request 2026-10-25: "have each additional vehicle have random gear set in the back with dice
 // rolling like how the first vehicle and add a button to view and randomize it"): a back set on the new-run screen
-// (f.load), that; else the dice's, as the car's: from its driver's background (their trunk table; a custom one, or
-// none: a background drawn), on dice of its own (f.roll, set by the screen's 🎲 Reroll; else from the seed and the
-// slot, backSeed), so the world's dice are untouched. The dice's back is noted on the slot (f.diceTrunk: the screen's
-// As rolled and its view). Into the team's cargo, as the car's. Returns each vehicle's back by its id.
-const backSeed = (state, i) => ((Math.imul(state.seed | 0, 2654435761) + i * 40503 + 977) >>> 0) % 2147483646 + 1;
-/** @param {any} state @param {any} p @param {any[]} people @param {any[]} more */
+// (f.load), that; else the dice's, as the car's: from its owner's background (their trunk table; a custom one: a
+// background drawn), on the vehicle's own dice after its kind and tank. The dice's back is noted on the slot
+// (f.diceTrunk: the screen's As rolled and 👁 Back). Into the team's cargo, as the car's. Returns each back by vehicle id.
+/** @param {any} state @param {any} p @param {any[]} people @param {any[]} more extraCars' */
 function extraBacks(state, p, people, more) {
   const out = new Map();
-  for (const v of more) {
-    const i = state.fleet.findIndex((f) => f.vid === v.id), f = state.fleet[i];
-    const rng = new Rng(f.roll != null ? f.roll : backSeed(state, i));
-    const d = people.find((s) => s.id === v.driver), own = d ? archetypeOf(state, d.background) : null;
+  for (const { v, owner, rng } of more) {
+    const f = state.fleet.find((x) => x.vid === v.id), own = archetypeOf(state, owner.background);
     const A = own && !own.custom && own.trunk ? own : HC_START.ARCHETYPES[rng.pick(Object.keys(HC_START.ARCHETYPES))];
     const dice = rollTrunk(state, rng, A, people);
     f.diceTrunk = { items: dice.gear.map((it) => pickOf(it)).filter(Boolean), supplies: { ...dice.supplies } };
@@ -720,7 +727,6 @@ function backWords(trunk) {
 }
 const tankText = (v) => `tank ${Math.round((v.fuel / VEHICLE_TYPES[v.type].tank) * 100)}% full, ${Math.round(v.condition)}% condition`;
 const vName = (v) => (/^[A-Z]{2,}\b/.test(v.name) ? v.name : v.name.toLowerCase()); // "SUV" stays so
-const aName = (v) => `${/^([aeiou]|SUV)/i.test(v.name) ? "an" : "a"} ${vName(v)}`;
 // driver: the one at its wheel when not its owner (startfleet.js: picked on the new-run screen), named after the tank.
 // riders: with more vehicles than the car, who rides in it (rideSplit; null: everyone, the car alone).
 function carPart(owner, car, trunk, people = HC_START.CREW, driver = null, riders = null) {
@@ -734,23 +740,26 @@ function carPart(owner, car, trunk, people = HC_START.CREW, driver = null, rider
   const w = riders.filter((s) => s !== driver);
   return { who: firstName(driver || riders[0] || owner), rest: `took ${firstName(owner)}'s ${vName(car)}${w.length ? ` with ${andList(w.map(firstName))}` : ""} (${tankText(car)})${goods}` };
 }
-// A vehicle past the car on the start's account, its driver first: "Cara followed in a pickup truck with Dan (tank 60%
-// full, 75% condition); in the back: …" (the first of them with no car: "got into"; nobody at the wheel: "A pickup truck
-// came along").
-function morePart(v, back, driver, riders = [], i = 1) {
+// A vehicle past the car on the start's account, whose it was first (as the car's): "Cara followed in their pickup
+// truck with Dan (tank 60% full, 75% condition); in the back: …"; its owner riding elsewhere, its driver: "Dan followed
+// in Cara's pickup truck"; someone else at its wheel named after the tank; the first of them with no car "got into" it.
+function morePart(v, back, driver, riders, i, owner) {
   const words = back ? backWords(back) : [];
-  const w = (riders || []).filter((s) => s !== driver);
-  const tail = `${w.length ? ` with ${andList(w.map(firstName))}` : ""} (${tankText(v)})${words.length ? `; in the back: ${andList(words)}` : ""}.`;
-  if (!driver) return { rest: `${aName(v).replace(/^./, (c) => c.toUpperCase())} came along${tail}` };
-  return { who: firstName(driver), rest: `${i === 0 ? "got into" : "followed in"} ${aName(v)}${tail}` };
+  const rs = riders || [], who = rs.includes(owner) ? owner : driver || owner;
+  const noun = who === owner ? `their ${vName(v)}` : `${firstName(owner)}'s ${vName(v)}`;
+  const w = rs.filter((s) => s !== who);
+  const atWheel = driver && driver !== who ? `, ${firstName(driver)} at the wheel` : "";
+  return { who: firstName(who), rest: `${i === 0 ? "got into" : "followed in"} ${noun}${w.length ? ` with ${andList(w.map(firstName))}` : ""} (${tankText(v)}${atWheel})${words.length ? `; in the back: ${andList(words)}` : ""}.` };
 }
-// Who rides in each vehicle (by id): its driver, then the rest of them in the first with a seat free, in order.
-function rideSplit(people, vs, driverOf) {
+// Who rides in each vehicle (by id): its driver, then the rest of them in their own (ownerOf) while it has a seat,
+// else the first with a seat free, in order.
+function rideSplit(people, vs, driverOf, ownerOf) {
   const out = new Map(vs.map((v) => [v.id, driverOf(v) ? [driverOf(v)] : []]));
   const atWheel = new Set(vs.map(driverOf).filter(Boolean));
+  const free = (x) => out.get(x.id).length < (SEATS[x.type] ?? 4);
   for (const s of people) {
     if (atWheel.has(s)) continue;
-    const v = vs.find((x) => out.get(x.id).length < (SEATS[x.type] ?? 4)) || vs[0];
+    const v = vs.find((x) => ownerOf(x) === s && free(x)) || vs.find(free) || vs[0];
     if (v) out.get(v.id).push(s);
   }
   return out;
@@ -907,7 +916,7 @@ export function setupHardcoreStart(state, crew, crewRoll = null, n = HC_START.CR
   const car = onFoot ? null : rolledCar.car;
   if (onFoot) { state.vehicles = state.vehicles.filter((v) => v !== rolledCar.car); delete owner.diceTrunk; }
   else Object.assign(state.fleet[0], { vid: car.id, rolledType: !state.fleet[0].type, type: car.type }); // startfleet.js: the starting vehicle is this car (rolledType: its kind as the dice rolled it)
-  const more = vehicles ? extraCars(state, p) : [];
+  const more = vehicles ? extraCars(state, p, people, onFoot ? null : owner) : [];
   seatDrivers(state, owner.id); // startfleet.js: one of them at each wheel (the new-run screen's pick; the car: its owner first)
   const backs = extraBacks(state, p, people, more); // their own dice: the world's untouched
   state.rng = crewRng;
@@ -921,14 +930,15 @@ export function setupHardcoreStart(state, crew, crewRoll = null, n = HC_START.CR
   // Who rides in which (the user's request 2026-10-25: "The preamble still says the first vehicle has everyone onboard
   // and then the second vehicle is just tacked on ... make it all meld"): each driver in their own, the rest in the
   // first vehicle while it has seats, then the next (vehicles.js SEATS). One vehicle: everyone in it, as before.
-  const fleetVs = [...(car ? [car] : []), ...more], riders = rideSplit(people, fleetVs, driverOf);
-  const vLines = fleetVs.map((v, i) => (v === car ? carPart(owner, car, trunk, people.length, driverOf(car), fleetVs.length > 1 ? riders.get(v.id) : null) : morePart(v, backs.get(v.id), driverOf(v), riders.get(v.id), i)));
+  const ownerOf = (v) => (v === car ? owner : (more.find((x) => x.v === v) || {}).owner || null);
+  const fleetVs = [...(car ? [car] : []), ...more.map((x) => x.v)], riders = rideSplit(people, fleetVs, driverOf, ownerOf);
+  const vLines = fleetVs.map((v, i) => (v === car ? carPart(owner, car, trunk, people.length, driverOf(car), fleetVs.length > 1 ? riders.get(v.id) : null) : morePart(v, backs.get(v.id), driverOf(v), riders.get(v.id), i, ownerOf(v))));
   const ride = vLines[0] || { rest: `No car: ${people.length === 1 ? "you go" : "you all go"} on foot.` };
   parts.push({ ...ride, rest: ride.rest + tentLine }); // the tents on the first vehicle's line (hcstarttest.js: one car, the last line is the car)
   parts.push(...vLines.slice(1));
   const lines = parts.map(lineText);
   const setOff = people.length === 1 ? "You set off alone" : `The ${countWord(people.length)} of you set off`;
-  const vWords = fleetVs.map((v) => (v === car ? `${firstName(owner)}'s ${vName(car)}` : aName(v)));
+  const vWords = fleetVs.map((v) => `${firstName(ownerOf(v))}'s ${vName(v)}`);
   const loaded = fleetVs.some((v) => v === car ? trunk.gear.length || Object.keys(trunk.supplies).length : backs.get(v.id) && (backs.get(v.id).gear.length || Object.keys(backs.get(v.id).supplies).length));
   if (fleetVs.length > 1) log(state, `${setOff} in ${andList(vWords)}${loaded ? ": what was in the backs is the team's cargo" : ""}.`, "info");
   else if (car) log(state, `${setOff} in ${vWords[0]}: tank ${Math.round((car.fuel / VEHICLE_TYPES[car.type].tank) * 100)}% full${loaded ? ", and what was in the back is the team's cargo" : ""}.`, "info");

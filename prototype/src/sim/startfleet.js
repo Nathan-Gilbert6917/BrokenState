@@ -84,7 +84,7 @@ export function cleanFleet(raw, mode, max = START_FLEET.COUNT.MAX) {
   const out = [];
   for (let i = 0; i < n; i++) {
     const r = list[i] && typeof list[i] === "object" ? list[i] : {};
-    const type = kinds.includes(r.type) ? r.type : mode === "hardcore" && i === 0 ? null : START_FLEET.KIND;
+    const type = kinds.includes(r.type) ? r.type : mode === "hardcore" && (i === 0 || r.type == null) ? null : START_FLEET.KIND; // Hardcore: every vehicle as rolled unless a kind is set (2026-10-25)
     const empty = !!r.empty;
     out.push({ type, limit: clampLimit(r.limit), load: r.load && !empty ? sanitizeStartVehicle(r.load, custom) : null, empty, driver: cleanDriver(r.driver, max), roll: cleanRoll(r.roll) });
   }
@@ -146,7 +146,8 @@ export function fleetRoom(state, i) {
   return Math.max(0, Math.round((T.payload || 0) - riders));
 }
 /**
- * Its name on the screen: "Vehicle 1 (Pickup truck)", "Ana's old sedan" (Hardcore's car), "Vehicle 2 (SUV)".
+ * Its name on the screen: "Vehicle 1 (Pickup truck)" (Normal, Custom), "Ana's sedan" (Hardcore's car), "Ben's SUV" (Hardcore's
+ * others: whose it was, f.ownerId).
  * @param {any} state @param {number} i
  */
 export function fleetName(state, i) {
@@ -154,10 +155,12 @@ export function fleetName(state, i) {
   const type = (v && v.type) || (f && f.type) || START_FLEET.KIND;
   const T = VEHICLE_TYPES[type] || VEHICLE_TYPES.truck;
   const mode = fleetMode(state);
-  if (mode === "hardcore" && i === 0) {
-    const id = state.hardcore && state.hardcore.start ? state.hardcore.start.carOwner : null;
+  if (mode === "hardcore") { // whose it was, as the car (the user's request 2026-10-25: "Instead of showing name like vehicle 2 do what you do with the first rolled vehicle")
+    const id = i === 0 ? (state.hardcore && state.hardcore.start ? state.hardcore.start.carOwner : null) : f && f.ownerId;
     const o = (state.survivors || []).find((s) => s.id === id);
-    return o ? `${String(o.name).split(" ")[0]}'s ${T.name.toLowerCase()}` : `The ${T.name.toLowerCase()}`;
+    const kind = /^[A-Z]{2,}\b/.test(T.name) ? T.name : T.name.toLowerCase(); // "SUV" stays so
+    if (o) return `${String(o.name).split(" ")[0]}'s ${kind}`;
+    if (i === 0) return `The ${kind}`;
   }
   return `Vehicle ${i + 1} (${T.name})`;
 }
@@ -176,6 +179,8 @@ export function fleetDrivers(state, ownerId = state && state.mode === "hardcore"
   fleet.forEach((/** @type {any} */ f, /** @type {number} */ i) => { const s = f && f.vid != null && f.driver != null ? crew[f.driver] : null; if (s && !taken.has(s)) take(i, s); });
   const owner = crew.find((/** @type {any} */ s) => s.id === ownerId);
   if (owner && !taken.has(owner) && fleet[0] && fleet[0].vid != null && !out[0]) take(0, owner);
+  // Hardcore's vehicles past the car: whose it was (f.ownerId, hardcore-start.js extraCars) when free, as the car's owner.
+  fleet.forEach((/** @type {any} */ f, /** @type {number} */ i) => { if (!f || f.vid == null || out[i] || f.ownerId == null) return; const s = crew.find((/** @type {any} */ c) => c.id === f.ownerId); if (s && !taken.has(s)) take(i, s); });
   fleet.forEach((/** @type {any} */ f, /** @type {number} */ i) => { if (!f || f.vid == null || out[i]) return; const s = crew.find((/** @type {any} */ c) => !taken.has(c)); if (s) take(i, s); });
   return out;
 }

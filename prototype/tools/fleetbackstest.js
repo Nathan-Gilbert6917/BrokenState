@@ -15,10 +15,10 @@
 //      window lists the back; Reroll gives the slot new dice and the world again changes that back.
 // Usage: node tools/fleetbackstest.js
 import { createWorld } from "../src/sim/world.js";
-import { cleanFleet, fleetVehicle, fleetDriver } from "../src/sim/startfleet.js";
+import { cleanFleet, fleetVehicle, fleetDriver, fleetName } from "../src/sim/startfleet.js";
 import { SEATS } from "../src/sim/vehicles.js";
 import { newRunScreen } from "../src/ui/newgame.js";
-import { SG_ACTIONS, fleetViewer } from "../src/ui/startgear.js";
+import { SG_ACTIONS, SG_CHANGE, fleetViewer } from "../src/ui/startgear.js";
 
 let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
@@ -77,7 +77,7 @@ section("3. The account: the crew split between the vehicles");
     check(vs.every((v) => (SEATS[v.type] ?? 4) >= 1), `${tag}: seats known`);
   }
   const big = HC([{ type: "sedan" }, { type: "truck" }], { startPeople: 4 });
-  check(big.hardcore.start.grabbed.some((l) => / followed in a pickup truck/.test(l)), "a sedan and a pickup: the pickup follows");
+  check(big.hardcore.start.grabbed.some((l) => / followed in (their|\w+'s) pickup truck/.test(l)), "a sedan and a pickup: the pickup follows");
 }
 
 section("4. The screen: 👁 Back and 🎲 Reroll");
@@ -95,12 +95,40 @@ section("4. The screen: 👁 Back and 🎲 Reroll");
   check(SG_ACTIONS["fleet-view"](st, ui, { i: "1" }) === false && ui.fleetView && ui.fleetView.i === 1, "👁 Back opens the look at its back");
   const win = fleetViewer(st, ui);
   const names = st.fleet[1].diceTrunk.items.length;
-  check(/Things/.test(win) && /Supplies/.test(win) && /data-action="fleet-reroll" data-i="1"/.test(win) && (win.match(/class="chip"/g) || []).length >= Math.min(1, names) && /follows|drives it/.test(win), "the window: its things, its supplies, who drives it, 🎲 Reroll");
+  check(/Things/.test(win) && /Supplies/.test(win) && /data-action="fleet-reroll" data-i="1"/.test(win) && (win.match(/class="chip"/g) || []).length >= Math.min(1, names) && /at the wheel/.test(win), "the window: its things, its supplies, who drives it, 🎲 Reroll");
   check(SG_ACTIONS["fleet-reroll"](st, ui, { i: "1" }) === "fleet" && Number.isInteger(ui.fleet[1].roll) && ui.fleet[1].load === null && st.fleet[1].roll === ui.fleet[1].roll, "🎲 Reroll: new dice on the slot (the world again)");
   const re = createWorld({ seed: 7, factionCount: 5, mode: "hardcore", startPeople: 4, fleet: ui.fleet });
   check(J(re.fleet[1].diceTrunk) !== J(first.diceTrunk) && J(re.fleet[2].diceTrunk) === J(plain.fleet[2].diceTrunk) && re.survivors.map((s) => s.name).join() === plain.survivors.map((s) => s.name).join(), "the world again: that back new, the rest as they were");
   check(SG_ACTIONS["fleet-reroll"](st, UI({ started: true, fleet: ui.fleet }), { i: "1" }) === false && SG_ACTIONS["fleet-view"](nm, UI(), { i: "0" }) === false, "not once started; not in Normal");
   check(SG_ACTIONS["fleet-view-close"](st, ui, {}) === false && ui.fleetView === null, "Done closes it");
+}
+
+section("5. Added vehicles rolled by whose they are; named so; the card as set");
+{
+  // The user's request 2026-10-25: "Instead of showing name like vehicle 2 do what you do with the first rolled vehicle.
+  // When you add a vehicle roll it based on the remaining survivors and update the preamble to show based on what was set when you begin".
+  const st = HC([{ type: null }], { startPeople: 3 });
+  const ui = UI({ mode: "hardcore", fleet: cleanFleet([{ type: null }], "hardcore") });
+  ui.fleet = cleanFleet(st.fleet.map((f) => ({ ...f, type: f.rolledType ? null : f.type })), "hardcore");
+  check(SG_ACTIONS["fleet-add"](st, ui, {}) === "fleet" && ui.fleet[1].type === null && !ui.fleet[1].empty, "＋ Add a vehicle (Hardcore): as rolled, no kind set");
+  const w = HC(ui.fleet, { startPeople: 3 }), carOwner = w.hardcore.start.carOwner, f1 = w.fleet[1];
+  const own = w.survivors.find((s) => s.id === f1.ownerId);
+  check(!!own && own.id !== carOwner && own === w.survivors.find((s) => s.id !== carOwner), "whose it is: the first of the crew without a vehicle (the car's owner has the car)");
+  check(f1.rolledType === true && fleetName(w, 1) === `${own.name.split(" ")[0]}'s ${/^[A-Z]{2,}/.test(fleetVehicle(w, 1).name) ? fleetVehicle(w, 1).name : fleetVehicle(w, 1).name.toLowerCase()}`, `named as the car is: ${fleetName(w, 1)}`);
+  check(fleetDriver(w, 1) === own, "its owner at its wheel by default");
+  const screen = newRunScreen(w, UI({ mode: "hardcore", fleet: ui.fleet }));
+  check(!/Vehicle 2/.test(screen) && screen.includes(fleetName(w, 1).replace(/'/g, "&#39;")) || screen.includes(fleetName(w, 1)), "the screen shows its name, not 'Vehicle 2'");
+  check(/<option value="" selected>As rolled: /.test((screen.match(/data-action="fleet-kind" data-i="1"[\s\S]*?<\/select>/) || [""])[0]), "its kind select offers As rolled (its rolled kind)");
+  const kinds = new Set();
+  for (let r = 1; r <= 30; r++) kinds.add(fleetVehicle(HC([{ type: null }, { type: null, roll: r * 7919 }], { startPeople: 3 }), 1).type);
+  check(kinds.size >= 2, `rolled by its owner's background: more than one kind over rerolls (${[...kinds].join(", ")})`);
+  const card = w.cards.find((c) => c.intro);
+  check(!!card && w.hardcore.start.grabbed.every((l) => card.text.includes(l)) && card.text.includes(`${own.name.split(" ")[0]} followed in their`), "the opening card is the account as set: the added vehicle's owner follows in it");
+  const ui2 = UI({ mode: "hardcore", fleet: ui.fleet.map((f) => ({ ...f })) });
+  check(SG_CHANGE["fleet-kind"](w, ui2, { value: "van", dataset: { i: "1" } }) === "fleet" && ui2.fleet[1].type === "van", "a kind picked");
+  const w2 = HC(ui2.fleet, { startPeople: 3 });
+  check(fleetVehicle(w2, 1).type === "van" && w2.cards.find((c) => c.intro).text.includes("work van") && w2.survivors.find((s) => s.id === w2.fleet[1].ownerId).name === own.name, "the world again: the card says the van, the same owner");
+  check(SG_CHANGE["fleet-kind"](w2, ui2, { value: "", dataset: { i: "1" } }) === "fleet" && ui2.fleet[1].type === null, "As rolled again");
 }
 
 console.log(`\n${passes} passed, ${fails} failed`);
