@@ -407,6 +407,98 @@ function f_aislesign(p) { // an aisle marker: a blue sign with a white number on
   V(p, 7, 7, 14, "#c9ced3"); V(p, 8, 7, 14, "#9aa1a8"); oval(p, 4, 14, 11, 15, "#7d858c");
 }
 
+// ---------- restaurants by kind of food (issue #33) ----------
+function f_flattop(p) { // a flat-top grill: a black steel plate with a grease trough, knobs along a steel front, short legs
+  R(p, 0, 5, 15, 6, "#26272a"); H(p, 0, 15, 4, "#b8bec4"); box(p, 1, 7, 14, 13, STEEL); for (const x of [3, 6, 9, 12]) p.set(x, 9, "#26272a"); legs(p, 2, 13, 14, 15, STEELD);
+}
+function f_deckoven(p) { // a deck oven: two stacked steel decks with dark glass doors and chrome handles, on a stand
+  box(p, 1, 0, 14, 12, STEEL); R(p, 3, 1, 12, 4, "#2a3a44"); R(p, 3, 7, 12, 10, "#2a3a44"); H(p, 3, 12, 5, "#c9ced3"); H(p, 3, 12, 11, "#c9ced3"); legs(p, 2, 13, 13, 15, STEELD);
+}
+function f_conveyoroven(p) { // a conveyor pizza oven: a steel tunnel, the wire belt running out of both ends, a pizza on it
+  box(p, 3, 3, 12, 10, STEEL); R(p, 0, 8, 15, 8, "#c9ced3"); H(p, 0, 15, 9, "#5e666d"); disc(p, 1, 7, 1, "#d9a03a"); R(p, 4, 5, 11, 7, "#26272a"); legs(p, 4, 11, 11, 15, STEELD);
+}
+function f_wokrange(p) { // a wok range: a steel cabinet with two big burner rings and a black wok on one
+  box(p, 1, 7, 14, 15, STEEL); R(p, 0, 5, 15, 6, "#5e666d"); ring(p, 4, 5, 2, "#26272a"); oval(p, 8, 1, 14, 5, "#26272a"); H(p, 9, 13, 2, "#4a4c50"); line(p, 14, 3, 15, 1, "#5f3c20"); H(p, 2, 13, 11, "#5e666d");
+}
+function f_smoker(p) { // an offset smoker: a black barrel on legs, the firebox at one end, the chimney
+  oval(p, 1, 5, 11, 11, "#2a2a2e"); H(p, 2, 10, 8, "#3a3a3e"); box(p, 11, 7, 15, 11, "#26272a"); V(p, 2, 0, 5, "#26272a"); V(p, 3, 0, 5, "#3a3a3e"); legs(p, 2, 10, 12, 15, "#26272a"); p.set(6, 7, "#c9ced3");
+}
+function f_chargrill(p) { // a char grill: bars over glowing coals on a steel body
+  R(p, 0, 4, 15, 6, "#e07a20"); for (const x of [1, 3, 5, 7, 9, 11, 13, 15]) V(p, x, 4, 6, "#26272a"); box(p, 1, 7, 14, 13, STEEL); legs(p, 2, 13, 14, 15, STEELD);
+}
+function f_gyrospit(p) { // a gyro spit: a cone of browned meat on a vertical skewer before a glowing element
+  R(p, 11, 1, 13, 12, "#e0a030"); V(p, 7, 0, 14, "#c9ced3"); for (let y = 2; y <= 11; y++) H(p, 7 - Math.max(1, 4 - Math.floor(y / 3)), 7 + Math.max(1, 4 - Math.floor(y / 3)) - 1, y, y % 2 ? "#8a4a22" : "#a05a2a");
+  box(p, 3, 13, 13, 15, STEEL);
+}
+function f_stockpot(p) { // a stockpot burner: a low steel stand with a ring, a tall pot on it, its lid
+  box(p, 2, 3, 13, 11, "#c9ced3"); H(p, 1, 14, 2, "#9aa1a8"); V(p, 2, 4, 10, "#eef0f2"); H(p, 0, 1, 5, "#9aa1a8"); H(p, 14, 15, 5, "#9aa1a8"); box(p, 1, 12, 14, 15, STEELD);
+}
+function f_steamtable(p) { // a steam table: a steel counter with wells of food under a sneeze guard
+  H(p, 0, 15, 2, "#9ed0e0"); V(p, 1, 2, 5, "#c9ced3"); V(p, 14, 2, 5, "#c9ced3"); R(p, 0, 6, 15, 7, "#9aa1a8");
+  R(p, 1, 5, 4, 6, "#d9a03a"); R(p, 6, 5, 9, 6, "#5fa04a"); R(p, 11, 5, 14, 6, "#b8402a"); box(p, 1, 8, 14, 15, STEEL);
+}
+function f_espresso(p) { // an espresso machine: a chrome box, two group heads, a steam wand, cups on top
+  box(p, 1, 3, 14, 13, "#c9ced3"); R(p, 2, 4, 13, 6, "#26272a"); for (const x of [4, 10]) { R(p, x, 7, x + 1, 9, "#26272a"); p.set(x, 11, "#eef0f2"); } line(p, 13, 7, 15, 11, "#9aa1a8");
+  for (const x of [3, 6, 9]) R(p, x, 1, x + 1, 2, "#eef0f2"); H(p, 1, 14, 14, "#5e666d");
+}
+function f_softserve(p) { // a soft-serve machine: a tall steel box, two hoppers on top, the handles and the cone in the drip tray
+  box(p, 2, 3, 13, 15, STEEL); R(p, 3, 0, 6, 2, "#eef0f2"); R(p, 9, 0, 12, 2, "#eef0f2"); R(p, 4, 7, 11, 8, "#5e666d"); V(p, 5, 6, 8, "#c8402f"); V(p, 10, 6, 8, "#c8402f");
+  line(p, 7, 12, 8, 10, "#d49a5a"); disc(p, 8, 9, 1, "#f2ead8"); H(p, 3, 12, 13, "#5e666d");
+}
+function f_slicer(p) { // a meat slicer: a round steel blade over its carriage, a white base
+  box(p, 1, 11, 14, 15, "#e4e6e8"); disc(p, 7, 7, 5, "#c9ced3"); ring(p, 7, 7, 5, "#8a949c"); disc(p, 7, 7, 1, "#5e666d"); R(p, 11, 8, 14, 10, "#9aa1a8");
+}
+function f_tortillapress(p) { // a cast-iron tortilla press: two black plates, the lever arm, a pale tortilla between
+  oval(p, 2, 9, 13, 13, "#26272a"); H(p, 3, 12, 8, "#f0e0b0"); oval(p, 2, 5, 13, 8, "#3a3a3e"); line(p, 13, 6, 15, 1, "#26272a"); box(p, 3, 14, 12, 15, "#26272a");
+}
+function f_extinguisher(p) { // a fire extinguisher: a red cylinder, the black valve and handle, the hose round its side
+  box(p, 5, 4, 10, 15, "#c0281e"); H(p, 5, 10, 4, "#d8382e"); R(p, 6, 1, 9, 3, "#26272a"); line(p, 9, 1, 12, 0, "#26272a"); line(p, 10, 3, 12, 8, "#26272a"); R(p, 6, 8, 9, 10, "#eef0f2");
+}
+function f_saladbar(p) { // a salad bar: a sneeze-guard roof, bowls of greens and vegetables on ice, a steel base
+  H(p, 0, 15, 1, "#9ed0e0"); H(p, 0, 15, 2, "#c9ced3"); V(p, 1, 2, 6, "#c9ced3"); V(p, 14, 2, 6, "#c9ced3");
+  R(p, 1, 6, 15, 7, "#eef6fa"); for (const [x, c] of [[2, "#4f8a3a"], [5, "#c8402f"], [8, "#e8a020"], [11, "#5fa04a"]]) R(p, x, 5, x + 2, 6, c); box(p, 1, 8, 14, 15, STEEL);
+}
+function f_menuboard(p) { // a menu board: a black panel of white lines and lit pictures on a steel post
+  box(p, 0, 0, 15, 9, "#26272a"); for (const y of [2, 4, 6]) H(p, 2, 8, y, "#eef0f2"); R(p, 10, 2, 13, 4, "#e0a030"); R(p, 10, 6, 13, 7, "#c8402f"); V(p, 7, 10, 15, STEEL); V(p, 8, 10, 15, STEELD);
+}
+function f_patiotable(p) { // a patio table under its striped umbrella
+  for (let x = 0; x <= 15; x++) for (let y = 1; y <= 4; y++) if (Math.abs(x - 7.5) <= 2 + y * 2) p.set(x, y, Math.floor(x / 3) % 2 ? "#c8402f" : "#eef0f2");
+  V(p, 7, 5, 14, "#c9ced3"); H(p, 2, 13, 10, "#eef0f2"); legs(p, 3, 12, 11, 15, "#9aa1a8");
+}
+function f_hoststand(p) { // a host stand: a dark wooden lectern, a lamp, the reservation book open on it
+  line(p, 2, 3, 13, 1, WOODL); box(p, 4, 4, 11, 15, WOODD); R(p, 4, 2, 11, 3, "#efece2"); H(p, 5, 10, 8, WOOD); p.set(13, 0, "#e0a030");
+}
+function f_clothtable(p) { // a white-cloth table: the cloth hanging to the floor, a candle and two glasses
+  R(p, 1, 5, 14, 6, "#eeeae0"); box(p, 2, 7, 13, 15, "#e2ddcc"); H(p, 2, 13, 11, "#cfc8b4"); V(p, 7, 2, 4, "#f2ead8"); p.set(7, 1, "#e0a030"); p.set(3, 4, "#9ed0e0"); p.set(12, 4, "#9ed0e0");
+}
+function f_kbbqtable(p) { // a Korean barbecue table: a wooden top with a round gas grill in the middle, its extractor hose above
+  R(p, 0, 7, 15, 8, WOODL); oval(p, 5, 6, 10, 8, "#26272a"); H(p, 6, 9, 7, "#e07a20"); V(p, 7, 0, 5, "#c9ced3"); V(p, 8, 0, 5, "#9aa1a8"); legs(p, 1, 14, 9, 15, WOODD);
+}
+function f_beertower(p) { // a beer tap tower: a chrome T on a drip tray, three coloured tap handles
+  H(p, 2, 13, 5, "#c9ced3"); H(p, 2, 13, 6, "#9aa1a8"); for (const [x, c] of [[3, "#d9b13b"], [7, "#3f6b3a"], [11, "#c8402f"]]) R(p, x, 0, x + 1, 4, c);
+  V(p, 7, 7, 13, "#c9ced3"); R(p, 2, 14, 13, 15, "#5e666d");
+}
+function f_lobstertank(p) { // a lobster tank: blue water behind glass, two red lobsters, bubbles, a wooden base
+  box(p, 0, 1, 15, 10, "#4f8aa8"); H(p, 0, 15, 1, "#2a3a44"); R(p, 2, 7, 5, 8, "#b8402a"); R(p, 9, 5, 12, 6, "#c8502a"); p.set(1, 6, "#b8402a"); p.set(13, 4, "#c8502a");
+  for (const [x, y] of [[7, 3], [8, 5], [6, 2]]) p.set(x, y, "#bcdbe6"); box(p, 0, 11, 15, 15, WOODD);
+}
+function f_pastrycase(p) { // a pastry case: curved glass over shelves of cakes and croissants, a wooden base
+  line(p, 0, 7, 3, 1, "#bcdbe6"); R(p, 3, 1, 15, 8, "#bcdbe6"); H(p, 3, 15, 4, "#eef0f2");
+  for (const [x, y, c] of [[4, 2, "#d49a5a"], [7, 2, "#e88aa0"], [11, 2, "#5a3424"], [5, 6, "#f0d080"], [9, 6, "#d49a5a"], [13, 6, "#c8402f"]]) R(p, x, y, x + 1, y + 1, c);
+  box(p, 0, 9, 15, 15, WOODD);
+}
+function f_dipcabinet(p) { // a dipping cabinet: a low white freezer, tubs of ice cream under its sloped glass
+  line(p, 0, 7, 3, 3, "#bcdbe6"); R(p, 3, 3, 15, 7, "#bcdbe6");
+  for (const [x, c] of [[3, "#f2ead8"], [6, "#e88aa0"], [9, "#5a3424"], [12, "#9cc46e"]]) R(p, x, 5, x + 2, 7, c); box(p, 0, 8, 15, 15, "#e4e6e8"); H(p, 1, 14, 11, "#9aa1a8");
+}
+function f_winerack(p) { // a wine rack: a wooden lattice of bottle ends, dark red and green
+  box(p, 1, 0, 14, 15, WOODD); for (let y = 2; y <= 13; y += 3) for (let x = 3; x <= 12; x += 3) disc(p, x, y, 1, (x + y) % 2 ? "#5a1418" : "#2a4a2a");
+}
+function f_dryshelf(p) { // dry-goods shelving: steel shelves of flour sacks, rice bags and big tins
+  legs(p, 1, 14, 0, 15, STEELD); for (const y of [5, 10, 15]) H(p, 1, 14, y, STEEL);
+  R(p, 2, 1, 6, 4, "#e2ddcc"); R(p, 8, 2, 12, 4, "#b8a27a"); R(p, 2, 7, 4, 9, "#9aa0a6"); R(p, 6, 7, 8, 9, "#9aa0a6"); R(p, 10, 6, 13, 9, "#e2ddcc"); R(p, 3, 12, 12, 14, "#c9b48a");
+}
+
 // ---------- bunkers (issue #26) ----------
 function f_hazmatrack(p) { // a steel rail on legs with two yellow hazmat suits hanging, their dark visors
   H(p, 1, 14, 1, STEEL); legs(p, 1, 14, 1, 15, STEELD);
@@ -509,6 +601,8 @@ function f_liquorcab(p) { // a liquor cabinet: dark wood, glass doors with bottl
 }
 
 export const GEAR_ART = {
+  f_flattop, f_deckoven, f_conveyoroven, f_wokrange, f_smoker, f_chargrill, f_gyrospit, f_stockpot, f_steamtable, f_espresso, f_softserve, f_slicer, f_tortillapress,
+  f_extinguisher, f_saladbar, f_menuboard, f_patiotable, f_hoststand, f_clothtable, f_kbbqtable, f_beertower, f_lobstertank, f_pastrycase, f_dipcabinet, f_winerack, f_dryshelf,
   f_freezercase, f_islandfreezer, f_meatcase, f_freezershelf, f_producebin, f_breadrack, f_selfcheckout, f_aislesign,
   f_hazmatrack, f_rationshelf, f_handfilter, f_screens, f_maptable, f_radioconsole, f_footlocker, f_batteries,
   f_freezercase, f_islandfreezer, f_meatcase, f_freezershelf, f_producebin, f_breadrack, f_selfcheckout, f_aislesign,
