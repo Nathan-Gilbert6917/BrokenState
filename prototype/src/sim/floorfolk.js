@@ -12,6 +12,8 @@
 //   raiders holed up   - the place's raiders (citycrawl.js RAIDERS) hold an upper-floor room in offices, apartments and
 //                        police stations, one of them a watcher on the floor below by the stairwell (he stands his post),
 //                        their stash (a crate with their kit, ammunition and food) in the room. Deeper blocks arm them better.
+//                        Their barricades are up (issue #21): the room's windows boarded, half cover dragged up beside its
+//                        doors (boardWindows, pileAgainst); the survivors pile furniture beside their barred door too.
 //   nests              - from block NEST.from in a building of NEST.storeys or more: a cluster of the special dead around
 //                        a knot of hive flesh on the top floor, keeping still (u.nesting: combat.js patrol) until noise
 //                        (alertNear through the floors), Heat NEST.heat or the sight of you wakes them. The top floor's
@@ -29,6 +31,8 @@ import { say, setFloor, enemyUnit, KITS, WEAPONS, active, activeAny, canSee, fir
 import { BMAP, placeOccupantGroups, runSteps, runLandings, runTop, stairWaits } from "./buildingmaps.js";
 import { FURNITURE } from "./barricade.js"; // a piece shoved onto a stair run's top landing gets its hit points (call-time only)
 import { tidyDecor } from "./decor.js"; // the survivors' room swept
+import { setPiece, boardCell } from "./barricade.js"; // their barricades: furniture dragged up, windows boarded (issue #21)
+import { scenePieces } from "./interiorscenes.js"; // the pieces a room's people shove into place
 import { newNeutralGroup, talkChance, groupById } from "./wanderers.js";
 import { applyZType } from "./zombietypes.js";
 import { lootItem } from "./inventory.js";
@@ -51,6 +55,7 @@ export const FOLK = {
     // Asking them to join: base + perLead × the team's best Leadership + their mood + talked (after a good talk), at most max.
     join: { base: 0.2, perLead: 0.03, talked: 0.2, refused: -0.1, max: 0.9, mood: { desperate: 0.15, friendly: 0.1, wary: 0 } },
     gift: { food: [2, 4], water: [2, 4] }, // what a good talk brings out through the barricade (not from the desperate)
+    prefer: { hospital: ["ward", "icu"] }, // the rooms they hold first, by the building's kind (a hospital's wards: #14)
   },
   RAIDERS: {
     types: ["offices", "apartments", "police"],
@@ -66,6 +71,9 @@ export const FOLK = {
     heat: 55,                                        // Heat at which the nest stirs on its own
   },
   LOOK: { base: 0.55, perScout: 0.07, max: 0.95, hours: 1 }, // Look around: each place's upper floors read with base + perScout × best Scouting
+  // Their barricades (issue #21: pileAgainst, boardWindows): the survivors' furniture beside their barred door, the
+  // raiders' half cover beside their room's doors and its windows boarded.
+  BARRICADE: { survivors: 2, raiders: 2, raiderBoards: 3 },
 };
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -186,7 +194,7 @@ export function placeFolk(state, b, place, n, deps = {}) {
   const folk = place.folk || {};
   R.folk = { survivors: null, raiders: null, nest: null, place: place.id, block: n };
   if (folk.nest) R.folk.nest = makeNest(state, b, n, deps.kind);
-  if (folk.survivors) R.folk.survivors = barricadeSurvivors(state, b);
+  if (folk.survivors) R.folk.survivors = barricadeSurvivors(state, b, place.key);
   R.folk.raiders = holeUpRaiders(state, b, n, !!folk.raidersUp);
   // A stash put down on the nest's floor after it (squatters holding a room up there) is as rich as the rest of it.
   if (R.folk.nest) for (const box of R.containers) if ((box.f || 0) === R.folk.nest.f && box.kind !== "body" && !box.rich) box.rich = FOLK.NEST.rich;
@@ -239,7 +247,7 @@ export function wakeNest(b, why) {
 }
 
 // Survivors barricaded in an upper-floor room with one door (not the nest's floor).
-function barricadeSurvivors(state, b) {
+function barricadeSurvivors(state, b, key = null) {
   const rng = state.rng, R = b.raid, S = FOLK.SURVIVORS;
   const nestF = R.folk.nest ? R.folk.nest.f : -1;
   const cand = [];
@@ -249,8 +257,10 @@ function barricadeSurvivors(state, b) {
   }
   // A room a scene left barricaded with nobody dead inside first (interiorscenes.js: area.scene.alive), then an empty
   // room, then the higher one (people fled upward).
+  // In a hospital a ward (or the ICU) before any other room (issue #14: the survivors live on a ward floor).
   const held = (r) => (r.scene && r.scene.alive ? 1 : 0);
-  cand.sort((a, c) => held(c) - held(a) || unitsIn(b, a).length - unitsIn(b, c).length || (c.f || 0) - (a.f || 0));
+  const kind = S.prefer[key || ""] || null, liked = (r) => (kind && kind.includes(r.role) ? 1 : 0);
+  cand.sort((a, c) => held(c) - held(a) || liked(c) - liked(a) || unitsIn(b, a).length - unitsIn(b, c).length || (c.f || 0) - (a.f || 0));
   const room = cand[0];
   if (!room) return null;
   const f = room.f || 0;
@@ -270,19 +280,23 @@ function barricadeSurvivors(state, b) {
   placeOccupantGroups(state, b, [grp]);
   const units = b.units.filter((u) => !before.has(u));
   for (const u of units) u.folk = "survivors";
-  // Inside their room: placeOccupantGroups seats people on cells reached from the stairs, and a room a scene already
-  // boarded shut (area.scene.alive, held first above) is not, so whoever it put elsewhere comes in (in cell order).
-  const inside = freeCells(b, room);
-  for (const u of units) if (!inRoom(room, u.x, u.y) || (u.f || 0) !== f) { const c = inside.shift(); if (c) { u.x = c[0]; u.y = c[1]; u.f = f; u.away = f !== (b.floor || 0); u.home = c.slice(); u.wp = null; } }
+  // A room a scene left boarded up from inside is cut off from the reach placeOccupantGroups places by: anyone it put
+  // outside goes in onto a free cell of the room (issue #21: the crawl's survivors prefer just such a room).
+  for (const u of units) {
+    if ((u.f || 0) === f && inRoom(room, u.x, u.y)) continue;
+    const c = rng.pick(freeCells(b, room));
+    if (c) { u.x = c[0]; u.y = c[1]; u.f = f; u.away = f !== (b.floor || 0); u.home = c.slice(); }
+  }
   // The door, barricaded from inside: furniture piled against it. Their room's containers are theirs (the bot leaves them).
   const cells = cellsOf(b, f);
   const doors = room.doors.map((d) => d.slice());
   for (const [x, y] of doors) { const c = cells[I(b, x, y)]; c.k = "door"; c.hp = c.mhp = BMAP.DOOR[S.door]; c.barred = true; delete c.roll; delete c.under; delete c.boards; delete c.frame; delete c.moved; } // a scene's boards or piece in the frame: their barricade now
   for (const box of R.containers) if ((box.f || 0) === f && box.area === room.id) { box.barred = true; box.botSkip = true; }
   tidyDecor(cells, b.w, room); // they keep their room swept (decor.js: the trash, clothes and papers gone)
+  const piled = pileAgainst(state, b, room, { n: FOLK.BARRICADE.survivors, half: false }); // issue #21: furniture dragged up beside the door too, not only the bar
   clearLos(b, f);
   const landing = landingPiece(state, b, f, "survivors"); // and the stairs onto their floor slowed with a piece of furniture
-  return { room: room.id, f, doors, landing, wid: g.wid, mood: g.mood, names: g.people.map((s) => s.name), count: units.length, met: false, state: "holding" };
+  return { room: room.id, f, doors, landing, wid: g.wid, mood: g.mood, names: g.people.map((s) => s.name), count: units.length, met: false, state: "holding", pieces: piled };
 }
 
 // The raiders: better armed deeper in; upstairs (offices, apartments, police) with a watcher by the stairs below; their stash.
@@ -339,8 +353,45 @@ function holeUpRaiders(state, b, n, up) {
   const lead = raiders[0];
   const stashRoom = room || roomAt(b, lead.f || 0, lead.home ? lead.home[0] : lead.x, lead.home ? lead.home[1] : lead.y) || roomAt(b, lead.f || 0, lead.x, lead.y);
   if (!room && stashRoom) stash = makeStash(state, b, stashRoom, n);
+  // Their barricades up on the floor they hold (issue #21): the room's windows boarded (barricade.js boardCell) and half
+  // cover dragged up beside its doors to fire from (setPiece, as a shove leaves it).
+  const fort = stashRoom ? { boards: boardWindows(b, stashRoom, FOLK.BARRICADE.raiderBoards), pieces: pileAgainst(state, b, stashRoom, { n: FOLK.BARRICADE.raiders, half: true }) } : null;
   squattersUp(state, b, n, stashRoom);
-  return { room: stashRoom ? stashRoom.id : null, f: stashRoom ? stashRoom.f || 0 : 0, up: !!room, watcher, landing, stash: stash ? stash.id : null, count: raiders.length };
+  return { room: stashRoom ? stashRoom.id : null, f: stashRoom ? stashRoom.f || 0 : 0, up: !!room, watcher, landing, stash: stash ? stash.id : null, count: raiders.length, fort };
+}
+// Furniture dragged up beside a room's doors from inside (issue #21; the survivors' barricade, the raiders' firing
+// positions): up to n pieces (interiorscenes.js scenePieces: the room's own kinds; half: half cover only) on the open
+// cells inside the room diagonally next to a door, never the cell straight through it (the way in stays a way in),
+// nobody and no container on them; never in a room less than 2 cells across inside. Returns how many.
+function pileAgainst(state, b, room, o) {
+  if (!room || !room.doors || room.w - 2 < 2 || room.h - 2 < 2) return 0;
+  const f = room.f || 0, cells = cellsOf(b, f);
+  const boxAt = new Set(b.raid.containers.filter((x) => (x.f || 0) === f).map((x) => `${x.x},${x.y}`));
+  const spots = [];
+  for (const [ex, ey] of room.doors) for (const [dx, dy] of DIRS8) {
+    const x = ex + dx, y = ey + dy;
+    if (!dx || !dy || !inRoom(room, x, y) || spots.some(([sx, sy]) => sx === x && sy === y)) continue;
+    if (cells[I(b, x, y)].k !== "open" || takenAt(b, f, x, y) || boxAt.has(`${x},${y}`)) continue;
+    spots.push([x, y]);
+  }
+  const kinds = scenePieces(room, state.rng, Math.min(o.n, spots.length), { half: !!o.half });
+  kinds.forEach((k, i) => setPiece(cells[I(b, spots[i][0], spots[i][1])], k));
+  if (kinds.length) clearLos(b, f);
+  return kinds.length;
+}
+// The outer windows of a room boarded up (barricade.js boardCell: one layer each), at most n. Returns how many.
+function boardWindows(b, room, n) {
+  const f = room.f || 0, cells = cellsOf(b, f);
+  let done = 0;
+  for (let y = room.y0; y < room.y0 + room.h && done < n; y++) for (let x = room.x0; x < room.x0 + room.w && done < n; x++) {
+    if (x > room.x0 && x < room.x0 + room.w - 1 && y > room.y0 && y < room.y0 + room.h - 1) continue; // its walls only
+    const c = cells[I(b, x, y)];
+    if (!c || c.k !== "window") continue;
+    boardCell(b, c, x, y);
+    done++;
+  }
+  if (done) clearLos(b, f);
+  return done;
 }
 // Armed squatters the wanderers brought in (buildingmaps.js placeOccupantGroups, u.occupant "hostile") who hold an
 // upper-floor room (wanderers.js interiorOccupants puts them there in offices, flats and police stations): a watcher

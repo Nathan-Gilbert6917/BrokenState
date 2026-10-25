@@ -6914,12 +6914,30 @@ export const BOX_LOOT = {
   engine:       { rest: 0, loot: { fuel: [0.5, 2, 6], parts: [0.3, 1, 2] }, gear: [["fireaxe", 0.5], ["prybar", 0.35], ["crowbar", 0.2], ["ladder", 0.3], ["sledge", 0.15], ["leatherjacket", 0.2], ["bikehelmet", 0.15], ["bandagekit", 0.2], ["flashlight", 0.2]] },
   ambulance:    { rest: 0, loot: { meds: [0.85, 2, 5], water: [0.4, 1, 3] }, gear: [["bandagekit", 0.25], ["surgkit", 0.08]] },
   policecar:    { rest: 0, loot: { ammo: [0.5, 5, 15], meds: [0.3, 1, 1] }, gear: [["shotgun", 0.15], ["flare", 0.4], ["bandagekit", 0.15], ["handradio", 0.2], ["baton", 0.08]] },
+  // The hospitals, clinics and vets room by room (issue #14, roomlayout.js MEDICAL_STYLES): the pharmacy's drug safe and
+  // the theatre's instrument cabinets the richest (a surgical kit for the medics), the ER's medicine cabinets and the
+  // supply room's shelves next, a ward's nightstands the poorest (a patient's things); the morgue's drawers a body's
+  // effects, a vending machine snacks and drinks; a hospital's ambulance the ambulance row above (#15's). kind@type:
+  // that kind in a room of that loot type only (a ward's nightstand is not a bedroom's; a vet's cabinet holds animal
+  // meds, half the dose).
+  drugsafe:            { rest: 0, loot: { meds: [0.95, 30, 60] }, gear: [["surgkit", 0.05]] },
+  instcab:             { rest: 0.3, loot: { meds: [0.9, 7, 14] }, gear: [["surgkit", 0.2], ["bandagekit", 0.12], ["knife", 0.04]] },
+  morguelocker:        { rest: 0, loot: { scrap: [0.15, 1, 2] }, gear: [["watch", 0.03], ["goldring", 0.05]] },
+  vending:             { rest: 0, loot: { food: [0.6, 1, 4], water: [0.6, 2, 5] }, gear: [] },
+  medcart:             { rest: 0, loot: { meds: [0.9, 5, 10], water: [0.15, 1, 2] }, gear: [["bandagekit", 0.1]] }, // a hospital's medication cart (ER, ICU, nurses' station)
+  "medcab@clinic":     { rest: 0, loot: { meds: [0.6, 1, 3], water: [0.1, 1, 1] }, gear: [["bandagekit", 0.08]] },
+  "medcab@pharmacy":   { rest: 0, loot: { meds: [0.95, 2, 4] }, gear: [["bandagekit", 0.06]] }, // a clinic's drug cupboard (locked)
+  "instcab@vet":       { rest: 0.3, loot: { meds: [0.5, 1, 2] }, gear: [["surgkit", 0.05], ["bandagekit", 0.06]] },
+  "rack@clinic":       { rest: 0.3, loot: { meds: [0.9, 5, 11] }, gear: [["bandagekit", 0.1]] }, // a supply room's shelving: bandages, gloves, masks, IV bags
+  "nightstand@clinic": { rest: 0.25, loot: { water: [0.3, 1, 1] }, gear: [["flashlight", 0.03], ["knife", 0.02]] },
+  "medcab@vet":        { rest: 0.5, loot: { meds: [0.75, 1, 4] }, gear: [["dewormer", 0.08]] },
+  "crate@vet":         { rest: 0, loot: { food: [0.75, 1, 4] }, gear: [] }, // the food store's sacks of feed: food, at a low worth
 };
 const boxDefs = new Map();
 // The table a container rolls: its room's (AREAS[type]), or its kind's (BOX_LOOT) with the room's rows at `rest` times
 // their chances (cold: a chest freezer in winter). The same object for the same three every time.
 export function boxLoot(type, kind, cold = false) {
-  const A = AREAS[type], K = A && BOX_LOOT[kind];
+  const A = AREAS[type], K = A && (BOX_LOOT[`${kind}@${type}`] || BOX_LOOT[kind]);
   if (!K) return A;
   const key = `${type}|${kind}|${cold ? 1 : 0}`;
   if (!boxDefs.has(key)) {
@@ -7612,6 +7630,26 @@ function truckCrewRises(state, b, u, box) {
 // A point of interest's container (R.poiDice, poicont.js) rolls its contents from dice of its own (boxRng: the seed,
 // the tile, the POI, the map, the container), with its salts and its locks' dice keyed by it too, so it holds the
 // same things on any visit; the place's kind is the POI's. Every other container rolls as before.
+// What a building's container holds by its table (a piece's own, BOX_LOOT, else its room's: boxLoot): the supplies
+// (the run's loot dial, parts by kind, a crawl's deeper blocks dearer by the kilo), the table's gear and a small find,
+// from the contents' dice drng in this order. searchBox rolls a container with it; the city crawl's quick search rolls
+// the same building's containers with it (citycrawl.js quickSearch, issue #21: the same totals as the laid-out map).
+// o: { def (boxLoot's), type (the room's AREAS type), rich, scav, reward, site, gunSite, deep, tileId, bid }. { sup, gear }.
+export function boxFinds(state, drng, o) {
+  const sup = {}, gear = [], def = o.def;
+  const src = areaSource(o.type, o.site); // itemcond.js: a house's things used, a shop's picked over, a wreck's scorched
+  for (const [k, [p, lo, hi]] of Object.entries(def.loot)) {
+    if (!drng.chance(Math.min(0.95, p * (0.6 + 0.4 * o.rich) * (1 + o.scav / 40)))) continue;
+    sup[k] = lootQty(state, k, Math.max(1, Math.round(drng.int(lo, hi) * (0.6 + 0.5 * o.rich) * (1 + o.scav / 25) * o.reward))); // worldcfg.js: the run's loot dial for this kind (0: none of it)
+    if (!sup[k]) delete sup[k];
+  }
+  splitParts(state, sup, o.type, `box${o.bid}`); // loot.js: parts by kind (a garage's are car parts; their own dice)
+  if (o.deep) deepShift(sup, o.deep); // deeploot.js: a city crawl's deeper blocks hold what is dear by the kilo
+  for (const [key, p] of def.gear) if (drng.chance(p * (0.5 + o.rich) * (1 + o.scav / 30) * o.reward * cfgOf(state, "lootGuns"))) gear.push(foundFill(lootItem(swapGun(areaSourceName(o.type, o.gunSite), key, drng), src, drng), o.tileId, o.bid, key)); // gundist.js: which gun, by the room's draws; gunrounds.js: a few rounds in a gun now and then (its own dice)
+  const small = rollAreaFind(drng, o.type, o.rich, o.scav, o.site); // loot.js: valuables, comforts, throwables
+  if (small) gear.push(small);
+  return { sup, gear };
+}
 export function searchBox(state, b, u, box, open = false, quick = false) {
   const rng = state.rng;
   const R = b.raid;
@@ -7638,17 +7676,17 @@ export function searchBox(state, b, u, box, open = false, quick = false) {
         say(b, `${u.name} gets acid on their hands from the burst sac (${eff}).`, "danger");
       }
     } else if (box.kind === "body") {
-      Object.assign(sup, bodyRounds(unitById(b, box.uid) || { weapon: box.weapon, kit: box.kit, id: box.uid }, rng.int(3, 10))); // ammo.js: their gun's calibre and load
+      if (!box.bare) Object.assign(sup, bodyRounds(unitById(b, box.uid) || { weapon: box.weapon, kit: box.kit, id: box.uid }, rng.int(3, 10))); // ammo.js: their gun's calibre and load (a patient: none)
       if (rng.chance(0.25)) sup.food = rng.int(1, 3);
       if (rng.chance(MEDS.BODY_HUMAN)) sup.meds = 1; // medfinds.js
       const kit = KITS[box.kit] || KITS.raiders;
-      if (box.full || rng.chance(0.3)) { // box.full: a scene's survivor (interiorscenes.js): their kit always on them
+      if (!box.bare && (box.full || rng.chance(0.3))) { // box.full: a scene's survivor (interiorscenes.js): their kit always on them; bare: a patient's (no kit, issue #14)
         const key = rng.chance(0.5) && GEAR[box.weapon] ? box.weapon : swapGun(bodyGunSource(box.kit), rng.pick(kit.loot), rng); // gundist.js: a spare gun of their kind
         const it = lootItem(key, kitSource(box.kit), spend(rng)); // itemcond.js: a soldier's rifle looked after, a raider's not
         if (key === box.weapon && box.uid != null) { carryMods(unitById(b, box.uid), it); enemyGunLoaded(unitById(b, box.uid), it); } // gunmods.js: their gun's attachments come with it; gunload.js: the rounds left in it
         gear.push(it);
       }
-      if (kit.finds && (box.full || rng.chance(BODY_FINDS))) gear.push(lootItem(rng.pick(kit.finds), kitSource(box.kit), rng)); // what was in their pockets
+      if (kit.finds && !box.bare && (box.full || rng.chance(BODY_FINDS))) gear.push(lootItem(rng.pick(kit.finds), kitSource(box.kit), rng)); // what was in their pockets
       gear.push(...carriedThrowables(box.uid != null ? unitById(b, box.uid) : null, kitSource(box.kit))); // inventory.js: a flashbang they never threw
       const bu = box.uid != null ? unitById(b, box.uid) : null;
       if (bu) { const L = launcherLoot(bu, kitSource(box.kit)); gear.push(...L.gear); for (const [k, n] of Object.entries(L.sup)) sup[k] = (sup[k] || 0) + n; blastLoot(b, bu, { gear, sup }); } // launchers.js: their launcher, its rounds; a blast's wear
@@ -7674,18 +7712,10 @@ export function searchBox(state, b, u, box, open = false, quick = false) {
     } else {
       const def = boxLoot(R.areas[box.area].type, box.kind, box.kind === "freezer" && Weather.season(state).key === "winter"); // a piece's own table (BOX_LOOT: a fridge, a nightstand...), else the room's
       const site = poiKind || (state.tiles[b.tileId] && state.tiles[b.tileId].loc ? state.tiles[b.tileId].loc.type : null);
-      const src = areaSource(R.areas[box.area].type, site); // itemcond.js: a house's things used, a shop's picked over, a wreck's scorched
       const gunSite = (b.setup && b.setup.raid && b.setup.raid.gunSite) || site; // gundist.js: the building a city crawl's map is (a police station, an Army checkpoint), else the site
-      for (const [k, [p, lo, hi]] of Object.entries(def.loot)) {
-        if (!drng.chance(Math.min(0.95, p * (0.6 + 0.4 * rich) * (1 + scav / 40)))) continue;
-        sup[k] = lootQty(state, k, Math.max(1, Math.round(drng.int(lo, hi) * (0.6 + 0.5 * rich) * (1 + scav / 25) * reward))); // worldcfg.js: the run's loot dial for this kind (0: none of it)
-        if (!sup[k]) delete sup[k];
-      }
-      splitParts(state, sup, R.areas[box.area].type, `box${bid}`); // loot.js: parts by kind (a garage's are car parts; their own dice)
-      if (R.deep) deepShift(sup, R.deep); // deeploot.js: a city crawl's deeper blocks hold what is dear by the kilo
-      for (const [key, p] of def.gear) if (drng.chance(p * (0.5 + rich) * (1 + scav / 30) * reward * cfgOf(state, "lootGuns"))) gear.push(foundFill(lootItem(swapGun(areaSourceName(R.areas[box.area].type, gunSite), key, drng), src, drng), b.tileId, bid, key)); // gundist.js: which gun, by the room's draws; gunrounds.js: a few rounds in a gun now and then (its own dice)
-      const small = rollAreaFind(drng, R.areas[box.area].type, rich, scav, site); // loot.js: valuables, comforts, throwables
-      if (small) gear.push(small);
+      const got = boxFinds(state, drng, { def, type: R.areas[box.area].type, rich, scav, reward, site, gunSite, deep: R.deep, tileId: b.tileId, bid });
+      Object.assign(sup, got.sup);
+      gear.push(...got.gear);
       // A book on the shelves (skills.js; its own dice, so nothing else in the raid changes).
       const book = rollBook(state, b.tileId, 0.5 * (u.scavBonus ? 2 : 1), `box${bid}`, pd ? { hour: pd, loot: R.richness / 1.3, kind: poiKind } : undefined);
       if (book) gear.push(book);
@@ -7733,7 +7763,7 @@ export function searchBox(state, b, u, box, open = false, quick = false) {
         alertNear(b, box.x, box.y, 12, "The alarm wakes everything nearby.");
       }
     }
-    if (box.kind === "body" && !box.zombie) gear.push(...unitMagItems(box.uid != null ? unitById(b, box.uid) : null, kitSource(box.kit))); // carrykit.js: their spare magazines
+    if (box.kind === "body" && !box.zombie && !box.bare) gear.push(...unitMagItems(box.uid != null ? unitById(b, box.uid) : null, kitSource(box.kit))); // carrykit.js: their spare magazines
     else if (box.kind !== "body") withMags(gear, box.truck ? "military" : areaSource(R.areas[box.area] ? R.areas[box.area].type : "house", null), "box", b.tileId, bid); // carrykit.js: a gun found keeps 0-2 spare magazines (own dice)
     lockedLoot(state, b, u, box, sup, gear); // locks.js: more in locked things, keys, blueprints (its own dice)
     const site = poiKind || (state.tiles[b.tileId] && state.tiles[b.tileId].loc ? state.tiles[b.tileId].loc.type : null);

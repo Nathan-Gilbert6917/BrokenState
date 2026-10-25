@@ -48,7 +48,7 @@ import { FRANCHISES } from "./data-shops.js"; // a franchise's layout (plan): th
 import { applyZType, siteList } from "./zombietypes.js";
 import { fitMargins, buildingTarget, densifyOutside, densify, coverTarget, buildingDeadScale, streetDeadScale, raidMaxDims, raidDims, SIZE_CLASSES } from "./battlesize.js";
 import { legacyRaids, legacyRooms } from "./worldcfg.js"; // an older save: a neighbourhood's street laid out as it always was; its buildings furnished as they were
-import { roomLayout, homeStyle, LAYOUT } from "./roomlayout.js"; // homes furnished room by room (the placement helpers)
+import { roomLayout, homeStyle, medicalStyle, LAYOUT } from "./roomlayout.js"; // homes furnished room by room (the placement helpers); hospitals, clinics and vets too (#14)
 import { commercialStyle, styleName as shopStyleName } from "./shoplayout.js"; // shops, restaurants, bars, offices, motels, banks and big stores laid out for their kind (issue #16)
 import { civicStyle } from "./civiclayout.js"; // police stations, fire stations, schools and churches laid out for their kind (issue #15)
 import { decorate, flipDecoY, placeDecorPieces } from "./decor.js"; // rugs, clutter, wall art, wall colours, light fixtures (cosmetic)
@@ -198,6 +198,15 @@ export const ROLES = {
   apt:         role("Apartment", "house", "apartment", { fl: "hardwood", maxBoxes: 3 }),
   dayroom:     role("Day room", "house", "living", { hub: true, fl: "hardwood" }),
   stairwell:   role("Stairwell", null, "none", { fl: "conc" }), // a stair run's own room (flats, offices: spec.stairs), one door a floor
+  // The hospitals, clinics and vets room by room (issue #14: roomlayout.js MEDICAL_STYLES; new saves only).
+  er:          role("Emergency", "clinic", "exam", { fl: "lino", maxBoxes: 4 }),
+  icu:         role("ICU", "clinic", "beds", { fl: "lino", maxBoxes: 2 }),
+  theatre:     role("Operating theatre", "clinic", "exam", { fl: "tile", windows: false, maxBoxes: 3 }),
+  morgue:      role("Morgue", "clinic", "shelves", { fl: "tile", windows: false, maxBoxes: 4 }),
+  ambbay:      role("Ambulance bay", "clinic", "bays", { fl: "conc", maxBoxes: 2 }),
+  nursestation: role("Nurses' station", "clinic", "office", { fl: "lino", maxBoxes: 3 }),
+  laundry:     role("Laundry", null, "none", { fl: "tile", windows: false }),
+  staffroom:   role("Staff room", "kitchen", "kitchen", { fl: "lino", maxBoxes: 2 }),
 };
 
 // ---------- the outside ----------
@@ -477,11 +486,15 @@ function institution(rng, v, o = {}) {
   const S = (bw, bh) => ({ bw, bh });
   switch (v) {
     case "clinic": case "infirmary": {
-      const bw = rng.int(16, 18), bh = rng.int(11, 13);
+      const bw = rng.int(16, 18), bh = rng.int(11, 13) + (o.legacy ? 0 : 2); // 2 deeper since #14: the back rooms take an exam bed
       const pl = planOf(v, o), n = clampN(rng.int(1, 3), ...(pl.storeys || [1, 3])); // exam rooms and offices above (a franchise's: plan.storeys)
+      // Since #14 (new saves): exam rooms either side of the waiting room and one behind, the drug cupboard, the staff
+      // kitchenette and a restroom; an older save (o.legacy) its office, pharmacy and storeroom as before.
+      const back = o.legacy ? [["*", "exam"], [rng.int(4, 5), { role: "pharmroom", lock: ["door", 0.6], boxLock: ["drugs", 0.5] }], [3, "storage"], [2, "restroom"]]
+        : [["*", "exam"], [3, { role: "pharmroom", name: "Drug cupboard", lock: ["door", 0.6], boxLock: ["drugs", 0.5] }], [3, { role: "staffroom", name: "Kitchenette" }], [2, "restroom"]];
       return {
         ...S(bw, bh), front: { width: 2 }, ground: v === "infirmary" ? "base" : "town", storeys: n, foot: "medium",
-        program: corridorPlan([[4, "exam"], ["*", L({ name: "Waiting room", type: "clinic" })], [4, "office"]], [["*", "exam"], [rng.int(4, 5), { role: "pharmroom", lock: ["door", 0.6], boxLock: ["drugs", 0.5] }], [3, "storage"], [2, "restroom"]], 4),
+        program: corridorPlan([[4, "exam"], ["*", L({ name: "Waiting room", type: "clinic" })], [4, o.legacy ? "office" : "exam"]], back, 4),
         upper: n > 1 ? () => corridorPlan([["*", "exam"], [4, "office"], ["*", "exam"]], [["*", "exam"], [3, { role: "storage", type: "clinic" }], [2, "restroom"]], 4) : null,
         exits: [{ side: "back", roles: ["storage", "exam"], chance: 0.8, lock: 0.3 }, ...fire(0.5).map((e) => ({ ...e, chance: 0.4 }))],
       };
@@ -489,6 +502,7 @@ function institution(rng, v, o = {}) {
     case "hospital": {
       const bw = rng.int(26, 30), bh = rng.int(17, 19);
       const n = rng.int(3, 5); // reception and the pharmacy low, wards above
+      if (!o.legacy) return hospital(rng, bw, bh, n, fire); // room by room since #14 (an older save: the plan below, as it was)
       return {
         ...S(bw, bh), front: { width: 2 }, ground: "city", storeys: n, foot: "large", stairs: ENDS,
         program: corridorPlan([["*", "ward"], [rng.int(6, 7), L({ name: "Reception", type: "clinic" })], [4, "office"], [4, "exam"], [4, "exam"]],
@@ -856,13 +870,46 @@ function library(rng, o = {}) {
   };
 }
 
+// A hospital room by room (issue #14, new saves; roomlayout.js MEDICAL_STYLES furnishes each room). The ground floor:
+// the emergency room, the waiting room, the pharmacy behind its steel door (always locked) and a restroom at the front;
+// the ambulance bay (its roller door the back exit), the morgue, the cafeteria and its kitchen behind. The first floor
+// up: a ward, the nurses' station, the operating theatre and the supply room; the ICU, a ward, the doctors' office and
+// a restroom. The floors between: wards round a nurses' station, a doctors' office and a supply room. The top floor:
+// the maternity ward, the staff room and the laundry. A 2-wide corridor down every floor.
+function hospital(rng, bw, bh, n, fire) {
+  const ward = (o = {}) => ({ role: "ward", ...o });
+  const doc = [4, { role: "office", name: "Doctors' office", type: "office" }];
+  const supply = (lock) => [4, { role: "storage", name: "Supply room", type: "clinic", ...(lock ? { lock: ["door", 0.3] } : {}) }]; // locked only on the first floor up, as before (a stairwell cell can stand in a higher floor's wall)
+  return {
+    bw, bh, front: { width: 2 }, ground: "city", storeys: n, foot: "large", stairs: ENDS, // one at each end of the corridor
+    program: corridorPlan([["*", { role: "er" }], [rng.int(6, 7), { role: "lobby", entry: true, name: "Waiting room", type: "clinic" }], [rng.int(4, 5), { role: "pharmroom", lock: ["vault", 1], boxLock: ["drugs", 0.3] }], [3, "restroom"]],
+      [[6, { role: "ambbay" }], [5, { role: "morgue", lock: ["door", 0.3] }], ["*", "cafeteria"], [5, "kitchen"]], 5, 2),
+    upper: (f, r, ctx) => (f === 1
+      ? corridorPlan([["*", ward()], [5, "nursestation"], [6, { role: "theatre", lock: ["door", 0.3] }], supply(true)], [["*", "icu"], ["*", ward()], doc, [3, "restroom"]], 5, 2)
+      : ctx && ctx.top
+        ? corridorPlan([["*", ward({ name: "Maternity ward", cots: true })], [5, "nursestation"], ["*", ward()]], [["*", ward()], [5, "staffroom"], [4, "laundry"], doc, [3, "restroom"]], 5, 2)
+        : corridorPlan([["*", ward()], [5, "nursestation"], ["*", ward()]], [["*", ward()], ["*", ward()], doc, supply(false), [3, "restroom"]], 5, 2)),
+    exits: [{ side: "back", roles: ["ambbay"], chance: 1, lock: 0.25, roller: true, width: 2, name: "Ambulance bay" }, ...fire(0.3).map((e) => ({ ...e, chance: 0.85 }))],
+  };
+}
+
 // A veterinary clinic (data-shops.js): the waiting room, exam rooms, the surgery and its drug cabinet, the kennels;
-// a country vet's has a large-animal barn at the back (plan.back "barn").
+// a country vet's has a large-animal barn at the back (plan.back "barn"). Since #14 (new saves): 3 cells wider and 2
+// deeper, the surgery an operating room (MEDICAL_STYLES theatre: the steel table), a food store (feed: BOX_LOOT
+// "crate@vet") in place of the ground floor's restroom, the kennels pens of bars (sometimes locked: dead pets shut in,
+// deadbeasts.js).
 function vet(rng, o = {}) {
   const plan = planOf("vet", o);
-  const bw = rng.int(15, 18) + (plan.wide ? 3 : 0), bh = rng.int(11, 13);
+  const bw = rng.int(15, 18) + (plan.wide ? 3 : 0) + (o.legacy ? 0 : 3), bh = rng.int(11, 13) + (o.legacy ? 0 : 2);
   const n = plan.storeys ? rng.int(plan.storeys[0], plan.storeys[1]) : 1;
   const barn = plan.back === "barn";
+  if (!o.legacy) return {
+    bw, bh, front: { width: 2 }, ground: barn ? "rural" : "town", storeys: n, foot: "medium",
+    program: corridorPlan([[4, { role: "exam", name: "Exam room", type: "vet" }], ["*", { role: "lobby", entry: true, name: "Waiting room", type: "vet" }], [4, { role: "exam", name: "Exam room", type: "vet" }]],
+      [["*", barn ? { role: "storage", name: "Large-animal stalls", type: "barn", fl: "dirt" } : { role: "cells", name: "Kennels", type: "vet", kennel: true, lock: ["door", 0.35] }], [4, { role: "theatre", name: "Surgery", type: "vet", lock: ["door", 0.3] }], [3, { role: "pharmroom", name: "Drug room", type: "vet", lock: ["door", 0.5], boxLock: ["drugs", 0.4] }], [3, { role: "storage", name: "Food store", type: "vet", food: true }]], 4),
+    upper: n > 1 ? () => corridorPlan([["*", "office"], [4, "breakroom"]], [["*", { role: "ward", name: "Recovery ward", type: "vet" }], [3, { role: "storage", type: "vet" }], [2, "restroom"]], 4) : null,
+    exits: [{ side: "back", roles: ["storage", "cells", "theatre"], chance: 0.8, lock: 0.3 }],
+  };
   return {
     bw, bh, front: { width: 2 }, ground: barn ? "rural" : "town", storeys: n, foot: "medium",
     program: corridorPlan([[4, { role: "exam", name: "Exam room", type: "vet" }], ["*", { role: "lobby", entry: true, name: "Waiting room", type: "vet" }], [4, { role: "exam", name: "Exam room", type: "vet" }]],
@@ -937,8 +984,8 @@ export const BUILDINGS = {
   supermarket: { name: "Supermarket", make: (r, o) => bigstore(r, "supermarket", o) },
   deptstore:   { name: "Department store", make: (r, o) => bigstore(r, "dept", o) },
   clinic:      { name: "Clinic", make: (r, o) => institution(r, "clinic", o) },
-  infirmary:   { name: "Infirmary", make: (r) => institution(r, "infirmary") },
-  hospital:    { name: "Hospital", make: (r) => institution(r, "hospital") },
+  infirmary:   { name: "Infirmary", make: (r, o) => institution(r, "infirmary", o) },
+  hospital:    { name: "Hospital", make: (r, o) => institution(r, "hospital", o) },
   police:      { name: "Police station", make: (r, o) => institution(r, "police", o) },
   school:      { name: "School", make: (r, o) => institution(r, "school", o) },
   offices:     { name: "Office building", make: (r, o) => institution(r, "offices", o) },
@@ -1053,7 +1100,7 @@ export function buildingOptions(tile, state = null) {
   return out;
 }
 
-// What a kind of building likely holds (from a sample plan, cached): { hint, size, rooms, holds: [AREAS types] }.
+// What a kind of building likely holds (from a sample plan, cached): { hint, size, rooms, holds: [AREAS types], sig: [{ name, n }] }.
 const hintCache = new Map();
 export function buildingHint(key) {
   let h = hintCache.get(key);
@@ -1067,7 +1114,16 @@ export function buildingHint(key) {
   const gear = types.some((t) => AREAS[t].gear.length);
   const cells = spec.bw * spec.bh;
   const named = [...new Set(plan.rooms.filter((r) => !r.outdoor && r.label !== false).map((r) => r.name.replace(/ \d+[AB]?$/, "")))].slice(0, 6);
-  h = { hint: `Likely: ${sup.join(", ")}${gear ? ", maybe gear" : ""}. Rooms: ${named.join(", ")}.`, size: cells < 140 ? "small" : cells < 300 ? "medium" : "large", rooms: plan.rooms.filter((r) => !r.outdoor).length, holds: [...new Set(types)] };
+  // The rooms by name (a flat's own rooms under its flat; numbers off) with how many the sample has, in plan order:
+  // the city crawl's hint line names the kind's signature rooms from them (citycrawl.js placeHint, issue #21).
+  const sig = [];
+  for (const r of plan.rooms) {
+    if (r.outdoor || r.label === false) continue;
+    const name = r.name.replace(/:.*$/, "").replace(/ \d+[A-Z]?$/, "");
+    const o = sig.find((x) => x.name === name);
+    if (o) o.n++; else sig.push({ name, n: 1 });
+  }
+  h = { hint: `Likely: ${sup.join(", ")}${gear ? ", maybe gear" : ""}. Rooms: ${named.join(", ")}.`, size: cells < 140 ? "small" : cells < 300 ? "medium" : "large", rooms: plan.rooms.filter((r) => !r.outdoor).length, holds: [...new Set(types)], sig };
   hintCache.set(key, h);
   return h;
 }
@@ -1091,7 +1147,7 @@ export function buildingMap(state, tileId, option, withVehicle) {
   spec.margins = fitMargins(spec.bw, spec.bh, { ...BMAP.MARGIN, ...(spec.margins || {}) }, buildingTarget(tile, !!(sb && sb.single), state));
   const map = assemble(rng, spec, { key: option.key, id: option.id, name: option.name, withVehicle, legacy: legacyRooms(state) });
   densifyOutside(map, rng, tile ? tile.terrain : "plains");
-  rollScenes(map, sceneRng(state, tileId, option), option.key); // interiorscenes.js: signs of survival (their own dice: the map is as it was)
+  rollScenes(map, sceneRng(state, tileId, option), option.key, option.scenes || null); // interiorscenes.js: signs of survival (their own dice: the map is as it was); option.scenes: a city crawl place's say (citycrawl.js placeOption)
   return map;
 }
 
@@ -1606,13 +1662,14 @@ export function assemble(rng, spec, opts = {}) {
       const r0 = rid[I(run[0].ix, run[0].iy)];
       if (r0 < 0 || !run.every((s) => rid[I(s.ix, s.iy)] === r0) || !ok(rooms[r0])) continue;
       if (run.some((s) => doorAt.has(I(s.x, s.y)))) continue;
-      if (!onStep && run.some((s) => stepAt[I(s.ix, s.iy)] || (inside(s.ox, s.oy) && stepAt[I(s.ox, s.oy)]))) continue; // a stair run's step is no door's approach
       const before = list[i - 1], after = list[i + width];
       if ((before && doorAt.has(I(before.x, before.y))) || (after && doorAt.has(I(after.x, after.y)))) continue;
       const room = rooms[r0];
       const mid = side === "front" || side === "back" ? room.ix0 + (room.iw - width) / 2 : room.iy0 + (room.ih - width) / 2;
       const p = side === "front" || side === "back" ? run[0].x : run[0].y;
-      cands.push({ run, room, score: Math.abs(p - mid) + rng.next() * 2.5 });
+      const score = Math.abs(p - mid) + rng.next() * 2.5; // (drawn first: the dice after it are as they were without the runs)
+      if (!onStep && run.some((s) => stepAt[I(s.ix, s.iy)] || (inside(s.ox, s.oy) && stepAt[I(s.ox, s.oy)]))) continue; // a stair run's step is no door's approach
+      cands.push({ run, room, score });
     }
     if (!cands.length) return null;
     cands.sort((a, b) => a.score - b.score);
@@ -1680,12 +1737,13 @@ export function assemble(rng, spec, opts = {}) {
     if (A.up !== B.up) w += (A.up ? B.hub : A.hub) ? 1 : 50;
     if (A.role === "stairwell" || B.role === "stairwell") w += A.hub || B.hub ? 0 : 3; // a stairwell opens onto the lobby, the landing or the corridor
     const free = p.cells.filter(([x, y]) => !nearStep(x, y)); // a door never opens onto a step
-    return { ...p, cells: free.length ? free : p.cells, blocked: !free.length, w };
+    return { ...p, cells: free.length ? free : p.cells, blocked: !free.length, all: p.cells.length, w };
   }).sort((a, b) => a.w - b.w);
   const inner = (e) => doors.some((d) => !d.ext && ((d.a === e.a && d.b === e.b) || (d.a === e.b && d.b === e.a)));
   function innerDoor(e) {
     const cs = e.cells.slice().sort((p, q) => p[0] - q[0] || p[1] - q[1]);
-    const mid = Math.floor(cs.length / 2) + (cs.length > 4 ? rng.int(-1, 1) : 0);
+    const jig = (e.all ?? cs.length) > 4 ? rng.int(-1, 1) : 0; // drawn by the whole wall's length: the dice after it are as they were without the runs
+    const mid = Math.floor(cs.length / 2) + (cs.length > 4 ? jig : 0);
     let pick = cs[Math.max(0, Math.min(cs.length - 1, mid))];
     // Not right next to another door.
     const near = (p) => doors.some((d) => Math.abs(d.x - p[0]) + Math.abs(d.y - p[1]) <= 1);
@@ -1876,7 +1934,7 @@ export function assemble(rng, spec, opts = {}) {
   }
   // Homes room by room (roomlayout.js): which bedroom is the master, which a child's, a great room with no kitchen on
   // its floor, a flat with no bedroom (a studio). An older save (opts.legacy) furnishes every room as it did.
-  const styleOf = (room) => (opts.legacy ? null : commercialStyle(room, opts.key) || homeStyle(room, opts.key) || civicStyle(room)); // shoplayout.js first (a motel's rooms, a shop's back rooms; a flat above stays a home), civiclayout.js a civic building's rooms (their leaf's civic mark)
+  const styleOf = (room) => (opts.legacy ? null : commercialStyle(room, opts.key) || homeStyle(room, opts.key) || medicalStyle(room, opts.key) || civicStyle(room)); // shoplayout.js first (a motel's rooms, a shop's back rooms; a flat above stays a home), a hospital's, a clinic's, a vet's rooms (#14), civiclayout.js a civic building's rooms (their leaf's civic mark)
   if (!opts.legacy) {
     for (const r of rooms) if (r.role === "bedroom" && styleOf(r) && r.iw * r.ih <= 4) Object.assign(r, { role: "storage", name: "Box room", furnish: "shelves" }); // too small for a bed and a wardrobe
     const beds = rooms.filter((r) => r.role === "bedroom" && styleOf(r)).sort((a, b) => b.iw * b.ih - a.iw * a.ih);
@@ -1945,7 +2003,7 @@ export function assemble(rng, spec, opts = {}) {
         passRect(rect);
         total -= rect.w * rect.h;
         if (!connected()) { removeCar(cells, W, rect); passRect(rect); total += rect.w * rect.h; return false; }
-        return true;
+        return rect;
       },
       // A vehicle of the room's (civiclayout.js: a fire engine, an ambulance, a police car): placeCar at (x, y) along o.ax,
       // o.len cells, drawn as o.body, never cutting anything off; o.box: a container of that kind over the whole of it
@@ -2062,7 +2120,7 @@ export function assemble(rng, spec, opts = {}) {
   // ---------- decor (decor.js) ----------
   // Rugs, clutter, wall art, wall colours and light fixtures: cosmetic, no cell's kind changes. Hash dice of the map's
   // seed as it stands (rng.state read, not consumed: the upper floors roll the same as before).
-  if (!opts.noDecor) decorate(cells, W, H, rooms, rid, { seed: rng.state, f, key: opts.id || opts.key }); // noDecor: the same map bare (tools/decortest.js)
+  if (!opts.noDecor) decorate(cells, W, H, rooms, rid, { seed: rng.state, f, key: opts.id || opts.key, ...(opts.legacy ? {} : { kind: opts.key }) }); // noDecor: the same map bare (tools/decortest.js)
 
   // ---------- the result ----------
   // Room ids run on across the floors (opts._idBase: the ids used so far), so areas[id] is the room with that id.
@@ -2073,6 +2131,7 @@ export function assemble(rng, spec, opts = {}) {
     hub: !!r.hub, locked: r.locked || null, up: !!r.up, entry: !!r.entry, noLabel: r.label === false,
   }));
   rooms.forEach((r, i) => { if (r.gunSafe) areas[i].gunSafe = r.gunSafe.slice(); }); // locks.js placeGunSafes: a gun safe may stand here
+  rooms.forEach((r, i) => { if (r.kennel) areas[i].kennel = true; }); // deadbeasts.js shutInPets: a vet's locked kennels hold dead pets
   if (!opts.legacy) rooms.forEach((r, i) => { if (r.flat) areas[i].flat = true; if (r.unit) areas[i].unit = r.unit; if (r.civic) areas[i].civic = r.civic; if (r.aisle != null) areas[i].aisle = r.aisle; const sn = shopStyleName(r, opts.key); if (sn) areas[i].shop = sn; }); // shoplayout.js: a room's style (its scenes' when); roomlayout.js: a shop's flat above, an apartment's rooms; civiclayout.js: a room's style, a nave's aisle
   for (const a of outdoor) areas.push({ ...a, id: idBase + a.id, f: 0 });
   for (const c of containers) c.area += idBase;
