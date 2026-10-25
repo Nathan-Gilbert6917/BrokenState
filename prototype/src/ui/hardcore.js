@@ -140,7 +140,8 @@ export function firstHubCard(state) {
   if (!v) return "";
   const d = v.p ? teamDays(state, v.p) : null;
   const spots = v.tile != null ? hubSites(state, v.tile, 4).slice(0, 3) : [];
-  const spotRows = spots.map((s) => `<div class="row small"><a class="link" data-action="center" data-tile="${s.id}"${tip("Center the map here")}>${esc(tileLabel(state, s.id))}</a><span class="muted">water: ${esc(waterText(state, s.id))} · ${s.sites} site${s.sites === 1 ? "" : "s"} around</span></div>`).join("");
+  // A name and its details side by side (a grid: the details wrap in their own column, not under the next spot's name).
+  const spotRows = `<div class="kv small spots" style="margin-top:0.15rem;row-gap:0.3rem">${spots.map((s) => `<a class="link" data-action="center" data-tile="${s.id}"${tip("Center the map here")}>${esc(tileLabel(state, s.id))}</a><span class="muted">water: ${esc(waterText(state, s.id))} · ${s.sites} site${s.sites === 1 ? "" : "s"} around</span>`).join("")}</div>`;
   const intro = `No base ${v.first ? "yet" : "left"}: your ${v.people || ""} survivors are on the road. Pick a good spot (beside a river or lake: there is no spring; sites around, few of the dead) and give a team the order <b>${ESTABLISH_LABEL}</b> carrying ${esc(needText(CAMP.fireCost))} for its camp fire (Cut wood and Gather stone on the way): a camp (the barest base: your people live there from the start); then pick its ${esc(BUILDINGS.camp_up.name.toLowerCase())} from the Build list and place it on the build map to build it up into a shelter: ${esc(needText(v.needs))} brought in, then ${BUILDINGS.camp_up.hours} work-hours by its builders (Camp → Shelter → Base).`;
   return `<div class="card attn">
     <div class="spread"><h2 style="margin:0">${v.title}</h2><span class="muted small">${v.first ? "Hardcore" : "On the road"}</span></div>

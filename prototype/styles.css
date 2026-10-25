@@ -202,6 +202,7 @@ body.fold-left #gut-left .gut-shut, body.fold-right #gut-right .gut-shut, body.f
 .tabs button { flex: 1; padding: 0.3rem 0.3rem; }
 .card { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 0.55rem 0.7rem; margin-bottom: 0.5rem; }
 .kv { display: grid; grid-template-columns: auto 1fr; gap: 0.15rem 0.8rem; }
+.kv.spots > a { white-space: nowrap; } /* the No base card's Good spots nearby (ui/hardcore.js firstHubCard): the name kept whole, its details wrap beside it */
 .kv div:nth-child(odd) { color: var(--muted); }
 .bar { height: 0.45rem; background: #2c3139; border-radius: 4px; overflow: hidden; }
 .bar > i { display: block; height: 100%; }
