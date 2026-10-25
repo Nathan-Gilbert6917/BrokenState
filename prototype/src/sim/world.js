@@ -99,7 +99,7 @@ import { riseOnMap, walkingDaily } from "./carriers.js"; // the worm: someone wh
 import { erasVictoryDaily, accordReady, containReady } from "./eras.js";
 import { outbreakDaily } from "./outbreak.js";
 import { hardcoreCreate, hardcoreAfterHives, hardcoreDaily, hardcoreHour, clampStartPeople, NORMAL_PEOPLE } from "./hardcore.js";
-import { countWord, normalStartBackgrounds, normalStartKit } from "./hardcore-start.js";
+import { countWord, normalStartBackgrounds, normalStartKit, rollHubFleet } from "./hardcore-start.js";
 import { campsHour } from "./staging.js";
 import { needsHour } from "./needs.js";
 import { wanderersDaily } from "./wanderers.js";
@@ -347,17 +347,15 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
   state.startPeople = people;
   const startBeds = baseBeds(hubBase);
   if (people > startBeds) hubBase.crowdNote = { hour: state.hour, over: people - startBeds };
-  // The starting vehicles at the hub (startfleet.js): a slot a survivor, each with its kind or empty; Start with a
-  // vehicle off: none.
+  // The starting vehicles at the hub (startfleet.js): a slot a survivor, each with its kind or empty; made once who they
+  // were is known (hardcore-start.js rollHubFleet, below). Start with a vehicle off: none.
   state.fleet = fitFleet(state.fleet, people, cust ? "custom" : "normal").map((f) => ({ ...f, vid: null }));
-  if (state.startVehicles) for (const f of state.fleet) if (!f.empty) f.vid = createVehicle(state, f.type, { kind: "base", baseId: hubBase.id }, { fuel: Math.min(START_FLEET.FUEL, VEHICLE_TYPES[f.type].tank), condition: START_FLEET.CONDITION }).id;
 
   createFactions(state, cust ? cust.groups : factionCount);
   recomputeOwnership(state);
 
   const endCrew = crewDice(state, crewRoll); // the crew's own dice, to loadUpAll below
   for (let i = 0; i < people; i++) state.survivors.push(makeSurvivor(state, i === 0 ? 1.3 : 1));
-  seatDrivers(state); // startfleet.js: one of them at each vehicle's wheel (the new-run screen's pick, else in order)
   // Starting gear: a few basics spread among the colonists (a seventh and eighth start with a knife and a machete; Custom
   // mode's ninth and on go round the list again).
   state.survivors.forEach((s, i) => (s.gear.weapon = newItem(START_WEAPONS[i % START_WEAPONS.length], 1, hash01(state.seed, "startdur", i), START_DUR))); // part-worn (inventory.js START_DUR)
@@ -377,6 +375,8 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
   normalStartBackgrounds(state, crew);
   if (crew) applyCrew(state, crew);
   normalStartKit(state, hubBase);
+  rollHubFleet(state, hubBase); // hardcore-start.js: the starting vehicles rolled by whose they are, their backs into the stores (2026-10-25)
+  seatDrivers(state); // startfleet.js: one of them at each vehicle's wheel (the new-run screen's pick, else its owner, else in order)
   normalStartGear(state, hubBase); // startgear.js: the gear picked on the new-run screen (what it replaces to the armory)
   assignStartingRoles(state);
   settleAll(state); // ammo.js: the hub's 80 rounds by the calibres of the guns it starts with

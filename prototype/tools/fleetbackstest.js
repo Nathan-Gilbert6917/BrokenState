@@ -90,7 +90,7 @@ section("4. The screen: 👁 Back and 🎲 Reroll");
   const plain = HC(FLEET), first = plain.fleet[1];
   check(!/\(\w+ driving\)/.test(newRunScreen(plain, UI({ mode: "hardcore" }))), "no leftover '(… driving)' text");
   const nm = createWorld({ seed: 7, factionCount: 5, startPeople: 4, fleet: [{ type: "truck" }, { type: "van" }] });
-  check(!/fleet-view|fleet-reroll/.test(newRunScreen(nm, UI({ mode: "normal" }))), "Normal: none (its vehicles come empty)");
+  check((newRunScreen(nm, UI({ mode: "normal" })).match(/data-action="fleet-reroll"/g) || []).length === 2, "Normal: 🎲 Reroll on both vehicles too (rolled by whose they are, 2026-10-25)");
   const ui = UI({ mode: "hardcore", fleet: cleanFleet(FLEET, "hardcore") });
   check(SG_ACTIONS["fleet-view"](st, ui, { i: "1" }) === false && ui.fleetView && ui.fleetView.i === 1, "👁 Back opens the look at its back");
   const win = fleetViewer(st, ui);
@@ -99,7 +99,7 @@ section("4. The screen: 👁 Back and 🎲 Reroll");
   check(SG_ACTIONS["fleet-reroll"](st, ui, { i: "1" }) === "fleet" && Number.isInteger(ui.fleet[1].roll) && ui.fleet[1].load === null && st.fleet[1].roll === ui.fleet[1].roll, "🎲 Reroll: new dice on the slot (the world again)");
   const re = createWorld({ seed: 7, factionCount: 5, mode: "hardcore", startPeople: 4, fleet: ui.fleet });
   check(J(re.fleet[1].diceTrunk) !== J(first.diceTrunk) && J(re.fleet[2].diceTrunk) === J(plain.fleet[2].diceTrunk) && re.survivors.map((s) => s.name).join() === plain.survivors.map((s) => s.name).join(), "the world again: that back new, the rest as they were");
-  check(SG_ACTIONS["fleet-reroll"](st, UI({ started: true, fleet: ui.fleet }), { i: "1" }) === false && SG_ACTIONS["fleet-view"](nm, UI(), { i: "0" }) === false, "not once started; not in Normal");
+  check(SG_ACTIONS["fleet-reroll"](st, UI({ started: true, fleet: ui.fleet }), { i: "1" }) === false && SG_ACTIONS["fleet-view"](nm, UI({ started: true }), { i: "0" }) === false, "not once started");
   check(SG_ACTIONS["fleet-view-close"](st, ui, {}) === false && ui.fleetView === null, "Done closes it");
 }
 
@@ -129,6 +129,28 @@ section("5. Added vehicles rolled by whose they are; named so; the card as set")
   const w2 = HC(ui2.fleet, { startPeople: 3 });
   check(fleetVehicle(w2, 1).type === "van" && w2.cards.find((c) => c.intro).text.includes("work van") && w2.survivors.find((s) => s.id === w2.fleet[1].ownerId).name === own.name, "the world again: the card says the van, the same owner");
   check(SG_CHANGE["fleet-kind"](w2, ui2, { value: "", dataset: { i: "1" } }) === "fleet" && ui2.fleet[1].type === null, "As rolled again");
+}
+
+section("6. Normal and Custom: the hub's vehicles rolled the same way");
+{
+  // The user's requests 2026-10-25: "Add the same rolling to normal mode vehicles too", "and custom".
+  const SMALL = { people: 4, groups: 3, hives: 3, cities: 1, towns: 6, military: 1 };
+  for (const [tag, opts] of [["Normal", { startPeople: 4 }], ["Custom", { custom: SMALL }]]) {
+    const mk = (fleet) => createWorld({ seed: 7, factionCount: 5, ...opts, fleet });
+    const a = mk([{}, {}]), b = mk([{}, {}]), one = mk([{}]), hubA = a.bases.find((x) => x.type === "hub");
+    const owners = a.fleet.slice(0, 2).map((f) => a.survivors.find((s) => s.id === f.ownerId));
+    check(owners[0] === a.survivors[0] && owners[1] === a.survivors[1], `${tag}: whose each is, in the crew's order`);
+    check(a.fleet.slice(0, 2).every((f) => f.rolledType && filled(f.diceTrunk)), `${tag}: each as rolled, with a back from the dice`);
+    check([0, 1].every((i) => fleetName(a, i).startsWith(`${owners[i].name.split(" ")[0]}'s `)) && [0, 1].every((i) => fleetDriver(a, i) === owners[i]), `${tag}: named after its owner (${fleetName(a, 0)}, ${fleetName(a, 1)}), at its wheel`);
+    check([0, 1].every((i) => { const v = fleetVehicle(a, i); return v && v.loc.kind === "base" && v.condition >= 60 && v.condition <= 85; }), `${tag}: at the hub, its condition rolled (60–85)`);
+    check(J(a.fleet[1].diceTrunk) === J(b.fleet[1].diceTrunk) && a.survivors.map((s) => s.name).join() === one.survivors.map((s) => s.name).join() && a.factions.map((f) => f.name).join() === one.factions.map((f) => f.name).join(), `${tag}: the same seed, the same; the world's dice untouched by a second vehicle`);
+    const things = a.fleet[1].diceTrunk.items.map((e) => (typeof e === "string" ? e : e.key));
+    check(things.every((k) => hubA.armory.some((it) => it.key === k)), `${tag}: what was in the backs is in the hub's armory`);
+    const r = mk([{}, { roll: 4242 }]);
+    check(J(r.fleet[1].diceTrunk) !== J(a.fleet[1].diceTrunk) && J(r.fleet[0].diceTrunk) === J(a.fleet[0].diceTrunk), `${tag}: a slot's roll changes its vehicle alone`);
+    const html = newRunScreen(a, UI({ mode: tag.toLowerCase() }));
+    check(html.includes(`In the yard: ${fleetName(a, 0)} and ${fleetName(a, 1)}`), `${tag}: the start's story names them in the yard`);
+  }
 }
 
 console.log(`\n${passes} passed, ${fails} failed`);

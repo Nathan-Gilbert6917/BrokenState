@@ -127,18 +127,17 @@ export function fleetInfo(state, i) {
 // The first starting vehicle (Hardcore: the car the team flees in; a normal start: the hub's pickup): { v, type, name,
 // room (kg), hard }, as before the fleet (the tools read it).
 export const startVehicleInfo = (state) => fleetInfo(state, 0);
-// What the dice put in Hardcore's car (its owner's s.diceTrunk, noted by hardcore-start.js rollCar), as a load; a normal
-// start's vehicles come empty.
+// What the dice put in Hardcore's car (its owner's s.diceTrunk, noted by hardcore-start.js rollCar), as a load.
 const diceLoad = (state) => { const d = (state.survivors || []).find((s) => s.diceTrunk); return d ? d.diceTrunk : null; };
-// What the dice put in Hardcore's vehicle i (the car's on its owner; the others' on the slot, f.diceTrunk, noted by
-// hardcore-start.js extraBacks: the user's request 2026-10-25), or null.
-const diceOf = (state, i) => (!isHardcore(state) ? null : i === 0 ? diceLoad(state) : (fleetEntry(state, i) || {}).diceTrunk || null);
-// The back shown for vehicle i: its load, or as rolled (Hardcore: the dice's; else empty).
+// What the dice put in vehicle i (Hardcore's car's on its owner; every other's on its slot, f.diceTrunk, noted by
+// hardcore-start.js rollBack: the user's requests 2026-10-25, Hardcore then Normal and Custom), or null.
+const diceOf = (state, i) => (isHardcore(state) && i === 0 ? diceLoad(state) : (fleetEntry(state, i) || {}).diceTrunk || null);
+// The back shown for vehicle i: its load, or as rolled (the dice's; else empty).
 const shownLoad = (state, i) => { const f = fleetEntry(state, i); return (f && f.load) || diceOf(state, i) || { items: [], supplies: {} }; };
 // Slot i is Hardcore's car slot (the car the team flees in: as rolled or a kind).
 const carSlot = (state, i) => isHardcore(state) && i === 0;
-// Vehicle i's back has the dice's to go back to (Hardcore: every vehicle there, the car and the ones past it).
-const hasDice = (state, i) => isHardcore(state) && !!fleetVehicle(state, i) && !!diceOf(state, i);
+// Vehicle i's back has the dice's to go back to (every starting vehicle, every mode, since 2026-10-25).
+const hasDice = (state, i) => !!fleetVehicle(state, i) && !!diceOf(state, i);
 // A back in a few words: "3 things, 40 food, 20 meds, 60 rounds" ("empty").
 const supLabel = (k) => SUP_LABELS[k] || (SUPPLIES[k] ? SUPPLIES[k].name : k);
 export function loadWords(V) {
@@ -176,7 +175,7 @@ export function fleetSection(state, ui) {
   // kind picked in its row. With a vehicle a survivor already: greyed, the reason in its hover.
   const addRow = (i) => {
     const full = i < 0, carGone = !full && carSlot(state, i);
-    const t = full ? `One vehicle a starting survivor: all ${max === 1 ? "one slot is" : `${max} are`} taken. Add starting survivors for more` : mode === "hardcore" ? `Another vehicle at the start, rolled as the car is: whose it was (the next of you without one), its kind by who they were, its tank, its condition and what is in its back (pick its kind in its row, or 🎲 Reroll it). ${carGone ? "It takes the rolled car's place: the one the team flees in" : where}. Up to one a starting survivor (${used} of ${max} now). The world is built again on the same seed` : `Another vehicle at the start: a pickup truck with a part-full tank (pick its kind in its row). ${where}. Up to one a starting survivor (${used} of ${max} now). The world is built again on the same seed`;
+    const t = full ? `One vehicle a starting survivor: all ${max === 1 ? "one slot is" : `${max} are`} taken. Add starting survivors for more` : `Another vehicle at the start, rolled by whose it is: the next of you without one, its kind by who they were, its tank, its condition and what is in its back (pick its kind in its row, or 🎲 Reroll it). ${carGone ? "It takes the rolled car's place: the one the team flees in" : where}. Up to one a starting survivor (${used} of ${max} now). The world is built again on the same seed`;
     return `<div class="row nrveh" style="gap:0.35rem;align-items:center;margin-top:0.25rem">
         <button class="mini" data-action="fleet-add"${full || ui.started ? " disabled" : ""}${tip(t)}>＋ Add a vehicle</button>
         <span class="small muted"${tip(`Vehicles at the start, of the most there may be: one a starting survivor (${max})`)}>${used} of ${max}</span>
@@ -186,7 +185,7 @@ export function fleetSection(state, ui) {
   // survivors"): the crew not at another vehicle's wheel, and under them the ones who are (picking one swaps the two).
   const crew = state.survivors || [], drivers = fleetDrivers(state);
   const driverSel = (i) => {
-    const me = drivers[i], opt = (s, at) => `<option value="${crew.indexOf(s)}" ${s === me ? "selected" : ""}>${esc(s.name)}${at >= 0 ? ` (at ${carSlot(state, at) ? "the car" : mode === "hardcore" ? esc(fleetName(state, at)) : `Vehicle ${at + 1}`})` : ""}</option>`;
+    const me = drivers[i], opt = (s, at) => `<option value="${crew.indexOf(s)}" ${s === me ? "selected" : ""}>${esc(s.name)}${at >= 0 ? ` (at ${carSlot(state, at) ? "the car" : esc(fleetName(state, at))})` : ""}</option>`;
     const free = crew.filter((s) => s === me || !drivers.includes(s)), busy = crew.filter((s) => s !== me && drivers.includes(s));
     const t = `Who drives ${fleetName(state, i)}: one of the starting survivors, one at each wheel. The list is the ones not driving another vehicle; picking one under "Swap with" trades drivers with theirs`;
     return `<label${tip(t)}>Driver <select data-action="fleet-driver" data-i="${i}"${ui.started ? " disabled" : ""}>${free.map((s) => opt(s, -1)).join("")}${busy.length ? `<optgroup label="Swap with">${busy.map((s) => opt(s, drivers.indexOf(s))).join("")}</optgroup>` : ""}</select></label>`;
@@ -200,13 +199,12 @@ export function fleetSection(state, ui) {
     const pct = Math.min(100, Math.round((pts / Math.max(1, f.limit)) * 100));
     // Its kind (every one, the user's request 2026-10-24); Hardcore's may stay as the dice roll it (whose it was: the
     // car and, since 2026-10-25, every vehicle past it, named after its owner as the car is).
-    const car = carSlot(state, i), hard = mode === "hardcore", chosen = hard ? (uiFleet(state, ui)[i] || {}).type || "" : info.type;
-    const opts = `${hard ? `<option value="" ${chosen ? "" : "selected"}>As rolled${chosen ? "" : `: ${esc(VEHICLE_TYPES[info.type].name)}`}</option>` : ""}${kindOpts(chosen)}`;
+    const car = carSlot(state, i), chosen = (uiFleet(state, ui)[i] || {}).type || "";
+    const opts = `<option value="" ${chosen ? "" : "selected"}>As rolled${chosen ? "" : `: ${esc(VEHICLE_TYPES[info.type].name)}`}</option>${kindOpts(chosen)}`;
     const kindTip = car
       ? "The car the team flees in: as rolled, its kind goes with whose it was (who they were); or pick its kind. Changing it builds the world again on the same seed"
-      : hard ? `${info.label}: as rolled, its kind goes with whose it was (who they were), as the car's; or pick its kind. ${where}. Changing it builds the world again on the same seed`
-      : `This vehicle's kind (every motor vehicle; no bicycles). ${where}, with a part-full tank. Changing it builds the world again on the same seed`;
-    const kind = `<label${tip(kindTip)}>${hard ? esc(info.label) : `Vehicle ${i + 1}`} <select data-action="fleet-kind" data-i="${i}"${ui.started ? " disabled" : ""}>${opts}</select></label>`;
+      : `${info.label}: as rolled, its kind goes with whose it was (who they were)${mode === "hardcore" ? ", as the car's" : ""}; or pick its kind (every motor vehicle; no bicycles). ${where}. Changing it builds the world again on the same seed`;
+    const kind = `<label${tip(kindTip)}>${esc(info.label)} <select data-action="fleet-kind" data-i="${i}"${ui.started ? " disabled" : ""}>${opts}</select></label>`;
     const remove = `<button class="mini" data-action="fleet-remove" data-i="${i}"${ui.started ? " disabled" : ""}${tip(`Take this vehicle out of its slot (the slot stays, empty: add one to it again). ${car ? "The car is left behind; the dice are cast all the same. " : ""}The world is built again on the same seed`)}>✕ Remove</button>`;
     // Hardcore (the user's request 2026-10-25): a look at what the dice put in its back, and the dice again.
     const look = hasDice(state, i) ? `<button class="mini" data-action="fleet-view" data-i="${i}"${ui.started ? " disabled" : ""}${tip(`What is in its back: ${loadWords(V)}${rolled ? " (as the dice rolled it)" : ""}`)}>👁 Back</button>` : "";
@@ -240,8 +238,8 @@ export function fleetSection(state, ui) {
         <span class="small muted"${tip(what)}>${esc(what.length > 70 ? `${what.slice(0, 67)}…` : what)}</span>
       </div>`;
   }).join("") + (firstFree < 0 ? addRow(-1) : "");
-  const head = mode === "hardcore" ? "the car you flee in and any you add, with the team, each with what the dice put in its back; a back set on one replaces what the dice put in it" : mode === "custom" ? "at the hub; each back is unloaded into the hub's armory and stores on the first day, any thing and any material" : "what is in its back is unloaded into the hub's armory and stores on the first day";
-  const backs = free ? ", each with its own point limit (nobody's points pay for it). Start is refused while a back costs more than its limit or weighs more than its room" : `. The backs are as rolled (${mode === "hardcore" ? "what the dice put in each, by whose car it is or who drives it: 👁 Back shows it, 🎲 Reroll rolls it again" : "empty"}): tick Customize to set each one, with its own point limit`;
+  const head = mode === "hardcore" ? "the car you flee in and any you add, with the team, each with what the dice put in its back; a back set on one replaces what the dice put in it" : `at the hub, each rolled by whose it is with what the dice put in its back, unloaded into the hub's armory and stores on the first day${mode === "custom" ? " (set by hand: any thing and any material)" : ""}`;
+  const backs = free ? ", each with its own point limit (nobody's points pay for it). Start is refused while a back costs more than its limit or weighs more than its room" : `. The backs are as rolled (what the dice put in each, by whose it is: 👁 Back shows it, 🎲 Reroll rolls it again): tick Customize to set each one, with its own point limit`;
   // What the backs are for is the heading's hover, not a line of its own (the user's request 2026-10-24).
   return `<div class="nrfleet">
       <div class="row small" style="gap:0.5rem"><b${tip(`Starting vehicles: ${head}. The first is ${mode === "hardcore" ? "the car you flee in" : "the hub's pickup truck"}: remove it, change its kind or add others (one a starting survivor at most)${backs}`)}>Starting vehicles</b>${iron ? `<span class="muted">Ironman: as rolled.</span>` : ""}</div>
@@ -261,9 +259,9 @@ export function fleetViewer(state, ui) {
   const things = [...counts].map(([k, n]) => `<span class="chip"${tip(`${GEAR[k].desc || ""} (${kg(k)} kg)`)}>${esc(GEAR[k].name)}${n > 1 ? ` ×${n}` : ""}</span>`).join("") || `<span class="small muted">No things.</span>`;
   const rounds = Object.entries(V.supplies || {}).filter(([k, q]) => ROUND_SUPPLIES[k] && q > 0);
   const sups = Object.entries(V.supplies || {}).filter(([k, q]) => !ROUND_SUPPLIES[k] && q > 0).map(([k, q]) => `<div>${esc(supLabel(k))}</div><div>${r1(q)}</div>`).join("") + rounds.map(([k, q]) => `<div>${esc(supLabel(k))}</div><div>${q} rounds</div>`).join("");
-  const whose = `${carSlot(state, i) ? "The car the team flees in" : "It comes along with the team"}${d ? `, ${esc(d.name.split(" ")[0])} at the wheel` : ""}; what is in its back goes with whose it is (who they were)`;
+  const whose = `${carSlot(state, i) ? "The car the team flees in" : info.hard ? "It comes along with the team" : "It is parked at the hub, its back unloaded into the stores on the first day"}${d ? `, ${esc(d.name.split(" ")[0])} at the wheel` : ""}; what is in its back goes with whose it is (who they were)`;
   return `<div class="box"><h1>${esc(info.label)}</h1>
-    <div class="small muted">${whose}. ${rolled ? "As the dice rolled it." : "The back set under Customize (the dice's waits under As rolled)."} It weighs ${r1(trunkKg(V))} of the ${info.room} kg it holds, and goes with the team as its cargo.</div>
+    <div class="small muted">${whose}. ${rolled ? "As the dice rolled it." : "The back set under Customize (the dice's waits under As rolled)."} It weighs ${r1(trunkKg(V))} of the ${info.room} kg it holds${info.hard ? ", and goes with the team as its cargo" : ""}.</div>
     <h3 style="margin-top:0.6rem">Things</h3><div>${things}</div>
     <h3 style="margin-top:0.6rem">Supplies</h3>${sups ? `<div class="kv small">${sups}</div>` : `<div class="small muted">No supplies.</div>`}
     <div class="row" style="margin-top:0.8rem;gap:0.4rem;justify-content:flex-end">
@@ -310,10 +308,10 @@ function vehicleSection(state, ui) {
     const opts = Object.keys(groups).sort().map((c) => `<optgroup label="${esc(c.replace(/^./, (x) => x.toUpperCase()))}">${groups[c].sort((a, b) => supLabel(a).localeCompare(supLabel(b))).map((k) => `<option value="${k}">${esc(supLabel(k))} · ${SUPPLIES[k] ? SUPPLIES[k].weight : 0} kg · ${suppliesPoints({ [k]: 10 })} pts for 10</option>`).join("")}</optgroup>`).join("");
     return `<div class="row" style="margin-top:0.2rem"><select data-action="sg-trunk-supadd"${tip("Custom: any supply or material in the game (wood, stone, building materials, car and gun parts, electronics, foods, reloading supplies...): ten of it go in (change how many after)")}><option value="">Add a supply or material…</option>${opts}</select></div>`;
   })() : "";
-  const what = hasDice(state, i)
-    ? `The car the ${state.survivors.length === 1 ? "survivor flees" : "team flees"} in. ${rolled ? "As rolled: what the dice put in it, free. A change makes the back yours, priced against its point limit." : "A back set here goes in place of what the dice put in it."}`
-    : info.hard ? "It comes along with the team, one of you at the wheel: what is in its back is the team's cargo."
-    : `At the hub: what is in its back is unloaded into the hub's armory and stores on the first day.${info.open ? " Custom: any thing and any material, as much as its point limit and its room allow." : ""}`;
+  const dice = hasDice(state, i) ? ` ${rolled ? "As rolled: what the dice put in it, free. A change makes the back yours, priced against its point limit." : "A back set here goes in place of what the dice put in it."}` : "";
+  const what = carSlot(state, i) ? `The car the ${state.survivors.length === 1 ? "survivor flees" : "team flees"} in.${dice}`
+    : info.hard ? `It comes along with the team, one of you at the wheel: what is in its back is the team's cargo.${dice}`
+    : `At the hub: what is in its back is unloaded into the hub's armory and stores on the first day.${dice}${info.open ? " Custom: any thing and any material, as much as its point limit and its room allow." : ""}`;
   return `<div class="sgtrunk">
     <h3>The back <span class="small muted">${rolled ? (hasDice(state, i) ? "as rolled (free)" : "empty") : `${cost} / ${info.limit} pts`} · ${r1(load)} / ${info.room} kg</span></h3>
     <div class="small muted">${what}</div>
@@ -697,7 +695,7 @@ export const SG_ACTIONS = {
   }),
   // As rolled (Hardcore: what the dice put in the car, free); a normal start's vehicles come empty.
   "sg-trunk-dice": (state, ui) => {
-    if (!hasDice(state, ui.fleetEdit ? ui.fleetEdit.i : 0)) { say(ui, isHardcore(state) ? "This vehicle has no dice's back to go back to." : "A normal start's vehicles come empty: nothing to load."); return false; }
+    if (!hasDice(state, ui.fleetEdit ? ui.fleetEdit.i : 0)) { say(ui, "This vehicle has no dice's back to go back to."); return false; }
     return asRolled(state, ui, ui.fleetEdit ? ui.fleetEdit.i : 0);
   },
   // The new-run screen's Starting vehicles (fleetSection).
@@ -754,7 +752,7 @@ export const SG_ACTIONS = {
   "fleet-add": (state, ui) => {
     const F = uiFleet(state, ui), i = F.findIndex((f) => f.empty);
     if (ui.started || i < 0) return false;
-    F[i] = { ...F[i], type: isHardcore(state) ? null : START_FLEET.KIND, load: null, empty: false }; // Hardcore: rolled as the car is, by whose it is (the user's request 2026-10-25)
+    F[i] = { ...F[i], type: null, load: null, empty: false }; // rolled by whose it is (the user's requests 2026-10-25: Hardcore, then Normal and Custom)
     ui.fleetEdit = null;
     return "fleet";
   },
@@ -904,7 +902,7 @@ export const SG_CHANGE = {
   "fleet-kind": (state, ui, el) => {
     const i = Number(el.dataset.i), F = uiFleet(state, ui);
     if (ui.started || !F[i]) return false;
-    if (el.value === "" && isHardcore(state)) F[i] = { ...F[i], type: null, empty: false }; // as rolled: the car and the rest (2026-10-25)
+    if (el.value === "") F[i] = { ...F[i], type: null, empty: false }; // as rolled: by whose it is (2026-10-25, every mode)
     else if (fleetKinds().includes(el.value)) F[i] = { ...F[i], type: el.value, empty: false };
     else return false;
     return "fleet";

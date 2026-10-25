@@ -680,37 +680,50 @@ export function rollCar(state, p, people, keptOwner = null) {
 const backSeed = (state, i) => ((Math.imul(state.seed | 0, 2654435761) + i * 40503 + 977) >>> 0) % 2147483646 + 1;
 /** @param {any} state @param {any} p @param {any[]} people @param {any} carOwner the car's owner (null: no car) */
 function extraCars(state, p, people, carOwner) {
-  const out = [], owned = new Set(carOwner ? [carOwner.id] : []), C = HC_START;
+  const out = [], owned = new Set(carOwner ? [carOwner.id] : []);
   (state.fleet || []).forEach((f, i) => {
     if (i === 0 || f.empty) return;
-    const rng = new Rng(f.roll != null ? f.roll : backSeed(state, i));
-    const owner = people.find((s) => !owned.has(s.id)) || people[(i - 1) % people.length];
-    owned.add(owner.id);
-    const A = archetypeOf(state, owner.background) || {};
-    const rolledType = A.custom && A.car.type ? A.car.type : pickW(rng, !A.custom && A.cars ? A.cars : { sedan: 2, truck: 1 });
-    const type = VEHICLE_TYPES[f.type] ? f.type : VEHICLE_TYPES[rolledType] ? rolledType : START_FLEET.KIND;
-    const T = VEHICLE_TYPES[type];
-    const fuel = Math.round(T.tank * rng.range(C.CAR.FUEL[0], C.CAR.FUEL[1]) * 10) / 10, condition = rng.int(C.CAR.CONDITION[0], C.CAR.CONDITION[1]);
-    const v = createVehicle(state, type, { kind: "party", partyId: p.id }, { fuel, condition });
-    addPartyVehicle(state, p, v);
-    Object.assign(f, { vid: v.id, rolledType: !VEHICLE_TYPES[f.type], type: v.type, ownerId: owner.id });
-    out.push({ v, owner, rng });
+    const x = rollVehicle(state, f, i, people, owned, { kind: "party", partyId: p.id }, HC_START.CAR);
+    addPartyVehicle(state, p, x.v);
+    out.push(x);
   });
   return out;
 }
+// One starting vehicle rolled as the car is (extraCars; a normal or Custom start's at the hub, rollHubFleet): whose it
+// was (the first of people with none yet: owned), its kind from their background's cars (a custom background's own
+// car kind; a kind set on the screen: that kind, the dice cast all the same), its tank and condition in R's ranges,
+// on its slot's own dice (f.roll, else backSeed). Notes the slot (vid, type, rolledType, ownerId). Returns { v, owner, rng }.
+function rollVehicle(state, f, i, people, owned, loc, R) {
+  const rng = new Rng(f.roll != null ? f.roll : backSeed(state, i));
+  const owner = people.find((s) => !owned.has(s.id)) || people[i % people.length];
+  owned.add(owner.id);
+  const A = archetypeOf(state, owner.background) || {};
+  const rolledType = A.custom && A.car.type ? A.car.type : pickW(rng, !A.custom && A.cars ? A.cars : { sedan: 2, truck: 1 });
+  const type = VEHICLE_TYPES[f.type] ? f.type : VEHICLE_TYPES[rolledType] ? rolledType : START_FLEET.KIND;
+  const T = VEHICLE_TYPES[type];
+  const fuel = Math.round(T.tank * rng.range(R.FUEL[0], R.FUEL[1]) * 10) / 10, condition = rng.int(R.CONDITION[0], R.CONDITION[1]);
+  const v = createVehicle(state, type, loc, { fuel, condition });
+  Object.assign(f, { vid: v.id, rolledType: !VEHICLE_TYPES[f.type], type: v.type, ownerId: owner.id });
+  return { v, owner, rng };
+}
+// Its back from the dice (after its kind and tank): its owner's background's trunk table (a custom background: one
+// drawn, its own car's back being theirs already: normalStartKit), noted on the slot (f.diceTrunk: As rolled, 👁 Back).
+function rollBack(state, f, owner, rng, people) {
+  const own = archetypeOf(state, owner.background);
+  const A = own && !own.custom && own.trunk ? own : HC_START.ARCHETYPES[rng.pick(Object.keys(HC_START.ARCHETYPES))];
+  const dice = rollTrunk(state, rng, A, people);
+  f.diceTrunk = { items: dice.gear.map((it) => pickOf(it)).filter(Boolean), supplies: { ...dice.supplies } };
+  return dice;
+}
 // Their backs (the user's request 2026-10-25: "have each additional vehicle have random gear set in the back with dice
 // rolling like how the first vehicle and add a button to view and randomize it"): a back set on the new-run screen
-// (f.load), that; else the dice's, as the car's: from its owner's background (their trunk table; a custom one: a
-// background drawn), on the vehicle's own dice after its kind and tank. The dice's back is noted on the slot
-// (f.diceTrunk: the screen's As rolled and 👁 Back). Into the team's cargo, as the car's. Returns each back by vehicle id.
+// (f.load), that; else the dice's (rollBack). Into the team's cargo, as the car's. Returns each back by vehicle id.
 /** @param {any} state @param {any} p @param {any[]} people @param {any[]} more extraCars' */
 function extraBacks(state, p, people, more) {
   const out = new Map();
   for (const { v, owner, rng } of more) {
-    const f = state.fleet.find((x) => x.vid === v.id), own = archetypeOf(state, owner.background);
-    const A = own && !own.custom && own.trunk ? own : HC_START.ARCHETYPES[rng.pick(Object.keys(HC_START.ARCHETYPES))];
-    const dice = rollTrunk(state, rng, A, people);
-    f.diceTrunk = { items: dice.gear.map((it) => pickOf(it)).filter(Boolean), supplies: { ...dice.supplies } };
+    const f = state.fleet.find((x) => x.vid === v.id);
+    const dice = rollBack(state, f, owner, rng, people);
     const back = f.load ? trunkFromPicks(f.load) : dice;
     typeFind(state, back.supplies, "travel"); // foods.js: the back's food as what people threw in a car
     for (const [k, q] of Object.entries(back.supplies)) p.cargo.supplies[k] = (p.cargo.supplies[k] || 0) + q;
@@ -718,6 +731,24 @@ function extraBacks(state, p, people, more) {
     out.set(v.id, back);
   }
   return out;
+}
+// A normal or Custom start's vehicles at the hub (world.js createWorld, once who they were is known; the user's request
+// 2026-10-25: "Add the same rolling to normal mode vehicles too", "and custom"): each filled slot rolled as Hardcore's
+// are (rollVehicle: whose it was, in the crew's order; its kind, a part-full tank a year on: START_FLEET.ROLL), its back
+// from the dice unloaded into the hub's armory and stores (a back set on the screen is unloaded instead: startgear.js
+// normalStartVehicle). Start with a vehicle off: none.
+export function rollHubFleet(state, base) {
+  if (!state.startVehicles) return;
+  const people = state.survivors, owned = new Set();
+  (state.fleet || []).forEach((f, i) => {
+    if (f.empty) return;
+    const { owner, rng } = rollVehicle(state, f, i, people, owned, { kind: "base", baseId: base.id }, START_FLEET.ROLL);
+    const dice = rollBack(state, f, owner, rng, people);
+    if (f.load) return;
+    typeFind(state, dice.supplies, "travel"); // foods.js: the back's food as what people threw in a car
+    for (const [k, q] of Object.entries(dice.supplies)) base.stock[k] = (base.stock[k] || 0) + q;
+    base.armory.push(...dice.gear);
+  });
 }
 export const carLine = (owner, car, trunk, people = HC_START.CREW) => lineText(carPart(owner, car, trunk, people));
 // A back in words: its supplies, its rounds, its things.
