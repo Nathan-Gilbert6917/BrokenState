@@ -187,7 +187,7 @@ function frontEnd(L, x0, x1, y, n) {
   let lanes = 0, kiosks = 0;
   const laneScan = (from, to, d) => {
     for (let x = from, last = null; lanes < n && (d > 0 ? x <= to : x >= to); x += d) {
-      if (!L.ok(x, y) || !L.ok(x, y - 1) || (last !== null && Math.abs(x - last) < 2)) continue;
+      if (!L.ok(x, y) || !L.ok(x, y - 1) || (last !== null && Math.abs(x - last) < 2) || [x - 1, x + 1].some((q) => L.c.kindAt(q, y) === "checkout")) continue;
       if (!L.place("checkout", [[x, y]], P(L, { face: "s" }))) continue;
       L.place("counter", [[x, y - 1]], { face: "s", plain: true });
       lanes++; last = x;
@@ -206,6 +206,8 @@ function frontEnd(L, x0, x1, y, n) {
   const end = placed.length ? (dir > 0 ? Math.max(...placed) : Math.min(...placed)) + 2 * dir : x0;
   block(end, x1, dir);
   if (!kiosks) block(x1, x0, -dir);
+  if (!kiosks) block(dir > 0 ? L.c.x1 - 1 : L.c.x0 + 1, dir > 0 ? L.c.x0 + 1 : L.c.x1 - 1, -dir); // anywhere along the front row
+  if (!kiosks) block(dir > 0 ? L.c.x0 + 1 : L.c.x1 - 1, dir > 0 ? L.c.x1 - 1 : L.c.x0 + 1, dir);
   return { lanes, kiosks };
 }
 /** The cells of row y between x0 and x1 that take a piece (off the lanes). @param {Lay} L */
@@ -366,9 +368,9 @@ export const COMMERCIAL_STYLES = {
     for (let i = 0; i < 3; i++) L.wall("counter", P(L, { sides: ["s"], near: [far + (far < door[0] ? i : -i), c.y1] })); // the customer service desk
     // The checkout row: the one of the rows 2 to 4 off the front that the lanes cross least (a lane from the front doors
     // to a side door runs along one); the lanes from the produce side toward the doors, the self-checkout block after them.
-    const lx0 = prod === "w" ? c.x0 + 7 : c.x1 - 7, lx1 = prod === "w" ? c.x1 - 7 : c.x0 + 7, sgn = prod === "w" ? 1 : -1;
-    const freeRow = (y) => { let n = 0; for (let x = Math.min(lx0, lx1); x <= Math.max(lx0, lx1); x++) if (L.ok(x, y) && L.ok(x, y - 1)) n++; return n; };
-    const yC = [c.y1 - 3, c.y1 - 4, c.y1 - 2].reduce((a, b) => (freeRow(b) > freeRow(a) ? b : a));
+    const lx0 = prod === "w" ? c.x0 + 4 : c.x1 - 4, lx1 = prod === "w" ? c.x1 - 4 : c.x0 + 4, sgn = prod === "w" ? 1 : -1;
+    const freeRow = (y) => { let n = 0, last = -9; for (let x = c.x0 + 1; x <= c.x1 - 1; x++) if (L.ok(x, y) && L.ok(x, y - 1) && x - last >= 2) { n++; last = x; } return Math.min(n, 15); }; // the lanes the row takes (and the kiosks)
+    const yC = [c.y1 - 3, c.y1 - 4, c.y1 - 2, c.y1 - 5].reduce((a, b) => (freeRow(b) > freeRow(a) ? b : a));
     frontEnd(L, lx0, lx1, yC, Math.min(12, Math.max(6, Math.floor((c.w - 18) / 2))));
     const yTop = c.y0 + 3, yBot = yC - 5;
     // Produce: bins along the wall (the misting racks), two rows of tables off it.
@@ -910,8 +912,8 @@ function checkoutLine(ctx) {
     if (tills.length < 2) continue;
     const y = tills.map((t) => t[1]).sort((a, b) => tills.filter((t) => t[1] === b).length - tills.filter((t) => t[1] === a).length)[0];
     const xs = tills.filter((t) => t[1] === y).map((t) => t[0]), x0 = Math.min(...xs), x1 = Math.max(...xs);
-    const gaps = [];
-    for (let x = x0 + 1; x < x1; x++) if (ctx.free(f, x, y)) gaps.push(x);
+    const gaps = []; // the lanes between the tills (ctx.free keeps clear of a container's side: the tills are containers)
+    for (let x = x0 + 1; x < x1; x++) { const c = ctx.at(f, x, y); if (c && c.k === "open" && !ctx.stair(x, y) && !ctx.used(f, x, y)) gaps.push(x); }
     if (gaps.length < 2) continue;
     const open = rng.pick(gaps);
     for (const x of gaps) if (x !== open) ctx.piece(f, x, y, rng.pick(["crate", "shelf", "cabinet", "crate"]));

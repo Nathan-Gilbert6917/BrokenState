@@ -303,7 +303,7 @@ function house(rng, v, o = {}) {
 // Shops: a sales floor at the front, a back strip of stockroom, office and the rest; a back door, a side fire exit.
 // Grocery stores by size (issue #22, a new save's plan only: o.legacy keeps the old 14–18 × 11–14 of both): a corner
 // store small (10–14 across: the till's counter, a few short shelf runs, the drinks fridges and a chest freezer, a
-// stockroom of crates), a neighbourhood grocery medium (20–26 × 15–19: aisles, checkouts, produce, the dairy wall and
+// stockroom of crates), a neighbourhood grocery medium (20–26 × 16–19: aisles, checkouts, produce, the dairy wall and
 // the frozen section, a small deli counter; a stockroom with a walk-in cooler behind it). The supermarket is bigstore's
 // (supermarket below). The dice are rolled in the same order either way.
 function shop(rng, v, o = {}) {
@@ -311,7 +311,7 @@ function shop(rng, v, o = {}) {
   const plan = planOf(v === "gasstation" ? "gas" : v, o); // data-shops.js: the franchise's layout
   const tier = !o.legacy && (v === "corner" || v === "grocery") ? v : null; // issue #22: the corner store and the grocery by size
   const bw = (tier === "corner" ? rng.int(10, 13) : tier === "grocery" ? rng.int(20, 23) : gas ? rng.int(12, 14) : truck ? rng.int(19, 22) : rng.int(14, 18)) + (plan.wide ? (tier === "corner" ? 1 : 3) : 0);
-  const bh = tier === "corner" ? rng.int(10, 12) : tier === "grocery" ? rng.int(15, 19) : gas ? rng.int(9, 10) : truck ? rng.int(12, 14) : rng.int(11, 14);
+  const bh = tier === "corner" ? rng.int(10, 12) : tier === "grocery" ? rng.int(16, 19) : gas ? rng.int(9, 10) : truck ? rng.int(12, 14) : rng.int(11, 14);
   const ih = bh - 2;
   const sd = tier === "grocery" ? ih - 5 : Math.max(4, Math.round(ih * (plan.depth ?? (gas ? 0.6 : 0.62)))); // a grocery's sales floor: all but a 4-deep back strip
   const S = (o) => ({ role: "sales", entry: true, ...o });
