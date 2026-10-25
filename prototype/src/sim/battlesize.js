@@ -82,7 +82,7 @@ export function baseSide(base, nStructures) {
 export const CONTACT = { PLAYER_X: 5, HUMANS: [15, 21], DEAD: [14, 20], CONE: 0.55, POD: [11, 18], FLANK: [6, 10], NEAR: 18 };
 // Cover density: the share of open ground with something to hide behind within R tiles (Chebyshev) that densify tops
 // a map up to (TARGET; OPEN on plains and by water, which stay more open), never more than MAX_ADD props a 100 tiles.
-export const COVER = { R: 3, TARGET: 0.82, OPEN: 0.72, CITY: 0.86, MAX_ADD: 7 };
+export const COVER = { R: 3, TARGET: 0.82, OPEN: 0.72, CITY: 0.86, MAX_ADD: 7, FAST: 80 * 60 }; // FAST: densify's quick draw past this many cells
 // Raid maps (raidDims): a site's SIZES scale from LO to HI is its place between the run's smallest and largest raid
 // map (worldcfg.js raidMin / raidMax: tiles across, ASPECT of that deep); LARGEST always the largest (a city's or a
 // town's, a site-less city tile's too: the crawl's buildings and its street events), a bridge never under Large (its
@@ -240,19 +240,27 @@ export function densify(cells, W, H, rng, opts = {}) {
   let open = 0, covered = 0;
   for (let i = 0; i < W * H; i++) if (groundK(cells[i])) { open++; if (d[i] <= R) covered++; }
   let placed = 0, far = 0, cand = [];
+  const fast = W * H > COVER.FAST;
   for (let guard = 0; guard < cap * 4 && placed < cap && open && covered / open < target; guard++) {
     // The open cells furthest from cover; one of them, or a cell next to it, takes a prop. A cell's distance only
     // falls and open ground only goes, so while some of the last ones are still that far they are all there is (in
     // the same order): the whole map is looked over again only when the furthest step down (interior.js
     // groundsBeyond's woodlot spent most of the yard map's making scanning it every prop: sizetest).
-    cand = cand.filter((i) => groundK(cells[i]) && d[i] === far);
+    // A map past COVER.FAST cells (the raid map dials past 80 across, issue #24: none an older save has): the stale ones
+    // are dropped as they are drawn instead of the list filtered for every prop (that was most of a 300 × 224 map's
+    // making); a smaller map keeps the filter, so its props fall where they always did.
+    let i0 = -1;
+    if (fast) {
+      while (cand.length) { const j = rng.int(0, cand.length - 1), i = cand[j]; if (groundK(cells[i]) && d[i] === far) { i0 = i; break; } cand[j] = cand[cand.length - 1]; cand.pop(); }
+    } else cand = cand.filter((i) => groundK(cells[i]) && d[i] === far);
     if (!cand.length) {
       far = 0;
       for (let i = 0; i < W * H; i++) if (groundK(cells[i]) && d[i] > far) far = d[i];
       if (far <= R) break;
       for (let i = 0; i < W * H; i++) if (groundK(cells[i]) && d[i] === far) cand.push(i);
     }
-    const i0 = cand[rng.int(0, cand.length - 1)], x0 = i0 % W, y0 = (i0 / W) | 0;
+    if (i0 < 0) i0 = cand[rng.int(0, cand.length - 1)];
+    const x0 = i0 % W, y0 = (i0 / W) | 0;
     let spot = null;
     for (const [dx, dy] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]]) if (ok(x0 + dx, y0 + dy)) { spot = [x0 + dx, y0 + dy]; break; }
     if (!spot) { d[i0] = 0; continue; } // no room for a prop here: leave it be

@@ -902,7 +902,7 @@ const outAndBack = (state, p, c, pl) => { const b = state.combat; walkOut(state)
   const { state, p, c } = crawlIn(2106);
   const hosp = testPlace(state, c, "hospital", 5);
   const hint = CC.placeHint(state, c, hosp);
-  check(/^Hospital: \d+ floors, wards/.test(hint) && hint.includes(String(CC.placeStoreys(state, c, hosp))), `the hint names the kind's signature rooms: "${hint}"`);
+  check(/^Hospital: \d+ floors( open of \d+)?, wards/.test(hint) && hint.includes(String(CC.placeStoreys(state, c, hosp))), `the hint names the kind's signature rooms: "${hint}"`);
   check(CC.placeHint(state, c, testPlace(state, c, "offices", 5)).includes("offices") && !/Corridor/i.test(CC.placeHint(state, c, testPlace(state, c, "offices", 5))), "an office tower's: offices (not its corridors)");
   // Per kind over QN buildings: every container opened both ways, the supplies found within ±10%.
   for (const s of partyMembers(state, p)) s.skills.scavenging = 3;

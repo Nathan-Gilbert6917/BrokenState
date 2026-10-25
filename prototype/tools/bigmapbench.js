@@ -9,11 +9,15 @@
 //   mem     the heap the raid's floors hold (losCache entries).
 // --render: the frame time too, in the real game in headless Chromium (playwright; a 1500 × 950 view): the battle
 // view redrawn F times on each map, the median frame and the biggest canvas.
-// Usage: node tools/bigmapbench.js [--sizes 56,200,300] [--dead 60] [--turns 6] [--key hospital] [--storeys 3] [--render]
+// --shots <dir> (with --render): the ground floor and the top floor built revealed with the roofs off, and a blocked
+// stair close up when there is one (a taller building's), as PNGs.
+// --save5: a save holding five big buildings left as they were (crawl snapshots), its size gzipped.
+// Usage: node tools/bigmapbench.js [--sizes 56,200,300] [--dead 60] [--turns 6] [--key hospital] [--storeys 3] [--render] [--shots dir] [--save5]
 import { createWorld, hub, atBase } from "../src/sim/world.js";
 import { launchExpedition } from "../src/sim/parties.js";
 import { createBattle, autoPlayerTurn, runEnemyPhase, endPlayerTurn, registerCombatHandler, CELL, enemyUnit } from "../src/sim/combat.js";
 import { saveToString } from "../src/sim/save.js";
+import { snapshotBuilding } from "../src/sim/citycrawl.js";
 import { cleanCfg } from "../src/sim/worldcfg.js";
 import { gzipSync } from "node:zlib";
 import { createRequire } from "node:module";
@@ -86,6 +90,30 @@ function measure(side) {
   return { side, w: b.w, h: b.h, storeys: b.floors ? b.floors.length : 1, dead: b.units.filter((u) => u.side === "enemy").length, gen, turnMed: med(turns), turnMax: Math.max(...turns, 0), save: json.length, gz, saveT, losN, heap: process.memoryUsage().heapUsed };
 }
 
+// A save holding five big buildings left as they were (the city crawl's snapshots, citycrawl.js snapshotBuilding: every
+// floor packed), each explored a few turns first: its bytes and gzipped (the browser stores saves gzipped: ui/saves.js),
+// against the same world with none.
+function saveFive(side) {
+  const keys = ["hospital", "factory", "warehouse", "offices", "apartments"];
+  const base = bigRaid(side, "hospital", 10, 3, 21);
+  const st = base.st;
+  st.combat = null;
+  const empty = saveToString(st);
+  const tile = st.tiles.find((t) => t.loc && t.loc.type === "city");
+  tile.crawlMem = tile.crawlMem || { visits: 0, looted: {}, alert: 0, hour: 0 };
+  tile.crawlMem.snaps = {};
+  let cells = 0;
+  for (const key of keys) {
+    const { st: s2, b } = bigRaid(side, key, 30, 4, 21 + key.length);
+    for (let t = 0; t < 2 && s2.combat && !s2.combat.over; t++) { autoPlayerTurn(s2); if (s2.combat && s2.combat.phase === "player") endPlayerTurn(s2); if (s2.combat && s2.combat.phase === "enemy") runEnemyPhase(s2); }
+    const B = s2.combat || b;
+    tile.crawlMem.snaps[`cc1-${key}`] = snapshotBuilding(B);
+    cells += B.w * B.h * (B.floors ? B.floors.length : 1);
+  }
+  const full = saveToString(st);
+  return { side, cells, empty: empty.length, emptyGz: gzipSync(Buffer.from(empty)).length, full: full.length, fullGz: gzipSync(Buffer.from(full)).length };
+}
+
 // The frame in the real game: the battle view drawn F times on a raid of each size (the first frame builds the
 // pictures; the median of the rest is the frame), on the ground floor and on the top floor, and the biggest canvas
 // the page made.
@@ -107,6 +135,13 @@ async function render(sizes, F = 30) {
       const mk = Document.prototype.createElement;
       Document.prototype.createElement = function (t, o) { const el = mk.call(this, t, o); if (String(t).toLowerCase() === "canvas") window.__canvases.push(el); return el; };
     });
+    const shotDir = opt("shots", null);
+    if (shotDir) {
+      const fs = require("fs");
+      fs.mkdirSync(shotDir, { recursive: true });
+      await page.addInitScript(() => { window.__shots = true; });
+      await page.exposeFunction("__shot", async (name) => { const f = path.join(shotDir, `${name}.png`); await page.screenshot({ path: f }); console.log(`  shot ${f}`); });
+    }
     await page.goto(`http://localhost:${port}/?notitle`);
     await page.waitForFunction(() => window.game && document.querySelector('[data-action="begin"]'), null, { timeout: 30000 });
     await page.click('[data-action="begin"]');
@@ -149,6 +184,26 @@ async function render(sizes, F = 30) {
           if (u) u.f = 0;
         }
         const big = window.__canvases.reduce((m, c) => Math.max(m, c.width, c.height), 0);
+        // --shots: the floors revealed with the roofs off (every cell seen and known), the building filling the view,
+        // and a close look at a blocked stair (a taller building's top floor built), each as the page stands.
+        const shots = [];
+        if (window.__shots) {
+          const reveal = () => { CB.drawCombat(st, performance.now()); const ca = CB.cui.cache; if (ca.vis) ca.vis.fill(1); if (ca.known && ca.known.cells) ca.known.cells.fill(1); CB.drawCombat(st, performance.now()); };
+          IV.setRoofs(false);
+          const B = b.raid.plan && b.raid.plan.building;
+          const u = b.units.find((x) => x.side === "player");
+          for (const f of b.floors ? [0, b.floors.length - 1] : [0]) {
+            if (b.floors) { SIM.setFloor(b, f); if (u) { u.f = f; u.away = false; } }
+            IV.iso.zoom = 1; if (B) IV.isoCenterOn(b, B.x0 + (B.w >> 1), B.y0 + (B.h >> 1), false);
+            reveal();
+            await window.__shot(`${key}-${side}-floor${f + 1}`);
+            const seal = b.cells.findIndex((c) => c.sealUp && c.top);
+            if (seal >= 0) { IV.iso.zoom = 6; IV.isoCenterOn(b, seal % b.w, (seal / b.w) | 0, false); reveal(); await window.__shot(`${key}-${side}-floor${f + 1}-stairs-${b.cells[seal].sealUp}`); }
+            shots.push(f);
+          }
+          if (b.floors) { SIM.setFloor(b, 0); if (u) u.f = 0; }
+          IV.setRoofs(true);
+        }
         const px = window.__canvases.reduce((m, c) => m + c.width * c.height, 0);
         const w = b.w, h = b.h, n = b.floors ? b.floors.length : 1;
         st.combat = null; st.parties = st.parties.filter((x) => x !== p); for (const s of crew) s.location = { kind: "base", baseId: hub.id };
@@ -176,6 +231,10 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     const r = measure(side);
     console.log(`${String(side).padEnd(5)} ${`${r.w}×${r.h}`.padEnd(10)} ${String(r.storeys).padEnd(6)} ${String(r.dead).padEnd(5)} ${ms(r.gen).padEnd(9)} ${ms(r.turnMed).padEnd(9)} ${ms(r.turnMax).padEnd(9)} ${kb(r.save).padEnd(10)} ${kb(r.gz).padEnd(9)} ${ms(r.saveT).padEnd(9)} ${String(r.losN).padEnd(10)} ${(r.heap / 1048576).toFixed(0)} MB`);
     if (global.gc) global.gc();
+  }
+  if (args.includes("--save5")) {
+    console.log("\nA save with five big buildings left as they were (hospital, factory, warehouse, offices, apartments: crawl snapshots):");
+    for (const side of SIZES) { const r = saveFive(side); console.log(`  raid map dial ${side}: ${(r.cells / 1e6).toFixed(2)} M cells of floors; the save ${kb(r.full)} (${kb(r.fullGz)} gzipped) against ${kb(r.empty)} (${kb(r.emptyGz)}) without them: +${kb(r.fullGz - r.emptyGz)} gzipped`); }
   }
   if (RENDER) {
     console.log("\nThe frame (1500 × 950 view; the first frame builds the pictures):");

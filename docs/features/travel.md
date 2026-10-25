@@ -316,7 +316,21 @@ Block-by-block roguelike extraction in a city or town, with multi-storey buildin
 - Multi-storey buildings with who lives on each floor (survivors barricaded upstairs, raiders holed up) [floorfolk].
 - **Stair runs** (the user's request 2026-10-25, issue #9: "Make the layouts make sense"): a stairwell is a straight
   flight against a wall with a landing at each end, drawn as steps rising toward the floor above. Details below.
-- Test `tools/citycrawltest.js`; the stairs `tools/storeytest.js`.
+- **Buildings at real size, towers to 10 storeys** (the user's request 2026-10-25, issue #24): a crawl's buildings are
+  their real size (a city's hospital 60–100 m across, its towers 6–10 storeys), each building's map as big as it needs
+  (up to 300 × 300); only the first 4 floors of a taller building are built (5 from the deeper blocks), its stairs up
+  from there collapsed or barricaded. Details below.
+- Test `tools/citycrawltest.js`; the stairs `tools/storeytest.js`; the sizes `tools/scaletest.js`.
+
+### Buildings at real size in the crawl (issue #24, 2026-10-25)
+The user's request 2026-10-25: "All buildings should scale based on how large buildings are in real life with unique layouts and 1 to 3 stories tall and city buildings can be 10 stories tall make the raid maps larger if needed up to 300x300", and "to prevent needing to make really tall cities just block off or have destroyed stairs to prevent going to higher stories though they dont actually exist". The rules are in [combat.md "Buildings at real size"](combat.md#buildings-at-real-size-issue-24-2026-10-25) and [docs/multi-storey-crawl.md](../multi-storey-crawl.md#up-to-10-storeys-the-floors-above-blocked-off-issue-24-2026-10-25).
+
+- **The setting**: a city crawl's buildings are "city" (buildingmaps.js `settingOf`: the crawl's tile is the city's), so offices, apartments and a hospital stand 6–10 storeys; a town's crawl "town" (2–4, 3–6). The depth bonus (`STOREY_BONUS`: +1 from block 4, +2 from block 7) adds to the height, within 10, and one more floor is built from block 4 (`openStoreys`).
+- **The block card**: the hint says the floors open and the height ("Office building: 4 floors open of 9, offices", citycrawl `placeHint`, `placeHeight`); the tip under it that the stairs above floor 4 have collapsed or been barricaded. `placeStoreys` stays the floors built (who lives on which floor: floorfolk, the Look around).
+- **The maps**: a place's building map is its footprint plus margins, at least the run's largest raid map dial, at most 300 × 300; the dead inside go by its floor area (`deadK`, at most 120 a group), its containers as full as a small building's (`R.natMap`), the quick search's the same (`placeProfile`).
+- **Snapshots** are packed floor by floor (citycrawl `packCells`: each distinct cell once, runs of them): five big buildings left as they were add about 100 KB to a gzipped save (`tools/bigmapbench.js --save5`).
+- **Other groups** strip the city's buildings no faster an hour, but they hold more (aiscav.js `siteSizeK`: a city 2.4 times what it did; docs/adr/0001-ai-parity.md).
+- **The balance gate** (`tools/crawlbalance.js city`, [docs/crawl-balance.md](../crawl-balance.md)): BALANCE_LINE
 
 ### Parity with the raid tickets (issue #21, 2026-10-25)
 The user's request 2026-10-25 (the interiors epic #7, its last ticket): "I want the interiors of buildings during raids and crawls to make sense. […] Improve the building, furniture, appliances etc fidelity for raids and crawls." The crawl keeps up with what the raid tickets added (#8–#13, #18).

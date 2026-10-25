@@ -21,7 +21,8 @@ Every cached picture is redrawn after the browser loses and restores its GPU con
 ## Battle map sizes
 Battle maps are sized by context, from 24×18 up to 48×34, with anti-slog endings.
 - Raid maps run between the run's *Raid map, smallest / largest* dials (32×24 to 56×42 as it stands; cities and towns always the largest). Past 40×30 the dead, Heat's rise, a container's find and the ways out scale with the ground; the plan window and the building choice show the size.
-- Modules: [battlesize, worldcfg]; `tools/raidshot.cjs` shoots a big raid in the browser.
+- **Up to 300 × 300** (issue #24, 2026-10-25): the *Raid map, largest* dial goes to 300 across (the default stays 56); a building's map is its real-size footprint plus margins (`fitMargins`), as big as it needs to be, never past 300 × 300. What makes that playable is under [Big maps: what keeps them fast](#big-maps-what-keeps-them-fast-issue-24-2026-10-25).
+- Modules: [battlesize, worldcfg]; `tools/raidshot.cjs` shoots a big raid in the browser; `tools/bigmapbench.js` measures a big raid (turn, frame, save).
 
 ## A raid without the side panel
 A raid on a site uses the whole screen as the map, with a top strip, cards over the map and a log window.
@@ -49,6 +50,7 @@ When a raid has a street and buildings to go into, a card asks which before the 
 
 ## Raids into building interiors
 Raids go into generated buildings and neighbourhood streets to search, past locks, keys and safes.
+- **Buildings at real size** (issue #24): footprints sized like real buildings (1 m a cell), wings and split rooms keeping the rooms, containers and dead to the square metre, 1–3 storeys mostly and a city's towers 6–10 with the floors above the fourth blocked off. See [Buildings at real size](#buildings-at-real-size-issue-24-2026-10-25).
 - **Extracting with furniture in the arms** (issue #18, 2026-10-25): a piece carried out goes into the team's car or truck by itself (its room as Load into vehicle; bikes only a piece their racks hold), else it is set down at the door with the message "Exhausted, the team dropped what it was carrying: …" (the summary, the log, the alert); at a POI it stays there in the ledger (`poi.cont.pieces`) for the next visit. The rules: [travel.md, Extracting with a piece in the arms](travel.md#extracting-with-a-piece-in-the-arms) [furnihome].
 - Procedurally generated buildings, containers and searches; raid loot carried by hand [buildingmaps, search, raidloot]. Raid planning (entry side, scout, wait for night) [raidplan]; locks, keys and safes [locks, gunsafes]. A site's building is picked before the map (see above).
 - **Neighbourhood POI**: a street of 3–5 two-storey houses on one map (rows facing a road, yards, fences, parked cars to search; ways out at both ends and the back gardens). Each house's containers are kept apart in the POI's ledger with the one pool falling across them. Headless it is one POI searched a house at a time [buildingmaps `streetMap`, `streetHouses`, `STREET`, `streetIntro`; combat `createRaid` (upper floors' reach from every stairwell); poicont `poiHouses`; scavenge `searchHour` / `afterRaid`].
@@ -250,6 +252,62 @@ Raids go into generated buildings and neighbourhood streets to search, past lock
   - **Map size and speed**: the map is the footprint and its margins (62–66 × 49–53), past the run's largest raid map (`fitMargins` only grows a map; `BIG`'s scales take the dead, Heat and the loot); the crawl's places open their own maps (`PLACE_POOL` has no slot widths to hold). Measured: a turn of the dead (scavenge.js `raidEnemies`, 10 turns, 3 worlds) 5 ms on average (25 at most) against 2 ms (13) on the old store's 40 × 30 map; a frame of the whole map zoomed out (ui/combat.js `drawCombat`, headless Chromium) 8.8 ms against 2.7 ms, 199 ms against 133 ms with the sprites made again.
   - **Signs of survival** (`registerScene` with `when`: the new layouts only): `checkoutline` (the gaps between the tills shoved full of crates and shelving, one left, the one who held them behind with brass, 3–6 of the dead in front: a supermarket's or a grocery's), `freezershut` (someone shut in a supermarket's walk-in freezer), `frontdoors` (5–9 of the dead piled inside the front doors, a blood trail to them, brass where the shooters stood); `stockshelter` now takes a supermarket's warehouse.
   - Modules: [buildingmaps `shop`, `bigstore`, `supermarket`, `assemble` dockTruck; shoplayout `cornerstore`, `grocerfloor`, `superstore`, `bakery`, `butcher`, `warehouse`, `walkfreezer`, `baler`, `aislesY`, `frontEnd`, the scenes; data-furniture; data-appliances; appliances; power; combat `BOX_LOOT`, `boxLoot`; citycrawl; ui/isoview; ui/itemart/furniture; ui/codex]. Tests: `tools/shopstest.js`, `tools/storeytest.js` (the "huge" class), `tools/appliancestest.js`, `tools/isobattles.js` (the showroom packs the one-deep pieces first).
+
+### Buildings at real size (issue #24, 2026-10-25)
+The user's request 2026-10-25 (the interiors epic #7): "All buildings should scale based on how large buildings are in real life with unique layouts and 1 to 3 stories tall and city buildings can be 10 stories tall make the raid maps larger if needed up to 300x300", and on the way: "to prevent needing to make really tall cities just block off or have destroyed stairs to prevent going to higher stories though they dont actually exist".
+
+- **The scale**: `CELL_M` = 1 m a cell (data-buildingsize.js), from the furniture: a bed is 1 × 2 cells (`BED_SPEC`), a doorway one cell, a sofa two, a car 2 × 3–4 (`placeCar`).
+- **The size table** (`REAL_SIZE`, metres, width along the front × depth, outer walls included; storeys; `city`: storeys in a city; `set`: rural, town or city; `own`: another ticket's size; `wings`: how it grows). Every archetype's spec goes through one helper, buildingmaps.js `realScale` (called by `makeSpec`, `buildingHint`, `streetMap`), which reads it (`realFoot`, `realStoreys`):
+
+  | Building | m | Storeys | | Building | m | Storeys |
+  |---|---|---|---|---|---|---|
+  | House (small 35%) | 12–16 × 9–13 (10–12 × 9–11) | 2 | | Clinic, infirmary | 15–25 × 12–20 | 1–2 |
+  | Farmhouse | 12–18 × 10–14 | 2 | | Hospital | 60–100 × 40–60 | 3–6, city 6–10 |
+  | Cabin | 7–9 × 6–8 | 1 | | Police | 25–45 × 20–35 | 2 |
+  | Lodge | 18–28 × 12–18 | 2 | | Fire station | 20–30 × 14–22 | 1–2 |
+  | Ranger station | 11–15 × 9–12 | 1 | | Offices | 20–40 × 15–30 a floor | 2–4, city 6–10 |
+  | Apartment block | 25–50 × 15–25 | 3–6, city 6–10 | | Lab | 20–40 × 15–25 | 1–3 |
+  | Pharmacy | 12–20 × 14–24 | 1 | | Barracks | 30–60 × 10–15 | 2–3 |
+  | Gun store, pawn shop, liquor, bookstore | 10–18 × 12–22 | 1–2 | | Armory | 15–25 × 10–15 | 1 |
+  | Sporting goods, electronics, pet store, clothing | 12–26 × 12–25 | 1–2 | | Cell block | 30–50 × 15–25 | 2 |
+  | Radio shop | 12–16 × 13–18 | 1–2 | | Mess hall | 25–40 × 15–25 | 1 |
+  | Garden center, hardware | 18–30 × 14–25 | 1 | | Control building | 15–25 × 12–18 | 1–3 |
+  | Feed store | 15–25 × 12–20 | 1 | | Transmitter hut | 8–12 × 6–9 | 1 |
+  | Diner, restaurant, bar | 15–25 × 12–20 | 1–2 | | Terminal | 40–80 × 20–35 | 1–2 |
+  | Pizza place | 12–18 × 12–18 | 1 | | Warehouse | 40–80 × 25–50 | 1 (tall) |
+  | Gas station | 15–25 × 10–15 (and the forecourt) | 1 | | Factory | 50–100 × 30–60 | 1 |
+  | Truck stop | 25–40 × 15–25 | 1 | | Hangar | 40–60 × 30–50 | 1 |
+  | Bank | 15–30 × 15–25 | 1–2 | | Motor pool | 40–70 × 25–40 | 1 |
+  | Car dealership | 30–50 × 20–35 | 1–2 | | Auto shop | 15–25 × 12–20 | 1 |
+  | Library | 25–40 × 20–30 | 1–2 | | Garage | 10–16 × 8–12 | 1 |
+  | Vet | 15–20 × 12–18 | 1–2 | | Workshop, machine shed | 12–20 × 8–14 | 1 |
+  | Motel | 40–70 × 10–14 | 2 | | Barn | 15–30 × 10–20 | 1 (a hayloft) |
+  | Church | 14–24 × 22–36 (a long nave) | 1 | | Corner store, grocery, supermarket, department store (#22), school (#23), bunkers (#26) | their own | |
+
+  Tuned from the issue's starting values: a cabin 7–9 (a 6 m cabin has no room for its bathroom), the radio shop a little bigger, the motel 10–14 deep (single-loaded rooms; deeper rooms would halve its rooms to the square metre), the church 14–24 × 22–36 and the fire station 20–30 × 14–22 (a small-town church and firehouse; the bigger ones read as cathedrals and city stations, with too few rooms for their floor).
+- **Layouts at that size** (`realScale`): the archetype's own plan stays what its dice made, at its own size (`natW × natH`). The building's footprint is the table's, and the plan goes over it:
+  - **wings**: from `SCALE.TILE` (1.7) times the plan's width or depth, the plan is laid out nx × ny times, each copy at least its own size and never under `SCALE.SQUASH` (80%) of it, a 2-wide corridor between them (a hub: the doors join every wing to it), each copy turned left for right by the dice. One more wing each way is tried too, and the layout nearest today's rooms to the square metre is kept;
+  - **rooms split**: a stretched room ("*" or a share; not a hub, corridor, entry or a room with its own outside door) is split in two, every wing alike, one at a time while that brings the plan nearer the rooms its own size would have on this floor (`planCount`: carve's own sizes, no dice), at most `SCALE.TWINS` (3) times a room. A few rooms' twin is the room that goes beside them (`TWIN_OF`: a kitchen's pantry, a gym's equipment store, a day room's office), so a stretched plan does not read "Kitchen 1, Kitchen 2";
+  - **containers**: a room's most containers (its `maxBoxes`, 4 by default) × `boxK` (0.5–4), the step nearest the plan's own containers to the square metre (assemble `boxCap`);
+  - **row kinds** (`wings`): "along" (a motel) grows side by side wall to wall, the copies after the first without the office (its rooms numbered on: Room 6…), its upper walkway one strip behind every wing; "back" (a church) never side by side, deeper by more of its back strip (vestry, parish kitchen, storage) behind a corridor, its nave stretched;
+  - **unique layouts**: with the wing count, the turned copies, the splits and the floor plans below, two buildings of a kind rarely look alike; #23's shapes (`spec.shape`) keep their own plan.
+- **Storeys** (`MAX_STOREYS` 10): the kinds that grow in a city (offices, apartments, a hospital: `REAL_SIZE` city) roll their height from the setting's range (`settingOf`: a city's tiles and its crawl "city", a town's "town", else "rural"), plus the crawl's depth bonus; the rest keep their own storeys within their row. **Only the lower floors are built** (the user's word, above): a building taller than `OPEN_STOREYS` (4) is built up to `openStoreys(height, bonus)` floors (4; 5 deeper in a crawl), `spec.height` what it stands, `spec.storeys` the floors built; on the top floor built the stair run still rises, but its top step is blocked (`c.sealUp`: "rubble", the flight collapsed, or "barricade", desks and cabinets jammed in, by its place), drawn as a heap or a barricade on the top step (ui/isoview.js `sealPrims`), and Go up says why ("The stairs up have collapsed…"). From 6 storeys a building has two stairwells (`SCALE.TWO_STAIRS`). Its top floor built is named "Floor N", not "Top floor".
+- **An office tower's floors differ**: between the lobby and the plant room on top, each floor is open plan, cubicles, meeting rooms or a canteen floor by its number (`OFFICE_FLOORS`, `OFFICE_ORDER`).
+- **The dead by floor area**: a building at real size holds what its plan's map would have held at its own size (`map.natMap`, the same rules: `BMAP.DEAD_SCALE`, the big-map growth) × its floor area over its plan's (`spec.deadK`), at most `BMAP.DEAD_CAP` (120) of a group; a container's find goes by its plan's map too (combat.js `searchBox`, citycrawl `placeProfile`: `R.natMap`), so a big building is as full to the square metre as a small one. Heat and the waves stay by the map (a big map's clock runs slower, its waves capped: the anti-slog ends unchanged).
+- **The street maps**: a city's or a town's street raid (combat.js `genRaidMap`, `extra.real`) has buildings 9–16 × 8–12 m where the map has room; a neighbourhood's houses are the house row's own sizes (`STREET.REAL_BW` 10–16, `REAL_BH` 13).
+- **AI parity** (docs/adr/0001-ai-parity.md): a site's buildings hold `siteSizeK` times what they did (the mean `deadK` of its buildings); the other groups' raids (aiscav.js: their own land and a site's loot) and your own hour-by-hour search (scavenge.js `searchHour`) take a share `siteSizeK` times smaller an hour of a site worth that much more: the same finds an hour, a big site lasting longer. A city 2.4, a town 1.1, a hospital 7, a warehouse 3.9, a police station 2.
+- **Older saves** (save.js `scaleLegacy`, worldcfg.js `legacyScale`; worlds since carry `scaleV`): every building keeps its archetype's own footprint and storeys (no `realScale`), offices and apartments their old cap of 8 (`OLD_MAX`); a battle in progress and a crawl's snapshots are restored as they were.
+- **Densities** (`tools/scaletest.js`, 200 seeds a kind): rooms and containers per square metre of the ground floor, and the dead per square metre of every floor built, within ±15% of the same plan at its old size for every kind.
+- Modules: [data-buildingsize, buildingmaps `realScale` `planCount` `fitParts` `TWIN_OF` `OFFICE_FLOORS` `SCALE` `OPEN_STOREYS` `openStoreys` `MAX_STOREYS` `settingOf` `siteSizeK` `STREET`, combat `goup` / `genRaidMap` / `searchBox`, citycrawl `placeHeight` / `placeHint` / `placeProfile`, aiscav, scavenge, ui/isoview `sealPrims`, worldcfg `legacyScale`, save]. Tests: `tools/scaletest.js`, `tools/storeytest.js`, `tools/citycrawltest.js`, `tools/interiortest.js`.
+
+### Big maps: what keeps them fast (issue #24, 2026-10-25)
+- **Pathing past 32k cells**: `reachable`'s path table is 32-bit (it was 16-bit: a map past 181 × 181 sent paths astray).
+- **Sight cache**: dense (`Int8Array(n²)`) up to `LOS_DENSE` cells, else sparse (`SparseLos`), which now starts over past `SPARSE_MAX` (400 000 entries, about 30 MB a floor): a 300 × 300 map's ten floors no longer grow without end. It is never saved.
+- **The render** (ui/isoview.js): the ground (`flatGroundFor`), the skirt (ui/battleedge.js `skirtFor`) and the marks (ui/battlemarks.js) are pictures in map space cut into tiles of 32 cells (512 px a side: `TILE_CELLS`), only the tiles on screen drawn (`drawTiles`); an upper floor is drawn the same way (the ground floor's picture dimmed, the floor's own raised), where it was one view-sized picture (8384 px wide at 300 × 224) painted pixel by pixel; the fog in two one-pixel-a-tile masks (`fogMaskFor` part); the per-cell overlays (`fillCells`, `outlineCells`, the door marks) only over the cells that can show (`viewWin`, `forWin`); the skirt goes by the ground floor's edge and is painted once per battle, not once a floor.
+- **Saves**: the crawl's snapshots keep each floor packed (citycrawl `packCells` / `unpackCells`: every distinct cell once and runs of them; an older snapshot's plain array still restores), the ground floor once; the browser stores saves gzipped (ui/saves.js).
+- **Measured** (`tools/bigmapbench.js`; a city hospital, 3 floors, 60 dead; the frame on a 1500 × 950 view in headless Chromium):
+
+BENCH_TABLE
 
 ## Bunkers
 The user's request (2026-10-25, issue #26 of the interiors epic #7): "Add bunker buildings". Module `sim/bunkerlayout.js`; tests `tools/interiortest.js` ("Bunkers") and `tools/crashlandingtest.js` (the bunker raided, the remnant inside, the generator, the captured base).

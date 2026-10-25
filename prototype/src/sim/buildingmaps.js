@@ -1032,11 +1032,13 @@ function apartments(rng, o = {}) {
 // worldcfg.js legacyScale). The archetype's own plan stays what it is, made by its own dice for its own footprint (the
 // plan's natural size, natW × natH; an older save's footprint); the building's footprint is its real size (data-
 // buildingsize.js REAL_SIZE, realFoot: 1 m a cell), and its storeys its kind's:
-//   - footprint: no wider or deeper than SCALE.TILE × the plan's, the plan stretches over it (its "*" rooms grow);
-//     past that the plan is laid out in wings: nx × ny copies of it, each about the plan's own size, a SCALE.CORRIDOR
-//     wide corridor between them (a hub: the doors join every wing to it), each copy turned left for right by the
-//     dice, so a big building's rooms are the size they were and as many to the square metre (rooms, containers and
-//     the dead keep today's density);
+//   - footprint: from SCALE.TILE × the plan's width or depth the plan is laid out in wings: nx × ny copies of it, each
+//     at least the plan's own size (one more each way where they stay SCALE.SQUASH of it, whichever comes nearer),
+//     a SCALE.CORRIDOR wide corridor between them (a hub: the doors join every wing to it), each copy turned left for
+//     right by the dice; then the stretched rooms are split (splitUp, every wing alike) until the plan holds as many
+//     rooms to the square metre of footprint as at its own size (planCount: carve's own cuts, no dice), and a room's
+//     most containers × boxK the same way: rooms, containers and the dead keep today's density (tools/scaletest.js);
+//   - row kinds (REAL_SIZE wings): "along" (a motel) side by side wall to wall, "back" (a church) deeper by its back strip;
 //   - storeys: the kinds that grow in a city (REAL_SIZE city: offices, apartments, a hospital) roll their height from
 //     the setting's range (a city's towers 6–10, a town's 2–4 or 3–6), plus the city crawl's depth bonus; the others
 //     keep their own storeys within their row's range. A building taller than OPEN_STOREYS is built up to openStoreys
@@ -1189,6 +1191,31 @@ export function realScale(rng, spec, key, o = {}) {
   }
   out.deadK = (out.bw * out.bh * built) / (spec.bw * spec.bh * out.natStoreys);
   return out;
+}
+
+// How much more floor a site's buildings have at real size than their plans had (the mean of realScale's deadK over a
+// few samples of each, by the site's setting; 1 in an older save, or a site with no buildings): the other groups'
+// abstract raids go by it (aiscav.js, docs/adr/0001-ai-parity.md): a site holds this many times what it did, stripped
+// no faster an hour.
+const sizeKCache = new Map();
+export function siteSizeK(state, tile) {
+  if (!tile || legacyScale(state)) return 1;
+  const sb = siteBuildings(tile);
+  if (!sb || !sb.options.length) return 1;
+  const setting = settingOf(tile);
+  let sum = 0;
+  for (const o of sb.options) {
+    const ck = `${o.key}|${setting}`;
+    let k = sizeKCache.get(ck);
+    if (k == null) {
+      k = 0;
+      for (let i = 0; i < 6; i++) { const r = new Rng(4409 + i * 7919); const sp = realScale(r, BUILDINGS[o.key].make(r, {}), o.key, { setting }); k += sp.deadK || 1; }
+      k /= 6;
+      sizeKCache.set(ck, k);
+    }
+    sum += k;
+  }
+  return Math.max(1, sum / sb.options.length);
 }
 
 // The buildings: key → { name, make(rng, opts) }. Location types use these through SITES. opts.storeyBonus: extra
@@ -1360,7 +1387,7 @@ const hintCache = new Map();
 export function buildingHint(key) {
   let h = hintCache.get(key);
   if (h) return h;
-  const spec = BUILDINGS[key].make(new Rng(7919));
+  const sr = new Rng(7919), spec = realScale(sr, BUILDINGS[key].make(sr), key, { setting: REAL_SIZE[key] ? REAL_SIZE[key].set : "town" }); // at real size (issue #24)
   const plan = assemble(new Rng(104729), spec, { key, name: BUILDINGS[key].name });
   const types = plan.rooms.filter((r) => r.type && AREAS[r.type] && !r.outdoor).map((r) => r.type);
   const score = {};
@@ -1378,7 +1405,7 @@ export function buildingHint(key) {
     const o = sig.find((x) => x.name === name);
     if (o) o.n++; else sig.push({ name, n: 1 });
   }
-  h = { hint: `Likely: ${sup.join(", ")}${gear ? ", maybe gear" : ""}. Rooms: ${named.join(", ")}.`, size: cells < 140 ? "small" : cells < 300 ? "medium" : "large", rooms: plan.rooms.filter((r) => !r.outdoor).length, holds: [...new Set(types)], sig };
+  h = { hint: `Likely: ${sup.join(", ")}${gear ? ", maybe gear" : ""}. Rooms: ${named.join(", ")}.`, size: cells < 200 ? "small" : cells < 800 ? "medium" : "large", rooms: plan.rooms.filter((r) => !r.outdoor).length, holds: [...new Set(types)], sig };
   hintCache.set(key, h);
   return h;
 }
@@ -1451,6 +1478,7 @@ export const STREET = {
   ROAD: 4,          // the road (a lane each way: a parked car never closes it); a sidewalk of one cell each side
   BW: [10, 14],     // a house's width (what three in a row leave), and BH its depth at most: two rows fit 34 cells
   BH: 10,
+  REAL_BW: [10, 16], REAL_BH: 13, // a world made since buildings at real size (data-buildingsize.js): the houses' own sizes, two rows in 40 cells
   CARS: [1, 3],     // cars parked along the kerb (searchable)
   TREES: [3, 6], BINS: [1, 3],
   DEAD: 1.0,        // the dead: the site's roster × this
@@ -1476,9 +1504,11 @@ export function streetMap(state, tileId, option, withVehicle) {
     const row = k < perRow[0] ? 0 : 1, col = row ? k - perRow[0] : k;
     const id = `${option.id}#${k + 1}`;
     const hr = new Rng(specSeed(state, tileId, { id }));
-    const spec = BUILDINGS.house.make(hr, { legacy: legacyRooms(state) });
-    spec.bw = Math.max(S.BW[0], Math.min(spec.bw, S.BW[1], Math.floor((MAXW - 2 * S.SIDE - (perRow[row] - 1) * S.GAP) / perRow[row])));
-    spec.bh = Math.min(spec.bh, S.BH);
+    const real = !legacyScale(state); // a world made since buildings at real size (issue #24): its houses 10–16 m wide, up to 13 deep
+    const spec0 = BUILDINGS.house.make(hr, { legacy: legacyRooms(state) }), spec = real ? realScale(hr, spec0, "neighbourhood", { setting: "town" }) : spec0;
+    const BW = real ? S.REAL_BW : S.BW, BH = real ? S.REAL_BH : S.BH;
+    spec.bw = Math.max(BW[0], Math.min(spec.bw, BW[1], Math.floor((MAXW - 2 * S.SIDE - (perRow[row] - 1) * S.GAP) / perRow[row])));
+    spec.bh = Math.min(spec.bh, BH);
     spec.margins = { front: 1, back: 1, left: 1, right: 1 };
     spec.ground = "none";
     const m = assemble(hr, spec, { key: "house", id, name: BUILDINGS.house.name, legacy: legacyRooms(state) });
@@ -2175,13 +2205,38 @@ export function assemble(rng, spec, opts = {}) {
   // The walk runs on every blocking thing put down (hundreds a building): over a byte a cell, passable(cells[i]) kept
   // in step by everything below that changes a cell's kind from here on (block, the cars: passAt).
   const pass = new Uint8Array(W * H);
-  const passAt = (i) => { pass[i] = passable(cells[i]) ? 1 : 0; };
+  // known / whole: the last answer of the whole walk, still good while nothing was opened since (a cell turning passable
+  // can join what was cut off); connected(i) with the one cell just blocked answers from its ring when it can.
+  let known = false, whole = false;
+  const passAt = (i) => { const p = passable(cells[i]) ? 1 : 0; if (p && !pass[i]) known = false; pass[i] = p; };
   const passRect = (r) => { for (let y = r.y0; y < r.y0 + r.h; y++) for (let x = r.x0; x < r.x0 + r.w; x++) passAt(I(x, y)); };
   let total = 0;
   for (let i = 0; i < cells.length; i++) { passAt(i); total += pass[i]; }
   let stamp = 0;
   const marks = new Uint32Array(W * H), stack = new Int32Array(W * H), N = W * H;
-  function connected() {
+  // The cell i just blocked keeps everything joined when its open neighbours (4-way) are one run round its ring of eight
+  // (each two along the ring touch 4-way): any way through it goes round it instead. Then the answer is the last whole
+  // walk's (issue #24: a walk of the whole map for every piece put down was most of a 300 × 224 map's making).
+  const RING = [[0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1]];
+  function ringKeeps(i) {
+    const x = i % W, y = (i / W) | 0, open = RING.map(([dx, dy]) => inside(x + dx, y + dy) && pass[I(x + dx, y + dy)] === 1);
+    if (open.every(Boolean)) return true;
+    let runs = 0; // the runs of open ring cells that hold a 4-way neighbour (even k)
+    for (let k = 0; k < 8; k++) {
+      if (!open[k] || open[(k + 7) % 8]) continue; // not the start of a run
+      let four = false;
+      for (let j = k; open[j % 8]; j++) if (j % 2 === 0) four = true;
+      if (four) runs++;
+    }
+    return runs <= 1;
+  }
+  function connected(i = -1) {
+    if (i >= 0 && known && ringKeeps(i)) return whole;
+    known = true;
+    whole = walkAll();
+    return whole;
+  }
+  function walkAll() {
     stamp++;
     let a = anchor;
     if (!passable(cells[a])) { a = cells.findIndex((c, i) => passable(c) && !inBldg(i % W, (i / W) | 0)); if (a < 0) return false; }
@@ -2213,7 +2268,7 @@ export function assemble(rng, spec, opts = {}) {
     passAt(i);
     if (!passable(c)) {
       total--;
-      if (!connected()) { c.k = was; passAt(i); total++; return false; }
+      if (!connected(i)) { c.k = was; passAt(i); total++; return false; }
     }
     if (room && room.up) c.h = 1;
     return true;
@@ -2372,7 +2427,7 @@ export function assemble(rng, spec, opts = {}) {
       const i = I(x, y), c = cells[i];
       if (c.k !== "open" || rid[i] !== -2 || pathCells[i] || keep[i] || inZone(x, y) || nearDoor(x, y)) continue;
       c.k = "crag"; passAt(i); total--;
-      if (!connected()) { c.k = "open"; passAt(i); total++; }
+      if (!connected(i)) { c.k = "open"; passAt(i); total++; }
     }
   }
   // The vent stack on the rock over the bunker: the footprint's rock cell nearest its middle.
@@ -2502,7 +2557,7 @@ export function assemble(rng, spec, opts = {}) {
   const floors = [{ cells, name: floorName(0) }];
   let base = areas.length, nextCid = cid;
   for (let g = 1; g < storeys; g++) {
-    const program = spec.upper ? spec.upper(g, rng, { top: g === storeys - 1, storeys, bw, bh }) : spec.program;
+    const program = spec.upper ? spec.upper(g, rng, { top: g === storeys - 1 && height === storeys, storeys, bw, bh }) : spec.program; // top: the roof is over it (a taller building's top floor built is not its plant room)
     const up = assemble(rng, spec, { ...opts, _floor: g, _program: program, _runs: runs, _idBase: base, _cid: nextCid, _piece: pieceNo });
     areas.push(...up.rooms); containers.push(...up.containers); lockedDoors.push(...up.lockedDoors);
     floors.push({ cells: up.cells, name: floorName(g) });

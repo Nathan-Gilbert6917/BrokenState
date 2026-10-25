@@ -586,24 +586,30 @@ export function placeStoreys(state, c, place, n = c.block) {
   const spec = buildingSpec(state, c.tile, placeOption(c, place, n));
   return typeof spec.storeys === "number" ? Math.max(1, spec.storeys) : 1;
 }
+// How many storeys it stands (issue #24: a city's towers 6–10; only placeStoreys of them are built, the stairs up from
+// the top one blocked: buildingmaps.js OPEN_STOREYS).
+export function placeHeight(state, c, place, n = c.block) {
+  const spec = buildingSpec(state, c.tile, placeOption(c, place, n));
+  return Math.max(1, spec.height || spec.storeys || 1);
+}
 
 // The block card's hint line (issue #21 rule 4): the kind, its storeys (this place's own, placeStoreys) and the kind's
 // signature rooms from its archetype (buildingmaps.js buildingHint: a sample plan's rooms), the most numerous first, then
 // the first of the rest, the plain ones (HINT_PLAIN: corridors, restrooms, storage...) left out: "Hospital: 4 floors,
-// wards, a pharmacy". At most HINT_ROOMS rooms.
+// wards, a pharmacy" (a taller one "Office building: 4 floors open of 9, offices"). At most HINT_ROOMS rooms.
 const HINT_PLAIN = new Set(["Corridor", "Restroom", "Bathroom", "Bath", "Storage", "Lobby", "Office", "Landing", "Walkway", "Stockroom", "Storeroom", "Back room", "Linen room",
   "Utility room", "Maintenance", "Supply room", "Reception", "Front desk", "Waiting room", "Break room", "Flat", "Restrooms"]);
 const HINT_ROOMS = 2;
 const plural = (w) => (/s$/.test(w) ? w : /[^aeiou]y$/.test(w) ? `${w.slice(0, -1)}ies` : `${w}s`);
 export function placeHint(state, c, place, n = c.block) {
-  const st = placeStoreys(state, c, place, n);
+  const st = placeStoreys(state, c, place, n), ht = placeHeight(state, c, place, n);
   const sig = (buildingHint(place.key).sig || []).filter((r) => !HINT_PLAIN.has(r.name) || r.n >= 4); // a plain room the kind is made of counts (an office tower's offices)
   const many = sig.filter((r) => r.n > 1).sort((a, b) => b.n - a.n).slice(0, 1);
   const rest = sig.filter((r) => !many.includes(r));
   const rooms = [...many, ...rest.filter((r) => r.n === 1), ...rest.filter((r) => r.n > 1)].slice(0, HINT_ROOMS);
   const one = (w) => (/s$| and /.test(w) ? w : aWord(w)); // "sporting goods", "lumber and stock": no article
   const words = rooms.map((r) => (r.n > 1 ? plural(r.name.toLowerCase()) : one(r.name.toLowerCase())));
-  return `${place.kind}: ${st} ${st === 1 ? "floor" : "floors"}${words.length ? `, ${words.join(", ")}` : ""}`;
+  return `${place.kind}: ${st} ${st === 1 ? "floor" : "floors"}${ht > st ? ` open of ${ht}` : ""}${words.length ? `, ${words.join(", ")}` : ""}`; // a tower's floors above are blocked off
 }
 
 // ---------- the team ----------
@@ -1182,7 +1188,7 @@ export function placeProfile(state, c, place, n = c.block) {
   const t = state.tiles[c.tile];
   const map = buildingMap(state, c.tile, placeOption(c, place, n), false);
   const boxes = (map.containers || []).filter((x) => x.kind !== "body" && x.kind !== "ground" && map.rooms[x.area] && AREAS[map.rooms[x.area].type]).map((x) => [x.area, x.kind, x.f || 0]);
-  const reward = rewardMult(t) * (raidBig(state, map.w, map.h) ? raidLootShare(map.w, map.h) : 1);
+  const reward = rewardMult(t) * (raidBig(state, map.w, map.h) ? (map.natMap ? raidLootShare(map.natMap[0], map.natMap[1]) : raidLootShare(map.w, map.h)) : 1); // a building at real size: by its plan's map (combat.js searchBox)
   let best = null, worth = 0;
   for (const F of map.floors && map.floors.length ? map.floors : [{ cells: map.cells }]) for (const cell of F.cells) {
     const d = cell && liftDef(cell.k);

@@ -163,7 +163,7 @@ import { swapGun, kitGunSource, bodyGunSource, areaSourceName } from "./gundist.
 import { planStart, closePlan } from "./raidplan.js"; // choices before a raid: the side, a scout, the night (docs/suggestions-5.md #23)
 import { fightersOf } from "./groupfight.js"; // a group's people in a fight by the numbers
 import { ammoFactor } from "./arsenal.js";
-import { cfgOf, lootQty, battleDials, legacyRaids } from "./worldcfg.js";
+import { cfgOf, lootQty, battleDials, legacyRaids, legacyScale } from "./worldcfg.js";
 import { concealHidden, concealAim, concealScore, softOn, softCost, markShot, tentStep, tentAI, tearTent, softSetup, settleTents } from "./softcover.js"; // bushes and tents: they hide people, stop no bullets; tents slashed, burned and worn (the user's picks 2026-10-20) // the run's dials (World… on the new-run screen): the battle carries its own
 import { strikeAct, slashAct, settleTentsDown } from "./tentfight.js"; // tents taken down (and carried off) and slashed in a fight (the user's request 2026-10-20)
 import { campRaidMap, campRaidUnits, campSleeperTurn, tentBoxLoot, campAfter } from "./campsite.js"; // the campsite raid: its clearing, its tents and their loot, its campers (the user's request 2026-10-20)
@@ -7201,8 +7201,11 @@ function genRaidMap(rng, tile, areaTypes, withVehicle, extra = {}) {
     // A building with doors, windows and containers against the inside walls.
     let built = false;
     const big = W * H > 900 ? 2 : W * H > 700 ? 1 : 0; // bigger rooms on a bigger map (battlesize.js)
+    // A city's or a town's street in a world made since buildings at real size (extra.real, issue #24): a shop's or a
+    // house's front, 9–16 × 8–12 m (data-buildingsize.js CELL_M: a cell a metre), where the map has room for it.
+    const real = !!extra.real && W >= 40 && H >= 30;
     for (let tries = 0; tries < 40 && !built; tries++) {
-      const w = rng.int(5, 8 + big), h = rng.int(4, 6 + Math.min(1, big));
+      const w = real && tries < 30 ? rng.int(9, 16) : rng.int(5, 8 + big), h = real && tries < 30 ? rng.int(8, 12) : rng.int(4, 6 + Math.min(1, big));
       const x0 = rng.int(4, W - 5 - w), y0 = rng.int(1, H - 1 - h);
       if (!rectFree(x0, y0, w, h)) continue;
       const edge = [];
@@ -7348,7 +7351,7 @@ export function createRaid(state, setup) {
     if (tile && tile.road && !types.includes("roadcars")) types.push("roadcars"); // a site on a road: the cars left on the road outside it too (AREAS.roadcars)
     const trucks = trucksAt(state, tileId); // miltrucks.js: Army trucks here (a road, a convoy, a base's motor pool, an army wreck)
     if (trucks.length && !types.includes("miltrucks")) { if (poiI != null) types.push("miltrucks"); else types.unshift("miltrucks"); } // first: they want the room (a POI's map: last)
-    map = genRaidMap(mrng, tile, types, withVehicle, { trucks, big: raidBig(state, W, H) });
+    map = genRaidMap(mrng, tile, types, withVehicle, { trucks, big: raidBig(state, W, H), real: !legacyScale(state) && !!tile && !!tile.loc && (tile.loc.type === "city" || tile.loc.type === "town") }); // real: a city's or a town's street, its buildings at real size (issue #24)
     if (entryFrom(map, entrySide, withVehicle)) { const z = map.zones[0]; map.reach = flood(map.cells, z.x0 + 1, z.y0 + 1); }
     if (campPoi) { campRaidMap(state, tileId, poiI, map, W, H, mrng); map.reach = flood(map.cells, map.zones[0].x0 + 1, map.zones[0].y0 + 1); } // campsite.js: the clearing, the fire and the tents round it
   }
@@ -7372,6 +7375,7 @@ export function createRaid(state, setup) {
     ...battleDials(state), // worldcfg.js: the run's dials this battle reads (b.zDmg, b.infectBite, b.wear, b.failures)
     raid: {
       areas: map.areas, containers: map.containers, zones: map.zones,
+      ...(map.natMap ? { natMap: map.natMap.slice() } : {}), // buildingmaps.js realScale: the map its plan would have had at its own size (a container's find goes by it)
       hasVehicle: !!withVehicle, vehicleZone: map.zones.findIndex((z) => z.vehicle), heat: setup.raid?.heat0 || 0, stage: 0, spawned: 0, spawnCap: Math.round(RAID_SIZE.SPAWN_CAP * raidDeadScale(W, H, big)), ...(big ? { big: true } : {}), // vehicleZone: the zone the vehicle touches now (syncVehicleZone), -1 when driven off
       // Hardcore (hardcore-loot.js): sites hold about twice a normal start's loot, so the cap is higher there.
       // A point of interest's containers hold what they held untouched (pois.js poiFull: how picked over it is shows
@@ -7708,7 +7712,7 @@ export function searchBox(state, b, u, box, open = false, quick = false) {
   const party = state.parties.find((x) => x.id === b.setup.partyId);
   if (u.xpT && !box.contents) u.xpT.boxes++; // skills.js: Scavenging XP for each container opened
   const rich = box.kind === "body" ? 1 : R.richness * Math.min(FLOOR_RICH.cap, Math.pow(FLOOR_RICH.perFloor, box.f || 0)) * (box.rich || 1); // upper storeys are less picked over (buildingmaps.js); a nest's floor richer still (floorfolk.js)
-  const reward = box.kind === "body" ? 1 : (R.reward ?? 1) * (box.truck || !R.big ? 1 : raidLootShare(b.w, b.h)); // buildingmaps.js rewardMult: city sites pay more, the countryside less; a map past the old Large has more containers, each holds a little less (battlesize.js BIG)
+  const reward = box.kind === "body" ? 1 : (R.reward ?? 1) * (box.truck || !R.big ? 1 : R.natMap ? raidLootShare(R.natMap[0], R.natMap[1]) : raidLootShare(b.w, b.h)); // a building at real size (R.natMap): its containers hold what its plan's map's did (as many to the square metre, each as full) // buildingmaps.js rewardMult: city sites pay more, the countryside less; a map past the old Large has more containers, each holds a little less (battlesize.js BIG)
   // Roll what is inside (once); anything that does not fit stays in the container.
   if (!box.contents) {
     const sup = {}, gear = [];
