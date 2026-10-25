@@ -15,7 +15,7 @@
 // Run: node tools/prisontest.js [seeds]  (BS_QUICK=1: fewer seeds)
 import { createWorld, hub, atBase } from "../src/sim/world.js";
 import { launchExpedition } from "../src/sim/parties.js";
-import { createBattle, registerCombatHandler, combatAct, endPlayerTurn, runEnemyPhase, CELL, AREAS, boxLoot } from "../src/sim/combat.js";
+import { createBattle, registerCombatHandler, combatAct, endPlayerTurn, runEnemyPhase, CELL, AREAS, boxLoot, enemyUnit } from "../src/sim/combat.js";
 import { BUILDINGS, siteBuildings, SITES } from "../src/sim/buildingmaps.js";
 import { prisonMap, prisonKind, PRISON, switchPanel } from "../src/sim/prison.js";
 import { raidEnemies } from "../src/sim/scavenge.js";
@@ -278,6 +278,35 @@ if (tile) {
     const tt = performance.now();
     endPlayerTurn(R.st); runEnemyPhase(R.st);
     console.log(`  a turn (the enemy phase) on ${b3.w} × ${b3.h} with ${deadNow} of the dead: ${Math.round(performance.now() - tt)} ms`);
+  }
+}
+console.log("The turn at the biggest size: a maximum-security penitentiary with 100 of the dead (headless)");
+{
+  let R = null;
+  for (let s = 0; s < 80 && !R; s++) {
+    const w = world(1200 + s), t = w.tiles.find((q) => q.loc && q.loc.type === "prison" && q.id !== hub(w).tile);
+    if (t && prisonKind(w, t.id, { key: "prison" }) === "max") R = raidOn(w, t);
+  }
+  if (check(!!R, "a world has a penitentiary")) {
+    const b = R.b, rng = b.rng;
+    const live = () => b.units.filter((q) => q.kind === "zombie" && !q.dead && !q.off);
+    const free = [];
+    for (const a of b.raid.areas) if (!a.outdoor && !(a.f > 0) && (a.prison === "dayroom" || a.prison === "tier" || a.prison === "chow" || a.role === "corridor")) for (let y = a.y0 + 1; y < a.y0 + a.h - 1; y++) for (let x = a.x0 + 1; x < a.x0 + a.w - 1; x++) if (b.reach[y * b.w + x] && b.cells[y * b.w + x].k === "open" && !b.units.some((q) => q.x === x && q.y === y)) free.push([x, y]);
+    let id = 900;
+    while (live().length < 100 && free.length) { const [x, y] = free.splice(Math.floor(rng.next() * free.length), 1)[0]; const u = enemyUnit(b, rng, "zombies", 3, ++id); Object.assign(u, { x, y, f: 0, aware: false, pod: 500 + id, home: [x, y] }); b.units.push(u); }
+    // Wake a third of them (the ones who heard the team come in): they hunt, the rest wander, as in play.
+    live().forEach((q, i) => { if (i % 3 === 0) q.aware = true; });
+    const times = [];
+    for (let t = 0; t < (QUICK ? 2 : 4); t++) {
+      for (const q of b.units) if (q.side === "player") q.ap = 0;
+      const t1 = performance.now();
+      endPlayerTurn(R.st); runEnemyPhase(R.st);
+      times.push(performance.now() - t1);
+      if (b.over) break;
+    }
+    const avg = Math.round(times.reduce((a, v) => a + v, 0) / times.length), max = Math.round(Math.max(...times));
+    console.log(`  ${b.w} × ${b.h}, ${b.floors.length} floors, ${live().length} of the dead: a turn ${avg} ms on average, ${max} ms at most (${times.map((v) => Math.round(v)).join(", ")})`);
+    check(avg < 1500, `a turn under 1.5 s headless with 100 of the dead (${avg} ms)`);
   }
 }
 console.log("Scenes, holders, an older save, the jail");

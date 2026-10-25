@@ -143,7 +143,8 @@ export function generatePois(state, t) {
   const site = permanentSite(t);
   const [bMin, bMax, eMin, eMax] = COUNTS[t.terrain];
   const [lo, hi] = site ? [eMin, Math.min(eMax, POI.MAX - 1)] : [bMin, bMax];
-  const n = lo + Math.floor(hash01(state.seed, "poin", t.id) * (hi - lo + 1));
+  // A town's county jail (jailExtra) keeps its place among POI.MAX: its tile's own list one shorter (a new world only).
+  const n = Math.min(lo + Math.floor(hash01(state.seed, "poin", t.id) * (hi - lo + 1)), jailTile(state, t) ? POI.MAX - 1 - (site ? 1 : 0) : Infinity);
   const out = [];
   let pool = poiKinds(t.terrain);
   if (site) {
@@ -190,12 +191,13 @@ export function generatePois(state, t) {
 }
 
 // A county jail (issue #31, prison.js): every town has one, on the tile of its suburb ring (within POI.TOWN_R) that its
-// own dice pick (the lowest hash01(seed, "jail", town, tile) among the ring's tiles that can hold POIs); a tile by two
-// towns may get two picks but holds one. Known as the site is (a town's landmark: never hidden in the known zone). An
+// own dice pick (the lowest hash01(seed, "jail", town, tile) among the ring's tiles that can hold POIs; jailTile), that
+// tile's own list one shorter so the jail keeps its place among POI.MAX; a tile by two towns may get two picks but
+// holds one. Known as the site is (a town's landmark: never hidden in the known zone). An
 // older save (worldcfg.js legacyPrisons) has none, so its POI lists load as they were.
-/** @param {State} state @param {Tile} t @param {any[]} list */
-export function jailExtra(state, t, list) {
-  if (legacyPrisons(state) || !state.grid || t.terrain !== "suburb" || list.some((p) => p.kind === "jail")) return null;
+/** Does this tile hold a town's county jail? @param {State} state @param {Tile} t */
+export function jailTile(state, t) {
+  if (legacyPrisons(state) || !state.grid || !t || t.terrain !== "suburb") return false;
   for (const id of state.grid.within(t.id, POI.TOWN_R)) {
     const o = state.tiles[id];
     if (!o || !o.loc || o.loc.type !== "town") continue;
@@ -206,11 +208,15 @@ export function jailExtra(state, t, list) {
       const v = hash01(state.seed, "jail", o.id, j);
       if (v < bv) { bv = v; best = j; }
     }
-    if (best !== t.id) continue;
-    const pool = Math.min(1, LOCATIONS.jail.richness * (POI.POOL[0] + (POI.POOL[1] - POI.POOL[0]) * hash01(state.seed, "jailpool", t.id)));
-    return { kind: "jail", hidden: !inKnownZone(state, t), pool, visits: 0, lastDay: null, cont: null, threatStamp: null, stripped: false, extra: "jail" };
+    if (best === t.id) return true;
   }
-  return null;
+  return false;
+}
+/** @param {State} state @param {Tile} t @param {any[]} list */
+export function jailExtra(state, t, list) {
+  if (!jailTile(state, t) || list.some((p) => p.kind === "jail") || list.length >= POI.MAX) return null;
+  const pool = Math.min(1, LOCATIONS.jail.richness * (POI.POOL[0] + (POI.POOL[1] - POI.POOL[0]) * hash01(state.seed, "jailpool", t.id)));
+  return { kind: "jail", hidden: !inKnownZone(state, t), pool, visits: 0, lastDay: null, cont: null, threatStamp: null, stripped: false, extra: "jail" };
 }
 
 // ---------- bunkers (issue #26, bunkerlayout.js) ----------
