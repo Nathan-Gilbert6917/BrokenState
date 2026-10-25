@@ -174,6 +174,7 @@ Detail: [combat.md](../features/combat.md).
 - **Hospitals, clinics and vets room by room**: ER, wards, theatre, ICU, pharmacy, morgue, kennels; meds ±10% [roomlayout, buildingmaps, combat, interiorscenes] `tools/interiortest.js`. [details](../features/combat.md#raids-into-building-interiors)
 - **Civic buildings laid out for their kind**: police, fire stations, schools, churches; cells, engine, pews [civiclayout, buildingmaps, combat] `tools/interiortest.js`. [details](../features/combat.md#raids-into-building-interiors)
 - **Shops, offices, motels, banks laid out by kind**: aisles, checkouts, kitchens, walk-ins, bars, desks, vaults [shoplayout, buildingmaps, roomlayout] `tools/shopstest.js`. [details](../features/combat.md#raids-into-building-interiors)
+- **Buildings that are not boxes**: L, T, U, cross, annexes, notches, stepped backs; a school 2.5× the floor round a yard [buildingmaps, ui/isoview] `tools/interiortest.js`. [details](../features/combat.md#raids-into-building-interiors)
 - **Stealth**: takedowns, facing and view cones, sneaking, lights and darkness, indoor light switches [stealth, vision, indoorlight, ailights].
 - **Vaulting half cover**: over waist-high cells at extra cost, landing winded [combat]. [details](../features/combat.md#vaulting-half-cover)
 - **Windows and the kinds of door**: window states (open, locked, broken) and door kinds with their own hit points, sight and locks [windows, buildingmaps, locks]. [details](../features/combat.md#windows-and-the-kinds-of-door)

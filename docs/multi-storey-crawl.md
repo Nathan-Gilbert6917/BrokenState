@@ -153,6 +153,26 @@ biggest hub room; it is now a stair run. Detail: [docs/features/travel.md](featu
 - **Saves**: an older save's one-cell stairwells (no runs, no `c.step`) still change floor from any stairs cell; an
   older building snapshot restores its own stairwells from its cells.
 
+## Parts with fewer storeys (issue #23, 2026-10-25)
+
+Buildings are no longer only boxes ("Schools should be larger and make buildings not just squares and asymetrical
+like many buildings are irl."): a new save's building can be a union of rectangles (`spec.shape.parts`), each part
+with its own plan and its own storeys. Detail: [docs/features/combat.md](features/combat.md#raids-into-building-interiors)
+("Buildings that are not boxes").
+
+- **Floors**: every floor is still the ground map's size. A part is on floor g while `g < part.storeys`; above that
+  its cells are `void` like the ground outside, so a school's gym, a hospital's ER, a police station's sally port, a
+  fire station's engine bay or a house's garage is a lower roof beside the floors above it. A part never rises above
+  the part it joins (a wing no taller than the main block), so every floor's parts reach one another.
+- **Stairs**: the stair runs (#9) stand only in a part with every storey (`allUp`); every floor up is reached from them.
+- **Walls**: two-storey walls (`c.t = 2`) on a part with storeys or a raised room, or marked `tall` (a gym's one tall
+  storey); a one-storey annex's walls one storey high.
+- **View**: on a floor above a lower part its roof is drawn at its storeys' height with its wall mass (ui/isoview.js
+  `sceneFor` `low`, from the ground floor's `c.bs`); each part is its own roof component, cut away with its building.
+- **The crawl**: a shaped place is kept and restored whole (`snapshotBuilding` keeps every floor's cells); the
+  school's bigger map is its own box and margins. Checked in `tools/storeytest.js`.
+- **Older saves** (`shapesLegacy`): every building the rectangle it was.
+
 ## Parity with the raid tickets (issue #21, 2026-10-25)
 
 The last ticket of the interiors epic (#7) brought the crawl up to what the raid tickets added. The detail is in
