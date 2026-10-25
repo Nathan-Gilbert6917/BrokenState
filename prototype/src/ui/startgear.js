@@ -245,7 +245,7 @@ export function fleetSection(state, ui) {
   const backs = free ? ", each with its own point limit (nobody's points pay for it). Start is refused while a back costs more than its limit or weighs more than its room" : `. The backs are as rolled (what the dice put in each, by whose it is: 👁 Back shows it, 🎲 Reroll rolls it again): tick Customize to set each one, with its own point limit`;
   // What the backs are for is the heading's hover, not a line of its own (the user's request 2026-10-24).
   return `<div class="nrfleet">
-      <div class="row small" style="gap:0.5rem"><b${tip(`Starting vehicles: ${head}. The first is ${mode === "hardcore" ? "the car you flee in" : "the hub's pickup truck"}: remove it, change its kind or add others (one a starting survivor at most)${backs}`)}>Starting vehicles</b>${iron ? `<span class="muted">Ironman: as rolled.</span>` : ""}</div>
+      <div class="row small" style="gap:0.5rem"><b${tip(`Starting vehicles: ${head}. The first is ${mode === "hardcore" ? "the car you flee in" : "the first survivor's, parked at the hub"}; each is rolled by whose it is (the next of you without one). Remove one, change its kind or add others (one a starting survivor at most)${backs}`)}>Starting vehicles</b>${iron ? `<span class="muted">Ironman: as rolled.</span>` : ""}</div>
       ${rows}
     </div>`;
 }
