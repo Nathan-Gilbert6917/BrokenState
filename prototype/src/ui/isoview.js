@@ -1098,6 +1098,48 @@ const FURN_DRAW = {
     return [...flegs(0.24, 0.72, 0.06, 0.9, 5, s0, 0.04), run(ax, 0.22, 0.78, 5, 7, canvas, 0.04, 0.96)];
   } },
   candles: { top: 18, p: () => [{ cyl: [0.5, 0.5, 0.12], z0: 0, z1: 1, m: flatM(FURNC.gold) }, fbox(0.48, 0.52, 0.48, 0.52, 1, 12, flatM(FURNC.gold)), fbox(0.3, 0.7, 0.47, 0.53, 12, 13, flatM(FURNC.gold)), fbox(0.3, 0.36, 0.47, 0.53, 13, 18, flatM(FURNC.cream)), fbox(0.64, 0.7, 0.47, 0.53, 13, 18, flatM(FURNC.cream)), fbox(0.47, 0.53, 0.47, 0.53, 13, 18, flatM(FURNC.cream))] },
+  // ---------- college campuses (issue #28, sim/campuslayout.js, sim/campus.js) ----------
+  // A dorm desk with its hutch of shelves, a mini fridge under a cell's height, a lecture hall's row of folding seats on
+  // a steel rail, a lectern with its slanted top, a fume hood's steel box with a glass sash, a study carrel's wood
+  // walls round its desk, a mailbox wall of little brass doors; outdoors a slatted bench, a bronze statue on a stone
+  // plinth, a fountain's stone basin with water in it.
+  dormdesk: { top: 20, p: (o) => {
+    const ax = along(o), w = flatM(PAL.woodDk);
+    return [run(ax, 0.22, 0.28, 0, 9, w, 0.1, 0.16), run(ax, 0.22, 0.78, 0, 9, fdrawers(PAL.woodLt, 3), 0.6, 0.9), run(ax, 0.18, 0.82, 9, 10, fwood(PAL.woodLt), 0.06, 0.94), run(ax, 0.18, 0.34, 10, 20, fwood(PAL.wood, 120), 0.06, 0.94), run(ax, 0.34, 0.38, 15, 16, flatM(PAL.woodDk), 0.06, 0.94)];
+  } },
+  minifridge: { top: 12, p: (o) => { const ax = along(o); return [run(ax, 0.28, 0.72, 0, 12, fappl(FURNC.black, [8], [[9, 11]]), 0.26, 0.74)]; } },
+  lectureseat: { top: 12, p: (o) => {
+    const ax = along(o), seat = (f, s, t, X, Y) => (f === "top" ? mul(FURNC.scrubs, 0.9 + n2(X, Y, 121) * 0.1) : Math.floor(X) % 8 < 1 ? FURNC.black : mul(FURNC.scrubs, 0.8));
+    return [run(ax, 0.6, 0.66, 0, 6, flatM(FURNC.steel), 0.02, 0.98), run(ax, 0.3, 0.7, 5, 6, seat, 0.02, 0.98), run(ax, 0.66, 0.74, 5, 12, seat, 0.02, 0.98), run(ax, 0.2, 0.26, 8, 9, flatM(PAL.woodLt), 0.02, 0.98)];
+  } },
+  lectern: { top: 18, p: (o) => {
+    const ax = along(o);
+    return [run(ax, 0.34, 0.66, 0, 1, flatM(PAL.woodDk), 0.3, 0.7), run(ax, 0.44, 0.56, 1, 15, fwood(PAL.wood, 122), 0.42, 0.58), run(ax, 0.3, 0.7, 15, 18, (f) => (f === "top" ? mul(PAL.woodLt, 1.15) : PAL.woodLt), 0.28, 0.72)];
+  } },
+  fumehood: { top: 28, p: (o) => {
+    const ax = along(o), sash = (f, s, t, X, Y, sw) => (f === "top" ? FURNC.steel : t > 10 && t < 22 && s > 1.5 && s < (sw || 16) - 1.5 ? mul(FURNC.water, 1.2 + n2(X, Y, 123) * 0.1) : t > 22 ? mul(FURNC.steel, 0.85) : mul(FURNC.white, 0.95));
+    return [run(ax, 0.22, 0.78, 0, 10, fdrawers(FURNC.white, 5, FURNC.chrome), 0.06, 0.94), run(ax, 0.22, 0.6, 10, 28, sash, 0.06, 0.94), run(ax, 0.6, 0.78, 10, 11, flatM(FURNC.black), 0.06, 0.94)];
+  } },
+  carrel: { top: 16, p: (o) => {
+    const ax = along(o), side = fwood(PAL.woodLt, 124);
+    return [run(ax, 0.2, 0.8, 9, 10, fwood(PAL.woodLt), 0.1, 0.9), run(ax, 0.2, 0.3, 0, 16, side, 0.08, 0.92), run(ax, 0.3, 0.8, 0, 16, side, 0.08, 0.14), run(ax, 0.3, 0.8, 0, 16, side, 0.86, 0.92), run(ax, 0.4, 0.5, 10, 11, flatM(FURNC.cloth), 0.3, 0.6)];
+  } },
+  mailboxes: { top: 26, p: (o) => {
+    const ax = along(o), face = (f, s, t, X) => (f === "top" ? PAL.woodDk : Math.floor(t) % 4 < 1 || Math.floor(X) % 3 < 1 ? PAL.woodDk : Math.floor(t) % 4 === 2 && Math.floor(X) % 3 === 2 ? FURNC.chrome : mul(FURNC.gold, 0.85));
+    return [run(ax, 0.26, 0.6, 0, 26, face, 0.04, 0.96)];
+  } },
+  campusbench: { top: 10, p: (o) => {
+    const ax = along(o), slat = (f, s, t, X) => (Math.floor(X) % 3 < 1 ? mul(PAL.woodDk, 1.1) : f === "top" ? mul(PAL.woodLt, 1.1) : PAL.wood), iron = flatM(FURNC.black);
+    return [run(ax, 0.3, 0.7, 0, 5, iron, 0.06, 0.12), run(ax, 0.3, 0.7, 0, 5, iron, 0.88, 0.94), run(ax, 0.3, 0.72, 5, 6, slat, 0.02, 0.98), run(ax, 0.66, 0.72, 6, 10, slat, 0.02, 0.98)];
+  } },
+  statue: { top: 40, p: (o, v) => {
+    const bronze = (f, s, t, X, Y) => mul(hex("#4f6a52"), (f === "top" ? 1.2 : 0.9) + n2(X, Y, 125 + v) * 0.15);
+    return [fbox(0.18, 0.82, 0.18, 0.82, 0, 12, (f, s, t, X, Y) => mul(PAL.stone, (f === "top" ? 1.2 : 1) + n2(X, Y, 126) * 0.08)), fbox(0.4, 0.6, 0.4, 0.6, 12, 26, bronze), fbox(0.32, 0.68, 0.44, 0.56, 22, 30, bronze), { cyl: [0.5, 0.5, 0.09], z0: 30, z1: 36, m: bronze }, fbox(0.58, 0.64, 0.46, 0.54, 26, 40, bronze)];
+  } },
+  fountain: { top: 12, p: (o) => {
+    const stone = (f, s, t, X, Y) => mul(PAL.stone, (f === "top" ? 1.25 : 1) + n2(X, Y, 127) * 0.08), water = (f, s, t, X, Y) => mul(FURNC.water, 1.1 + n2(X, Y, 128) * 0.2);
+    return [fbox(0.04, 0.96, 0.04, 0.96, 0, 4, water), fbox(0, 1, 0, 0.1, 0, 6, stone), fbox(0, 1, 0.9, 1, 0, 6, stone), fbox(0, 0.1, 0.1, 0.9, 0, 6, stone), fbox(0.9, 1, 0.1, 0.9, 0, 6, stone), ...(o.v & 1 ? [{ cyl: [0.5, 0.5, 0.12], z0: 0, z1: 12, m: stone }] : [])];
+  } },
   // ---------- lootable decor (issue #13, sim/decor.js) ----------
   // A plant in a clay pot, a floor lamp with its shade; a painting and a wall clock as they stand once set down (on a
   // wall they are drawn on its face: wartTexel).

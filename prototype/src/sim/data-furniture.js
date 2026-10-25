@@ -177,6 +177,20 @@ export const FURNITURE_KINDS = {
   compressor:  P("Air compressor",    HALF, 30, 45, "two", S1, false, ["bay"], "none", true),
   cot:         P("Cot",               HALF, 8, 7, "one", S12, false, ["school", "church", "ward"], "bed:cot"),
   candles:     P("Candlesticks",      POLE, 5, 6, "one", S1, true, ["church"], "comfort:0.1"),
+  // ---------- college campuses (issue #28: campuslayout.js lays them; campus.js the grounds) ----------
+  // A dorm room's desk with its hutch and a mini fridge (a small fridge at a base, #19's use), a lecture hall's bolted
+  // row of seats and its lectern, a teaching lab's fume hood (built in), a library's study carrel, a residence hall's
+  // wall of mailboxes; outdoors a bench, a statue on its plinth and a fountain on the quads and in the courtyards.
+  dormdesk:    P("Dorm desk",        HALF, 20, 25, "one", S1, true, ["bedroom", "school"], "work:desk", true),
+  minifridge:  P("Mini fridge",      HALF, 20, 18, "one", S1, true, ["bedroom", "office", "kitchen"], "fridge", true),
+  lectureseat: P("Lecture seating",  HALF, 40, 120, "fixed", S21, false, ["school"], "none"),
+  lectern:     P("Lectern",          HALF, 15, 20, "one", S1, false, ["school", "church", "office"], "none"),
+  fumehood:    P("Fume hood",        FULL, 50, 160, "fixed", S1, false, ["lab", "school"], "none", true),
+  carrel:      P("Study carrel",     HALF, 20, 28, "one", S1, true, ["school", "office"], "work:desk", true),
+  mailboxes:   P("Mailbox wall",     FULL, 50, 90, "two", S1, true, ["office", "school"], "storage:20", true),
+  campusbench: P("Bench",            HALF, 20, 40, "two", S21, false, ["yard"], "comfort:0.3"),
+  statue:      P("Statue",           STEEL, 120, 900, "fixed", S1, false, ["yard"], "none"),
+  fountain:    P("Fountain",         HALF, 80, 1500, "fixed", S22, false, ["yard"], "none"),
   // ---------- lootable decor (issue #13: decor.js places them; light comfort pieces for the base) ----------
   // The plant and the floor lamp stand on a room's floor cell; the painting and the wall clock hang on a wall (decor.js:
   // c.wart = { k, d, piece: true } on the wall cell, the wall's own kind unchanged) and stand on a cell only once set down.

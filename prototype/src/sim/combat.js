@@ -91,6 +91,7 @@ import { sceneBattle, sceneSeen } from "./interiorscenes.js"; // signs of surviv
 import { stirBodies, carrierRound, burst, swarmHit, swarmBite, crush, tapRefusal, tap, pickUp, putDown, stowBody, botCrush, turnedBody, walkingBody, walkingBox, walksOn, turnedName, turnedLine, dropBodyBox, endBodies, placeWalking } from "./carriers.js"; // the Carrier raises the human dead; its worm swarm; bodies carried, shot, burnt; the walking loot
 import { hasWorm, WORM } from "./worm.js"; // the worm in a living person (half the healing while it is in them)
 import { fieldDims, raidDims, densify, coverTarget, spawnRules, clearEnough, fledFarEnough, raidAreaTypes, raidDeadScale, roomBoxes, raidHeatRate, raidLootShare, raidBig, BIG as BIG_RAID, RAID as RAID_SIZE, CONTACT } from "./battlesize.js"; // map sizes by context, cover, spawns, the anti-slog ends
+import { campusHeatRate, campusLootShare } from "./campus.js"; // a college campus: Heat by the area searched, a container what its building's own map holds (issue #28)
 // The third side (neutral survivors, military squads: wanderers.js brings them, thirdside.js runs them). Every hook
 // below is marked "thirdside.js"; a battle without a third side takes exactly the old paths.
 import { volFought } from "./volunteers.js"; // volunteers: an allied group's people with your team, moved by their AI (volunteerTurn below)
@@ -7450,7 +7451,8 @@ export function createRaid(state, setup) {
   if (pick) {
     const rooms = map.areas.filter((a) => !a.outdoor).length;
     const st = b.raid.storeys > 1 ? ` on ${b.raid.storeys} storeys (the stairs are marked; Go up / Go down takes an action)` : "";
-    if (map.street) say(b, `You reach the street at ${b.place}: ${map.plan.houses.length} houses. ${map.containers.length} places to search in ${rooms} rooms${st}.`, "info"); // buildingmaps.js streetMap: a neighbourhood
+    if (map.campus) say(b, `You reach the campus of ${b.place}: ${map.plan.houses.length} buildings. ${map.containers.length} places to search in ${rooms} rooms${st}.`, "info"); // campus.js campusMap: a college campus
+    else if (map.street) say(b, `You reach the street at ${b.place}: ${map.plan.houses.length} houses. ${map.containers.length} places to search in ${rooms} rooms${st}.`, "info"); // buildingmaps.js streetMap: a neighbourhood
     else say(b, `You reach the ${pick.name.toLowerCase()} at ${b.place}. ${map.containers.length} places to search in ${rooms} rooms${st}.`, "info");
     say(b, interiorIntro(b), "info");
   } else say(b, `You slip into ${b.place}. ${map.containers.length} places to search across ${map.areas.length} areas.`, "info");
@@ -7534,7 +7536,7 @@ function raidTurn(b) {
   const noise = b.noise;
   b.noise = 0;
   const K = RAID_HEAT;
-  R.heat = Math.min(100, R.heat + K.turn * (R.big ? raidHeatRate(b.w, b.h) : 1) + noise * K.noise + b.infection * K.infection); // a big map (battlesize.js raidBig): the clock runs slower
+  R.heat = Math.min(100, R.heat + K.turn * (R.big ? (R.plan && R.plan.campus ? campusHeatRate(b) : raidHeatRate(b.w, b.h)) : 1) + noise * K.noise + b.infection * K.infection); // a big map (battlesize.js raidBig): the clock runs slower
   const stage = Math.min(3, Math.floor(R.heat / K.stage));
   if (stage > R.stage) {
     R.stage = stage;
@@ -7662,7 +7664,7 @@ export function searchBox(state, b, u, box, open = false, quick = false) {
   const party = state.parties.find((x) => x.id === b.setup.partyId);
   if (u.xpT && !box.contents) u.xpT.boxes++; // skills.js: Scavenging XP for each container opened
   const rich = box.kind === "body" ? 1 : R.richness * Math.min(FLOOR_RICH.cap, Math.pow(FLOOR_RICH.perFloor, box.f || 0)) * (box.rich || 1); // upper storeys are less picked over (buildingmaps.js); a nest's floor richer still (floorfolk.js)
-  const reward = box.kind === "body" ? 1 : (R.reward ?? 1) * (box.truck || !R.big ? 1 : raidLootShare(b.w, b.h)); // buildingmaps.js rewardMult: city sites pay more, the countryside less; a map past the old Large has more containers, each holds a little less (battlesize.js BIG)
+  const reward = box.kind === "body" ? 1 : (R.reward ?? 1) * (box.truck || !R.big ? 1 : R.plan && R.plan.campus ? campusLootShare(b, box) : raidLootShare(b.w, b.h)); // buildingmaps.js rewardMult: city sites pay more, the countryside less; a map past the old Large has more containers, each holds a little less (battlesize.js BIG)
   // Roll what is inside (once); anything that does not fit stays in the container.
   if (!box.contents) {
     const sup = {}, gear = [];

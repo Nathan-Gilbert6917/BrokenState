@@ -371,7 +371,31 @@ function f_exambed(p) { // an exam bed: a padded teal top with a raised end, the
   line(p, 1, 3, 4, 6, "#4f7b88"); R(p, 4, 6, 15, 7, "#4f7b88"); H(p, 4, 15, 5, "#eef0f2"); box(p, 3, 8, 14, 15, "#c9b48a"); H(p, 4, 13, 11, "#957f58");
 }
 
+// ---------- the college campuses' pieces (#28, sim/campuslayout.js and sim/campus.js) ----------
+function f_dormdesk(p) { // a dorm desk: a pale top over a drawer stack, a hutch of shelves with books and a lamp
+  R(p, 0, 8, 15, 9, WOODL); box(p, 9, 10, 14, 15, WOOD); H(p, 10, 13, 12, WOODD); legs(p, 1, 8, 10, 15, WOODD);
+  box(p, 1, 0, 14, 7, WOOD); H(p, 2, 13, 4, WOODD); R(p, 3, 1, 6, 3, "#3a6fb0"); R(p, 8, 2, 9, 3, "#c8402f"); R(p, 11, 5, 12, 7, "#e6e04a");
+}
+function f_minifridge(p) { // a mini fridge: a little black cube, a freezer door line, a chrome handle
+  box(p, 3, 4, 12, 15, "#26272a"); H(p, 3, 12, 8, "#46474b"); V(p, 11, 5, 7, "#c9ced3"); V(p, 11, 10, 13, "#c9ced3"); H(p, 4, 11, 4, "#3a3b3f");
+}
+function f_lectern(p) { // a lectern: a slanted wooden top on a column, a wide foot
+  line(p, 2, 4, 13, 1, WOODL); R(p, 2, 4, 13, 5, WOOD); R(p, 6, 6, 9, 13, WOOD); V(p, 7, 6, 13, WOODD); R(p, 3, 14, 12, 15, WOODD);
+}
+function f_carrel(p) { // a study carrel: a desk boxed in by wooden side walls, a shelf above, a book open on it
+  box(p, 0, 0, 2, 15, WOODL); box(p, 13, 0, 15, 15, WOODL); R(p, 3, 1, 12, 2, WOOD); R(p, 3, 8, 12, 9, WOOD);
+  R(p, 5, 6, 10, 7, "#eef0f2"); V(p, 7, 6, 7, "#957f58"); legs(p, 3, 12, 10, 15, WOODD); R(p, 4, 3, 6, 5, "#3a6fb0");
+}
+function f_mailboxes(p) { // a mailbox wall: rows of little brass doors in a wooden frame, a keyhole on each
+  box(p, 0, 0, 15, 15, WOODD); for (let y = 1; y <= 13; y += 4) for (let x = 1; x <= 13; x += 4) { R(p, x, y, x + 2, y + 2, "#c9a446"); p.set(x + 2, y + 1, "#5a4a20"); }
+}
+function f_campusbench(p) { // a park bench: wooden slats on black iron ends, the back rest
+  for (const y of [2, 4]) H(p, 0, 15, y, WOODL); for (const y of [8, 10]) H(p, 0, 15, y, WOOD); H(p, 0, 15, 5, WOODD);
+  for (const x of [1, 14]) { V(p, x, 1, 15, "#26272a"); } line(p, 1, 11, 0, 15, "#26272a"); line(p, 14, 11, 15, 15, "#26272a");
+}
+
 export const GEAR_ART = {
+  f_dormdesk, f_minifridge, f_lectern, f_carrel, f_mailboxes, f_campusbench,
   f_medcart, f_drugsafe, f_instcab, f_morguelocker, f_autopsy, f_wheelchair, f_vettable, f_curtain, f_linencart, f_monitor, f_crib, f_exambed,
   f_bed, f_bunk, f_hospbed, f_gurney, f_ivstand, f_hay, f_barrel, f_range, f_dishwasher, f_washer, f_dryer, f_fryer, f_coldshelf,
   f_icemachine, f_watercooler, f_compressor, f_tank, f_jukebox, f_pooltable, f_clothesrack, f_pottingbench, f_palletrack, f_tirerack,
