@@ -351,13 +351,19 @@ function houseShape(rng, v, spec, { garage, hall, o, upper }) {
 }
 
 // Shops: a sales floor at the front, a back strip of stockroom, office and the rest; a back door, a side fire exit.
+// Grocery stores by size (issue #22, a new save's plan only: o.legacy keeps the old 14–18 × 11–14 of both): a corner
+// store small (10–14 across: the till's counter, a few short shelf runs, the drinks fridges and a chest freezer, a
+// stockroom of crates), a neighbourhood grocery medium (20–26 × 17–20: aisles, checkouts, produce, the dairy wall and
+// the frozen section, a small deli counter; a stockroom with a walk-in cooler behind it). The supermarket is bigstore's
+// (supermarket below). The dice are rolled in the same order either way.
 function shop(rng, v, o = {}) {
   const gas = v === "gasstation", truck = v === "truckstop";
   const plan = planOf(v === "gasstation" ? "gas" : v, o); // data-shops.js: the franchise's layout
-  const bw = (gas ? rng.int(12, 14) : truck ? rng.int(19, 22) : rng.int(14, 18)) + (plan.wide ? 3 : 0);
-  const bh = gas ? rng.int(9, 10) : truck ? rng.int(12, 14) : rng.int(11, 14);
+  const tier = !o.legacy && (v === "corner" || v === "grocery") ? v : null; // issue #22: the corner store and the grocery by size
+  const bw = (tier === "corner" ? rng.int(10, 13) : tier === "grocery" ? rng.int(20, 23) : gas ? rng.int(12, 14) : truck ? rng.int(19, 22) : rng.int(14, 18)) + (plan.wide ? (tier === "corner" ? 1 : 3) : 0);
+  const bh = tier === "corner" ? rng.int(10, 12) : tier === "grocery" ? rng.int(17, 20) : gas ? rng.int(9, 10) : truck ? rng.int(12, 14) : rng.int(11, 14);
   const ih = bh - 2;
-  const sd = Math.max(4, Math.round(ih * (plan.depth ?? (gas ? 0.6 : 0.62))));
+  const sd = tier === "grocery" ? ih - 5 : Math.max(4, Math.round(ih * (plan.depth ?? (gas ? 0.6 : 0.62)))); // a grocery's sales floor: all but a 4-deep back strip
   const S = (o) => ({ role: "sales", entry: true, ...o });
   let sales, back;
   switch (v) {
@@ -449,8 +455,9 @@ function shop(rng, v, o = {}) {
       back = [["*", "kitchen"], [rng.int(3, 4), { role: "stock", name: "Storeroom" }], [3, { role: "office", lock: ["door", 0.3], boxLock: ["safe", 0.3] }], [2, "restroom"]];
       break;
     default: // grocery, the corner store
-      sales = S({ name: v === "corner" ? "Store" : "Sales floor", type: "store" });
-      back = [["*", { role: "stock" }], [rng.int(3, 4), { role: "office", boxLock: ["safe", 0.2] }], [2, "restroom"]];
+      sales = S({ name: v === "corner" ? "Store" : "Sales floor", type: "store", ...(tier ? { lay: tier === "corner" ? "cornerstore" : "grocerfloor", maxBoxes: tier === "corner" ? 7 : 6 } : {}) });
+      back = [["*", { role: "stock", ...(tier === "grocery" ? { maxBoxes: 2 } : {}) }], [rng.int(3, 4), { role: "office", boxLock: ["safe", 0.2] }], [2, "restroom"]];
+      if (tier === "grocery") back.splice(1, 0, [3, { role: "pantry", name: "Walk-in cooler", type: "kitchen", cold: true, dk: "steel", windows: false, fl: "steel", maxBoxes: 1 }]); // a small walk-in behind the dairy wall (shoplayout.js walkin)
   }
   if (!o.legacy) back = shopBack(v, back, plan, o);
   let program = { split: "y", parts: [[sd, withPlan(sales, plan)], ["*", { split: "x", parts: leaves(back) }]] };
@@ -468,10 +475,10 @@ function shop(rng, v, o = {}) {
   // A corner store sometimes has a flat above the shop.
   const flat = (v === "corner" && rng.chance(0.5)) || (!!plan.flat && rng.chance(plan.flat)); // a franchise's flat above (plan.flat: a pub, a bookshop)
   const F = (r) => ({ role: r, flat: true }); // the flat's rooms take the home styles (roomlayout.js)
-  const upper = () => ({ split: "y", parts: [["*", { split: "x", parts: leaves([["*", { role: "living", name: "Flat: living room", flat: true }], ["*", { role: "kitchen", name: "Flat: kitchen", flat: true }]]) }], [1, { role: "hall", name: "Landing", flat: true }], ["*", { split: "x", parts: leaves([["*", F("bedroom")], [2, F("bath")], ["*", F("bedroom")]]) }]] });
+  const upper = () => ({ split: "y", parts: [["*", { split: "x", parts: leaves([["*", { role: "living", name: "Flat: living room", flat: true }], ["*", { role: "kitchen", name: "Flat: kitchen", flat: true }]]) }], [1, { role: "hall", name: "Landing", flat: true }], ["*", { split: "x", parts: leaves(tier === "corner" ? [["*", F("bedroom")], [2, F("bath")]] : [["*", F("bedroom")], [2, F("bath")], ["*", F("bedroom")]]) }]] }); // a corner store's narrow flat: one bedroom (issue #22)
   const spec = {
-    bw, bh, program, exits, front: { width: 2 }, openDoors: 0.3, ground: v === "feedstore" ? "rural" : truck || gas ? "lot" : "town", pumps: gas || truck ? (truck ? 3 : 2) : 0,
-    storeys: flat ? 2 : 1, upper: flat ? upper : null, foot: gas ? "small" : "medium",
+    bw, bh, program, exits, front: { width: tier === "corner" ? 1 : 2 }, openDoors: 0.3, ground: v === "feedstore" ? "rural" : truck || gas ? "lot" : "town", pumps: gas || truck ? (truck ? 3 : 2) : 0,
+    storeys: flat ? 2 : 1, upper: flat ? upper : null, foot: gas || tier === "corner" ? "small" : tier === "grocery" ? "large" : "medium",
     stairs: { roles: BACK_STAIRS }, // the flat's stair from the back room
   };
   return shaped ? shopShape(rng, spec, back, bay) : spec;
@@ -525,6 +532,7 @@ function shopBack(v, back, plan, o) {
 
 // Big stores: a wide sales floor of aisles, the deli or a sports section, a back room with racks and a loading dock.
 function bigstore(rng, v, o = {}) {
+  if (v === "supermarket" && !o.legacy) return supermarket(rng, o); // issue #22 (o.shapes: a new save's dock annex and notched entrance, #23): really big (an older save's and every department store's as below)
   const bw = rng.int(26, 30), bh = rng.int(18, 21);
   const dept = v === "dept";
   const salesFloor = dept
@@ -547,6 +555,65 @@ function bigstore(rng, v, o = {}) {
       { side: sideRoom(rng), roles: ["sales"], chance: 0.7, lock: 0.4, name: "Fire exit" },
     ],
   };
+}
+
+// The supermarket (issue #22, the user's request 2026-10-25: "make super markets really big, the ones in those 3 images
+// would be a small one or corner store"; a new save's plan, an older save keeps bigstore's 26–30 × 18–21): 54–58 × 36–40
+// cells, twice the old store each way.
+//   The front: the sales floor across the middle (shoplayout.js superstore: the entrance with its cart corrals and the
+//     customer service desk, a row of checkout lanes and a self-checkout block, the wide front aisle, 10–16 long aisles,
+//     produce down one side, the frozen aisles, the dairy wall along the back), two front entrances (in and out) and a
+//     fire exit; a column of rooms down each side: the café, the restrooms and the bakery on one, the pharmacy and the
+//     deli and butcher on the other (the dice pick which side).
+//   The back of house (11–13 deep): the warehouse (receiving along the dock, pallet racks in rows: shoplayout.js
+//     warehouse) with 2–3 roller doors onto the loading dock (a box truck parked at a bay: assemble's dockTruck), the
+//     walk-in cooler and the walk-in freezer behind steel doors, the compactor and baler, the cash office and the
+//     manager's office (their safes), the break room and the staff restroom, a staff door.
+//   Upstairs (40%): the mezzanine over it all, an overstock floor with the offices along its back.
+function supermarket(rng, o = {}) {
+  const bw = rng.int(54, 58), bh = rng.int(36, 40), backD = rng.int(11, 13), flip = rng.chance(0.5);
+  const cafeSide = { split: "y", parts: leaves([[7, { role: "dining", name: "Café", type: "store", lay: "cafe", hub: false, maxBoxes: 3 }], [5, { split: "x", parts: leaves([["*", { role: "restroom", name: "Men's restroom" }], ["*", { role: "restroom", name: "Women's restroom" }]]) }], ["*", { role: "kitchen", name: "Bakery", type: "kitchen", lay: "bakery", maxBoxes: 4 }]]) };
+  const pharmSide = { split: "y", parts: leaves([[8, { role: "dispensary", name: "Pharmacy", type: "pharmacy", lay: "dispensary", lock: ["door", 0.3], boxLock: ["drugs", 0.4], maxBoxes: 3 }], ["*", { role: "kitchen", name: "Deli and butcher", type: "kitchen", lay: "butcher", maxBoxes: 4 }]]) };
+  const floor = { role: "sales", entry: true, name: "Sales floor", type: "store", lay: "superstore", maxBoxes: 60 };
+  const main = { split: "x", parts: flip ? [[8, pharmSide], ["*", floor], [8, cafeSide]] : [[8, cafeSide], ["*", floor], [8, pharmSide]] };
+  const cold = { name: "Walk-in cooler", type: "kitchen", cold: true, dk: "steel", windows: false, fl: "steel", maxBoxes: 4 };
+  const backRooms = [
+    ["*", { role: "warefloor", name: "Warehouse", type: "store", lay: "warehouse", hub: true, maxBoxes: 26 }],
+    [7, { split: "y", parts: leaves([["*", { role: "pantry", ...cold, lay: "walkin" }], ["*", { role: "pantry", ...cold, name: "Walk-in freezer", lay: "walkfreezer", fl: "steel" }]]) }],
+    [6, { role: "storage", name: "Compactor and baler", type: "warehouse", lay: "baler", maxBoxes: 1 }],
+    [8, { split: "y", parts: leaves([["*", { role: "office", name: "Cash office", lock: ["door", 0.6], boxLock: ["safe", 0.8], maxBoxes: 2 }], ["*", { role: "office", name: "Manager's office", boxLock: ["safe", 0.4] }]]) }],
+    [8, { split: "y", parts: leaves([["*", "breakroom"], [3, { role: "restroom", name: "Staff restroom" }]]) }],
+  ];
+  const back = { split: "x", parts: leaves(flip ? backRooms.slice().reverse() : backRooms) };
+  const two = rng.chance(0.4);
+  const mezz = () => ({ split: "y", parts: [["*", { role: "warefloor", name: "Mezzanine stockroom", maxBoxes: 12 }], [7, { split: "x", parts: leaves([["*", { role: "office", name: "Offices" }], ["*", { role: "breakroom", name: "Training room" }], [8, { role: "storage", name: "Records", type: "office" }], [4, "restroom"]]) }]] });
+  const upper = mezz;
+  const spec = {
+    bw, bh, front: { width: 2 }, openDoors: 0.3, ground: "lot", storeys: two ? 2 : 1, upper: two ? upper : null, foot: "huge", stairs: { roles: BACK_STAIRS }, // up to the mezzanine from the back of house
+    margins: { back: 8 }, dockTruck: true, // the lot behind: room for the box truck at a dock door (assemble)
+    program: { split: "y", parts: [["*", main], [backD, back]] },
+    exits: [
+      { side: "front", roles: ["sales"], chance: 1, width: 2, lock: 0.2, name: "Exit doors" },
+      { side: "back", roles: ["warefloor"], chance: 1, roller: true, width: 3, lock: 0.2, name: "Loading dock" },
+      { side: "back", roles: ["warefloor"], chance: 1, roller: true, width: 3, lock: 0.3, name: "Loading dock" },
+      { side: "back", roles: ["warefloor"], chance: 0.6, roller: true, width: 3, lock: 0.3, name: "Loading dock" },
+      { side: "back", roles: ["breakroom", "storage", "office"], chance: 0.7, lock: 0.4, name: "Staff door" },
+      { side: sideRoom(rng), roles: ["sales", "dining", "kitchen"], chance: 0.8, lock: 0.4, name: "Fire exit" },
+    ],
+  };
+  if (!o.shapes) return spec;
+  // A new save's (issue #23): the receiving dock an annex out the back behind the warehouse (one tall storey, its roller
+  // doors the docks' too), and the entrance's corner notched: the café, the restrooms and the bakery's side 3 cells
+  // short of the front, the sales floor's front stepping out past it. The rooms are the plan's.
+  const ny = 3, sw = 9, fh = bh - backD - 1, cafeLeft = !flip; // the café's column (8 and its wall) on the left unless flipped
+  const front = { split: "x", parts: flip ? [[8, pharmSide], ["*", floor]] : [["*", floor], [8, pharmSide]] };
+  const aw = rng.int(14, 18), ah = rng.int(6, 8), dockX = flip ? bw - aw - rng.int(2, 4) : rng.int(2, 4); // the warehouse's end
+  return { ...spec, ...shapeOf("notch", [
+    { x: 0, y: ah - 1, w: bw, h: backD + 2, name: "Back of house", program: back, upper: two ? () => mezz().parts[1][1] : null, storeys: two ? 2 : 1 },
+    { x: cafeLeft ? sw : 0, y: ah - 1 + backD + 1, w: bw - sw, h: fh, name: "Store", main: true, program: front, upper: two ? () => mezz().parts[0][1] : null, storeys: two ? 2 : 1 },
+    { x: cafeLeft ? 0 : bw - sw - 1, y: ah - 1 + backD + 1, w: sw + 1, h: fh - ny, storeys: 1, name: "Café side", program: cafeSide },
+    { x: dockX, y: 0, w: aw, h: ah, storeys: 1, tall: true, name: "Receiving dock", program: { role: "warefloor", name: "Receiving dock", type: "store", lay: "warehouse", hub: true, maxBoxes: 6, nextTo: ["warefloor"] } },
+  ]), program: null, upper: null };
 }
 
 // Corridor buildings: a band of rooms at the front (with the lobby), a corridor along the building, a band behind it.
@@ -2483,6 +2550,27 @@ export function assemble(rng, spec, opts = {}) {
       if (box(null, x, y, "pump", a)) placed++;
     }
     if (placed) { Object.assign(a, { x0: bx0, y0: y - 2, w: bw, h: 5 }); outdoor.push(a); }
+  }
+  // The supermarket's box truck at the loading dock (issue #22; spec.dockTruck): backed up to the dock beside a roller
+  // door (its bay; the door's own way out to the edge and the ring round the building left clear), its cargo box a
+  // container over the whole of it (combat.js BOX_LOOT.boxtruck: pallets of tins and water), an outdoor area of its own,
+  // the "Loading dock". Drawn as the map's box trucks are (body "truck": ui/vehiclemodel.js boxtruck).
+  if (!upper && spec.dockTruck) {
+    const a = { id: rooms.length + outdoor.length, type: "warehouse", name: "Loading dock", outdoor: true };
+    const L = 5, y = by0 - 1 - L;
+    const cands = [];
+    for (const e of exits.filter((q) => q.roller && q.side === "back")) { const xs = e.cells.map(([x]) => x); for (const d of [2, 3, 4]) cands.push(Math.min(...xs) - d - 1, Math.max(...xs) + d); }
+    for (const x of rng.shuffle(cands)) {
+      const rect = placeCar(cells, W, H, x, y, "y", L, "truck", (cx, cy) => outsideFree(cx, cy), rng.int(0, 1e6), { ring: false, body: "truck" });
+      if (!rect) continue;
+      passRect(rect);
+      total -= rect.w * rect.h;
+      if (!connected()) { removeCar(cells, W, rect); passRect(rect); total += rect.w * rect.h; continue; }
+      containers.push({ id: cid++, x: rect.x0, y: rect.y0, w: rect.w, h: rect.h, f, area: a.id, kind: "boxtruck", searched: false, label: "Loading dock: box truck" });
+      Object.assign(a, { x0: rect.x0 - 1, y0: rect.y0 - 1, w: rect.w + 2, h: rect.h + 2 });
+      outdoor.push(a);
+      break;
+    }
   }
   // Wrecked cars on the street (towns and cities): an outdoor area to search (car alarms, AREAS.wreck).
   if (!upper && (spec.ground === "town" || spec.ground === "city") && rng.chance(0.45)) {

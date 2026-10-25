@@ -109,7 +109,8 @@ console.log(`Every archetype (${Object.keys(BUILDINGS).length}), ${SEEDS} seeds 
       const W = m.w, H = m.h;
       sizes[key].push(`${W}x${H}`);
       const errs = [];
-      if (W < 14 || H < 14 || W > 44 || H > 34) errs.push(`size ${W}x${H}`);
+      const huge = m.building && m.building.w >= 50; // the supermarket since issue #22: past the largest size class, its map its footprint and margins
+      if (W < 14 || H < 14 || W > (huge ? m.building.w + 12 : 44) || H > (huge ? m.building.h + 16 : 34)) errs.push(`size ${W}x${H}`);
       const z0 = m.zones[0];
       const start = [z0.x0 + 1, z0.y0 + (s % 2 === 1 ? 0 : 1)];
       if (!CELL[m.cells[start[1] * W + start[0]].k].walk) errs.push("the front zone is blocked");
@@ -954,7 +955,7 @@ console.log("\nFootprint shapes: buildings that are not boxes (issue #23)");
   const N4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
   const DOORS = new Set(["idoor", "odoor", "door"]);
   const SEEDN = Math.max(40, SEEDS * 10);
-  const shapedKeys = Object.keys(BUILDINGS).filter((k) => !BUILDINGS[k].street && k !== "supermarket" && k !== "deptstore"); // the big stores wait for #22
+  const shapedKeys = Object.keys(BUILDINGS).filter((k) => !BUILDINGS[k].street && k !== "deptstore"); // the department store stays a box
   const errs = {};
   const bad = (what, eg) => { (errs[what] = errs[what] || []).push(eg); };
   const kinds = {};
@@ -1038,6 +1039,9 @@ console.log("\nFootprint shapes: buildings that are not boxes (issue #23)");
   }
   const line = (k) => `${k} ${share[k].shaped}/${share[k].n} (${Object.entries(share[k].kinds).map(([q, n]) => `${q} ${n}`).join(", ")})`;
   for (const key of ["house", "school", "hospital", "church", "motel"]) check(share[key].shaped >= share[key].n / 2 && ["L", "T", "U"].some((q) => share[key].kinds[q] > 0), `half or more shaped, an L, T or U among them: ${line(key)}`);
+  const sm = { n: 0, shaped: 0 };
+  for (let s = 0; s < 40; s++) { sm.n++; if ((BUILDINGS.supermarket.make(new Rng(32000 + s * 7919), { shapes: true }).shape || {}).kind === "notch") sm.shaped++; }
+  check(sm.shaped === sm.n, `a supermarket's receiving dock an annex, its entrance's corner notched (${sm.shaped} of ${sm.n})`);
   check(share.police.kinds.L === share.police.n && share.firestation.kinds.annex === share.firestation.n && share.offices.shaped > 0 && share.apartments.shaped > 0 && share.grocery.kinds.stepped > 0 && share.gasstation.kinds.annex > 0,
     `a police station an L (its sally port), a fire station's engine bay an annex, offices and flats an L at times, a shop's back stepped: ${["police", "firestation", "offices", "apartments", "grocery", "gasstation"].map(line).join("; ")}`);
   // The school: a 50–70 × 34–46 box, two wings or more and a gym annex, its floors 2–3 times the old school's.
@@ -1068,8 +1072,8 @@ console.log("\nFootprint shapes: buildings that are not boxes (issue #23)");
     return { v: v / n, cells: cellsN / n };
   };
   const rows = [];
-  for (const key of ["house", "police", "firestation", "hospital", "gasstation"]) {
-    const a = lootOf(key, false), b = lootOf(key, true);
+  for (const key of ["house", "police", "firestation", "hospital", "gasstation", "supermarket"]) {
+    const a = lootOf(key, false, key === "supermarket" ? 30 : 120), b = lootOf(key, true, key === "supermarket" ? 30 : 120);
     rows.push(`${key} ${b.v.toFixed(1)} against ${a.v.toFixed(1)}`);
     check(Math.abs(b.v / a.v - 1) <= 0.1, `a shaped ${key} holds what it did within ±10%: ${b.v.toFixed(1)} against ${a.v.toFixed(1)} (its floor ${b.cells.toFixed(0)} cells against ${a.cells.toFixed(0)})`);
   }
