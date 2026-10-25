@@ -7,7 +7,7 @@
 //   and bridges), every building's front door reached, the map at most CAMPUS.MAX (500) across, each building's
 //   containers inside it (c.house) with ids 1..n, the same campus every time (and with a vehicle)
 // - the raid (createBattle at a university): one map, the intro naming the buildings, the dead spread by building and
-//   denser in the dorms and the dining hall, Heat's clock by the area searched
+//   denser in the dorms and the dining hall, Heat's clock by the area searched, students holed up in a dorm
 // - the site's ledger: a building opened and left, another never entered; after a save and a load the revisit shows the
 //   first as it was left and the second fresh
 // - older saves: a university whose buildings a raid went into keeps its three; a fresh one is a campus
@@ -188,6 +188,14 @@ let world = null;
   const [hw2] = campusHeatDims(b);
   check(hw2 > hw && hw2 < b.w * b.h, `searching a building grows it (${hw2} cells)`);
   for (const c of R.containers) c.searched = false;
+  st.combat = null;
+  // Students holed up in a dorm (floorfolk.js's survivors upstairs, CAMPUS.SURVIVORS of the time): forced on here.
+  const was = CAMPUS.SURVIVORS;
+  CAMPUS.SURVIVORS = 1;
+  const bs = raid(st, p, t);
+  CAMPUS.SURVIVORS = was;
+  const S = bs.raid.folk && bs.raid.folk.survivors, room = S ? bs.raid.areas[S.room] : null, home = room && room.house != null ? bs.raid.plan.houses[room.house] : null;
+  check(S && home && home.key === "dorm" && S.f >= 1 && bs.units.filter((u) => u.folk === "survivors").length >= 1, `students holed up in ${room ? room.name : "nowhere"} (floor ${S ? S.f + 1 : "-"}), its door barred (${S ? S.count : 0} of them)`);
   st.combat = null;
   world = { st, p, t, i, raid };
 }

@@ -45,6 +45,7 @@ import { legacyRooms } from "./worldcfg.js";
 import { rollScenes, sceneRng } from "./interiorscenes.js";
 import { applyZType, siteList } from "./zombietypes.js";
 import { CAMPUS_NAMES } from "./campuslayout.js";
+import { placeFolk } from "./floorfolk.js"; // students holed up in a dorm (the city crawl's survivors upstairs)
 
 export const CAMPUS = {
   MAX: 300,            // a campus map's side at most: 500 once #24's engine work (windowed pathing, tiled canvases, compact saves) is on dev
@@ -67,9 +68,10 @@ export const CAMPUS = {
   DENSE: { dorm: 1.7, dininghall: 1.6, studentunion: 1.2, parkgarage: 0.6, maintenance: 0.6, security: 0.8 }, // the dead per cell of a building by kind (1 else)
   OUTSIDE: 0.3,        // the share of the dead on the open ground
   DEAD_AREA: 2500,     // the site's roster × (the campus's ground-floor building area / this) ^ DEAD_EXP …
-  DEAD_EXP: 0.5,
+  DEAD_EXP: 0.75,
   DEAD_MAX: 100,       // … at most this many of the dead in all (the issue's turn target: 100 dead)
   QUARANTINE: 0.5,     // a quad's quarantine tent (an outdoor scene) on these dice
+  SURVIVORS: 0.45,     // students holed up in a dorm (campusFolk: floorfolk.js's survivors upstairs) on these dice
   STALL: 3,            // a parking stall's width (a car 2 wide, a cell between: placeCar's ring)
   CARS: 0.55,          // the stalls with a car left in them
   // The kinds: the map's size, the buildings (how many, the dorms among them), the quads.
@@ -436,7 +438,9 @@ export function campusDead(state, b, map, g, pod0 = 0) {
   const rng = state.rng, R = b.raid, W = b.w, H = b.h, P = map.plan;
   const C = CAMPUS;
   const area = P.houses.reduce((a, h) => a + h.w * h.h, 0);
-  const n = Math.min(C.DEAD_MAX, Math.max(1, Math.round((g.count || 0) * Math.max(1, Math.pow(area / C.DEAD_AREA, C.DEAD_EXP)))));
+  const before = R.campusDead || 0; // the groups before this one's (the cap is the campus's, all groups together)
+  const n = Math.min(C.DEAD_MAX - before, Math.max(1, Math.round((g.count || 0) * Math.max(1, Math.pow(area / C.DEAD_AREA, C.DEAD_EXP)))));
+  if (n <= 0) return 0;
   const zl = siteList(rng, g.mix, n);
   const entry = R.zones[0], ex = entry.x0 + 1, ey = entry.y0 + 1;
   const inZone = (x, y) => R.zones.some((z) => x >= z.x0 - 1 && x <= z.x0 + z.w && y >= z.y0 - 1 && y <= z.y0 + z.h);
@@ -478,7 +482,19 @@ export function campusDead(state, b, map, g, pod0 = 0) {
     placed++;
   }
   if (b.floors && (b.floor || 0) !== 0) setFloor(b, 0);
+  R.campusDead = before + placed;
   return placed;
+}
+// Students holed up in a dorm (buildingmaps.js placeInterior, after the dead; floorfolk.js placeFolk, the crawl's
+// survivors upstairs): CAMPUS.SURVIVORS of campuses with a dorm of two storeys or more, the world's dice. They hold an
+// upper floor's dorm room (FOLK.SURVIVORS.prefer.dorm; one a scene left barricaded with nobody dead first), its door
+// barred; meeting them raises floorfolk.js's card (talk, ask them to join: they wait outside after the raid,
+// scavenge.js afterRaid → folkAfterPlace).
+export function campusFolk(state, b) {
+  const P = b.raid && b.raid.plan;
+  if (!P || !P.campus || !b.floors || b.floors.length < 2) return null;
+  if (!P.houses.some((h) => h.key === "dorm" && h.storeys >= 2) || !state.rng.chance(CAMPUS.SURVIVORS)) return null;
+  return placeFolk(state, b, { id: P.id, key: "dorm", folk: { survivors: true } }, 1);
 }
 // The area Heat's clock reads on a campus (combat.js: raidHeatRate on these dims): the buildings your people have
 // searched in (a container opened there) or stand in now, and a raid map's worth of ground round them; not the map's.

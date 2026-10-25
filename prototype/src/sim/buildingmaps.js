@@ -52,7 +52,7 @@ import { roomLayout, homeStyle, medicalStyle, LAYOUT } from "./roomlayout.js"; /
 import { commercialStyle, styleName as shopStyleName } from "./shoplayout.js"; // shops, restaurants, bars, offices, motels, banks and big stores laid out for their kind (issue #16)
 import { civicStyle } from "./civiclayout.js"; // police stations, fire stations, schools and churches laid out for their kind (issue #15)
 import { campusStyle, CAMPUS_PLANS, CAMPUS_NAMES } from "./campuslayout.js"; // the college campus buildings laid out for their kind (issue #28)
-import { campusMap, campusLegacy, campusDead, campusIntro } from "./campus.js"; // a college campus: many buildings on one map (issue #28)
+import { campusMap, campusLegacy, campusDead, campusIntro, campusFolk } from "./campus.js"; // a college campus: many buildings on one map (issue #28)
 import { militaryStyle, militaryOutside, MIL_SIZE } from "./militarylayout.js"; // military bases, air bases, airports and prisons laid out like the real thing (issue #25)
 import { decorate, flipDecoY, placeDecorPieces } from "./decor.js"; // rugs, clutter, wall art, wall colours, light fixtures (cosmetic)
 import { rollWin, winMixOf, windowOpen } from "./windows.js"; // the windows' states (open, locked, fixed), a throw through an open one
@@ -2780,6 +2780,7 @@ export function placeInterior(state, b, map, groups) {
       pod++;
     }
   }
+  if (map.campus) campusFolk(state, b); // campus.js: students holed up in a dorm (floorfolk.js)
   // The living people inside (wanderers.js).
   const groupsIn = interiorOccupants(state, state.tiles[b.tileId] || null, R.plan) || [];
   R.occupants = { asked: true, groups: 0, waiting: [] };
