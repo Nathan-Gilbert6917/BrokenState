@@ -597,7 +597,7 @@ console.log("\nHomes room by room (roomlayout.js)");
   let newKinds = 0;
   for (let s = 0; s < 10; s++) {
     const rng = new Rng(500 + s);
-    const m = assemble(rng, BUILDINGS.house.make(rng, { legacy: true }), { key: "house", name: "House", legacy: true });
+    const m = assemble(rng, BUILDINGS.house.make(rng, { legacy: true }), { key: "house", name: "House", legacy: true, noDecor: true }); // decor.js's plants and lamps are not this ticket's
     for (const F of m.floors || [{ cells: m.cells }]) for (const c of F.cells) if (pieceDef(c.k) && !OLD.has(c.k)) newKinds++;
   }
   check(!newKinds, `an older save's house is furnished the old way (${newKinds} new pieces)`);

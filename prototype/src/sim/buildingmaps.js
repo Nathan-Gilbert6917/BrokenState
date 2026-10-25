@@ -1815,7 +1815,7 @@ export function assemble(rng, spec, opts = {}) {
     hub: !!r.hub, locked: r.locked || null, up: !!r.up, entry: !!r.entry, noLabel: r.label === false,
   }));
   rooms.forEach((r, i) => { if (r.gunSafe) areas[i].gunSafe = r.gunSafe.slice(); }); // locks.js placeGunSafes: a gun safe may stand here
-  rooms.forEach((r, i) => { if (r.flat) areas[i].flat = true; if (r.unit) areas[i].unit = r.unit; }); // roomlayout.js: a shop's flat above, an apartment's rooms
+  if (!opts.legacy) rooms.forEach((r, i) => { if (r.flat) areas[i].flat = true; if (r.unit) areas[i].unit = r.unit; }); // roomlayout.js: a shop's flat above, an apartment's rooms
   for (const a of outdoor) areas.push({ ...a, id: idBase + a.id, f: 0 });
   for (const c of containers) c.area += idBase;
   for (const d of lockedDoors) { d.f = f; if (d.area != null) d.area += idBase; }
