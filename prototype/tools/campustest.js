@@ -280,7 +280,7 @@ section("The campus buildings alone (setup.raid.place)");
     const z = m.zones[0], g0 = flood(m.cells, m.w, m.h, [[z.x0 + 1, z.y0 + 1]]);
     let walk = 0, got = 0;
     m.cells.forEach((c, j) => { if (walkable(c)) { walk++; if (g0[j]) got++; } });
-    const styled = m.rooms.filter((a) => !a.outdoor && (a.campus || a.civic || a.shop)).length;
+    const styled = m.rooms.filter((a) => !a.outdoor && (a.campus || a.civic || a.shop || a.office)).length;
     check(walk === got && m.containers.length > 0 && (key === "healthcentre" || styled >= Math.ceil(m.rooms.filter((a) => !a.outdoor).length * 0.6)), `${BUILDINGS[key].name}: ${m.rooms.filter((a) => !a.outdoor).length} rooms (${styled} laid out for their kind), ${m.containers.length} containers, ${m.storeys || 1} storeys, all reachable`);
   }
   const used = new Set();

@@ -25,8 +25,9 @@
 //                 walk-in freezer (chest freezers), a dish room, a dry store.
 //   athletics     a basketball court with bleachers, the pool hall (the pool drained: its blue tiles, fl "pool"), a
 //                 weight room, locker rooms (#15's), an equipment room of storage cages (bats, sticks: melee weapons).
-//   admin         the registrar's counter with queue posts, admissions and the bursar (#16's office floors), records;
-//                 upstairs the president's office with a safe, the boardroom.
+//   admin         #27's office rooms (officelayout.js, by the leaf's office mark): the registrar (the clerk's counter with
+//                 queue posts), admissions and the bursar (open-plan floors), records (a file room); upstairs the
+//                 president's office (the executive suite: the safe always, a liquor cabinet), the boardroom.
 //   security      campus security: the front desk, dispatch, the officers' room, lockers and a small armory (a gun
 //                 rack, an ammo cabinet, a locker) behind a steel door.
 //   maintenance   the physical plant: a vehicle bay with the maintenance truck (a container: fuel, parts, tools), the
@@ -194,17 +195,21 @@ function athletics(rng, o = {}) {
     exits: [{ side: "back", roles: ["gym"], chance: 0.9, lock: 0.3 }, ...fireExits(0.3)],
   };
 }
+// The administration building: #27's office rooms (officelayout.js OFFICE_STYLES by the leaf's office mark: the clerk's
+// counter with queue posts, open-plan floors, the file room, the executive suite with its safe, the boardroom).
 function admin(rng, o = {}) {
   const { bw, bh } = footOf(rng, "admin", o), n = storeysOf(rng, "admin", o);
-  const office = (name) => room("office", name, "officefloor", { type: "office", maxBoxes: 3 });
-  const records = () => room("storage", "Records", "records", { type: "office", lock: ["door", 0.3], maxBoxes: 3 });
+  const ofc = (role, name, office, extra = {}) => ({ role, name, office, type: "office", ...extra });
+  const office = (name) => ofc("office", name, "openplan", { maxBoxes: 3 });
+  const records = () => ofc("storage", "Records", "fileroom", { lock: ["door", 0.3], maxBoxes: 3 });
+  const rest = () => ({ role: "restroom", name: "Restroom", office: "restroom" });
   return {
     bw, bh, front: { width: 2 }, ground: "town", storeys: n, foot: "large", stairs: ENDS,
-    program: hallPlan([["*", room("office", "Registrar", "registrar", { type: "office", maxBoxes: 3 })], [7, room("lobby", "Lobby", "adminlobby", { entry: true, type: "office", maxBoxes: 1 })], ["*", office("Admissions")]],
-      [["*", office("Bursar")], [5, records()], [4, civ("breakroom", "Break room", "breakroom")], [3, restroom()]], 6),
+    program: hallPlan([["*", ofc("office", "Registrar", "clerk", { maxBoxes: 3 })], [7, ofc("lobby", "Lobby", "reception", { entry: true, maxBoxes: 1 })], ["*", office("Admissions")]],
+      [["*", office("Bursar")], [5, records()], [4, ofc("breakroom", "Break room", "breakroom", { type: "kitchen" })], [3, rest()]], 6),
     upper: (f, r, ctx) => (ctx.top
-      ? hallPlan([["*", room("office", "President's office", "president", { type: "office", lock: ["door", 0.3], maxBoxes: 3 })], [7, room("office", "Boardroom", "boardroom", { type: "office", maxBoxes: 2 })], ["*", room("office", "Provost's office", "faculty", { type: "office", maxBoxes: 2 })]], [["*", office("Deans' offices")], [5, records()], [3, restroom()]], 6)
-      : hallPlan([["*", office("Financial aid")], [7, office("Human resources")], ["*", office("Student affairs")]], [["*", office("Offices")], [5, records()], [3, restroom()]], 6)),
+      ? hallPlan([["*", ofc("office", "President's office", "execsuite", { lock: ["door", 0.3], maxBoxes: 3 })], [7, ofc("office", "Boardroom", "boardroom", { maxBoxes: 2 })], ["*", ofc("office", "Provost's office", "execoffice", { maxBoxes: 2 })]], [["*", office("Deans' offices")], [5, records()], [3, rest()]], 6)
+      : hallPlan([["*", office("Financial aid")], [7, office("Human resources")], ["*", office("Student affairs")]], [["*", office("Offices")], [5, records()], [3, rest()]], 6)),
     exits: [{ side: "back", roles: ["breakroom", "storage"], chance: 0.5, lock: 0.4 }, ...fireExits(0.4)],
   };
 }
@@ -329,17 +334,6 @@ function some(L, k, n, opts = {}) { const out = []; for (let i = 0; i < n; i++) 
 function fill(L, kinds) {
   for (let i = 0, miss = 0; !full(L) && miss < kinds.length; i++) { if (L.wall(kinds[i % kinds.length], { prefer: "corner" })) miss = 0; else miss++; }
   for (let i = 0, miss = 0; !full(L) && miss < kinds.length; i++) { if (L.centre(kinds[i % kinds.length])) miss = 0; else miss++; }
-}
-// A fixed piece that is its own locked container (the president's safe), as shoplayout.js's.
-function lockedPiece(L, k, opts = {}) {
-  const r = L.wall(k, { prefer: "corner", ...opts });
-  if (!r) return null;
-  const [x, y] = r.cells[0];
-  L.c.unblock(x, y);
-  const box = L.c.container(x, y, k, L.lane);
-  if (box) box.lockKind = "safe"; else L.c.block(x, y, k);
-  L.c.cell(x, y).fc = r.face;
-  return box;
 }
 // A vehicle in the room off its lanes: placeCar through the room's tools (buildingmaps.js furnishCtx vehicle).
 function vehicleAt(L, o) {
@@ -625,32 +619,6 @@ export const CAMPUS_STYLES = {
     L.wall("ammocab", { prefer: "corner" });
     L.wall("locker", { prefer: "corner" });
   },
-  // ---------- administration ----------
-  // The registrar: the counter across the room with queue posts before it, filing behind, desks.
-  registrar(L) {
-    const back = quietWall(L, "reg");
-    L.run(["counter", "counter", "counter"], [back], { plain: () => full(L) });
-    for (const p of L.placed.filter((q) => q.k === "counter").slice(0, 3)) L.facing(p, "stanchion");
-    fill(L, ["filing", "desk"]);
-  },
-  // The president's office: the desk, bookshelves, a sofa and an armchair, the safe (locked: its own container).
-  president(L) {
-    deskWithChair(L) || L.need("desk");
-    lockedPiece(L, "safe");
-    L.wall("bookshelf", P(L, { prefer: "corner" }));
-    L.wall("sofa", { prefer: "middle" });
-    L.wall("armchair", { prefer: "corner" });
-    fill(L, ["cabinet", "bookshelf"]);
-  },
-  // The boardroom: a long table with chairs round it, the screen.
-  boardroom(L) {
-    const c = L.c, n = Math.max(2, Math.min(5, Math.max(c.w, c.h) - 3)), horiz = c.w >= c.h;
-    const [mx, my] = [Math.floor((c.x0 + c.x1) / 2), Math.floor((c.y0 + c.y1) / 2)], cells = [];
-    for (let i = 0; i < n; i++) { const x = horiz ? mx - Math.floor(n / 2) + i : mx, y = horiz ? my : my - Math.floor(n / 2) + i; if (L.place("table", [[x, y]])) cells.push([x, y]); }
-    if (cells.length) L.around({ k: "table", cells, face: null, side: null, box: null }, "chair", cells.length * 2);
-    screen(L, quietWall(L, "board"));
-    fill(L, ["cabinet"]);
-  },
   // ---------- borrowed: #16's shops, offices and the library's rooms ----------
   laundry: (L) => COMMERCIAL_STYLES.laundry(L),
   circ: (L) => COMMERCIAL_STYLES.circulation(L),
@@ -660,9 +628,6 @@ export const CAMPUS_STYLES = {
   foodcourt: (L) => COMMERCIAL_STYLES.dining(L),
   kitchen: (L) => COMMERCIAL_STYLES.galley(L),
   walkin: (L) => COMMERCIAL_STYLES.walkin(L),
-  officefloor: (L) => COMMERCIAL_STYLES.officefloor(L),
-  records: (L) => COMMERCIAL_STYLES.records(L),
-  adminlobby: (L) => COMMERCIAL_STYLES.officelobby(L),
 };
 
 // The campus style for a room (buildingmaps.js assemble): its plan leaf's campus mark; the health centre's rooms by
