@@ -18,7 +18,7 @@
 //   own      the size belongs to another ticket (#22: the corner store, grocery, supermarket and department store;
 //            #23: the school; #26: the bunkers): its archetype's own dice are kept (only the storeys rule applies);
 //   planned  the archetype's own plan is drawn at this size (#25's military buildings: militarylayout.js MIL_SIZE is these
-//            rows, read through realFoot; #27's office buildings: officeplans.js SIZE): realScale leaves its footprint as
+//            rows, read through realFoot; #27's office buildings: officeplans.js SIZE; #34's libraries: librarylayout.js LIBRARY.SIZE): realScale leaves its footprint as
 //            it is (and #25's storeys; #27's tall towers keep only the floors the tall rule builds);
 //   wings    how a footprint much bigger than the plan is laid out (buildingmaps.js realScale), when not in whole copies:
 //            "along" side by side along the front only, wall to wall, never turned, the copies after the first without the
@@ -63,7 +63,7 @@ export const REAL_SIZE = {
   truckstop:   { w: [25, 40], d: [15, 25], storeys: [1, 1], set: "rural" },
   bank:        { w: [15, 30], d: [15, 25], storeys: [1, 2], set: "town" },
   dealer:      { w: [30, 50], d: [20, 35], storeys: [1, 2], set: "town" },
-  library:     { w: [25, 40], d: [20, 30], storeys: [1, 2], set: "town" },
+  library:     { w: [9, 56], d: [10, 44], storeys: [1, 8], set: "town", planned: true }, // #34: thirteen variants drawn at their real size (librarylayout.js LIBRARY.SIZE), a rural reading room to an 8-storey central library
   vet:         { w: [15, 20], d: [12, 18], storeys: [1, 2], set: "town" },
   motel:       { w: [40, 70], d: [10, 14], storeys: [2, 2], set: "rural", wings: "along" },
   church:      { w: [14, 24], d: [22, 36], storeys: [1, 1], set: "town", wings: "back" }, // a long nave (and a tower), a parish hall behind

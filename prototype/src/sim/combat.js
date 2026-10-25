@@ -6991,6 +6991,16 @@ export const BOX_LOOT = {
   "nightstand@clinic": { rest: 0.25, loot: { water: [0.3, 1, 1] }, gear: [["flashlight", 0.03], ["knife", 0.02]] },
   "medcab@vet":        { rest: 0.5, loot: { meds: [0.75, 1, 4] }, gear: [["dewormer", 0.08]] },
   "crate@vet":         { rest: 0, loot: { food: [0.75, 1, 4] }, gear: [] }, // the food store's sacks of feed: food, at a low worth
+  // Libraries (issue #34, librarylayout.js): the shelving, the carts and the card catalogue roll their room's table (a
+  // stack's books, a reference room's manuals: data-shops.js AREA_DEFS); a computer desk, a printer and a microfilm
+  // reader hold electronics and parts wherever they stand; the bookmobile is a van of books (its fuel tank, a box of
+  // returns: skills.js's book rolls on it as on any container, twice over through rest), the book return a few books
+  // dropped in and someone's things.
+  computer:   { rest: 0, loot: { electronics: [0.2, 1, 1], parts: [0.2, 1, 1] }, gear: [["phone", 0.01], ["laptop", 0.01]] },
+  printer:    { rest: 0, loot: { parts: [0.5, 1, 2], scrap: [0.4, 1, 2] }, gear: [] },
+  microfilm:  { rest: 0, loot: { electronics: [0.15, 1, 1], parts: [0.25, 1, 1] }, gear: [] },
+  bookreturn: { rest: 0.5, loot: { scrap: [0.2, 1, 1] }, gear: [["photos", 0.04], ["novel", 0.06], ["comic", 0.04], ["magazines", 0.04]] },
+  bookmobile: { rest: 0.3, loot: { fuel: [0.5, 1, 4], parts: [0.2, 1, 1] }, gear: [["novel", 0.1], ["comic", 0.06], ["gardenbook", 0.03], ["cookbook", 0.03], ["survivalbook", 0.02], ["medbook", 0.02], ["diybook", 0.02]] },
   // A hotel's (issue #29, hotellayout.js): a guest's suitcase (clothes as rags, toiletries, a phone or a laptop, now and
   // then a pistol or meds), a room's minibar (snacks, drinks, the little bottles), the front desk's safe (the night's
   // cash, guests' valuables), its desk drawers, housekeeping's shelves (soap, shampoo, the mini bottles).
