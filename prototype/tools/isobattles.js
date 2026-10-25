@@ -1,7 +1,7 @@
 // Battles of every layout for the battle-view checks (tools/uitest.js) and measurements: a field encounter (a town
 // with a road, a forest), a raid, a hive assault, a hive growth, an assault on a group's walled base, a base defence
 // on the wall map (night, a manned tower) and after the fall back on the yard map (some of your people inside a
-// building), a base without walls. Each is built the way the browser opens it (a window there: no auto-resolve).
+// building), a base without walls, and the furniture showroom (one of every kind: showroom). Each is built the way the browser opens it (a window there: no auto-resolve).
 // battles(seed) → [{ name, st, b }]
 import { createWorld, hub, atBase, makeSurvivor } from "../src/sim/world.js";
 import { createBattle, registerCombatHandler } from "../src/sim/combat.js";
@@ -10,6 +10,7 @@ import { addBuilding } from "../src/sim/buildings.js";
 import { newItem } from "../src/sim/inventory.js";
 import { endDeploy } from "../src/sim/deploy.js";
 import { fallBack } from "../src/sim/interior.js";
+import { FURNITURE_KINDS } from "../src/sim/data-furniture.js";
 
 registerCombatHandler("isotest", () => {});
 const BUILT = ["walls", "walls", "barricades", "barricades", "watchtower", "bunkhouse", "bunkhouse", "storehouse", "ammo_bench", "infirmary", "cistern", "well", "gate", "rain_catcher", "garage", "radio", "common_room", "cells", "cellar", "floodlights"];
@@ -38,6 +39,38 @@ const field = (st, tile, enemy, extra = {}) => {
   const h = hub(st);
   return inBrowser(() => createBattle(st, { tile, baseId: h.id, fighterIds: atBase(st, h.id).slice(0, 6).map((s) => s.id), enemy, ambush: null, canRetreat: true, handler: "isotest", context: {}, ...extra }));
 };
+
+// The furniture showroom (sim/data-furniture.js, issue #8): one of every kind of the catalogue laid out on the battle's
+// map in rows, each at its own size (a sofa two cells, bleachers two by two) with a free cell round it, on a floor of
+// floorboards; the cells under it cleared first, anyone standing there moved off, any raid container there dropped.
+// Used by the "furniture" layout below and by tools/raidshot.cjs (site "furniture": the same on a real raid's map).
+// showroom(b, x0?, y0?) → [{ k, x, y }] (each piece's first cell).
+export function showroom(b, x0 = 2, y0 = 2) {
+  const placed = [], cols = Math.max(4, Math.floor((b.w - x0 - 1) / 3));
+  const kinds = Object.keys(FURNITURE_KINDS);
+  const rows = Math.ceil(kinds.length / cols), x1 = Math.min(b.w - 1, x0 + cols * 3), y1 = Math.min(b.h - 1, y0 + rows * 3);
+  for (let y = y0 - 1; y <= y1; y++) for (let x = x0 - 1; x <= x1; x++) {
+    if (x < 0 || y < 0 || x >= b.w || y >= b.h) continue;
+    b.cells[y * b.w + x] = { k: "open", f: "floor", fl: (x + y) % 7 ? undefined : "tile" };
+  }
+  kinds.forEach((k, i) => {
+    const x = x0 + (i % cols) * 3, y = y0 + Math.floor(i / cols) * 3, [w, h] = FURNITURE_KINDS[k].size;
+    if (y + h > b.h - 1) return;
+    for (let dy = 0; dy < h; dy++) for (let dx = 0; dx < w; dx++) b.cells[(y + dy) * b.w + x + dx] = { k, f: "floor" };
+    placed.push({ k, x, y });
+  });
+  const taken = (x, y) => b.units.some((u) => u.x === x && u.y === y);
+  for (const u of b.units) {
+    if (b.cells[u.y * b.w + u.x].k === "open") continue;
+    let best = null, bd = Infinity; // the nearest free open cell (the gaps between the pieces count)
+    for (let y = 0; y < b.h; y++) for (let x = 0; x < b.w; x++) { const d = Math.abs(x - u.x) + Math.abs(y - u.y); if (d < bd && b.cells[y * b.w + x].k === "open" && !taken(x, y)) { bd = d; best = [x, y]; } }
+    if (best) { u.x = best[0]; u.y = best[1]; }
+  }
+  if (b.raid && b.raid.containers) b.raid.containers = b.raid.containers.filter((c) => c.x < x0 - 1 || c.x > x1 || c.y < y0 - 1 || c.y > y1);
+  if (b.losCache) b.losCache.fill(0);
+  b.rev = (b.rev || 0) + 1;
+  return placed;
+}
 
 export function battles(seed = 42, only = null) {
   const out = [];
@@ -104,5 +137,7 @@ export function battles(seed = 42, only = null) {
     return b;
   });
   add("base-open", (st) => baseFight(st, false, ["barricades", "bunkhouse", "storehouse", "well", "ammo_bench"], false));
+  // One of every piece of furniture and appliance (showroom above) on a field map.
+  add("furniture", (st) => { const b = field(st, fakeTile(st, "plains", null), { kind: "zombies", count: 2, power: 2 }); b.showroom = showroom(b); return b; });
   return out;
 }

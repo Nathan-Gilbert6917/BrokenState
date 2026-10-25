@@ -20,8 +20,10 @@
 //     wall's face toward that room, hidden when the wall is cut away.
 //   - c.wc on a room's cells: the room's wall colour (room.wallc: WALLC by role, a franchise's front room in its look's
 //     wall colour), painted on the inside faces of the walls round it; the outside keeps the building's own.
-// Lootable decor pieces (a potted plant, a floor lamp, a painting, a wall clock) belong to the furniture catalogue
-// (data-furniture.js, issue #8) and are placed with the furniture.
+// Lootable decor pieces (a potted plant, a floor lamp, a painting, a wall clock) are the furniture catalogue's rows
+// (data-furniture.js, issue #8): the plant and the lamp stand on a floor cell by a wall of a home's, an office's, a
+// ward's or a shop's room (placeDecorPieces, with assemble's own block: never cutting a way off), the painting and the
+// wall clock hang in place of a picture or a clock (c.wart = { k: "painting" | "wallclock", d, piece: true }).
 import { hash01 } from "./skills.js";
 
 // Floor clutter by kind: what lies on the floor, the rooms its colour is drawn in (ui/isoview.js decoTexel).
@@ -93,6 +95,7 @@ export const DECOR = {
 const BOOKISH = /stacks|reading|library/i;
 // Wall art kinds: their names (ui/isoview.js WARTC draws each).
 export const WALL_ART = {
+  painting: "a painting (lootable)", wallclock: "a wall clock (lootable)", // the catalogue's pieces (data-furniture.js), c.wart.piece
   picture: "a picture", clock: "a clock", mirror: "a mirror", whiteboard: "a whiteboard", poster: "a poster",
   crucifix: "a crucifix", notice: "a notice board", shelf: "a shelf of knick-knacks",
 };
@@ -114,7 +117,16 @@ export const DECO_CFG = {
   LEAVES: 0.6,                    // the chance of a second leafy cell further in from an open outer door
   ART_GAP: 2,                     // cells between two pieces of wall art on one room
   LIGHT_EVERY: 4,                 // strip lights: one row every so many cells in a long room
+  // The lootable decor pieces (data-furniture.js rows plant, floorlamp, painting, wallclock): the chance a room of their
+  // kind gets a plant or a lamp, and the share of pictures and clocks that are the catalogue's painting or wall clock.
+  PIECE: { plant: 0.45, floorlamp: 0.35, painting: 0.35, wallclock: 0.5 },
 };
+// Room roles → the catalogue's tags for the plant and the floor lamp (data-furniture.js FURNITURE_KINDS tags).
+const PIECE_TAG = {
+  living: "living", greatroom: "living", dayroom: "living", apt: "living", dining: "dining", bedroom: "bedroom", motelroom: "bedroom",
+  office: "office", vestry: "office", reception: "office", foyer: "office", lobby: "office", ward: "ward", sales: "shop",
+};
+const PIECE_TAGS = { plant: ["living", "office", "dining", "ward", "shop"], floorlamp: ["living", "bedroom", "office"] }; // as their rows' tags
 const D4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 const OPENISH = new Set(["open", "loft"]);
 // The building's mess, 0.25 (kept) to 1 (a wreck), by its own dice.
@@ -204,7 +216,9 @@ export function decorate(cells, W, H, rooms, rid, o) {
         if (put.length >= n) break;
         if (put.some(([px, py]) => Math.abs(px - wx) + Math.abs(py - wy) < DECO_CFG.ART_GAP)) continue;
         const k = kinds[Math.floor(h("artk", wx, wy) * kinds.length) % kinds.length];
-        at(wx, wy).wart = { k, d };
+        // A picture or a clock worth taking home: the catalogue's painting or wall clock (data-furniture.js), marked piece.
+        const pk = k === "picture" && h("painting", wx, wy) < DECO_CFG.PIECE.painting ? "painting" : k === "clock" && h("wallclock", wx, wy) < DECO_CFG.PIECE.wallclock ? "wallclock" : null;
+        at(wx, wy).wart = pk ? { k: pk, d, piece: true } : { k, d };
         put.push([wx, wy]);
       }
     }
@@ -224,6 +238,21 @@ export function decorate(cells, W, H, rooms, rid, o) {
       const fc = at(ix + dx, iy + dy);
       if (fc && ridAt(ix + dx, iy + dy) >= 0 && OPENISH.has(fc.k) && !fc.deco && h("leaves2", ix, iy) < DECO_CFG.LEAVES) fc.deco = { k: "leaves", v: Math.floor(h("lv", ix + dx, iy + dy) * 6) };
     }
+  }
+}
+
+// The plant and the floor lamp (the catalogue's lootable decor): stood on a free floor cell along the room's wall by
+// assemble's own block (put: undone if it would cut anything off). spot(x, y): a free cell by a wall. Hash dice only.
+export function placeDecorPieces(room, o, spot, put) {
+  const tag = PIECE_TAG[room.role];
+  if (!tag) return;
+  const h = (...p) => hash01(o.seed, "piece", o.f || 0, room.id, ...p);
+  for (const k of ["plant", "floorlamp"]) {
+    if (!PIECE_TAGS[k].includes(tag) || h(k) >= DECO_CFG.PIECE[k]) continue;
+    const spots = [];
+    for (let y = room.iy0; y < room.iy0 + room.ih; y++) for (let x = room.ix0; x < room.ix0 + room.iw; x++) if (spot(x, y)) spots.push([x, y]);
+    spots.sort((p, q) => h(k, p[0], p[1]) - h(k, q[0], q[1]));
+    for (const [x, y] of spots) if (put(x, y, k)) break;
   }
 }
 

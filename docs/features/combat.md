@@ -69,6 +69,80 @@ Raids go into generated buildings and neighbourhood streets to search, past lock
   - Pick without the crowbar, like lockpicks from a lower base, as quiet; one snaps off the stack half the time an attempt.
   - A safe, a steel security door and the gun safes are beyond them. The crowbar's picks are used first.
   - Modules: [locks `MAKESHIFT_PICK`, `picksOf`, `crowbarOf`, `makeshiftPicksOf`, `isMakeshiftPicks`, `makeshiftPickable`, `pickChance`, `wearPicks`, `openOdds` (pick.makeshift / left), `openLock`, `lockedSearchHour`; foundcars (cars), rescueraid `pickOdds` (a cell's lock); ui/locks `lockPanel` "Pick (makeshift)", ui/carpanel].
+- **Furniture and appliance catalogue** (issue #8 of the interiors epic #7, the user's request 2026-10-25: "Make the layouts make sense and filled with appliances, furniture and decor that makes it feel lived in. […] I want all reasonable appliances, furniture and some decor to be lootable and taken to your base for use […] some will require two survivors to carry"). Test `tools/furnituretest.js`.
+  - One table, `FURNITURE_KINDS` in [data-furniture], keyed by cell kind: the twelve old kinds (their cover, sight, names and shove hit points unchanged) and 49 new ones. Each row: `name`, `cell` { walk, cover, los }, `hp`, `kg`, `carry` (`one`, `two`, `fixed`), `size` [w, h], `loot` (also a container), `tags` (room roles), `use` (the base-use key), `wall` (stands against a wall).
+  - Driven from it: combat `CELL` (`furnitureCells`, merged at load), barricade `FURNITURE` (`furnitureHp`: every piece that is not fixed shoves and is battered; sandbags kept), ui/isoview's `FURNITURE` and `FLOORED` sets, the outlines, the joins and the wall-facing turn (`WALL_FURN`), `structureName` tooltips, and the codex's Barricades entry ("What shoves", "Two people", "Never shoved").
+  - Rules picked (the issue's numbers were starting points): a "one" piece weighs at most 30 kg, a "two" piece at least 35 kg (`CARRY_KG`). Nothing that holds loot is fixed. Fixed pieces are plumbed in, bolted down or built in, and are never shoved: cell bars, the gun safe, the safe, water heater, boiler, sink, toilet, bathtub, shower, altar, booth, bar counter, bleachers. The gun safe and the safe are not area boxes (their own locks), so they are `loot: false`. The counter stays shoveable, so it is a "two" piece (70 kg), not fixed. The fridge is 60 kg like the Refrigerator item.
+  - Uses: `fridge`, `freezer`, `stove`, `oven`, `microwave`, `storage:<kg>`, `comfort:<mood>`, `work:<station>`, `bed:<BED_SPEC kind>` (beds, bunks, hospital beds and gurneys sleep as data-beds' kinds), `none`. Helpers: `pieceDef(k)` (the row or null), `useOf`, `furnitureFor(tag, loot)`, `isFurniture`.
+  - Item forms for the pick-up ticket: `FURNITURE_GEAR` keyed `f_<kind>` for every liftable piece (bulky, both arms, `furniture: <kind>`, weight its kg), the fridge keeping data-power's `fridge` item (`itemKey(k)`). Not merged into `GEAR` yet: nothing lifts a piece, and a GEAR row would enter the loot pools and shops.
+  - Sprites: `FURN_DRAW` in ui/isoview (boxes and cylinders, colours in `FURNC` beside `DOORC`), each with its height for `blockTop0`; `furnProbe` exposes them to the test.
+  - Showing them: the `furniture` layout in `tools/isobattles.js` (`showroom`: one of every kind at its size), and `node tools/raidshot.cjs <dir> 56 56 furniture` lays the same on a real town raid's map and shoots it close up in two turns of the view (no page errors, 2026-10-25).
+  - Not yet: `FURNISH` places what it placed before. Placing the kinds in rooms, picking them up, base use, blood and bodies are the sibling tickets under #7.
+
+| Piece | Kind | Carry | kg | Size | hp | Cover | Container | Base use |
+|---|---|---|---|---|---|---|---|---|
+| Shelves | `shelf` | one | 25 | 1 × 1 | 25 | half | yes | storage:40 |
+| Lockers | `locker` | two | 40 | 1 × 1 | 40 | full, blocks sight | yes | storage:60 |
+| Cabinet | `cabinet` | one | 30 | 1 × 1 | 25 | half | yes | storage:40 |
+| Counter | `counter` | two | 70 | 1 × 1 | 30 | half | yes | storage:50 |
+| Crates | `crate` | one | 20 | 1 × 1 | 20 | half | yes | storage:60 |
+| Shelving | `rack` | two | 45 | 1 × 1 | 35 | full, blocks sight | yes | storage:120 |
+| Table | `table` | one | 25 | 1 × 1 | 15 | half |  | work:table |
+| Bed | `bed` | one | 22 | 1 × 2 | 20 | half |  | bed:bed |
+| Cell bars | `bars` | fixed | 120 | 1 × 1 | 60 | half |  | none |
+| Hay bales | `hay` | one | 25 | 1 × 1 | 15 | half |  | none |
+| Rain barrels | `barrel` | one | 25 | 1 × 1 | 15 | half |  | none |
+| Gun safe | `gunsafe` | fixed | 180 | 1 × 1 | 80 | full |  | storage:40 |
+| Refrigerator | `fridge` | two | 60 | 1 × 1 | 40 | full, blocks sight | yes | fridge |
+| Chest freezer | `freezer` | two | 45 | 2 × 1 | 35 | half | yes | freezer |
+| Stove | `stove` | two | 50 | 1 × 1 | 35 | half |  | stove |
+| Oven | `oven` | two | 40 | 1 × 1 | 35 | half |  | oven |
+| Microwave | `microwave` | one | 15 | 1 × 1 | 10 | half |  | microwave |
+| Dishwasher | `dishwasher` | two | 35 | 1 × 1 | 25 | half |  | none |
+| Washing machine | `washer` | two | 65 | 1 × 1 | 30 | half |  | none |
+| Tumble dryer | `dryer` | two | 35 | 1 × 1 | 30 | half |  | none |
+| Water heater | `waterheater` | fixed | 55 | 1 × 1 | 35 | full, blocks sight |  | none |
+| Boiler | `boiler` | fixed | 150 | 1 × 1 | 50 | full, blocks sight |  | none |
+| Sink | `sink` | fixed | 20 | 1 × 1 | 25 | half |  | none |
+| Toilet | `toilet` | fixed | 30 | 1 × 1 | 20 | half |  | none |
+| Bathtub | `bathtub` | fixed | 100 | 1 × 2 | 40 | half |  | none |
+| Shower stall | `shower` | fixed | 40 | 1 × 1 | 20 | full, blocks sight |  | none |
+| Sofa | `sofa` | two | 45 | 2 × 1 | 25 | half |  | comfort:1 |
+| Armchair | `armchair` | one | 25 | 1 × 1 | 15 | half |  | comfort:0.5 |
+| Chair | `chair` | one | 6 | 1 × 1 | 8 | half |  | comfort:0.1 |
+| Desk | `desk` | one | 30 | 2 × 1 | 20 | half | yes | work:desk |
+| Filing cabinet | `filing` | one | 30 | 1 × 1 | 30 | half | yes | storage:30 |
+| Bookshelf | `bookshelf` | one | 30 | 1 × 1 | 25 | full, blocks sight | yes | storage:30 |
+| Wardrobe | `wardrobe` | two | 50 | 1 × 1 | 30 | full, blocks sight | yes | storage:60 |
+| Chest of drawers | `dresser` | one | 30 | 1 × 1 | 25 | half | yes | storage:40 |
+| Nightstand | `nightstand` | one | 8 | 1 × 1 | 10 | half | yes | storage:10 |
+| TV stand | `tvstand` | one | 20 | 1 × 1 | 15 | half | yes | storage:15 |
+| Piano | `piano` | two | 230 | 2 × 1 | 50 | full |  | comfort:1 |
+| Pew | `pew` | two | 60 | 2 × 1 | 30 | half |  | comfort:0 |
+| Altar | `altar` | fixed | 120 | 2 × 1 | 40 | half |  | none |
+| Pulpit | `pulpit` | two | 35 | 1 × 1 | 20 | half |  | none |
+| Hospital bed | `hospbed` | two | 70 | 1 × 2 | 25 | half |  | bed:bed |
+| Gurney | `gurney` | two | 35 | 1 × 2 | 15 | half |  | bed:cot |
+| IV stand | `ivstand` | one | 5 | 1 × 1 | 5 | none |  | none |
+| Medicine cabinet | `medcab` | one | 20 | 1 × 1 | 20 | half | yes | storage:15 |
+| Operating table | `optable` | two | 90 | 1 × 2 | 30 | half |  | work:surgery |
+| Vending machine | `vending` | two | 200 | 1 × 1 | 60 | full, blocks sight | yes | storage:60 |
+| Checkout | `checkout` | two | 40 | 1 × 1 | 30 | half | yes | storage:20 |
+| Display case | `displaycase` | two | 45 | 1 × 1 | 20 | half | yes | storage:30 |
+| Cold case | `coldcase` | two | 120 | 1 × 1 | 40 | full, blocks sight | yes | fridge |
+| Booth | `booth` | fixed | 80 | 2 × 1 | 30 | half |  | none |
+| Bar counter | `barcounter` | fixed | 150 | 1 × 1 | 35 | half |  | none |
+| Bar stool | `barstool` | one | 6 | 1 × 1 | 8 | half |  | comfort:0.1 |
+| Workbench | `workbench` | two | 60 | 2 × 1 | 35 | half | yes | work:workbench |
+| Tool chest | `toolchest` | two | 55 | 1 × 1 | 35 | half | yes | storage:40 |
+| Bunk | `bunk` | two | 40 | 1 × 2 | 25 | half |  | bed:bunkbed |
+| School desk | `schooldesk` | one | 12 | 1 × 1 | 10 | half | yes | storage:5 |
+| Teacher's desk | `teacherdesk` | two | 40 | 2 × 1 | 25 | half | yes | work:desk |
+| Bleachers | `bleachers` | fixed | 200 | 2 × 2 | 50 | half |  | none |
+| Server rack | `serverrack` | two | 120 | 1 × 1 | 50 | full, blocks sight | yes | none |
+| Photocopier | `copier` | two | 80 | 1 × 1 | 30 | half |  | none |
+| Safe | `safe` | fixed | 200 | 1 × 1 | 80 | full |  | storage:20 |
+
 
 ## Vaulting half cover
 People go over waist-high cells at extra cost and land winded; the dead crawl over instead.

@@ -48,7 +48,7 @@ import { FRANCHISES } from "./data-shops.js"; // a franchise's layout (plan): th
 import { applyZType, siteList } from "./zombietypes.js";
 import { fitMargins, buildingTarget, densifyOutside, densify, coverTarget, buildingDeadScale, streetDeadScale, raidMaxDims, raidDims, SIZE_CLASSES } from "./battlesize.js";
 import { legacyRaids } from "./worldcfg.js"; // an older save: a neighbourhood's street laid out as it always was
-import { decorate, flipDecoY } from "./decor.js"; // rugs, clutter, wall art, wall colours, light fixtures (cosmetic)
+import { decorate, flipDecoY, placeDecorPieces } from "./decor.js"; // rugs, clutter, wall art, wall colours, light fixtures (cosmetic)
 import { rollWin, winMixOf, windowOpen } from "./windows.js"; // the windows' states (open, locked, fixed), a throw through an open one
 
 export const BMAP = {
@@ -1617,6 +1617,14 @@ export function assemble(rng, spec, opts = {}) {
         if (containers.filter((c) => c.area === room.id).length >= target) break;
         box(room, x, y, rng.pick(kinds));
       }
+    }
+  }
+  // The lootable decor (decor.js placeDecorPieces): a plant, a floor lamp by a room's wall, by hash dice (no roll used).
+  if (!opts.noDecor) {
+    const pseed = rng.state;
+    for (const room of rooms) {
+      const ctx = furnishCtx(room);
+      placeDecorPieces(room, { seed: pseed, f }, (x, y) => ctx.free(x, y) && [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => rid[I(x + dx, y + dy)] === -1), (x, y, k) => block(x, y, k, room));
     }
   }
   function furnishCtx(room) {

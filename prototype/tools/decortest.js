@@ -2,7 +2,9 @@
 // primsOf), issue #13 of the interiors epic (the user's request 2026-10-25: "filled with appliances, furniture and decor
 // that makes it feel lived in"):
 //   1. decor never changes a cell's kind (walk, cover, sight: combat.js CELL), nor the containers or any other roll of
-//      the map: the same building assembled bare (opts.noDecor) is the same map without it;
+//      the map: the same building assembled bare (opts.noDecor) is the same map without it, but for the catalogue's
+//      lootable plants and floor lamps (data-furniture.js) stood on open floor; the paintings and wall clocks hang on
+//      the walls marked piece;
 //   2. rugs lie wholly inside their room, as one rectangle of 2 × 3 to 3 × 4 cells with its border on its outer sides;
 //   3. wall art only on wall cells next to a floor cell of its room (on the side it faces); wall colours on room cells;
 //   4. broken glass only under a broken window (and under every one with floor inside); leaves only by an open door;
@@ -17,6 +19,7 @@ import { createWorld } from "../src/sim/world.js";
 import { CELL } from "../src/sim/combat.js";
 import { BUILDINGS, ROLES, assemble, streetMap } from "../src/sim/buildingmaps.js";
 import { DECOR, WALL_ART, WALLC, tidyDecor } from "../src/sim/decor.js";
+import { pieceDef } from "../src/sim/data-furniture.js";
 import { snapshotBuilding, restoreBuilding } from "../src/sim/citycrawl.js";
 import { Rng } from "../src/sim/rng.js";
 import { battles } from "./isobattles.js";
@@ -29,19 +32,21 @@ const KEYS = ["house", "cabin", "apartments", "hospital", "clinic", "school", "o
 const build = (key, seed, o = {}) => { const spec = BUILDINGS[key].make(new Rng(seed)); return assemble(new Rng(seed), spec, { key, name: BUILDINGS[key].name, ...o }); };
 const floorsOf = (m) => (m.floors || [{ cells: m.cells }]).map((F, f) => ({ f, cells: F.cells }));
 const D4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+const PIECES = new Set(["plant", "floorlamp"]); // the lootable decor that stands on a cell (data-furniture.js)
 const decorOf = (m) => JSON.stringify(floorsOf(m).map(({ cells }) => cells.map((c) => [c.deco || 0, c.wart || 0, c.wc || 0])));
 const roomAt = (m, f, x, y) => m.rooms.find((r) => !r.outdoor && (r.f || 0) === f && x > r.x0 && x < r.x0 + r.w - 1 && y > r.y0 && y < r.y0 + r.h - 1);
 
 // ---------- 1. decor changes nothing but the look ----------
 console.log("Decor changes nothing but the look");
 {
-  let maps = 0, sameK = true, sameBoxes = true, decoCells = 0, artCells = 0, onlyLook = true;
+  let maps = 0, sameK = true, sameBoxes = true, decoCells = 0, artCells = 0, onlyLook = true, pieces = 0;
   for (const key of KEYS) for (let s = 1; s <= SEEDS; s++) {
     const m = build(key, s * 7919), bare = build(key, s * 7919, { noDecor: true });
     maps++;
     floorsOf(m).forEach(({ f, cells }) => {
       const bc = floorsOf(bare)[f].cells;
       cells.forEach((c, i) => {
+        if (PIECES.has(c.k) && bc[i].k === "open") { pieces++; return; } // the catalogue's plant or floor lamp stood there
         if (c.k !== bc[i].k || CELL[c.k].walk !== CELL[bc[i].k].walk || CELL[c.k].cover !== CELL[bc[i].k].cover || CELL[c.k].los !== CELL[bc[i].k].los) sameK = false;
         const extra = Object.keys(c).filter((k) => !(k in bc[i]));
         if (extra.some((k) => k !== "deco" && k !== "wart" && k !== "wc")) onlyLook = false;
@@ -51,7 +56,8 @@ console.log("Decor changes nothing but the look");
     });
     if (JSON.stringify(m.containers) !== JSON.stringify(bare.containers) || JSON.stringify(m.exits) !== JSON.stringify(bare.exits)) sameBoxes = false;
   }
-  check(sameK, `${maps} buildings: every cell's kind (walk, cover, sight) the same as the bare map's`);
+  check(sameK, `${maps} buildings: every cell's kind (walk, cover, sight) the same as the bare map's, but for the catalogue's plants and floor lamps on open floor (${pieces})`);
+  check(pieces > 0, "plants and floor lamps stood in rooms");
   check(sameBoxes, "the containers and the exits the same: decor rolls none of the map's dice");
   check(onlyLook, "decor adds only deco, wart and wc to a cell");
   check(decoCells > maps * 5 && artCells > maps, `decor laid: ${decoCells} floor cells, ${artCells} pieces of wall art`);
@@ -60,6 +66,7 @@ console.log("Decor changes nothing but the look");
 // ---------- 2–4. where it lies ----------
 console.log("Where it lies");
 {
+  const pieceArt = [], plainArt = [];
   let rugs = 0, rugBad = [], artBad = [], glassBad = 0, glassMissing = 0, glass = 0, leavesBad = 0, wcBad = 0, artKinds = new Set(), decoKinds = new Set(), lights = 0;
   for (const key of KEYS) for (let s = 1; s <= SEEDS; s++) {
     const m = build(key, s * 104729);
@@ -87,6 +94,7 @@ console.log("Where it lies");
         }
         if (c.wart) {
           artKinds.add(c.wart.k);
+          (c.wart.k === "painting" || c.wart.k === "wallclock" ? pieceArt : plainArt).push(c.wart);
           const [dx, dy] = D4[c.wart.d] || [0, 0], fl = at(x + dx, y + dy);
           if (c.k !== "wall" || !WALL_ART[c.wart.k] || !fl || fl.f !== "floor" || !roomAt(m, f, x + dx, y + dy)) artBad.push(`${key}#${s} f${f} (${x},${y}) ${c.wart.k}`);
         }
@@ -103,6 +111,7 @@ console.log("Where it lies");
   check(rugs > 0 && !rugBad.length, `${rugs} rugs, each one rectangle of 2 × 3 to 3 × 4 wholly inside its room${rugBad.length ? `: ${rugBad.slice(0, 4).join("; ")}` : ""}`);
   check(!artBad.length, `wall art only on wall cells, facing a floor cell of a room (${[...artKinds].join(", ")})${artBad.length ? `: ${artBad.slice(0, 4).join("; ")}` : ""}`);
   check(artKinds.size >= 6, `${artKinds.size} kinds of wall art seen`);
+  check(artKinds.has("painting") && artKinds.has("wallclock") && pieceArt.every((w) => w.piece && pieceDef(w.k) && pieceDef(w.k).carry === "one") && !plainArt.some((w) => w.piece), `the catalogue's paintings and wall clocks hang among the wall art, marked piece (${pieceArt.length})`);
   check(glass > 0 && glassBad === 0, `broken glass only under a broken window (${glass} cells)`);
   check(glassMissing === 0, `glass under every broken window with open floor inside (${glassMissing} missing)`);
   check(leavesBad === 0, "leaves only in from an open outer door or a doorway");
@@ -192,7 +201,7 @@ console.log("The view");
     imgs = null;
     return { err, ground: ISO.iso.builds.ground - g0, sum };
   };
-  ISO.iso.roofs = false; // every building cut away: the inside walls seen
+  ISO.setRoofs(false); // every building cut away: the inside walls seen
   const a = frame(vb), a2 = frame(vb);
   check(!a.err && a.ground >= 1 && a2.ground === 0, `a building's raid drawn with its decor, the ground painted once (${a.ground}, then ${a2.ground})${a.err ? ` (${a.err})` : ""}`);
   const keys = ISO.isoSpriteKeys();
