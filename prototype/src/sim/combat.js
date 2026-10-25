@@ -171,6 +171,7 @@ import { strikeAct, slashAct, settleTentsDown } from "./tentfight.js"; // tents 
 import { campRaidMap, campRaidUnits, campSleeperTurn, tentBoxLoot, campAfter } from "./campsite.js"; // the campsite raid: its clearing, its tents and their loot, its campers (the user's request 2026-10-20)
 import { furnitureCells } from "./data-furniture.js"; // the furniture and appliance catalogue: its cells (merged into CELL below)
 import { NEW_KINDS, AREA_DEFS } from "./data-shops.js"; // the shops and services new as places: their raid rooms
+import { OFFICE_BOX } from "./data-offices.js"; // the office buildings' new pieces: their own tables (issue #27)
 
 // Result handlers by key. Other modules register theirs while they load (conflicts.js, scavenge.js), which can be
 // before this module's own body has run (the imports are circular), so the map is made on first use: a `var`
@@ -6978,6 +6979,23 @@ export const BOX_LOOT = {
   "nightstand@clinic": { rest: 0.25, loot: { water: [0.3, 1, 1] }, gear: [["flashlight", 0.03], ["knife", 0.02]] },
   "medcab@vet":        { rest: 0.5, loot: { meds: [0.75, 1, 4] }, gear: [["dewormer", 0.08]] },
   "crate@vet":         { rest: 0, loot: { food: [0.75, 1, 4] }, gear: [] }, // the food store's sacks of feed: food, at a low worth
+  // A hotel's (issue #29, hotellayout.js): a guest's suitcase (clothes as rags, toiletries, a phone or a laptop, now and
+  // then a pistol or meds), a room's minibar (snacks, drinks, the little bottles), the front desk's safe (the night's
+  // cash, guests' valuables), its desk drawers, housekeeping's shelves (soap, shampoo, the mini bottles).
+  suitcase:            { rest: 0.3, loot: { scrap: [0.6, 1, 3], meds: [0.12, 1, 2], water: [0.15, 1, 1] }, gear: [["soap", 0.12], ["shampoo", 0.1], ["toothpaste", 0.1], ["deodorant", 0.08], ["perfume", 0.04], ["makeup", 0.04], ["phone", 0.08], ["laptop", 0.03], ["camera", 0.03], ["watch", 0.03], ["pistol", 0.025], ["compact9", 0.02], ["slingbag", 0.03]] },
+  minifridge:          { rest: 0, loot: { food: [0.6, 1, 3], water: [0.7, 1, 4] }, gear: [["vodka", 0.12], ["whiskey", 0.1], ["wine", 0.06], ["chocolate", 0.2], ["candy", 0.15]] },
+  "safe@hotelfront":   { rest: 0, loot: { scrap: [0.2, 1, 2] }, gear: [["cashbox", 0.6], ["watch", 0.15], ["goldring", 0.12], ["goldchain", 0.1], ["phone", 0.1], ["pistol", 0.06]] },
+  frontdesk:           { rest: 0.6, loot: {}, gear: [["flashlight", 0.05], ["phone", 0.04]] },
+  "shelf@hotelhk":     { rest: 0.6, loot: {}, gear: [["soap", 0.35], ["shampoo", 0.3], ["toothpaste", 0.2], ["wetwipes", 0.15], ["deodorant", 0.1]] },
+  // Restaurants by kind of food (issue #33, eaterylayout.js): a dry store's shelving its sacks and tins (the cuisine's:
+  // the room's mix), a pastry case stale biscuits and the sugar, a dipping cabinet ice cream long melted but in winter,
+  // a wine rack wine, a food truck its stock, its propane bottles and a little fuel. Tuned with tools/restauranttest.js
+  // so a restaurant holds what the old ones did per area within ±10%.
+  dryshelf:   { rest: 0, loot: { preserved: [0.8, 2, 5], food: [0.45, 1, 3] }, gear: [] },
+  pastrycase: { rest: 0, loot: { preserved: [0.25, 1, 2], food: [0.2, 1, 2] }, gear: [] },
+  dipcabinet: { rest: 0, loot: { food: [0.1, 1, 2] }, cold: { food: [0.8, 2, 6], preserved: [0.1, 1, 2] }, gear: [] },
+  winerack:   { rest: 0, loot: { water: [0.5, 1, 3] }, gear: [["wine", 0.45], ["bottle", 0.2]] },
+  foodtruck:  { rest: 0, loot: { preserved: [0.6, 2, 5], food: [0.4, 1, 3], propane: [0.8, 1, 2], fuel: [0.3, 1, 3] }, gear: [["knife", 0.15], ["cleaver", 0.15], ["flashlight", 0.1]] },
   // Military bases, air bases, airports and prisons (issue #25, militarylayout.js; the footlocker, the radio console and
   // the Humvee are #26's rows above): an ammo crate the rounds and the odd grenade; a fuel bladder fuel; an inmate's
   // property locker what was taken off them at intake (a phone, a watch, a knife, cigarettes); a suitcase what a traveller
@@ -7834,7 +7852,7 @@ export function searchBox(state, b, u, box, open = false, quick = false) {
     lockedLoot(state, b, u, box, sup, gear); // locks.js: more in locked things, keys, blueprints (its own dice)
     const site = poiKind || (state.tiles[b.tileId] && state.tiles[b.tileId].loc ? state.tiles[b.tileId].loc.type : null);
     const rTheme = box.kind === "body" ? "home" : box.truck ? "military" : raidTheme(site, box.area != null && R.areas[box.area] ? R.areas[box.area].type : "house");
-    typeFind(state, sup, box.kind === "body" ? (box.zombie ? "travel" : "raider") : box.truck ? "military" : box.area != null && R && R.areas[box.area] ? AREA_MIX[R.areas[box.area].type] || "house" : "house", box.kind === "body" ? null : b.tileId, pd ? drng : undefined); // foods.js: the food as the items a place like this holds (a site's shelves run down)
+    typeFind(state, sup, box.kind === "body" ? (box.zombie ? "travel" : "raider") : box.truck ? "military" : box.area != null && R && R.areas[box.area] ? R.areas[box.area].mix || AREA_MIX[R.areas[box.area].type] || "house" : "house", box.kind === "body" ? null : b.tileId, pd ? drng : undefined); // foods.js: the food as the items a place like this holds (a site's shelves run down)
     sortFind(sup, rTheme, "box", b.tileId, bid); // ammo.js: what turns up there, by calibre
     if (box.kind !== "body") formFinds(sup, gear, rTheme, "box", b.tileId, bid); // ammo.js: some of it boxed (stacks of boxes), now and then a bulk ammo container; the rest loose
     box.contents = { sup, gear };
@@ -8199,3 +8217,4 @@ MED.setMedicHooks({ take, spendRounds, medsOf, spendMed, alertAll, foesOf, heal,
 // data-shops.js: the town's and the city's shops and services (their rows; this module's own rows win).
 for (const [k, d] of Object.entries(AREA_DEFS)) if (!AREAS[k]) AREAS[k] = d.def;
 for (const [k, d] of Object.entries(NEW_KINDS)) if (!AREA_SETS[k]) AREA_SETS[k] = d.areas;
+for (const [k, d] of Object.entries(OFFICE_BOX)) if (!BOX_LOOT[k]) BOX_LOOT[k] = d;

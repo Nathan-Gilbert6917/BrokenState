@@ -6,7 +6,8 @@
 // ship, pizza shops and other restaurants, banks, bars, liquor store add all of these and have them more common in
 // areas that makes sense and make versions that fit the setting if they apply to multiple places for city, town,
 // suburbs POIs and crawls"; "Create many variants for each to show being different franchises including colors,
-// layout etc"). Pure data: no imports, so data.js, loot.js, combat.js and the rest can each merge their own slice.
+// layout etc"). Pure data (its one import, data-offices.js, is pure data too: the office buildings and their firms,
+// issue #27, merged into each table below), so data.js, loot.js, combat.js and the rest can each merge their own slice.
 //
 // NEW_KINDS: the site types new with this module (each module takes its part: data.js LOCATIONS from site, loot.js
 //   SITE_TAGS from tags, combat.js AREA_SETS from areas, battlesize.js SIZES.SITE from size, buildingmaps.js the
@@ -23,9 +24,13 @@
 //   (shops.js franchiseFor): poi.v, place.v, a site's by its tile.
 // ROWS: the new kinds' rows in the find tables, by table (each module merges its own: loot.js SITE_FINDS …).
 
+import { OFFICE_KINDS, OFFICE_AREAS, OFFICE_W, OFFICE_FIRMS, OFFICE_ROWS } from "./data-offices.js"; // the office buildings of every kind, with their firms (issue #27)
+
 /** @typedef {{ wall: string, trim: string, sign: string, text: string, accent: string, roof?: string, style: number }} Look */
-/** @typedef {{ fl?: string, depth?: number, wide?: boolean, flat?: number, storeys?: [number, number], room?: string, back?: string }} Plan */
-/** @typedef {{ id: string, name: string, w: { city: number, suburb: number, town: number }, look: Look, plan?: Plan }} Franchise */
+/** @typedef {{ fl?: string, depth?: number, wide?: boolean, flat?: number, storeys?: [number, number], room?: string, back?: string, office?: string, media?: string, truck?: boolean, hotel?: string }} Plan */
+/** @typedef {{ id: string, name: string, w: { city: number, suburb: number, town: number, scenic?: number }, look: Look, plan?: Plan, eat?: { cuisine: string, format: string, size: string, brew?: boolean, truck?: boolean } }} Franchise */
+
+import { VARIANTS } from "./data-eateries.js"; // the restaurant variants (issue #33): pure data too
 
 const G = (city, suburb, town) => ({ city, suburb, town });
 const L = (wall, trim, sign, text, accent, style = 0, roof = undefined) => ({ wall, trim, sign, text, accent, style, ...(roof ? { roof } : {}) });
@@ -126,12 +131,22 @@ export const NEW_KINDS = {
     tags: ["kitchen", "crime", "travel", "shop", "home"],
     areas: ["bar", "bar", "kitchen", "store"], size: 0.5, storeys: [1, 2],
   },
+  // A hotel (issue #29, the user's request 2026-10-25: "add hotel 200x200 max"): a roadside inn, a business hotel, a
+  // resort or a city tower by its franchise (hotellayout.js). Not a shop of PLACE_W: it stands on dice of its own
+  // (hotels.js: a POI in a town, a city or scenic land, a place in the crawl), so the shops' lists stay as they were.
+  hotel: {
+    site: { name: "Hotel", glyph: "Ht", cat: "town", danger: 2, loot: { food: 2, water: 2, meds: 1, scrap: 2, ammo: 0.5 },
+      gear: ["pistol", "compact9", "knife", "backpack", "duffle", "slingbag", "flashlight"], richness: 0.6, known: "public" },
+    tags: ["home", "travel", "kitchen", "office", "shop"],
+    areas: ["hotelroom", "hotelroom", "hotelfront", "kitchen", "luggage"], size: 1, storeys: [2, 10],
+  },
   liquor: {
     site: { name: "Liquor store", glyph: "Lq", cat: "town", danger: 1, loot: { water: 2, food: 1, scrap: 1 },
       gear: ["bottle", "revolver", "pistol", "bat", "flashlight"], richness: 0.45, known: "public" },
     tags: ["shop", "crime", "travel", "kitchen", "home"],
     areas: ["liquor", "liquor", "store", "office"], size: 0.5, storeys: [1, 1],
   },
+  ...OFFICE_KINDS, // the office buildings (data-offices.js)
 };
 
 // ---------- their raid rooms (combat.js AREAS; tags: loot.js AREA_TAGS) ----------
@@ -169,8 +184,22 @@ export const AREA_DEFS = {
     loot: { scrap: [0.2, 1, 2] }, gear: [["pistol", 0.03], ["revolver", 0.02]] } },
   bar: { tags: ["kitchen", "crime", "travel", "shop", "home"], def: { name: "Bar", boxes: ["counter", "shelf", "cabinet"],
     loot: { water: [0.5, 2, 6], food: [0.3, 1, 4] }, gear: [["bottle", 0.12], ["bat", 0.03], ["shotgun", 0.02], ["revolver", 0.02], ["knife", 0.03]] } },
+  // A hotel's (issue #29, hotellayout.js): a guest room (its minibar and a guest's suitcase have their own tables:
+  // combat.js BOX_LOOT), the front desk (its safe: cash and valuables), the luggage room (suitcases), housekeeping
+  // (linen, the toiletries: soap, shampoo, the little bottles).
+  hotelroom: { tags: ["home", "travel"], def: { name: "Hotel room", boxes: ["nightstand", "wardrobe", "dresser"],
+    loot: { water: [0.25, 1, 2], food: [0.15, 1, 2], scrap: [0.3, 1, 3], meds: [0.06, 1, 1] }, gear: [["slingbag", 0.02], ["flashlight", 0.02], ["knife", 0.015], ["pistol", 0.006]] } },
+  hotelfront: { tags: ["office", "travel"], def: { name: "Front desk", boxes: ["counter", "cabinet"],
+    loot: { scrap: [0.4, 1, 3], water: [0.2, 1, 2] }, gear: [["flashlight", 0.04]] } },
+  luggage: { tags: ["travel", "home"], def: { name: "Luggage room", boxes: ["suitcase", "suitcase", "shelf"],
+    loot: { scrap: [0.5, 1, 3] }, gear: [["backpack", 0.04], ["duffle", 0.04], ["slingbag", 0.04]] } },
+  hotelhk: { tags: ["home", "shop"], def: { name: "Housekeeping", boxes: ["shelf", "cabinet"],
+    loot: { scrap: [0.55, 1, 4], water: [0.2, 1, 2], meds: [0.05, 1, 1] }, gear: [] } },
+  pitroom: { tags: ["kitchen", "shop", "travel"], def: { name: "Pit room", boxes: ["shelf", "counter", "shelf"], // a BBQ's smokers (issue #33)
+    loot: { food: [0.6, 2, 6], preserved: [0.4, 1, 3], wood: [0.5, 10, 30] }, gear: [["knife", 0.06], ["cleaver", 0.04]] } },
   liquor: { tags: ["shop", "crime", "travel", "kitchen", "home"], def: { name: "Liquor shelves", boxes: ["shelf", "shelf", "counter"],
     loot: { water: [0.6, 2, 6], food: [0.25, 1, 3] }, gear: [["bottle", 0.15], ["revolver", 0.02], ["pistol", 0.02], ["bat", 0.02]] } },
+  ...OFFICE_AREAS,
 };
 
 // ---------- where each stands (shops.js) ----------
@@ -208,6 +237,8 @@ export const PLACE_W = {
   autoshop:    { ...G(0.45, 0.75, 0.7), crawl: C(0.5, 0.7, -0.1, 1, 0.9, 0.8) },
   firestation: { ...G(0.2, 0.25, 0.25), crawl: C(0.2, 0.25, 0.05, 1, 1.1, 1) },
   police:      { ...G(0.15, 0.2, 0.2),  crawl: C(0.15, 0.2, 0.05, 1, 1.2, 1.3, true) },
+  // the office buildings (data-offices.js): their own dice place them (shops.js officeExtras, officePlaces), not the shops'
+  ...OFFICE_W,
 };
 
 // ---------- the franchises ----------
@@ -375,6 +406,17 @@ export const FRANCHISES = {
     { id: "lakeside", name: "Lakeside Motel", w: G(0.2, 0.6, 1), look: L("#5d8aa8", "#2d4a5e", "#e8e4d8", "#2d4a5e", "#9cc46e", 0) },
     { id: "route9lodge", name: "Route 9 Motor Lodge", w: G(0.3, 0.8, 1), look: L("#a2713f", "#5a3a20", "#e8a020", "#5a3a20", "#c8402f", 3) },
   ],
+  // Hotels (issue #29): plan.hotel the kind (hotellayout.js), w.scenic its weight in scenic land (hotels.js: the resorts).
+  hotel: [
+    { id: "willowcreek", name: "Willow Creek Inn", w: { city: 0, suburb: 0.4, town: 1, scenic: 0 }, look: L("#e8e4d8", "#3f6b3a", "#3f6b3a", "#f0e6c8", "#c8402f", 0, "#4a3424"), plan: { hotel: "inn", fl: "hardwood" } },
+    { id: "oldmill", name: "Old Mill Bed & Breakfast", w: { city: 0, suburb: 0.2, town: 0.9, scenic: 0 }, look: L("#a2713f", "#5a3a20", "#e8e0c8", "#5a3a20", "#3f6b3a", 2, "#5a3a20"), plan: { hotel: "inn", fl: "plank" } },
+    { id: "interstate", name: "Interstate Inn & Suites", w: { city: 0.5, suburb: 1, town: 0.7, scenic: 0 }, look: L("#d9c9a8", "#1f4f9a", "#1f4f9a", "#ffffff", "#e8c04a", 2), plan: { hotel: "business", fl: "carpet" } },
+    { id: "meridian", name: "Meridian Business Hotel", w: { city: 1, suburb: 0.8, town: 0.3, scenic: 0 }, look: L("#a7adb3", "#3c3a36", "#2d4a5e", "#e8e4d8", "#9cc46e", 3), plan: { hotel: "business", fl: "carpet" } },
+    { id: "pinecrest", name: "Pinecrest Lodge Resort", w: { city: 0, suburb: 0, town: 0.12, scenic: 1 }, look: L("#7a5230", "#4a3424", "#3f6b3a", "#f0e6c8", "#c9873c", 1, "#3f4a3a"), plan: { hotel: "resort", fl: "hardwood" } },
+    { id: "lakeshore", name: "Lakeshore Grand Resort", w: { city: 0, suburb: 0.08, town: 0.08, scenic: 0.8 }, look: L("#e8e4d8", "#2d4a5e", "#5d8aa8", "#ffffff", "#d9a520", 3, "#2d4a5e"), plan: { hotel: "resort", fl: "carpet" } },
+    { id: "caldergrand", name: "Calder Grand Hotel", w: { city: 1, suburb: 0, town: 0, scenic: 0 }, look: L("#8e4f3c", "#4a2a20", "#3c3a36", "#e8c04a", "#d9a520", 1), plan: { hotel: "tower", fl: "carpet" } },
+    { id: "harborview", name: "Harbor View Tower", w: { city: 0.8, suburb: 0, town: 0, scenic: 0 }, look: L("#c9ced3", "#2d4a5e", "#1f4f9a", "#ffffff", "#5d8aa8", 3), plan: { hotel: "tower", fl: "carpet" } },
+  ],
   church: [
     { id: "firstbaptist", name: "First Baptist Church", w: G(0.6, 1, 1), look: L("#e8e4d8", "#5d6168", "#5d6168", "#ffffff", "#c8402f", 0) },
     { id: "stmarys", name: "St. Mary's Catholic Church", w: G(1, 0.8, 0.6), look: L("#8e4f3c", "#4a2a20", "#3c3a36", "#e8e4d8", "#d9a520", 1) },
@@ -418,7 +460,18 @@ export const FRANCHISES = {
     { id: "lumberbarn", name: "Lumber Barn", w: G(0.2, 0.8, 1), look: L("#a2713f", "#5a3a20", "#3f6b3a", "#f0d070", "#c9a46a", 2), plan: { back: "yard" } },
     { id: "fixit", name: "Fix-It Depot", w: G(1, 1, 0.5), look: L("#e8e4d8", "#3f6b3a", "#3f6b3a", "#ffffff", "#e8a020", 3), plan: { depth: 0.66, wide: true } },
   ],
+  // the office buildings' firms (data-offices.js); the tower's are the site type "office"'s (the crawl's "offices" reads
+  // them: shops.js franchisesOf)
+  ...OFFICE_FIRMS,
 };
+// Restaurants by kind of food, format and size (issue #33, data-eateries.js VARIANTS): every food kind's franchise has
+// its cuisine, format and size (eat); the variants new with it join the lists, with their own look and plan.
+for (const v of VARIANTS) {
+  const list = FRANCHISES[v.kind], eat = { cuisine: v.cuisine, format: v.format, size: v.size, ...(v.brew ? { brew: true } : {}), ...(v.plan && v.plan.truck ? { truck: true } : {}) };
+  const have = list.find((f) => f.id === v.id);
+  if (have) { have.eat = eat; continue; }
+  list.push({ id: v.id, name: v.name, w: v.w, look: v.look, plan: { ...(v.plan || {}) }, eat });
+}
 
 // ---------- the new kinds' rows in the find tables ----------
 const P = (p, items) => ({ p, items });
@@ -439,6 +492,7 @@ export const ROWS = {
     bank: P(0.08, { coins: 2, watch: 1, stamps: 1, goldring: 0.5 }),
     bar: P(0.18, { vodka: 2, whiskey: 2, scotch: 1, wine: 1, cigarettes: 2, cigars: 0.5, smokes: 1, cards: 1, lighters: 1 }),
     liquor: P(0.24, { vodka: 3, whiskey: 3, scotch: 1.5, wine: 3, cigarettes: 2, cigars: 1, smokes: 1.5, lighters: 1, candy: 0.5 }),
+    hotel: P(0.16, { soap: 2, shampoo: 2, toothpaste: 1, phone: 1, watch: 0.5, perfume: 0.5, chocolate: 1, vodka: 0.5, lighters: 0.5 }),
   },
   AREA_FINDS: {
     sportshop: P(0.1, { lipbalm: 1, deodorant: 1, chocolate: 1, handwarmer: 2, batteries: 1 }),
@@ -453,6 +507,10 @@ export const ROWS = {
     bankvault: P(0.45, { goldring: 3, goldchain: 2, watch: 2, coins: 3, diamond: 0.8, pearls: 1, stamps: 1, silverware: 1 }),
     bar: P(0.2, { vodka: 2, whiskey: 2, scotch: 1, wine: 1, cigarettes: 2, cigars: 0.5, cards: 1, lighters: 1 }),
     liquor: P(0.24, { vodka: 3, whiskey: 3, scotch: 1.5, wine: 3, cigarettes: 1.5, cigars: 0.8, lighters: 1 }),
+    hotelroom: P(0.12, { phone: 1, watch: 0.3, lighters: 1, cigarettes: 1, deodorant: 1, perfume: 0.5, makeup: 0.5 }),
+    luggage: P(0.18, { phone: 1, camera: 0.5, watch: 0.4, perfume: 1, makeup: 1, deodorant: 1, toothpaste: 1 }),
+    hotelhk: P(0.4, { soap: 3, shampoo: 3, toothpaste: 2, deodorant: 1, wetwipes: 1 }),
+    hotelfront: P(0.1, { lighters: 1, phone: 0.5, stamps: 0.5 }),
   },
   // loot.js: lamps, carts, the hunter's kit, building materials, wood, arrows
   LIGHT_FINDS: { sportshop: P(0.05, { headlamp: 2, lantern: 1.5, windlight: 1 }), radioshop: P(0.05, { windlight: 2, headlamp: 1, spotlight: 0.5 }), electronics: P(0.04, { windlight: 2 }), garden: P(0.04, { lantern: 2, windlight: 1 }) },
@@ -513,20 +571,23 @@ export const ROWS = {
   // loot.js PARTS_MIX: parts by kind
   PARTS_MIX: { electronics: { electronics: 0.85 }, radioshop: { electronics: 0.8 }, dealer: { carparts: 0.75 } },
   // foods.js: the food a place holds (its mix) and how much its shelves held (shop food)
-  SITE_MIX: { sportshop: "travel", electronics: "shop", radioshop: "shop", bookstore: "house", library: "house", petstore: "shop", garden: "farm", clothing: "shop",
+  SITE_MIX: { hotel: "diner", sportshop: "travel", electronics: "shop", radioshop: "shop", bookstore: "house", library: "house", petstore: "shop", garden: "farm", clothing: "shop",
     vet: "house", dealer: "house", restaurant: "diner", bank: "house", bar: "diner", liquor: "shop" },
   AREA_MIX: { sportshop: "travel", petstore: "shop", garden: "farm", bar: "diner", liquor: "shop", vet: "house", dealer: "house" },
   SHOP_FOOD: { sportshop: 40, petstore: 60, restaurant: 70, bar: 50, liquor: 40, garden: 30 },
   // itemcond.js: the condition finds come in
-  SITE_SOURCE: { sportshop: "shop", electronics: "shop", radioshop: "shop", bookstore: "shop", library: "home", petstore: "shop", garden: "shop", clothing: "shop",
+  SITE_SOURCE: { hotel: "home", sportshop: "shop", electronics: "shop", radioshop: "shop", bookstore: "shop", library: "home", petstore: "shop", garden: "shop", clothing: "shop",
     vet: "shop", dealer: "shop", restaurant: "shop", bank: "home", bar: "home", liquor: "shop" },
-  AREA_SOURCE: { sportshop: "shop", electronics: "shop", radioshop: "shop", books: "shop", petstore: "shop", garden: "shop", clothes: "shop", vet: "shop", dealer: "shop", bankvault: "home", bar: "home", liquor: "shop" },
+  AREA_SOURCE: { hotelroom: "home", luggage: "home", hotelhk: "shop", hotelfront: "home", sportshop: "shop", electronics: "shop", radioshop: "shop", books: "shop", petstore: "shop", garden: "shop", clothes: "shop", vet: "shop", dealer: "shop", bankvault: "home", bar: "home", liquor: "shop" },
   // locks.js: locked containers by area [box kinds, lock kind, chance]; a locked room at a site; a search hour's locked find
   LOCK_RULES: { bankvault: [["locker", "cabinet", "deposit"], "safe", 0.75], liquor: [["counter", "checkout"], "lockbox", 0.3], bar: [["counter", "cabinet", "checkout"], "lockbox", 0.2], electronics: [["counter", "displaycase"], "lockbox", 0.25], vet: [["cabinet"], "drugs", 0.3], radioshop: [["cabinet"], "lockbox", 0.2] }, // deposit, checkout, displaycase: the pieces buildingmaps.js lays since issue #16 (shoplayout.js)
   LOCK_ROOM: { bank: 0.7, vet: 0.3, electronics: 0.2, dealer: 0.2, liquor: 0.2 },
   SEARCH_LOCK: { bank: 0.3, vet: 0.15 },
   SEARCH_KIND: { bank: "safe", vet: "drugs" },
 };
+
+// The office buildings' rows (data-offices.js), each table's own rows first.
+for (const [t, rows] of Object.entries(OFFICE_ROWS)) ROWS[t] = { ...rows, ...(ROWS[t] || {}) };
 
 /** Merges rows into a table, never over a row it has (a module's own rows win). @param {Record<string, any>} into @param {Record<string, any>} [rows] */
 export function mergeRows(into, rows) {
