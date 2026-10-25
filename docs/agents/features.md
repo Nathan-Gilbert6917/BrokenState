@@ -122,6 +122,7 @@ Detail: [travel.md](../features/travel.md).
 - **Carry weight and load bands**, physical supply carrying, carry kit and rigs; full hands in a fight [load, carry, carrykit, ui/carry]. [details](../features/travel.md#the-hands-in-a-fight)
 - **Vehicles**: fuel, condition, breakdowns, bicycles; found cars, military trucks, road blockages and repairs, vehicle trade [vehicles, foundcars, miltrucks, roadblocks, vehicletrade]. [details](../features/travel.md#vehicles)
 - **A lost team's vehicles keep what was in them**: left on the tile with their cargo, to recover [parties, groupworld, vehicles] `tools/lostfleettest.js`. [details](../features/travel.md#a-lost-teams-vehicles-keep-what-was-in-them)
+- **Recover the convoy**: a team raids the tile to drive your abandoned vehicles home, or an allied group fetches them for a fee [convoyrecover, parties, envoys] `tools/convoyrecoverytest.js`. [details](../features/travel.md#recover-the-convoy)
 - **Boat crossings** over water [crossing].
 - **Night on the road**: make camp or push through [nightmarch].
 - **Tents**: tent bags found as loot in three sizes plus a makeshift tent; pitched at camp as beds and dry storage [tents, data-tents] `tools/tentstest.js`. [details](../features/travel.md#tents)
