@@ -1748,7 +1748,7 @@ export function buildBaseMap(state, base, rng, opts = {}) {
       const ax = (atG[2] || 0) & 1 ? "y" : "x";
       const rect = placeCar(cells, W, H, mx, my, ax, it.w, "car", (x, y) => inside(x, y) && cells[y * W + x].k === "open", (it.veh ? it.veh.id : 0) % 1000, { ring: false, body: carBody(it.veh) });
       if (rect) {
-        for (let y = rect.y0; y < rect.y0 + rect.h; y++) for (let x = rect.x0; x < rect.x0 + rect.w; x++) { const c = cells[y * W + x]; c.hp = c.mhp = DEF_HP.car; used[y * W + x] = 1; }
+        for (let y = rect.y0; y < rect.y0 + rect.h; y++) for (let x = rect.x0; x < rect.x0 + rect.w; x++) { const c = cells[y * W + x]; c.hp = c.mhp = DEF_HP.car; used[y * W + x] = 1; if (it.veh && it.veh.type) c.car.type = it.veh.type; } // its type: drawn as that kind of vehicle (ui/vehiclemodel.js)
         F.vehicles.push({ id: it.veh ? it.veh.id : null, name: it.label, x0: rect.x0, y0: rect.y0, w: rect.w, h: rect.h });
         // A car that is storage (basestorage.js vehicleStoreKg: its payload while it is parked here) holds goods.
         const room = it.veh ? vehicleStoreKg(it.veh) : 0;

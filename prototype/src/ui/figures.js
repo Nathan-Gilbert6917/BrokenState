@@ -68,10 +68,11 @@ function paintLimb(p, zb, gb, L, W, g, cb = null) {
   let u = L.u ? norm(L.u) : Math.abs(axis[2]) > 0.9 ? [1, 0, 0] : norm(cross([0, 0, 1], axis));
   u = norm(sub(u, mul(axis, dot(u, axis))));
   const v = cross(axis, u);
+  const proj = W.proj || null; // the transform's own projection (ui/vehiclemodel.js: the straight view's), else the 2:1 one
   const plot = (P, col) => {
-    const w = W(P), x = Math.round(g.ox + SX(w)), y = Math.round(g.oy + SY(w));
+    const w = W(P), q = proj ? proj(w) : null, x = Math.round(g.ox + (q ? q[0] : SX(w))), y = Math.round(g.oy + (q ? q[1] : SY(w)));
     if (x < 0 || y < 0 || x >= g.w || y >= g.h) return;
-    const dep = DEPTH(w), i = y * g.w + x;
+    const dep = q ? q[2] : DEPTH(w), i = y * g.w + x;
     if (dep > zb[i]) { zb[i] = dep; p.px[i] = col; gb[i] = L.group; if (cb) cb[i] = W.cell(P); }
   };
   const N = (nf) => norm(W.n ? W.n(nf) : W(nf)); // a normal through the transform (its own, when the transform is not a rotation)
@@ -79,7 +80,8 @@ function paintLimb(p, zb, gb, L, W, g, cb = null) {
   // A face's light is worked out once (its normal is the same at every point of it), and the colour shaded last is
   // kept, since the texture gives runs of one colour: the same shade(col, light) as a point at a time, a few times.
   const litOf = (nf) => { const f = light(N(nf)); let lc = litOf, ls = null; return (col) => (col === lc ? ls : (ls = shade((lc = col), f))); };
-  const seen = (nf) => dot(N(nf), VIEW) > 0.02;
+  const view = W.view || VIEW; // toward the viewer (a transform with its own projection brings its own)
+  const seen = (nf) => dot(N(nf), view) > 0.02;
   const n = L.sides, ST = W.step || 0.4, ra = L.ra, rb = L.rb, tex = L.tex; // the sampling step (grid px; a transform that paints big parts on a fine grid may take a coarser one: ui/vehiclemodel.js)
   const radial = (th, sc) => add(mul(u, ra * Math.cos(th) * sc), mul(v, rb * Math.sin(th) * sc));
   const [u0, u1, u2] = u, [v0, v1, v2] = v;
