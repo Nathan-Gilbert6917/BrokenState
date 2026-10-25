@@ -14,6 +14,8 @@
 //     2+ cells takes a door's front; the containers are exactly the lootable pieces of the home rooms; two houses lay a
 //     room out differently; a sofa faces its TV; a house holds what it did before within ±10% (200 seeded houses, the
 //     legacy layout against the new); an older save keeps the old layout (save.js roomsLegacy);
+//   - commercial buildings laid out for their kind (shoplayout.js, issue #16: the rest in tools/shopstest.js): every
+//     room's doors and stairs reachable from each other, no piece of 2+ cells on a door's front.
 //   - civic buildings laid out for their kind (civiclayout.js, issue #15): a police station's rooms with their pieces
 //     (the front desk's counter, the squad room's desks, the armory's gun racks, the evidence room's lockers, cells each
 //     with bars, a cell door, a bunk, a toilet and a sink, a one-way window from an interview room, a police car in the
@@ -35,6 +37,7 @@ import { raidEnemies } from "../src/sim/scavenge.js";
 import { raidBuildings, buildingPickFor } from "../src/sim/poiraid.js"; // a site's building, picked before the map
 import { BUILDINGS, SITES, assemble, siteBuildings, buildingMap, buildingOptions, placeOccupantGroups, windowsNear, BMAP } from "../src/sim/buildingmaps.js";
 import { HOME_STYLES, HOME_KEYS } from "../src/sim/roomlayout.js";
+import { COMMERCIAL_KEYS, styleName } from "../src/sim/shoplayout.js";
 import { CIVIC_STYLES } from "../src/sim/civiclayout.js";
 import { pieceDef } from "../src/sim/data-furniture.js";
 import { boxLoot } from "../src/sim/combat.js";
@@ -616,6 +619,38 @@ console.log("\nHomes room by room (roomlayout.js)");
   const back = deserializeState(old);
   const fresh = deserializeState(JSON.parse(JSON.stringify(serializeState(st))));
   check(back.roomsLegacy === true && !fresh.roomsLegacy, "save.js: a save from before is marked roomsLegacy, a new world is not");
+}
+
+// ======================================================================================
+console.log("\nCommercial buildings room by room (shoplayout.js)");
+{
+  const N = Math.max(SEEDS, 4);
+  const errs = {};
+  const err = (k, msg) => { (errs[k] = errs[k] || []).push(msg); };
+  let built = 0, styled = 0;
+  for (const key of COMMERCIAL_KEYS) for (let s = 0; s < N; s++) {
+    const rng = new Rng(52000 + s * 7919 + key.length * 13);
+    const m = assemble(rng, BUILDINGS[key].make(rng, {}), { key, name: key });
+    const grids = m.floors || [{ cells: m.cells }];
+    built++;
+    for (const a of m.rooms.filter((r) => !r.outdoor)) {
+      const g = grids[a.f].cells, doors = a.doors || [];
+      if (styleName(a, key)) styled++;
+      if (doors.length) {
+        const seen = walkFrom(m, doors[0][0], doors[0][1], true, g);
+        for (const [x, y] of doors) if (!seen[y * m.w + x]) err("doors", `${key} ${s} ${a.name} door ${x},${y}`);
+        for (let y = a.y0 + 1; y < a.y0 + a.h - 1; y++) for (let x = a.x0 + 1; x < a.x0 + a.w - 1; x++) if (g[y * m.w + x].k === "stairs" && !seen[y * m.w + x]) err("stairs", `${key} ${s} ${a.name}`);
+      }
+      const isDoor = (x, y) => ["idoor", "odoor", "door"].includes(g[y * m.w + x].k);
+      for (let y = a.y0 + 1; y < a.y0 + a.h - 1; y++) for (let x = a.x0 + 1; x < a.x0 + a.w - 1; x++) {
+        const c = g[y * m.w + x];
+        if (c.pc && pieceDef(c.k) && styleName(a, key) && [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => isDoor(x + dx, y + dy))) err("doorway", `${key} ${s} ${a.name} ${c.k}`);
+      }
+    }
+  }
+  for (const [what, label] of [["doors", "every room's doors reachable from each other"], ["stairs", "the stairs reachable from the rooms' doors"], ["doorway", "no piece of 2+ cells on a door's front"]]) {
+    check(!errs[what], `${label} (${built} commercial buildings, ${styled} rooms styled)${errs[what] ? `: ${errs[what].length} bad, e.g. ${errs[what].slice(0, 3).join("; ")}` : ""}`);
+  }
 }
 
 // ======================================================================================

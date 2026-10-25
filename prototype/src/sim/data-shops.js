@@ -499,7 +499,7 @@ export const ROWS = {
     vet: "shop", dealer: "shop", restaurant: "shop", bank: "home", bar: "home", liquor: "shop" },
   AREA_SOURCE: { sportshop: "shop", electronics: "shop", radioshop: "shop", books: "shop", petstore: "shop", garden: "shop", clothes: "shop", vet: "shop", dealer: "shop", bankvault: "home", bar: "home", liquor: "shop" },
   // locks.js: locked containers by area [box kinds, lock kind, chance]; a locked room at a site; a search hour's locked find
-  LOCK_RULES: { bankvault: [["locker", "cabinet"], "safe", 0.75], liquor: [["counter"], "lockbox", 0.3], bar: [["counter", "cabinet"], "lockbox", 0.2], electronics: [["counter"], "lockbox", 0.25], vet: [["cabinet"], "drugs", 0.3], radioshop: [["cabinet"], "lockbox", 0.2] },
+  LOCK_RULES: { bankvault: [["locker", "cabinet", "deposit"], "safe", 0.75], liquor: [["counter", "checkout"], "lockbox", 0.3], bar: [["counter", "cabinet", "checkout"], "lockbox", 0.2], electronics: [["counter", "displaycase"], "lockbox", 0.25], vet: [["cabinet"], "drugs", 0.3], radioshop: [["cabinet"], "lockbox", 0.2] }, // deposit, checkout, displaycase: the pieces buildingmaps.js lays since issue #16 (shoplayout.js)
   LOCK_ROOM: { bank: 0.7, vet: 0.3, electronics: 0.2, dealer: 0.2, liquor: 0.2 },
   SEARCH_LOCK: { bank: 0.3, vet: 0.15 },
   SEARCH_KIND: { bank: "safe", vet: "drugs" },

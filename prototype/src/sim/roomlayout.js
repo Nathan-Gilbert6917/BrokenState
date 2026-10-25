@@ -34,7 +34,9 @@
 //     to it with lootable pieces, never with generic shelves.
 //
 // The helpers (roomLayout(c) → L):
-//   L.place(k, cells, { face, force, size })   puts piece k on exactly these cells (all or nothing); the record or null
+//   L.place(k, cells, { face, force, size, plain })   puts piece k on exactly these cells (all or nothing); the record or
+//                                              null (plain, here and in wall / centre / beside / facing: a lootable piece
+//                                              standing without being a container, as shoplayout.js's past a room's share)
 //   L.wall(k, { sides, prefer, near, far, face, force, size })   the best spot with its back to a wall: sides limits
 //                                              the walls ("n", "s", "e", "w"), prefer "corner" | "middle", near / far
 //                                              a point to be close to / away from
@@ -43,7 +45,7 @@
 //   L.beside(p, k)                             one k against the same wall next to piece p (a nightstand by the bed)
 //   L.facing(p, k)                             k on the wall p faces, turned to it (a sofa facing the TV); else off the
 //                                              walls, a cell or more away, turned to it
-//   L.run(kinds, sides)                        kinds laid one after another along the walls given (a kitchen's counter
+//   L.run(kinds, sides, { plain })             kinds laid one after another along the walls given (a kitchen's counter
 //                                              run: fridge, cabinet, sink, stove...), skipping cells that will not take one
 //   L.fill(kinds)                              lootable pieces of these kinds against the walls up to target()
 //   L.need(k, opts)                            a piece the room must have: L.wall, then L.centre, then both with force
@@ -160,7 +162,8 @@ export function roomLayout(c) {
   function place(k, cells, opts = {}) {
     const d = pieceDef(k);
     if (!d || !cells.length) return null;
-    if (d.loot && !c.canBox) return null;
+    const asBox = d.loot && !opts.plain; // plain: a lootable piece that stands without being searched (shoplayout.js: past the room's containers)
+    if (asBox && !c.canBox) return null;
     if (cells.length > 1 && !opts.force && cells.some(([x, y]) => nearDoor(x, y))) return null;
     if (!cells.every(([x, y]) => ok(x, y, opts.force))) return null;
     const sorted = cells.slice().sort((a, b) => a[1] - b[1] || a[0] - b[0]);
@@ -169,7 +172,7 @@ export function roomLayout(c) {
     const undo = () => { for (const [x, y] of done.reverse()) c.unblock(x, y); return null; };
     for (const [x, y] of sorted.slice(1)) { if (!c.block(x, y, k)) return undo(); done.push([x, y]); }
     const [fx, fy] = sorted[0];
-    if (d.loot) { box = c.container(fx, fy, k, onLane); if (!box) return undo(); } // searched from a lane or a door's front where it can
+    if (asBox) { box = c.container(fx, fy, k, onLane); if (!box) return undo(); } // searched from a lane or a door's front where it can
     else if (!c.block(fx, fy, k)) return undo();
     if (box && sorted.length > 1) {
       const xs = sorted.map((p) => p[0]), ys = sorted.map((p) => p[1]);
@@ -220,7 +223,7 @@ export function roomLayout(c) {
     });
     cands.sort((a, b) => a.score - b.score);
     for (const cd of cands) {
-      const r = place(k, cd.cells, { face: opts.face || OPP[cd.side], side: cd.side, force: opts.force });
+      const r = place(k, cd.cells, { face: opts.face || OPP[cd.side], side: cd.side, force: opts.force, plain: opts.plain });
       if (r) return r;
     }
     return null;
@@ -236,7 +239,7 @@ export function roomLayout(c) {
       cands.push({ cells, score: dist2(centreOf(cells), goal) + hash01(c.seed, "ctr", room.id, k, x, y) * 0.5 });
     }
     cands.sort((a, b) => a.score - b.score);
-    for (const cd of cands) { const r = place(k, cd.cells, { face: opts.face || null, force: opts.force }); if (r) return r; }
+    for (const cd of cands) { const r = place(k, cd.cells, { face: opts.face || null, force: opts.force, plain: opts.plain }); if (r) return r; }
     return null;
   }
   const faceTo = (from, to) => { const dx = to[0] - from[0], dy = to[1] - from[1]; return Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? "e" : "w") : (dy >= 0 ? "s" : "n"); };
@@ -257,7 +260,7 @@ export function roomLayout(c) {
     return made;
   }
   // One k against the same wall, next to piece p (a nightstand by the bed's head).
-  function beside(p, k) {
+  function beside(p, k, opts = {}) {
     if (!p.side) return null;
     lowBack = low(k);
     const along = p.side === "n" || p.side === "s" ? [[1, 0], [-1, 0]] : [[0, 1], [0, -1]];
@@ -267,16 +270,16 @@ export function roomLayout(c) {
       const nx = x + dx, ny = y + dy;
       if (p.cells.some((q) => q[0] === nx && q[1] === ny)) continue;
       if (!solid(nx + D4[p.side][0], ny + D4[p.side][1])) continue;
-      const r = place(k, [[nx, ny]], { face: OPP[p.side], side: p.side });
+      const r = place(k, [[nx, ny]], { face: OPP[p.side], side: p.side, plain: opts.plain });
       if (r) return r;
     }
     return null;
   }
   // k on the wall p faces, turned to it; else off the walls, turned to it.
-  function facing(p, k) {
+  function facing(p, k, opts = {}) {
     const ctr = centreOf(p.cells);
     if (p.face) {
-      const r = wall(k, { sides: [p.face], near: ctr, face: OPP[p.face] });
+      const r = wall(k, { sides: [p.face], near: ctr, face: OPP[p.face], plain: opts.plain });
       if (r) return r;
     }
     const [w, h] = sizeOf(k);
@@ -288,11 +291,11 @@ export function roomLayout(c) {
       cands.push({ cells, cc, score: Math.abs(d - 2.5) + hash01(c.seed, "facing", room.id, x, y) * 0.3 });
     }
     cands.sort((a, b) => a.score - b.score);
-    for (const cd of cands) { const r = place(k, cd.cells, { face: faceTo(cd.cc, ctr) }); if (r) return r; }
+    for (const cd of cands) { const r = place(k, cd.cells, { face: faceTo(cd.cc, ctr), plain: opts.plain }); if (r) return r; }
     return null;
   }
   // Kinds laid one after another along these walls (each tried at the next cells that take it).
-  function run(kinds, sides) {
+  function run(kinds, sides, opts = {}) {
     const out = [];
     let i = 0;
     for (const side of sides) {
@@ -303,7 +306,7 @@ export function roomLayout(c) {
         const [x, y] = line[li];
         const cells = footprint(side, x, y, w, h);
         if (!solid(x + D4[side][0], y + D4[side][1])) continue;
-        const r = place(k, cells, { face: OPP[side], side });
+        const r = place(k, cells, { face: OPP[side], side, plain: typeof opts.plain === "function" ? opts.plain() : opts.plain });
         if (r) { out.push(r); i++; li += w - 1; }
       }
     }
