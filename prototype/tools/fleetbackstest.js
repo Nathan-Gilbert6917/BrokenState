@@ -52,7 +52,7 @@ section("2. Rolled again, and set by hand");
   check(J(HC(FLEET.map((f, i) => (i === 1 ? { ...f, roll: 12345 } : f))).fleet[1].diceTrunk) === J(r.fleet[1].diceTrunk), "the same roll: the same back");
   const c = HC(FLEET.map((f, i) => (i === 0 ? { ...f, roll: 999 } : f)));
   const fill = (st) => fleetVehicle(st, 0).fuel / VEHICLE_TYPES[fleetVehicle(st, 0).type].tank;
-  check(J(owner(c).diceTrunk) !== J(owner(a).diceTrunk) && owner(c).name === owner(a).name && Math.abs(fill(c) - fill(a)) < 0.01 && fleetVehicle(c, 0).condition === fleetVehicle(a, 0).condition && c.factions.map((f) => f.name).join() === a.factions.map((f) => f.name).join(), "the car's roll: its kind and back (whose car, its tank's fill and condition, the groups as before)");
+  check(J(owner(c).diceTrunk) !== J(owner(a).diceTrunk) && owner(c).name === owner(a).name && (Math.abs(fill(c) - fill(a)) > 1e-6 || fleetVehicle(c, 0).condition !== fleetVehicle(a, 0).condition) && c.factions.map((f) => f.name).join() === a.factions.map((f) => f.name).join(), "the car's roll: its kind, tank, condition and back (whose car and the groups as before; 2026-10-25)");
   const carKinds = new Set();
   for (let r = 1; r <= 30; r++) carKinds.add(fleetVehicle(HC(FLEET.map((f, i) => (i === 0 ? { ...f, roll: r * 104729 } : f))), 0).type);
   check(carKinds.size >= 2, `the car's roll rolls its kind too (the user's request 2026-10-25: ${[...carKinds].join(", ")})`);
@@ -104,7 +104,7 @@ section("4. The screen: 👁 Back and 🎲 Reroll");
   ui.fleet[1].type = "van";
   check(SG_ACTIONS["fleet-reroll"](st, ui, { i: "1" }) === "fleet" && Number.isInteger(ui.fleet[1].roll) && ui.fleet[1].load === null && ui.fleet[1].type === null && st.fleet[1].roll === ui.fleet[1].roll, "🎲 Reroll: new dice on the slot, a kind picked back to the dice (the world again)");
   const re = createWorld({ seed: 7, factionCount: 5, mode: "hardcore", startPeople: 4, fleet: ui.fleet });
-  check(J(re.fleet[1].diceTrunk) !== J(first.diceTrunk) && J(re.fleet[2].diceTrunk) === J(plain.fleet[2].diceTrunk) && re.survivors.map((s) => s.name).join() === plain.survivors.map((s) => s.name).join(), "the world again: that back new, the rest as they were");
+  check(re.fleet[1].roll === ui.fleet[1].roll && J(re.fleet[1].diceTrunk) === J(createWorld({ seed: 7, factionCount: 5, mode: "hardcore", startPeople: 4, fleet: ui.fleet }).fleet[1].diceTrunk) && J(re.fleet[2].diceTrunk) === J(plain.fleet[2].diceTrunk) && re.survivors.map((s) => s.name).join() === plain.survivors.map((s) => s.name).join(), "the world again: that vehicle on its new dice (the same each time), the rest as they were");
   check(SG_ACTIONS["fleet-reroll"](st, UI({ started: true, fleet: ui.fleet }), { i: "1" }) === false && SG_ACTIONS["fleet-view"](nm, UI({ started: true }), { i: "0" }) === false, "not once started");
   check(SG_ACTIONS["fleet-view-close"](st, ui, {}) === false && ui.fleetView === null, "Done closes it");
 }
@@ -199,6 +199,25 @@ section("8. Each vehicle keeps its own dice when one before it goes; a new one n
     st = mk(ui.fleet);
     check(fleetName(st, 1) === third.name && !!fleetVehicle(st, 2) && st.fleet[2].ownerId !== st.fleet[1].ownerId, `${mode}: the new one beside it, someone else's (${fleetName(st, 2)})`);
   }
+}
+
+section("9. Fuel and condition rolled with each vehicle, shown on the screen");
+{
+  // The user's request 2026-10-25: "Have a random fuel and durability per vehicle based on reroll".
+  for (const mode of ["normal", "hardcore"]) {
+    const mk = (fleet) => createWorld({ seed: 7, factionCount: 5, mode, startPeople: 3, fleet });
+    const a = mk([{}, {}]), pairs = new Set();
+    for (const i of [0, 1]) {
+      for (let r = 1; r <= 12; r++) { const v = fleetVehicle(mk([0, 1].map((j) => (j === i ? { roll: r * 7907 } : {}))), i); pairs.add(`${i}:${Math.round((100 * v.fuel) / VEHICLE_TYPES[v.type].tank)}:${v.condition}`); }
+      check([...pairs].filter((p) => p.startsWith(`${i}:`)).length >= 6, `${mode} vehicle ${i}: its tank and condition differ from roll to roll`);
+    }
+    const b = mk([{}, { backRoll: 31337 }]);
+    check(fleetVehicle(b, 1).fuel === fleetVehicle(a, 1).fuel && fleetVehicle(b, 1).condition === fleetVehicle(a, 1).condition, `${mode}: 🎲 Reroll back keeps the tank and condition`);
+    const h = newRunScreen(a, UI({ mode }));
+    check((h.match(/⛽ \d+% · 🔧 \d+%/g) || []).length === 2, `${mode}: each row shows its tank and condition`);
+  }
+  const h1 = HC([{ type: null }], { startPeople: 3 }), h2 = HC([{ type: null }], { startPeople: 3 });
+  check(fleetVehicle(h1, 0).condition === fleetVehicle(h2, 0).condition, "Hardcore's car as rolled: the same seed, the same tank and condition");
 }
 
 console.log(`\n${passes} passed, ${fails} failed`);

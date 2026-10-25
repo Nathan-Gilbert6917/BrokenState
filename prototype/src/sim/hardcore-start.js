@@ -648,8 +648,12 @@ export function rollCar(state, p, people, keptOwner = null) {
   const worldType = kindOf(rng), rolledType = own ? kindOf(own) : worldType;
   const type = fleet0 && fleet0.type && VEHICLE_TYPES[fleet0.type] ? fleet0.type : rolledType; // a kind set on the new-run screen (startfleet.js): that kind, the dice cast all the same
   const T = VEHICLE_TYPES[type];
-  const fuel = Math.round(T.tank * rng.range(C.CAR.FUEL[0], C.CAR.FUEL[1]) * 10) / 10;
-  const car = createVehicle(state, type, { kind: "party", partyId: p.id }, { fuel, condition: rng.int(C.CAR.CONDITION[0], C.CAR.CONDITION[1]) });
+  // Its tank and condition: the world's dice drawn all the same; rolled again, its own (the user's request 2026-10-25:
+  // "Have a random fuel and durability per vehicle based on reroll").
+  const tankAt = (r) => r.range(C.CAR.FUEL[0], C.CAR.FUEL[1]), condAt = (r) => r.int(C.CAR.CONDITION[0], C.CAR.CONDITION[1]);
+  let fill = tankAt(rng), condition = condAt(rng);
+  if (own) { fill = tankAt(own); condition = condAt(own); }
+  const car = createVehicle(state, type, { kind: "party", partyId: p.id }, { fuel: Math.round(T.tank * fill * 10) / 10, condition });
   p.vehicle = true;
   p.vehicleId = car.id;
   let trunk = rollTrunk(state, rng, A, people);
