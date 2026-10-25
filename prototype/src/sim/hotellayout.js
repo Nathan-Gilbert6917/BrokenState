@@ -121,7 +121,7 @@ function band(len, head, tail, uw, f, side, n0, fl) {
 function guestFloor(kind, f, bw, bh, fl, o = {}) {
   const inn = kind === "inn", uw = inn ? HOTEL.UNIT.inn : HOTEL.UNIT.big, fd = inn ? HOTEL.FRONT.inn : HOTEL.FRONT.big, cw = inn ? 1 : 2, len = bw - 2;
   const fr = band(len, inn ? [] : [SW, HK()], inn ? [ICE(2)] : [ICE(), SW], uw + (o.wide || 0), f, "front", 1, fl);
-  const bk = band(len, inn ? [[3, { role: "stairwell", lay: "stairwell" }]] : o.noLift ? [] : [LIFT], inn ? [HK()] : o.backTail || [], uw + (o.wide || 0), f, "back", fr.rooms + 1, fl);
+  const bk = band(len, inn ? [[3, { role: "stairwell", lay: "stairwell" }]] : [LIFT], inn ? o.innTail || [HK()] : [], uw + (o.wide || 0), f, "back", fr.rooms + 1, fl);
   return corridorPlan(fr.parts, bk.parts, fd, cw);
 }
 const pick = (rng, [a, b]) => rng.int(a, b);
@@ -161,20 +161,22 @@ export function hotelSpec(rng, o = {}) {
   let spec;
   switch (kind) {
     case "inn": {
-      const n = bw >= 24 && rng.chance(0.5) ? 2 : 3;
+      const n = bw >= 25 && rng.chance(0.5) ? 2 : 3; // two storeys only when the floors hold 10 rooms between them
       const reception = lobbyOf("Reception", { hub: true });
       const parlour = { role: "living", name: "Parlour", type: "house", lay: "parlour", hub: false, fl };
       const breakfast = { role: "dining", name: "Breakfast room", type: "kitchen", lay: "breakfast", maxBoxes: 1, fl };
       const flat = { role: "apt", name: "Owners' flat", type: "house", lay: "ownersflat", lock: ["door", 0.3], maxBoxes: 3 };
       const stair = [3, { role: "stairwell", lay: "stairwell" }];
-      // A two-storey inn's ground floor holds guest rooms behind (its owners' flat at the front, by the parlour).
-      const groundBack = n === 2 ? band(bw - 2, [stair, [4, { ...kitchen, name: "Kitchen", fry: false }], [2, { role: "restroom", lay: "restroom" }]], [], HOTEL.UNIT.inn, 0, "back", 1, fl).parts
-        : [stair, [4, { ...kitchen, fry: false }], ["*", flat], [2, { role: "restroom", lay: "restroom" }]];
+      // A two-storey inn's ground floor holds guest rooms behind, with their housekeeping closet (its owners' flat at the
+      // front, by the parlour; its laundry upstairs).
+      const laundryI = [3, { ...laundry, name: "Laundry" }], restroom = bw >= 23 ? [[2, { role: "restroom", lay: "restroom" }]] : [];
+      const groundBack = n === 2 ? band(bw - 2, [stair, [4, { ...kitchen, fry: false }]], [HK()], HOTEL.UNIT.inn, 0, "back", 1, fl).parts
+        : [stair, [4, { ...kitchen, fry: false }], laundryI, ["*", flat], ...restroom];
       const groundFront = n === 2 ? [["*", parlour], [5, reception], ["*", breakfast], [5, flat]] : [["*", parlour], [5, reception], ["*", breakfast]];
       spec = {
         bw, bh, front: { width: 1 }, extraDoors: 0, openDoors: 0.25, foot: "large", hotel: kind, ground: "town", storeys: n, stairs: { roles: ["stairwell"], n: 1, len: 2 },
         program: corridorPlan(groundFront, groundBack, HOTEL.FRONT.inn, 1),
-        upper: (f) => guestFloor("inn", f, bw, bh, fl),
+        upper: (f) => guestFloor("inn", f, bw, bh, fl, n === 2 ? { innTail: [laundryI, HK()] } : {}),
         exits: [{ side: "back", roles: ["kitchen", "apt", "corridor"], chance: 0.8, lock: 0.4, name: "Back door" }, { side: "left", roles: ["corridor"], chance: 0.4, lock: 0.5 }],
       };
       break;
@@ -195,12 +197,13 @@ export function hotelSpec(rng, o = {}) {
     }
     case "resort": {
       const n = clampN(pick(rng, S.storeys), S.storeys[0], maxS);
-      // The ground floor's front: a wing of guest rooms either side of the core (gift shop, lobby, restaurant, bar).
+      // The ground floor's front: a wing of guest rooms either side of the core (gift shop, lobby, restaurant, bar), their
+      // housekeeping closet and ice nook at the wings' ends.
       const core = [[5, gift], ["*", lobbyOf("Grand lobby")], ["*", restaurant()], [6, bar("Lounge bar")]];
-      const spare = bw - 2 - (5 + 6 + 3 + 3) - 2 * 10 - (core.length + 1); // the core's flexible rooms at least 10 each
+      const spare = bw - 2 - (5 + 6 + 3 + 3 + 3 + 3) - 2 * 10 - (core.length + 3); // the core's flexible rooms at least 10 each
       const k = Math.max(0, Math.floor(spare / 2 / (HOTEL.UNIT.big + 1)));
       const wing = (n0) => Array.from({ length: k }, (_, i) => [HOTEL.UNIT.big, unit(HOTEL.UNIT.big, 0, n0 + i, "front", fl)]);
-      const front = [SW, ...wing(1), ...core, ...wing(k + 1), SW];
+      const front = [SW, HK(), ...wing(1), ...core, ...wing(k + 1), ICE(), SW];
       const back = [LIFT, ["*", ballroom], [7, spa], [6, gym], [3, restrooms], [4, luggage], ["*", kitchen], [3, walkin]];
       const boh = [[5, laundry], [4, lockers], [4, manager], [5, maint]]; // the back of house over the ballroom
       spec = {
@@ -629,4 +632,4 @@ SCENES.ODDS.hotel = SCENES.ODDS.hotel ?? 0.7; // a hotel has signs of survival a
 registerScene("hotelbarricade", { w: 4, place: barricadedFloor, kinds: ["hotel"], when: isHotel });
 registerScene("evaccentre", { w: 3, place: evacCentre, kinds: ["hotel"], when: isHotel });
 registerScene("lobbyoverrun", { w: 3, place: overrunLobby, kinds: ["hotel"], when: isHotel });
-registerScene("penthouse", { w: 3, place: penthouseHoldout, kinds: ["hotel"], when: isHotel });
+registerScene("penthouse", { w: 6, place: penthouseHoldout, kinds: ["hotel"], when: isHotel }); // only a tower has a penthouse: the others' draws fall through to the next
