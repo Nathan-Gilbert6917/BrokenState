@@ -11,6 +11,8 @@
 // Drawn in map space (16 px a tile, the ground's texels: isoview.js flatGroundFor) into one canvas stretched onto the
 // diamonds with the ground's transform, so turning or zooming the view never repaints it; it is repainted only when a
 // mark is added, seen or dropped. A pool of blood grows for a couple of seconds first (drawn live until it has).
+// Marks the map came with (a building's signs of survival, sim/interiorscenes.js: c.blood, c.brass) are read off its
+// cells, every floor, when the battle's marks start (preplaced).
 // Display → Battle ground marks (ui/displayopts.js battleMarks): full; light (blood, scorch and glass only, no brass or
 // ash, fewer kept, no growing); off.
 import { CELL, WEAPONS } from "../sim/combat.js";
@@ -51,7 +53,29 @@ function freshState(b, key) {
     const c = b.cells[i];
     if (c.k === "window" || c.k === "car" || c.k === "truck" || c.k === "vehicle") cells.set(i, { k: c.k, hp: c.hp, wr: !!(c.car && c.car.wrecked) });
   }
-  return { b, key, lastSeq: b.fxSeq || 0, list: [], dead: new Set(), down: new Set(), known: new Set(), fires: new Set(), cells, dirty: true, cv: null, rev: 0, unseen: 0, duds: [] };
+  const st = { b, key, lastSeq: b.fxSeq || 0, list: [], dead: new Set(), down: new Set(), known: new Set(), fires: new Set(), cells, dirty: true, cv: null, rev: 0, unseen: 0, duds: [] };
+  preplaced(st);
+  return st;
+}
+// What the map came with (sim/interiorscenes.js): blood on the floors (c.blood { kind, amount }) and spent brass
+// (c.brass: cases) on every floor of the building, found like any mark when someone sees the cell.
+function preplaced(st) {
+  const b = st.b;
+  const floors = b.floors && b.floors.length ? b.floors.map((F) => F.cells) : [b.cells];
+  floors.forEach((cells, f) => {
+    if (!cells) return;
+    for (let i = 0; i < cells.length; i++) {
+      const c = cells[i];
+      if (!c || (!c.blood && !c.brass)) continue;
+      const x = i % b.w, y = (i / b.w) | 0;
+      const put = (m) => { m.t0 = -GROW_MS; m.seen = false; m.f = f; m.cell = i; st.list.push(m); st.unseen++; };
+      if (c.blood) {
+        const n = Math.max(1, Math.min(3, c.blood.amount || 1));
+        for (let k = 0; k < n; k++) put({ k: c.blood.kind === "zombie" ? "zblood" : "blood", x: x + 0.5 + (hash(i, k, 21) - 0.5) * 0.5, y: y + 0.5 + (hash(i, k, 22) - 0.5) * 0.5, r: 0.16 + 0.1 * n + hash(i, k, 23) * 0.08, a: hash(i, k, 24) * 6.28, n: 3 + n, seed: i * 11 + k + 5 });
+      }
+      for (let k = 0; k < Math.min(8, c.brass || 0); k++) put({ k: "brass", x: x + 0.2 + hash(i, k, 31) * 0.6, y: y + 0.2 + hash(i, k, 32) * 0.6, r: 0.1, a: hash(i, k, 33) * 6.28, n: 1, seed: i * 13 + k });
+    }
+  });
 }
 
 // ---------- small helpers ----------
@@ -109,7 +133,7 @@ export function ingestMarks(b, now = 0) {
     if (t.x < 0 || t.y < 0 || t.left || t.fled) continue;
     if (t.dead && !st.dead.has(t.id)) {
       st.dead.add(t.id);
-      if (t.off || t.ztype === "swarm" || t.sank) continue; // no body
+      if (t.off || t.ztype === "swarm" || t.sank || t.noPool) continue; // no body (noPool: a scene's quiet death, sim/interiorscenes.js)
       const s = hash(t.id, 7, b.turn);
       add(st, { k: bloodKind(t), x: t.x + 0.5 + (s - 0.5) * 0.2, y: t.y + 0.5 + (hash(t.id, 8, 1) - 0.5) * 0.2, r: t.ztype === "spitter" ? 0.55 : 0.42, a: s * 6.28, n: 5, seed: t.id * 31 + 7, f: t.f || 0, pool: true }, now);
     } else if (t.down && !t.dead && !t.ko && !st.down.has(t.id)) {
@@ -225,7 +249,8 @@ function undoBlast(st, to) {
 export function revealMarks(b, vis) {
   const st = marksOf(b);
   if (!st || !st.unseen || !vis) return;
-  for (const m of st.list) if (!m.seen && vis[m.cell]) { m.seen = true; st.unseen--; st.dirty = true; }
+  const fl = b.floor || 0;
+  for (const m of st.list) if (!m.seen && m.f === fl && vis[m.cell]) { m.seen = true; st.unseen--; st.dirty = true; }
 }
 // A body (dead or down, either side) is drawn where it lies once it has been seen there; your own always.
 export function knownBody(b, t, vis) {

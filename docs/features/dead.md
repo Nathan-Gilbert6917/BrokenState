@@ -29,6 +29,13 @@ The special kinds of the dead beyond the plain ones, and the worm's dead animals
   - A horde crossing bad land picks some up. A raid's locked house may hold pets that come out at whoever opens the door. A team on foot meets them as a travel card.
   - Modules: [deadbeasts, hiveconst BEASTS; locks lockRaid / openLock; events "deadbeasts"].
 
+## Bodies on every floor
+The bodies lying about a raid's building, on every storey (issue #11, the user's request 2026-10-25).
+- `sleepers.js placeBodies` spreads the map's bodies (as many as before) over every floor of a building with storeys (`b.floors`, each floor's reach; the zones and the keep-away from your people's start on the ground floor only); each body has `f`. `spotCheck` and `wakeNear` look only at bodies on the unit's own floor (and the active one); a spotted Sleeper stands on its body's floor; `ui/isoview.js drawCorpseIso` draws the active floor's.
+- The scenes of a building (`interiorscenes.js`, [combat.md](combat.md#signs-of-survival)) add their dead to `b.corpses` (`scene: true`, with `f`), Sleepers among them at the battle's own share (`SLEEPER.ODDS + ODDS_INF` × the tile's Infection, at most `ODDS_MAX`), and their survivors as dead people (side `neutral`, kit survivors, `restored`: never counted as killed) with a body container each (`kind: "body"`, `f`, `full`): searched as any body, and a Carrier raises them (`carriers.js wormable`).
+- Kept by the city crawl's snapshot (`corpses`: a split Sleeper stays split) and by a save mid-raid.
+- Modules: [sleepers placeBodies, spotCheck, wakeNear; interiorscenes sceneBattle; citycrawl snapshotBuilding]. Test `tools/scenestest.js`.
+
 ## Attacked alone (2026-10-19)
 A lone worker or walker set upon by the dead fights alone on the battle map or by the numbers.
 - A worker on a job trip or one of a team on foot set upon by the dead or the dead beasts: the card "<name> was attacked by …" with Save and fight, Fight (the battle map with just that person and what they carry: combat `afield`) or by the numbers.

@@ -241,6 +241,18 @@ console.log("a fixed piece is never lifted; a lootable one leaves its contents o
   check(box.searched && !box.contents.gear.length && !Object.keys(box.contents.sup).length, "the cabinet's container empty, searched");
   fresh(b);
   check(combatAct(st, { type: "setPiece", unit: u.id, x: x0 + 4, y: y0 + 4 }) === "" && box.x === x0 + 4 && box.y === y0 + 4, "set down: its container with it, empty");
+  // A desk as roomlayout.js lays it: 2 × 1, its number on both cells (c.pc), one container of w × h over both.
+  stand(b, u, x0 + 8, y0 + 9);
+  for (const x of [x0 + 8, x0 + 9]) { put(b, x, y0 + 8, "desk"); at(b, x, y0 + 8).pc = 7; }
+  const pen = newItem("knife");
+  const dbox = { id: b.nextId++, x: x0 + 8, y: y0 + 8, w: 2, h: 1, f: 0, area: box.area, kind: "desk", searched: false, label: "Office: desk", contents: { sup: {}, gear: [pen] } };
+  b.raid.containers.push(dbox);
+  fresh(b);
+  check(combatAct(st, { type: "liftPiece", unit: u.id, x: x0 + 8, y: y0 + 8 }) === "", "a 2-cell desk lifted");
+  check(at(b, x0 + 8, y0 + 8).k === "open" && at(b, x0 + 9, y0 + 8).k === "open" && !at(b, x0 + 9, y0 + 8).pc, "both its cells open floor, its number gone");
+  check(dbox.searched && !dbox.contents.gear.length && groundAt(b, x0 + 8, y0 + 8, 0)?.contents.gear.includes(pen), "its one container emptied onto the floor");
+  fresh(b);
+  check(combatAct(st, { type: "setPiece", unit: u.id, x: x0 + 8, y: y0 + 10 }) === "" && dbox.x === x0 + 8 && dbox.y === y0 + 10 && dbox.w === 1 && dbox.h === 2, `set down south of them, turned: its container ${dbox.w} × ${dbox.h} over both cells`);
 }
 
 console.log("the orders: Lift, its chooser, Set down, Load into vehicle (ui/combat.js on stub canvases)");

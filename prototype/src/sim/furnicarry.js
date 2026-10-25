@@ -34,7 +34,7 @@
 //     see (combat.js canSeeAt); a 2-cell piece needs both cells (the second straight on from the carrier). A pair sets
 //     it to the left or right of the two (act.side), parallel to the line between them: the cells beside them on that
 //     side (a 1-cell piece the one beside its carrier; standing diagonally, the cell next to both). The cell is the
-//     piece again (barricade.js pieceOn: its hp, c.moved), its container (if it had one, or a lootable kind) with it,
+//     piece again (barricade.js setPiece: its hp, c.moved), its container (if it had one, or a lootable kind) with it,
 //     empty and searched.
 //   Into the vehicle (combatAct "stowPiece", LIFT.STOW_AP: 1 action): from the vehicle (raidloot.js atVehicle, a field
 //     battle's evac strip: carriers.js carHere) into the team's cargo (parties.js addGearToCargo), the full item; refused
@@ -54,7 +54,7 @@ import { survivorById } from "./world.js";
 import { MAX_LOAD } from "./load.js";
 import { CELL, active, unitAt, unitById, canSeeAt, say, reachable, pathTo, moveAlong, moveToFloor, alertNear, searchBox } from "./combat.js"; // call-time only: the modules load in a circle
 import { handsCount, handsBusy } from "./carry.js"; // call-time only
-import { freeForPiece, pieceOff, pieceOn } from "./barricade.js"; // call-time only
+import { freeForPiece, pieceOff, setPiece } from "./barricade.js"; // call-time only
 import { groundPile, groundPiles, pileCount, settlePile } from "./ground.js"; // call-time only
 import { lootLayer, atVehicle, trunkVehicle, trunkSpace, raidParty } from "./raidloot.js"; // call-time only
 import { carHere, carRoom } from "./carriers.js"; // call-time only
@@ -166,16 +166,29 @@ export function pieceRefusal(b, u, type) {
 }
 // Free hands for a lift: on their feet, one of your people, nothing carried, not carrying or dragging anyone.
 const freeHands = (u) => !!u && u.kind === "human" && !u.ztype && !u.aboard && !u.gunner && u.carrying == null && u.dragging == null && u.ram == null && !u.piece && handsCount(u) === 0 && !handsBusy(u);
-// A container standing on the piece's cell (a raid's shelf, cabinet, locker...), or null.
-const boxOn = (b, x, y, f) => { const L = lootLayer(b); return L ? L.containers.find((c) => c.x === x && c.y === y && (c.f || 0) === f && !c.w && c.kind !== "ground" && c.kind !== "body" && !c.cart) || null : null; };
-// The other cell of a 2-cell piece at (x, y): the cell right beside it (not diagonally) of the same kind, free, not
-// burning; null when there is none (half a bed lifts as a bed).
-function otherHalf(b, x, y, k) {
-  for (const [dx, dy] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
-    const c = cellOf(b, x + dx, y + dy);
-    if (c && c.k === k && !unitAt(b, x + dx, y + dy) && !burning(b, x + dx, y + dy)) return c;
+// A container standing on the piece's cells (a raid's shelf, cabinet, locker; a 2-cell piece's one container of w × h,
+// roomlayout.js), or null.
+const NOT_PIECE_BOX = new Set(["ground", "body", "car", "pump", "tent", "store"]);
+function boxOn(b, cells, f, k) {
+  const L = lootLayer(b);
+  if (!L) return null;
+  const covers = (c, x, y) => x >= c.x && x < c.x + (c.w || 1) && y >= c.y && y < c.y + (c.h || 1);
+  return L.containers.find((c) => (c.f || 0) === f && !c.cart && !c.truck && !NOT_PIECE_BOX.has(c.kind) && (c.kind === k || !c.w) && cells.some(([x, y]) => covers(c, x, y))) || null;
+}
+// The cells of the piece at (x, y): a piece laid by roomlayout.js has its number on every cell (c.pc); else a 2-cell
+// kind takes the cell right beside it (not diagonally) of the same kind (a bed laid as two cells; half a bed lifts as a
+// bed). [[x, y]...], the clicked cell first.
+function pieceCells(b, x, y, def) {
+  const c0 = cellOf(b, x, y), out = [[x, y]];
+  const n = def.size[0] * def.size[1];
+  if (n < 2) return out;
+  const ok = (cx, cy) => { const c = cellOf(b, cx, cy); return !!c && c.k === c0.k && !unitAt(b, cx, cy) && !burning(b, cx, cy); };
+  if (c0.pc) {
+    for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) { const c = cellOf(b, x + dx, y + dy); if ((dx || dy) && c && c.pc === c0.pc && ok(x + dx, y + dy)) out.push([x + dx, y + dy]); }
+    return out;
   }
-  return null;
+  for (const [dx, dy] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) if (ok(x + dx, y + dy)) { out.push([x + dx, y + dy]); break; }
+  return out;
 }
 // What the unit could lift: the pieces next to it (any side, the same floor) and the piece items on a ground pile on its
 // cell or next to it: [{ x, y, def, cell?, pile?, item? }].
@@ -219,7 +232,7 @@ export function liftPlan(b, u, t, helperId = null) {
   if (t.cell) {
     if (unitAt(b, t.x, t.y)) return { helper: null, why: `Someone is on the ${word(d)}.` };
     if (burning(b, t.x, t.y)) return { helper: null, why: `The ${word(d)} is on fire.` };
-    const box = boxOn(b, t.x, t.y, u.f || 0);
+    const box = boxOn(b, pieceCells(b, t.x, t.y, d), u.f || 0, t.cell.k);
     if (box && box.lock && !box.lock.open) return { helper: null, why: `The ${word(d)} is locked: open it first (Force lock), its contents come out before it is lifted.` };
   }
   const helpers = liftHelpers(b, u, t);
@@ -245,16 +258,15 @@ export function liftAct(state, b, u, act) {
   if (!s) return "That unit cannot act.";
   let item = null, emptied = 0;
   if (t.cell) {
-    // A 2-cell piece (a bed laid as two cells) takes its other cell along: the one beside it of the same kind.
-    const other = Math.max(d.size[0], d.size[1]) > 1 ? otherHalf(b, t.x, t.y, t.cell.k) : null;
-    if (other) pieceOff(other);
+    // A piece of 2+ cells (a bed, a sofa) takes its other cells along.
+    const cells = pieceCells(b, t.x, t.y, d);
+    const kind = t.cell.k;
     // A container on it: its contents onto a pile on the cell (rolled first if nobody had looked inside).
-    const box = boxOn(b, t.x, t.y, u.f || 0);
+    const box = boxOn(b, cells, u.f || 0, kind);
     if (box) {
       if (!box.contents && b.raid) searchBox(state, b, u, box, true);
       const c = box.contents || { sup: {}, gear: [] };
       const n = c.gear.length + Object.values(c.sup).filter((v) => v > 0).length;
-      pieceOff(t.cell);
       if (n) {
         const pile = groundPile(b, t.x, t.y, u.f || 0);
         for (const it of c.gear.splice(0)) pile.contents.gear.push(it);
@@ -266,7 +278,8 @@ export function liftAct(state, b, u, act) {
       box.searched = true; box.partial = false; box.hidden = null; box.quick = false;
       box.lifted = true; // carried off with its piece (setAct puts it down with it)
       u.pieceBox = box.id;
-    } else pieceOff(t.cell);
+    }
+    for (const [x, y] of cells) { const c = cellOf(b, x, y); pieceOff(c); delete c.pc; delete c.fc; } // roomlayout.js: its number and the way it faced go with it
     item = d.item ? newItem(d.item) : null;
     if (!item) return `The ${word(d)} cannot be carried.`;
     if (t.cell.hp > 0 && t.cell.hp < d.hp) item.pieceHp = t.cell.hp; // battered before: it stays so
@@ -368,12 +381,15 @@ export function setRefusal(b, u) {
 function placePiece(state, b, P, cells) {
   const d = P.def, c = P.carrier;
   const hp = P.item.pieceHp > 0 ? P.item.pieceHp : d.hp;
-  for (const [x, y] of cells) { if (!CELL[d.kind]) break; pieceOn(cellOf(b, x, y), d.kind, hp, d.hp); }
-  const [x, y] = cells[0];
+  const pc = cells.length > 1 ? 1e6 + b.nextId++ : 0; // a piece of 2+ cells keeps one number on its cells (roomlayout.js c.pc)
+  for (const [x, y] of cells) { if (!CELL[d.kind]) break; const cl = cellOf(b, x, y); setPiece(cl, d.kind, hp, d.hp); if (pc) cl.pc = pc; }
+  const xs = cells.map((p) => p[0]), ys = cells.map((p) => p[1]);
+  const x = Math.min(...xs), y = Math.min(...ys), w = Math.max(...xs) - x + 1, h = Math.max(...ys) - y + 1;
   const L = lootLayer(b);
   const box = c.pieceBox != null && L ? L.containers.find((k) => k.id === c.pieceBox) : null;
-  if (box) { box.x = x; box.y = y; box.f = c.f || 0; delete box.lifted; }
-  else if (d.loot && L && b.raid) L.containers.push({ id: b.nextId++, x, y, f: c.f || 0, kind: d.kind, area: null, searched: true, partial: false, label: d.name, contents: { sup: {}, gear: [] } });
+  const wh = w * h > 1 ? { w, h } : {};
+  if (box) { box.x = x; box.y = y; box.f = c.f || 0; delete box.lifted; delete box.w; delete box.h; Object.assign(box, wh); }
+  else if (d.loot && L && b.raid) L.containers.push({ id: b.nextId++, x, y, ...wh, f: c.f || 0, kind: d.kind, area: null, searched: true, partial: false, label: d.name, contents: { sup: {}, gear: [] } });
   endCarry(state, b, P);
   b.losCache.fill(0);
 }
