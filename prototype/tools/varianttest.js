@@ -26,6 +26,7 @@ import { GEAR, supValue } from "../src/sim/data.js";
 
 // The types another ticket owns until it lands (issue #32 "Ownership"): none left (every ticket of the epic has landed).
 export const PENDING_OWNER = {
+  cinema: "#30", arcade: "#30", mallservices: "#30", mallrestrooms: "#30", vacantunit: "#30", // #30: a mall's own units (mall.js mallArchetype), varied by the mall round them; their own dozen plans still to come
 };
 
 

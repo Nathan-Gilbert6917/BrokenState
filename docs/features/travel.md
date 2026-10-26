@@ -832,6 +832,12 @@ Issue #26 (the user's request 2026-10-25: "Add bunker buildings"). Points of int
 - Crashlanding's mountain bunker stays its own site (`bunker_mil`, crashstart.js), now with its building.
 - Each opens its building (buildingmaps.js `SITES`: `bunker_mil` → `mountainbunker`, `bunker` → `milbunker`, `govbunker`, `shelter`, `prepper`); the rest of the POI flow (surveys, the per-POI raid, the container ledger, tile heat, other groups surveying and raiding them through `aiscav`) is the shared one. Their loot by place: loot.js tags (`bunker` military, guns, camp; `govbunker` tech, office, military; `shelter` kitchen, medical, camp; `prepper` camp, hunt, guns, kitchen, outdoor). The building: [combat.md Bunkers](combat.md#bunkers).
 
+## Shopping malls as places
+Issue #30 (the user's request 2026-10-25: "add … mall max 500x500 building variants"); the maps in [combat.md](combat.md#malls).
+- **Regional malls**: the `mall` site (on a city's ring, as before: mapgen.js `URBAN_SITES`, "Mall") is now one map of the whole enclosed mall (buildingmaps.js `SITES.mall = ["regionalmall"]`); its site POI opens straight into it. A mall raided before keeps its old buildings (`LEGACY_SITES`).
+- **Strip malls** (`stripmall`) and **outlet centres** (`outlet`): site types of their own (data-shops.js `NEW_KINDS`: LOCATIONS rows, theme tags, street areas), placed as POIs on their own dice after everything else (pois.js `mallExtra`, `MALL_POI`): a strip mall on a suburb tile (6%) or a town's own tile (30%), an outlet on a road out on the plains (0.4%) or in the suburbs (1%), never on a city block. Map sprite: the mall's.
+- **City crawl**: a block may hold a strip mall among its places (citycrawl.js `CRAWL.STRIPMALL`: a city's blocks 4%, a town's 12%, on its own dice after the shops); never a regional mall (too big for a block).
+- **AI parity**: other groups and your headless crews go through a mall shop by shop: poicont.js `poiHouses` counts the mall's buildings (mall.js `mallUnits`, cached), so the pool falls that many times slower, container by container, as on its map.
 
 ## Prisons and county jails as places
 The user's request (2026-10-25, issue #31): "add … prisons max of 400x400". The maps are in [combat.md "Prisons"](combat.md#prisons).

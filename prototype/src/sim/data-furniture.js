@@ -180,6 +180,19 @@ export const FURNITURE_KINDS = {
   cartcorral:    P("Cart corral",       C(false, 1, false), 40, 150, "fixed", S21, false, ["shop"], "none"),
   baler:         P("Baler",             STEEL, 80, 700, "fixed", S1, false, ["bay", "shop"], "none", true),
   aislesign:     P("Aisle marker",      POLE, 5, 6, "one", S1, false, ["shop"], "none"),
+  // ---------- shopping malls (issue #30, mall.js / malllayout.js) ----------
+  kiosk:       P("Kiosk cart",         HALF, 30, 90, "two", S21, true, ["shop", "mall"], "storage:60"),
+  mallbench:   P("Mall bench",         HALF, 25, 60, "fixed", S21, false, ["mall", "yard"], "none"),
+  planter:     P("Planter",            HALF, 45, 300, "fixed", S22, false, ["mall", "yard"], "none"),
+  directory:   P("Mall directory",     C(false, 1, false), 25, 80, "fixed", S1, false, ["mall"], "none"),
+  escalator:   P("Escalator",          HALF, 120, 2000, "fixed", S1, false, ["mall"], "none"),
+  cinemaseat:  P("Cinema seats",       HALF, 20, 60, "fixed", S21, false, ["mall"], "none"),
+  projector:   P("Film projector",     HALF, 30, 70, "two", S1, false, ["mall", "office"], "none"),
+  concession:  P("Concession counter", HALF, 35, 90, "two", S21, true, ["shop", "mall", "bar"], "storage:50", true),
+  arcadecab:   P("Arcade cabinet",     FULL, 40, 110, "two", S1, true, ["mall", "bar"], "comfort:0.4", true),
+  carousel:    P("Carousel",           HALF, 60, 1500, "fixed", S22, false, ["mall"], "none"),
+  mannequin:   P("Mannequin",          POLE, 8, 12, "one", S1, false, ["shop", "mall"], "none"),
+  dumpster:    P("Dumpster",           HALF, 60, 400, "fixed", S1, false, ["yard"], "none"),
   // ---------- restaurants by kind of food, format and size (issue #33: eaterylayout.js lays them) ----------
   // The cooking line by cuisine (a flat-top, deck and conveyor pizza ovens, a wok range, a clay tandoor, a smoker, a char
   // grill, a gyro spit, a stockpot burner, steam tables, an espresso machine, a soft-serve machine, a slicer, a tortilla
@@ -269,7 +282,7 @@ export const FURNITURE_KINDS = {
   mailboxes:   P("Mailbox wall",     FULL, 50, 90, "two", S1, true, ["office", "school"], "storage:20", true),
   campusbench: P("Bench",            HALF, 20, 40, "two", S21, false, ["yard"], "comfort:0.3"),
   statue:      P("Statue",           STEEL, 120, 900, "fixed", S1, false, ["yard"], "none"),
-  fountain:    P("Fountain",         HALF, 80, 1500, "fixed", S22, false, ["yard"], "none"),
+  fountain:    P("Fountain",         HALF, 80, 1500, "fixed", S22, false, ["yard", "mall"], "none"), // a campus's quad and a mall's centre court (#28, #30)
   // ---------- bunkers (issue #26: bunkerlayout.js lays them) ----------
   // The fixed fittings: the steel frame round a blast door, the air filtration plant, the water and fuel tanks, a
   // decontamination shower, the escape shaft's ladder and the vent stack up on the hillside. The hazmat suit rack and the

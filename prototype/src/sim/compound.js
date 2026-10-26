@@ -21,7 +21,7 @@
 //     railings both sides) along a straight line of cells from one building's outer wall to another's; a room of its
 //     own (role o.role, else "corridor") so the dead and the living path through it. Returns the area. link(C, a, b, o)
 //     finds the row or column where two placed buildings' facing walls both open onto a room and connects them there.
-//   - guard(C, start): blocking things put on the ground floor (block(x, y, k), car(...)) never cut a walkable cell
+//   - guard(C, sx, sy, o): blocking things put on the ground floor (or floor o.f) (block(x, y, k), car(...)) never cut a walkable cell
 //     off from start. A cell whose eight neighbours stay joined round it is safe without a flood (the simple-point
 //     test); only the rest flood the floor, so dressing a 300 × 300 map stays quick.
 //   - parkingLot(C, G, rect, o): a surface lot of bays in double rows a drive aisle apart, cars parked in a share of the
@@ -41,6 +41,9 @@ export const COMPOUND = {
   PARKED: 0.45,  // the share of the bays with a car in them
 };
 
+// The kinds of door (buildingmaps.js DOOR_KINDS, handed over at its load: no import back, the modules' order stays as
+// it was): a connector's doors take their hit points from it.
+export const DOOR_HP = {};
 const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]]; // buildingmaps.js STAIR_DIRS; ui/isoview.js VD (wall art's d)
 const FACING = { e: [1, 0], w: [-1, 0], s: [0, 1], n: [0, -1] }; // a piece's c.fc
 const dirOf = (dx, dy) => DIRS.findIndex(([a, b]) => a === dx && b === dy);
@@ -103,6 +106,7 @@ export function compoundGrid(W, H, storeys, groundAt) {
     /** @type {any[]} */ areas: [], /** @type {any[]} */ containers: [], /** @type {any[]} */ lockedDoors: [],
     /** @type {number[][]} */ stairs: [], /** @type {any[]} */ runs: [], /** @type {any[]} */ parts: [],
     keep: new Uint8Array(W * H), // stays clear: the ring round each building, the paths to its doors
+    built: new Uint8Array(W * H), // inside a placed building (every floor's footprint): no lot, no dressing
     cid: 1,
   };
 }
@@ -168,6 +172,7 @@ export function placeBuilding(C, m, o) {
     const [dx, dy] = T.vec(r.dx, r.dy);
     C.runs.push({ ...r, x: tx(r.x, r.y), y: ty(r.x, r.y), dx, dy, f0: (r.f0 || 0) + f0, f1: (r.f1 ?? (m.storeys || 1) - 1) + f0, house: k });
   }
+  for (let y = rect.y0; y < rect.y0 + rect.h; y++) for (let x = rect.x0; x < rect.x0 + rect.w; x++) if (x >= 0 && y >= 0 && x < W && y < C.H) C.built[y * W + x] = 1;
   if (o.keepRing !== false) for (let y = rect.y0 - 1; y <= rect.y0 + rect.h; y++) for (let x = rect.x0 - 1; x <= rect.x0 + rect.w; x++) if (x >= 0 && y >= 0 && x < W && y < C.H && !(x >= rect.x0 && x < rect.x0 + rect.w && y >= rect.y0 && y < rect.y0 + rect.h)) C.keep[y * W + x] = 1;
   const sides = SIDES[face];
   const out = (side, x, y) => { const s = sides[side] || side, [dx, dy] = { n: [0, -1], s: [0, 1], w: [-1, 0], e: [1, 0] }[s]; return { side: s, ox: x + dx, oy: y + dy }; };
@@ -208,7 +213,7 @@ export function connect(C, from, to, o = {}) {
   for (const [ex, ey] of [from, to]) for (let j = 0; j < wd; j++) {
     const x = horiz ? ex : ex + j, y = horiz ? ey + j : ey, c = cells[I(x, y)];
     if (!c) continue;
-    if (c.k === "wall" || c.k === "window" || c.k === "smashed") { cells[I(x, y)] = { ...c, k: kind === "walkway" ? "odoor" : "idoor", dk: o.dk || (kind === "walkway" ? "glass" : "wood") }; delete cells[I(x, y)].win; }
+    if (c.k === "wall" || c.k === "window" || c.k === "smashed") { const dk = o.dk || (kind === "walkway" ? "glass" : "wood"), hp = DOOR_HP[dk] || DOOR_HP.wood || 30; cells[I(x, y)] = { ...c, k: kind === "walkway" ? "odoor" : "idoor", dk, hp, mhp: hp }; delete cells[I(x, y)].win; } // its hit points by its kind (DOOR_HP)
     doors.push([x, y]);
   }
   // A sally port (o.sally, prison.js): a cross wall half way along with its own door (at the line's first row).
@@ -274,11 +279,12 @@ const passable = (c) => !!c && (!!(CELL[c.k] && CELL[c.k].walk) || c.k === "door
 
 /**
  * The connectivity guard over the ground floor: block / car refuse anything that would cut a walkable cell off from
- * (sx, sy) (locked doors count as ways through). o.free(x, y): may dressing go here (default: open, not kept).
- * @param {any} C @param {number} sx @param {number} sy @param {{ free?: (x: number, y: number) => boolean }} [o]
+ * (sx, sy) (locked doors count as ways through). o.free(x, y): may dressing go here (default: open, not kept); o.f: the
+ * floor it guards (default the ground; an upper floor's walk starts from a stair cell or a landing).
+ * @param {any} C @param {number} sx @param {number} sy @param {{ free?: (x: number, y: number) => boolean, f?: number }} [o]
  */
 export function guard(C, sx, sy, o = {}) {
-  const { W, H } = C, cells = C.cells, N = W * H, I = (x, y) => y * W + x;
+  const { W, H } = C, cells = C.floors[o.f || 0].cells, N = W * H, I = (x, y) => y * W + x;
   const pass = new Uint8Array(N);
   let total = 0;
   for (let i = 0; i < N; i++) { pass[i] = passable(cells[i]) ? 1 : 0; total += pass[i]; }
@@ -317,7 +323,7 @@ export function guard(C, sx, sy, o = {}) {
     }
     return runs <= 1;
   };
-  const free = o.free || ((x, y) => x >= 0 && y >= 0 && x < W && y < H && cells[I(x, y)].k === "open" && !C.keep[I(x, y)]);
+  const free = o.free || ((x, y) => x >= 0 && y >= 0 && x < W && y < H && cells[I(x, y)].k === "open" && !C.keep[I(x, y)] && !C.built[I(x, y)]);
   const g = {
     pass, connected, passAt: (i) => { const was = pass[i]; pass[i] = passable(cells[i]) ? 1 : 0; total += pass[i] - was; },
     /** A blocking thing on a free cell, undone if it would cut anything off. @param {number} x @param {number} y @param {string} k @param {any} [extra] */
@@ -330,6 +336,8 @@ export function guard(C, sx, sy, o = {}) {
       if (!pass[i] && !safe && !connected()) { c.k = was; if (extra) for (const key of Object.keys(extra)) delete c[key]; g.passAt(i); return false; }
       return true;
     },
+    /** A thing taken back up (the cell open floor again). */
+    unblock(x, y) { const i = I(x, y), c = cells[i]; c.k = "open"; delete c.fc; delete c.pc; g.passAt(i); },
     /** A car of L cells along ax at (x, y) (combat.js placeCar), undone if it cuts anything off. */
     car(x, y, ax, L, kind = "car", v = 0) {
       const rect = placeCar(cells, W, H, x, y, ax, L, kind, (cx, cy) => free(cx, cy) && I(cx, cy) !== start, v, { ring: false });
@@ -352,7 +360,7 @@ export function guard(C, sx, sy, o = {}) {
  */
 export function parkingLot(C, G, r, rng, o = {}) {
   const W = C.W, [bw, bd] = COMPOUND.BAY, A = COMPOUND.AISLE;
-  for (let y = r.y0; y < r.y0 + r.h; y++) for (let x = r.x0; x < r.x0 + r.w; x++) { const c = C.cells[y * W + x]; if (c && c.k === "open" && !C.keep[y * W + x]) c.f = "road"; }
+  for (let y = r.y0; y < r.y0 + r.h; y++) for (let x = r.x0; x < r.x0 + r.w; x++) { const c = C.cells[y * W + x]; if (c && c.k === "open" && !C.keep[y * W + x] && !C.built[y * W + x]) c.f = "road"; }
   const area = { id: C.areas.length, type: "wreck", name: o.name || "Parking lot", outdoor: true, f: 0, x0: r.x0, y0: r.y0, w: r.w, h: r.h, house: o.house ?? null, lot: true };
   let cars = 0;
   // Rows: an aisle, a row of bays facing it, a row back to back, an aisle...
@@ -386,7 +394,7 @@ export function compoundResult(C, meta) {
   const first = C.parts[0];
   const plan = {
     key: meta.key, id: meta.id, name: meta.name, w: W, h: H, compound: true, kind: meta.kind || meta.key, building: rects[0], buildings: rects,
-    houses: C.parts.map((p) => ({ k: p.k, name: p.name, key: p.key, x0: p.x0, y0: p.y0, w: p.w, h: p.h, f0: p.f0, storeys: p.storeys, front: p.front ? { x: p.front.x, y: p.front.y } : null, rooms: p.rooms.slice(), ...(p.role ? { role: p.role } : {}), ...(p.anchor ? { anchor: true } : {}) })),
+    houses: C.parts.map((p) => ({ k: p.k, name: p.name, key: p.key, face: p.face, ...(p.kind ? { kind: p.kind } : {}), x0: p.x0, y0: p.y0, w: p.w, h: p.h, f0: p.f0, storeys: p.storeys, front: p.front ? { x: p.front.x, y: p.front.y } : null, rooms: p.rooms.slice(), ...(p.role ? { role: p.role } : {}), ...(p.anchor ? { anchor: true } : {}) })),
     tall: true, storeys: C.storeys, stairs: C.stairs.map((s) => s.slice()), runs: C.runs.map((r) => ({ ...r })),
     rooms: C.areas.filter((a) => !a.outdoor).map((a) => ({ id: a.id, f: a.f, name: a.name, role: a.role, type: a.type, x0: a.x0, y0: a.y0, w: a.w, h: a.h, locked: a.locked, up: a.up, hub: a.hub, entry: a.entry, house: a.house, ...(a.civic ? { civic: a.civic } : {}), ...(a.shop ? { shop: a.shop } : {}) })),
     front: first && first.front ? { x: first.front.x, y: first.front.y } : null, exits: zoneExits(), ...(meta.extra || {}),
