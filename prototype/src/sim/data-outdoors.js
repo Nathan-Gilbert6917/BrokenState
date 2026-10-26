@@ -18,13 +18,13 @@
 /** @type {Record<string, any>} */
 export const OUTDOOR_KINDS = {
   golfcourse: {
-    site: { name: "Golf course", glyph: "Gf", cat: "town", danger: 1, gearRate: 1.1, loot: { food: 2, water: 2, fuel: 1, scrap: 1, parts: 0.5 },
+    site: { name: "Golf course", glyph: "Gf", cat: "town", danger: 1, gearRate: 1.1, loot: { food: 2, water: 2, fuel: 0.8, scrap: 1, parts: 0.5 },
       gear: ["golfclub", "slingbag", "duffle", "leatherjacket", "flashlight", "binoculars", "prybar", "hammer", "handwarmer"], richness: 0.5, known: "public" },
-    tags: ["sport", "shop", "kitchen", "garage", "outdoor", "tools"],
+    tags: ["sport", "shop", "kitchen", "garage", "outdoor", "tools", "office", "travel"], // office, travel: the members' cigars and scotch
     areas: ["proshop", "bar", "kitchen", "cartbarn", "golfcart", "wreck"], size: 2, storeys: [1, 2],
   },
   rvpark: {
-    site: { name: "RV park", glyph: "Rv", cat: "rural", danger: 1, loot: { food: 3, water: 3, fuel: 1.5, meds: 0.4, scrap: 1, parts: 0.5 },
+    site: { name: "RV park", glyph: "Rv", cat: "rural", danger: 1, loot: { food: 3, water: 3, fuel: 1.2, meds: 0.4, scrap: 1, parts: 0.5 },
       gear: ["stove", "lantern", "hikingpack", "backpack", "waterfilter", "flashlight", "revolver", "shotgun", "hatchet", "fishrod", "bicycle", "binoculars"], richness: 0.45, known: "road" },
     tags: ["camp", "outdoor", "home", "travel", "garage"],
     areas: ["rvpad", "rvpad", "coinlaundry", "office", "wreck"], size: 2, storeys: [1, 1],
@@ -43,7 +43,7 @@ export const OUTDOOR_AREAS = {
     loot: { fuel: [0.65, 2, 6], parts: [0.55, 1, 3], scrap: [0.5, 2, 5] },
     gear: [["prybar", 0.05], ["hammer", 0.05], ["crowbar", 0.03], ["golfclub", 0.04], ["flashlight", 0.04], ["hatchet", 0.02]] } },
   // A golf cart left out on the course: the bag on its back, a cooler, a bottle of water.
-  golfcart: { tags: ["sport", "outdoor", "travel"], def: { name: "Golf carts", outdoor: true, boxes: ["car"],
+  golfcart: { tags: ["sport", "outdoor", "travel", "tools"], def: { name: "Golf carts", outdoor: true, boxes: ["car"],
     loot: { water: [0.45, 1, 3], food: [0.2, 1, 2], parts: [0.2, 1, 1] },
     gear: [["golfclub", 0.3], ["slingbag", 0.04], ["flashlight", 0.03]] } },
   // A campground's or a lake's camp store: food and drink, camp fuel and propane, first aid, the camping gear.

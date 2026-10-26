@@ -271,7 +271,7 @@ const CLUBHOUSES = new Set(["country", "municipal", "resort", "links"]);
 // ======================================================================================
 // The variants (a dozen and more a kind): the buildings (b: [plan, count range]), the map ([[w], [h]]), the ground,
 // the road, a lot, the ways out (ways: 2–5), water (north: a lake, river: a river along the north edge), and the
-// grounds' own (golf, camp, rv). sizeClass: the placement table's size it stands as (#42); w: its weight by setting
+// grounds' own (golf, camp, rv: per, the pads a side of a drive). sizeClass: the placement table's size it stands as (#42); w: its weight by setting
 // and tile class (#41); foot: its main building's footprint (the gallery's).
 // ======================================================================================
 const B = (p, a = 1, b = a) => [p, a, b];
@@ -305,18 +305,18 @@ export const CAMP_VARIANTS = registerVariants("campground", [
   V("hunters", "Hunters' camp", "medium", { scenic: 2, rural: 1, any: 0.8 }, { b: [B("huntlodge"), B("skinshed"), B("cabin", 1, 3)], map: [[140, 180], [130, 170]], ways: 2, road: "dirt", ground: "dirt", trees: 0.05, camp: { loops: 1, sites: [6, 12], tent: 0.65, car: 0.45, rv: 0.1 } }),
 ].map((e) => ({ ...e, foot: footOf("campground", e) })));
 export const RV_VARIANTS = registerVariants("rvpark", [
-  V("highway", "Highway RV park", "medium", { highway: 3, any: 1 }, { b: [B("rvoffice"), B("laundry")], map: [[170, 220], [150, 200]], ways: 2, road: "road", rv: { rows: [2, 4], full: 0.55, big: 0.45, dump: true, surface: "gravel" }, pool: true }),
-  V("resort", "Resort RV park", "large", { scenic: 1.5, coast: 1.5, any: 1 }, { b: [B("rvoffice"), B("rechall"), B("laundry"), B("poolhouse")], map: [[210, 260], [190, 240]], lot: true, ways: 3, road: "road", rv: { rows: [3, 5], full: 0.6, big: 0.6, dump: true, court: true, surface: "road" }, pool: true }),
-  V("mobilemix", "Mobile home and RV park", "large", { town: 2, highway: 1.5, rural: 1.5, any: 1 }, { b: [B("rvoffice"), B("laundry"), B("mobile", 4, 7)], map: [[200, 260], [170, 220]], ways: 3, road: "gravel", rv: { rows: [2, 3], full: 0.65, big: 0.35, dump: true, surface: "gravel" } }),
+  V("highway", "Highway RV park", "medium", { highway: 3, any: 1 }, { b: [B("rvoffice"), B("laundry")], map: [[170, 220], [150, 200]], ways: 2, road: "road", rv: { per: 14, rows: [2, 4], full: 0.55, big: 0.45, dump: true, surface: "gravel" }, pool: true }),
+  V("resort", "Resort RV park", "large", { scenic: 1.5, coast: 1.5, any: 1 }, { b: [B("rvoffice"), B("rechall"), B("laundry"), B("poolhouse")], map: [[210, 260], [190, 240]], lot: true, ways: 3, road: "road", rv: { per: 22, rows: [3, 5], full: 0.6, big: 0.6, dump: true, court: true, surface: "road" }, pool: true }),
+  V("mobilemix", "Mobile home and RV park", "large", { town: 2, highway: 1.5, rural: 1.5, any: 1 }, { b: [B("rvoffice"), B("laundry"), B("mobile", 4, 7)], map: [[200, 260], [170, 220]], ways: 3, road: "gravel", rv: { per: 12, rows: [2, 3], full: 0.65, big: 0.35, dump: true, surface: "gravel" } }),
   V("boondock", "Desert boondocking lot", "small", { rural: 2, highway: 1, any: 1 }, { b: [B("toilet")], map: [[130, 170], [120, 160]], ways: 3, road: "dirt", ground: "dirt", trees: 0, rv: { scatter: [8, 16], full: 1, big: 0.5 } }),
-  V("lakeside", "Lakeside RV resort", "large", { coast: 3, any: 0.6 }, { b: [B("rvoffice"), B("baitshop"), B("laundry")], map: [[210, 260], [210, 260]], ways: 2, road: "road", water: "north", launch: true, rv: { rows: [2, 4], full: 0.6, big: 0.5, dump: true, surface: "gravel" } }),
-  V("overnight", "Overnight RV stop", "small", { highway: 3, any: 0.8 }, { b: [B("rvoffice")], map: [[120, 150], [110, 140]], ways: 2, road: "road", rv: { rows: [1, 2], full: 0.5, big: 0.5, dump: true, surface: "road" } }),
-  V("snowbird", "Snowbird park", "large", { rural: 1.5, town: 1.5, any: 1 }, { b: [B("rvoffice"), B("rechall"), B("laundry")], map: [[200, 250], [180, 230]], ways: 3, road: "road", rv: { rows: [3, 5], full: 0.75, big: 0.5, court: true, surface: "road" }, pool: true }),
-  V("workcamp", "Work camp", "small", { rural: 2, highway: 1.5, any: 1 }, { b: [B("crewoffice"), B("laundry")], map: [[130, 170], [120, 160]], ways: 2, road: "gravel", ground: "dirt", rv: { rows: [1, 3], full: 0.8, big: 0.25, fuel: true, surface: "gravel" } }),
-  V("trailercourt", "Old trailer court", "medium", { town: 2, highway: 1.5, any: 1 }, { b: [B("rvoffice"), B("laundry"), B("mobile", 1, 3)], map: [[150, 190], [140, 180]], ways: 2, road: "gravel", rv: { rows: [2, 3], full: 0.6, big: 0.2, surface: "gravel" } }),
-  V("pines", "RV park in the pines", "medium", { scenic: 3, any: 0.8 }, { b: [B("rvoffice"), B("laundry")], map: [[170, 220], [160, 210]], ways: 2, road: "gravel", trees: 0.05, rv: { rows: [2, 3], full: 0.5, big: 0.45, dump: true, surface: "gravel" } }),
-  V("riverside", "Riverside RV park", "medium", { coast: 2.5, any: 0.8 }, { b: [B("rvoffice"), B("laundry")], map: [[170, 220], [170, 220]], ways: 2, road: "gravel", water: "river", launch: true, rv: { rows: [2, 3], full: 0.55, big: 0.4, dump: true, surface: "gravel" } }),
-  V("luxury", "Motorcoach resort", "large", { suburb: 2, coast: 1.5, any: 0.8 }, { b: [B("rvoffice"), B("rechall"), B("poolhouse"), B("laundry")], map: [[220, 270], [200, 250]], lot: true, ways: 3, road: "road", rv: { rows: [3, 4], full: 0.55, big: 0.95, court: true, surface: "road" }, pool: true }),
+  V("lakeside", "Lakeside RV resort", "large", { coast: 3, any: 0.6 }, { b: [B("rvoffice"), B("baitshop"), B("laundry")], map: [[210, 260], [210, 260]], ways: 2, road: "road", water: "north", launch: true, rv: { per: 16, rows: [2, 4], full: 0.6, big: 0.5, dump: true, surface: "gravel" } }),
+  V("overnight", "Overnight RV stop", "small", { highway: 3, any: 0.8 }, { b: [B("rvoffice")], map: [[120, 150], [110, 140]], ways: 2, road: "road", rv: { per: 8, rows: [1, 2], full: 0.5, big: 0.5, dump: true, surface: "road" } }),
+  V("snowbird", "Snowbird park", "large", { rural: 1.5, town: 1.5, any: 1 }, { b: [B("rvoffice"), B("rechall"), B("laundry")], map: [[200, 250], [180, 230]], ways: 3, road: "road", rv: { per: 24, rows: [3, 5], full: 0.75, big: 0.5, court: true, surface: "road" }, pool: true }),
+  V("workcamp", "Work camp", "small", { rural: 2, highway: 1.5, any: 1 }, { b: [B("crewoffice"), B("laundry")], map: [[130, 170], [120, 160]], ways: 2, road: "gravel", ground: "dirt", rv: { per: 10, rows: [1, 3], full: 0.8, big: 0.25, fuel: true, surface: "gravel" } }),
+  V("trailercourt", "Old trailer court", "medium", { town: 2, highway: 1.5, any: 1 }, { b: [B("rvoffice"), B("laundry"), B("mobile", 1, 3)], map: [[150, 190], [140, 180]], ways: 2, road: "gravel", rv: { per: 12, rows: [2, 3], full: 0.6, big: 0.2, surface: "gravel" } }),
+  V("pines", "RV park in the pines", "medium", { scenic: 3, any: 0.8 }, { b: [B("rvoffice"), B("laundry")], map: [[170, 220], [160, 210]], ways: 2, road: "gravel", trees: 0.05, rv: { per: 14, rows: [2, 3], full: 0.5, big: 0.45, dump: true, surface: "gravel" } }),
+  V("riverside", "Riverside RV park", "medium", { coast: 2.5, any: 0.8 }, { b: [B("rvoffice"), B("laundry")], map: [[170, 220], [170, 220]], ways: 2, road: "gravel", water: "river", launch: true, rv: { per: 14, rows: [2, 3], full: 0.55, big: 0.4, dump: true, surface: "gravel" } }),
+  V("luxury", "Motorcoach resort", "large", { suburb: 2, coast: 1.5, any: 0.8 }, { b: [B("rvoffice"), B("rechall"), B("poolhouse"), B("laundry")], map: [[220, 270], [200, 250]], lot: true, ways: 3, road: "road", rv: { per: 16, rows: [3, 4], full: 0.55, big: 0.95, court: true, surface: "road" }, pool: true }),
 ].map((e) => ({ ...e, foot: footOf("rvpark", e) })));
 const VARIANTS = { golfcourse: GOLF_VARIANTS, campground: CAMP_VARIANTS, rvpark: RV_VARIANTS };
 // A variant's main building's usual footprint (variantpick.js foot: the gallery's; its size class is its own sizeClass):
@@ -549,13 +549,18 @@ function golfGrounds(K, Gr, built) {
   if (!n || x0 > Gr.x1 - 40) return;
   // The holes: strips north to south, a fairway along each from its tee to its green, the next hole back the other way.
   const cartA = areaFor(K, "golfcart", "Golf carts", Gr);
+  // Each hole's strip: the grounds' depth shared out (OUTDOOR.HOLE at least, half as much again at most); its length,
+  // its tee's place and its fairway's width its own.
+  const hd0 = clamp(Math.floor((Gr.y1 - Gr.y0 + 1) / n), OUTDOOR.HOLE[0], Math.round(OUTDOOR.HOLE[1] * 1.5));
   let y = Gr.y0;
   for (let h = 0; h < n; h++) {
-    const hd = R2(rng, OUTDOOR.HOLE);
-    if (y + hd > Gr.y1) break;
-    const cy = y + Math.floor(hd / 2), fw = rng.int(3, 5), east = h % 2 === 0;
-    const len = g.short ? rng.int(30, Math.min(60, Gr.x1 - x0 - 6)) : Math.max(40, Gr.x1 - x0 - rng.int(6, 30));
-    const tx = east ? x0 + 3 : Gr.x1 - 3, gx = east ? tx + len : tx - len;
+    const hd = clamp(hd0 + rng.int(-1, 1), OUTDOOR.HOLE[0], hd0 + 1);
+    if (y + hd > Gr.y1 + 1) break;
+    const cy = y + Math.floor(hd / 2), fw = clamp(Math.floor(hd / 4) + rng.int(-1, 1), 2, 6), east = h % 2 === 0;
+    const span = Gr.x1 - x0 - 6;
+    const len = g.short ? rng.int(30, Math.min(60, span)) : rng.int(Math.max(40, Math.round(span * 0.55)), Math.max(40, span));
+    const off = rng.int(0, Math.max(0, span - len));
+    const tx = east ? x0 + 3 + off : Gr.x1 - 3 - off, gx = east ? tx + len : tx - len;
     for (let x = Math.min(tx, gx); x <= Math.max(tx, gx); x++) for (let yy = cy - fw; yy <= cy + fw; yy++) if (K.inside(x, yy) && K.cells[K.I(x, yy)].k === "open" && !K.keep[K.I(x, yy)]) K.cells[K.I(x, yy)].f = "fairway";
     for (let q = cy - 1; q <= cy + 1; q++) for (let p = tx - 1; p <= tx + 1; p++) if (free(K, p, q)) K.cells[K.I(p, q)].f = "green"; // the tee box
     blob(K, gx, cy, rng.int(3, 4), "green", rng.int(4, 5)); // the green
@@ -636,9 +641,10 @@ function campGrounds(K, Gr) {
   }
   if (!g.loops || !want) return;
   // The loops: gravel rings of road, the sites along both sides of them, a spur down to the forecourt.
-  const L = g.loops, span = Math.floor((Gr.x1 - fx0 + 1) / L);
+  const L = g.loops, span = Math.floor((Gr.x1 - fx0 + 1) / L), each = Math.ceil(want / L);
   let made = 0;
   for (let l = 0; l < L && made < want; l++) {
+    const quota = Math.min(want, made + each); // the sites shared between the loops
     const lx0 = fx0 + l * span + 8, lx1 = fx0 + (l + 1) * span - 9, ly0 = Gr.y0 + 8, ly1 = Gr.y1 - 10;
     if (lx1 - lx0 < 24 || ly1 - ly0 < 20) continue;
     const rw = 3, f = K.roadF === "road" ? "road" : walkF;
@@ -651,7 +657,7 @@ function campGrounds(K, Gr) {
     const slots = [];
     for (let x = lx0 + 2; x + 6 < lx1; x += OUTDOOR.SITE) { slots.push([x, ly0 - 7]); slots.push([x, ly0 + rw + 1]); if (Math.abs(x - sx) > 8) slots.push([x, ly1 + 1]); slots.push([x, ly1 - rw - 6]); }
     for (let y = ly0 + rw + 8; y + 6 < ly1 - rw - 7; y += OUTDOOR.SITE) { slots.push([lx0 - 7, y]); slots.push([lx1 + 1, y]); }
-    for (const [x, y] of rng.shuffle(slots)) { if (made >= want) break; if (site(K, x, y, g, { tentA, carA, rvA })) made++; }
+    for (const [x, y] of rng.shuffle(slots)) { if (made >= quota) break; if (site(K, x, y, g, { tentA, carA, rvA })) made++; }
   }
 }
 // One tent site of 6 × 6: its pad, a picnic table, a fire ring, a cooler, a tent, a car or a camper parked on it.
@@ -713,6 +719,8 @@ function rvGrounds(K, Gr) {
   // Rows: a drive with a row of pads either side, back-in; the drives joined by a cross drive at the west end down to
   // the forecourt.
   const rowsN = R2(rng, g.rows), f = g.surface === "road" ? "road" : walkF;
+  const blockW = P.aisle + 2 + (g.per || 16) * (P.w + 1);
+  x0 += Math.max(0, Math.floor((Gr.x1 - x0 - blockW) / 2)); // the rows in the middle of the grounds
   const band = 2 * P.d + P.aisle + 2;
   const yTop = Math.max(Gr.y0, Gr.y1 - rowsN * band + 1);
   paint(x0, yTop, P.aisle, Gr.y1 - yTop + OUTDOOR.BACK + 2, f); // the cross drive
@@ -720,8 +728,9 @@ function rvGrounds(K, Gr) {
     const by = yTop + r * band;
     if (by + band - 2 > Gr.y1) break;
     const ay = by + P.d;
-    paint(x0, ay, Gr.x1 - x0 + 1, P.aisle, f);
-    for (let x = x0 + P.aisle + 1; x + P.w <= Gr.x1; x += P.w + 1) {
+    paint(x0, ay, Math.min(Gr.x1, x0 + P.aisle + 2 + (g.per || 16) * (P.w + 1)) - x0 + 1, P.aisle, f);
+    const xEnd = Math.min(Gr.x1, x0 + P.aisle + 1 + (g.per || 16) * (P.w + 1)); // per: the pads a side of a drive
+    for (let x = x0 + P.aisle + 1; x + P.w <= xEnd; x += P.w + 1) {
       for (const [py, toward] of [[by, 1], [ay + P.aisle, -1]]) {
         if (!freeRect(K, x, py, P.w, P.d)) continue;
         for (let q = py; q < py + P.d; q++) for (let p = x; p < x + P.w; p++) K.cells[K.I(p, q)].f = "gravel";

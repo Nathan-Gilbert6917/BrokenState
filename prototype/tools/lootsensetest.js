@@ -49,6 +49,7 @@ const BASELINE = {
   theatre: 73.7, parkgarage: 557.6, chapel: 152.2, healthcentre: 508.4, milbunker: 1415.1, mountainbunker: 1827.5,
   govbunker: 1037.7, shelter: 151.4, prepper: 273.0, regionalmall: 17794.1, stripmall: 2735.9, outlet: 3947.1,
   cinema: 52.7, arcade: 53.4, mallservices: 89.9, mallrestrooms: 18.5, vacantunit: 5.9,
+  golfcourse: 549.7, campground: 371.9, rvpark: 1434.5, // issue #61 (outdoors.js): new types, measured on their own branch
 };
 // Kinds whose loot moved past ±10% because a row was clearly wrong: the reason.
 const SHIFTED = {
