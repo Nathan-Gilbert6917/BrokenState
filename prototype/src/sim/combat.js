@@ -7030,6 +7030,10 @@ export const BOX_LOOT = {
   meatcase:        { rest: 0, loot: { preserved: [0.15, 1, 2] }, cold: { food: [0.8, 3, 8], preserved: [0.15, 1, 2] }, gear: [["knife", 0.05]] },
   producebin:      { rest: 0, loot: { food: [0.25, 1, 3] }, gear: [] },
   breadrack:       { rest: 0, loot: { preserved: [0.3, 1, 2], food: [0.15, 1, 2] }, gear: [] },
+  // Sawmills (issue #53, sawmilllayout.js): stacked lumber its boards (wood, building materials, a bundle of boards and
+  // nails), a filing room's saw-blade rack its saws.
+  lumberstack:     { rest: 0.2, loot: { wood: [0.9, 30, 90], buildmat: [0.7, 1, 3], scrap: [0.3, 1, 3] }, gear: [["boards", 0.2]] },
+  bladerack:       { rest: 0.2, loot: { scrap: [0.5, 1, 3] }, gear: [["handsaw", 0.22], ["bowsaw", 0.2], ["scrapsaw", 0.08], ["toolkit", 0.04], ["hatchet", 0.04]] },
   "palletrack@store": { rest: 0, loot: { preserved: [0.85, 5, 12], water: [0.7, 5, 12], food: [0.35, 2, 5] }, gear: [] },
   boxtruck:        { rest: 0, loot: { preserved: [0.85, 8, 20], water: [0.75, 6, 16], food: [0.4, 3, 8], fuel: [0.4, 2, 6] }, gear: [["prybar", 0.1], ["flashlight", 0.15]] },
   // Police stations, fire stations, schools and churches (issue #15, civiclayout.js). An armory's gun racks hold the long
@@ -7066,6 +7070,12 @@ export const BOX_LOOT = {
   // aid the lab kept in it; a few vials still good.
   labfreezer:   { rest: 0.4, loot: { meds: [0.35, 1, 2] }, gear: [["bandagekit", 0.03]] },
   drum:         { rest: 0.2, loot: { fuel: [0.6, 2, 6] }, gear: [] }, // a fuel depot's drum: what is left in it
+  // Data centres (issue #51, datacenter.js): a UPS cabinet's and a battery string's batteries and boards, a drum of cable
+  // (copper: scrap), a mining rig's cards and boards. Nothing to eat.
+  upscab:       { rest: 0, loot: { electronics: [0.5, 1, 2], parts: [0.4, 1, 2], scrap: [0.4, 1, 3] }, gear: [["batteries", 0.25]] },
+  batterystring: { rest: 0, loot: { scrap: [0.6, 2, 5], electronics: [0.2, 1, 1] }, gear: [["batteries", 0.35]] },
+  cablereel:    { rest: 0, loot: { scrap: [0.8, 3, 8], electronics: [0.25, 1, 2] }, gear: [] },
+  miningrig:    { rest: 0, loot: { electronics: [0.6, 1, 3], parts: [0.2, 1, 1] }, gear: [] },
   gokart:       { rest: 0, loot: { fuel: [0.55, 1, 2], parts: [0.2, 1, 1] }, gear: [] }, // a go-kart off its track (issue #60, amusement.js): the fuel left in its tank
   rationshelf:  { rest: 0, loot: { preserved: [0.95, 3, 7], water: [0.55, 2, 5] }, gear: [["puritabs", 0.1]] },
   "rationshelf@cabin": { rest: 0, loot: { preserved: [1, 6, 12], food: [0.7, 3, 6], water: [0.8, 4, 9], meds: [0.3, 1, 2] }, gear: [["puritabs", 0.25]] },
@@ -7178,7 +7188,8 @@ export const AREA_SETS = {
   hospital: ["clinic", "clinic", "pharmacy", "office", "kitchen"], police: ["armory", "office", "garage", "cellblock"],
   military: ["armory", "barracks", "motorpool", "warehouse"], airbase: ["hangar", "barracks", "armory", "warehouse"], prison: ["cellblock", "cellblock", "kitchen", "armory", "clinic"],
   univ: ["lab", "lab", "office", "kitchen"], college: ["office", "lab", "kitchen", "lockers"], dam: ["control", "workshop", "warehouse"], airport: ["hangar", "warehouse", "store", "office"],
-  factory: ["workshop", "warehouse", "office", "garage"], quarry: ["workshop", "garage", "campsite"],
+  factory: ["workshop", "warehouse", "office", "garage"], quarry: ["workshop", "garage", "campsite"], sawmill: ["hardware", "workshop", "garage", "warehouse"],
+  datacenter: ["control", "office", "garage", "workshop"], // a data centre's street map (issue #51): the halls, offices, generators, the dock
   forest: ["cabin", "campsite", "wreck"], hills: ["cabin", "campsite"], mountain: ["campsite", "cabin"], plains: ["farmhouse", "barn", "wreck"],
   suburb: ["house", "house", "house", "garage"], water: ["campsite", "wreck"],
   // A road with no site on it, and a bridge: the cars people left on the road (roadcars, placed on the road itself).
@@ -7932,8 +7943,8 @@ export function searchBox(state, b, u, box, open = false, quick = false) {
   const scav = (s ? skill(s, "scavenging") : 0) + (u.scavBonus || 0); // scavBonus: Treasure Hunter (skills.js)
   const party = state.parties.find((x) => x.id === b.setup.partyId);
   if (u.xpT && !box.contents) u.xpT.boxes++; // skills.js: Scavenging XP for each container opened
-  const rich = box.kind === "body" ? 1 : R.richness * Math.min(FLOOR_RICH.cap, Math.pow(FLOOR_RICH.perFloor, box.f || 0)) * (box.rich || 1); // upper storeys are less picked over (buildingmaps.js); a nest's floor richer still (floorfolk.js)
-  const reward = box.kind === "body" ? 1 : (R.reward ?? 1) * (box.truck || !R.big ? 1 : R.plan && R.plan.campus ? campusLootShare(b, box) : R.natMap ? raidLootShare(R.natMap[0], R.natMap[1]) : raidLootShare(b.w, b.h)); // a building at real size (R.natMap): its containers hold what its plan's map's did (as many to the square metre, each as full) // buildingmaps.js rewardMult: city sites pay more, the countryside less; a map past the old Large has more containers, each holds a little less (battlesize.js BIG)
+  const rich = box.kind === "body" ? 1 : R.richness * Math.min(FLOOR_RICH.cap, Math.pow(FLOOR_RICH.perFloor, box.f || 0)) * (box.rich || 1) * (box.lootK || 1); // lootK: a civic plan at real scale holds its drawn plan's worth a square metre (civicvariants.js LOOT_K, issue #49); upper storeys are less picked over (buildingmaps.js); a nest's floor richer still (floorfolk.js)
+  const reward = box.kind === "body" ? 1 : (R.reward ?? 1) * (box.truck || !R.big ? 1 : R.plan && (R.plan.campus || R.plan.civicSite) ? campusLootShare(b, box) : R.natMap ? raidLootShare(R.natMap[0], R.natMap[1]) : raidLootShare(b.w, b.h)); // a campus's or a civic site's (civicsite.js, issue #49) container what its building's own map's would; a building at real size (R.natMap): its containers hold what its plan's map's did (as many to the square metre, each as full) // buildingmaps.js rewardMult: city sites pay more, the countryside less; a map past the old Large has more containers, each holds a little less (battlesize.js BIG)
   // Roll what is inside (once); anything that does not fit stays in the container.
   if (!box.contents) {
     const sup = {}, gear = [];

@@ -54,6 +54,7 @@ export const SIZES = {
     farm: M, ranch: M, lodge: M, campground: M, crashsite: M, crash_mil: M, crash_cargo: M, crash_med: M, crash_news: M, convoy: M, // convoy: miltrucks.js
     // Points of interest (pois.js): small places, the neighbourhood a street of houses.
     house: 0.5, garage: 0.5, corner: 0.5, pizza: 0.5, farmstand: 0.5, shed: 0.5, blind: 0.5, campsite: 0.5, hikercamp: 0.5, mineshack: 0.5, neighbourhood: M,
+    sawmill: M, // issue #53: a sawmill (its plan's own map; the industrial mill's yard its own: sawmilllayout.js millYardMap)
   },
   TERRAIN: { city: L, suburb: M, plains: M, forest: M, hills: M, mountain: M, water: M },
   // Fights in the open: BASE, plus PER a combatant over FROM (each of the dead counts ZOMBIE: they bunch up), at most
@@ -346,7 +347,13 @@ export function fitMargins(bw, bh, margins, [tw, th], cap = null) {
 // (the run's raid map dials and the building's own size decide). A hotel's 200 × 200 (issue #29, the user's request
 // 2026-10-25: "add hotel 200x200 max"): the hotel and its grounds (parking, the drive, the pool, the gardens) within it
 // (hotellayout.js sizes its grounds to fit).
-export const MAP_CAP = { hotel: 200, prison: 400, jail: 130, cinema: 80, parkgarage: 80, regionalmall: 500, stripmall: 500, outlet: 500, amusement: 500 }; // a prison's complex up to the user's 400 × 400, a county jail's 130 (issue #31, prison.js); a mall's cinema and parking garage at their real size, a mall's whole map (issue #30, mall.js MALL.CAP); an amusement park's whole map, a theme park's up to 500 × 500 (issue #60, amusement.js)
+// The civic and medical kinds (issue #49, the user's request 2026-10-26: "updating the map size of civic and medical
+// buildings to be max size of 350x350"): a hospital's and a church's map up to 350 × 350 (a regional medical centre at
+// real scale, a city medical centre's campus, a cathedral, a churchyard: civicsite.js sizes a site's map within it), the
+// police, fire stations, city halls and courthouses 300 (a headquarters on its site), the clinics, infirmaries and vets
+// the default (the dials, at most 300). The run's raid map dial goes to 300, so a cap of 300 or more never changes an older
+// save's map.
+export const MAP_CAP = { datacenter: 400, hotel: 200, prison: 400, jail: 130, cinema: 80, parkgarage: 80, regionalmall: 500, stripmall: 500, outlet: 500, amusement: 500, hospital: 350, church: 350, police: 300, firestation: 300, cityhall: 300, courthouse: 300 }; // a prison's complex up to the user's 400 × 400, a county jail's 130 (issue #31, prison.js); a mall's cinema and parking garage at their real size, a mall's whole map (issue #30, mall.js MALL.CAP); an amusement park's whole map, a theme park's up to 500 × 500 (issue #60, amusement.js); a data centre campus up to the user's 400 × 400 (issue #51, datacenter.js)
 // Issue #55's six shops: the round's default cap (epic #39: 300 × 300); a big-box furniture showroom's map is about 90 × 80.
 for (const k of ["furnstore", "laundromat", "thrift", "bakery", "butcher", "deli"]) MAP_CAP[k] = 300;
 MAP_CAP.gym = 300; MAP_CAP.bowling = 300; // issue #56 (reclayout.js): the default, for the deep, narrow strip gyms and bowling alleys past the small maps (the 40-lane centre 92 × 55)
