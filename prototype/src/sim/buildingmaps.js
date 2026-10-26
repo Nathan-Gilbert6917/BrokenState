@@ -3493,9 +3493,9 @@ export const TOWER_SITES = { radiotower: ["radiotower"] };
 // legacyMines) keeps SITES' workshop and cabin.
 export const MINE_SITES = { quarry: ["quarry"], mineshack: ["mine"] };
 // The sites that are one map of a whole place in a new save (issue #61, outdoors.js): a campground (mapgen.js's forest
-// site: its tents round a street map before). An older save (worldcfg.js legacyOutdoors), or a caller with no state (as #52's mines), keeps the street map.
+// site: its tents round a street map before). An older save (worldcfg.js legacyOutdoors), or a caller with no state, keeps the street map (SITES.campground is the lake campground POI's, placement.js).
 export const OUTDOOR_SITES = { campground: ["campground"] };
-const siteEntry = (type, state) => (COMPLEX_SITES[type] && !legacyPrisons(state) ? COMPLEX_SITES[type] : TOWER_SITES[type] && !legacyTowers(state) ? TOWER_SITES[type] : MINE_SITES[type] && state && !legacyMines(state) ? MINE_SITES[type] : OUTDOOR_SITES[type] && state ? (legacyOutdoors(state) ? null : OUTDOOR_SITES[type]) : SITES[type]);
+const siteEntry = (type, state) => (COMPLEX_SITES[type] && !legacyPrisons(state) ? COMPLEX_SITES[type] : TOWER_SITES[type] && !legacyTowers(state) ? TOWER_SITES[type] : MINE_SITES[type] && state && !legacyMines(state) ? MINE_SITES[type] : OUTDOOR_SITES[type] ? (state && !legacyOutdoors(state) ? OUTDOOR_SITES[type] : null) : SITES[type]);
 // A university or a college is a campus (issue #28: campus.js); one whose buildings an older save's raids already went
 // into (its site's ledger holds their maps: campus.js campusLegacy) keeps the choice of buildings it had.
 export const SITES_LEGACY = { univ: ["lab", "offices", ["messhall", "Cafeteria"]] };
