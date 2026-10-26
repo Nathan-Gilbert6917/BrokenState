@@ -26,6 +26,8 @@
 //   index     true: a number pins the entry at that index (#26's bunkers, #27's offices)
 //   byName    true: a name pins as an id does (#27's offices: their plans were pinned by name)
 //   sizeClass (entry) → its size class, for entries that do not say (#42's placement.js sizeClassOf on its size row)
+//   sub       true: a plan's own sub-plans (a library variant's two plans), not a building type: varianttest's dozen-plans
+//             rule skips it
 //
 // THE PICK. pickVariant(key, rng, ctx) → the entry, or null. ctx: { setting, site, tileClass, size, franchise, ids,
 // plan, legacy, r, only } (#42's placement.js placementCtx gives setting, tileClass and size). In order:
@@ -62,7 +64,7 @@ function hash01(...parts) {
 }
 
 /** @typedef {{ id: string, name: string, w?: Record<string, number>, fr?: string[], size?: string, storeys?: number[] | number, tile?: string[], make?: Function, [k: string]: any }} VariantEntry */
-/** @typedef {{ missing?: number, frMin?: number, le?: boolean, index?: boolean, byName?: boolean, sizeClass?: (e: any) => string | null }} VariantOpts */
+/** @typedef {{ missing?: number, frMin?: number, le?: boolean, index?: boolean, byName?: boolean, sub?: boolean, sizeClass?: (e: any) => string | null }} VariantOpts */
 /** @typedef {{ setting?: string | null, site?: string | null, tileClass?: string | null, size?: string | null, franchise?: string | null, ids?: string[] | null, plan?: string | number | null, legacy?: boolean, r?: number | (() => number), only?: (e: VariantEntry) => boolean }} VariantCtx */
 
 /** @type {Map<string, { list: VariantEntry[], opts: VariantOpts }>} */

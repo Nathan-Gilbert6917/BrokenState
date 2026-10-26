@@ -525,7 +525,7 @@ export function libraryVariant(rng, o = {}) {
 // The registry (variantpick.js): "library" (the thirteen variants, by LIBRARY.ANY's weights), "library:<variant>" (its
 // plans, uniform).
 registerVariants("library", Object.keys(PLANS).map((v) => ({ id: v, name: LIBRARY_NAMES[v] || v, w: { any: LIBRARY.ANY[v] || 0 } })));
-for (const v of Object.keys(PLANS)) registerVariants(`library:${v}`, Object.keys(PLANS[v]).map((p) => ({ id: p, name: `${LIBRARY_NAMES[v] || v} (${p})` })));
+for (const v of Object.keys(PLANS)) registerVariants(`library:${v}`, Object.keys(PLANS[v]).map((p) => ({ id: p, name: `${LIBRARY_NAMES[v] || v} (${p})` })), { sub: true });
 /**
  * A library's spec for buildingmaps.js assemble: the variant's footprint, storeys and plan from the dice. o: { variant,
  * plan } as libraryVariant takes them; w, h: a footprint to fit (another building's room for one: a strip mall's unit, a
