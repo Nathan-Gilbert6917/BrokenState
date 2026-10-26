@@ -483,7 +483,8 @@ section("Laid out for their kind (shoplayout.js, issue #16)");
   const NEWK = new Set(["freezercase", "islandfreezer", "meatcase", "freezershelf", "producebin", "breadrack", "selfcheckout", "cartcorral", "baler", "aislesign", "range", "fryer", "pizzaoven", "coldshelf", "jukebox", "pooltable", "clothesrack", "gunrack", "tank", "pottingbench", "palletrack", "tirerack", "compressor", "carlift", "machine", "forklift", "saddlerack", "cubicle", "whiteboard", "watercooler", "secdesk", "keyrack", "icemachine", "teller", "deposit", "atm", "stanchion", "checkout", "displaycase", "coldcase", "barcounter", "barstool", "desk", "filing", "bookshelf"]);
   let newer = 0;
   // (a hotel has no older save's plan: buildingmaps.js NEW_KEYS lays it out new in an older save, issue #29)
-  for (const key of KEYS.filter((k) => k !== "hotel" && !NEWSHOP_KEYS.includes(k))) for (let s = 0; s < 3; s++) { // issue #55's six: as the hotel const m = make(key, s, true, true); for (const F of m.floors || [{ cells: m.cells }]) for (const c of F.cells) if (NEWK.has(c.k)) newer++; if (m.rooms.some((a) => /Walk-in cold|ATM lobby|Safe-deposit|Pharmacy counter|Greenhouse/.test(a.name) && !/^Walk-in$/.test(a.name))) newer++; }
+  // (issue #55's six shops likewise: buildingmaps.js NEW_KEYS)
+  for (const key of KEYS.filter((k) => k !== "hotel" && !NEWSHOP_KEYS.includes(k))) for (let s = 0; s < 3; s++) { const m = make(key, s, true, true); for (const F of m.floors || [{ cells: m.cells }]) for (const c of F.cells) if (NEWK.has(c.k)) newer++; if (m.rooms.some((a) => /Walk-in cold|ATM lobby|Safe-deposit|Pharmacy counter|Greenhouse/.test(a.name) && !/^Walk-in$/.test(a.name))) newer++; }
   check(!newer, `an older save's shops are furnished and planned the old way (${newer} new pieces or rooms)`);
   // Their signs of survival (interiorscenes.js registerScene): a motel room held, a stockroom shelter, a counter stand,
   // a walk-in hiding place; only on a map laid out by these styles.
