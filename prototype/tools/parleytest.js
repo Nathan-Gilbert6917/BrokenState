@@ -18,6 +18,9 @@
 //   - Split what we found with an allied group that fought beside you (on its card; its own card when one of yours
 //     gets out), You kept it all; a Hostile group's people trade by a swap, never its trade window;
 //   - the raid bot calls out on its own (botCallOut: the best talker, once a group), and its raids still end.
+// The party mix samples the sites within a group's PARLEY.PARTY.range (the 250 × 150 Normal map since 1370d1c); the
+// sections on a plain hostile pod set its record plain (plainHostile), as the treachery sections set it treacherous
+// (issue #44, 2026-10-26).
 // Usage: node tools/parleytest.js
 import { createWorld, hub, atBase, factionById, survivorById } from "../src/sim/world.js";
 import { launchExpedition } from "../src/sim/parties.js";
@@ -112,6 +115,11 @@ const recOf = (b, u) => b.parley.groups.find((g) => g.key === u.pk);
 const shotsBy = (b, names, from = 0) => b.log.slice(from).filter((l) => names.some((n) => l.text.startsWith(`${n} shoots`) || l.text.startsWith(`${n} fires`) || l.text.startsWith(`${n} strikes`))).length;
 const nextTurn = (state) => { const b = state.combat; for (const u of b.units) if (u.side === "player") u.ap = 0; endPlayerTurn(state); runEnemyPhase(state); };
 const raiders = (n = 3) => ({ kind: "raiders", count: n, power: 3.5, name: "rival scavengers", guard: true });
+// A raider pod's record made plain hostile. Its group's record is rolled at the battle's start, and a loose group's
+// dice may make it treacherous (PARLEY.TREACHERY.loose, 30%): shown as friendly ("we're friendly", Answer them, no Hand
+// over what you found). Seeds 71 and 91 roll it so (red since the repo's first commit 222200d). Treachery has its own
+// sections (a treacherous group fakes friendliness, treachery tells), which set the record treacherous as this sets it plain.
+const plainHostile = (rec) => Object.assign(rec, { treacherous: false, lie: rec.hostility, shown: rec.stance });
 const partyOf = (f, stance = "neutral", n = 3) => ({ kind: "raiders", count: n, power: 4, name: `${f.name} scavengers`, factionId: f.id, ...(stance === "hostile" ? {} : { side: "neutral" }), parley: { stance, hostility: stance === "friendly" ? 15 : stance === "neutral" ? 40 : 80, treacherous: false } });
 // Ends the raid with everyone of yours out (extracted), and the handler run.
 function endRaidNow(state) {
@@ -142,7 +150,11 @@ section("An AI group's party on a site (siteParty): the mix, one a raid, placed 
     const s = createWorld({ seed, factionCount: 7 });
     for (const f of s.factions) f.goodwill = Math.round((f.goodwill || 0) + (seed % 3 - 1) * 30); // how the run has gone with them
     const tiles = s.tiles.filter((t) => t.loc && !t.hive);
-    for (const t of tiles.slice(0, 60)) for (let w = 0; w < 4; w++) {
+    // The sites a group's party can reach (siteParty: a group with a base within PARLEY.PARTY.range). The first 60 sites
+    // were the sample on the old 64 × 42 map; on the 250 × 150 Normal map since 1370d1c (map sizes, 2026-10-24) the same
+    // 7 groups are spread thin and the first 60 sites, in the map's top rows, are out of their range (seed 11: 1 of 60).
+    const inRange = tiles.filter((t) => s.factions.some((f) => f.alive && !f.outsider && f.bases.some((id) => s.grid.distance(id, t.id) <= PARLEY.PARTY.range)));
+    for (const t of inRange.slice(0, 60)) for (let w = 0; w < 4; w++) {
       s.hour = w * PARLEY.PARTY.window + 12;
       const g = siteParty(s, t.id);
       if (!g) { tally.none++; continue; }
@@ -309,6 +321,7 @@ section("A hostile pod that calls out holds its fire until answered");
   const { b, mine } = raid(state, [raiders(3)]);
   const pod = b.units.filter((x) => x.side === "enemy" && x.kind === "human");
   check(inSight(b, mine[0], pod, 2, 3), "(test setup: close, in sight)");
+  plainHostile(recOf(b, pod[0])); // a hostile pod, not a treacherous one (plainHostile)
   const call = PARLEY.CALL.hostile;
   PARLEY.CALL.hostile = 1;
   try { notice(b, pod[0]); } finally { PARLEY.CALL.hostile = call; }
@@ -397,6 +410,7 @@ section("Join us, What do you know, Trade, the haul handed over; after the raid"
   const { b, mine, p } = raid(state, [partyOf(f, "friendly", 2), raiders(2), { kind: "zombies", count: 3, power: 2, name: "the dead" }], { dead: true });
   const party = b.units.filter((x) => x.side === "third");
   const pod = b.units.filter((x) => x.side === "enemy" && x.kind === "human");
+  plainHostile(recOf(b, pod[0])); // the raiders hostile, not treacherous: the haul handed over is offered (plainHostile)
   inSight(b, mine[0], party, 3, 6);
   combatAct(state, { type: "callout", unit: mine[0].id, target: party[0].id });
   const boxes = b.raid.containers.filter((c) => !c.searched && c.kind !== "body");

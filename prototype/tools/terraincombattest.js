@@ -9,6 +9,8 @@
 // when that is cheaper, never through crag; a raider with a gun takes the high ground and leaves a hollow; a raid in a
 // building with storeys: from a hill as high as an upper floor a survivor sees and shoots in through a window (not
 // through a wall, not from too low, not out of range), and the raider at the window shoots back.
+// The window raider made of one of the dead drops the dead's wild and beast flags with its zombie type: a wild unit's
+// foes are every living non-zombie, itself too once a person (combat.js foesOf; issue #44, 2026-10-26).
 // Usage: node tools/terraincombattest.js [seed]
 import { createWorld, hub, atBase } from "../src/sim/world.js";
 import { launchExpedition } from "../src/sim/parties.js";
@@ -226,7 +228,11 @@ section("From a hill into an upper floor through a window");
     const raider = b.units.find((u) => u.side === "enemy" && u.kind === "human") || b.units.find((u) => u.side === "enemy");
     for (const u of b.units) if (u.side === "enemy" && u !== raider) { u.dead = true; }
     if (q) { q.x = p.x; q.y = p.y; q.dead = true; }
-    raider.kind = "human"; raider.weapon = "pistol"; raider.aware = true; raider.surprised = false; delete raider.ztype; raider.f = 1; raider.away = true; raider.x = ix; raider.y = iy; raider.hp = raider.maxHp = 200;
+    // No raider of their own in the mix (seed 7: two dead hogs and a zombie): one of the dead made the raider. A dead
+    // beast is wild (zombietypes.js applyZType: u.beast, u.wild), and a wild unit's foes are every living thing that is
+    // not a zombie (combat.js foesOf), itself once a person: so the wild and the beast go with the zombie type, or it
+    // shoots at itself. Red since the repo's first commit 222200d, where the dead beasts were already in the raid mix.
+    raider.kind = "human"; raider.weapon = "pistol"; raider.aware = true; raider.surprised = false; delete raider.ztype; delete raider.wild; delete raider.beast; raider.f = 1; raider.away = true; raider.x = ix; raider.y = iy; raider.hp = raider.maxHp = 200;
     // The ground out from the window: level open ground, then a hill a level up 4–6 tiles out.
     for (let s = 1; s <= 6; s++) { const c = G[(wy + dy * s) * W + wx + dx * s]; c.k = "open"; delete c.h; delete c.ter; for (const [ox, oy] of [[dy, dx], [-dy, -dx]]) { const x = wx + dx * s + ox, y = wy + dy * s + oy; if (x >= 0 && y >= 0 && x < W && y < b.h && G[y * W + x].f !== "floor") { G[y * W + x].k = "open"; } } }
     const at = (s) => [wx + dx * s, wy + dy * s];
