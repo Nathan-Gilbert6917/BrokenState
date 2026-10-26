@@ -1607,7 +1607,90 @@ const FURN_DRAW = {
     return [run(ax, 0.2, 0.28, 0, 18, wd, 0.02, 0.98), run(ax, 0.72, 0.8, 0, 18, wd, 0.02, 0.98), run(ax, 0.28, 0.72, 9, 10, warp, 0.06, 0.94), run(ax, 0.2, 0.8, 16, 18, wd, 0.02, 0.98), run(ax, 0.2, 0.8, 0, 2, wd, 0.02, 0.98)];
   } },
   grainbin: { top: 36, p: () => [{ cyl: [0.5, 0.5, 0.46], z0: 0, z1: 28, m: (f, s, t, X) => (f === "top" ? FURNC.chrome : Math.floor(t) % 3 < 1 ? mul(FURNC.chrome, 0.8) : mul(FURNC.chrome, 0.95 + n2(Math.floor(X), 0, 107) * 0.05)) }, { cyl: [0.5, 0.5, 0.3], z0: 28, z1: 33, m: flatM(mul(FURNC.chrome, 0.9)) }, { cyl: [0.5, 0.5, 0.1], z0: 33, z1: 36, m: flatM(FURNC.steel) }] },
+  // ---------- mines and quarries (issue #52, sim/minelayout.js) ----------
+  // The shaft and cage: a steel collar round the shaft's dark mouth, the cage's frame standing in its guides, a sheave
+  // wheel's rim at the top; the hoist drum: a big steel drum wound with cable on its bed; the ore chute: a timber bin
+  // with a steel gate at its foot; a cave-in: a heap of broken grey rock to the back; a timber set: two posts and a cap
+  // of old timber against the wall; a rock pillar: rough grey stone floor to back; the jaw crusher: a heavy yellow frame
+  // and its flywheel; the screen deck: a tilted mesh deck on legs; a stockpile: a low heap of grey gravel; an ore car: a
+  // small steel tub on wheels, ore heaped in it; a cap-lamp rack: a board of lamps and their cords; an explosives box: a
+  // red wooden chest, its warning band.
+  headframe: { top: 34, p: () => {
+    const steel = (f, s, t) => (f === "top" ? FURNC.steel : Math.floor(t) % 6 < 1 ? PAL.metalDk : FURNC.chrome);
+    return [fbox(0.02, 0.98, 0.02, 0.98, 0, 3, flatM(PAL.metalDk)), fbox(0.18, 0.82, 0.18, 0.82, 0, 1, flatM(FURNC.black)), fbox(0.08, 0.2, 0.08, 0.2, 3, 34, steel), fbox(0.8, 0.92, 0.08, 0.2, 3, 34, steel), fbox(0.08, 0.2, 0.8, 0.92, 3, 30, steel), fbox(0.8, 0.92, 0.8, 0.92, 3, 30, steel), fbox(0.3, 0.7, 0.3, 0.7, 3, 18, (f, s, t) => (f === "top" ? FURNC.steel : Math.floor(t) % 4 < 1 ? PAL.metalDk : mul(FURNC.chrome, 0.85)))];
+  } },
+  hoist: { top: 18, p: (o) => {
+    const ax = along(o), cable = (f, s, t, X) => (f === "top" ? mul(FURNC.steel, 0.9) : Math.floor(X) % 2 < 1 ? PAL.metalDk : FURNC.steel);
+    return [run(ax, 0.1, 0.9, 0, 4, flatM(PAL.metalDk), 0.04, 0.96), run(ax, 0.2, 0.8, 4, 18, cable, 0.08, 0.92), run(ax, 0.16, 0.2, 4, 16, flatM(hex("#8a2a20")), 0.04, 0.96)];
+  } },
+  orechute: { top: 24, p: (o) => {
+    const ax = along(o);
+    return [run(ax, 0.2, 0.8, 0, 24, fwood(PAL.woodDk), 0.1, 0.9), run(ax, 0.72, 0.84, 2, 8, flatM(PAL.metalDk), 0.2, 0.8)];
+  } },
+  cavein: { top: 26, p: () => {
+    const rock = (f, s, t, X, Y) => (f === "top" ? mul(hex("#7a7468"), 0.9 + n2(X, Y, 541) * 0.2) : mul(hex("#6a645a"), 0.8 + n2(Math.floor(X), Math.floor(t), 542) * 0.3));
+    return [fbox(0.02, 0.98, 0.02, 0.98, 0, 10, rock), fbox(0.08, 0.92, 0.04, 0.8, 10, 20, rock), fbox(0.2, 0.8, 0.04, 0.5, 20, 26, rock)];
+  } },
+  timberset: { top: 28, p: (o) => {
+    const ax = along(o), wood = fwood(PAL.woodDk);
+    return [run(ax, 0.06, 0.2, 0, 26, wood, 0.1, 0.3), run(ax, 0.06, 0.2, 0, 26, wood, 0.7, 0.9), run(ax, 0.04, 0.24, 26, 28, wood, 0.04, 0.96)];
+  } },
+  pillar: { top: 36, p: () => [fbox(0.04, 0.96, 0.04, 0.96, 0, 36, (f, s, t, X, Y) => (f === "top" ? mul(hex("#5a564e"), 0.9 + n2(X, Y, 543) * 0.15) : mul(hex("#4e4a44"), 0.85 + n2(Math.floor(X), Math.floor(t / 3), 544) * 0.25)))] },
+  jawcrusher: { top: 22, p: () => {
+    const frame = (f, s, t, X) => (f === "top" ? mul(hex("#d0a12a"), 1.05) : Math.floor(t) % 7 < 1 ? mul(hex("#d0a12a"), 0.65) : hex("#d0a12a"));
+    return [fbox(0.04, 0.96, 0.04, 0.96, 0, 3, flatM(PAL.metalDk)), fbox(0.12, 0.88, 0.12, 0.88, 3, 18, frame), fbox(0.25, 0.75, 0.25, 0.75, 18, 22, flatM(FURNC.black))];
+  } },
+  screendeck: { top: 16, p: (o) => {
+    const ax = along(o), mesh = (f, s, t, X, Y) => (f === "top" ? (Math.floor(X * 2) % 2 === Math.floor(Y * 2) % 2 ? FURNC.steel : PAL.metalDk) : hex("#4a6a3a"));
+    return [...flegs(0.15, 0.85, 0.15, 0.85, 10, flatM(PAL.metalDk)), run(ax, 0.08, 0.92, 10, 16, mesh, 0.04, 0.96)];
+  } },
+  gravelpile: { top: 12, p: () => {
+    const grit = (f, s, t, X, Y) => mul(hex("#9a9488"), 0.85 + n2(Math.floor(X * 3), Math.floor((f === "top" ? Y : t) * 3), 545) * 0.25);
+    return [fbox(0.02, 0.98, 0.02, 0.98, 0, 5, grit), fbox(0.14, 0.86, 0.14, 0.86, 5, 9, grit), fbox(0.3, 0.7, 0.3, 0.7, 9, 12, grit)];
+  } },
+  orecart: { top: 14, p: () => {
+    const tub = (f, s, t) => (f === "top" ? hex("#6a645a") : Math.floor(t) % 5 < 1 ? PAL.metalDk : hex("#5a6068"));
+    return [fbox(0.2, 0.32, 0.12, 0.88, 0, 3, flatM(FURNC.black)), fbox(0.68, 0.8, 0.12, 0.88, 0, 3, flatM(FURNC.black)), fbox(0.1, 0.9, 0.1, 0.9, 3, 12, tub), fbox(0.2, 0.8, 0.2, 0.8, 12, 14, flatM(hex("#7a7468")))];
+  } },
+  lamprack: { top: 22, p: (o) => {
+    const ax = along(o), lamps = (f, s, t, X) => (f === "top" ? PAL.metalDk : Math.floor(t) % 6 < 2 ? (Math.floor(X * 4) % 2 ? FURNC.amber : FURNC.black) : mul(FURNC.steel, 0.8));
+    return [run(ax, 0.6, 0.8, 0, 22, lamps, 0.04, 0.96)];
+  } },
+  powderbox: { top: 11, p: () => [fbox(0.12, 0.88, 0.2, 0.8, 0, 11, (f, s, t) => (f === "top" ? mul(hex("#a03228"), 0.9) : t > 5 && t < 7 ? FURNC.amber : hex("#a03228")))] },
   drum: { top: 14, p: () => [{ cyl: [0.5, 0.5, 0.3], z0: 0, z1: 14, m: (f, s, t) => (f === "top" ? mul(FURNC.red, 0.8) : Math.floor(t) === 4 || Math.floor(t) === 9 ? mul(FURNC.red, 0.6) : FURNC.red) }] },
+  // ---------- sawmills and lumber yards (issue #53, sim/sawmilllayout.js) ----------
+  // The headsaw: a band head rig on its steel bed, the wheel housing up the middle in mill blue, the blade bright down
+  // its side; the edger a low yellow box with its feed rollers; a log pile three courses of bark-brown logs, their pale
+  // ends to the sides; a kiln door a tall ribbed aluminium panel; the wigwam burner a rusty steel cone and its mesh cap;
+  // stacked lumber pale boards in courses on dark stickers; a saw-blade rack a board of round blades.
+  headsaw: { top: 30, p: (o) => {
+    const ax = along(o), housing = (f, s, t) => (f === "top" ? mul(hex("#3f6f8a"), 1.1) : Math.floor(t) % 8 < 1 ? FURNC.black : hex("#3f6f8a"));
+    return [run(ax, 0.12, 0.88, 0, 8, flatM(FURNC.steel), 0.02, 0.98), run(ax, 0.3, 0.66, 8, 30, housing, 0.12, 0.88), run(ax, 0.66, 0.72, 8, 28, flatM(FURNC.chrome), 0.08, 0.92)];
+  } },
+  edger: { top: 14, p: (o) => {
+    const ax = along(o), body = (f, s, t, X) => (f === "top" ? mul(hex("#d0a12a"), 1.08) : Math.floor(X) % 4 < 1 ? mul(hex("#d0a12a"), 0.7) : hex("#d0a12a"));
+    return [...flegs(0.2, 0.75, 0.1, 0.85, 4, flatM(FURNC.black)), run(ax, 0.18, 0.82, 4, 12, body, 0.04, 0.96), run(ax, 0.3, 0.7, 12, 14, flatM(FURNC.chrome), 0.1, 0.9)];
+  } },
+  logpile: { top: 18, p: () => {
+    const bark = (f, s, t, X, Y) => (f === "top" ? mul(hex("#5a4030"), 0.95 + n2(X, Y, 531) * 0.12) : Math.floor(t) % 6 < 1 ? hex("#3a2a1e") : Math.floor(X) % 4 < 1 ? hex("#c9a46a") : mul(hex("#5a4030"), 0.9 + n2(X, Y, 532) * 0.15));
+    return [fbox(0.04, 0.96, 0.04, 0.96, 0, 6, bark), fbox(0.1, 0.9, 0.1, 0.9, 6, 12, bark), fbox(0.2, 0.8, 0.2, 0.8, 12, 18, bark)];
+  } },
+  kilndoor: { top: 30, p: (o) => {
+    const ax = along(o), panel = (f, s, t, X) => (f === "top" ? FURNC.steel : Math.floor(X) % 3 < 1 ? mul(FURNC.chrome, 0.8) : FURNC.chrome);
+    return [run(ax, 0.3, 0.7, 0, 28, panel, 0.02, 0.98), run(ax, 0.26, 0.74, 28, 30, flatM(PAL.metalDk), 0, 1)];
+  } },
+  burner: { top: 40, p: () => {
+    const rust = (f, s, t, X) => (f === "top" ? hex("#3a2a24") : Math.floor(t) % 5 < 1 ? hex("#5a3424") : mul(hex("#8a4a2c"), 0.9 + n2(Math.floor(X), 0, 533) * 0.15));
+    return [{ cyl: [0.5, 0.5, 0.46], z0: 0, z1: 14, m: rust }, { cyl: [0.5, 0.5, 0.36], z0: 14, z1: 26, m: rust }, { cyl: [0.5, 0.5, 0.24], z0: 26, z1: 35, m: rust }, { cyl: [0.5, 0.5, 0.14], z0: 35, z1: 40, m: flatM(PAL.metalDk) }];
+  } },
+  lumberstack: { top: 16, p: (o) => {
+    const ax = along(o), boards = (f, s, t, X) => (f === "top" ? mul(PAL.woodLt, 1.08) : Math.floor(t) % 4 < 1 ? mul(PAL.woodDk, 0.8) : mul(PAL.woodLt, Math.floor(X) % 5 < 1 ? 0.9 : 1));
+    return [run(ax, 0.12, 0.88, 0, 2, flatM(PAL.woodDk), 0.12, 0.26), run(ax, 0.12, 0.88, 0, 2, flatM(PAL.woodDk), 0.74, 0.88), run(ax, 0.1, 0.9, 2, 16, boards, 0.04, 0.96)];
+  } },
+  bladerack: { top: 24, p: (o) => {
+    const ax = along(o), blade = flatM(FURNC.chrome);
+    return [run(ax, 0.4, 0.6, 0, 24, fwood(PAL.woodDk), 0.06, 0.94), run(ax, 0.32, 0.4, 6, 13, blade, 0.12, 0.46), run(ax, 0.32, 0.4, 14, 21, blade, 0.54, 0.88), run(ax, 0.6, 0.68, 6, 13, blade, 0.54, 0.88), run(ax, 0.6, 0.68, 14, 21, blade, 0.12, 0.46)];
+  } },
   labfreezer: { top: 28, p: (o) => {
     const ax = along(o), front = (f, s, t, X) => (f === "top" ? mul(FURNC.white, 1.05) : t > 23 && t < 25 && Math.floor(X) % 6 < 2 ? FURNC.led : fappl(FURNC.white, [21], [[8, 18]])(f, s, t, X, 0));
     return [run(ax, 0.2, 0.8, 0, 28, front, 0.08, 0.92)];

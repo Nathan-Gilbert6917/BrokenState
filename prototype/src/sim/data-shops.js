@@ -36,6 +36,7 @@ import { TOWER_AREAS } from "./data-radiotower.js"; // a radio tower compound's 
 /** @typedef {{ id: string, name: string, w: { city: number, suburb: number, town: number, scenic?: number }, look: Look, plan?: Plan, eat?: { cuisine: string, format: string, size: string, brew?: boolean, truck?: boolean } }} Franchise */
 
 import { VARIANTS } from "./data-eateries.js"; // the restaurant variants (issue #33): pure data too
+import { MINE_AREAS } from "./data-mines.js"; // a mine's raid rooms: the workings, the dry, the lamp room, the magazines (issue #52)
 import { MUSEUM_AREAS } from "./data-museums.js"; // a museum's raid rooms (issue #58): pure data too
 
 const G = (city, suburb, town) => ({ city, suburb, town });
@@ -228,6 +229,7 @@ export const AREA_DEFS = {
   ...PARK_AREA_DEFS, // a park's rooms (data-parks.js, issue #60)
   ...NEWSHOP_AREAS, // issue #55's rooms (data-newshops.js)
   ...TOWER_AREAS, // radio towers (issue #54, data-radiotower.js)
+  ...MINE_AREAS, // a mine's workings below, its dry, its lamp room, an explosives magazine (issue #52, minelayout.js)
   ...MUSEUM_AREAS, // a museum's galleries, gift shop, café, labs, stores, dock and security (issue #58, museumlayout.js)
 };
 
