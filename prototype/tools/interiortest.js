@@ -79,7 +79,7 @@ import { noiseAt } from "../src/sim/stealth.js";
 import { newItem, stow } from "../src/sim/inventory.js";
 import { raidEnemies } from "../src/sim/scavenge.js";
 import { raidBuildings, buildingPickFor } from "../src/sim/poiraid.js"; // a site's building, picked before the map
-import { SCHOOL_VARIANTS, BUILDINGS, SITES, assemble, siteBuildings, buildingMap, buildingOptions, placeOccupantGroups, windowsNear, BMAP, runSteps, runLandings } from "../src/sim/buildingmaps.js";
+import { SCHOOL_VARIANTS, BUILDINGS, SITES, assemble, siteBuildings, buildingMap, buildingOptions, raidBuilding, placeOccupantGroups, windowsNear, BMAP, runSteps, runLandings } from "../src/sim/buildingmaps.js";
 import { HOME_STYLES, HOME_KEYS, MEDICAL_STYLES, MED_KEYS } from "../src/sim/roomlayout.js";
 import { rollScenes } from "../src/sim/interiorscenes.js";
 import { COMMERCIAL_KEYS, styleName } from "../src/sim/shoplayout.js";
@@ -272,9 +272,18 @@ console.log("Raids on building maps");
   const r1 = raidAt(["police"]);
   check(r1 && r1.b.raid.interior && r1.b.raid.interior.key === "police", `a police station opens straight into its interior (${r1 && r1.b.w}x${r1 && r1.b.h})`);
   const sig = (cells) => cells.map((c) => c.k).join(",");
-  const again = buildingMap(r1.st, r1.tile.id, { id: "police", key: "police", name: "Police station" }, false);
-  const other = buildingMap(r1.st, r1.tile.id + 1, { id: "police", key: "police", name: "Police station" }, false);
-  check(sig(again.cells) === sig(r1.b.cells) && JSON.stringify(again.plan.rooms) === JSON.stringify(r1.b.raid.plan.rooms) && sig(other.cells) !== sig(again.cells), "the same site has the same floor plan every visit (another site another)");
+  // The site's own option, as the raid took it (buildingmaps.js raidBuilding): its id and name seed the plan (specSeed).
+  // Issue #45: a bare { id: "police", ... } here built another plan (seed 309's station: "general" against the raid's
+  // "smalltown": the site's option names its variant, "statepatrol"), and the raid's own dressing (below) was read as
+  // another plan.
+  const opt = raidBuilding(r1.st, r1.tile, r1.setup);
+  const again = buildingMap(r1.st, r1.tile.id, opt, false);
+  const other = buildingMap(r1.st, r1.tile.id + 1, opt, false);
+  // The raid dresses the map it is given: a container's cell turned into a gun safe (locks.js makeGunSafe) and a cart
+  // set down (carts.js placeMapCarts). Those cells are read as the plan had them; every other cell must match.
+  const dressed = (k) => k === "gunsafe" || k === "cart";
+  const raidSig = r1.b.cells.map((c, k) => (dressed(c.k) && again.cells[k] ? again.cells[k].k : c.k)).join(",");
+  check(raidSig === sig(again.cells) && r1.b.cells.filter((c) => dressed(c.k)).length <= 6 && JSON.stringify(again.plan.rooms) === JSON.stringify(r1.b.raid.plan.rooms) && sig(other.cells) !== sig(again.cells), "the same site has the same floor plan every visit (another site another)");
   // Locked doors in the raid are locks.js doors; locked containers are locked.
   const b = r1.b;
   check((b.raid.doors || []).length > 0 && b.raid.doors.every((d) => b.cells[d.y * b.w + d.x].k === "door" && d.lock && !d.lock.open), `${b.raid.doors.length} locked door cells (${b.raid.areas.filter((a) => a.locked).map((a) => a.name).join(", ")})`);
@@ -284,9 +293,18 @@ console.log("Raids on building maps");
   const team = b.units.filter((u) => u.side === "player");
   check(team.every((u) => u.y >= b.raid.plan.building.y0 + b.raid.plan.building.h), "the team starts outside the front of the building");
   // The dead are mostly inside.
-  const dead = b.units.filter((u) => u.side === "enemy" && u.kind === "zombie");
-  const B = b.raid.plan.building, inB = (u) => u.x >= B.x0 && u.x < B.x0 + B.w && u.y >= B.y0 && u.y < B.y0 + B.h;
-  check(!dead.length || dead.filter(inB).length >= dead.length / 2, `the dead are mostly inside (${dead.filter(inB).length} of ${dead.length})`);
+  // BMAP.OUTSIDE_DEAD (a quarter) of the ground floor's dead are placed outside, so one raid's three or four can land two
+  // outside on the dice (issue #45: seed 309's police station had 1 of 3 inside). Read over this raid and seven more
+  // of the same site (the world's dice move on between them): the share inside, not one draw of it.
+  const insideOf = (bb) => {
+    const dead = bb.units.filter((u) => u.side === "enemy" && u.kind === "zombie");
+    const B = bb.raid.plan.building, inB = (u) => u.x >= B.x0 && u.x < B.x0 + B.w && u.y >= B.y0 && u.y < B.y0 + B.h;
+    return [dead.filter(inB).length, dead.length];
+  };
+  let [inside, all] = insideOf(b);
+  for (let k = 0; k < 7; k++) { const [i, n] = insideOf(createBattle(r1.st, r1.setup)); inside += i; all += n; }
+  r1.st.combat = b;
+  check(all >= 12 && inside >= all / 2, `the dead are mostly inside (${inside} of ${all} over 8 raids; this one ${insideOf(b).join(" of ")})`);
 }
 
 console.log("Occupants");

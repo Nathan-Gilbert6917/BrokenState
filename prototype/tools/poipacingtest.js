@@ -13,18 +13,24 @@
 //     the bases holds more of its pool than the known zone near them, and at least half of it is Rich or Some;
 //   - no world has every pool at zero by year 2: at the end of year 2 at least a quarter of the map's POI pool is left
 //     and under half of its POIs are picked clean.
-// Usage: node tools/poipacingtest.js [years, 6] [seed, 42] [sizes, normal,large] [--autopilot]
-//   BS_QUICK=1 in the environment (runtests.js --quick): 4 years (the last year the checks read) on a Small world
-//   alone, unless the arguments say otherwise: every check on the one world.
+// Usage: node tools/poipacingtest.js [years, 4] [seed, 42] [sizes, normal,large] [--years N] [--autopilot]
+//   4 years by default (issue #45; it was 6): the checks read years 2 and 4, and since the map sizes of 2026-10-24
+//   (Normal 250 × 150, Large 300 × 200) a Large year takes 2 to 3 minutes, so 6 years ran past 15 minutes. Years 5 and
+//   up only print: ask for them with --years 6 (or the first argument) for the long report.
+//   BS_QUICK=1 in the environment (runtests.js --quick): the same 4 years on a Small world alone, unless the arguments
+//   say otherwise: every check on the one world.
 import { execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const CHILD = process.argv[2] === "--child";
 const AUTO = process.argv.includes("--autopilot");
-const args = process.argv.slice(CHILD ? 3 : 2).filter((a) => a !== "--autopilot");
+const argv = process.argv.slice(CHILD ? 3 : 2);
+const yi = argv.indexOf("--years"), yearsFlag = yi >= 0 ? argv.splice(yi, 2)[1] : null; // --years N: the same as the first argument
+const args = argv.filter((a) => a !== "--autopilot");
+if (yearsFlag != null) args.unshift(yearsFlag);
 const QUICK = !!process.env.BS_QUICK;
 const NEAR = 5; // "near a base": within this many tiles
-const years = Number(args[0] || (QUICK ? 4 : 6));
+const years = Number(args[0] || 4);
 const seed = Number(args[1] || 42);
 const sizes = (args[2] || (QUICK ? "small" : "normal,large")).split(",");
 

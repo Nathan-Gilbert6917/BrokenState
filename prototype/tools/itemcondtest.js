@@ -139,6 +139,7 @@ const ALLOWED = {
   "carrykit.js": /starting gear/, // a colonist's starting spare magazines (not loot)
   "deadsoldiers.js": /newItem\([kg], q\(range\), rng\)/, // the maker handed in (inventory.js armouredItem; g: gundist.js swapGun's rifle)
   "hardcore-start.js": /./, "recruits.js": /./, "world.js": /startdur/, // starting and recruit gear (START_DUR), not loot
+  "crashstart.js": /newItem\(key, 1, hash01\(state\.seed, "crashkit"|= newItem\("(chestrig|plate|traumakit)"\)|stow\(s, newItem\("/, // Crashlanding's fixed kit (crashstart.js crashKit, CRASH_KIT: the soldier's issue, starting gear, not loot; issue #45: red since the mode came in)
   "toolreqs.js": /newItem\(k, 1\)/, // an older save's hub given the tool shelf a new hub starts with (migrateTools: starting gear, not loot)
   "blueprints.js": /bpItemKey/, "skills.js": /newItem\(key, 1\)|newItem\(list\[/, // paper
   "visitors.js": /bpItemKey|newItem\(k, 1\)\)/, // a merchant's blueprints and books (paper)
@@ -256,7 +257,7 @@ check(Object.values(AREAS).every((a) => (a.gear || []).every(([k]) => !!GEAR[k])
     const its = [];
     for (let w = 0; w < 25; w++) { st.hour = w * 168; its.push(...restock(st, f)); }
     f.type = was;
-    within(`a ${type} group's wares`, its, new Set([...WARES[type], ...Object.keys((WARE_BLADES[type] || {}).items || {}), ...Object.keys((WARE_SURV[type] || {}).items || {}), ...Object.keys((WARE_TOOLS[type] || {}).items || {}), ...newGuns(type), ...Object.keys((WARE_EXTRAS[type] || {}).items || {}), ...Object.keys((WARE_GUNMODS[type] || {}).items || {}), ...Object.keys((WARE_MODS[type] || {}).items || {}), ...Object.keys((WARE_HEAD[type] || {}).items || {}), ...Object.keys((WARE_KIT[type] || {}).items || {}), ...paper(type), ...Object.keys(gunsFrom(`trader:${type}`)), ...Object.keys(partPool(PART_FINDS.WARE_TAGS[type]))])); // partfinds.js partWares: the catalogue's parts by the shelf's tags
+    within(`a ${type} group's wares`, its, new Set([...WARES[type], ...Object.keys((WARE_BLADES[type] || {}).items || {}), ...Object.keys((WARE_SURV[type] || {}).items || {}), ...Object.keys((WARE_TOOLS[type] || {}).items || {}), ...newGuns(type), ...Object.keys((WARE_EXTRAS[type] || {}).items || {}), ...Object.keys((WARE_GUNMODS[type] || {}).items || {}), ...Object.keys((WARE_MODS[type] || {}).items || {}), ...Object.keys((WARE_HEAD[type] || {}).items || {}), ...Object.keys((WARE_KIT[type] || {}).items || {}), ...paper(type), ...Object.keys(gunsFrom(`trader:${type}`)), ...Object.keys(partPool(PART_FINDS.WARE_TAGS[type])), ...Object.keys((WARE_CARTS[type] || {}).items || {})])); // partfinds.js partWares: the catalogue's parts by the shelf's tags; loot.js cartWares: a wheelbarrow or a hand cart on a traders' table (WARE_CARTS, 2026-10-24; issue #45: the list had left them out)
   }
   st.hour = 0;
   const com = [];
