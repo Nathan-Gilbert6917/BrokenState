@@ -300,7 +300,7 @@ export const REAL_SIZE = {
 export const CIVIC_REAL = {
   hospital: { general: null, critical: [30, 40, 22, 28, 1, 2], tower: [40, 50, 30, 36, 5, 7, 7, 10], children: [60, 80, 36, 46, 2, 4, 3, 5], psych: [50, 64, 28, 36, 2, 3],
     va: [60, 80, 36, 46, 3, 4, 4, 6], trauma: [70, 90, 40, 50, 3, 4, 4, 6], pavilion: [70, 90, 26, 32, 1, 2], teaching: [80, 110, 46, 60, 4, 5, 6, 9], cottage: [24, 30, 16, 20, 1, 1],
-    surgical: [32, 40, 22, 26, 2, 3], nursing: [50, 64, 26, 32, 2, 2], regional: [130, 160, 84, 100, 5, 8, 6, 10], county: [44, 56, 30, 38, 2, 4], medcampus: [50, 60, 34, 40, 6, 8, 8, 10] },
+    surgical: [32, 40, 22, 26, 2, 3], nursing: [50, 64, 26, 32, 2, 2], regional: [130, 160, 84, 100, 5, 8, 6, 10], county: [44, 56, 30, 38, 2, 4], medcampus: [62, 70, 40, 46, 6, 8, 8, 10] },
   infirmary: { general: null, prison: [22, 26, 15, 18, 1, 1], prisonhosp: [30, 36, 18, 22, 2, 3], jail: [19, 22, 14, 16, 1, 1], camp: [14, 16, 11, 13, 1, 1], campus: [22, 26, 14, 17, 2, 2],
     field: [26, 32, 15, 18, 1, 1], aid: [20, 24, 16, 18, 1, 1], company: [18, 22, 13, 16, 1, 2], boarding: [17, 20, 13, 15, 2, 2], quarantine: [22, 26, 15, 17, 1, 2], shelter: [20, 24, 14, 16, 1, 1] },
   clinic: { general: null, urgent: [24, 30, 16, 20, 1, 2], family: [18, 22, 13, 16, 1, 1], dialysis: [26, 32, 15, 18, 1, 1], dental: [18, 22, 12, 15, 1, 1], stripmall: [12, 14, 20, 26, 1, 1],

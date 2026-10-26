@@ -3091,6 +3091,7 @@ export function realScale(rng, spec, key, o = {}) {
   // The footprint, and the plan over it (realFoot; a kind with no size of its own here: the archetype's footprint and plan).
   if (spec.shape && !R.own && R.wings !== "along") shapeAtScale(rng, spec, key, out, o.cap || null); // a shape's parts scaled (issue #23; a motel's rooms are its own size: its U is as long as its row)
   const foot = R.own || spec.shape ? null : realFoot(rng, key, v);
+  if (foot && spec.vscale) { foot.bw = Math.max(foot.bw, spec.bw); foot.bh = Math.max(foot.bh, spec.bh); } // a named civic plan (issue #49) never laid out smaller than it was drawn
   const flips = Array.from({ length: 64 }, () => !R.wings && rng.chance(0.5)); // each wing turned left for right
   let lay = (prog) => prog, fill = (prog) => prog;
   if (foot) {
@@ -3162,7 +3163,7 @@ export function realScale(rng, spec, key, o = {}) {
     }
     const strip = P.split === "y" && P.parts.length > 1 ? P.parts[P.parts.length - 1] : null;
     if (R.wings === "back" && strip && typeof strip[0] === "number") { // deeper by back strips while the rest keeps its depth: any number of them
-      oy = []; for (let k = 1; k <= 1 + Math.floor((foot.bh - spec.bh) / (strip[0] + C)); k++) oy.push(k);
+      oy = []; for (let k = 1; k <= Math.max(1, 1 + Math.floor((foot.bh - spec.bh) / (strip[0] + C))); k++) oy.push(k); // at least the plan itself
     }
     let best = null;
     for (const nx of ox) for (const ny of oy) {
@@ -5517,6 +5518,7 @@ export function interiorIntro(b) {
   const R = b.raid;
   if (!R || !R.interior) return "";
   if (R.plan && R.plan.campus) return campusIntro(b); // a college campus (campus.js)
+  if (R.plan && R.plan.civicSite) return civicSiteIntro(b); // a civic site of several buildings (civicsite.js, issue #49)
   if (R.plan && R.plan.street) return streetIntro(b);
   if (R.plan && R.plan.mall) return `${mallIntro(R.plan)} Ways out: ${(R.plan.exits || []).map((e) => e.name.toLowerCase()).join(", ")}, and the lots all round.${R.storeys > 1 ? ` ${R.storeys} levels: the escalators, the lift and the service stairs go up.` : ""}`; // a shopping mall (mall.js)
   const ex = (R.plan.exits || []).filter((e) => e.zone >= 0);
@@ -5524,6 +5526,14 @@ export function interiorIntro(b) {
   const names = ["the front", ...ex.map((e) => e.name.toLowerCase())];
   const st = R.storeys > 1 ? ` ${R.storeys} storeys: ${stairsText(R)}; the ways out are on the ground floor.` : "";
   return `${planName(R.plan) ? `${planName(R.plan)}. ` : ""}Ways out: ${names.join(", ")}${lockedEx ? ` (${lockedEx} locked)` : ""}.${st} Rooms, walls and closed doors block sight (a glass or a screen door is seen through): peek through a door (K) before you go in, shut doors behind you (Shift+E): the dead have to batter them down. Windows: check one from next to it (free), open it if it is unlocked (or from inside if it is locked: 1 action, quiet), then climb or vault through; a fixed one only breaks (loud).`;
+}
+// A civic or medical site of several buildings (civicsite.js, issue #49): its plan, its buildings, the ways out, and
+// each tall building's storeys and where its stairs are (stairsText over its own runs).
+function civicSiteIntro(b) {
+  const R = b.raid, P = R.plan, houses = P.houses || [];
+  const ways = R.zones.map((z) => (z.name || z.side).toLowerCase());
+  const tall = houses.filter((h) => (h.storeys || 1) > 1).map((h) => { const runs = (R.runs || []).filter((r) => r.house === h.k); return `${h.name}, ${h.storeys} storeys: ${stairsText({ ...R, runs, stairs: runs.length ? R.stairs : [R.stairs[0]] })}`; });
+  return `${planName(P) ? `${planName(P)}: ` : ""}${houses.length} buildings (${houses.map((h) => h.name).join(", ")}). Ways out: ${ways.join(", ")}.${tall.length ? ` ${tall.join(". ")}.` : ""} Rooms, walls and closed doors block sight: peek through a door (K) before you go in, shut doors behind you (Shift+E).`;
 }
 // A street of houses (streetMap): the houses, the ways out, and the houses your side has been into before (the
 // containers the POI's ledger brought back as you left them: poicont.js poiRaidStart marks them mine).
