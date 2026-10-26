@@ -28,6 +28,7 @@
 // VARIANT_KINDS: the kinds with their plans here (each list's first, "general", the plan before this ticket).
 // variantNames(kind): [{ id, name }] for the docs and the tests.
 
+import { registerVariants, pickVariant as pickRegistered } from "./variantpick.js"; // the shared picker (issue #41)
 import { REAL_SIZE } from "./data-buildingsize.js"; // the plans' sizes (#24's table: its "<kind>.<plan id>" rows)
 
 /** @typedef {{ city?: number, suburb?: number, town?: number, rural?: number, [site: string]: number | undefined }} Weights */
@@ -941,26 +942,13 @@ export const variantNames = (kind) => (VARIANTS[kind] || []).map((v) => ({ id: v
  * @param {string} kind @param {any} rng @param {any} [o]
  */
 export function pickVariant(kind, rng, o = {}) {
-  const list = VARIANTS[kind] || [];
-  const r = rng.next();
-  const pinned = o.plan ? list.find((v) => v.id === o.plan) : null;
-  if (pinned || !list.length) return pinned || null;
-  const byFr = o.variant ? list.filter((v) => v.fr && v.fr.includes(o.variant)) : [];
-  const pool = byFr.length ? byFr : list;
-  const wOf = (v) => {
-    const site = o.site && v.w[o.site] != null ? v.w[o.site] : null;
-    const any = o.site && list.some((x) => x.w[o.site] != null);
-    if (any) return site || 0; // a site some plans name (a prison's infirmary): those plans only
-    return v.w[o.setting || "town"] ?? 0;
-  };
-  // A franchise's plan in a setting it rarely stands in still turns up now and then.
-  const ws = pool.map((v) => Math.max(byFr.length ? 0.05 : 0, wOf(v)));
-  const tot = ws.reduce((a, b) => a + b, 0);
-  if (!(tot > 0)) return pool[Math.min(pool.length - 1, Math.floor(r * pool.length))];
-  let x = r * tot;
-  for (let i = 0; i < pool.length; i++) { x -= ws[i]; if (x < 0 && ws[i] > 0) return pool[i]; }
-  return pool[pool.length - 1];
+  // variantpick.js (issue #41): "civic:<kind>", the dice drawn first (r: one rng.next(), pinned or not), a franchise's
+  // plans at least 0.05.
+  const e = pickRegistered(`civic:${kind}`, rng, { plan: typeof o.plan === "string" ? o.plan : null, franchise: o.variant || null, site: o.site || null, setting: o.setting || "town", r: rng.next() });
+  return e ? /** @type {any} */ (e).src : null;
 }
+// The registry's views (variantpick.js): each kind's plans, their weights by setting and site, their franchises.
+for (const kind of Object.keys(VARIANTS)) registerVariants(`civic:${kind}`, VARIANTS[kind].map((v) => ({ id: v.id, name: v.name, w: { ...(v.w || {}) }, ...(v.fr ? { fr: v.fr } : {}), src: v })), { frMin: 0.05 });
 /**
  * The spec of a new save's building of a kind with plans here: the plan pickVariant gives, built; K.classic() the
  * kind's plan before this ticket (#14's or #15's, buildingmaps.js). The spec carries vid and vname.

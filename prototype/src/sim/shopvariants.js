@@ -41,6 +41,7 @@
 // dice (the plan's first roll). A kind without franchises names its variants itself.
 //
 // For a strip mall (#30): shopPlan(kind, { size, setting, layout, variant }) returns the spec of a kind's plan for a slot.
+import { registerVariants, pickVariant as pickRegistered } from "./variantpick.js"; // the shared picker (issue #41)
 import { planName } from "./planname.js"; // a plan's name, one field (issue #40)
 import { FRANCHISES } from "./data-shops.js";
 import { Rng } from "./rng.js";
@@ -633,6 +634,9 @@ V.supermarket.variants = [
  * A tile's setting for the variants (SETTINGS): a city's blocks "city", a suburb "town", a road through open country
  * "highway", the rest "rural" (a strip mall's slot passes "strip" itself). @param {any} tile
  */
+// The registry's views (variantpick.js, issue #41): each type's variants, their weights by SETTINGS (the row's array as
+// an object).
+for (const key of Object.keys(VARIANT_TYPES)) registerVariants(`shop:${key}`, VARIANT_TYPES[key].variants.map((v) => ({ id: v.id, name: v.name, w: Object.fromEntries(SETTINGS.map((k, i) => [k, v.w[i]])), src: v })));
 export const variantSetting = (tile) => (!tile ? null : tile.terrain === "city" ? "city" : tile.terrain === "suburb" ? "town" : tile.road ? "highway" : "rural");
 /** The variants of a type ([] for a type with none). @param {string} key */
 export const variantsOf = (key) => (VARIANT_TYPES[key] && VARIANT_TYPES[key].variants) || [];
@@ -647,21 +651,15 @@ export const variantById = (key, id) => (id ? variantsOf(key).find((v) => v.id =
  * @param {string} key @param {Rng} rng @param {any} [o]
  */
 export function shopVariant(key, rng, o = {}) {
-  const list = variantsOf(key);
+  // variantpick.js (issue #41): "shop:<key>", the dice drawn first (r: one rng.next(), pinned or not), the chain's list
+  // (ids: its plan.variants), weighted by the setting (SETTINGS; every plan alike when there is none).
   const r = rng.next(); // the plan's first roll, always drawn
-  const set = variantById(key, o.plan || o.layout);
-  if (set) return set;
   const fr = o.variant ? (FRANCHISES[(o.kind && FRANCHISES[o.kind] ? o.kind : frKind(key))] || []).find((f) => f.id === o.variant) : null;
   const ids = fr && fr.plan && fr.plan.variants ? fr.plan.variants : null;
-  const pool = ids ? list.filter((v) => ids.includes(v.id)) : list;
-  const si = SETTINGS.indexOf(o.vset || o.setting); // vset: buildingmaps.js variantSetting (o.setting: #36's siteWhere, or a caller's own)
-  const ws = (pool.length ? pool : list).map((v) => (si >= 0 ? v.w[si] : 1));
-  const cands = pool.length ? pool : list;
-  const tot = ws.reduce((a, b) => a + b, 0);
-  if (!(tot > 0)) return cands[Math.floor(r * cands.length)];
-  let x = r * tot;
-  for (let i = 0; i < cands.length; i++) { x -= ws[i]; if (x < 0 && ws[i] > 0) return cands[i]; }
-  return cands[cands.length - 1];
+  const set = o.vset || o.setting; // vset: buildingmaps.js variantSetting (o.setting: #36's siteWhere, or a caller's own)
+  const pin = o.plan || o.layout;
+  const e = pickRegistered(`shop:${key}`, rng, { plan: typeof pin === "string" ? pin : null, ids, setting: SETTINGS.includes(set) ? set : null, r });
+  return /** @type {any} */ (e).src;
 }
 
 // ======================================================================================

@@ -44,7 +44,8 @@
 // Determinism and older saves: the plans are new kinds; nothing an older save holds changes (a saved bunker_mil site
 // had no buildings, so its raid was the street map: a save from before this change opens the bunker's own map the next
 // time, which is the fix the ticket asks for; its POI ledger had no containers).
-import { planSlug, stampPlan } from "./planname.js"; // the plan's id and name on the spec (issue #40)
+import { planSlug, stampPlan } from "./planname.js";
+import { registerVariants, pickVariant, variantFor } from "./variantpick.js"; // the shared picker (issue #41) // the plan's id and name on the spec (issue #40)
 import { hash01 } from "./skills.js";
 import { registerScene, SCENES } from "./interiorscenes.js";
 import { vehicleIn, CIVIC_STYLES } from "./civiclayout.js";
@@ -359,7 +360,17 @@ const PREP = [
 ];
 /** The twelve named plans of each kind (BUNKER_VARIANTS[kind][i].name). */
 export const BUNKER_VARIANTS = { milbunker: MIL, govbunker: GOV, shelter: SHELTER, prepper: PREP };
-const pick = (rng, list, o) => (o && o.plan != null ? Math.max(0, Math.min(list.length - 1, o.plan | 0)) : rng.int(0, list.length - 1));
+// variantpick.js (issue #41): "bunker:<kind>". Pinned by an id ("cold-war-command-post": its name's slug) or an index
+// (clamped to the list, as before), else one draw of the dice, uniform, as before. Returns the index.
+for (const [kind, list] of Object.entries({ milbunker: MIL, govbunker: GOV, shelter: SHELTER, prepper: PREP })) registerVariants(`bunker:${kind}`, list.map((v, i) => ({ id: planSlug(v.name), name: v.name, i, src: v })), { index: true });
+/** @type {Map<any, string>} */
+const KIND_OF = new Map(/** @type {[any, string][]} */ ([[MIL, "milbunker"], [GOV, "govbunker"], [SHELTER, "shelter"], [PREP, "prepper"]]));
+const pick = (rng, list, o) => {
+  const key = `bunker:${KIND_OF.get(list)}`, plan = o ? o.plan : null;
+  const byId = typeof plan === "string" ? variantFor(key, plan) : null;
+  const at = byId ? byId.i : plan != null ? Math.max(0, Math.min(list.length - 1, plan | 0)) : null;
+  return /** @type {any} */ (pickVariant(key, rng, { plan: at, r: () => rng.next() })).i;
+};
 /** @param {any} rng @param {any} [o] */
 function milbunker(rng, o = {}) {
   if (o.levels) return commandBunker(rng, o); // Crashlanding's mountain bunker: the command bunker, its dice as they were

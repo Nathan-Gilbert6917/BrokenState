@@ -19,6 +19,7 @@
 // A row: [size, key, overrides?] (the key a room of the type's vocabulary below, size a width or "*" for the rest), or
 // ["rep", unit, key] for as many such rooms unit wide as the row has room for (a dorm's rooms, offices, labs).
 import { CAMPUS_SIZE } from "./campuslayout.js";
+import { registerVariants, pickVariant } from "./variantpick.js"; // the shared picker (issue #41)
 import { libraryPlan } from "./librarylayout.js"; // #34's library plans: the university library's
 import { industryPlan } from "./industrylayout.js"; // #37's lab plans: more science buildings
 
@@ -765,14 +766,15 @@ export const CAMPUS_VARIANTS = {
       exits: [{ side: "back", roles: ["bays"], chance: 0.8, width: 3, lock: 0.1, name: "Exit ramp" }, { side: "front", roles: ["bays"], chance: 0.9, roller: true, width: 3, lock: 0.3, name: "Workshop door" }] },
   ],
 };
+// The registry's views (variantpick.js, issue #41): "campus:<type>", pinned by id or index (o.plan), else one draw of
+// the dice, uniform, as before (r: a function, so a pinned plan draws nothing).
+for (const key of Object.keys(CAMPUS_VARIANTS)) registerVariants(`campus:${key}`, CAMPUS_VARIANTS[key].map((V, i) => ({ id: V.id, name: V.name, i, src: V })), { index: true });
 for (const k of Object.keys(CAMPUS_VARIANTS)) for (const V of CAMPUS_VARIANTS[k]) if (V.u === undefined && V.g && V.g.form === "tree") V.u = V.g;
 
 /** The variant a building takes: o.plan (an index or an id) or the building's dice. @returns {[number, any]} */
 export function campusVariantOf(rng, key, o = {}) {
   const list = CAMPUS_VARIANTS[key];
   if (!list) return [0, null];
-  let i = -1;
-  if (o.plan != null) i = typeof o.plan === "number" ? o.plan : list.findIndex((V) => V.id === o.plan);
-  if (i < 0 || i >= list.length) i = rng.int(0, list.length - 1);
-  return [i, list[i]];
+  const e = /** @type {any} */ (pickVariant(`campus:${key}`, rng, { plan: o.plan ?? null, r: () => rng.next() }));
+  return [e.i, list[e.i]];
 }
