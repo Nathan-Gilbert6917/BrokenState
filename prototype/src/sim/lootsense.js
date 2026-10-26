@@ -64,7 +64,7 @@ export const GROUPS = {
   camp:      { label: "camping gear", item: (k, c) => c === "camp" },
 };
 
-export const PERSONAL = new Set(["house", "farmhouse", "cabin", "hotelroom", "dormroom", "luggage", "wreck", "roadcars"]);
+export const PERSONAL = new Set(["house", "farmhouse", "cabin", "hotelroom", "dormroom", "luggage", "wreck", "roadcars", "rvpad"]); // rvpad: an RV is its owner's home (issue #61)
 export const PERSONAL_NEVER = ["military", "explosive"];
 
 // The groups a container's contents fall in. sup: { key: n }; keys: the items' keys; cat: key → GEAR cat.
@@ -198,4 +198,8 @@ export const LOOT_SENSE = {
   mallservices:   S({ drugs: 0.5, gadgets: 0.5 }, ["explosive"], { note: "mall security's gun rack" }),
   mallrestrooms:  S({ drink: 0.25, food: 0.25 }, NO_GUNS),
   vacantunit:     S({ food: 0.1 }, NO_GUNS),
+  // Golf courses, campgrounds and RV parks (issue #61, outdoors.js).
+  golfcourse:     S({ sports: 0.95, liquor: 0.4, fuel: 0.85, food: 0.95 }, [...ARMY, "armour"], { note: "a ranger lodge's or a clubhouse's bar shotgun now and then; a cabin's hunting rifle (a lodge's rooms)" }),
+  campground:     S({ camp: 0.75, food: 0.95, fuel: 0.6, medgear: 0.35 }, ARMY, { note: "a ranger's patrol rifle in the office, a hunting lodge's gun room at a hunters' camp" }),
+  rvpark:         S({ food: 0.95, fuel: 0.9, drugs: 0.6, clothing: 0.5 }, ARMY, { note: "an RV is its owner's home (PERSONAL): a revolver or a shotgun in one now and then" }),
 };

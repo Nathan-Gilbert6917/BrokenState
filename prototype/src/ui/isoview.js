@@ -2549,6 +2549,7 @@ function massSprite(mat, lift, faces, fog) {
 // ---------- the ground ----------
 const FLOORC = {
   grass: hex("#4a5834"), field: hex("#6a6238"), dirt: hex("#5c4f3e"), gravel: hex("#5c5a57"), road: hex("#37393d"), deck: hex("#5e5f5c"),
+  fairway: hex("#55703a"), green: hex("#64883f"), sand: hex("#b3a074"), // a golf course's fairway, its greens, a bunker or a beach (sim/outdoors.js, issue #61)
   floor: hex("#5a4632"), rubble: hex("#4e4842"), roof: hex("#6a6a64"),
   // A building's floors by room (sim/buildingmaps.js c.fl): tiles, concrete, carpet, a barn's dirt.
   tile: hex("#7a7668"), conc: hex("#5e5d5a"), carpet: hex("#4e3e44"), barn: hex("#5e5040"), straw: hex("#8a7440"),
@@ -2673,6 +2674,9 @@ function floorColor(c, k, x, y, lx, ly, mud, R = null, lf = 0, pd = 0, pe = 0) {
     case "paving": col = tx % 8 === 0 || ty % 8 === 0 ? mul(FLOORC.paving, 0.78) : mul(FLOORC.paving, 0.9 + q * 0.12); break;
     case "pool": col = tx % 4 === 0 || ty % 4 === 0 ? mul(FLOORC.pool, 0.8) : q > 0.94 ? mul(FLOORC.dirt, 1.1) : c.deep && v > 0.5 && q > 0.6 ? mul(FLOORC.road, 0.9) : mul(FLOORC.pool, 0.92 + q * 0.1); break; // c.deep: the deep end, rain standing in it
     case "court": col = c.line && ((c.line & 1 && ty < 2) || (c.line & 2 && ty > 13) || (c.line & 4 && tx < 2) || (c.line & 8 && tx > 13)) ? hex("#d8d8d0") : mul(FLOORC.court, 0.94 + q * 0.08); break; // c.line: the court's white lines on its sides (bits n, s, w, e)
+    case "fairway": col = (((x * 16 + tx) >> 3) + ((y * 16 + ty) >> 3)) % 2 ? mul(FLOORC.fairway, 1.08 + q * 0.05) : mul(FLOORC.fairway, 0.95 + q * 0.05); break; // a golf course's mown stripes (sim/outdoors.js)
+    case "green": col = mul(FLOORC.green, 0.97 + q * 0.06); break; // a putting green or a tee, a mini-golf hole's felt (sim/outdoors.js)
+    case "sand": col = q > 0.92 ? mul(FLOORC.sand, 0.85) : mul(FLOORC.sand, 0.94 + q * 0.1 + v * 0.04); break; // a bunker, a beach (sim/outdoors.js)
     default: col = mul(FLOORC.grass, 0.92 + q * 0.12);
   }
   if (c.deco) col = decoTexel(col, c.deco, x, y, tx, ty); // rugs, clutter, a light's pool (sim/decor.js)

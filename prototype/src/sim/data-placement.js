@@ -83,7 +83,10 @@ export const PLACEMENT_ROWS = {
   blind: "coast 0.6 S, scenic 1.5 S, rural 0.4 S",
   hikercamp: "coast 0.4 S, scenic 1.5 S",
   campsite: "town 0.2 S, highway 0.4 S, coast 1.2 S, scenic 1.4 S, rural 0.6 S",
-  campground: "coast 1.4 M, scenic 1.4 M, rural 0.4 M",
+  campground: "coast 1.4 L, scenic 1.4 M, rural 0.4 M", // issue #61 (outdoors.js): a lake's or a state park's large, the woods' medium
+  // ---- golf and RV parks (issue #61, outdoors.js; placement.js PLACE_EXTRA places them) ----
+  golfcourse: "city 0.3 M, suburb 1.6 L, town 1.2 M, highway 0.4 S, coast 0.5 L, scenic 0.3 M, rural 0.3 S", // near the towns and the cities: a suburb's country club, a town's municipal course, a driving range by the road
+  rvpark: "town 0.3 M, highway 2 M, coast 1 L, scenic 0.8 M, rural 0.5 S", // by the highways, the lakes and in scenic land; a boondocking lot out in the country
   // ---- food ----
   grocery: "centre 1 M, city 1.2 M, suburb 1.2 M, town 1.4 M, highway 0.2 S, rural 0.1 S",
   corner: "centre 1 S, city 1.2 S, suburb 1.2 S, town 1.2 S, highway 0.4 S, rural 0.2 S",

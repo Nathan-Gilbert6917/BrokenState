@@ -57,7 +57,7 @@ const SHIFTED = {
   univlibrary: "its stacks are the bookstore's \"books\" rooms (above)",
 };
 
-const BIG = (key) => !!(BUILDINGS[key].compound || BUILDINGS[key].campus || BUILDINGS[key].complex);
+const BIG = (key) => !!(BUILDINGS[key].compound || BUILDINGS[key].campus || BUILDINGS[key].complex || BUILDINGS[key].outdoors); // outdoors: a golf course, a campground, an RV park (issue #61)
 const cat = (k) => (GEAR[k] && GEAR[k].cat) || "";
 const value = (def) => { let v = 0; for (const [k, [p, lo, hi]] of Object.entries(def.loot)) v += Math.min(0.95, p) * ((lo + hi) / 2) * supValue(k); for (const [k, p] of def.gear) v += p * ((GEAR[k] && GEAR[k].value) || 0); return v; };
 const listOf = (s) => (Array.isArray(SITES[s]) ? SITES[s] : SITES[s].list).map((e) => (Array.isArray(e) ? e[0] : e));

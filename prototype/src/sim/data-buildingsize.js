@@ -275,6 +275,27 @@ export const REAL_SIZE = {
   parkgarage:   { w: [30, 48], d: [18, 32], storeys: [2, 6], set: "town", planned: true },
   chapel:       { w: [14, 24], d: [22, 36], storeys: [1, 2], set: "town", wings: "back" },
   healthcentre: { w: [15, 25], d: [12, 20], storeys: [1, 3], set: "town" },
+  // Golf courses, campgrounds and RV parks (issue #61, outdoors.js): the place's main building drawn at its own size,
+  // a row per variant (outdoors.js GOLF_VARIANTS, CAMP_VARIANTS, RV_VARIANTS ids): a golf course's clubhouse (a country
+  // club's of two storeys, a municipal course's of one, a driving range's shed, a mini-golf office), a campground's
+  // bathhouse, an RV park's office. The other buildings of a place are their own plans' sizes (the cart barn, the
+  // ranger station's, the lodges', the cabins').
+  golfcourse: { w: [24, 28], d: [14, 16], storeys: [1, 1], set: "town", planned: true, sizes: {
+    country: { w: [34, 40], d: [20, 24], storeys: [2, 2] }, municipal: { w: [24, 28], d: [14, 16], storeys: [1, 1] }, resort: { w: [40, 46], d: [22, 26], storeys: [2, 2] },
+    links: { w: [26, 30], d: [16, 18], storeys: [2, 2] }, range: { w: [18, 22], d: [9, 10], storeys: [1, 1] }, minigolf: { w: [12, 14], d: [9, 10], storeys: [1, 1] },
+    par3: { w: [22, 25], d: [13, 15], storeys: [1, 1] }, executive: { w: [24, 28], d: [14, 16], storeys: [1, 1] }, prairie: { w: [24, 28], d: [14, 16], storeys: [1, 1] },
+    parkland: { w: [36, 40], d: [20, 24], storeys: [2, 2] }, private: { w: [26, 30], d: [16, 18], storeys: [2, 2] }, lakeside: { w: [40, 46], d: [22, 26], storeys: [2, 2] },
+  } },
+  campground: { w: [12, 14], d: [8, 9], storeys: [1, 1], set: "rural", planned: true, sizes: {
+    statepark: { w: [13, 14], d: [8, 9] }, primitive: { w: [12, 12], d: [8, 8] }, scout: { w: [12, 14], d: [8, 9] }, group: { w: [12, 14], d: [8, 9] },
+    glamping: { w: [13, 14], d: [9, 9] }, lake: { w: [12, 14], d: [8, 9] }, forest: { w: [12, 12], d: [8, 8] }, riverside: { w: [12, 14], d: [8, 9] },
+    hikers: { w: [12, 12], d: [8, 8] }, youth: { w: [12, 14], d: [8, 9] }, family: { w: [13, 14], d: [8, 9] }, hunters: { w: [12, 12], d: [8, 8] },
+  } },
+  rvpark: { w: [16, 20], d: [10, 12], storeys: [1, 1], set: "rural", planned: true, sizes: {
+    highway: { w: [16, 20], d: [10, 12] }, resort: { w: [19, 22], d: [11, 12] }, mobilemix: { w: [16, 18], d: [10, 11] }, boondock: { w: [16, 16], d: [10, 10] },
+    lakeside: { w: [18, 20], d: [10, 12] }, overnight: { w: [16, 17], d: [10, 10] }, snowbird: { w: [18, 20], d: [11, 12] }, workcamp: { w: [16, 16], d: [10, 10] },
+    trailercourt: { w: [16, 18], d: [10, 11] }, pines: { w: [16, 18], d: [10, 11] }, riverside: { w: [16, 18], d: [10, 11] }, luxury: { w: [20, 22], d: [12, 12] },
+  } },
 };
 
 const pick = (rng, [lo, hi]) => rng.int(Math.round(lo / CELL_M), Math.round(hi / CELL_M));

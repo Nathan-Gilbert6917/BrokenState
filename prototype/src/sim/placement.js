@@ -24,7 +24,7 @@ import { LOCATIONS } from "./data.js";
 import { hash01 } from "./skills.js";
 import { useSizeClassOf } from "./variantpick.js"; // the shared picker (#41): its plans' size classes by sizeClassOf
 import { settingAt } from "./settings.js"; // the six settings (issue #40): this module adds coast and scenic land
-import { legacyPlace } from "./worldcfg.js";
+import { legacyPlace, legacyOutdoors } from "./worldcfg.js";
 import { maxLevel } from "./citygrid.js";
 
 export { TILE_CLASSES, SIZE_CLASSES, PLACE };
@@ -133,7 +133,13 @@ export const PLACE_EXTRA = [
   ["church", { rural: 0.006, highway: 0.004 }],
   ["feedstore", { rural: 0.004, highway: 0.006 }],
   ["farmstand", { highway: 0.01 }],
+  // Issue #61 (outdoors.js), a world made since (worldcfg.js legacyOutdoors): golf near the towns and the cities, RV
+  // parks by the highways, the lakes and in scenic land, a lake's or a river's campground.
+  ["golfcourse", { suburb: 0.02, town: 0.012, city: 0.004, highway: 0.002, coast: 0.003, scenic: 0.0015, rural: 0.0015 }],
+  ["rvpark", { highway: 0.012, coast: 0.006, scenic: 0.004, rural: 0.002, town: 0.002 }],
+  ["campground", { coast: 0.004, scenic: 0.002 }],
 ];
+const OUTDOOR_EXTRA = new Set(["golfcourse", "rvpark", "campground"]); // a save from before issue #61 draws none of them
 export const PLACE_KNOWN = 0.7; // the share of them known from the start in the known zone (shops.js SHOP.KNOWN)
 /**
  * The kind of one more POI a new world's tile may hold by the table (pois.js generatePois builds it, last, on dice of
@@ -148,6 +154,7 @@ export function placeExtraKind(state, t, list, max) {
   for (const [kind, at] of PLACE_EXTRA) {
     const p = /** @type {Record<string, number>} */ (at)[cls] || 0;
     if (!p || !LOCATIONS[kind] || LOCATIONS[kind].richness > cap || list.some((q) => q.kind === kind) || (t.loc && t.loc.type === kind)) continue;
+    if (OUTDOOR_EXTRA.has(/** @type {string} */ (kind)) && legacyOutdoors(state)) continue;
     if (hash01(state.seed, "placepoi", t.id, kind) < p) return /** @type {string} */ (kind);
   }
   return null;

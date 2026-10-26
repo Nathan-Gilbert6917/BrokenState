@@ -155,6 +155,10 @@ export const legacyOffices = (state) => !!(state && state.officesLegacy);
 // A save from before the placement table (issue #42, save.js placeLegacy: no state.placeV): its points of interest, its
 // crawls' blocks and its buildings stay as they were (placement.js placing is off).
 export const legacyPlace = (state) => !!(state && state.placeLegacy);
+// A save from before the golf courses, campgrounds and RV parks (issue #61, save.js outdoorsLegacy: no state.outdoorsV):
+// its points of interest get none of them (placement.js PLACE_EXTRA), and its campgrounds keep their street map
+// (buildingmaps.js OUTDOOR_SITES), so its places stay as they were.
+export const legacyOutdoors = (state) => !!(state && state.outdoorsLegacy);
 // The run's raid map dials as [smallest, largest]: each clamped to its range, the two in order whatever was stored
 // (a hand-edited or older settings object can hold them the wrong way round: the range never runs backwards).
 /** @param {any} state */
