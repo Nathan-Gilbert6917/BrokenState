@@ -20,7 +20,7 @@ import { poisOf, isSitePoi } from "../src/sim/pois.js";
 import { poiRaidSetup, poiPlace } from "../src/sim/poiraid.js";
 import { contKey, ledgerBox, poiHouses } from "../src/sim/poicont.js";
 import { buildingMap, siteBuildings, BUILDINGS, SITES } from "../src/sim/buildingmaps.js";
-import { MALL, STRIP_VARIANTS, REGIONAL_VARIANTS, OUTLET_VARIANTS, DEPT_VARIANTS, deptstorePlan } from "../src/sim/mall.js";
+import { MALL, STRIP_VARIANTS, REGIONAL_VARIANTS, OUTLET_VARIANTS, DEPT_VARIANTS, deptstorePlan, UNIT_VARIANTS, mallArchetype } from "../src/sim/mall.js";
 import { Rng } from "../src/sim/rng.js";
 import { assemble } from "../src/sim/buildingmaps.js";
 import { MALL_SCENES } from "../src/sim/malllayout.js";
@@ -174,6 +174,24 @@ section("A dozen plans a type (issue #32's rule): each mall kind's variants and 
   }
   check(!dbad.length, `deptstore: every variant a sales floor at its front and containers (${dbad.join("; ") || "all"})`);
   check(dsigs.size >= 12, `deptstore: ${dsigs.size} distinct plans (rooms, storeys, footprint)`);
+  // A mall's own units (mall.js UNIT_VARIANTS): a dozen named variants each, every one built at the narrowest slot it
+  // takes (its min; a cinema at its narrowest, a utility room 6 wide) and 15 deep, named on its spec; a cinema's two
+  // screens and more and its booth, the offices' mall security and first-aid room in every one; a dozen plans by rooms.
+  for (const [kind, list] of Object.entries(UNIT_VARIANTS)) {
+    const ubad = [], usigs = new Set();
+    for (const V of list) {
+      const w = kind === "cinema" ? MALL.CINEMA.W[0] : Math.max(V.min || 0, V.min === 0 && kind === "mallrestrooms" ? 6 : 10);
+      let m, spec;
+      try { const r = new Rng(17); spec = mallArchetype(kind, r, { variant: V.id, w, d: 15 }); m = assemble(r, spec, { key: kind, name: kind }); } catch (e) { ubad.push(`${V.id}: ${e.message}`); continue; }
+      const rooms = m.rooms.filter((a) => !a.outdoor);
+      if (spec.vid !== V.id || spec.vname !== V.name) ubad.push(`${V.id}: unnamed`);
+      if (kind === "cinema" && (rooms.filter((a) => a.role === "screen").length < 2 || !rooms.some((a) => a.role === "projection"))) ubad.push(`${V.id}: screens or booth`);
+      if (kind === "mallservices" && (!rooms.some((a) => a.type === "mallsec") || !rooms.some((a) => /First-aid/.test(a.name)))) ubad.push(`${V.id}: security or first aid`);
+      usigs.add([...new Set(rooms.map((a) => a.role))].sort().join(","));
+    }
+    check(list.length >= 12 && new Set(list.map((v) => v.name)).size === list.length && !ubad.length, `${kind}: ${list.length} named variants, each built at its narrowest slot (${ubad.slice(0, 3).join("; ") || "all"})`);
+    check(usigs.size >= 12, `${kind}: ${usigs.size} distinct plans by their rooms`);
+  }
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
