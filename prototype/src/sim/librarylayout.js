@@ -77,6 +77,7 @@
 // (buildingmaps.js library: the old plan, its dice as before, so poi.cont's container ids line up); only a new save's
 // libraries are these.
 import { hash01 } from "./skills.js";
+import { registerVariants, pickVariant, pickFrom, variantFor } from "./variantpick.js"; // the shared picker (issue #41)
 import { registerScene, SCENES } from "./interiorscenes.js";
 import { vehicleIn } from "./civiclayout.js";
 import { FRANCHISES } from "./data-shops.js";
@@ -503,7 +504,12 @@ function footOf(bw, bh) {
  */
 export function libraryVariant(rng, o = {}) {
   const id = o.variant || null;
-  const pickW = (w) => { const keys = Object.keys(w).filter((k) => PLANS[k] && w[k] > 0); return rng.weighted(keys, (k) => w[k]); };
+  // variantpick.js (issue #41): a weights table (a franchise's plan.libs, LIBRARY.ANY) walked as Rng.weighted walks it,
+  // in the table's own order (pickFrom on its "library" entries); a variant's plan ("library:<variant>") by one draw.
+  const pickW = (w) => {
+    const e = pickFrom(Object.keys(w).filter((k) => PLANS[k] && w[k] > 0).map((k) => ({ ...variantFor("library", k), id: k, w: { any: w[k] } })), rng, { r: rng.next() }, { le: true });
+    return e ? e.id : undefined; // none: the carnegie below, the draw still made, as before
+  };
   let variant = null, plan = o.plan || null;
   if (id && id.includes("/")) [variant, plan] = id.split("/");
   else {
@@ -513,10 +519,13 @@ export function libraryVariant(rng, o = {}) {
     else variant = pickW(LIBRARY.ANY);
   }
   if (!PLANS[variant]) variant = "carnegie";
-  const names = Object.keys(PLANS[variant]);
-  if (!plan || !PLANS[variant][plan]) plan = names[rng.int(0, names.length - 1)];
+  plan = /** @type {any} */ (pickVariant(`library:${variant}`, rng, { plan: plan && PLANS[variant][plan] ? plan : null, r: () => rng.next() })).id;
   return { variant, plan };
 }
+// The registry (variantpick.js): "library" (the thirteen variants, by LIBRARY.ANY's weights), "library:<variant>" (its
+// plans, uniform).
+registerVariants("library", Object.keys(PLANS).map((v) => ({ id: v, name: LIBRARY_NAMES[v] || v, w: { any: LIBRARY.ANY[v] || 0 } })));
+for (const v of Object.keys(PLANS)) registerVariants(`library:${v}`, Object.keys(PLANS[v]).map((p) => ({ id: p, name: `${LIBRARY_NAMES[v] || v} (${p})` })));
 /**
  * A library's spec for buildingmaps.js assemble: the variant's footprint, storeys and plan from the dice. o: { variant,
  * plan } as libraryVariant takes them; w, h: a footprint to fit (another building's room for one: a strip mall's unit, a
