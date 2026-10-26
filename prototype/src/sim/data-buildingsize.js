@@ -92,6 +92,17 @@ export const REAL_SIZE = {
   regionalmall: { set: "city", own: true }, stripmall: { set: "town", own: true }, outlet: { set: "town", own: true },
   cinema: { set: "city", own: true }, arcade: { set: "city", own: true }, mallservices: { set: "city", own: true },
   mallrestrooms: { set: "city", own: true }, vacantunit: { set: "city", own: true },
+  // #60's amusement parks (amusement.js): the whole park on one map, a row a variant: its grounds' width and depth in
+  // metres (the map's, within battlesize.js MAP_CAP.amusement) and the storeys of its tallest buildings
+  amusement: { set: "city", planned: true, w: [120, 500], d: [110, 500], storeys: [1, 2], sizes: {
+    themepark: { w: [440, 500], d: [420, 500], storeys: [2, 2] }, regional: { w: [300, 360], d: [280, 340], storeys: [1, 2] },
+    fairground: { w: [260, 320], d: [220, 280], storeys: [1, 1] }, pier: { w: [110, 130], d: [320, 400], storeys: [1, 2] },
+    waterpark: { w: [240, 300], d: [220, 280], storeys: [1, 2] }, carnival: { w: [150, 180], d: [130, 160], storeys: [1, 1] },
+    funcentre: { w: [150, 180], d: [140, 170], storeys: [1, 1] }, family: { w: [190, 230], d: [170, 210], storeys: [1, 1] },
+    abandoned: { w: [300, 360], d: [260, 320], storeys: [1, 2] }, funfair: { w: [220, 260], d: [180, 220], storeys: [1, 1] },
+    lights: { w: [220, 280], d: [200, 260], storeys: [1, 1] }, trampoline: { w: [120, 140], d: [110, 130], storeys: [1, 2] },
+    western: { w: [260, 320], d: [240, 300], storeys: [1, 2] },
+  } },
   // Institutions
   clinic:      { w: [15, 25], d: [12, 20], storeys: [1, 2], set: "town" },
   infirmary:   { w: [15, 25], d: [12, 20], storeys: [1, 2], set: "rural" },

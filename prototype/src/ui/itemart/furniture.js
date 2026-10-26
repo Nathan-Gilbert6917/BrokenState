@@ -657,6 +657,11 @@ function f_labfreezer(p) { // an upright lab freezer: white enamel, a full-heigh
 function f_drum(p) { // a red 200-litre steel drum: two rolling hoops, the bung on its lid
   box(p, 3, 1, 12, 15, "#8e3028"); H(p, 3, 12, 5, "#6a241e"); H(p, 3, 12, 10, "#6a241e"); R(p, 4, 0, 11, 1, "#a8483c"); p.set(9, 0, "#26272a");
 }
+// ---------- amusement parks (issue #60) ----------
+function f_gokart(p) { // a red go-kart from the side: four fat tyres, the low tub, the seat back and the wheel
+  R(p, 2, 8, 13, 10, "#8e3028"); H(p, 2, 13, 8, "#b04a3e"); R(p, 9, 5, 10, 8, "#26272a"); line(p, 4, 7, 6, 5, "#9aa1a8");
+  for (const x of [1, 11]) { R(p, x, 10, x + 3, 13, "#26272a"); p.set(x + 1, 11, "#5a5c60"); }
+}
 // ---------- military bases, air bases, airports and prisons (issue #25) ----------
 function f_ammocrate(p) { // a green ammo crate: rope handles, yellow stencil band, latches
   box(p, 1, 4, 14, 14, "#4d5a32"); H(p, 2, 13, 8, "#e6c23a"); V(p, 7, 5, 13, "#3a4426");
@@ -749,7 +754,7 @@ export const GEAR_ART = {
   f_kiosk, f_concession, f_arcadecab, f_projector, f_mannequin,
   f_dormdesk, f_mailboxes, f_campusbench,
   f_bookstack, f_lowshelf, f_mobileshelf, f_cardcat, f_mapcase, f_booktruck, f_bookreturn, f_computer, f_printer, f_microfilm, f_selfcheck, f_readtable, f_carrel, f_globe, f_lectern, f_woodstove,
-  f_drum, f_labfreezer,
+  f_drum, f_labfreezer, f_gokart,
   f_frontdesk, f_suitcase, f_minifridge, f_luggagecart, f_banquet, f_loungechair, f_lounger,
   f_flattop, f_deckoven, f_conveyoroven, f_wokrange, f_smoker, f_chargrill, f_gyrospit, f_stockpot, f_steamtable, f_espresso, f_softserve, f_slicer, f_tortillapress,
   f_extinguisher, f_saladbar, f_menuboard, f_patiotable, f_hoststand, f_clothtable, f_kbbqtable, f_beertower, f_lobstertank, f_pastrycase, f_dipcabinet, f_winerack, f_dryshelf,

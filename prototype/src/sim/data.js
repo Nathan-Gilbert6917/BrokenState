@@ -21,6 +21,7 @@ import { FURN_GEAR } from "./data-basefurniture.js"; // furniture at the base (#
 import { FURNITURE_GEAR } from "./data-furniture.js"; // the furniture's item forms, f_<kind>: lifted off a raid's floor (furnicarry.js)
 import { POWER_GEAR } from "./data-power.js"; // the power grid: found generators, mounted spotlights, fridges (electric.js)
 import { BOX_GEAR, BOX_PATCH } from "./data-boxes.js"; // cash boxes, fire safes, toolboxes, equipment cases; the gun cases as boxes (boxes.js)
+import { PARK_GEAR } from "./data-parks.js"; // a park's prizes (issue #60)
 import { NEW_KINDS } from "./data-shops.js"; // the shops and services new as places (their LOCATIONS rows)
 
 // Travel time a tile, in hours (parties.js moveCost): on foot an hour a tile whatever the ground; a car half an hour
@@ -793,6 +794,7 @@ Object.assign(GEAR, BED_GEAR); // beds as furniture (data-beds.js, beds.js)
 Object.assign(GEAR, FURN_GEAR); // furniture at the base (data-basefurniture.js, furniture.js): the found pieces' item forms (f_<kind>)
 Object.assign(GEAR, TENT_GEAR); // tent bags (data-tents.js, tents.js)
 Object.assign(GEAR, POWER_GEAR); // found generators, mounted spotlights, fridges (data-power.js, electric.js)
+Object.assign(GEAR, PARK_GEAR); // a park's prizes (data-parks.js, issue #60)
 // The furniture's item forms (data-furniture.js FURNITURE_GEAR, issue #12: what a piece lifted off a raid's floor is in the
 // arms, the cart or the cargo), where no other module's row stands (the appliances' own: data-appliances.js). piece:
 // never offered in a starting kit, a trunk or a background (startgear.js, custombg.js), so their dice stay as they were.

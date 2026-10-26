@@ -7063,6 +7063,7 @@ export const BOX_LOOT = {
   // aid the lab kept in it; a few vials still good.
   labfreezer:   { rest: 0.4, loot: { meds: [0.35, 1, 2] }, gear: [["bandagekit", 0.03]] },
   drum:         { rest: 0.2, loot: { fuel: [0.6, 2, 6] }, gear: [] }, // a fuel depot's drum: what is left in it
+  gokart:       { rest: 0, loot: { fuel: [0.55, 1, 2], parts: [0.2, 1, 1] }, gear: [] }, // a go-kart off its track (issue #60, amusement.js): the fuel left in its tank
   rationshelf:  { rest: 0, loot: { preserved: [0.95, 3, 7], water: [0.55, 2, 5] }, gear: [["puritabs", 0.1]] },
   "rationshelf@cabin": { rest: 0, loot: { preserved: [1, 6, 12], food: [0.7, 3, 6], water: [0.8, 4, 9], meds: [0.3, 1, 2] }, gear: [["puritabs", 0.25]] },
   radioconsole: { rest: 0.3, loot: { electronics: [0.7, 1, 3], parts: [0.4, 1, 2] }, gear: [["milradio", 0.2], ["handradio", 0.15]] },
