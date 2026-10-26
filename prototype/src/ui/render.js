@@ -4,6 +4,7 @@ import { TERRAIN, LOCATIONS, SITE_ZONES, DANGER_NAMES, siteDanger } from "../sim
 import { hub, day, factionById, RADIO_RANGE, isNight } from "../sim/world.js";
 import { setPoiReveal, poisOf, poiKnown, knownPois, poiLootBand, poiName, POI } from "../sim/pois.js"; // points of interest: a bare tile's top POI drawn once known, the known-count pip; the dev tools' Reveal map shows every one (resetView puts the fog back)
 import { poiHeading, poiTipLines } from "./poiview.js"; // the hover text's lines on a tile's POIs
+import { tileThreatTip, drawThreatOverlay } from "./threatui.js"; // the dead and raiders as known (issue #67): the hover line, The dead on the land layer
 import { partyTile, plannedPos, outpostScrap, glideAt, partyMembers, clockText, reportsLive } from "../sim/parties.js";
 import { contactable, orderStatus } from "../sim/orders.js";
 import { walkPos } from "../sim/poiwalk.js"; // a team walking to a place on its tile, or standing at it
@@ -1244,6 +1245,9 @@ export function render(state) {
   drawNight(ctx, { state, cw, ch: chh, S, ox, oy, boost: zoomBoost(), G, frac: hourFrac(), timelapse: !!state.timelapse });
   drawLightning(ctx); // ui/lightningfx.js: the flash and the bolt (what is drawn after it is never flashed)
   const inView = (id) => { const px = G.x[id], py = G.y[id]; return !(px < minX || px > maxX || py < minY || py > maxY); };
+  // The dead on the land (ui/threatui.js, issue #67): a wash by the dead's level on the tiles you know it of (a Survey,
+  // a look, live while you are there), under the sites. Off by default.
+  if (on("deadland") && !state.timelapse) drawThreatOverlay(ctx, state, { G, inView, hexPath, hex: HEX, zoom });
   let animating = false;
   glidingNow = false;
 
@@ -2618,6 +2622,7 @@ export function tileTooltip(state, id) {
   }
   else lines.push(`<span class="muted">${TERRAIN[t.terrain].name}${t.road ? " · road" : ""}</span>`);
   for (const line of poiTipLines(state, id, isLive, snap)) lines.push(line); // ui/poiview.js: the places known on the tile, the hidden remainder
+  { const th = tileThreatTip(state, id); if (th) lines.push(th); } // ui/threatui.js: the dead and raiders as last seen, or live
   if (isLive) lines.push(`<span class="good">Live view</span>`);
   else if (snap) lines.push(`<span class="muted">Last seen ${ageText(state, snap)}</span>`);
   else lines.push(`<span class="muted">No current intel</span>`);

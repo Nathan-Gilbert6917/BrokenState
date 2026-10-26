@@ -785,7 +785,8 @@ console.log("The POI surveys: Survey (8h, the own tile and its ring with optics)
       while (p.phase === "task" && h2 < 4) { tickHour(st); h2++; st.cards = st.cards.filter((c) => c.isOrders); }
       const rec2 = (p.poiFinds && p.poiFinds.get(t2.id)) || poiKnowledge(st, t2.id);
       check(h2 === LOOK.quickHours && !!rec2 && rec2.looked === day(st) && rec2.surveyed == null, "it ends after 2 hours, stamped looked and not surveyed");
-      check(poisOf(t2).every((x) => !x.threatStamp), "a quick look leaves no threat stamp");
+      // Issue #67: a quick look gives each place known a general estimate of its dead, rougher than a Survey's (threatknow.js).
+      check(knownPois(st, t2).every((k) => { const x = poisOf(t2)[k].threatStamp; return x && x.d != null && x.de > 0.2; }), "a quick look leaves a rough estimate of the dead in each place known");
     }
   }
 }

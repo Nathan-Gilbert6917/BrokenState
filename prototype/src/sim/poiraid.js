@@ -39,6 +39,7 @@ import { franchiseName } from "./shops.js"; // a franchise's name (a POI's poi.v
 import { layoutName } from "./buildvariants.js"; // a layout's name (a POI's poi.lay, issue #32)
 import { poiWalkMins, walkText, startPoiWalk, startExitWalk, exitsOf } from "./poiwalk.js"; // the minutes on foot to each place, the walk there, and out to an edge
 import { groundsBase, groundsRaid, raidCount, GROUNDS_LABEL } from "./campscout.js"; // your base here set up blind: the dead on its grounds (call-time only)
+import { poiDeadEstimate, bandText } from "./threatknow.js"; // knowing the threat level (issue #67): the dead and raiders a place holds, as known (call-time only)
 
 /** Does a raid on this tile go into one of its points of interest (not a site that stands for a while, not open ground)? @param {any} t */
 export const poiTileRaid = (t) => !!t && poisOf(t).length > 0 && !(t.loc && !permanentSite(t));
@@ -89,7 +90,7 @@ export function poiRows(state, p, tile = partyTile(p)) {
     return {
       i, kind: poi.kind, name: poiName(t, i), site: isSitePoi(t, i), desc: LOCATIONS[poi.kind] ? LOCATIONS[poi.kind].desc || "" : "",
       pool: poiPool(t, i), band: poiBand(t, i), bandName: poiBandName(t, i), stripped: poiBand(t, i) === 3,
-      visits: poiVisitText(state, t, i), threat: est, threatText: poiThreatText(state, t, i),
+      visits: poiVisitText(state, t, i), threat: est, threatText: poiThreatText(state, t, i), dead: poiDeadEstimate(state, t, i), // threatknow.js (issue #67): the dead and raiders it holds, as known
       cont: poiContainerNote(state, t, i), raiding: raidingNow(state, t, i), score: poiScore(state, t, i), camp: campText(state, t, i),
       buildings: isSitePoi(t, i) ? buildingOptions(t, state) : null, // the site's buildings and the street (null: one building, or none)
       mins: p ? poiWalkMins(state, p, i, tile) : 0, // poiwalk.js: from where the team stands, on foot or by its vehicle (0: it stands there)
@@ -98,7 +99,7 @@ export function poiRows(state, p, tile = partyTile(p)) {
   });
 }
 // A row as one line (the card's hint).
-export const poiRowText = (r) => `${walkText(r.mins, r.drive ? { vehicle: true } : null)}; ${r.bandName.toLowerCase()}; ${r.visits}; ${r.threatText}${r.camp ? `; ${r.camp}` : ""}${r.cont ? `; ${r.cont}` : ""}${r.raiding ? "; being raided now by another group" : ""}`;
+export const poiRowText = (r) => `${walkText(r.mins, r.drive ? { vehicle: true } : null)}; ${r.bandName.toLowerCase()}; ${r.visits}; ${r.threatText}${r.dead ? `; the dead ${bandText(r.dead.dead)} (${r.dead.when})` : ""}${r.camp ? `; ${r.camp}` : ""}${r.cont ? `; ${r.cont}` : ""}${r.raiding ? "; being raided now by another group" : ""}`;
 
 // The dialogue: a card with a choice per known POI (the browser draws it with ui/poipick.js), each with its minutes on
 // foot from where the team stands (poiwalk.js). Picking one starts the walk there (5–20 minutes on the clock, which

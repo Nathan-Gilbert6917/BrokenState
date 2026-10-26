@@ -26,7 +26,7 @@ const BASELINE = join(here, "gate-baseline.json");
 const CORE = [
   ["typechecktest", false], ["shopstest", false], ["interiortest", false], ["storeytest", false],
   ["scaletest", true], ["varianttest", true], ["itemarttest", false], ["furnituretest", false],
-  ["citycrawltest", false], ["scenestest", true], ["basefurnituretest", false], ["malltest", true],
+  ["citycrawltest", false], ["scenestest", false], ["basefurnituretest", false], ["malltest", true],
   ["neighbourhoodtest", false], ["shopvarianttest", false],
   ["carryplaytest", true], // #48: the carry playthrough (raid, crawl, base; one and two survivors, with and without a vehicle); quick: seeds 42 and 5
   ["loottest", false], ["gunmodtest", false], // #45: they run again since the skills import cycle broke (skillmilestones.js)
@@ -38,8 +38,8 @@ const CORE = [
   ["stealthtest", true], // quick: 20-day soaks, 160 prisoners a setup; about 3 minutes
   // #63's later twelve made green (alone on 2026-10-26: basestorage 7 s, basestorageui 14 s, basestoragemap 12 s,
   // ailocks 6 s, floorfolk 19 s, field 36 s, basebuildauto 50 s, bridge 83 s); left out: basetest (7 minutes), medstest
-  // (25 minutes of CPU), and depletetest and exploretest (quick about 2 minutes each, but in child processes that crowd
-  // citycrawltest, at 1748 s of its 1800 in the gate)
+  // (25 minutes of CPU), and depletetest and exploretest (quick about 2 minutes each, in child processes; left out while
+  // citycrawltest ran at 1748 s of its 1800 in the gate, before #74 split it)
   ["basestoragetest", false], ["basestorageuitest", false], ["basestoragemaptest", false], ["ailockstest", false],
   ["floorfolktest", false], ["fieldtest", false], ["basebuildautotest", false], ["bridgetest", false],
   // #72: red tests made green, kept so (officestest 80 s, plannametest 65 s in the gate on 2026-10-26); savetest is left out,
@@ -48,6 +48,10 @@ const CORE = [
   // #73: red tests made green, kept so (alone on 2026-10-26: occupytest 274 s, farmtest quick 323 s); left out, too long:
   // custompointstest (12 minutes), hcstarttest (16), uitest (12) and farmtest at full length (17)
   ["occupytest", false], ["farmtest", true],
+  // #74: citycrawltest split in four, side by side (its sections 1-5; the grid, saving and 10a-10d; 10e's quick search by
+  // kind, every other kind in each; the shared setup in citycrawlkit.js), scenestest at full seeds (above; 141 s alone),
+  // indoorlighttest (14 s alone)
+  ["citycrawlgridtest", false], ["citycrawlquicktest", false], ["citycrawlquick2test", false], ["indoorlighttest", false],
 ];
 
 const args = process.argv.slice(2);
@@ -110,7 +114,7 @@ async function runAll(list) {
   return results;
 }
 
-const ORDER = ["citycrawltest", "interiortest", "varianttest", "shopstest", "scenestest", "shopvarianttest", "storeytest", "scaletest"]; // slowest first
+const ORDER = ["citycrawlquicktest", "citycrawlquick2test", "citycrawlgridtest", "citycrawltest", "interiortest", "varianttest", "shopstest", "scenestest", "shopvarianttest", "storeytest", "scaletest"]; // slowest first
 const sorted = [...picked].sort((a, b) => (ORDER.indexOf(a[0]) + 1 || 99) - (ORDER.indexOf(b[0]) + 1 || 99));
 const t0 = Date.now();
 let otherDir = null;
