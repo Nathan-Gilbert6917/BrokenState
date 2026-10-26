@@ -7,7 +7,7 @@
 //      game's dice and no fight first; Scout first surveys, then asks;
 //   2. the blind spot: valid, and the same for the same world and tile;
 //   3. the blind camp: the dead on its grounds (siteThreat's rules × GROUNDS.MAP), the map fogged past the fire;
-//   4. the attacks: a card when their hour comes, the battle takes the kills off the pool, none once it is 0;
+//   4. the attacks (campattack.js, issue #69): a card, the battle takes the kills off the pool, none from the grounds once it is 0;
 //   5. the POI map's raid on the grounds: a share of the pool, the kills off it;
 //   6. a survey shows it all: the fog lifts, the count shows;
 //   7. save and load keep the stamp and the pool; the governor's outpost scouts first; hardcore's first home is exempt.
@@ -28,6 +28,7 @@ import { serializeState, deserializeState } from "../src/sim/save.js";
 import { roadTeam } from "../src/sim/hardcore-start.js";
 import { layoutHover } from "../src/ui/basemap.js";
 import { teamTileMenu } from "../src/ui/teamctx.js";
+import { attackNow, groundsRate } from "../src/sim/campattack.js";
 import { GROUNDS, tileScouted, blindSite, mapDead, groundsHour, groundsBase, BLIND_NOTE, SCOUT_LABEL, GROUNDS_LABEL } from "../src/sim/campscout.js";
 
 const SEED = Number(process.argv[2] || 42);
@@ -121,14 +122,13 @@ section("The dead come out: a card, a battle, the kills off the pool, none once 
 {
   const g = base.grounds;
   st.cards.length = 0;
-  g.next = st.hour;
   for (const s of atBase(st, base.id)) { delete s.trip; s.role = "guard"; } // everyone home (no job trips out of the walls)
-  groundsHour(st);
+  attackNow(st, base, { grounds: true }); // issue #69: the hour's chance (campattack.js), forced here
   const card = st.cards.find((c) => c.grounds === base.id);
   check(!!card && /^The dead come out of .+ at /.test(card.title) && /unknown \(\?\)/.test(card.text), `the card: "${card && card.title}" (how many more: ?)`);
-  check(g.next > st.hour, `the next one in ${g.next - st.hour} hours`);
+  check(base.campAttack.after > st.hour, `the next one no sooner than ${base.campAttack.after - st.hour} hours`);
   groundsHour(st);
-  check(st.cards.filter((c) => c.grounds === base.id).length === 1, "one card at a time");
+  check(st.cards.filter((c) => c.campAttack === base.id).length === 1, "one card at a time");
   const d0 = g.dead;
   for (const s of atBase(st, base.id)) s.health = 100;
   const def = card.choices.find((c) => c.default);
@@ -139,15 +139,16 @@ section("The dead come out: a card, a battle, the kills off the pool, none once 
   g.dead = 2;
   for (let i = 0; i < 6 && g.dead > 0; i++) {
     for (const s of atBase(st, base.id)) { s.health = 100; delete s.trip; }
-    g.next = st.hour; groundsHour(st);
+    st.cards.length = 0;
+    attackNow(st, base, { grounds: true });
     const c = st.cards.find((x) => x.grounds === base.id);
     if (!c) break;
     st.cards.splice(st.cards.indexOf(c), 1);
     c.choices.find((x) => x.default).resolve(st);
   }
   check(g.dead === 0 && st.log.some((l) => /grounds of .+ are clear of the dead/.test(l.text)), "at 0: the log says the grounds are clear");
-  g.next = st.hour; groundsHour(st); tickHour(st);
-  check(!st.cards.some((c) => c.grounds === base.id), "and no more attacks");
+  groundsHour(st); tickHour(st);
+  check(!st.cards.some((c) => c.grounds === base.id) && groundsRate(st, base) === 0, "and no more attacks from the grounds (the tile's trickle is campattacktest's)");
 }
 
 // ---------- 5. the POI map's raid ----------

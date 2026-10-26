@@ -42,6 +42,7 @@ import { foodDays, commandable, hoursHome } from "./plans.js";
 import { teamWater, hungerOf, thirstOf, NEEDS } from "./needs.js";
 import { siteView } from "./hivebirth.js";
 import { atWarWithYou } from "./playerwars.js";
+import { nearbyView, everyText } from "./campattack.js"; // issue #69: the attacks on a base by the dead and raiders nearby
 import { tileThreatEstimate } from "./threatknow.js"; // the dead on the land as your people see it (issue #67): the pools round a base
 
 export const THREAT = {
@@ -533,6 +534,24 @@ function gatherings(ctx) {
   }
 }
 
+// The dead and raiders nearby coming at a base (campattack.js, issue #69): the odds by the grounds' dead, the tile's
+// open ground, the noise, the base's Heat and stance, spread over the week as the expected attacks (a guess: the dice
+// are hourly). The base's own tile: you live there, so its level is known (live).
+function campAttacks(ctx) {
+  const { state } = ctx;
+  for (const b of peopled(state)) {
+    if (b.group) continue;
+    const v = nearbyView(state, b);
+    if (!isFinite(v.every) || v.every > ctx.days * DAY_H) continue;
+    for (let k = 1, h = v.every; h <= ctx.days * DAY_H && k <= ctx.days; k++, h += v.every) {
+      ctx.add({
+        key: `campatk:${b.id}:${k}`, day: ctx.dayAt(h), kind: "camp attack", level: 1, icon: "☠",
+        text: `The dead or raiders nearby come at ${b.name}`, confidence: 0.35, source: "The land round the base", target: baseRef(b),
+        why: `About one attack ${everyText(v.every)} at ${b.name} (${v.text}). ${v.why}`, go: { base: b.id, tab: "overview" },
+      });
+    }
+  }
+}
 // The dead on a base's own tile (deadpop.js's pools, read live by the people there: threatknow.js tileThreatEstimate): a
 // high tile is a watch for the week, an overrun one a danger; its open ground feeds the grounds attacks and a loud
 // fight's reinforcements.
@@ -552,4 +571,4 @@ function deadNear(ctx) {
   }
 }
 
-const SOURCES = [hordes, raids, weatherSrc, stores, cold, power, sickness, teams, gatherings, deadNear];
+const SOURCES = [hordes, raids, weatherSrc, stores, cold, power, sickness, teams, gatherings, deadNear, campAttacks];
