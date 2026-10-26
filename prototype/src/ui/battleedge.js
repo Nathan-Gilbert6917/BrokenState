@@ -18,7 +18,7 @@ export const EDGE_LEVELS = { full: 2, low: 1, off: 0 };
 export const EDGE = { level: 2 };
 export function setEdgeLevel(k) { EDGE.level = typeof k === "number" ? k : EDGE_LEVELS[k] ?? 2; }
 export const skirtTiles = (lvl = EDGE.level) => (lvl >= 2 ? 5 : lvl === 1 ? 3 : 0);
-const TEX = 16;
+const TEX = 16, TILE = 32; // texels a tile; skirt cells a side of one picture at most (isoview.js TILE_CELLS)
 
 let mkCanvas = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
 export function setEdgeCanvas(fn) { mkCanvas = fn; skirtCache = null; vig = null; }
@@ -87,52 +87,65 @@ function skirtGround(c, corner) {
 let skirtCache = null;
 // floorColor(c, k, x, y, lx, ly, mud) → [r, g, b]: isoview.js's own (the ground's colours). gkey: the ground's
 // signature (isoview.js sceneFor groundKey). Returns { cv, K } or null (off).
-export function skirtFor(b, fog, floorColor, gkey = "") {
+// cells: the ground floor's (on an upper floor of a building the skirt still runs on from the ground; issue #24: it was
+// painted again on every floor). Its key holds the edge cells' grounds itself.
+export function skirtFor(b, fog, floorColor, gkey = "", cells = b.cells) {
   const K = skirtTiles();
   if (!K) return null;
-  const key = `${b.w}x${b.h}:${K}:${EDGE.level}:${fog.join(",")}:${gkey}`;
+  let esig = 0;
+  for (let x = 0; x < b.w; x++) for (const y of [0, b.h - 1]) { const c = cells[y * b.w + x]; esig = (Math.imul(esig, 31) + (c.f ? c.f.charCodeAt(0) + c.f.length * 7 : 0) + (c.k === "tree" ? 3 : c.k === "water" ? 5 : 0)) | 0; }
+  for (let y = 0; y < b.h; y++) for (const x of [0, b.w - 1]) { const c = cells[y * b.w + x]; esig = (Math.imul(esig, 31) + (c.f ? c.f.charCodeAt(0) + c.f.length * 7 : 0) + (c.k === "tree" ? 3 : c.k === "water" ? 5 : 0)) | 0; }
+  const key = `${b.w}x${b.h}:${K}:${EDGE.level}:${fog.join(",")}:${gkey}:${esig}`;
   if (skirtCache && skirtCache.b === b && skirtCache.key === key) return skirtCache;
   const W = b.w + 2 * K, H = b.h + 2 * K, tw = W * TEX, th = H * TEX;
-  const cv = mkCanvas(tw, th), ctx = cv.getContext("2d"), img = ctx.createImageData(tw, th), buf = img.data;
   // How wooded the edges are (more stumps in a forest).
   let trees = 0, edge = 0;
   for (let y = 0; y < b.h; y++) for (let x = 0; x < b.w; x++) {
     if (x > 1 && y > 1 && x < b.w - 2 && y < b.h - 2) continue;
     edge++;
-    if (b.cells[y * b.w + x].k === "tree") trees++;
+    if (cells[y * b.w + x].k === "tree") trees++;
   }
   const wood = edge ? Math.min(1, (trees / edge) * 4) : 0;
   const props = EDGE.level >= 2;
-  for (let ty = 0; ty < H; ty++) for (let tx = 0; tx < W; tx++) {
-    const x = tx - K, y = ty - K;
-    if (x >= 0 && y >= 0 && x < b.w && y < b.h) continue;
-    const ex = Math.max(0, Math.min(b.w - 1, x)), ey = Math.max(0, Math.min(b.h - 1, y));
-    const corner = (x < 0 || x >= b.w) && (y < 0 || y >= b.h);
-    const g = skirtGround(b.cells[ey * b.w + ex], corner);
-    // What lies on this skirt tile (props): a few grass tufts, a stump, rubble, litter on the road.
-    const h = hash(x, y, 31);
-    const urban = g.f === "road" || g.f === "gravel" || g.f === "rubble";
-    const prop = !props || g.k === "water" ? null : NATURAL.has(g.f) ? (h < 0.04 + wood * 0.1 ? "stump" : h < 0.42 ? "tuft" : null) : urban ? (h < (g.f === "road" ? 0.08 : 0.3) ? "rubble" : null) : null;
-    for (let py = 0; py < TEX; py++) for (let px = 0; px < TEX; px++) {
-      const lx = (px + 0.5) / TEX, ly = (py + 0.5) / TEX;
-      let col = floorColor(g, g.k, x, y, lx, ly, 0);
-      if (prop) col = propPixel(prop, col, x, y, px, py) || col;
-      // Distance out from the map's edge (tiles), with a ragged, wispy front.
-      const wx = x + lx, wy = y + ly;
-      const ox = wx < 0 ? -wx : wx > b.w ? wx - b.w : 0, oy = wy < 0 ? -wy : wy > b.h ? wy - b.h : 0;
-      const d = Math.hypot(ox, oy) + (hash(Math.floor((x * TEX + px) / 4), Math.floor((y * TEX + py) / 4), 5) - 0.5) * 0.7;
-      const t = Math.max(0, Math.min(1, (d - 0.15) / (K - 0.6)));
-      col = mix(mul(col, 0.94), fog, t * t * (3 - 2 * t) * 0.98 + 0.06 * Math.min(1, d));
-      const i = ((ty * TEX + py) * tw + tx * TEX + px) * 4;
-      buf[i] = col[0]; buf[i + 1] = col[1]; buf[i + 2] = col[2]; buf[i + 3] = 255;
+  // In tiles of at most TILE skirt cells a side (issue #24: a 300 × 300 map's skirt would be one 4960 px picture); a
+  // tile wholly inside the map has nothing to paint and is left out.
+  const tiles = [];
+  for (let y0 = 0; y0 < H; y0 += TILE) for (let x0 = 0; x0 < W; x0 += TILE) {
+    const cw = Math.min(TILE, W - x0), chh = Math.min(TILE, H - y0);
+    if (x0 >= K && y0 >= K && x0 + cw <= K + b.w && y0 + chh <= K + b.h) continue;
+    const ttw = cw * TEX, tth = chh * TEX;
+    const cv = mkCanvas(ttw, tth), ctx = cv.getContext("2d"), img = ctx.createImageData(ttw, tth), buf = img.data;
+    for (let ty = y0; ty < y0 + chh; ty++) for (let tx = x0; tx < x0 + cw; tx++) {
+      const x = tx - K, y = ty - K;
+      if (x >= 0 && y >= 0 && x < b.w && y < b.h) continue;
+      const ex = Math.max(0, Math.min(b.w - 1, x)), ey = Math.max(0, Math.min(b.h - 1, y));
+      const corner = (x < 0 || x >= b.w) && (y < 0 || y >= b.h);
+      const g = skirtGround(cells[ey * b.w + ex], corner);
+      // What lies on this skirt tile (props): a few grass tufts, a stump, rubble, litter on the road.
+      const h = hash(x, y, 31);
+      const urban = g.f === "road" || g.f === "gravel" || g.f === "rubble";
+      const prop = !props || g.k === "water" ? null : NATURAL.has(g.f) ? (h < 0.04 + wood * 0.1 ? "stump" : h < 0.42 ? "tuft" : null) : urban ? (h < (g.f === "road" ? 0.08 : 0.3) ? "rubble" : null) : null;
+      for (let py = 0; py < TEX; py++) for (let px = 0; px < TEX; px++) {
+        const lx = (px + 0.5) / TEX, ly = (py + 0.5) / TEX;
+        let col = floorColor(g, g.k, x, y, lx, ly, 0);
+        if (prop) col = propPixel(prop, col, x, y, px, py) || col;
+        // Distance out from the map's edge (tiles), with a ragged, wispy front.
+        const wx = x + lx, wy = y + ly;
+        const ox = wx < 0 ? -wx : wx > b.w ? wx - b.w : 0, oy = wy < 0 ? -wy : wy > b.h ? wy - b.h : 0;
+        const d = Math.hypot(ox, oy) + (hash(Math.floor((x * TEX + px) / 4), Math.floor((y * TEX + py) / 4), 5) - 0.5) * 0.7;
+        const t = Math.max(0, Math.min(1, (d - 0.15) / (K - 0.6)));
+        col = mix(mul(col, 0.94), fog, t * t * (3 - 2 * t) * 0.98 + 0.06 * Math.min(1, d));
+        const i = (((ty - y0) * TEX + py) * ttw + (tx - x0) * TEX + px) * 4;
+        buf[i] = col[0]; buf[i + 1] = col[1]; buf[i + 2] = col[2]; buf[i + 3] = 255;
+      }
     }
+    ctx.putImageData(img, 0, 0);
+    const t = { cv, x: (x0 - K) * TEX, y: (y0 - K) * TEX }; // its place in the map's texels (the map's corner at 0, 0)
+    if (typeof createImageBitmap === "function" && typeof HTMLCanvasElement !== "undefined" && cv instanceof HTMLCanvasElement) createImageBitmap(cv).then((bm) => { t.cv = bm; }, () => { /* keep the canvas */ });
+    tiles.push(t);
   }
-  ctx.putImageData(img, 0, 0);
-  skirtCache = { b, key, cv, K, tw, th };
-  if (typeof createImageBitmap === "function" && typeof HTMLCanvasElement !== "undefined" && cv instanceof HTMLCanvasElement) {
-    const o = skirtCache;
-    createImageBitmap(cv).then((bm) => { o.cv = bm; }, () => { /* keep the canvas */ });
-  }
+  // cv: the one picture of a map small enough for a single tile (the tools read it).
+  skirtCache = { b, key, tiles, cv: tiles.length === 1 && W <= TILE && H <= TILE ? tiles[0].cv : null, K, tw, th };
   return skirtCache;
 }
 // A prop's texel over the ground (px, py in 0..15 on the tile), or null where it is not.

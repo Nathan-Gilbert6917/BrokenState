@@ -272,6 +272,34 @@ export const FURNITURE_KINDS = {
   footlocker:   P("Footlocker",             HALF, 20, 18, "one", S1, true, ["bunker", "bedroom", "cells"], "storage:40"),
   batteries:    P("Solar battery rack",     HALF, 30, 80, "two", S1, false, ["bunker", "cellar"], "none", true),
   genset:       P("Military generator",     STEEL, 80, 140, "two", S22, false, ["bunker", "bay"], "none"),
+  // ---------- libraries (issue #34: librarylayout.js lays them) ----------
+  // The shelving: a library's tall double-sided stacks (old libraries), low shelving (modern ones), compact mobile
+  // shelving on its rails (archives), a card catalogue's drawers, a map cabinet's flat drawers, a book cart and the book
+  // return: all hold loot (books, papers, maps), so they lift. The modern library's computer desk, printer, self-check
+  // station and microfilm reader; the reading room's long reading table with its green lamps, a study carrel, a globe, a
+  // lectern and a cast-iron wood stove (a rural reading room's heat). Fixed: a hearth (a historic library's fireplace),
+  // the rows of auditorium seats bolted down, a gallery's railing and the gallery's open well (the floor cut away over the
+  // reading hall below: nobody stands there). The beanbags and the lift doors are #27's rows (below).
+  bookstack:   P("Library stacks",        FULL, 30, 60, "two", S1, true, ["library"], "storage:40"),
+  lowshelf:    P("Low shelving",          HALF, 20, 25, "one", S1, true, ["library", "school"], "storage:30"),
+  mobileshelf: P("Compact mobile shelving", FULL, 50, 150, "two", S1, true, ["library", "office"], "storage:80"),
+  cardcat:     P("Card catalogue",        HALF, 25, 45, "two", S1, true, ["library"], "storage:20", true),
+  mapcase:     P("Map cabinet",           HALF, 30, 80, "two", S21, true, ["library", "office"], "storage:30", true),
+  booktruck:   P("Book cart",             HALF, 10, 18, "one", S1, true, ["library", "school"], "storage:20"),
+  bookreturn:  P("Book return",           HALF, 25, 40, "two", S1, true, ["library"], "storage:40", true),
+  computer:    P("Computer desk",         HALF, 15, 28, "one", S1, true, ["library", "office", "school"], "work:desk", true),
+  printer:     P("Printer",               HALF, 12, 22, "one", S1, true, ["library", "office"], "storage:5", true),
+  microfilm:   P("Microfilm reader",      HALF, 15, 26, "one", S1, true, ["library"], "storage:5", true),
+  selfcheck:   P("Self-check station",    HALF, 20, 38, "two", S1, false, ["library", "shop"], "none"),
+  readtable:   P("Reading table",         HALF, 25, 55, "two", S21, false, ["library", "office", "dining"], "work:table"),
+  carrel:      P("Study carrel",          HALF, 15, 28, "one", S1, false, ["library", "school"], "work:desk", true),
+  globe:       P("Globe",                 POLE, 8, 9, "one", S1, false, ["library", "office", "school"], "comfort:0.1"),
+  lectern:     P("Lectern",               HALF, 12, 16, "one", S1, false, ["library", "school", "church"], "none"),
+  woodstove:   P("Wood stove",            HALF, 60, 110, "two", S1, false, ["library", "living", "cabin"], "stove"),
+  fireplace:   P("Fireplace",             FULL, 120, 900, "fixed", S21, false, ["library", "living"], "none", true),
+  audseat:     P("Auditorium seats",      HALF, 30, 90, "fixed", S1, false, ["library", "school", "church"], "none"),
+  railing:     P("Gallery railing",       HALF, 40, 60, "fixed", S1, false, ["library"], "none"),
+  galleryvoid: P("Open to the hall below", C(false, 0, false), 999, 1, "fixed", S1, false, ["library"], "none"),
   // ---------- warehouses, factories and labs (issue #37: industrylayout.js lays them) ----------
   // Fixed: a fume hood (ducted up through the roof), a conveyor (a section of a bolted line), a process tank (a dye vat,
   // a reactor, a fermenter, a syrup tank, a tank farm's fuel or a water works' settling tank), a kiln (firebrick), a
@@ -312,14 +340,14 @@ export const FURNITURE_KINDS = {
   // own tables (combat.js BOX_LOOT, data-offices.js OFFICE_BOX).
   dentalchair:  P("Dental chair",         HALF, 30, 120, "two", S12, false, ["ward", "office"], "comfort:0.3"),
   turnstile:    P("Turnstile",            C(false, 1, false), 40, 150, "fixed", S1, false, ["office"], "none"),
-  liftdoor:     P("Lift doors",           FULL, 80, 300, "fixed", S1, false, ["office"], "none", true),
+  liftdoor:     P("Lift doors",           FULL, 80, 300, "fixed", S1, false, ["office", "library"], "none", true), // a central library's lift bank too (issue #34)
   judgebench:   P("Judge's bench",        STEEL, 60, 400, "fixed", S21, false, ["office"], "none"),
   jurybox:      P("Jury box",             HALF, 50, 300, "fixed", S21, false, ["office"], "none"),
   witnessstand: P("Witness stand",        HALF, 40, 150, "fixed", S1, false, ["office"], "none"),
   dais:         P("Council dais",         HALF, 50, 300, "fixed", S21, false, ["office"], "none"),
   podium:       P("Podium",               HALF, 15, 35, "two", S1, false, ["office", "school", "church"], "none"),
   headsetdesk:  P("Headset desk",         HALF, 15, 25, "one", S1, true, ["office"], "work:desk"),
-  beanbag:      P("Beanbag",              HALF, 8, 5, "one", S1, false, ["living", "office"], "comfort:0.4"),
+  beanbag:      P("Beanbag",              HALF, 8, 5, "one", S1, false, ["living", "office", "library"], "comfort:0.4"), // a library's story corner too (issue #34)
   camera:       P("TV camera",            POLE, 15, 25, "one", S1, false, ["office"], "none"),
   studiolight:  P("Studio light",         POLE, 5, 8, "one", S1, false, ["office"], "comfort:0.1"),
   newsdesk:     P("News desk",            HALF, 35, 90, "two", S21, true, ["office"], "work:desk"),

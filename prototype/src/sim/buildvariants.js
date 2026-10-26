@@ -150,7 +150,7 @@ export const settingOfPlace = (s) => (s === "city" ? "city" : s === "suburb" || 
  * opts (legacy, layout, setting); lay: the franchise's plan.lay.
  * allow: the layouts the dice may pick from (a street's houses: the ones that fit a street), all when null.
  * @param {string} key @param {number} seed @param {any} [o] @param {string | null} [lay] @param {string[] | null} [allow]
- * @returns {{ id: string, name: string } | null}
+ * @returns {{ id: string, name: string, classic: boolean } | null}
  */
 export function pickLayout(key, seed, o = {}, lay = null, allow = null) {
   if (o && o.legacy) return null;
@@ -159,5 +159,5 @@ export function pickLayout(key, seed, o = {}, lay = null, allow = null) {
   const pinned = layoutById(key, o && o.layout) || layoutById(key, o && typeof o.plan === "string" ? o.plan : null) || layoutById(key, lay); // o.plan: dev's pin of a named plan (setup.raid.place.plan, #26 and #37's)
   const id = pinned ? pinned.id : layoutFor(key, o && o.setting, hash01(seed, "layout", key), allow);
   const l = layoutById(key, id) || list[0];
-  return { id: l.id, name: l.name };
+  return { id: l.id, name: l.name, classic: l === list[0] }; // classic: the type's plan as it stood (buildingmaps.js realScale scales it as the general plan)
 }
