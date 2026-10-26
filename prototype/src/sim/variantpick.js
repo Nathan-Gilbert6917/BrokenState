@@ -40,7 +40,7 @@
 //      ctx.franchise; none: the whole pool), the chain's list (ctx.ids: a chain's plan.variants, #35 and #38), the
 //      tile class (entries whose tile has ctx.tileClass), the size (entries of size class ctx.size). Each narrowing that
 //      leaves nothing is skipped.
-//   5. The weights: a site some entries name (w[ctx.site]) weighs by it alone; else w[ctx.setting], else
+//   5. The weights: a site some of the type's entries name (w[ctx.site]) weighs by it alone; else w[ctx.setting], else
 //      w[ctx.tileClass], else w[ctx.size], else w.any, else opts.missing; every entry 1 (or its w.any) when no setting,
 //      tile class or size is given; a franchise's entries at least opts.frMin.
 //   6. The walk: x = r × the total, take the first entry with weight that brings x below 0 (opts.le: to 0 or below);
@@ -124,7 +124,7 @@ export function pickFrom(list, rng, ctx = {}, opts = {}, salt = "") {
   if (ctx.tileClass) { const tc = /** @type {string} */ (ctx.tileClass), onTile = pool.filter((e) => e.tile && e.tile.includes(tc)); if (onTile.length) pool = onTile; }
   if (ctx.size) { const sc = (/** @type {T} */ e) => e.sizeClass || (opts.sizeClass ? opts.sizeClass(e) : null), sized = pool.filter((e) => sc(e) === ctx.size); if (sized.length) pool = sized; }
   // The weights.
-  const site = ctx.site && pool.some((e) => e.w && e.w[/** @type {string} */ (ctx.site)] != null) ? ctx.site : null;
+  const site = ctx.site && list.some((e) => e.w && e.w[/** @type {string} */ (ctx.site)] != null) ? ctx.site : null; // a site the type's plans name (any of them: #36's rule)
   const missing = opts.missing ?? 0, floor = byFr.length ? opts.frMin || 0 : 0;
   const wOf = (/** @type {T} */ e) => {
     const w = e.w || {};
