@@ -156,6 +156,7 @@ import { sumRecs } from "./rounds.js"; // a team's rounds: its bags and what its
 import { siteThreat } from "./siteclear.js"; // the dead at a camp's spot (outpostSite)
 import { tileScouted } from "./campscout.js"; // a camp's tile scouted first when time allows (2026-10-23)
 import { packFood, packWater } from "./eating.js"; // the packs everyone carries (carriedDays)
+import { govBreakOut } from "./poirooms.js"; // a camp inside a POI cut off: the governor breaks out (issue #71; call-time only)
 
 // Play styles. range = max tiles from the hub for a trip, maxHoursOut = longest way out, cooldown = days between
 // launches, homeFrac = share of the hub that stays home, risk = lowest success chance worth a gamble,
@@ -352,6 +353,7 @@ export function autopilotHour(state) {
     engagementHour(state);
     resolvePending(state);
     guardArrivals(state);
+    if (state.hour % 24 === 9) { govBreakOut(state); resolvePending(state); } // poirooms.js (#71): a camp inside a POI cut off breaks out, once a day, with fighters home
     idleTeams(state);
     trackHauls(state); // the water and food the haul teams bring home (the daily Water / Food line)
     trackHuntTrips(state); // the hunting trips' catch against what they were sent for (huntTripYield)

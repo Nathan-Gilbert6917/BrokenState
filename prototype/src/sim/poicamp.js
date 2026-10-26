@@ -93,6 +93,7 @@ import { carriedSpots } from "./inventory.js"; // (call-time only)
 import { stockKeyOf } from "./supitems.js"; // (call-time only)
 import { amountOf } from "./itemstack.js"; // (call-time only)
 import { keyWord } from "./water.js"; // (call-time only)
+import { packFloor, syncRooms, deadFromMap, roomsOnRaid, roomsAfterRaid, refreshWay, mergeSeenFloors, cellClearWhy, POIROOMS } from "./poirooms.js"; // the rooms Cleared or Not cleared, the way out (issue #71; call-time only)
 
 export const POICAMP = {
   SIZE: 5, HALF: 2,          // the camp's square (basescatter.js SITE.SIZE), the fire in its middle cell
@@ -336,8 +337,21 @@ function snapshot(b, R) {
     s += String.fromCharCode(48 + i);
   }
   const rooms = (b.raid.areas || []).filter((a) => a && !a.outdoor && a.x0 != null && a.w > 2 && a.h > 2 && (a.f || 0) === R.f).map((a) => ({ x0: a.x0, y0: a.y0, w: a.w, h: a.h, name: a.name || a.type || "Room" }));
-  return { v: POICAMP.SEEN_V, poi: R.poi, mapId: R.mapId, f: R.f, at: R.at.slice(), w: b.w, h: b.h, pal, cells: s, rooms, seen: R.seen[R.f] || "", knownBy: [] };
+  const P = { v: POICAMP.SEEN_V, poi: R.poi, mapId: R.mapId, f: R.f, at: R.at.slice(), w: b.w, h: b.h, pal, cells: s, rooms, seen: R.seen[R.f] || "", knownBy: [] };
+  return withFloors(P, b);
 }
+// #71 (poirooms.js): every floor of the building, its rooms on each floor, the stairs and what was seen of each floor,
+// so the way out can be searched over the floors (P.v 2). An older record (v 1) gets them on the next raid of its map.
+function withFloors(P, b) {
+  P.v = POIROOMS.V;
+  P.rm = (b.raid.areas || []).filter((a) => a && !a.outdoor && a.x0 != null && a.w > 2 && a.h > 2).map((a) => ({ f: a.f || 0, x0: a.x0, y0: a.y0, w: a.w, h: a.h, name: roomName(a) }));
+  P.fl = {};
+  if (b.floors) for (let f = 0; f < b.floors.length; f++) if (f !== P.f && b.floors[f] && b.floors[f].cells && b.floors[f].cells.length === b.w * b.h) P.fl[f] = packFloor(b.floors[f].cells);
+  if (b.poiCamp) mergeSeenFloors(P, b.poiCamp, b.w * b.h);
+  return P;
+}
+// "the kitchen", "the stairwell": a room's name in a sentence ("Cut off: the way out runs through the kitchen").
+const roomName = (a) => { const n = String(a.name || a.type || "a room").replace(/_/g, " "); return /^(the|a|an) /i.test(n) ? n.toLowerCase() : `the ${n.toLowerCase()}`; };
 /** The POI map's cell at (x, y) of a camp's record, as a map cell { k, f, hp, mhp, h, ter }, or null. */
 export function poiCellAt(P, x, y) {
   if (!P || x < 0 || y < 0 || x >= P.w || y >= P.h) return null;
@@ -373,6 +387,7 @@ export function foundPoiCamp(state, b) {
   };
   state.bases.push(base);
   R.baseId = base.id;
+  deadFromMap(state, base, b); refreshWay(state, base); // poirooms.js (#71): the dead in their rooms, the way out worked out (the camp is done)
   R.safe = POICAMP.SAFE_TURNS;
   const c = poiLedger(t, R.poi);
   if (c) delete c.camp;
@@ -450,6 +465,7 @@ export function poiCampRaidStart(state, b) {
   if (base && base.poiCamp && base.poiCamp.mapId === mapId && base.poiCamp.w === b.w && base.poiCamp.h === b.h) {
     R.at = base.poiCamp.at.slice(); R.f = base.poiCamp.f; R.done = true; R.baseId = base.id; R.total = R.work = setupTotal(); R.safe = POICAMP.SAFE_TURNS; R.paid = {}; R.old = true;
     R.seen[R.f] = base.poiCamp.seen || "";
+    roomsOnRaid(state, b, base); // poirooms.js (#71): the map opens with the rooms as they stand, the POI's dead in their Not cleared rooms
   } else if (half) {
     R.at = half.at.slice(); R.f = half.f; R.work = half.work; R.total = half.total; R.paid = { ...half.paid }; R.workers = [];
     say(b, `Your half-built camp is here as it was left: ${R.work}/${R.total}. Work on it from inside its 5 × 5.`, "info");
@@ -467,8 +483,10 @@ export function poiCampAfterRaid(state, b, p) {
   const base = R.done ? state.bases.find((x) => x.id === R.baseId) : null;
   if (!base) return null;
   if (base.poiCamp && R.seen[R.f]) base.poiCamp.seen = seenRle(orMasks(unseenRle(base.poiCamp.seen, b.w * b.h), unseenRle(R.seen[R.f], b.w * b.h)));
+  if (base.poiCamp && base.poiCamp.w === b.w && base.poiCamp.h === b.h) { if (!Array.isArray(base.poiCamp.rm)) withFloors(base.poiCamp, b); else mergeSeenFloors(base.poiCamp, R, b.w * b.h); } // poirooms.js (#71): every floor seen kept (an older record gets its floors now)
   sitesToQueue(state, b, base);
   groundsFromPoi(state, base); // the dead still in the place are the camp's grounds, whoever stayed (nobody home: its attacks find it empty)
+  if (base.poiCamp) { deadFromMap(state, base, b); roomsAfterRaid(state, b, base); } // poirooms.js (#71): the dead left on the map in the rooms they stand in (the first time), the kills off their rooms, the way out worked out again
   if (!R.settled || !p || !state.parties.includes(p)) return null;
   const ids = new Set(b.units.filter((u) => u.settled && !u.dead).map((u) => u.sid));
   const members = partyMembers(state, p);
@@ -510,6 +528,8 @@ export function poiPlaceWhy(base, it, at, occ = null) {
     const x = gx + P.at[0], y = gy + P.at[1];
     if (x < 0 || y < 0 || x >= P.w || y >= P.h) return `${POICAMP.NO_ROOM} (past its edge)`;
     if (!seen[y * P.w + x]) return POICAMP.UNKNOWN;
+    const nc = cellClearWhy(P, P.f || 0, x, y); // poirooms.js (#71): only in Cleared rooms and on seen, empty yard
+    if (nc) return nc;
     const c = poiCellAt(P, x, y);
     if (c && CELL[c.k] && CELL[c.k].climb) return "On the stairs";
     if (!groundOk(c)) return `On ${c && CELL[c.k] ? CELL[c.k].name.toLowerCase() : "nothing"} (the building's walls and furniture stay)`;
@@ -525,7 +545,7 @@ const fitCache = new Map();
 export function poiFits(base, type) {
   const P = base && base.poiCamp, f = FOOT[type];
   if (!P || !f) return true;
-  const key = `${base.id}:${P.seen.length}:${P.seen.slice(0, 40)}:${type}`;
+  const key = `${base.id}:${P.seen.length}:${P.seen.slice(0, 40)}:${type}:${JSON.stringify(P.zd || {})}:${(P.cz || []).length}`; // #71: the rooms' states too
   if (fitCache.has(key)) return fitCache.get(key);
   const it = { ...f, type, key: null };
   let ok = false;
@@ -672,7 +692,17 @@ export function buildWorkProblem(state, b, u, s) {
   if (!nextTo(siteCells(b, s), u) || (u.f || 0) !== b.poiCamp.f) return "Stand inside or next to the site.";
   const cells = siteCells(b, s);
   if (b.units.some((e) => (e.side === "enemy" || (e.side === "third" && e.hostile)) && activeAny(e) && (e.f || 0) === b.poiCamp.f && cells.some(([x, y]) => x === e.x && y === e.y))) return "Stopped: a hostile is in the site. Kill it or push it out (nothing is lost).";
+  const nc = siteRoomWhy(base, s); // poirooms.js (#71): a room that turned Not cleared stops the work (its progress kept)
+  if (nc) return `Stopped: ${nc.replace(/^Not cleared: /, "")} is not cleared (its progress is kept)`;
   if (!s.paid) { const short = Object.entries(siteMaterials(state, b, base, s, false)); if (short.length) return `Short: ${short.map(([k, n]) => `${n} ${keyWord(k)}`).join(", ")} (the camp's stores and your people on the map)`; }
+  return "";
+}
+/** Why a site (or a queued build with a spot) on a POI camp's map waits: its footprint in a Not cleared room ("" when not). @param {any} base @param {any} s */
+export function siteRoomWhy(base, s) {
+  const P = base && base.poiCamp, f = s && FOOT[s.type];
+  if (!P || !f || !s.at || !P.zd) return "";
+  const r = rectOf(f, s.at);
+  for (let gy = r.y0; gy < r.y0 + r.h; gy++) for (let gx = r.x0; gx < r.x0 + r.w; gx++) { const why = cellClearWhy(P, P.f || 0, gx + P.at[0], gy + P.at[1]); if (why) return why; }
   return "";
 }
 /** A survivor spends the actions they have left on a site (the one next to them, or act.site). "" or why not. */

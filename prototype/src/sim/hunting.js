@@ -112,6 +112,7 @@ import { huntRounds, huntLoad, takeHuntShots, baseAmmo, carriedRec, spendCarried
 import { noteOutput } from "./output.js"; // the base's Work now panel: what each job brought in a day (activity.js)
 import { workLand, distFactor, waterSources, shoreOf, NO_WATER, walkMult, tileGameMult } from "./tripland.js"; // the Hunt and Fish jobs in trips: the land, the water and the walking (jobtrips.js)
 import { WINTER } from "./winter.js"; // winter's game and fish (call-time only)
+import { cutOffWhy } from "./poirooms.js"; // a camp inside a POI cut off: nobody leaves its map (issue #71; call-time only)
 
 // ---------- numbers ----------
 export const HUNT = {
@@ -996,6 +997,8 @@ const baseHasHunting = (base) => count(base, "huntcabin") > 0; // the cabin: its
 // Why nobody here can hunt as work ("" = they can). Used by work.js: the grounds hold too little game (CABIN.land for
 // the full 19 tiles of a cabin's reach, its share for fewer).
 export function huntWorkWhy(state, base) {
+  const co = cutOffWhy(state, base); // poirooms.js (#71): a cut-off camp's people cannot leave its map
+  if (co) return co;
   const g = huntGrounds(state, base);
   const land = g.reduce((a, id) => a + gameAbundance(state, id), 0);
   if (land < CABIN.land * (g.length / HUNT_GROUND.full) || !huntTripTile(state, base)) return count(base, "huntcabin") > 0 ? "no game land around" : "no game land next to the base (a hunting cabin reaches 2 tiles out)";
@@ -1020,6 +1023,8 @@ export function fishTools(state, base, people = atBase(state, base.id), opts = {
   return fishKit(people, base.armory || [], opts);
 }
 export function fishWorkWhy(state, base) {
+  const co = cutOffWhy(state, base); // poirooms.js (#71): a cut-off camp's people cannot leave its map
+  if (co) return co;
   if (!fishWater(state, base)) return NO_WATER; // a water tile of the base's own (tripland.js waterSources)
   const k = fishTools(state, base);
   if (!k.rods && !k.nets && !k.spears) return "no fishing rod, net or spear here";

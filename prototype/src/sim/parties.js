@@ -121,6 +121,8 @@ import { unpackPerson } from "./supitems.js"; // supplies carried as items, unpa
 import { fightSides, fightersOf, applySide } from "./groupfight.js"; // fights nobody watches: your rules
 import { cfgOf } from "./worldcfg.js"; // the run's dials: Durability loss, Fuel use
 import { CRAWL_WHY } from "./startpick.js"; // no base of yours on a town's or a city's crawl tile
+import { cutOffWhy, fightIn, POIROOMS } from "./poirooms.js"; // a camp inside a POI cut off: nobody leaves, arrivals fight in (issue #71; call-time only)
+const vehicleIdOf = (opts) => opts.vehicleId || (Array.isArray(opts.vehicleIds) && opts.vehicleIds.length ? opts.vehicleIds[0] : null);
 const AI_KIND = { raider: "raiders", expansionist: "fighters", zealot: "zealots", military: "soldiers", fortress: "soldiers", traders: "guards", commune: "militia" };
 
 export const STANCES = {
@@ -951,6 +953,8 @@ export function launchExpedition(state, opts) {
     members.push(m);
   }
   if (!STANCES[stance]) return { error: "Unknown stance." };
+  const cut = cutOffWhy(state, home, { heavy: !!(vehicleIdOf(opts)) }); // poirooms.js (#71): nobody leaves a cut-off camp inside a POI (a climb out: on foot only)
+  if (cut) return { error: `${cut}. Clear a route or ${POIROOMS.BREAK.toLowerCase()} first (Camp tab).` };
   const why = missionProblem(state, dest, mission);
   if (why) return { error: why };
   // Several vehicles (opts.vehicleIds, up to MAX_VEHICLES: teamform.js): each at the base and running; the base's bikes
@@ -2594,6 +2598,7 @@ const r1 = (x) => Math.round(x * 10) / 10;
 function returnHome(state, p) {
   const home = baseById(state, p.homeBaseId) || hub(state);
   if (!home) { awaitOrders(state, p, "There is no base to go home to.", { failed: true, hold: true }); return; }
+  if (p.kind !== "convoy" && fightIn(state, p, home)) return; // poirooms.js (#71): a cut-off camp inside a POI: they fight their way in
   if (p.envoy != null) envoyHome(state, p, home); // envoys.js: the answer it brings is known now
   const members = partyMembers(state, p);
   const loot = Object.entries(p.cargo.supplies).filter(([, val]) => val >= 1).map(([k, val]) => `${Math.floor(val)} ${keyWord(k)}`); // "un-purified water", not the key (before the food goes into the stores)

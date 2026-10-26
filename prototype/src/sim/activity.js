@@ -68,6 +68,7 @@ import { hasKitchen, kitchenService, eatsAtKitchen, cookActivity, cookPlusOf, co
 import { haulActivity } from "./hauling.js"; // hauling: the Haul job's line (call-time only)
 import { helpingAs, helpLine } from "./noidle.js"; // noidle: a Manual person whose job has no work this hour helps elsewhere (call-time only)
 import { bondWorkNote } from "./bonds.js"; // bonds: beside a friend or a rival on the job (call-time only)
+import { cutOffWhy } from "./poirooms.js"; // a camp inside a POI cut off: nobody leaves its map (issue #71; call-time only)
 
 // Icons by job, and by kind for everything that is not a job.
 export const JOB_ICONS = { water: "🪣", wood: "🪓", farm: "🌱", forage: "🍄", hunt: "🏹", fish: "🎣", build: "🔨", craft: "🧰", operate: "⚙️", medic: "✚", trainee: "✚", teach: "🎓", read: "📚", scavenge: "🔍", guard: "🛡️", rest: "☕", cook: "🍳", haul: "📦" };
@@ -195,7 +196,8 @@ function tripWhy(state, base, job) {
     case "forage": { const why = forageWorkWhy(state, base); return why ? act("stalled", `Can't forage: ${why}`, `Nothing worth gathering around ${base.name}: ${why}.`, job) : null; }
     case "hunt": { const why = huntWorkWhy(state, base); return why ? act("stalled", `Can't hunt: ${why}`, `The Hunt job needs game on the base's hunting grounds (the tiles next to it; with a Hunting cabin the land within 2 tiles): ${why}.`, job) : null; }
     case "fish": { const why = fishWorkWhy(state, base); return why ? act("stalled", `Can't fish: ${why}`, `The Fish job needs a river or lake tile in the base's own land (or right next to it, if nobody holds it: a camp's river bank) and a rod, net or spear: ${why}.`, job) : null; }
-    case "scavenge": return scavLeft(base) <= SCAV_FLOOR + 0.02 ? act("stalled", "Scavenger – area picked clean", "The ruins around the base are picked over: send a team on a trip instead.", job) : null;
+    case "scavenge": { const co = cutOffWhy(state, base); if (co) return act("stalled", `Can't scavenge: ${co}`, `${base.name} is cut off inside its place: nobody can leave the map until a route is cleared or they break out (Camp tab).`, job); } // poirooms.js (#71)
+      return scavLeft(base) <= SCAV_FLOOR + 0.02 ? act("stalled", "Scavenger – area picked clean", "The ruins around the base are picked over: send a team on a trip instead.", job) : null;
     case "water": { const why = fetchWaterWhy(state, base); return why ? act("stalled", `Can't fetch water: ${why}`, `Fetch water needs a river or lake tile in the base's own land (or right next to it, if nobody holds it: a camp's river bank), and room in the un-purified barrels: ${why}.`, job) : null; }
     default: return null;
   }

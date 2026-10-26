@@ -93,6 +93,7 @@ import { noteFinds, discoveryHour, mergeLooked } from "./discovery.js";
 import { aiHuntsDaily } from "./deadhunt.js"; // Hunt the dead: the groups' own hunts (call-time only)
 import { threatKnowHour } from "./threatknow.js"; // knowing the threat level (issue #67): the tiles your people stand on, looked at live
 import { deadPopDaily, deadPopSpread } from "./deadpop.js"; // the dead on the land: the midnight recalculation
+import { poiRoomsDaily } from "./poirooms.js"; // a camp inside a POI: its rooms and its way out after the night (issue #71)
 import { ensurePois, poiSnapshot, learnPois, mergePoiFinds } from "./pois.js"; // points of interest on the tiles: their lists, and what a report says of them
 import { hiveBirthHour } from "./hivebirth.js"; // hive birth you can see: rumours, the massing card, a hive risen
 import { festivalHour } from "./festival.js"; // the yearly harvest festival at the hub
@@ -1211,6 +1212,7 @@ function hourOfWorld(state) {
     wanderersDaily(state); // wanderers.js: the survivors you met and left live on (or not); no dice of the world's
     deadPopDaily(state); // deadpop.js (issue #65): the dead and the raiders on the tiles and in their POIs, by their bands and yesterday's noise
     deadPopSpread(state); // deadpop.js: the spread between tiles (the heat epic's #66)
+    poiRoomsDaily(state); // poirooms.js (issue #71): each POI camp's rooms put right against its pool, its way out worked out again
     aiHuntsDaily(state); // deadhunt.js (issue #68): the groups hunt the dead on their own land now and then
     recomputeOwnership(state);
     claimsDaily(state); // claims.js: claims under a new base, a hive or a hostile camp are lost

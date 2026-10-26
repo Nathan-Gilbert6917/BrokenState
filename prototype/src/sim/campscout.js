@@ -57,6 +57,8 @@ import { startTask } from "./orders.js";
 import { firstHubPending } from "./hardcore-start.js";
 import { campAttackHour } from "./campattack.js"; // issue #69: the attacks on a camp by the dead and raiders nearby
 import { scaleFood } from "./foods.js";
+import { roomsCleared } from "./poirooms.js"; // #71: a POI camp's grounds are its Not cleared rooms (call-time only)
+import { startScavenge } from "./scavenge.js"; // #71: clearing a POI camp's grounds is a raid on its POI map (call-time only)
 
 export const GROUNDS = {
   MAP: 3,               // the whole map's dead: this × the dead at one spot (siteclear.js siteThreat)
@@ -301,6 +303,14 @@ export function groundsRaid(state, p) {
   if (why) { if (p && state.parties.includes(p)) awaitOrders(state, p, `${GROUNDS_LABEL}: ${why}`, { failed: true }); return ""; }
   const n = raidCount(base), th = siteThreat(state, tile), at = groundsSpot(state, base);
   base.grounds.raids = (base.grounds.raids || 0) + 1;
+  // A camp inside a POI (#71, poirooms.js): the POI's map opens with the rooms as they stand (Cleared rooms known, the
+  // dead in their Not cleared rooms); the team clears room by room and leaves when it likes, keeping what it cleared.
+  if (base.poiCamp && base.poi != null && !state.autoCombat && typeof window !== "undefined") {
+    log(state, `${teamName(state, p)} goes into ${base.name}'s place to clear the dead from its rooms.`, "info");
+    p.poi = base.poi; p.dest = tile;
+    startScavenge(state, p);
+    return `${teamName(state, p)} goes in to clear the rooms.`;
+  }
   p.phase = "engaged";
   log(state, `${teamName(state, p)} goes out onto the grounds of ${base.name} to clear the dead from ${groundsWord(state, tile)}.`, "info");
   startCombat(state, { tile, partyId: p.id, enemy: { kind: "zombies", count: n, power: th.power || 2, mix: th.mix || null, name: "the dead on the base grounds" }, ambush: null, canRetreat: true, handler: "groundsClear", layout: "siteClear", context: { partyId: p.id, tile, at, baseId: base.id, wave: n, grounds: true } });
@@ -310,7 +320,8 @@ registerCombatHandler("groundsClear", (state, result, setup) => {
   const c = setup.context;
   const p = state.parties.find((x) => x.id === c.partyId);
   const base = state.bases.find((b) => b.id === c.baseId);
-  const k = base ? takeDead(state, base, result.outcome === "victory" ? c.wave : Math.min(c.wave, result.enemiesKilled || 0)) : 0;
+  const kills = result.outcome === "victory" ? c.wave : Math.min(c.wave, result.enemiesKilled || 0);
+  const k = base ? (base.poiCamp && base.poi != null ? roomsCleared(state, base, kills) : takeDead(state, base, kills)) : 0; // poirooms.js (#71): a POI camp's off the rooms on the blocked route first
   if (!p || !partyMembers(state, p).length) {
     if (p) wipeIfEmpty(state, p);
     log(state, `The team clearing the grounds of ${base ? base.name : "the base"} died out there.`, "death");
