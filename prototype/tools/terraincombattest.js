@@ -231,7 +231,7 @@ section("From a hill into an upper floor through a window");
     // No raider of their own in the mix (seed 7: two dead hogs and a zombie): one of the dead made the raider. A dead
     // beast is wild (zombietypes.js applyZType: u.beast, u.wild), and a wild unit's foes are every living thing that is
     // not a zombie (combat.js foesOf), itself once a person: so the wild and the beast go with the zombie type, or it
-    // shoots at itself. Red since the repo's first commit 222200d, where the dead beasts were already in the raid mix.
+    // shoots at itself. Since 1370d1c (map sizes: new worlds) seed 7's raid draws dead hogs, no raider.
     raider.kind = "human"; raider.weapon = "pistol"; raider.aware = true; raider.surprised = false; delete raider.ztype; delete raider.wild; delete raider.beast; raider.f = 1; raider.away = true; raider.x = ix; raider.y = iy; raider.hp = raider.maxHp = 200;
     // The ground out from the window: level open ground, then a hill a level up 4–6 tiles out.
     for (let s = 1; s <= 6; s++) { const c = G[(wy + dy * s) * W + wx + dx * s]; c.k = "open"; delete c.h; delete c.ter; for (const [ox, oy] of [[dy, dx], [-dy, -dx]]) { const x = wx + dx * s + ox, y = wy + dy * s + oy; if (x >= 0 && y >= 0 && x < W && y < b.h && G[y * W + x].f !== "floor") { G[y * W + x].k = "open"; } } }

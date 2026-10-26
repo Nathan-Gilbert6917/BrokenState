@@ -146,7 +146,7 @@ section("3. heard, not seen: the marker and its guess");
   const b = state.combat;
   // The run's Failures dial off for this battle (gunfire.js jamChance × b.failures): the checks below count the shots
   // heard, and a dud makes no bang (combat.js fire: a misfire returns before noteShot). The pump shotgun's first pull
-  // misfired on seed 11 + 2, red since the repo's first commit 222200d; jams and misfires have their own tests.
+  // misfired on seed 11 + 2 since 1370d1c (map sizes: new worlds, new battle dice); jams and misfires have their own tests.
   b.failures = 0;
   const team = quiet(b);
   const run = openRun(b, 8, team, 16);

@@ -117,7 +117,7 @@ const nextTurn = (state) => { const b = state.combat; for (const u of b.units) i
 const raiders = (n = 3) => ({ kind: "raiders", count: n, power: 3.5, name: "rival scavengers", guard: true });
 // A raider pod's record made plain hostile. Its group's record is rolled at the battle's start, and a loose group's
 // dice may make it treacherous (PARLEY.TREACHERY.loose, 30%): shown as friendly ("we're friendly", Answer them, no Hand
-// over what you found). Seeds 71 and 91 roll it so (red since the repo's first commit 222200d). Treachery has its own
+// over what you found). Seeds 71 and 91 roll it so since 1370d1c (map sizes: new worlds, new dice). Treachery has its own
 // sections (a treacherous group fakes friendliness, treachery tells), which set the record treacherous as this sets it plain.
 const plainHostile = (rec) => Object.assign(rec, { treacherous: false, lie: rec.hostility, shown: rec.stance });
 const partyOf = (f, stance = "neutral", n = 3) => ({ kind: "raiders", count: n, power: 4, name: `${f.name} scavengers`, factionId: f.id, ...(stance === "hostile" ? {} : { side: "neutral" }), parley: { stance, hostility: stance === "friendly" ? 15 : stance === "neutral" ? 40 : 80, treacherous: false } });
