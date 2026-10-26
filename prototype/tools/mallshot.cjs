@@ -42,7 +42,7 @@ const port = 5300 + Math.floor(Math.random() * 600);
         p.path = [t.id]; p.idx = 0; p.phase = "engaged";
         game.ui.speed = 0;
         const groups = [{ kind: "zombies", count: 20, power: 3 }, { kind: "zombies", count: 7, power: 3 }];
-        game.combat.start({ mode: "raid", tile: t.id, partyId: p.id, canRetreat: true, ambush: null, handler: "scavenge", enemy: { kind: "zombies", count: 27, power: 3, name: "the dead", groups }, raid: { heat0: 5, poi: null, kind: null, place: { id: key, key, name: { regionalmall: "Calder Mall", stripmall: "Pinewood Plaza", outlet: "Highway Outlets" }[key] } }, plan: true, context: {} });
+        game.combat.start({ mode: "raid", tile: t.id, partyId: p.id, canRetreat: true, ambush: null, handler: "scavenge", enemy: { kind: "zombies", count: 27, power: 3, name: "the dead", groups }, raid: { heat0: 5, poi: null, kind: null, place: { id: key, key, name: { regionalmall: "Calder Mall", stripmall: "Pinewood Plaza", outlet: "Highway Outlets" }[key], ...(key === "regionalmall" ? { variant: "mega" } : {}) } }, plan: true, context: {} });
         const b = st.combat;
         return b ? { w: b.w, h: b.h, levels: b.raid.storeys, buildings: b.raid.plan.houses.length, dead: b.units.filter((u) => u.side === "enemy").length } : null;
       }, key);

@@ -1,6 +1,6 @@
 // The biggest mall's turn, headless (issue #30: a turn under 1.5 s with 100 dead): a regional mall raid with about
 // 100 of the dead, the map made, then a few rounds of the player's turn (the raid bot) and the enemy phase, timed.
-// Usage: node tools/mallbench.js [seed] [rounds] [--aware]   (not a test: it prints the times)
+// Usage: node tools/mallbench.js [seed] [rounds] [--aware] [--variant mega]   (not a test: it prints the times)
 import { createWorld, hub, atBase } from "../src/sim/world.js";
 import { createBattle, runEnemyPhase, autoPlayerTurn, endPlayerTurn } from "../src/sim/combat.js";
 import { launchExpedition } from "../src/sim/parties.js";
@@ -8,6 +8,7 @@ import { poiRaidSetup } from "../src/sim/poiraid.js";
 import { buildingMap } from "../src/sim/buildingmaps.js";
 
 const seed = Number(process.argv[2] || 7), rounds = Number(process.argv[3] || 5);
+const VAR = process.argv.includes("--variant") ? process.argv[process.argv.indexOf("--variant") + 1] : null; // a regional mall's variant (mall.js REGIONAL_VARIANTS: "mega", the biggest)
 const st = createWorld({ seed, factionCount: 6 });
 st.started = true; st.cards.length = 0; st.crashNext = 1e9;
 const malls = st.tiles.filter((t) => t.loc && t.loc.type === "mall" && t.pois && t.pois[0] && t.pois[0].site);
@@ -21,7 +22,7 @@ const p = res.party;
 p.path = [t.id]; p.idx = 0; p.dest = t.id; p.phase = "engaged";
 const rs = poiRaidSetup(st, t, 0);
 const t0 = performance.now();
-const b = createBattle(st, { mode: "raid", tile: t.id, partyId: p.id, canRetreat: true, ambush: null, handler: "scavenge", enemy: { kind: "zombies", count: 0, power: 3, name: "the dead", groups: [{ kind: "zombies", count: 20, power: 3 }, { kind: "zombies", count: 7, power: 3 }] }, raid: { heat0: 5, poi: 0, kind: rs.kind || null, place: rs.place || null }, context: {} });
+const b = createBattle(st, { mode: "raid", tile: t.id, partyId: p.id, canRetreat: true, ambush: null, handler: "scavenge", enemy: { kind: "zombies", count: 0, power: 3, name: "the dead", groups: [{ kind: "zombies", count: 20, power: 3 }, { kind: "zombies", count: 7, power: 3 }] }, raid: { heat0: 5, poi: 0, kind: rs.kind || null, place: VAR ? { id: "regionalmall", key: "regionalmall", name: "Mall", variant: VAR } : rs.place || null }, context: {} });
 st.combat = b;
 const setup = performance.now() - t0;
 const dead = b.units.filter((u) => u.side === "enemy" && u.kind === "zombie").length;
