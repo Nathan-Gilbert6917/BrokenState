@@ -53,8 +53,11 @@ const CORE = [
   // indoorlighttest (14 s alone)
   ["citycrawlgridtest", false], ["citycrawlquicktest", false], ["citycrawlquick2test", false], ["indoorlighttest", false],
   // #75: red tests made green, kept so (alone on 2026-10-26: landorder 10 s, detach 11 s, claims 17 s, guide 30 s,
-  // teamctx 33 s)
+  // teamctx 33 s; with the machine shared: eta 98 s, team 111 s, roadevents 412 s; eta and team were 1639 s and 815 s,
+  // a path search to every tile of the 250 × 150 maps); left out, too long: visitortest (43 minutes, its four
+  // 365-day autopilot years; quick 162 s, but red on dev since #69, d3994a4e: two worlds of one seed differ)
   ["landordertest", false], ["detachtest", false], ["claimstest", false], ["guidetest", false], ["teamctxtest", false],
+  ["etatest", false], ["teamtest", false], ["roadeventstest", false],
 ];
 
 const args = process.argv.slice(2);
