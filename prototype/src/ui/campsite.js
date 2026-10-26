@@ -24,7 +24,7 @@ import { pendingSite, pickSite, autoSite, durText, levelWords } from "../sim/sta
 import { siteProblem, openSiteView, defaultSite, BASE_GRID, GRID } from "../sim/basemap.js";
 import { SITE } from "../sim/basescatter.js";
 import { siteInfo, pickWords, SITE_INFO } from "../sim/siteinfo.js"; // the spot's facts (the dead to clear first among them: sim/siteclear.js siteThreat)
-import { tileLabel, teamName } from "../sim/parties.js";
+import { tileLabel, teamName, partyTile } from "../sim/parties.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -39,13 +39,25 @@ function viewTeam(state) {
 }
 // main.js tidyUi: a team of yours waiting for its spot, nothing else on screen: the view opens (the clock waits under
 // it). A view whose team is no longer waiting (gone, answered) closes.
-export function siteViewDue(state, ui) {
+// wrap (main.js: ui/newgame.js generating, the user's request 2026-10-26: "When establishing camp and the map needs to
+// load show a generating map overlay until the map loads"): the tile's map is built under the "Generating map…" box,
+// the open put off a frame or two till the box is painted; asked again meanwhile (tidyUi runs on every refresh), nothing
+// more is queued, and the open looks again when it runs (the team may have gone, a battle come up). Headless: at once.
+let siteOpening = false;
+export function siteViewDue(state, ui, wrap = (fn) => fn()) {
   const b = state.combat;
   if (b && b.site) { if (!viewTeam(state)) state.combat = null; return; }
-  if (b || state.autopilot || state.gameOver || !ui.started) return;
+  if (b || state.autopilot || state.gameOver || !ui.started || siteOpening) return;
   const p = pendingSite(state);
-  if (p) openSiteView(state, p);
+  if (!p) return;
+  siteOpening = true;
+  wrap(() => {
+    siteOpening = false;
+    if (!state.combat && !state.autopilot && !state.gameOver && ui.started && pendingSite(state) === p) openSiteView(state, p);
+  });
 }
+// The box's line for the camp's map (generating's text): "The camp's spot at Dunmore: its tile's map, 500 × 500 cells".
+export const siteGenWhat = (state) => { const p = pendingSite(state); return `The camp's spot${p ? ` at ${tileLabel(state, partyTile(p))}` : ""}: its tile's map, ${BASE_GRID} × ${BASE_GRID} cells`; };
 
 const placeWords = ([x, y]) => (x || y ? `${[x ? `${Math.abs(x)} ${x > 0 ? "east" : "west"}` : "", y ? `${Math.abs(y)} ${y > 0 ? "south" : "north"}` : ""].filter(Boolean).join(" and ")} of the map's middle` : "in the middle of the map");
 const getWords = (get) => Object.entries(get).filter(([, v]) => v > 0).map(([k, v]) => `+${v} ${k === "carparts" ? `car part${v === 1 ? "" : "s"}` : k === "metalsheet" ? `metal sheet${v === 1 ? "" : "s"}` : k === "buildmat" ? "building materials" : k}`).join(", ");
