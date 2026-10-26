@@ -196,7 +196,7 @@ console.log("\nThe scenes");
     const out = rollScenes(m, new Rng(70 + s * 13 + v.length), key);
     for (const x of (out && out.list) || []) seen.add(x.kind || x.key || x.name);
   }
-  const want = ["gymshelter", "lockerhold", "pinhide", "leaguenight"];
+  const want = ["recshelter", "lockerhold", "pinhide", "leaguenight"];
   check(want.every((k) => seen.has(k)), `the scenes turn up on their maps (${[...seen].filter((k) => want.includes(k)).join(", ") || "none"})`);
 }
 

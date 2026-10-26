@@ -386,7 +386,8 @@ export const BOWL_KEYS = Object.keys(BOWL_PLANS);
  * @param {any} o @param {(cls: string) => string | null} [sizeOf]
  */
 const ctxOf = (o, sizeOf) => ({ setting: o.where || null, tileClass: o.tileClass || null, size: o.tileClass && sizeOf ? sizeOf(o.tileClass) : null, plan: o.variant || (typeof o.plan === "string" ? o.plan : null) });
-const footOf = (bw, bh) => { const a = bw * bh; return a >= 1800 ? "huge" : a >= 700 ? "xl" : a > 360 ? "large" : a <= 190 ? "small" : "medium"; };
+// The footprint class (buildingmaps.js spec.foot, storeytest's classes): huge 1,800 cells and 50 wide, xl 700 and 30 wide.
+const footOf = (bw, bh) => { const a = bw * bh; return a >= 1800 && bw >= 50 ? "huge" : a >= 700 && bw >= 30 ? "xl" : a > 360 ? "large" : a <= 190 ? "small" : "medium"; };
 
 /**
  * A gym's spec for buildingmaps.js assemble: its variant by the shared picker (or o's pin), its footprint and storeys
@@ -679,7 +680,7 @@ export function recStyle(room) {
 // ======================================================================================
 // The signs of survival (interiorscenes.js registerScene; their own dice there, only on a building laid out by these
 // plans: when):
-//   gymshelter  the gym as a shelter: cots in rows on the court, the mats or a studio, a water barrel, the ones who never
+//   recshelter  the gym as a shelter: cots in rows on the court, the mats or a studio, a water barrel, the ones who never
 //               left;
 //   lockerhold  someone held out in a locker room: lockers shoved across its door, the one behind them (alive upstairs
 //               now and then: area.scene.alive);
@@ -700,7 +701,7 @@ function gymShelter(ctx) {
     ctx.piece(f, bx, by, "barrel");
     const dead = rng.int(0, 2);
     for (const [x, y] of free.slice(cots + 1, cots + 1 + dead)) ctx.body(f, x, y, { human: true, quiet: true });
-    return ctx.done("gymshelter", r, free[0][0], free[0][1], `The ${lower(r)} was a shelter: ${cots} cots in rows, a water barrel${dead ? `, and ${dead} who never left` : ""}.`);
+    return ctx.done("recshelter", r, free[0][0], free[0][1], `The ${lower(r)} was a shelter: ${cots} cots in rows, a water barrel${dead ? `, and ${dead} who never left` : ""}.`);
   }
   return null;
 }
@@ -751,7 +752,7 @@ function leagueNight(ctx) {
   return null;
 }
 const isRecMap = (ctx) => ctx.rooms.some((r) => !!r.rec);
-registerScene("gymshelter", { w: 4, place: gymShelter, kinds: ["gym"], when: isRecMap });
+registerScene("recshelter", { w: 4, place: gymShelter, kinds: ["gym"], when: isRecMap });
 registerScene("lockerhold", { w: 3, place: lockerHold, kinds: ["gym"], when: isRecMap });
 registerScene("pinhide", { w: 3, place: pinHide, kinds: ["bowling"], when: isRecMap });
 registerScene("leaguenight", { w: 4, place: leagueNight, kinds: ["bowling"], when: isRecMap });
