@@ -40,7 +40,7 @@ const CORE = [
   // too long (quick: 8 minutes alone, 12 in the gate, where it pushed citycrawltest past the time limit; full: over 30)
   ["officestest", false], ["plannametest", false],
   // #73: red tests made green, kept so (alone on 2026-10-26: occupytest 274 s, farmtest quick 323 s); left out, too long:
-  // custompointstest (12 minutes), hcstarttest (16), uitest (over 20) and farmtest at full length (17)
+  // custompointstest (12 minutes), hcstarttest (16), uitest (12) and farmtest at full length (17)
   ["occupytest", false], ["farmtest", true],
 ];
 
