@@ -8,6 +8,7 @@
 //   every house's front door, every container; upstairs every container from a stairwell; every zone
 // - the raid on it (createBattle): one POI map ("poi<i>:neighbourhood"), its storeys, the upper floors' reach from
 //   every house's stairs, the intro naming the houses, the dead of the whole roster (more than one house's map)
+//   (the dead only: a hostile group living on the street, u.occupant, is not the roster)
 // - per-house containers in the POI's ledger: a house opened and left, another never entered; the revisit shows the
 //   first as left (and says so) and the other fresh; the one pool falls by each container's share across the street
 // - depletion across the houses: a second house opened on a later raid takes the same share; others' abstract looting
@@ -166,10 +167,14 @@ let world = null;
   // The dead: the whole roster on a street; a lone house's map takes about 0.6 of it.
   const groups = [{ kind: "zombies", count: 12, power: 2, name: "the dead" }];
   const bz = raid(st, p, t, i, { groups });
-  const dead = bz.units.filter((u) => u.side === "enemy");
+  // The dead only: a street can also hold a hostile group living there (buildingmaps.js placeOccupantGroups, wanderers.js
+  // interiorOccupants: u.occupant), which the roster does not size. Seed 42's grid street has three (red on 09c8f00 and
+  // dev before issue #45: the check counted them, 18 = 15 dead + 3 people).
+  const deadOf = (b) => b.units.filter((u) => u.side === "enemy" && !u.occupant);
+  const dead = deadOf(bz);
   const inHouse = new Set(dead.map((u) => (bz.raid.plan.houses.find((h) => u.x >= h.x0 && u.x < h.x0 + h.w && u.y >= h.y0 && u.y < h.y0 + h.h) || { k: "out" }).k));
   const house = st.tiles.map((tt) => [tt, poisOf(tt).findIndex((q, j) => q.kind === "house" && !isSitePoi(tt, j))]).find(([, j]) => j >= 0);
-  const hz = house ? raid(st, p, house[0], house[1], { groups }).units.filter((u) => u.side === "enemy").length : 0;
+  const hz = house ? deadOf(raid(st, p, house[0], house[1], { groups })).length : 0;
   const want = Math.round(12 * streetDeadScale(bz.w, bz.h));
   check(dead.length === want && want >= 12 && dead.length > hz && inHouse.size >= 3, `the dead: ${dead.length} on the street (12 × ${streetDeadScale(bz.w, bz.h).toFixed(2)} for the bigger map), ${hz} in a lone house; spread over ${inHouse.size} houses and the yards`);
   st.combat = null;
