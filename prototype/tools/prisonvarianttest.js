@@ -3,7 +3,7 @@
 // cellblock, the new prison buildings, and the prison site layouts"; issue #32's MIN_PLANS = 12):
 // - every type in sim/prison.js PRISON_PLANS (the housing unit, central control, the chow hall, the infirmary, the
 //   chapel, education, industries, administration, the armory, the gatehouse, the jail building) has 12+ named plans,
-//   their ids and names their own; pinned (o.layout), the plans are as many distinct signatures (#32's: the rooms'
+//   their ids and names their own; pinned (o.plan), the plans are as many distinct signatures (#32's: the rooms'
 //   roles, the role pairs with a door between them, the ways in, the footprint class);
 // - every plan, pinned, over several seeds: it assembles; every walkable cell reached (on the ground from its entry,
 //   upstairs from the stairs); a housing unit's cells (its cell doors) on every tier;
@@ -30,7 +30,7 @@ const pass = (c) => !!c && ((CELL[c.k] && CELL[c.k].walk) || c.k === "door");
 
 function make(type, s, layout) {
   const rng = new Rng(s * 100003 + type.length * 7919 + 17);
-  const sp = PRISON_BUILDERS[type](rng, layout ? { layout } : {});
+  const sp = PRISON_BUILDERS[type](rng, layout ? { plan: layout } : {});
   const m = assemble(rng, sp, { key: "pblock", id: `${type}:${s}`, name: type });
   openTiers(m, sp);
   return { sp, m };

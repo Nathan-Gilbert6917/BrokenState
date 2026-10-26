@@ -91,14 +91,15 @@ const spec = (bw, bh, program, o = {}) => ({ bw, bh, front: { width: 1 }, ground
 // A building's footprint from its REAL_SIZE row (data-buildingsize.js, #24): [bw, bh] in cells.
 const foot = (rng, key) => { const F = realFoot(rng, key); return F ? [F.bw, F.bh] : [20, 14]; };
 // The named plans of each prison building (the user's request for a dozen variants of every building, issue #32's
-// rule; prisontest.js counts them): { id, name, ...its choices }. A building takes its plan by o.layout (pinned: the
-// option's layout) or its own dice (pickPlan), from the plans its use allows (o.only).
+// rule; prisonvarianttest.js counts them): { id, name, ...its choices }. A building takes its plan by o.plan (pinned:
+// the tests, the renders) or its own dice (pickPlan), from the plans its use allows (o.only).
 export const PRISON_PLANS = {};
 /** @param {any} rng @param {string | any[]} type @param {any} o */
 export function pickPlan(rng, type, o = {}) {
   const all = Array.isArray(type) ? type : PRISON_PLANS[type] || [];
   const ok = all.filter((v) => !o.only || o.only(v));
-  return (o.layout && all.find((v) => v.id === o.layout)) || ok[Math.floor(rng.next() * ok.length)] || all[0];
+  const want = o.plan ?? o.layout; // o.plan pins a building's plan (the other plan pickers' convention), o.layout a complex's
+  return (want && all.find((v) => v.id === want)) || ok[Math.floor(rng.next() * ok.length)] || all[0];
 }
 // A housing unit's plans: tiers (2, or 3), where its officers' station stands (picket: at one end, at both, in the
 // middle between two half blocks), its core (cells both sides of the day room, cells one side, a dormitory of bunks,
@@ -120,9 +121,9 @@ PRISON_PLANS.housing = [
 ];
 const cellsPlan = (v) => !v.core || v.core === "single"; // a plan with cells (death row, segregation and a jail's pods take only these)
 // A housing unit. o: { len, day, tiers, picket: "left" | "right" (the side of the station toward the corridor),
-// unitId, kind: "cells" | "dorm" (a wish: a dorm picks a dormitory plan), single, dk, name, yard, layout, only }.
+// unitId, kind: "cells" | "dorm" (a wish: a dorm picks a dormitory plan), single, dk, name, yard, plan, only }.
 export function housingUnit(rng, o) {
-  const v = pickPlan(rng, "housing", { layout: o.layout, only: (q) => (o.kind === "dorm" ? !cellsPlan(q) : o.kind === "cells" || o.single ? cellsPlan(q) : true) && (!o.only || o.only(q)) });
+  const v = pickPlan(rng, "housing", { plan: o.plan, only: (q) => (o.kind === "dorm" ? !cellsPlan(q) : o.kind === "cells" || o.single ? cellsPlan(q) : true) && (!o.only || o.only(q)) });
   const day = o.day ?? rng.int(7, 10), unitId = o.unitId ?? 0;
   const tiers = o.tiers === 1 ? 1 : v.tiers || o.tiers || 2;
   const left = o.picket !== "right";
@@ -366,7 +367,7 @@ PRISON_PLANS.jailmain = [
   { id: "suicidewatch", name: "Jail with suicide-watch cells (the sally port on the right)", ...jail({ mirror: true, mid: [["*", P_.holding()], [6, P_.property("Property room")], ["*", P_.kitchen("Jail kitchen")], [5, P_.ward("Medical room")], [6, psych("Suicide-watch cells", "s")]] }) },
   { id: "pharmacy", name: "Jail with a pharmacy by the medical room", ...jail({ mid: [["*", P_.holding()], ["*", P_.holding()], [6, P_.property("Property room")], ["*", P_.kitchen("Jail kitchen")], [6, P_.ward("Medical room")], [4, pharm()]] }) },
 ];
-// The building's spec from its plan (pinned by o.layout or by its dice); bw, bh: its footprint.
+// The building's spec from its plan (pinned by o.plan or by its dice); bw, bh: its footprint.
 function planned(rng, type, bw, bh, o = {}, extra = {}) {
   const v = pickPlan(rng, type, o);
   return spec(bw, bh, v.plan(rng), { ...extra, ...(v.upper ? { upper: v.upper } : {}), vid: v.id, vname: v.name });
@@ -395,7 +396,7 @@ function jailMain(rng, o = {}) {
   });
 }
 
-// Each type's builder (the tests pin each plan by o.layout): (rng, o) => its spec.
+// Each type's builder (the tests pin each plan by o.plan): (rng, o) => its spec.
 export const PRISON_BUILDERS = {
   housing: (rng, o) => housingUnit(rng, { len: foot(rng, "pblock")[0], picket: "left", unitId: 1, ...o }),
   control: centralControl, chow: chowHall, infirmary: prisonInfirmary, chapel, education, industries, admin, armory,
