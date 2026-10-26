@@ -11,7 +11,7 @@
 import { createWorld, hub, atBase } from "../src/sim/world.js";
 import { launchExpedition } from "../src/sim/parties.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
-import { poisOf, isSitePoi, poiPool, poiKnowledge, knownPois, notePoiThreat, THREAT } from "../src/sim/pois.js";
+import { poisOf, poiAt, isSitePoi, poiPool, poiKnowledge, knownPois, notePoiThreat, THREAT } from "../src/sim/pois.js";
 import { tileDead, openDead, popCap, poiDead, killDead, putBack, earshot, bandOfCount } from "../src/sim/deadpop.js";
 import { fullSurveyDone, quickLook } from "../src/sim/survey.js";
 import { surveyErr } from "../src/sim/intelnotes.js";
@@ -147,6 +147,9 @@ section("Live on the tile, stale after leaving");
   check(tileThreatStamp(st, t).h === st.hour, "the hour writes the live look into the stamp");
   const pd = poiDeadEstimate(st, t, i);
   check(pd && pd.live, "its known places are live too");
+  for (let h = 0; h < 24 * 60; h++) { st.hour++; threatKnowHour(st); }
+  const ts = poiAt(t, i).threatStamp;
+  check(ts.err <= THREAT.ERR.visit + 1e-9 && ts.de <= THREATKNOW.ERR.live + 1e-9, `two months live: the place's errors do not creep up (${ts.err}, ${ts.de})`);
   const seen = tileThreatEstimate(st, t).dead.n;
   leave(st, p);
   const e3 = tileThreatEstimate(st, t);

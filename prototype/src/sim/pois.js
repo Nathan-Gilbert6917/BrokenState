@@ -523,7 +523,7 @@ export function notePoiThreat(state, tile, i, src = "visit", err = null) {
   if (!p) return null;
   const old = p.threatStamp || null;
   if (src === "live") { // threatknow.js threatKnowHour: a team or a base on the tile sees it as it is now, at the error it had
-    const e0 = old ? Math.min(THREAT.MAX_ERR, old.err + THREAT.STALE * Math.max(0, state.hour - old.hour) / 24) : THREAT.ERR.visit;
+    const e0 = old ? Math.min(THREAT.ERR.visit, old.err + THREAT.STALE * Math.max(0, state.hour - old.hour) / 24) : THREAT.ERR.visit; // being there is at least as good as a visit: it never ages
     p.threatStamp = { hour: state.hour, v: poiThreat(state, t, i), err: Math.round(e0 * 1000) / 1000, src: old ? old.src : "visit", k: old ? old.k ?? old.hour : state.hour, live: 1, ...poiStampFields(state, t, i, "live", null, old) };
     noteCampSeen(state, t, i);
     return p.threatStamp;

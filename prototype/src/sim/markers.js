@@ -30,7 +30,7 @@ export const LAYERS = {
   infection: { name: "Infection",        desc: "Red overlay showing infection level" },
   weather:   { name: "Weather",          desc: "Season wash; rain and fog on the tiles seen live" },
   known:     { name: "Known area",       desc: "Hatched where your people searched for hidden places" },
-  deadland:  { name: "The dead on the land", desc: "How many of the dead are on the tiles you surveyed or stand on (none … overrun), as last seen" }, // sim/threatknow.js (issue #67)
+  deadland:  { name: "The dead on the land", desc: "The dead on tiles you surveyed or stand on, by level" }, // sim/threatknow.js (issue #67)
   coalition: { name: "Coalition land",   desc: "Land you and the coalition's members hold (goal: 50%)" },
   towersight: { name: "Tower sight",     desc: "Rings round your manned watch towers: what they see" }, // sim/fieldworks.js
   radio:     { name: "Radio coverage",   desc: "How far your radios and your allies' reach, in tiles" }, // sim/radio.js, sim/radioallies.js; the help has the long version
