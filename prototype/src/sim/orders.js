@@ -7,7 +7,7 @@ import { keyWord } from "./water.js"; // supplies as words: "9mm FMJ", "rounds"
 import { log, survivorById, baseById, hub } from "./world.js";
 import {
   MISSIONS, partyMembers, partyTile, tileLabel, teamName, bestSkill, orderMove, giveOrder, startReturn, awaitOrders,
-  survey, orderOptions, planPath, travelHours, hoursLeft, partySpeed, clockFrac, byMinute, carried, takeSupply, starving, paceOpts, modeSpeed, cargoRoom, pitchHoursFor, pitchDone, stuckText, clockText,
+  survey, orderOptions, planPath, travelHours, hoursLeft, partySpeed, clockFrac, byMinute, carried, takeSupply, starving, paceOpts, modeSpeed, afterLeaving, cargoRoom, pitchHoursFor, pitchDone, stuckText, clockText,
 } from "./parties.js";
 import { SUPPLIES } from "./data.js";
 import { partyVehicle, partyVehicles, partyFuel } from "./vehicles.js";
@@ -126,7 +126,9 @@ export function queueEstimate(state, p) {
   let tile = sw ? sw.center : p.dest ?? partyTile(p);
   let vehicle = p.vehicle || false;
   let fuel = vehicle === true ? partyFuel(state, p) - (sw ? routeFuel(state, sw.route.slice(sw.done), true, paceOpts(p).fuelMult) : 0) : 0;
-  if (p.phase === "task" && p.task?.type === "cross" && p.task.mode === "leave" && !p.task.afloat) { vehicle = false; fuel = 0; }
+  // q: the team as it travels the queued legs (on foot at a fresh weighing once a crossing leaves the vehicle).
+  let q = p;
+  if (p.phase === "task" && p.task?.type === "cross" && p.task.mode === "leave" && !p.task.afloat) { vehicle = false; fuel = 0; q = afterLeaving(state, p, p.task.mats); }
   // A road delay still owed (negative progress, e.g. from a card on the last step) is paid by the next move.
   let owed = Math.min(0, p.progress || 0);
   // at: the time each queued order starts, to the minute (weather sets travel times by the hour, weather.js): the
@@ -156,8 +158,8 @@ export function queueEstimate(state, p) {
   // A move starting at `at`: from that minute, the minutes of its hour already gone not travelled (parties.js wayOn).
   /** @param {number[]} path */
   const leg = (path) => {
-    const h0 = Math.floor(at + 1e-9), fs = Math.max(0, at - h0), sp = modeSpeed(p, vehicle);
-    const t = travelHours(state, path, { vehicle, ...paceOpts(p), speed: sp, fuel, progress: owed - fs * sp, startHour: h0 });
+    const h0 = Math.floor(at + 1e-9), fs = Math.max(0, at - h0), sp = modeSpeed(q, vehicle);
+    const t = travelHours(state, path, { vehicle, ...paceOpts(q), speed: sp, fuel, progress: owed - fs * sp, startHour: h0 });
     return { t, hours: exactly ? Math.max(0, t.exact - fs) : t.hours };
   };
   return (p.orders || []).map((o) => {
@@ -217,7 +219,7 @@ export function queueEstimate(state, p) {
       // Build and crossing hours were fixed when the order was given; the team ends up across the water.
       hours = o.build + o.cross;
       tile = o.tile;
-      if (o.mode === "leave") { vehicle = false; fuel = 0; }
+      if (o.mode === "leave") { vehicle = false; fuel = 0; q = afterLeaving(state, p, o.mats); }
     }
     at += hours ?? 0;
     return { order: o, label: describeOrder(state, o), hours };

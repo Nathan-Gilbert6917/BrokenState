@@ -154,7 +154,8 @@ section("A queued move waits for them");
 section("A job on another tile: there and back; a plain move stays; Call back");
 {
   const state = mk();
-  const tile = find(state, hub(state).tile, () => true, 2, 12);
+  // A tile with woods 1-3 away (the 250 × 150 maps have wide plains: the nearest open tile may have none).
+  const tile = find(state, hub(state).tile, (t) => state.grid.within(t.id, 3).some((id) => id !== t.id && woodAbundance(state, id) >= 0.3), 2, 30);
   const wood = find(state, tile, (t) => woodAbundance(state, t.id) >= 0.3, 1, 3);
   const p = team(state, 3, tile);
   const [a, b] = partyMembers(state, p);

@@ -40,9 +40,10 @@ const TOWN_COUNT = 13; // on the original 64 × 42 map; scaled by area (about 18
 const MORE_TOWN_NAMES = ["Thornton", "Bridgeport", "Maple Grove", "Dover Flats", "Clearwater", "Hadley", "Sawyer", "Whitmore", "Linden",
   "Carver", "Brookfield", "Iron Gap", "Winslow", "Meadowvale", "Rockport", "Garland", "Tallow Creek", "Beckett", "Norwood", "Shiloh"];
 // A third pool for the new sizes (2026-10-24; a Normal map alone has some 180 towns), drawn from once the two above are taken.
+// No "... City": that is for cities (teamtest T-19; its "Dale City" is Daleville since issue #75).
 const EVEN_MORE_TOWN_NAMES = ["Alder", "Barlow", "Caswell", "Dunhill", "Edgewater", "Fenwick", "Gilead", "Hartwell", "Ivydale", "Jericho",
   "Kinsley", "Lockridge", "Marlow", "Nettleton", "Orchard Park", "Pembroke", "Quarry Ridge", "Rosewood", "Selby", "Tamarack", "Ulster",
-  "Verona", "Wakefield", "Yarrow", "Ashby", "Bellwood", "Coldwater", "Dale City", "Elmhurst", "Foxboro", "Greenfield", "Hemlock",
+  "Verona", "Wakefield", "Yarrow", "Ashby", "Bellwood", "Coldwater", "Daleville", "Elmhurst", "Foxboro", "Greenfield", "Hemlock",
   "Ironwood", "Juniper", "Kingfield", "Lowell", "Mansfield", "Newbury", "Oriole", "Paxton", "Rutland", "Sedgwick", "Trenton", "Wyndham"];
 // A town's distinguishing forms once every plain name is taken: [prefix, suffix] round a plain name ("North Hadley", "Hadley Crossing").
 const TOWN_FORMS = [["North ", ""], ["South ", ""], ["East ", ""], ["West ", ""], ["Old ", ""], ["New ", ""], ["Upper ", ""], ["Lower ", ""],

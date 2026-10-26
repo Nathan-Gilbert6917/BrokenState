@@ -267,7 +267,9 @@ section("Cards never outlive their team or the person they are about (T-2, P-13)
     const h = hub(state);
     const crew = crewOf(state, 2);
     const truck = truckOf(state);
-    const far = state.tiles.filter((t) => t.terrain !== "water" && planPath(state, h.tile, t.id, true)).sort((x, y) => state.grid.distance(h.tile, y.id) - state.grid.distance(h.tile, x.id))[0];
+    // The farthest tile a truck can reach: sorted first, then a path to each in turn until one is found (a path to every
+    // land tile was 36,000 searches a world on the 250 × 150 maps, 1370d1cf, nearly all of this test's 13 minutes).
+    const far = state.tiles.filter((t) => t.terrain !== "water").sort((x, y) => state.grid.distance(h.tile, y.id) - state.grid.distance(h.tile, x.id)).find((t) => planPath(state, h.tile, t.id, true));
     const p = send(state, crew.map((s) => s.id), far.id, "move", { vehicleId: truck.id, stance: "rushed", grant: { fuel: 80, food: 40, water: 40 } });
     for (let i = 0; i < 80 && state.parties.includes(p) && p.phase === "out"; i++) {
       p.lastConflict = state.hour;
