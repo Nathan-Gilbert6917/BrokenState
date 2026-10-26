@@ -71,7 +71,7 @@ console.log("Older saves");
   const BASE = { 4242: ["5226b79c7af26b02", "20bca0896464f29f"], 4243: ["8d084359037daebc", "3f97f8daf3c304db"] };
   const run = (seed, legacy) => {
     const st = createWorld({ seed, factionCount: 3, size: "small" });
-    if (legacy) st.shopsR2Legacy = true;
+    if (legacy) { st.shopsR2Legacy = true; st.minesLegacy = true; } // a save from before #55 is from before #52's mines too (save.js marks both)
     for (const t of st.tiles) delete t.pois;
     ensurePois(st);
     const blocks = [];
