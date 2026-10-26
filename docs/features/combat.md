@@ -1107,6 +1107,48 @@ The user's requests (2026-10-25, issue #34 of the interiors epic #7): "add libra
 - **Scenes** (interiorscenes.js `registerScene`, `kinds: ["library"]`, `when`: a map whose rooms carry a lib mark, so an older save's library rolls as it did): `readers` (book carts and shelving shoved across the aisles at a stacks room's door, the readers behind it dead or, upstairs, alive), `libshelter` (cots in rows in a reading room, a soup kitchen of a stove, a water barrel and tins in the meeting room or the café), `archivesealed` (the closed stacks', the genealogy archive's or the rare-books room's door locked steel, the archivist inside), `lastnotice` (the librarian's last notice on the circulation desk, papers by it).
 - **Older saves** (worldcfg.js `legacyRooms`): the old plan, its dice as before (no lib marks; the containers' ids line up). The `library` key, `SITES.library` and the five old franchise ids keep working.
 - **For other buildings**: `libraryPlan(rng, { variant, plan, w, h, storeys })` returns a spec (and `spec.lib`); `"variant/plan"` picks a plan. #30's strip mall can place `strip` at its unit's size, #28's university and #27's courthouse a library of their size.
+## Loot that makes sense
+
+The user's request (2026-10-26, round-2 epic #39, issue #43): "Each building type here and and existing should have loot that makes sense".
+
+- **The table**: `prototype/src/sim/lootsense.js` `LOOT_SENSE`, one row per `BUILDINGS` key (103 on 2026-10-26). Each row names its **signature finds** (`sig`: a group and the share of buildings of the kind where it turns up at least once: a pharmacy's drugs in 90%, a gun store's guns in 95%, a vet's animal medicine in 60%, a bookstore's books in 90%, a cinema's candy in 30%) and what is **never there** (`never`: most shops and offices `NO_GUNS`, every civilian place `ARMY`, the Army's weapons). `note` says why a row allows what it allows (a liquor store's gun under the counter, a bar's shotgun, a sporting goods store's gun counter, campus police's patrol rifles stay).
+- **Groups** (`GROUPS`): food, drink, drugs, medical kit, surgical tools, animal medicine, ammunition, handguns, rifles and shotguns, military arms, any gun, bows, grenades and launchers (`explosive`), flashbangs and smoke, body armour, gun parts, tools, parts, building materials, fuel, liquor, treats, books, gadgets, valuables, sports gear, clothes and bags, camping gear: supply keys and item tests on `GEAR` `cat`.
+- **Personal rooms** (`PERSONAL`): a house's rooms, a flat over a shop, a guest room, a dorm room, the luggage room and the cars left outside. People kept their own things there (a pistol in a nightstand over a bakery is the baker's), so a row's `never` is checked on the kind's other rooms; a personal room only never holds `PERSONAL_NEVER` (military arms, grenades and launchers). Bodies, the scenes' stashes and what a lock adds (`locks.js` lock loot, gun safes) are someone's stash and not checked.
+- **What a container rolls** is the search's own path: `combat.js boxFinds` (its piece's or room's table, `boxLoot`, and a small find) and `areaExtras` (new, issue #43: the per-area finds on their own dice that `searchBox` adds after it: gun parts, reloading, grenades, launchers, the newer guns, wood, sheets, arrows, propane, a tent, a tool, a power piece). `searchBox` calls `areaExtras` in the order it rolled them before, so a search finds what it found.
+
+### What was fixed (issue #43)
+
+| Was | Now |
+|---|---|
+| Budget gun parts (optics, slings, lasers) on a grocery's shelves, a diner's dining room, a school's locker room, a tyre bay (`PART_FINDS.area` store, lockers, garage) | gone from those rows; a sporting goods store keeps its own (`data-shops.js ROWS.PART_AREA`) |
+| A bottle of scotch in a pupil's desk (a classroom is an `office` room, the office's small finds) | a piece names its own small finds (`BOX_LOOT find`): school and teacher desks the corridor lockers' (phones, candy, cards) |
+| An AT4, an M203 or 40 mm in a police armoury, a farm shed's pump room, a dam's generator room (`AREA_LAUNCHERS` by room only) | launchers and frag grenades only at the Army's sites (`loot.js ARMY_SITES`: military, airbase, the bunkers, a military crash, the convoy, an air drop; a crawl's Army checkpoint by its `gunSite`); frags moved from the armoury's and barracks' small finds into `AREA_LAUNCHERS` |
+| A server rack held the room's lunch (`BOX_LOOT serverrack` rest 0.2) | rest 0: parts, scrap and a radio |
+| A liquor store's pistol and revolver on every shelf (half the stores had one) | whiskey, vodka and wine on its shelves (a supermarket's beer and wine aisle is a liquor room too); the gun under the counter (`data-shops.js ROWS.ARSENAL_AREA`) stays, about one store in a dozen |
+| A bookstore's and a library's shelves held no books (`books` rooms: a bag and a lamp) | novels, comics, magazines, crosswords and a few skill books |
+| A cinema's concession had no candy | candy and chocolate |
+| Hunting rifles in a vet's large-animal stalls, a pet store's feed warehouse, a gas station's feed and seed corner, a science building's greenhouse (barn rooms) | the stalls a vet's room, the feed warehouse a pet store's, feed and seed and every industrial greenhouse a garden centre's |
+| A boarding school's common room a house (revolvers) | a dorm common room, as the campus's |
+| A dam's duty bunk room barracks (sniper rifles, LMGs) | a house's, as the radio station's bunk room |
+| An office's records or tape vault a bank vault (pistols in safe-deposit boxes) | an office room |
+| No animal medicine in a feed store | a barn's (so a feed store's) livestock dewormer |
+
+Kept on purpose (in the rows' notes): a farm-supply store's hunting rifles and shotguns (its barn rooms), a bar's shotgun behind the counter, an executive's or a mayor's pistol, a radio relay's guard post gun rack (#54 reworks radio towers), a country gas station's .22 rounds in its bait room, a prepper's pipe bombs.
+
+Older saves: a container already opened keeps what it rolled (`box.contents` is saved); a container not yet opened, and every new one, rolls the fixed rows. A building already laid out keeps its rooms' types (its map is saved), so the retyped rooms (the stalls, the greenhouse, the vaults, the bunk rooms) are a new layout's.
+
+### The test
+
+`prototype/tools/lootsensetest.js` (about 2 minutes; the same under `--quick`): 100 buildings of every kind (25 of a compound: a mall, a campus, a prison), laid out by `buildingMap` as a raid lays them out, every container rolled as above.
+
+- every building type has a row, every row is a building type, every group is a `GROUPS` entry, every row names its signature finds;
+- each row's signature groups turn up in at least its share of buildings;
+- none of a row's `never` groups in its own rooms, none of `PERSONAL_NEVER` in a personal room;
+- the economy: each kind's loot (its containers' tables valued as `tools/shopstest.js` values them) within ±10% of `BASELINE` (measured on dev at 016f555 before the fixes; the same plans, so per area too), unless `SHIFTED` says why. Shifted: the bookstore (+39%), the library (+37%) and the university library (+30%), whose shelves now hold books. Every other kind is within ±10%.
+- `--report` prints every kind's rate for every group, `--why <group>` where it came from (item, room, piece, the table or the extras), `--baseline` each kind's value.
+
+**Adding a building type** (wave 2 of #39: #51–#62): add its row to `LOOT_SENSE` (signature finds with rates it reaches, never-groups), run `node tools/lootsensetest.js <key> --report` to see its rates and anything out of place (`--why <group> <key>`), fix what does not fit, then `node tools/lootsensetest.js <key> --baseline` and add the line to `BASELINE`. A new group goes in `GROUPS`. A type with no baseline yet passes the economy check and is listed as new.
+
 ## Vaulting half cover
 People go over waist-high cells at extra cost and land winded; the dead crawl over instead.
 - A person (yours, a human enemy, the third side) goes over a waist-high cell nobody can stand on (a fence, crates, a car, sandbags, a table; not a window, cell bars, a railing or a well) at VAULT.COST tiles more than a step, never ending on it or cutting its corner.
@@ -1153,6 +1195,34 @@ The user's request 2026-10-18. Test `tools/barricadetest.js`.
 - **Orders**: Shove (Alt+S), Board up (Alt+B), Tear down (Alt+J) in the Doors & lights tray; the Shove chooser picks where it goes and names the helper.
 - **Carrying a piece off** (issue #12, 2026-10-25): next to Shove, Lift (Alt+U, both actions; a helper's both too), Set down (Alt+G, 1 action each) and Load into vehicle (Alt+W, 1 action) carry furniture and appliances: alone very slow (past 40 kg the pace is crushed), two tethered at half the weight each, set down on a seen cell next to the carrier (a pair: left or right of the two, parallel; a door frame too, as a barricade). The cells involved go through barricade `pieceOff` / `setPiece` / `freeForPiece` (shared with the shove's `movePiece`). The rules, numbers and kinds: [travel.md, Carrying furniture and appliances](travel.md#carrying-furniture-and-appliances).
 - Modules: [barricade; combat CELL boarded, reachable, distField, moveAlong, breakCell, structureName, combatAct; windows insideOf; data GEAR.boards; crafting CRAFTS.boards; ui/combat barricadeButtons / shoveChooser / shoveCbAct / shoveClick, ui/battlebar, ui/keymap, ui/isoview (boarded cells drawn as planks), ui/codex "Barricades"].
+
+## The carry playthrough (issue #48)
+The user's request (2026-10-26): "Add a scripted play though of testing taking different pieces with one, two survivors and using vehicles and no vehicles".
+
+`prototype/tools/carryplaytest.js` plays the carrying, extraction and base systems of issues #12, #17, #18, #19, #20 and #21 end to end through the sim's own orders (`combatAct`: `move`, `liftPiece`, `setPiece`, `stowPiece`, `goup` / `godown`, `extract`; the turns ended with `endPlayerTurn` / `runEnemyPhase`), on a real house POI's raid map and a real city crawl, no browser. It prints a transcript, one line a step ("Turn 5: Ivy and Theo lift the refrigerator (2 actions each: 0 and 0 left).") with the `ok` / `FAIL` checks between, and each FAIL names the seed and the scene. Default seeds 42, 7, 1 and 5 (1 and 5 have a two-storey house, for the stairs); `BS_QUICK` plays 42 and 5. About 3 s a seed.
+
+| Scene | Who | What it plays |
+|---|---|---|
+| A | two survivors and the van | one refused the fridge alone; the two lift it (2 actions each), tethered at 30 kg each, carry it out of the house (the tether checked after every move) and load it; the range the same; the sofa (2 cells) set down to the left, parallel, and lifted again; one of the two downed: the sofa drops, the tether ends; a piece upstairs carried down the stairs (both actions each); the van filled up: the sofa stays by the door, in the house's ledger; the pieces loaded in the raid's loot |
+| B | one survivor and the van | refused the fridge; the microwave lifted (2 actions; one action left is refused), its 15 kg on the load; the shelves (25 kg: 4 tiles an action from 5) set in the front doorway, a barricade (the frame kept under it): nobody stands in the doorway, and a walker brought to the door crawls over the shelves (half cover, `CRAWL.COST` 4 tiles over the step, its whole turn: 2 tiles to the cell inside with the doorway clear, 6 with the shelves in it); lifted out again, the door is back; carried out at extraction: into the van by itself |
+| C | one survivor on foot | a chair carried out: "Exhausted, the team dropped what it was carrying: a chair. It stands by the door…", in the ledger |
+| D | two survivors on foot | the oven between them dropped from exhaustion; the next raid finds the oven and C's chair by the door and lifts the oven again |
+| E | two survivors and a van, a city crawl | a piece lifted in a place, out still in the arms (`it.crawl`), the card's line, a block away and back at `carryPace`'s hours, out at the entry block: into the van |
+| F | at the hub | the pieces in the armory as items (`fridge`, `f_stove`, `f_microwave`, `f_shelf`); the fridge set (`setPlaced`) is a cupboard without power and a fridge room on a generator; the range cooks on the grid; the microwave runs; the shelves add 40 kg of storage |
+
+What the script does for itself, and says in the transcript: nobody else on the map (the dead, the house's folk and the bodies taken off, no Heat waves: `R.spawnCap` 0), so the carrying is all that happens; a piece the house has no copy of is stood on an open cell ("no microwave here to carry out: the script stands one at 20,9"); only pieces with a way out for someone with full hands are chosen (no vault over half cover, `canVault`), and the closed doors on that way are opened first by walking onto them (`noDoors`); the end of a pair nearer the cell leads (the other steps along); a new generator's tank is filled (the refuel chore runs by day); the drive home is skipped (`startReturn` from the home tile: the real `returnHome`, `unloadAt`). A scene that stops sends its team home, so the next scenes still run.
+
+**Bugs it found, fixed with a check each** (2026-10-26):
+- A piece with a plural name ("Shelves", "Lockers", "Crates") read "The shelves goes into the work van", "a shelves". `furnicarry.js pluralName` / `agree` make the lift, set-down, extraction and exhaustion lines agree ("The shelves go into…", "some shelves", "two lots of shelves", "They stand by the door").
+- A piece the ledger put by the door stood on a survivor who arrived there: `poiRaidStart` applies the ledger after the units are placed. `furnihome.js applyPieceLedger` now steps anyone on a cell nobody can stand on to the nearest free one.
+- `furnihome.js crawlMoveHours` weighed each carrier with the whole piece, so it said 2 h for a table between two where the crawl walked it in 1 h. It now scales `citycrawl.js carryPace` (the one rule, by pairs).
+- A piece loaded into the vehicle during a raid (Load into vehicle) went home but the summary said "Loot: nothing". `stowAct` keeps it in `b.raid.stowed`; `endRaid` lists it in the loot when the vehicle goes home.
+
+**Decisions:**
+- The issue says the extras a full vehicle cannot take are dropped "with the exhaustion message". #18 gives them their own line ("The work van is full: the sofa stays by the door."), which the test checks; the exhaustion message is for no vehicle. Left as #18 built it.
+- A pair standing diagonally has no side to set a 2-cell piece down on, parallel to them (`setTargets` offers nothing); the script steps one of them straight beside the other first.
+
+**The browser version** (`prototype/tools/carryplaysmoke.cjs`, by hand, outside the gate): a house raid with two survivors and the vehicle, the Lift order and its "With <name>" chooser clicked in the battle panel, the fridge carried to the vehicle with move orders, Load into vehicle, extraction and the summary, a screenshot at each step (`node tools/carryplaysmoke.cjs <outdir>`).
 
 ## Signs of survival
 Pre-placed barricades, blood and bodies inside a raid's building: signs that people held out there, and how it ended.

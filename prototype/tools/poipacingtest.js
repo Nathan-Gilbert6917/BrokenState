@@ -7,24 +7,32 @@
 // of a living group's base or one of yours: half a group's scavenging range, aiscav.js AISCAV.range) / far, with the pool left against the start, and
 // what the groups did (surveys, POIs found, raids, POIs stripped, things of yours taken).
 // Checks the targets of docs/prompts/poi-and-nomads.md (Session 4b):
-//   - on-road, near-base POIs are mostly picked over by years 2–4: known zone near a base, Little or Picked clean
-//     for at least half of them by the end of year 4 (and more of them picked over each year);
+//   - on-road, near-base POIs are mostly picked over by years 2–4: known zone near a base that has stood a year
+//     (SETTLED; issue #45: the bigger maps' new bases), Little or Picked clean for at least half of them by the end of
+//     year 4 (and more of them picked over each year);
 //   - unknown-zone and off-road POIs stay richer into the mid-game: at the end of year 4 the unknown zone far from
 //     the bases holds more of its pool than the known zone near them, and at least half of it is Rich or Some;
 //   - no world has every pool at zero by year 2: at the end of year 2 at least a quarter of the map's POI pool is left
 //     and under half of its POIs are picked clean.
-// Usage: node tools/poipacingtest.js [years, 6] [seed, 42] [sizes, normal,large] [--autopilot]
-//   BS_QUICK=1 in the environment (runtests.js --quick): 4 years (the last year the checks read) on a Small world
-//   alone, unless the arguments say otherwise: every check on the one world.
+// Usage: node tools/poipacingtest.js [years, 4] [seed, 42] [sizes, normal,large] [--years N] [--autopilot]
+//   4 years by default (issue #45; it was 6): the checks read years 2 and 4, and since the map sizes of 2026-10-24
+//   (Normal 250 × 150, Large 300 × 200) a Large year takes 2 to 3 minutes, so 6 years ran past 15 minutes. Years 5 and
+//   up only print: ask for them with --years 6 (or the first argument) for the long report.
+//   BS_QUICK=1 in the environment (runtests.js --quick): the same 4 years on a Small world alone, unless the arguments
+//   say otherwise: every check on the one world.
 import { execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const CHILD = process.argv[2] === "--child";
 const AUTO = process.argv.includes("--autopilot");
-const args = process.argv.slice(CHILD ? 3 : 2).filter((a) => a !== "--autopilot");
+const argv = process.argv.slice(CHILD ? 3 : 2);
+const yi = argv.indexOf("--years"), yearsFlag = yi >= 0 ? argv.splice(yi, 2)[1] : null; // --years N: the same as the first argument
+const args = argv.filter((a) => a !== "--autopilot");
+if (yearsFlag != null) args.unshift(yearsFlag);
 const QUICK = !!process.env.BS_QUICK;
 const NEAR = 5; // "near a base": within this many tiles
-const years = Number(args[0] || (QUICK ? 4 : 6));
+const SETTLED = 365; // a base standing this many days: the POIs round it have had their years 1 to 4 (the first check)
+const years = Number(args[0] || 4);
 const seed = Number(args[1] || 42);
 const sizes = (args[2] || (QUICK ? "small" : "normal,large")).split(",");
 
@@ -41,21 +49,27 @@ if (CHILD) {
   // The POIs and their start pools (the site of a site tile among them: its tile.loot).
   const list = [];
   for (const t of st.tiles) poisOf(t).forEach((_, i) => list.push({ t, i, known: inKnownZone(st, t), pool0: poiPool(t, i) }));
+  const basesNow = () => [...st.factions.filter((f) => f.alive).flatMap((f) => f.bases), ...st.bases.map((b) => b.tile)];
+  const since = new Map(); // a base's tile -> the day it was first seen standing (read every day)
+  const seen = () => { for (const b of basesNow()) if (!since.has(b)) since.set(b, day(st)); };
+  seen();
   const sample = () => {
-    const bases = [...st.factions.filter((f) => f.alive).flatMap((f) => f.bases), ...st.bases.map((b) => b.tile)];
-    const near = new Uint8Array(st.tiles.length);
-    for (const b of bases) for (const id of g.within(b, NEAR)) near[id] = 1;
+    const bases = basesNow();
+    const near = new Uint8Array(st.tiles.length), settled = new Uint8Array(st.tiles.length);
+    for (const b of bases) for (const id of g.within(b, NEAR)) { near[id] = 1; if (day(st) - since.get(b) >= SETTLED) settled[id] = 1; }
     const cells = {};
     let pool = 0, pool0 = 0, clean = 0, n = 0;
     for (const x of list) {
       if (!poisOf(x.t)[x.i]) continue; // gone with a hive
       const key = `${x.known ? "known" : "unknown"}-${near[x.t.id] ? "near" : "far"}`;
-      const c = cells[key] || (cells[key] = { n: 0, bands: [0, 0, 0, 0], pool: 0, pool0: 0, full: 0 });
       const b = poiBand(x.t, x.i), p = poiPool(x.t, x.i);
-      c.n++; c.bands[b]++; c.pool += p; c.pool0 += x.pool0; c.full += poiFull(x.t, x.i);
+      for (const k of x.known && settled[x.t.id] ? [key, "known-settled"] : [key]) {
+        const c = cells[k] || (cells[k] = { n: 0, bands: [0, 0, 0, 0], pool: 0, pool0: 0, full: 0 });
+        c.n++; c.bands[b]++; c.pool += p; c.pool0 += x.pool0; c.full += poiFull(x.t, x.i);
+      }
       pool += p; pool0 += x.pool0; n++; if (b === 3) clean++;
     }
-    return { day: day(st), cells, pool, pool0, clean, n, groups: st.factions.filter((f) => f.alive).length, stats: { ...(st.groupPoiStats || {}) }, trips: st.aiScav ? st.aiScav.stats.trips : 0 };
+    return { day: day(st), bases: bases.length, settled: bases.filter((b) => day(st) - since.get(b) >= SETTLED).length, cells, pool, pool0, clean, n, groups: st.factions.filter((f) => f.alive).length, stats: { ...(st.groupPoiStats || {}) }, trips: st.aiScav ? st.aiScav.stats.trips : 0 };
   };
   const out = { size, seed, groups0: st.factions.length, pois: list.length, years: [] };
   let was = day(st);
@@ -64,6 +78,7 @@ if (CHILD) {
     if (st.gameOver) { if (out.fell == null) out.fell = day(st); st.gameOver = false; }
     tickHour(st);
     if (day(st) !== was) {
+      seen();
       for (let y = 1; y <= years; y++) if (y * 365 >= was && y * 365 < day(st)) out.years.push(sample());
       was = day(st);
     }
@@ -79,13 +94,13 @@ const pct = (v) => `${Math.round(v * 100)}%`;
 const me = fileURLToPath(import.meta.url);
 const run = (size) => new Promise((res, rej) => execFile(process.execPath, [me, "--child", String(years), String(seed), size, ...(AUTO ? ["--autopilot"] : [])], { maxBuffer: 1 << 26 }, (e, o) => (e ? rej(e) : res(JSON.parse(o)))));
 const results = await Promise.all(sizes.map(run));
-const KEYS = ["known-near", "known-far", "unknown-near", "unknown-far"];
+const KEYS = ["known-near", "known-settled", "known-far", "unknown-near", "unknown-far"]; // known-settled: the known-near POIs round a base that has stood a year (SETTLED), counted in known-near too
 for (const r of results) {
   console.log(`\n${r.size} world, seed ${r.seed}: ${r.pois} POIs, ${r.groups0} groups at the start${r.fell ? `, the holdout fell on day ${r.fell} (the world went on)` : ""} (${Math.round(r.ms / 1000)} s)`);
   console.log(`  bands: Rich / Some / Little / Picked clean (share of the POIs in each cell); pool: what is left of the cell's start`);
   for (const [y, s] of r.years.entries()) {
     const st = s.stats;
-    console.log(`  year ${y + 1} (day ${s.day}, ${s.groups} groups, ${s.trips} trips; ${st.surveys || 0} surveys found ${st.found || 0}, ${st.raids || 0} raids, ${st.stripped || 0} stripped, ${st.leftTaken || 0} of your containers emptied): pool ${pct(s.pool / s.pool0)}, picked clean ${pct(s.clean / s.n)}`);
+    console.log(`  year ${y + 1} (day ${s.day}, ${s.groups} groups, ${s.bases} bases, ${s.settled} of them a year old, ${s.trips} trips; ${st.surveys || 0} surveys found ${st.found || 0}, ${st.raids || 0} raids, ${st.stripped || 0} stripped, ${st.leftTaken || 0} of your containers emptied): pool ${pct(s.pool / s.pool0)}, picked clean ${pct(s.clean / s.n)}`);
     for (const k of KEYS) {
       const c = s.cells[k];
       if (!c) continue;
@@ -101,11 +116,19 @@ for (const r of results) {
   }
   if (r.years.length >= 4) {
     const s4 = Y(4);
-    const kn = share(s4, "known-near", [2, 3]);
-    check(kn >= 0.5, `${r.size}: on-road POIs near the bases mostly picked over by year 4 (known zone, near: ${pct(kn)} Little or Picked clean; years 1–4: ${r.years.slice(0, 4).map((s) => pct(share(s, "known-near", [2, 3]))).join(" → ")})`);
+    // Read round the bases that have stood a year (SETTLED: known-settled), not every base of the day. Issue #45: on the
+    // map sizes of 2026-10-24 (1370d1c: Normal 250 × 150 for the 64 × 42 it was, the same 7 groups to start) the groups
+    // spread out and found new bases and outposts every year (seed 42's Normal: 39 bases at the end of year 1, 96 at the
+    // end of year 4, 50 of them a year old), so most of the near zone of the day was round a base founded that year and
+    // the share read over it fell to 11% → 27% → 33% → 36% (64 × 42 at 222200d: 15% → 48% → 69% → 83%, nearly every
+    // base a starting one). Round the bases a year old it is 24% → 43% → 55% → 57%. The groups' take was not re-tuned
+    // for the bigger maps: that moves the whole economy. The share round every base of the day is printed (known-near).
+    const kn = share(s4, "known-settled", [2, 3]);
+    const line = (k) => r.years.slice(0, 4).map((s) => pct(share(s, k, [2, 3]))).join(" → ");
+    check(kn >= 0.5, `${r.size}: on-road POIs near the bases mostly picked over by year 4 (known zone, round the bases a year old: ${pct(kn)} Little or Picked clean; years 1–4: ${line("known-settled")}; round every base of the day ${line("known-near")})`);
     // The near zone is the POIs within reach of the bases of the day, so its set shifts as groups move and fall: a dip of
     // a few points between years is the zone changing, not the POIs filling back up.
-    check(r.years.slice(1, 4).every((s, j) => share(s, "known-near", [2, 3]) >= share(r.years[j], "known-near", [2, 3]) - 0.05), `${r.size}: more of them picked over every year (within 5 points: years 1–4 ${r.years.slice(0, 4).map((s) => pct(share(s, "known-near", [2, 3]))).join(" → ")})`);
+    check(r.years.slice(1, 4).every((s, j) => share(s, "known-settled", [2, 3]) >= share(r.years[j], "known-settled", [2, 3]) - 0.05), `${r.size}: more of them picked over every year (within 5 points: years 1–4 ${line("known-settled")})`);
     const uf = share(s4, "unknown-far", [0, 1]);
     check(poolOf(s4, "unknown-far") > poolOf(s4, "known-near") && uf >= 0.5, `${r.size}: the unknown zone far from the bases stays richer into the mid-game (year 4: ${pct(poolOf(s4, "unknown-far"))} of its pool left against ${pct(poolOf(s4, "known-near"))} near the bases on the roads; ${pct(uf)} Rich or Some)`);
   }

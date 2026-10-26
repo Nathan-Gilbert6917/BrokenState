@@ -181,7 +181,7 @@ export const VARIANT_TYPES = {
       snack: { role: "dining", name: "Coffee and snack bar", type: "store", lay: "cafe", hub: false },
       deli: { role: "dining", name: "Deli counter", type: "store", lay: "cafe", hub: false },
       lunch: { role: "dining", name: "Lunch counter", type: "store", lay: "diner", hub: false },
-      feed: { role: "storage", name: "Feed and seed", type: "barn" },
+      feed: { role: "storage", name: "Feed and seed", type: "garden" }, // seed and fencing (issue #43: a barn's were its hunting rifles)
       bait: { role: "storage", name: "Bait room", type: "sportshop" },
       attend: { role: "office", name: "Attendant's office" },
       showers: { role: "restroom", name: "Showers" },
@@ -295,7 +295,7 @@ export const VARIANT_TYPES = {
       safeoff: { role: "office" },
       sig2: { role: "exam", name: "Grooming room", type: "vet" },
       extra: { role: "sales", name: "Aquarium hall", type: "petstore", hub: false, maxBoxes: 3 },
-      yard: { role: "warefloor", name: "Feed warehouse", type: "barn", hub: false, maxBoxes: 4 },
+      yard: { role: "warefloor", name: "Feed warehouse", type: "petstore", hub: false, maxBoxes: 4 }, // pet food (issue #43: a barn's were its hunting rifles)
     },
     variants: SHOP12({ main: "Pet shop", narrow: "Pet shop with a flat above", corner: "Corner pet shop", strip: "Strip-mall pet supply", superstore: "Pet superstore", outlet: "Pet and feed warehouse", twofloor: "Two-floor pet store", wrap: "Pet shop with an L of back rooms", counter: "Pet shop with a grooming salon", twin: "Pets and aquariums, two shopfronts", roadside: "Country pet and feed", flagship: "Flagship pet store with a groomer" }),
   },
@@ -464,7 +464,7 @@ export const VARIANT_TYPES = {
       spice: { role: "storage", name: "Dry goods room", type: "store" },
       annex: { role: "sales", name: "Beer and wine", type: "liquor", lay: "minimart", hub: false, maxBoxes: 2 },
       florist: { role: "storage", name: "Florist", type: "garden" },
-      feed: { role: "storage", name: "Feed and seed", type: "barn" },
+      feed: { role: "storage", name: "Feed and seed", type: "garden" }, // seed and fencing (issue #43: a barn's were its hunting rifles)
     },
   },
 };

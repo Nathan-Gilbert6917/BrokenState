@@ -27,6 +27,8 @@ const CORE = [
   ["typechecktest", false], ["shopstest", false], ["interiortest", false], ["storeytest", false],
   ["scaletest", true], ["varianttest", true], ["itemarttest", false], ["furnituretest", false],
   ["citycrawltest", false], ["scenestest", true], ["basefurnituretest", false], ["malltest", true],
+  ["neighbourhoodtest", false], ["shopvarianttest", false],
+  ["carryplaytest", true], // #48: the carry playthrough (raid, crawl, base; one and two survivors, with and without a vehicle); quick: seeds 42 and 5
 ];
 
 const args = process.argv.slice(2);
@@ -89,7 +91,7 @@ async function runAll(list) {
   return results;
 }
 
-const ORDER = ["citycrawltest", "interiortest", "varianttest", "shopstest", "scenestest", "storeytest", "scaletest"]; // slowest first
+const ORDER = ["citycrawltest", "interiortest", "varianttest", "shopstest", "scenestest", "shopvarianttest", "storeytest", "scaletest"]; // slowest first
 const sorted = [...picked].sort((a, b) => (ORDER.indexOf(a[0]) + 1 || 99) - (ORDER.indexOf(b[0]) + 1 || 99));
 const t0 = Date.now();
 let otherDir = null;

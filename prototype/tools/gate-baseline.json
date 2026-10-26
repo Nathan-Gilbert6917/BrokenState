@@ -1,7 +1,4 @@
 {
  "note": "Checks known to fail on dev, read by tools/gate.js (issue #46). Each fails on 09c8f00 (before epic #7) too and belongs to #44 or #45. node tools/gate.js --update drops a check once it passes; nothing is ever added.",
- "checks": [
-  "interiortest: the dead are mostly inside (# of #)",
-  "interiortest: the same site has the same floor plan every visit (another site another)"
- ]
+ "checks": []
 }

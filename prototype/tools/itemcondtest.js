@@ -139,6 +139,7 @@ const ALLOWED = {
   "carrykit.js": /starting gear/, // a colonist's starting spare magazines (not loot)
   "deadsoldiers.js": /newItem\([kg], q\(range\), rng\)/, // the maker handed in (inventory.js armouredItem; g: gundist.js swapGun's rifle)
   "hardcore-start.js": /./, "recruits.js": /./, "world.js": /startdur/, // starting and recruit gear (START_DUR), not loot
+  "crashstart.js": /newItem\(key, 1, hash01\(state\.seed, "crashkit"|= newItem\("(chestrig|plate|traumakit)"\)|stow\(s, newItem\("/, // Crashlanding's fixed kit (crashstart.js crashKit, CRASH_KIT: the soldier's issue, starting gear, not loot; issue #45: red since the mode came in)
   "toolreqs.js": /newItem\(k, 1\)/, // an older save's hub given the tool shelf a new hub starts with (migrateTools: starting gear, not loot)
   "blueprints.js": /bpItemKey/, "skills.js": /newItem\(key, 1\)|newItem\(list\[/, // paper
   "visitors.js": /bpItemKey|newItem\(k, 1\)\)/, // a merchant's blueprints and books (paper)
@@ -256,7 +257,7 @@ check(Object.values(AREAS).every((a) => (a.gear || []).every(([k]) => !!GEAR[k])
     const its = [];
     for (let w = 0; w < 25; w++) { st.hour = w * 168; its.push(...restock(st, f)); }
     f.type = was;
-    within(`a ${type} group's wares`, its, new Set([...WARES[type], ...Object.keys((WARE_BLADES[type] || {}).items || {}), ...Object.keys((WARE_SURV[type] || {}).items || {}), ...Object.keys((WARE_TOOLS[type] || {}).items || {}), ...newGuns(type), ...Object.keys((WARE_EXTRAS[type] || {}).items || {}), ...Object.keys((WARE_GUNMODS[type] || {}).items || {}), ...Object.keys((WARE_MODS[type] || {}).items || {}), ...Object.keys((WARE_HEAD[type] || {}).items || {}), ...Object.keys((WARE_KIT[type] || {}).items || {}), ...paper(type), ...Object.keys(gunsFrom(`trader:${type}`)), ...Object.keys(partPool(PART_FINDS.WARE_TAGS[type]))])); // partfinds.js partWares: the catalogue's parts by the shelf's tags
+    within(`a ${type} group's wares`, its, new Set([...WARES[type], ...Object.keys((WARE_BLADES[type] || {}).items || {}), ...Object.keys((WARE_SURV[type] || {}).items || {}), ...Object.keys((WARE_TOOLS[type] || {}).items || {}), ...newGuns(type), ...Object.keys((WARE_EXTRAS[type] || {}).items || {}), ...Object.keys((WARE_GUNMODS[type] || {}).items || {}), ...Object.keys((WARE_MODS[type] || {}).items || {}), ...Object.keys((WARE_HEAD[type] || {}).items || {}), ...Object.keys((WARE_KIT[type] || {}).items || {}), ...paper(type), ...Object.keys(gunsFrom(`trader:${type}`)), ...Object.keys(partPool(PART_FINDS.WARE_TAGS[type])), ...Object.keys((WARE_CARTS[type] || {}).items || {})])); // partfinds.js partWares: the catalogue's parts by the shelf's tags; loot.js cartWares: a wheelbarrow or a hand cart on a traders' table (WARE_CARTS, 2026-10-24; issue #45: the list had left them out)
   }
   st.hour = 0;
   const com = [];
@@ -318,6 +319,9 @@ for (const f of ["site", "area", "wares"]) { nlStash.push([ARSENAL_FINDS, f, ARS
 //   the gun distribution (gundist.js swapGun: a listed gun swapped for one of its source's pool on a hash; off, every
 //   source yields its own list on the same dice).
 for (const f of ["site", "area", "wares"]) { nlStash.push([PART_FINDS, f, PART_FINDS[f]]); PART_FINDS[f] = {}; }
+// - the frag grenade the armoury's and the barracks' small finds had (loot.js AREA_FINDS; the Army's only since issue #43,
+//   in AREA_LAUNCHERS at an Army site): put back, first in each table at its old weight, so the small finds hash as before.
+for (const [a, w] of [["armory", 1], ["barracks", 0.5]]) if (!AREA_FINDS[a].items.frag) { nlStash.push([AREA_FINDS[a], "items", AREA_FINDS[a].items]); AREA_FINDS[a].items = { frag: w, ...AREA_FINDS[a].items }; }
 GUN_DIST.off = true;
 // - the wind-up and the military flashlight (lights.js windlight / tacflash, night sight by the hour, ab69f1b): rows
 //   appended to LIGHT_FINDS, so a light find picks from a longer table (one draw all the same: the keys move, not the
@@ -361,7 +365,19 @@ const BASE = {
   // Handbook, and hobbyelec, the Hobby Electronics Handbook; was c643e509c194a1f5 / f7404c882ec78521 / 12728447271355):
   // a caravan shuffles BP_KEYS for its blueprints (visitors.js merchantGoods), one draw a key, so two more keys move
   // the visitors' dice and all that follows; with the two taken out of BP_KEYS they come back to the old hashes exactly.
-  siteFinds: "edc8e9c7fdaab752", groupWares: { keys: "dcbb48f4247749e8", rng: 2670422955354 }, visitors: { keys: "a3e22f8dda2c057c", merchants: "3f0ab5a78a5a8143", rng: 13215643777613 },
+  // siteFinds, groupWares and visitors: re-baselined for issue #45 (2026-10-26; red since 2026-10-24, on 09c8f00 too).
+  // Bisected from 926b4fd (green) to dev; four commits moved them, each on purpose, nothing else:
+  //   1370d1c (the map sizes, Normal 250 × 150, and a name of its own for every site, 2026-10-24): seed 4242 builds
+  //     another map, so every world-drawn sample moved (site finds 3c704b88a9bebf31, group wares 517a8092361bb15c /
+  //     3142966935108, travellers 30a998f80509996b, merchants 25e8f28f03020924 / 15843940719268; were edc8e9c7fdaab752, dcbb48f4247749e8 / 2670422955354, a3e22f8dda2c057c, 3f0ab5a78a5a8143 /
+  //     13215643777613);
+  //   4d67e54 (survivors on dice of their own, 2026-10-24): the groups' people drawn off the world's dice, so the
+  //     group wares' draws moved (99a3a782ddfde0d3 / 3095346223970);
+  //   b7add23 (appliances at the base, #19, 2026-10-25: propane in the caravans' goods): merchants c208a60ce6f29898;
+  //   ad5c840 (the college sites, campus.js, 2026-10-25: laid on the map after the town rings): the sites the sample
+  //     reads and where travellers and caravans go (site finds 6c38411580a801f3, travellers bac9ee96eb2653e5,
+  //     merchants c99e3e9805ffbe06 / 16047244524511).
+  siteFinds: "6c38411580a801f3", groupWares: { keys: "99a3a782ddfde0d3", rng: 3095346223970 }, visitors: { keys: "bac9ee96eb2653e5", merchants: "c99e3e9805ffbe06", rng: 16047244524511 },
 };
 // The flashbang branch's extras (deadsoldiers.js MILDEAD.BODY_EXTRA, miltrucks.js TRUCK_LOOT_HOOKS) roll dice of their
 // own and only add: off for these samples, like the commune's extras below, so the old baselines hold.

@@ -11,7 +11,7 @@
 //   bare tile is hidden; a site keeps its discovery class; the hub never sees a count
 // - pools: a site POI's pool is tile.loot (poiTake lowers it), an extra's its own, from its kind's richness; stripped
 // - the town rings: radius 1–2 of suburb round every town centre, some towns 1 and some 2, land only, the centre and
-//   countryside sites untouched, the town's shops on them; infection and loot follow the suburbs' rules
+//   countryside sites untouched, the town's shops in the ring on them (a satellite 3 tiles out keeps its ground); infection and loot follow the suburbs' rules
 // - knowledge: a team's survey finds go in its report and reach the hub with it, a snapshot carries what is known,
 //   the dev reveal shows everything, a save keeps the hub's record; a hive rising or falling clears the tile
 // - the save corpus (tools/savecorpustest.js, 2 days) still loads
@@ -287,8 +287,15 @@ section("The town suburb rings");
   check(!farRing, `no ring reaches 3 tiles out (${farRing})`);
   const st = W();
   const town = st.tiles.find((t) => t.loc && t.loc.type === "town");
+  // The town's shops in its ring (radius 1 or 2) stand in its suburbs. A satellite (mapgen.js TOWN_SATELLITES: a gas
+  // station, diner, motel, church, feed store or clinic, laid 2 or 3 tiles out since the first map) 3 tiles out stands
+  // past the ring, which never reaches 3 tiles (the check above), so it keeps its own ground. Issue #45: the check read
+  // every shop of the town, and seed 42's Iron Gap has had its clinic 3 tiles out on the plains since 09c8f00 at least.
   const shops = st.tiles.filter((t) => t.loc && t.loc.settlement === town.id && t !== town && t.loc.zone === "town");
-  check(shops.length >= 2 && shops.every((t) => t.terrain === "suburb"), `${town.loc.name}'s shops stand in its suburbs (${shops.map((t) => t.loc.type).join(", ")})`);
+  const inRing = shops.filter((t) => st.grid.distance(town.id, t.id) <= 2), past = shops.filter((t) => st.grid.distance(town.id, t.id) === 3);
+  const where = (list) => list.map((t) => `${t.loc.type} ${st.grid.distance(town.id, t.id)} out on ${t.terrain}`).join(", ") || "none";
+  check(inRing.length >= 2 && inRing.every((t) => t.terrain === "suburb") && inRing.length + past.length === shops.length, `${town.loc.name}'s shops in its ring stand in its suburbs (${where(inRing)}), none more than 3 tiles out`);
+  check(past.every((t) => t.terrain !== "suburb"), `${town.loc.name}'s satellites 3 tiles out keep their own ground (${where(past)})`);
   check(st.grid.within(town.id, 1).map((id) => st.tiles[id]).filter((t) => t.terrain === "suburb" && !t.loc).every((t) => t.loot >= 0.3 - 1e-9), "a bare ring tile has the suburbs' minor loot");
   // The same map as before the rings under them: every site, road and hive where it was (the ring is laid last).
   const same = (a, b) => a.tiles.every((t, i) => (t.loc && t.loc.name) === (b.tiles[i].loc && b.tiles[i].loc.name) && t.road === b.tiles[i].road && t.hive === b.tiles[i].hive);
