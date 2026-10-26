@@ -9,7 +9,8 @@
 // WHO FIGHTS (siteThreat): a team setting up camp (Set up camp, Establish base, Build outpost: staging.js pitchArrive)
 // on a city tile, a town (the suburbs, a town's own tile: basemap.js terrainOf) or a tile at least SITE_CLEAR.INF
 // infected. The dead there: BASE by the place, more by the tile's infection (INF_N), times the year's growth of the
-// hordes (eras.js hordeGrowth), times the run's Dead at sites dial; on farmland (plains, a farm's fields) or land with no
+// hordes (eras.js hordeGrowth), times the run's Dead at sites dial, never more than the tile's open ground holds
+// (deadpop.js openDead: the kills come off it, setup.deadPop); on farmland (plains, a farm's fields) or land with no
 // town or city within NEAR tiles a share of that (FAR): a few at most, often none. Their kinds as a raid's there (the soldiers of a military site, the bred dead, the dead beasts,
 // the years' dead).
 // WHEN: once the spot is fixed (staging.js pickSite, autoSite, or at once when nobody is asked: clearSiteFirst), before
@@ -31,6 +32,7 @@ import { siteDeadMix, maxMix } from "./deadsoldiers.js";
 import { beastMix } from "./deadbeasts.js";
 import { siteSpecials } from "./hivetech.js";
 import { widenMix } from "./deadpool.js";
+import { openDead } from "./deadpop.js"; // the dead on the land (issue #65)
 
 export const SITE_CLEAR = {
   INF: 0.5,                               // a tile this infected needs clearing wherever it is
@@ -67,7 +69,7 @@ export function siteThreat(state, tile) {
   if (place === "land" && farOut(state, tile)) n *= SITE_CLEAR.FAR;
   const dial = cfgOf(state, "siteDead");
   if (dial != null && dial !== 1) n *= dial; // worldcfg.js: the run's Dead at sites dial
-  const count = Math.max(0, Math.min(SITE_CLEAR.MAX, Math.round(n)));
+  const count = Math.max(0, Math.min(SITE_CLEAR.MAX, openDead(state, tile), Math.round(n))); // deadpop.js: no more than the tile's open ground holds
   if (!count) return { ...none, place };
   const mix = maxMix(maxMix(maxMix(siteDeadMix(state, tile), siteSpecials(state, tile)), beastMix(state, tile)), widenMix(state, tile));
   return { count, power: Math.round((2 + inf * 3) * 10) / 10, place, mix, name: place === "land" ? "the dead about the spot" : `the dead in the ${place === "city" ? "city's" : "town's"} streets` };
@@ -90,7 +92,7 @@ export function clearSiteFirst(state, p, at) {
   if (!th.count) { p.siteClear = tile; return false; }
   p.phase = "engaged";
   log(state, `${tileLabel(state, tile).replace(/^\w/, (m) => m.toUpperCase())}: ${th.count} of the dead between the team and its camp's spot. They have to be cleared first.`, "danger");
-  startCombat(state, { tile, partyId: p.id, enemy: { kind: "zombies", count: th.count, power: th.power, name: th.name, mix: th.mix }, ambush: null, canRetreat: true, handler: "siteClear", layout: "siteClear", context: { partyId: p.id, tile, at: [at[0], at[1]] } });
+  startCombat(state, { tile, partyId: p.id, enemy: { kind: "zombies", count: th.count, power: th.power, name: th.name, mix: th.mix }, ambush: null, canRetreat: true, handler: "siteClear", layout: "siteClear", context: { partyId: p.id, tile, at: [at[0], at[1]] }, deadPop: { tile, poi: null, roster: th.count } }); // deadpop.js: the kills off the tile's open ground
   return true;
 }
 
