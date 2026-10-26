@@ -584,7 +584,8 @@ function sceneB(st) {
       const via = (q) => (isFinite(q) ? `${q} tiles` : "no way");
       say(`(a walker at ${zd.x},${zd.y} outside the door: to the cell inside it is ${via(r0.dist[ji])} with the doorway clear, ${via(r.dist[ji])} with the shelves in it)`);
       const half = vaultable(b, dc); // barricade.js: half cover the dead crawl over (CRAWL.COST over the step: a walker's whole turn), full cover they batter or go round
-      check(!isFinite(r.dist[jd]) && r.dist[ji] >= r0.dist[ji] + (half ? CRAWL.COST : 3), `the dead cannot walk through it: nobody stands in the doorway, and the way in is ${half ? `a crawl over the shelves (+${CRAWL.COST} tiles, half cover)` : "round by another door, or none"} (${via(r0.dist[ji])} → ${via(r.dist[ji])})`);
+      const over = r.dist[ji] >= r0.dist[ji] + CRAWL.COST;
+      check(!isFinite(r.dist[jd]) && r.dist[ji] > r0.dist[ji] && (!half || r.dist[ji] <= r0.dist[ji] + CRAWL.COST), `the dead cannot walk through it: nobody stands in the doorway, and the way in is ${!isFinite(r.dist[ji]) ? "gone" : over && half ? `a crawl over the shelves (+${CRAWL.COST} tiles, half cover)` : "round by another way"} (${via(r0.dist[ji])} → ${via(r.dist[ji])})`);
       b.units.splice(b.units.indexOf(zd), 1);
     } else say("(no walker to try the door)");
     nextTurn(st, b);
