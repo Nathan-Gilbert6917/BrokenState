@@ -37,7 +37,7 @@ import { teamLoad, burdenRecord, wornLoad } from "./load.js";
 import { expectForage } from "./foraging.js";
 import { expectWood, chopCrew, chopPower, campDayBurn } from "./woodcutting.js";
 import { partyFleet } from "./vehicles.js";
-import { supplyLoad, poolLoad, packedSupplies } from "./parties.js";
+import { supplyLoad, poolLoad, packedSupplies, clockText } from "./parties.js";
 import { sumRecs } from "./rounds.js"; // rounds by calibre
 
 export const SEARCH_HOURS = 6;      // time on site the estimates assume for a search (as estimateTrip does)
@@ -151,10 +151,10 @@ export const stepLabel = (state, s) => {
     case "wait": return `Wait ${s.hours || 6}h`;
     case "sweep": { const o = sweepOpts(s); return `Sweep ${o.radius} tiles around for ${o.hours}h`; }
     case "fullsurvey": return `Survey the tile (${LOOK.hours}h)`;
-    case "hunt": return `Hunt ${huntHours(s)}h`;
-    case "fish": return `Fish ${huntHours(s)}h`;
-    case "forage": return `Forage ${huntHours(s)}h`;
-    case "wood": return `Cut wood ${huntHours(s)}h`;
+    case "hunt": return `Hunt ${clockText(huntHours(s))}`;
+    case "fish": return `Fish ${clockText(huntHours(s))}`;
+    case "forage": return `Forage ${clockText(huntHours(s))}`;
+    case "wood": return `Cut wood ${clockText(huntHours(s))}`;
     case "snare": return s.mode === "check" ? "Check the snares" : s.mode === "set" ? "Set snares" : "Snares: set (or check)";
     case "move": return `Move to ${tileLabel(state, s.tile)}`;
     default: return STEP_KINDS[s.kind]?.label || s.kind;

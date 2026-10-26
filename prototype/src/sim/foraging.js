@@ -35,7 +35,7 @@
 // months), at a base the Kitchen makes meals of it and the drying racks and the preserving room take it (storage.js).
 // Gathered on infected ground it is an egg lot (worm.js). A wild hive's honey is honey (it never spoils).
 import { log, skill, atBase } from "./world.js";
-import { partyMembers, partyTile, tileLabel, teamName, cargoRoom, carried, planPath, partySpeed } from "./parties.js";
+import { partyMembers, partyTile, tileLabel, teamName, cargoRoom, carried, planPath, partySpeed, clockText } from "./parties.js";
 import { hasPerk, gainXp, USE } from "./skills.js";
 import { zombieToughness } from "./hives.js";
 import * as Weather from "./weather.js";
@@ -57,7 +57,7 @@ export const FORAGE = {
   rate: 0.3,                 // rations a forager-hour: average forager, untouched forest, high summer, daylight
   deplete: 40,               // rations a full tile of abundance 1 gives before it is stripped
   halfLife: 10,              // days for the picked land to grow half back
-  minHours: 2, maxHours: 24, defHours: 8,
+  minHours: 0.5, maxHours: 24, defHours: 8, // in half hours (the user's request 2026-10-26: "Minimum is 30 min orders"; 2 before)
   weights: [1, 0.9, 0.8, 0.7, 0.6, 0.5], floorWeight: 0.4,
   dusk: 0.6, night: 0.1, storm: 0.5,
   hurt: 40, hurtMult: 0.5,   // under this health a forager counts half
@@ -174,8 +174,8 @@ export function forageRate(state, tile, hour, power, level = forageLevel(state, 
 export function expectForage(state, members, tile, hours, startHour = state.hour, room = Infinity, power = foragePower(members)) {
   let level = forageLevel(state, tile, startHour), rations = 0;
   const per = depletePer(state, tile);
-  for (let h = 1; h <= hours; h++) {
-    const r = forageRate(state, tile, startHour + h, power, level);
+  for (let h = 1; h - 1 < hours - 1e-9; h++) { // a half hour at the end: half an hour's
+    const r = forageRate(state, tile, startHour + h, power, level) * Math.min(1, hours - h + 1);
     rations += r;
     level = Math.max(0, level - r * per);
   }
@@ -246,12 +246,12 @@ function gatherHour(state, p, members, got, share = 1) {
   for (const s of members) { gainXp(state, s, "farming", 0.5 * share); gainXp(state, s, "scouting", 0.3 * share); }
   return kept;
 }
-export function forageHour(state, p) {
+export function forageHour(state, p, share = 1) { // share: of the hour (a half hour)
   const t = p.task;
   const got = t.got || (t.got = { rations: 0, left: 0 });
   const members = partyMembers(state, p);
   if (!members.length) { got.stopped = "nobody left to forage."; return false; }
-  gatherHour(state, p, members, got, 1);
+  gatherHour(state, p, members, got, share);
   return true;
 }
 // A team in camp (orders.js campHour): its fit people forage around the camp in daylight, part of the hour.
@@ -282,8 +282,8 @@ export function forageSummary(state, p, t) {
   const stop = got.stopped ? ` Stopped: ${got.stopped}` : "";
   if (got.rations >= 1) log(state, `${teamName(state, p)} foraged near ${tileLabel(state, tile)}: ${Math.floor(got.rations)} days of food (${forageWhat(state)}).`, "good");
   return got.rations >= 0.5
-    ? `Foraged ${t.done}h: ${r1(got.rations)} days of food (${forageWhat(state)})${finds ? `, and ${finds}` : ""}.${left}${sickText(state, got)} Left to gather here: ${word}.${stop}`
-    : `Foraged ${t.done}h and found next to nothing${seasonKey(state) === "winter" ? " (winter: little grows)" : ""}.${finds ? ` Still: ${finds}.` : ""}${sickText(state, got)} Left to gather here: ${word}.${stop}`;
+    ? `Foraged ${clockText(t.worked ?? t.done)}: ${r1(got.rations)} days of food (${forageWhat(state)})${finds ? `, and ${finds}` : ""}.${left}${sickText(state, got)} Left to gather here: ${word}.${stop}`
+    : `Foraged ${clockText(t.worked ?? t.done)} and found next to nothing${seasonKey(state) === "winter" ? " (winter: little grows)" : ""}.${finds ? ` Still: ${finds}.` : ""}${sickText(state, got)} Left to gather here: ${word}.${stop}`;
 }
 // What a camp gathered (orders.js finishTask, the break-camp line).
 export function campForageNote(state, p, t) {

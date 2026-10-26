@@ -54,7 +54,7 @@
 // Wood is a supply (data.js SUPPLIES.wood: 0.1 kg a unit, cheap, dear in winter; every wood figure here was a
 // 30th of this when a unit was a 3 kg bundle): stored at bases with no limit, carried by teams, traded.
 import { log, skill, atBase } from "./world.js";
-import { partyMembers, partyTile, tileLabel, teamName, cargoRoom, carried, takeSupply } from "./parties.js";
+import { partyMembers, partyTile, tileLabel, teamName, cargoRoom, carried, takeSupply, clockText } from "./parties.js";
 import { gainXp, USE } from "./skills.js";
 import { zombieToughness } from "./hives.js";
 import * as Weather from "./weather.js";
@@ -76,7 +76,7 @@ export const WOOD = {
   hands: 0.7,                // bare hands (no cutting tool): deadfall and branches (it was 1 until the tools, 2026-10-21: an axe ~3 times it)
   deplete: 7500,             // wood a full tile of abundance 1 gives before it is cut bare (750 kg)
   halfLife: 60,              // days for the cut land to grow half back
-  minHours: 2, maxHours: 24, defHours: 8,
+  minHours: 0.5, maxHours: 24, defHours: 8, // in half hours (the user's request 2026-10-26: "Minimum is 30 min orders"; 2 before)
   weights: [1, 0.9, 0.8, 0.7, 0.6, 0.5], floorWeight: 0.4,
   dusk: 0.5, night: 0, storm: 0.4, snow: 0.75, // winter: winter.js WINTER.wood (seasonWood)
   hurt: 40, hurtMult: 0.5,
@@ -190,8 +190,8 @@ export function woodRate(state, tile, hour, power, level = woodLevel(state, tile
 export function expectWood(state, members, tile, hours, startHour = state.hour, room = Infinity, power = chopPower(chopCrew(members))) {
   let level = woodLevel(state, tile, startHour), wood = 0;
   const per = depletePer(state, tile);
-  for (let h = 1; h <= hours; h++) {
-    const r = woodRate(state, tile, startHour + h, power, level);
+  for (let h = 1; h - 1 < hours - 1e-9; h++) { // a half hour at the end: half an hour's
+    const r = woodRate(state, tile, startHour + h, power, level) * Math.min(1, hours - h + 1);
     wood += r;
     level = Math.max(0, level - r * per);
   }
@@ -219,15 +219,15 @@ export function woodProblem(state, p, tile = partyTile(p)) {
   return "";
 }
 
-// ---------- one hour of cutting (orders.js taskHour) ----------
-export function woodHour(state, p) {
+// ---------- one hour of cutting (orders.js taskHour), or share of one (a half hour) ----------
+export function woodHour(state, p, share = 1) {
   const t = p.task;
   const got = t.got || (t.got = { wood: 0, left: 0 });
   const members = partyMembers(state, p);
   if (!members.length) { got.stopped = "nobody left to cut wood."; return false; }
   const tile = partyTile(p);
   const crew = chopCrew(members, teamSpare(p));
-  const rate = woodRate(state, tile, state.hour, chopPower(crew));
+  const rate = woodRate(state, tile, state.hour, chopPower(crew)) * share;
   if (rate > 0) {
     // A good hour or a poor one: 50% to 150% of the expected.
     const amount = Math.round(rate * (0.5 + state.rng.next()) * 100) / 100;
@@ -242,12 +242,12 @@ export function woodHour(state, p) {
     es.woodField = (es.woodField || 0) + kept; // the teams' cutting (the base job counts in es.woodCut)
     // Axes slip: a cut or a sprain now and then (half the chance gathering by hand).
     for (const c of crew) {
-      if (state.rng.chance(WOOD.injury * (c.tool ? 1 : 0.5))) {
+      if (state.rng.chance(WOOD.injury * (c.tool ? 1 : 0.5) * share)) {
         addCondition(state, c.s, state.rng.chance(0.6) ? "cut" : "sprain", `cutting wood near ${tileLabel(state, tile)}`);
         (got.hurt || (got.hurt = [])).push(c.s.id);
       }
     }
-    for (const s of members) { gainXp(state, s, "farming", 0.4); gainXp(state, s, "mechanics", 0.1); }
+    for (const s of members) { gainXp(state, s, "farming", 0.4 * share); gainXp(state, s, "mechanics", 0.1 * share); }
   }
   return true;
 }
@@ -261,8 +261,8 @@ export function woodSummary(state, p, t) {
   p.lastHaul = { kind: "wood", wood: got.wood, hour: state.hour };
   if (got.wood >= 30) log(state, `${teamName(state, p)} cut wood near ${tileLabel(state, tile)}: ${Math.floor(got.wood)} wood.`, "good");
   return got.wood >= 15
-    ? `Cut wood ${t.done}h: ${Math.round(got.wood)} wood to carry home.${left}${hurt} Wood left here: ${word}.${stop}`
-    : `Cut wood ${t.done}h and got next to nothing${woodAbundance(state, tile) < 0.1 ? " (bare ground)" : ""}.${hurt} Wood left here: ${word}.${stop}`;
+    ? `Cut wood ${clockText(t.worked ?? t.done)}: ${Math.round(got.wood)} wood to carry home.${left}${hurt} Wood left here: ${word}.${stop}`
+    : `Cut wood ${clockText(t.worked ?? t.done)} and got next to nothing${woodAbundance(state, tile) < 0.1 ? " (bare ground)" : ""}.${hurt} Wood left here: ${word}.${stop}`;
 }
 
 // ---------- the Cut wood job at a base ----------
