@@ -1110,7 +1110,7 @@ Block-by-block roguelike extraction in a city or town, with multi-storey buildin
   their real size (a city's hospital 60–100 m across, its towers 6–10 storeys), each building's map as big as it needs
   (up to 300 × 300); only the first 4 floors of a taller building are built (5 from the deeper blocks), its stairs up
   from there collapsed or barricaded. Details below.
-- Test `tools/citycrawltest.js`; the stairs `tools/storeytest.js`; the sizes `tools/scaletest.js`.
+- Tests `tools/citycrawltest.js` and the parts split from it to run side by side in the merge gate (issue #74; the shared setup `tools/citycrawlkit.js`): `tools/citycrawlgridtest.js` (encounters, saving, the autopilot, the round grid, the raid tickets' parity 10a–10d), `tools/citycrawlquicktest.js` and `tools/citycrawlquick2test.js` (the quick search's parity, every other kind each); the stairs `tools/storeytest.js`; the sizes `tools/scaletest.js`.
 
 ### Buildings at real size in the crawl (issue #24, 2026-10-25)
 The user's request 2026-10-25: "All buildings should scale based on how large buildings are in real life with unique layouts and 1 to 3 stories tall and city buildings can be 10 stories tall make the raid maps larger if needed up to 300x300", and "to prevent needing to make really tall cities just block off or have destroyed stairs to prevent going to higher stories though they dont actually exist". The rules are in [combat.md "Buildings at real size"](combat.md#buildings-at-real-size-issue-24-2026-10-25) and [docs/multi-storey-crawl.md](../multi-storey-crawl.md#up-to-10-storeys-the-floors-above-blocked-off-issue-24-2026-10-25).
