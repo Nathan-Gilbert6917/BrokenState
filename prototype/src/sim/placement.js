@@ -141,11 +141,11 @@ export const PLACE_EXTRA = [
   ["bakery", { rural: 0.0015, highway: 0.0015, coast: 0.0005 }],
   ["butcher", { rural: 0.0015, highway: 0.001 }],
   ["datacenter", { centre: 0.03, city: 0.012, suburb: 0.006, town: 0.004, highway: 0.004 }], // data centres (issue #51): by the power and the fibre; last, so the kinds before keep their picks
-  ["sawmill", { scenic: 0.0025, rural: 0.0005, coast: 0.0015, highway: 0.0005, town: 0.006 }], // issue #53 (last: the kinds before keep their picks; none in a save from before them, legacySaw): forest and hills most, some by the water, the roads and in towns
   // Issue #52: a mine or a quarry in the hills and mountains, now and then in the country; never a town's (a new world
-  // from since them: legacyMines skips these).
+  // from since them: legacyMines skips these). Before the sawmill (#53), which stays last.
   ["mine", { scenic: 0.004, rural: 0.0005 }],
   ["quarry", { scenic: 0.002, rural: 0.0008 }],
+  ["sawmill", { scenic: 0.0025, rural: 0.0005, coast: 0.0015, highway: 0.0005, town: 0.006 }], // issue #53 (last: the kinds before keep their picks; none in a save from before them, legacySaw): forest and hills most, some by the water, the roads and in towns
 ];
 const R2_EXTRA = new Set(["bakery", "butcher"]); // issue #55's: none in a save from before them
 const MINE_EXTRA = new Set(["mine", "quarry"]); // issue #52's: none in a save from before them
