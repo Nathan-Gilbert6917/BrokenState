@@ -32,9 +32,9 @@
 //   cont is the container ledger (poiLedger makes it; poicont.js keeps it: which containers were looted and by whom,
 //   what the player opened and left in them), threatStamp the perceived threat recorded by a survey or a visit,
 //   visits / lastDay the player's visit history; site marks the site POI.
-// - Tile heat (state.tileHeat, TILE_HEAT): per tile, raised by going into and out of its places and by others'
-//   raids, falling 10% a day; it raises every POI's true threat and the raid roster. Seen as a stamp (noteTileHeat).
-// - Threat: the true threat of a POI (poiThreat) is its kind's danger + the tile's infection + the tile's heat + a
+// - The dead and raiders on the tile and in each POI (deadpop.js, issue #65): real counts that raids spawn from and kills
+//   come off; tile heat is retired to thin wrappers over its noise memory and its bands (TILE_HEAT below).
+// - Threat: the true threat of a POI (poiThreat) is its kind's danger + the tile's infection + its dead (deadpop.js) + a
 //   hive-land bonus (THREAT.HIVE × hives.js zombieToughness); the raid roster reads the true value (scavenge.js
 //   raidEnemies). What the player sees is an estimate (poiThreatEstimate, the intelest.js pattern): a stamp made by
 //   a full survey (notePoiThreat "survey", error 20%, less with optics) or a visit (10%) whose error grows by
@@ -62,6 +62,7 @@ import { hotelExtra } from "./hotels.js"; // call-time only: a hotel a tile may 
 import { layoutFor, layoutName, poiLayoutKey, settingOfTile } from "./buildvariants.js"; // a POI's building layout (issue #32): its name and its plan
 import { legacyRooms, legacyPrisons, legacyMines, legacyFarms } from "./worldcfg.js"; // an older save: no layouts, no county jails
 import { placing, placeMult, standsOn, tileClass, placeExtraKind, PLACE_KNOWN } from "./placement.js"; // call-time only: a new world's kinds by the placement table (issue #42)
+import { DEADPOP, noiseOf, noteNoise, deadPopDaily, tileDead, popCap, poiDead, poiDefault, bandOfCount as deadBandOf } from "./deadpop.js"; // the dead on the land (issue #65): tile heat's wrappers, the threat's pools
 
 export const POI = {
   MAX: 4,                 // POIs a tile can hold, the site among them
@@ -456,66 +457,62 @@ export const THREAT = {
   STALE_DAYS: 14,                          // older than this the estimate says "stale"
   BANDS: [[0.6, "quiet"], [1.5, "some risk"], [2.6, "dangerous"], [Infinity, "very dangerous"]], // threat < cut → word; skulls = the band's index
 };
-// Tile heat (persistent, per tile: state.tileHeat { [tileId]: 0–TILE_HEAT.MAX }): what raiding a tile's places
-// stirs up there. Not Field Heat (fieldheat.js, a team's own) and not Scavenge Heat (scavenge.js, one search's or
-// one raid's). Going into a POI adds ENTER; coming out adds the approach's heat (scavenge.js APPROACHES: sneak 7,
-// normal 13, loud 22; an interactive raid by how hot it ran) and SHOT a shot fired (the fieldheat.js noteGunfire
-// record, up to SHOT_CAP); another group's abstract raid adds AI (poicont.js lootPoiAbstract). It falls by DECAY a
-// day (tileHeatDaily) and is dropped below FLOOR. The true threat of every POI on the tile rises by THREAT at MAX
-// heat (poiThreat); the raid roster grows (scavenge.js raidEnemies: one more of the dead every ROSTER heat, and from
-// SURGE up a chance of a horde or a wandering band drawn by the noise, at most SURGE_P). The player sees it as a
-// stamp made when a team is there (noteTileHeat: a visit, a raid's end, a full survey) that goes stale as the
-// threat's does (tileHeatEstimate).
+// Tile heat, retired (the heat epic #64, issue #65): the dead and the raiders are real counts now (deadpop.js: per tile
+// and per POI, raid rosters, kills, reinforcements and the day's recalculation). What raiding a tile's places stirs up
+// there is deadpop.js's noise memory; these are thin wrappers over it until #64's UI ticket replaces the words:
+// - tileHeat: the tile's noise memory (deadpop.js noiseOf, 0–TILE_HEAT.MAX): going into a POI adds ENTER, coming out
+//   the approach's heat (scavenge.js APPROACHES: sneak 7, normal 13, loud 22; a raid on its map by how hot it ran) and
+//   SHOT a shot fired (up to SHOT_CAP), another group's raid AI (poicont.js lootPoiAbstract); addTileHeat adds to it
+//   (deadpop.js noteNoise); it fades × deadpop.js DEADPOP.NOISE_DECAY a day (deadPopDaily; tileHeatDaily is that day).
+// - noteTileHeat / tileHeatEstimate: the stamp a team makes when it is there (a visit, a raid's end, a full survey) is
+//   of the dead's level now (deadpop.js deadBand: none / low / medium / high / overrun of the tile's dead against its
+//   cap), placed by the seed's dice inside an error that grows with the stamp's age; a stamp made before the pools (an
+//   older save's) still reads as heat (cold / warm / hot / very hot).
+// Not Field Heat (fieldheat.js, a team's own) and not Scavenge Heat (scavenge.js, one search's or one raid's).
 export const TILE_HEAT = {
   ENTER: 3, SHOT: 0.5, SHOT_CAP: 15, AI: 4,
-  DECAY: 0.9, FLOOR: 0.5, MAX: 100,
-  THREAT: 1.5, ROSTER: 20, SURGE: 50, SURGE_P: 0.2,
+  DECAY: 0.7, FLOOR: 0.5, MAX: 100,         // deadpop.js DEADPOP.NOISE_DECAY, FLOOR, NOISE_MAX (literals: the modules load in a cycle)
+  THREAT: 1.5, ROSTER: 20, SURGE: 50, SURGE_P: 0.2, // deadpop.js HEAT_ROSTER (an older save's fold), SURGE_NOISE, SURGE_P
   ERR: 0.25,                                                               // a stamp's error (the estimate's, as THREAT.ERR)
-  BANDS: [[10, "cold"], [30, "warm"], [60, "hot"], [Infinity, "very hot"]], // heat < cut → word
+  BANDS: [[10, "cold"], [30, "warm"], [60, "hot"], [Infinity, "very hot"]], // an older stamp's heat < cut → word
 };
-/** The tile's heat now (0 when nothing has stirred it). @param {State} state @param {Tile | number} tile @returns {number} */
+/** The tile's noise memory now (deadpop.js noiseOf; 0 when nothing has stirred it). @param {State} state @param {Tile | number} tile @returns {number} */
 export function tileHeat(state, tile) {
-  const id = typeof tile === "number" ? tile : tile ? tile.id : null;
-  const h = id != null && state.tileHeat ? state.tileHeat[id] : 0;
-  return h > 0 ? h : 0;
+  const t = typeof tile === "number" ? state.tiles[tile] : tile;
+  return t ? noiseOf(state, t) : 0;
 }
-/** Adds to a tile's heat (capped at TILE_HEAT.MAX); returns the heat after. @param {State} state @param {Tile | number} tile @param {number} amount */
+/** Adds to a tile's noise memory (deadpop.js noteNoise, capped at TILE_HEAT.MAX); returns it after. @param {State} state @param {Tile | number} tile @param {number} amount */
 export function addTileHeat(state, tile, amount) {
-  const id = typeof tile === "number" ? tile : tile ? tile.id : null;
-  if (id == null || !(amount > 0)) return tileHeat(state, id);
-  if (!state.tileHeat || typeof state.tileHeat !== "object") state.tileHeat = {};
-  return (state.tileHeat[id] = Math.min(TILE_HEAT.MAX, tileHeat(state, id) + amount));
+  const t = typeof tile === "number" ? state.tiles[tile] : tile;
+  if (!t) return 0;
+  return noteNoise(state, t, null, amount);
 }
 /** The heat a team coming out of a POI adds: the approach's heat (scavenge.js APPROACHES) and the shots fired. @param {number} approachHeat @param {number} [shots] */
 export const exitHeat = (approachHeat, shots = 0) => Math.max(0, approachHeat || 0) + Math.min(TILE_HEAT.SHOT_CAP, Math.max(0, shots || 0) * TILE_HEAT.SHOT);
 /** The shots fieldheat.js noteGunfire recorded on a tile this hour (a raid's own: finishCombat notes them first). @param {State} state @param {number} id */
 export const shotsHere = (state, id) => (state.gunfire || []).reduce((a, s) => a + (s.tile === id && s.hour === state.hour ? s.n : 0), 0);
-/** The day's fall (world.js tickHour at midnight): every tile's heat × TILE_HEAT.DECAY, gone below FLOOR. @param {State} state */
+/** The day (world.js tickHour at midnight): deadpop.js deadPopDaily (the pools' recalculation, the noise fading). @param {State} state */
 export function tileHeatDaily(state) {
-  const h = state.tileHeat;
-  if (!h || typeof h !== "object") return;
-  for (const k of Object.keys(h)) {
-    const v = h[k] * TILE_HEAT.DECAY;
-    if (!(v >= TILE_HEAT.FLOOR)) delete h[k];
-    else h[k] = v;
-  }
+  deadPopDaily(state);
 }
-/** The band of a heat value: { band: 0–3, word }. @param {number} v */
+/** The band of an older stamp's heat value: { band: 0–3, word }. @param {number} v */
 export function heatBand(v) {
   const band = Math.max(0, TILE_HEAT.BANDS.findIndex(([cut]) => v < Number(cut)));
-  return { band, word: String(TILE_HEAT.BANDS[band][1]) };
+  return { band, word: String(TILE_HEAT.BANDS[band][1]), skulls: "" };
 }
-/** A team is on the tile and sees how stirred up it is: the hub's stamp { hour, v } (state.poiKnow[tile].heat). @param {State} state @param {Tile | number} tile */
+/** A team is on the tile and sees how many of the dead are about: the hub's stamp { hour, v (noise), d (the dead), cap } (state.poiKnow[tile].heat). @param {State} state @param {Tile | number} tile */
 export function noteTileHeat(state, tile) {
   const id = typeof tile === "number" ? tile : tile.id;
   const k = poiKnowledge(state, id, true);
-  k.heat = { hour: state.hour, v: Math.round(tileHeat(state, id) * 10) / 10 };
+  k.heat = { hour: state.hour, v: Math.round(tileHeat(state, id) * 10) / 10, d: tileDead(state, id), cap: popCap(state, id) };
   return k.heat;
 }
 /**
- * The heat the player believes the tile has, or null without a stamp: { v, word, band, age (days), stale, text }. The
- * stamp's value faded by the known daily fall, placed by the seed's dice inside an error that grows with its age (the
- * threat's rule: THREAT.STALE a day, "stale" past THREAT.STALE_DAYS): new heat since the look is not known.
+ * The dead's level the player believes the tile has, or null without a stamp: { v (the count as believed), word (none
+ * … overrun), band (0–3, the colours'), level (deadpop.js deadBand's 0–4), skulls, age (days), stale, text }. The
+ * stamp's count placed by the seed's dice inside an error that grows with its age (the threat's rule: THREAT.STALE a
+ * day, "stale" past THREAT.STALE_DAYS): what changed since the look is not known. An older stamp (no count) reads as
+ * the heat it recorded, faded by the known daily fall.
  * @param {State} state @param {Tile | number} tile
  */
 export function tileHeatEstimate(state, tile) {
@@ -525,22 +522,35 @@ export function tileHeatEstimate(state, tile) {
   if (!st) return null;
   const age = Math.max(0, state.hour - st.hour) / 24;
   const err = Math.min(THREAT.MAX_ERR, TILE_HEAT.ERR + THREAT.STALE * age);
-  const faded = st.v * Math.pow(TILE_HEAT.DECAY, Math.floor(age));
-  const v = Math.max(0, faded * (1 + (hash01(state.seed, "tileheat", id, st.hour) - 0.5) * err));
-  const b = heatBand(v);
+  const j = 1 + (hash01(state.seed, "tileheat", id, st.hour) - 0.5) * err;
   const stale = age >= THREAT.STALE_DAYS;
-  return { v, word: b.word, band: b.band, age, stale, text: `${b.word} (seen ${age < 1 ? "today" : `${Math.floor(age)}d ago`}${stale ? ", stale" : ""})` };
+  const when = `seen ${age < 1 ? "today" : `${Math.floor(age)}d ago`}${stale ? ", stale" : ""}`;
+  if (st.d == null) { // a stamp from before the pools: its heat
+    const v = Math.max(0, st.v * Math.pow(TILE_HEAT.DECAY, Math.floor(age)) * j);
+    const b = heatBand(v);
+    return { v, word: b.word, band: b.band, level: b.band, skulls: "", age, stale, text: `${b.word} (${when})` };
+  }
+  const v = Math.max(0, st.d * j);
+  const b = deadBandOf(Math.round(v), st.cap || 0);
+  return { v, word: b.word, band: Math.max(0, Math.min(3, b.band - 1)), level: b.band, skulls: b.skulls, age, stale, text: `${b.word}${b.skulls ? ` ${b.skulls}` : ""} (${when})` };
 }
 /** "unknown", or the estimate's text. @param {State} state @param {Tile | number} tile */
 export function tileHeatText(state, tile) {
   const e = tileHeatEstimate(state, tile);
   return e ? e.text : "unknown";
 }
-/** The true threat at POI i: its kind's danger (0–3) + the tile's infection + its heat (up to TILE_HEAT.THREAT) + the hive-land bonus. @param {State} state @param {Tile | number} tile @param {number} i */
+/**
+ * The true threat at POI i: its kind's danger (0–3) + the tile's infection + the POI's dead against its default
+ * (deadpop.js: DEADPOP.THREAT × (dead / default − 1), between THREAT_LO and THREAT_HI: a cleared place less, a crowded
+ * one more) + the hive-land bonus + an active or overrun campsite's. Never below 0.
+ * @param {State} state @param {Tile | number} tile @param {number} i
+ */
 export function poiThreat(state, tile, i) {
   const t = tileOf(state, tile), p = poiAt(t, i);
   if (!p) return 0;
-  return (LOCATIONS[p.kind].danger || 0) + (t.infection || 0) + (tileHeat(state, t) / TILE_HEAT.MAX) * TILE_HEAT.THREAT + THREAT.HIVE * zombieToughness(state, t.id) + campDanger(state, t, i); // campsite.js: an active or overrun camp
+  const def = poiDefault(state, t, i), dead = poiDead(state, t, i);
+  const pool = DEADPOP.THREAT * Math.max(DEADPOP.THREAT_LO, Math.min(DEADPOP.THREAT_HI, (dead - def) / Math.max(1, def)));
+  return Math.max(0, (LOCATIONS[p.kind].danger || 0) + (t.infection || 0) + pool + THREAT.HIVE * zombieToughness(state, t.id) + campDanger(state, t, i)); // campsite.js: an active or overrun camp
 }
 /** The band of a threat value: { band: 0–3, word, skulls }. @param {number} v */
 export function threatBand(v) {

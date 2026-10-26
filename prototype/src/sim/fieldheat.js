@@ -22,7 +22,8 @@
 //   decay = 8 an hour on the move (and gone at your own bases); Heat is capped at 100.
 //   trouble = 12% × (Heat / 100)^1.5 × danger, danger = 0.15 + 3 × the road's conflict chance here
 //             (groups near, AI parties, infected ground, hordes, traffic) + 0.3 city / 0.15 suburbs
-//             + 0.3 hive land / 0.8 hive ring + 0.2 a horde within 3 tiles (capped at 2); × 0.8 with a tripwire
+//             + 0.3 hive land / 0.8 hive ring + 0.6 × (the tile's open-ground dead / its cap − 0.3) (deadpop.js
+//             openDead, popCap: at least 0.05) + 0.2 a horde within 3 tiles (capped at 2); × 0.8 with a tripwire
 //             alarm carried (they hear it coming).
 //   After trouble the Heat halves (they found you; the rest lost interest), and nothing more for 6 hours (20 after a
 //   conflict card, the road's rule).
@@ -46,6 +47,7 @@ import { partyVehicles, isCar } from "./vehicles.js";
 import * as Weather from "./weather.js";
 import { cartOf, CART_NOISE } from "./carts.js"; // a cart rattles: a search makes more Heat
 import { canLight } from "./woodcutting.js"; // a fire burns wood: none, and it cannot be lit
+import { popCap, openDead, DEADPOP } from "./deadpop.js"; // the dead on the land (issue #65): the trouble roll reads the open ground's dead
 
 export const HEAT_MAX = 100;
 export const KIT = { floor: 0.35, tripwire: 0.8, maskHours: 24 };
@@ -332,6 +334,14 @@ export function tileDanger(state, p, tile = partyTile(p)) {
   if (t.terrain === "city") { d += 0.3; parts.push("city"); } else if (t.terrain === "suburb") { d += 0.15; parts.push("suburbs"); }
   const tough = zombieToughness(state, tile);
   if (tough) { d += tough >= 3 ? 0.8 : 0.3; parts.push(tough >= 3 ? "next to a hive" : "hive land"); }
+  // deadpop.js (issue #65): the dead about the tile's open ground against its cap (a crowded tile more trouble, a cleared
+  // one less: DEADPOP.FIELD × (fill − FIELD_BASE)).
+  const cap = popCap(state, tile);
+  if (cap > 0) {
+    const of = openDead(state, tile) / cap, dd = DEADPOP.FIELD * (of - DEADPOP.FIELD_BASE);
+    d = Math.max(0.05, d + dd);
+    if (Math.abs(dd) >= 0.05) parts.push(dd > 0 ? "many of the dead about" : "few of the dead about");
+  }
   const horde = state.hordes.find((h) => state.grid.distance(h.tile, tile) <= 3);
   if (horde) { d += 0.2; parts.push("a horde within 3 tiles"); }
   // Vehicles parked at a camp: raiders want them (camp danger, CAMP_HEAT.carDanger each).
