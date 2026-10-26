@@ -368,10 +368,10 @@ function houseShape(rng, v, spec, { garage, hall, o, upper }) {
     ]), program: null, upper: null };
   }
   if (v === "cabin") return spec;
-  const r = rng.next();
+  const r = hash01(rng.state, "shape", v); // the shape's dice read, not consumed: a house that stays a box rolls on as it did
   const kitchenLeft = v === "house" || v === "farmhouse"; // the plan's back row starts with the kitchen
-  const wh = rng.int(5, 6), ww = rng.int(5, 7);
-  if (r < 0.45 && !(cap && bh + wh - 1 > cap.h)) {
+  if (r < 0.45 && !(cap && bh + 5 > cap.h)) {
+    const wh = rng.int(5, 6), ww = rng.int(5, 7);
     const wing = v === "lodge" ? { role: "storage", name: "Mud room", type: "cabin" } : v === "ranger" ? { role: "storage", name: "Woodshed", type: "cabin" }
       : rng.pick([{ role: "dayroom", name: "Sun room", type: "house" }, { role: "storage", name: "Laundry", type: "house" }, { role: "bedroom" }]);
     const left = v === "lodge" ? rng.chance(0.5) : kitchenLeft;
@@ -547,7 +547,7 @@ function shopShape(rng, spec, back, bay) {
       { x: bay.right ? bw - bay.w : 0, y: bh - hg, w: bay.w, h: hg, storeys: 1, name: "Service bay", program: bay.leaf },
     ]), program: null, upper: null };
   }
-  if (!rng.chance(0.65)) return spec;
+  if (hash01(rng.state, "shape", "shop") >= 0.65) return spec; // read, not consumed: a shop that stays a box rolls on as it did
   const leaf = (r) => (typeof r === "string" ? { role: r } : r);
   const right = rng.chance(0.5), list = back.map(([, r]) => leaf(r)); // the back row, left to right
   const by = right ? list[list.length - 1] : list[0]; // the back room the store stands behind
@@ -765,7 +765,7 @@ function institution(rng, v, o = {}) {
         exits: [{ side: "back", roles: ["breakroom", "storage", "office"], chance: 0.7, lock: 0.3 }, ...fire(0.4)],
       };
       // A new save's (issue #23), half of them: a lower wing of offices on one side, its back stepped (an L).
-      if (o.legacy || !o.shapes || !rng.chance(0.5)) return tower;
+      if (o.legacy || !o.shapes || hash01(rng.state, "shape", "offices") >= 0.5) return tower; // read, not consumed: a tower that stays a box rolls on as it did
       const wh = wingDepth(rng, fd, bh), wn = rng.int(1, Math.min(3, n - 1));
       const wingPlan = (g) => corridorPlan([["*", { role: "office", name: g ? "Office" : "Meeting room" }]], [["*", "office"], [2, "restroom"]], fd);
       return withSideWing(rng, tower, { w: rng.int(9, 12), h: wh, storeys: wn, name: "Low wing", mainName: "Tower", program: wingPlan(0), upper: (g) => wingPlan(g) });
@@ -1595,7 +1595,7 @@ function apartments(rng, o = {}) {
     exits: [{ side: "back", roles: ["hgarage"], chance: 0.8, lock: 0.3 }, { side: "left", roles: ["corridor"], chance: 0.4, lock: 0.4 }, { side: "right", roles: ["corridor"], chance: 0.4, lock: 0.4 }],
   };
   // A new save's (issue #23), half of them: a lower wing of two more flats a floor on one side, its back stepped (an L).
-  if (o.legacy || !o.shapes || !rng.chance(0.5)) return block;
+  if (o.legacy || !o.shapes || hash01(rng.state, "shape", "apartments") >= 0.5) return block; // read, not consumed
   const ww = rng.int(10, 12), wh = wingDepth(rng, 5, bh), wn = rng.int(2, n - 1);
   const wingPlan = (g) => corridorPlan([["*", flat(g, "E", ww - 2)]], [["*", flat(g, "F", ww - 2)]], 5);
   return withSideWing(rng, block, { w: ww, h: wh, storeys: wn, name: "Low wing", program: wingPlan(0), upper: (g) => wingPlan(g) });
@@ -1684,7 +1684,7 @@ function twinUp(prog, natIw, natIh, iw, ih) {
   if (!prog || prog.role) return prog;
   const c = structuredClone(prog), cands = [];
   const stretchy = ([sz, ch]) => !!ch && !!ch.role && (typeof sz !== "number" || sz < 1) && !ch.ownDoor && ch.role !== "motelroom" && (!!TWIN_OF[ch.role] || (!ch.hub && !ch.entry && !(ROLES[ch.role] && ROLES[ch.role].hub)));
-  const walk = (node) => { if (!node || node.role) return; for (const part of node.parts) { if (stretchy(part)) cands.push([node, part]); walk(part[1]); } };
+  const walk = (node) => { if (!node || node.role) return; const front = node.parts.some(([, ch]) => ch && ch.entry); for (const part of node.parts) { if (!front && stretchy(part)) cands.push([node, part]); walk(part[1]); } }; // never the entrance's row: its front desk and lobby keep their widths
   walk(c);
   const target = (planCount(prog, natIw, natIh).rooms * iw * ih) / Math.max(1, natIw * natIh);
   let now = planCount(c, iw, ih).rooms;

@@ -486,7 +486,7 @@ console.log("Footprint shapes: parts with fewer storeys (issue #23)");
   check(snap && snap.floors && snap.floors.length === b.floors.length, `the school is kept with its ${b.floors.length} floors`);
   CC.enterPlace(state, p, school.id, { map: true });
   const b2 = state.combat;
-  check(b2 && shapeOf(b2) === shapeOf(b) && b2.floors.every((F, f) => F.cells.map((q) => q.k).join() === snap.floors[f].cells.map((q) => q.k).join()) && b2.raid.containers.some((x) => x.id === box.id && x.searched)
+  check(b2 && shapeOf(b2) === shapeOf(b) && b2.floors.every((F, f) => F.cells.map((q) => q.k).join() === b.floors[f].cells.map((q) => q.k).join()) && b2.raid.containers.some((x) => x.id === box.id && x.searched)
     && (!lowCell || b2.floors[b2.floors.length - 1].cells[lowCell[1] * b2.w + lowCell[0]].k === "void"), "going back in gives it back as it was left: its parts, every floor's cells (a lower part open air above), what was searched");
   for (const o of b2.units.filter((x) => x.side === "player" && !x.dead && !x.left)) { o.x = z.x0 + 1; o.y = z.y0 + 1; o.f = 0; o.ap = 2; combatAct(state, { type: "extract", unit: o.id }); }
   finishCombat(state, b2.setup, b2.result);
