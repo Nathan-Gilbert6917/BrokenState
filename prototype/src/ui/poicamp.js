@@ -11,7 +11,7 @@
 //   poiCampHover(state, b, cui, h)                the hover line in those modes
 import {
   POICAMP, poiRaid, setupProblem, workProblem, squareCells, squareSupplies, safeText, settleProblem, buildModeProblem, buildPlaceProblem, sitesNear,
-  siteCells, buildWorkProblem, poiCampProblem, setupTotal, buildCheck,
+  siteCells, buildWorkProblem, poiCampProblem, setupTotal, buildCheck, seenOf,
 } from "../sim/poicamp.js";
 import { buildMenu, FOOT, dimsOf } from "../sim/basemap.js";
 import { BUILDINGS } from "../sim/buildings.js";
@@ -119,7 +119,8 @@ export function poiCampHover(state, b, cui, h) {
     const why = setupProblem(state, b, u && u.side === "player" ? u : null, h.x, h.y);
     const sup = squareSupplies(state, b, [h.x, h.y]);
     const list = Object.keys(sup.need).map((k) => `${keyWord(k)} ${sup.have[k]}/${sup.need[k]}`).join(", ");
-    return `${why ? `<span class="danger">Here: ${esc(why)}</span>` : `<b>Camp here:</b> <span class="good">it can go here</span>`}<br>In the 5 × 5: ${esc(list)} (${sup.people.length} of yours inside).${Object.keys(sup.short).length ? ` <span class="danger">Short ${esc(needWords(sup.short))}.</span>` : ""}`;
+    const seen = seenOf(b), n = seen.reduce((a, x) => a + x, 0);
+    return `${why ? `<span class="danger">Here: ${esc(why)}</span>` : `<b>Camp here:</b> <span class="good">it can go here</span>`}<br>In the 5 × 5: ${esc(list)} (${sup.people.length} of yours inside).${Object.keys(sup.short).length ? ` <span class="danger">Short ${esc(needWords(sup.short))}.</span>` : ""}<br><span class="muted">The camp's map would be this place's, ${b.w} × ${b.h}, never more: ${Math.round((100 * n) / (b.w * b.h))}% of it seen so far (builds go only on seen ground).</span>`;
   }
   if (cui.mode === "campBuild" && cui.campBuild) {
     const [x0, y0] = buildAt(cui.campBuild, cui.campRot, h.x, h.y);
@@ -143,11 +144,14 @@ const buildable = (state, b, r) => r.ok || !!buildCheck(state, b, r.type).ok;
 export function poiCampPanel(state, b, cui) {
   const R = campOf(b), base = baseOf(state, b);
   if (!poiRaid(b) || !R || !R.build || !base) return "";
-  const rows = buildMenu(state, base).filter((r) => !r.furniture && FOOT[r.type]);
+  const all = buildMenu(state, base).filter((r) => !r.furniture && FOOT[r.type]);
+  const rows = all.filter((r) => buildable(state, b, r)); // what can go up now (the rest, greyed with why, on the camp's build map)
   const groups = new Map();
   for (const r of rows) { if (!groups.has(r.group)) groups.set(r.group, []); groups.get(r.group).push(r); }
   let html = `<div class="small cbmsg cbammo"${tip("The camp's Build list on its own map: fittings in the building's rooms, crop plots and small builds in the yard, nothing past the map's edge. Greyed: why not.")}><b>🔨 Build</b> `;
-  for (const [g, list] of groups) html += `<span class="muted">${esc(g)}:</span> ${list.map((r) => `<button class="mini${cui.campBuild === r.type ? " active" : ""}" data-action="cb-act" data-v="campBuildPick" data-k="${esc(r.type)}" ${buildable(state, b, r) ? "" : "disabled"}${tip(`${r.name} (${r.w} × ${r.h}): ${needWords(r.cost) || "no materials"}, ${r.hours} work-hours.${r.ok ? "" : ` ${r.why}`}`)}>${esc(r.name)}</button>`).join(" ")} `;
+  for (const [g, list] of groups) html += `<span class="muted">${esc(g)}:</span> ${list.map((r) => `<button class="mini${cui.campBuild === r.type ? " active" : ""}" data-action="cb-act" data-v="campBuildPick" data-k="${esc(r.type)}"${tip(`${r.name} (${r.w} × ${r.h}): ${needWords(r.cost) || "no materials"}, ${r.hours} work-hours.${r.ok ? "" : " The materials from your people on the map too."}`)}>${esc(r.name)}</button>`).join(" ")} `;
+  if (!rows.length) html += `<span class="muted">nothing can go up now</span> `;
+  if (all.length > rows.length) html += `<span class="muted"${tip("The rest are greyed on the camp's build map with why (No room on this map, the tier, the materials)")}>+${all.length - rows.length} not now</span> `;
   if (cui.campBuild) html += `<button class="mini" data-action="cb-act" data-v="campBuildRot"${tip("Turn it")}>↻</button> `;
   html += `<button class="mini" data-action="cb-act" data-v="buildMode"${tip("Close build mode")}>✕</button></div>`;
   return html;

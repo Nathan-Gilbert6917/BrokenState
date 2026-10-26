@@ -4,7 +4,7 @@ Detail for section 3 of [docs/agents/features.md](../agents/features.md) (the ba
 
 Module names follow the index: `[name]` is `prototype/src/sim/name.js`, `ui/name` is `prototype/src/ui/name.js`. Related docs: [docs/base-building/plan.md](../base-building/plan.md) (the base-building contract), [ADR 0002](../adr/0002-base-building.md), [ADR 0001](../adr/0001-ai-parity.md) (AI parity), screenshots in [docs/base-defence/](../base-defence/).
 
-Contents: [Base tiers](#base-tiers) · [Buildings and construction queue](#buildings-and-construction-queue) · [Base storage limits](#base-storage-limits) · [The base map](#the-base-map) · [Base building](#base-building) · [Furniture](#furniture)
+Contents: [Base tiers](#base-tiers) · [Buildings and construction queue](#buildings-and-construction-queue) · [Base storage limits](#base-storage-limits) · [The base map](#the-base-map) · [Base building](#base-building) · [Furniture](#furniture) · [A camp inside a POI](#a-camp-inside-a-poi)
 
 ## Base tiers
 
@@ -94,6 +94,7 @@ Rules:
 - Their number: by place (SITE_CLEAR.BASE), infection (INF_N), year (eras hordeGrowth) and the Dead at sites dial; only a share (FAR) on farmland or land with no town or city within NEAR tiles. Their kinds are a raid's there (siteThreat).
 - The fight (layout "siteClear") is on the tile's own land round the spot (houses, streets, high ground: layLand), the dead spread round, your people from the west, **none drawn in** (b.reinfMax 0). Won: setup goes on (p.siteClear). Pulled back or beaten: the team waits for orders.
 - The spot's panel, the orders' text and the start sites say how many (ui/campsite deadCard, staging threatWords). The governor's outpost pick and hardcore's start sites count them (autopilot outpostSite, hardcore-start hubSites).
+- **Optional since 2026-10-26** (issue #70, the heat epic #64 §4: "siteclear's clear the spot first becomes optional on the tile's own map; a POI camp never needs it"): the spot's panel has **Set up without clearing** when the dead are about (ui/campsite cs-noclear, p.noClear): no fight; the dead stay out on the camp's grounds (siteclear leaveGrounds → base.grounds, known, their first attack in 6 h: campscout's attacks, Defend the camp, Clear the dead from the base grounds). The governor still clears first. A camp inside a POI never clears first (below).
 - Modules: [siteclear, staging, ui/campsite]; test `tools/siteclearest.js`.
 
 ### Open the build map
@@ -374,3 +375,62 @@ The user's request 2026-10-20: "Cots 1x2 mood debuff, Beds 1x2, bunkbeds 1x2 moo
 ### Governor and AI groups
 - **Governor** (beds governBeds, autopilot governBase, before the day's builds): spare tent bags pitched first (free), then at a camp or shelter Makeshift tents (autopilot buildWishes) while it may build more, then furniture: sets what lies in the stores and queues a bunk bed (else a cot) only while beds built, pitched and queued still fall short.
 - **AI groups** (coarse): a hall work (your Lodge: beds hallWork / hallDef, groupworks WORKS.hall and nextWork); furniture crafted from their stock at your costs, one piece a day where the hall's floor has room (beds groupBedsDaily, basemap fittingRoom on their base object); its sleepers counted as their beds (groupworks served / nextWork, beds furnSleepers); their people's bed mood off desertion pressure (beds groupBedMorale, groupcare desertPressure); the hall a Lodge and each piece on their base's map (groupbases WORKS_BUILDING, BED_WORKS_BUILDING).
+
+## A camp inside a POI
+The user's requests 2026-10-26 (the heat epic #64 §4, issue #70; build mode: #64's addendum the same day):
+- "Come up with ideas of how to allow the player to create and start camps with in POIs without needing to clear out all the zombies/raiders first. I want it so you can survey a tile Discover a POI raid it and see a good spot you want to set up camp and do so."
+- "When camping on a POI it will be the POi map itself so AI groups raiding that POI will also see your base"; "The POI map does not expand for camps or bases. So it limits the kind of camp you can make on purpose. You can utilize the building to place interior utilities and farm on the yard of the building but can't build too much beyond."; "A tile can hold more than one base but only One base per POI and one normal base".
+- "You set up a camp from survivors being within a 5x5 grid selected when a survivor action for set up camp. You select the viewed 5x5 area and all the supplies needed must be within the inventories of the survivors within the 5x5. Then at least one survivor needs to use actions each turn to set up the campsite."; "Increase from no zombie in one turn to no zombie in 5 turns with a overlay showing the tick down of being "safe" … The 5 countdown is after the camp setup is finished".
+- "While in raid and it is your turn and no zombies insight you can enter build mode to build up your base in areas you have seen and that are cleared such as making beds or defenses. These can be worked on by using actions each turn by your survivors and multiple of them assisting makes it go quicker."
+
+All of it is [poicamp] (one `POICAMP` block of tunables), its orders on the raid map [ui/poicamp]; test `tools/poicamptest.js`. Rooms Cleared / Not cleared and the way out are #71's, on top of this.
+
+### Set up camp on the raid map
+- A survivor's order on a raid map of a POI (act `campSetup` { unit, x, y }; the button ⛺ Set up camp, then a click on the camp fire's cell). The 5 × 5 (POICAMP.SIZE) under the mouse is drawn green where it can go and red where not (ui/poicamp poiCampGhost → ui/isoview H.ghost); the hover line lists the supplies inside against the needs.
+- setupProblem refuses: the POI has a base already (one base a POI), the tile is a hive, a group's base tile or a city's crawl tile; a cell not seen (the raid's fog: seenOf, what your people have seen on that floor this raid and before), not open floor or ground (walls, furniture, containers, water), on the stairs (one floor: the floor looked at); a hostile inside; the survivor giving it not inside; supplies short.
+- **Supplies inside the square**: the camp fire's CAMP.fireCost (5 wood + 8 stone) in the inventories of your survivors standing inside the 5 × 5 (squareSupplies): what they carry loose (raidloot u.haul), the supply stacks in their pockets and pack (supitems), and their share of the team's packs on foot (raidloot u.share). What people outside it carry does not count. **Taken when the work starts** (takeFrom), kept with the site.
+- **Work by actions**: CAMP.fireHours (1 work-hour; a POI map has no tile land to clear) × POICAMP.AP_PER_HOUR (12: a turn is ten minutes, two actions a survivor) = 12 actions. Work on the camp (act `campWork`) spends the survivor's actions left, from inside the 5 × 5; everyone inside can work the same turn (two workers: twice as fast); a turn with nobody working leaves it where it is. A gold square and "Setting up camp 50% (6/12)" over it; ⛺ Camp 6/12 in the raid's top strip.
+- **Interrupted**: a hostile inside the 5 × 5 stops the work (refused) until it is killed or pushed out; nothing is lost.
+- **Abandoned** (the raid ends first: everyone left, the site overrun): the half-built camp and its supplies stay in the POI's ledger, `poi.cont.camp = { mapId, f, at, work, total, paid }` (saved with the POI, pois packPois), and the next raid on that map picks it up (poiCampRaidStart, from combat createRaid).
+
+### The base is official when the work finishes
+- foundPoiCamp, mid-raid: a camp (buildings isCamp, tier 0) on the tile with **base.poi = i** and **base.poiCamp** (below), named for the place ("Bungalow Camp"); the log, the **A new home** card (with Open the build map), the State Map, the save and the groups see it as any base (factions recomputeOwnership). The POI's ledger forgets the half-built camp.
+- **The raid map does not close**: it is the camp's first defence. Anyone who leaves by an edge from then on is the team on the tile, not the camp's people.
+
+### Settle in and the "safe" countdown
+- Only once the camp is done: at the start of each of your turns (poiCampTurn, from combat startPlayerTurn) b.poiCamp.safe counts **5** (POICAMP.SAFE_TURNS) down while no hostile is seen by any of your survivors (combat playerSees) nor inside the 5 × 5; one in sight resets it to 5 ("Not safe: the dead in sight"), and it starts again the turn after none are seen. The overlay over the camp and the top strip read "Safe in 5" … "Safe in 1", then "Safe: Settle in".
+- **Settle in** (act `settleIn`; the order, and a button in the top strip at 0): everyone still on the map is marked settled and out; the raid ends (combat endCalledOff → endRaid; what they carry comes home). scavenge afterRaid → poiCampAfterRaid: the settled move in as the camp's people (parties settleInto: the team's load into its stores; a team part of which left earlier keeps the rest), the camp's build map is asked for (staging askLayout "camp": the Open the build map prompt) and its base window opens.
+- The dead still on the map are the camp's **grounds**: base.grounds from the POI's dead (deadpop poiDead), known, `grounds.poi = i`; campscout runs their attacks (#69 times them; #71 keeps them per room). Everyone leaves instead: the camp stands empty (its stores in its containers, the grounds' attacks find nobody home).
+
+### The POI's map is the camp's base map
+- **Where it lives (for #71)**: `base.poiCamp = { v, poi, mapId, f, at: [x, y], w, h, pal, cells, rooms, seen, knownBy }`:
+  - `mapId` (poicont raidMapId: "street" or the building's option id), `f` the camp's floor, `at` the fire's cell on the POI map, `w × h` the POI map's size;
+  - `pal` + `cells`: the POI map's cells on that floor as the raid left them, a character a cell indexing `pal` ("k|f|mhp|h|ter"); poiCellAt(P, x, y) reads one;
+  - `rooms`: the building's rooms on that floor ({ x0, y0, w, h, name }, walls included; from b.raid.areas); poiIndoor(P, x, y);
+  - `seen`: the cells your side has seen, run lengths (seenRle / unseenRle; poiSeenMask), merged after every raid on it (poiCampAfterRaid), all of it after a Survey of the tile (survey fullSurveyDone → poiCampSurveyed);
+  - `knownBy`: the groups that found it.
+  - On a raid: `b.poiCamp = { tile, poi, mapId, seen: { f: rle }, at, f, work, total, paid, workers, done, baseId, safe, build, sites, settled }`.
+- The base map reads it ([basemap]): gridBox is the POI map's own extent (grid (0, 0) is the fire, POI cell = grid + at); buildBaseMap lays the POI's cells (walls, doors, furniture, floors) as the map's ground, the whole map and nothing past its edge, for the Base map view and every fight on the base alike (fort, defences: a raid or the dead at the camp are fought on the POI's map); landFor has no tile land (base.land.off); viewBattle's fog is poiKnownMask (hover: "Unknown ground"). The raid counts as scouting the camp (it was set up with the place in view; no blind spot, no clearing first).
+
+### The POI map never grows
+- placeProblemAt asks poiPlaceWhy first: every cell on the map ("No room on this map (past its edge)"), seen ("Unknown ground: nobody of yours has seen it"), off the building's walls, furniture and stairs; **fittings** (FOOT fit: bunks, shelves, the stove, the power grid's fixtures) only in the building's rooms (basemap fittingRoom finds room there, key "poi:room") or a general building put up in the yard; indoor props in a room or the yard; **everything else in the yard** (crop plots, field works, small builds); a building bigger than POICAMP.YARD_AREA (20 cells: a hut, a step up's house; not a lodge or a barn) "only small builds fit in the yard". No NO_BUILD margin and no wall band on a POI map: its edge is the limit.
+- The Build list greys a build that fits nowhere on the seen map with **No room on this map** (buildings placeProblem → poiFits); the step ups (camp_up, outpost_up, hub_up) only if they fit. poiRoomLeft / roomWords: "room left on the map: 173 cells of yard, 8 in the rooms, 526 unknown (fogged)".
+
+### Bases on a tile
+- At most **one base a POI** (poiBaseAt; poiCampProblem refuses Set up camp in a POI with a base) plus **one normal base** (normalBaseAt: the tile's own 500 × 500 map; staging campProblem / campOption, parties missionProblem and orderOptions for Set up camp, Establish base and Build outpost count only a base with no `poi`). Each keeps its own grounds, stores and attacks; the tile's dead feed all of them. Code that finds "the" base of a tile (`bases.find(b => b.tile === t)`) gets the first: a camp inside a POI is a normal base to it.
+
+### Other groups see your base
+- grouppois raidPoiAsGroup (aiscav, visitors, nomads, hardcore bands, a group's own land) → poiCampFoundBy: no loot by the numbers there; the place is marked as your base in their knowledge (`base.poiCamp.knownBy`); a group (factions) Hostile to you raids the base (factions launchRaidOnBase: fought on the POI's map), at most once a day a camp; anyone else turns away. Your other POIs on the tile are raided as before.
+
+### Build mode on the raid map
+- On a raid of your POI camp's map once the camp is done (the raid it was set up in, or any later one: poiCampRaidStart), **Build mode** (act `buildMode`; the order and the top strip): only on your turn with no hostile in sight; a sighting closes it at the start of your next turn ("Build mode closed: the dead in sight"); it does not wait for the countdown.
+- Its Build list (ui/poicamp poiCampPanel, over the orders bar): the camp's (basemap buildMenu), furniture aside (set from the stores on the base map), materials counted from the stores and your people on the map together (buildCheck). A pick's ghost follows the mouse (R / ↻ turns it); a click stakes out a **site** (act `campBuild` { build, x, y, r }) on seen, cleared cells: not on fog, not where the dead are seen or last seen (b.ghosts), nobody standing there, under the same limits (placeProblemAt on the camp's base, sites apart).
+- A survivor inside or next to a site works it (act `buildWork`): its work is the build's hours × 12 actions; several the same turn go faster; a turn with nobody leaves it. Its materials are taken when its work starts: the camp's stores first, then your survivors on the map. A hostile in its footprint stops it. Finished, it stands at once (buildings addBuilding, its spot kept; a barricade, spikes or a prop laid on the battle map) and counts for the camp.
+- The raid ends with a site unfinished: it goes into the camp's construction queue at its spot with its progress (paid; one never started is queued as usual: buildings queueBuild), and constructionHour finishes it.
+
+### Headless, the governor and AI groups
+- The raid bot (combat autoRaidTurn → botPoiCamp): anyone inside a setup works it, sites next to someone are worked, Settle in at 0. A team sent to camp in a POI (setup.raid.camp) starts it on the game's own 5 × 5 (bestSquare: valid, nearest the team, no dice) when the governor's rule allows, and holds there while nothing is in sight.
+- **The governor's rule** (govPoiCampOk): only in a POI whose dead are low or fewer (deadpop deadBand ≤ 1) and with two or more fighters to answer Defend. The governor's own plans send no team to camp in a POI yet (its raids are by the numbers, never a map); its build mode places nothing of its own.
+- AI groups: their camps stay their own coarse things (groupworks, hardcore-groups); they find and raid yours as above.
+- Saves: base.poi, base.poiCamp, poi.cont.camp and a battle's b.poiCamp are plain data; an older save has none of them and loads as before.
+

@@ -243,6 +243,22 @@ section("Another group raiding the POI finds your base");
   if (j >= 0) check(raidPoiAsGroup(st, f, t.id, j, 0.1) !== null, "the tile's other POIs are raided as normal");
 }
 
+section("The team's packs on foot count by each one's share");
+{
+  const st3 = W();
+  const [t3, i3] = findHouse(st3);
+  const p3 = team(st3, 3);
+  p3.supplies.stone = 8; // (wood is bulky: a team on foot sets its loads down at the edge as it goes in, carry.js stageAtStart; carried loose below)
+  const b3 = raid(st3, p3, t3, i3);
+  give(mine(b3)[1], "wood", 5);
+  const at3 = PC.bestSquare(st3, b3);
+  const inside = mine(b3).filter((u) => Math.abs(u.x - at3[0]) <= 2 && Math.abs(u.y - at3[1]) <= 2);
+  const shared = mine(b3).every((u) => u.share > 0);
+  check(shared && inside.length === 3 && PC.setupProblem(st3, b3, inside[0], at3[0], at3[1]) === "", `on foot, the team's packed stone is on its people (raidloot u.share), the wood carried loose: all three inside, enough (${JSON.stringify(PC.squareSupplies(st3, b3, at3).have)})`);
+  check(combatAct(st3, { type: "campSetup", unit: inside[0].id, x: at3[0], y: at3[1] }) === "" && p3.supplies.stone < 1e-6, "the stone taken from the packs when the work starts");
+  st3.combat = null;
+}
+
 section("The governor's rule and the raid bot");
 {
   const st2 = W();

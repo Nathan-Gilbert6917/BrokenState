@@ -70,8 +70,9 @@ Base detail: [bases.md](../features/bases.md). Economy detail: [economy.md](../f
 - **What a camp's spot is like**: the picker's facts for a 5 × 5 (ground, sight, room, wood, water) and the game's pick scored on them [siteinfo, basemap, ui/campsite] `tools/campspottest.js`. [details](../features/bases.md#what-a-camps-spot-is-like)
 - **Scouting before a camp**: scout first, or set up blind on a random spot, fogged, its dead attacking until cleared [campscout, staging, survey, poiraid] `tools/campscouttest.js`. [details](../features/bases.md#scouting-before-a-camp)
   - Step ups (Shelter shack, Outpost house, Main house) are buildings placed by hand from the Build list [ui/basemap] `tools/stepupplacetest.js`. [details](../features/bases.md#step-ups-are-buildings)
-  - Clearing the spot of the dead first on towns, cities and infected tiles [siteclear] `tools/siteclearest.js`. [details](../features/bases.md#clearing-the-spot-of-the-dead)
+  - Clearing the spot of the dead first on towns, cities and infected tiles, or not (the dead stay on the grounds) [siteclear] `tools/siteclearest.js`. [details](../features/bases.md#clearing-the-spot-of-the-dead)
   - "Open the build map" prompt for new bases (key U) [ui/buildmap] `tools/buildmapbtntest.js`. [details](../features/bases.md#open-the-build-map)
+- **A camp inside a POI**: set up mid-raid on a seen 5 × 5, worked by actions; Settle in after 5 safe turns; the POI map is its base map [poicamp, ui/poicamp, basemap] `tools/poicamptest.js`. [details](../features/bases.md#a-camp-inside-a-poi)
 - **Buildings and construction queue**: plots, demolition refunds, the storage ladder, general buildings and fittings [buildings]; field works outside the walls [fieldworks]. [details](../features/bases.md#buildings-and-construction-queue)
 - **Base storage limits**: kg of room by tier and buildings; what does not fit lies outside, weathers and is raided first [basestorage, ui/storage] `tools/basestoragetest.js`. [details](../features/bases.md#base-storage-limits)
 - **The base map**: every base's 500 × 500 grid and 150 × 150 view, its land to clear, placement rules and Move [basemap, basescatter, ui/basemap, ui/isoview] `tools/baseviewtest.js`. [details](../features/bases.md#the-base-map)
@@ -166,6 +167,7 @@ Detail: [combat.md](../features/combat.md).
 - **Terrain in combat**: high ground aims and sees better, hills are cover, a hollow sees only its rim, the AI paths by the land [combat, highground, ui/combat] `tools/terraincombattest.js`. [details](../features/combat.md#terrain-in-combat)
 - **Weather in battle**: the tile's weather drawn over the fight; fog and blizzards cut every side's sight [wxsight, stealth, ui/battlewx, ui/isoview] `tools/battlewxtest.js`. [details](../features/combat.md#weather-in-battle-rain-fog-and-snow)
 - **Turn-based tactical battles** with an isometric view [combat, ui/isoview].
+- **Camp orders on a raid map**: Set up camp, Work on it, the safe countdown, Settle in, build mode [poicamp, ui/poicamp] `tools/poicamptest.js`. [details](../features/combat.md#setting-up-camp-on-a-raid-map-and-settle-in)
 - **Walking on the battle map**: moves animated cell by cell at each mover's pace [ui/moveanim, ui/combat, ui/figures] `tools/moveanimtest.js`. [details](../features/combat.md#walking-on-the-battle-map)
 - **Lost pictures drawn again**: every cached picture redrawn after a GPU context loss [ui/pictures]. [details](../features/combat.md#lost-pictures-drawn-again)
 - **Battle map sizes** by context (24×18 to 48×34; raids 32×24 to 56×42) with anti-slog endings [battlesize, worldcfg] `tools/raidshot.cjs`. [details](../features/combat.md#battle-map-sizes)

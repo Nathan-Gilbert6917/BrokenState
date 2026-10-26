@@ -210,6 +210,7 @@ export function squareSupplies(state, b, at, f = floorOf(b)) {
 // returns how many it got.
 function takeFrom(state, b, people, k, n) {
   const p = raidTeam(state, b), all = sharesOf(b);
+  const packs = new Map(people.map((u) => [u.id, p && all > 0 && u.share > 0 ? teamHas(p, k) * (u.share / all) : 0])); // each one's share of the team's packs, as counted (squareSupplies)
   let left = n;
   for (const u of people) {
     if (left <= 0) break;
@@ -224,7 +225,7 @@ function takeFrom(state, b, people, k, n) {
       if (sp.item.dur <= 0) sp.take();
       left -= q;
     }
-    if (left > 0 && p && all > 0 && u.share > 0) left -= takeSupply(p, k, Math.min(left, teamHas(p, k) * (u.share / all)));
+    if (left > 0 && p && packs.get(u.id) > 0) left -= takeSupply(p, k, Math.min(left, packs.get(u.id)));
   }
   return n - Math.max(0, left);
 }
