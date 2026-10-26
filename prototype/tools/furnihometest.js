@@ -129,7 +129,7 @@ console.log("a pickup: the fridge (two carrying it) goes into its cargo by itsel
   check(!ledgerPieces(t, i, "fridge").length, "nothing left at the door");
 }
 
-console.log("the pickup full: the fridge stays by the door, in the ledger");
+console.log("the pickup full: the fridge stays behind, in the ledger");
 {
   const st = W();
   const p = team(st, "car");
@@ -144,8 +144,8 @@ console.log("the pickup full: the fridge stays by the door, in the ledger");
   extractAll(st, b, true);
   check(!p.cargo.gear.includes(it), "not in the cargo");
   check(ledgerPieces(t, i, "fridge").length === 1, "the fridge is in the POI's ledger, standing as a piece");
-  check(b.summary.some((l) => /is full: the refrigerator stays by the door/.test(l)), `the line says so: "${b.summary.find((l) => /full/.test(l)) || "none"}"`);
-  check(logHas(st, /is full: the refrigerator stays by the door/), "and the log");
+  check(b.summary.some((l) => /is full: the refrigerator stays behind/.test(l)), `the line says so: "${b.summary.find((l) => /full/.test(l)) || "none"}"`);
+  check(logHas(st, /is full: the refrigerator stays behind/), "and the log");
   check(!survivorById(st, u.sid).gear.carry, "the arms are empty");
 }
 
