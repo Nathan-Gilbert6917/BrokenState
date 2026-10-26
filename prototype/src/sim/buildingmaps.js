@@ -4090,7 +4090,7 @@ export function assemble(rng, spec, opts = {}) {
   } : (room, side) => (side === "front" ? room.iy0 + room.ih - 1 === by1 - 1 : side === "back" ? room.iy0 === by0 + 1 : side === "left" ? room.ix0 === bx0 + 1 : room.ix0 + room.iw - 1 === bx1 - 1);
   let entry = upper ? null : rooms.find((r) => r.entry && touches(r, "front")) || rooms.find((r) => r.hub && touches(r, "front")) || rooms.find((r) => touches(r, "front")) || rooms[0];
   // ---------- the stairwells (storeys) ----------
-  // Stair runs (STAIR_DIRS above): the ground floor picks one or two (spec.stairs.n, else two from a footprint of
+  // Stair runs (STAIR_DIRS above): the ground floor picks one or two (spec.stairs.n, more for a shaped hotel's wings: issue #50; else two from a footprint of
   // BMAP.STOREY.twoStairs cells) against a wall of the rooms spec.stairs.roles names by the building's kind (a house's
   // hall or living room by the front, a shop's back room, a stairwell room of its own in flats and offices, each end
   // of a hospital's or a school's corridor), else the hubs, else the entry: a run of spec.stairs.len steps (2; 3 in the
@@ -4151,6 +4151,15 @@ export function assemble(rng, spec, opts = {}) {
         const apart = (c) => c.cells.every(([x, y]) => out[0].cells.every(([u, v]) => Math.max(Math.abs(x - u), Math.abs(y - v)) >= 2));
         const second = cands.filter((c) => far(c) >= 6 && apart(c)).sort((a, c) => a.s - far(a) * 0.5 - (c.s - far(c) * 0.5))[0];
         if (second) out.push(second);
+      }
+      // More than two (a shaped hotel's wing ends and junctions, issue #50): each next run the farthest from those
+      // picked, in a stairwell of its own.
+      for (let k = 2; k < want && out.length === k; k++) {
+        const near = (c) => Math.min(...out.map((o) => Math.hypot(c.mid[0] - o.mid[0], c.mid[1] - o.mid[1])));
+        const apart = (c) => out.every((o) => c.cells.every(([x, y]) => o.cells.every(([u, v]) => Math.max(Math.abs(x - u), Math.abs(y - v)) >= 2)));
+        const sc = (c) => c.s - near(c) * 0.5 + (out.some((o) => o.room === c.room) ? 50 : 0);
+        const next = cands.filter((c) => near(c) >= 6 && apart(c)).sort((a, c) => sc(a) - sc(c))[0];
+        if (next) out.push(next);
       }
       return out.map((c) => c.run);
     }
