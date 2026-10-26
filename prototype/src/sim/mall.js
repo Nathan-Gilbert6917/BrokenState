@@ -248,7 +248,7 @@ export const DEPT_VARIANTS = [
   { id: "garden", name: "Store with a garden centre", w: [30, 34], h: [19, 22], storeys: [1, 1], front: () => [["*", S("Department floor", { entry: true })], [9, { role: "stock", name: "Garden centre", type: "garden", lay: "greenhouse", glass: true, hub: false }]], back: () => [["*", W_("Stockroom")], [7, { role: "warefloor", name: "Garden yard", type: "garden", hub: false, maxBoxes: 4 }], [4, "office"]] },
   { id: "electronics", name: "Electronics and appliances anchor", w: [26, 30], h: [19, 21], storeys: [1, 2], front: () => [["*", S("Department floor", { entry: true })], [8, S("Electronics", { type: "electronics", hub: false, maxBoxes: 4 })]], back: () => [["*", W_("Stockroom")], [5, { role: "workshop", name: "Repair bench", type: "electronics" }], [4, "office"]], up: () => [S("Appliance floor", { type: "store", maxBoxes: 7 })] },
 ];
-registerVariants("mall:dept", viewsOf(DEPT_VARIANTS));
+registerVariants("mall:dept", DEPT_VARIANTS.map((v) => ({ id: v.id, name: v.name, foot: [(v.w[0] + v.w[1]) / 2, (v.h[0] + v.h[1]) / 2, (v.storeys[0] + v.storeys[1]) / 2], src: v }))); // foot: its size class (#42's sizeClassOf)
 /** A department store's spec by a variant (o.variant: its id; else the dice's). */
 export function deptstorePlan(rng, o = {}) {
   const V = /** @type {any} */ (pickRegistered("mall:dept", rng, { plan: o.variant || null, r: () => rng.next() })).src;

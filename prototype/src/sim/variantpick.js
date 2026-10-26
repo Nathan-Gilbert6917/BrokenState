@@ -18,6 +18,8 @@
 //     tile?: [tile classes],     the tile classes it stands on (ctx.tileClass narrows the pool to these: #42's
 //                                placement.js TILE_CLASSES, the six settings plus coast and scenic)
 //     sizeClass?,                its size class (small, medium, large, huge: #42's SIZE_CLASSES; else opts.sizeClass's)
+//     foot?: [w, d, storeys],    its usual footprint in metres and storeys: its size class by #42's placement.js
+//                                sizeClassOf (which placement.js hands this module: useSizeClassOf), when it gives none
 //     make?(rng, o, plan) }      its spec (the module's own maker; the picker never calls it)
 // opts (how the type's table reads, so a ported module's picks stay where they were):
 //   missing   the weight of an entry whose w lacks the setting (default 0; 1 for the tables where unset means 1)
@@ -48,7 +50,7 @@
 //   6. The walk: x = r × the total, take the first entry with weight that brings x below 0 (opts.le: to 0 or below);
 //      a total of 0 takes the pool's floor(r × n)th.
 // HELPERS. variantsOf(key) (the list, [] for none), variantFor(key, id) (an entry by id, or null), variantKeys() (the
-// registered keys): varianttest.js reads the registry through them, the gallery and #42's placement table too.
+// registered keys), variantSize(key, entry) (its size class): varianttest.js reads the registry through them, the gallery and #42's placement table too.
 // No imports, so the data tables (data-hotels.js) and the plan makers can register without a cycle. hash01: skills.js's
 // deterministic roll, the same function (the same dice for the same parts).
 /** @param {...any} parts @returns {number} */
@@ -63,12 +65,25 @@ function hash01(...parts) {
   return (h >>> 0) / 4294967296;
 }
 
-/** @typedef {{ id: string, name: string, w?: Record<string, number>, fr?: string[], size?: string, storeys?: number[] | number, tile?: string[], make?: Function, [k: string]: any }} VariantEntry */
+/** @typedef {{ id: string, name: string, w?: Record<string, number>, fr?: string[], size?: string, storeys?: number[] | number, tile?: string[], sizeClass?: string, foot?: number[], make?: Function, [k: string]: any }} VariantEntry */
 /** @typedef {{ missing?: number, frMin?: number, le?: boolean, index?: boolean, byName?: boolean, sub?: boolean, sizeClass?: (e: any) => string | null }} VariantOpts */
 /** @typedef {{ setting?: string | null, site?: string | null, tileClass?: string | null, size?: string | null, franchise?: string | null, ids?: string[] | null, plan?: string | number | null, legacy?: boolean, r?: number | (() => number), only?: (e: VariantEntry) => boolean }} VariantCtx */
 
 /** @type {Map<string, { list: VariantEntry[], opts: VariantOpts }>} */
 const REGISTRY = new Map();
+// #42's placement.js sizeClassOf (w, d, storeys → small | medium | large | huge), handed over when placement.js loads
+// (this module imports nothing): a plan's size class from its foot.
+/** @type {((w: number, d: number, storeys?: number) => string) | null} */
+let sizeOfFoot = null;
+/** placement.js gives its sizeClassOf. @param {(w: number, d: number, storeys?: number) => string} fn */
+export function useSizeClassOf(fn) { sizeOfFoot = fn; }
+/**
+ * An entry's size class: its own (sizeClass), its type's opts.sizeClass, else its foot by sizeClassOf; null for none.
+ * @param {string} key @param {VariantEntry} e @returns {string | null}
+ */
+export const variantSize = (key, e) => sizeClassOfEntry(e, variantOpts(key));
+/** @param {VariantEntry} e @param {VariantOpts} opts @returns {string | null} */
+const sizeClassOfEntry = (e, opts) => e.sizeClass || (opts.sizeClass ? opts.sizeClass(e) : null) || (e.foot && sizeOfFoot ? sizeOfFoot(e.foot[0], e.foot[1], e.foot[2]) : null);
 
 /**
  * Registers a type's plans (the header's entries and opts). Registering a key again replaces it. Returns the list.
@@ -124,7 +139,7 @@ export function pickFrom(list, rng, ctx = {}, opts = {}, salt = "") {
   if (byFr.length) pool = byFr;
   if (ctx.ids && ctx.ids.length) { const ids = ctx.ids, inIds = pool.filter((e) => ids.includes(e.id)); if (inIds.length) pool = inIds; }
   if (ctx.tileClass) { const tc = /** @type {string} */ (ctx.tileClass), onTile = pool.filter((e) => e.tile && e.tile.includes(tc)); if (onTile.length) pool = onTile; }
-  if (ctx.size) { const sc = (/** @type {T} */ e) => e.sizeClass || (opts.sizeClass ? opts.sizeClass(e) : null), sized = pool.filter((e) => sc(e) === ctx.size); if (sized.length) pool = sized; }
+  if (ctx.size) { const sized = pool.filter((e) => sizeClassOfEntry(e, opts) === ctx.size); if (sized.length) pool = sized; }
   // The weights.
   const site = ctx.site && list.some((e) => e.w && e.w[/** @type {string} */ (ctx.site)] != null) ? ctx.site : null; // a site the type's plans name (any of them: #36's rule)
   const missing = opts.missing ?? 0, floor = byFr.length ? opts.frMin || 0 : 0;
