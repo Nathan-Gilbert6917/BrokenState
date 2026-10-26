@@ -150,7 +150,7 @@ export const CRAWL = {
   // A place picked over (place.looted) laid out for the first time this crawl (pickedOver, issue #21): each container
   // stripped at looted × strip; from `broken` looted one barricade of its scenes broken through.
   LOOTED: { strip: 0.6, broken: 0.3 },
-  QUICK: { hours: 2, fight: 0.22, perBlock: 0.07, rolls: 3, rollsPerBlock: 0.75, looted: 0.5, alert: 4 }, // rollsPerBlock: more rolls a block deeper
+  QUICK: { hours: 2, fight: 0.22, perBlock: 0.07, fightMin: 0.05, fightMax: 0.9, rolls: 3, rollsPerBlock: 0.75, looted: 0.5, alert: 4 }, // rollsPerBlock: more rolls a block deeper
   // The autopilot's crawl: how deep (depth), when it leaves (hurt, full), when it fights (sureOdds, fightOdds), what it
   // searches (searchOdds: the odds of the fight a search could bring, searchOdds below; 2026-10-13: was a place's
   // look, at most "A few of the dead about", which no place deeper than block 3 is, so it walked deep and searched
@@ -1259,7 +1259,7 @@ export function quickSearch(state, p, place) {
   const Q = CRAWL.QUICK;
   const members = partyMembers(state, p);
   // Maybe a fight first: the dead inside (some of them), the raiders holed up all of them.
-  const fight = clamp((Q.fight + Q.perBlock * (n - 1) + blockHeat(state, c, c.cell) / 300 - bestSkill(state, p, "stealth") * 0.02) * (place.raiders ? 1.6 : 1) * (1 - 0.5 * (place.looted || 0)), 0.05, 0.9);
+  const fight = clamp((Q.fight + Q.perBlock * (n - 1) + blockHeat(state, c, c.cell) / 300 - bestSkill(state, p, "stealth") * 0.02) * (place.raiders ? 1.6 : 1) * (1 - 0.5 * (place.looted || 0)), Q.fightMin, Q.fightMax); // fightMin / fightMax: the chance's bounds (a test turns the fight off with both 0)
   let lines = [];
   if (rng.chance(fight)) {
     const groups = placeGroups(state, c, place).map((g) => (g.kind === "zombies" ? { ...g, count: Math.max(1, Math.round(g.count * 0.5)) } : g));
