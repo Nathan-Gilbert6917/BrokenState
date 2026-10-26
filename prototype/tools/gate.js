@@ -36,6 +36,10 @@ const CORE = [
   ["seasongroundtest", false], ["puddletest", false], ["zombiesfxtest", false], ["siegetest", false],
   ["allyorderstest", false], ["hivebirthtest", false], ["sizetest", false], ["rescuetest", false], ["hiveplustest", false],
   ["stealthtest", true], // quick: 20-day soaks, 160 prisoners a setup; about 3 minutes
+  // #63's later twelve made green (alone on 2026-10-26: basestorage 7 s, basestorageui 14 s, basestoragemap 12 s,
+  // ailocks 6 s, floorfolk 19 s, field 36 s, basebuildauto 50 s, bridge 83 s); basetest (7 minutes) is left out
+  ["basestoragetest", false], ["basestorageuitest", false], ["basestoragemaptest", false], ["ailockstest", false],
+  ["floorfolktest", false], ["fieldtest", false], ["basebuildautotest", false], ["bridgetest", false],
 ];
 
 const args = process.argv.slice(2);
