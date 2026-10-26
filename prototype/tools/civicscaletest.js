@@ -4,6 +4,7 @@
 //     has a sizes row (data-buildingsize.js CIVIC_REAL); in a new world each is laid out at it (realScale: its footprint
 //     in the row's range, never smaller than drawn; its storeys the row's), its map within battlesize.js MAP_CAP, its
 //     kind's signature rooms kept, its containers to the square metre within ±25% of its drawn plan's;
+//     its loot to the square metre (the tables' value × civicvariants.js LOOT_K) within ±10% of its drawn plan's;
 //   - the big ones are big: a regional medical centre 130 m across and more, a city's towers 6–10 storeys, a cathedral
 //     70 m deep; a rural clinic stays small;
 //   - the four multi-building sites (civicsite.js): the buildings and grounds each has (a medical centre's towers, ER,
@@ -24,6 +25,8 @@ import { PLACEMENT } from "../src/sim/data-placement.js";
 import { variantsOf, pickFrom, variantOpts } from "../src/sim/variantpick.js";
 import { legacyCivic } from "../src/sim/worldcfg.js";
 import { Rng } from "../src/sim/rng.js";
+import { boxLoot } from "../src/sim/combat.js";
+import { GEAR, supValue } from "../src/sim/data.js";
 
 const QUICK = !!process.env.BS_QUICK;
 const SEEDS = Math.max(2, Number(process.argv[2]) || (QUICK ? 3 : 6));
@@ -49,12 +52,15 @@ console.log("Each plan at real scale in a new world: its row's footprint and sto
 const world = createWorld({ seed: 4901, factionCount: 3 });
 check(!legacyCivic(world) && world.civicV === 1, "a new world is made at real scale (civicV)");
 const cityT = world.tiles.find((t) => t.loc && t.loc.type === "city"), townT = world.tiles.find((t) => t.loc && t.loc.type === "town");
+// The tables' value of a map's indoor containers (tools/lootsensetest.js's value) × their worth (c.lootK), and its rooms' floor.
+const value = (def) => { let v = 0; for (const [k, [p, lo, hi]] of Object.entries(def.loot)) v += Math.min(0.95, p) * ((lo + hi) / 2) * supValue(k); for (const [k, p] of def.gear) v += p * ((GEAR[k] && GEAR[k].value) || 0); return v; };
+const worth = (m, k = 1) => { const rooms = new Map(m.rooms.map((r) => [r.id, r])); let v = 0; for (const c of m.containers) { const a = rooms.get(c.area); if (a && a.type && !a.outdoor) v += value(boxLoot(a.type, c.kind, false)) * k; } return [v, m.rooms.filter((r) => !r.outdoor).reduce((x, r) => x + r.w * r.h, 0)]; };
 const interior = (m) => { const B = m.building; let n = 0; for (const F of m.floors || [{ cells: m.cells }]) for (let y = B.y0; y < B.y0 + B.h; y++) for (let x = B.x0; x < B.x0 + B.w; x++) { const c = F.cells[y * m.w + x]; if (c && c.k !== "void" && c.k !== "wall") n++; } return n; };
 const SITE_PLANS = new Set(["hospital/medcampus", "church/churchyard", "police/hqsite", "firestation/hqsite"]);
 for (const kind of KINDS) {
-  const bad = [], sig = [], capBad = [], dens = [];
+  const bad = [], sig = [], capBad = [], dens = [], worthOff = [];
   for (const id of plansOf(kind)) {
-    const R = { ...REAL_SIZE[kind], ...REAL_SIZE[kind].sizes[id] }, D = { a: 0, ia: 0, b: 0, ib: 0 };
+    const R = { ...REAL_SIZE[kind], ...REAL_SIZE[kind].sizes[id] }, D = { a: 0, ia: 0, b: 0, ib: 0, va: 0, fa: 0, vb: 0, fb: 0 };
     for (let s = 0; s < SEEDS; s++) for (const setting of ["city", "town"]) {
       const r = new Rng(9100 + s * 31), drawn = BUILDINGS[kind].make(r, { plan: id, setting });
       const r2 = new Rng(9100 + s * 31), spec = realScale(r2, BUILDINGS[kind].make(r2, { plan: id, civicReal: true, setting }), kind, { setting });
@@ -66,6 +72,8 @@ for (const kind of KINDS) {
       }
       const m = assemble(new Rng(77 + s), spec, { key: kind, name: kind, noDecor: true }), md = assemble(new Rng(77 + s), drawn, { key: kind, name: kind, noDecor: true });
       D.a += m.containers.length; D.ia += interior(m); D.b += md.containers.length; D.ib += interior(md);
+      const [va, fa] = worth(m, spec.lootK || 1), [vb, fb] = worth(md);
+      D.va += va; D.fa += fa; D.vb += vb; D.fb += fb;
       if (s === 0 && setting === "city") {
         const roles = new Set(m.rooms.filter((a) => !a.outdoor).map((a) => a.role));
         const want = SIGN[kind] || [];
@@ -74,6 +82,8 @@ for (const kind of KINDS) {
     }
     const k = (D.a / D.ia) / Math.max(1e-9, D.b / D.ib); // over every seed and setting: a small plan's few containers are noisy alone
     if (id !== "general" && (k < 0.75 || k > 1.25)) dens.push(`${id} ×${k.toFixed(2)}`);
+    const kv = (D.va / D.fa) / Math.max(1e-9, D.vb / D.fb); // the loot to the square metre (#43's economy), with the plan's worth (LOOT_K)
+    if (id !== "general" && (kv < 0.9 || kv > 1.1)) worthOff.push(`${id} ×${kv.toFixed(2)}`);
     if (!SITE_PLANS.has(`${kind}/${id}`)) for (const t of [cityT, townT]) {
       const m = buildingMap(world, t.id, { id: `cs-${id}`, key: kind, name: kind, plan: id }, false), cap = MAP_CAP[kind] || 300;
       if (m.w > cap || m.h > cap) capBad.push(`${id} ${m.w}×${m.h}`);
@@ -82,6 +92,7 @@ for (const kind of KINDS) {
   check(!bad.length, `${kind}: every plan laid out at its row's footprint and storeys${bad.length ? `: ${bad.slice(0, 6).join("; ")}` : ""}`);
   if (SIGN[kind]) check(!sig.length, `${kind}: the signature rooms in every plan at real scale (${SIGN[kind].join(", ")})${sig.length ? `: missing in ${sig.join("; ")}` : ""}`);
   check(!dens.length, `${kind}: containers to the square metre within ±25% of each drawn plan's${dens.length ? `: ${dens.join(", ")}` : ""}`);
+  check(!worthOff.length, `${kind}: loot to the square metre (the tables' value × LOOT_K) within ±10% of each drawn plan's, on seeds of its own${worthOff.length ? `: ${worthOff.join(", ")}` : ""}`);
   check(!capBad.length, `${kind}: every map within its cap (${MAP_CAP[kind] || "the dials, 300"})${capBad.length ? `: ${capBad.join(", ")}` : ""}`);
 }
 

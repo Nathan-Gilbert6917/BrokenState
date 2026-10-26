@@ -1077,6 +1077,25 @@ export const SITE_PLANS = {
     exits: [{ side: "back", roles: ["storage", "lobby"], chance: 0.7, lock: 0.2 }],
   }),
 };
+// Loot at real scale (issue #49; #43's economy: loot per area within its band). realScale grows a plan by splitting its
+// stretched rooms (wards, offices, squad rooms), while its rooms of one piece (the pharmacy's drug safe, the armory, a
+// bay's vehicle) stay one each, so its containers hold less (or more) to the square metre than its drawn plan's. LOOT_K:
+// each plan's containers' worth at real scale (c.lootK: combat.js searchBox and citycrawl.js's quick search × it),
+// calibrated so the plan holds what its drawn plan did a square metre (the tables' value of its indoor containers, over
+// six seeds in a town and a city; tools/civicscaletest.js holds each plan within ±10%, tools/lootsensetest.js the kinds).
+// A plan not listed was within 3% as it was.
+/** @type {Record<string, Record<string, number>>} */
+export const LOOT_K = {
+  hospital: { critical: 1.43, tower: 0.96, children: 1.18, psych: 1.2, va: 1.32, trauma: 1.19, pavilion: 1.27, teaching: 1.1, cottage: 1.22, surgical: 1.18, nursing: 1.41, regional: 1.28, county: 1.27, medcampus: 0.81 },
+  infirmary: { prison: 0.93, prisonhosp: 1.09, jail: 0.92, camp: 1.09, field: 1.08, aid: 1.11, company: 1.16, quarantine: 1.16, shelter: 1.11 },
+  clinic: { urgent: 1.04, family: 1.05, dialysis: 0.75, occhealth: 1.23, free: 1.06, multi: 0.88, rural: 1.04, surgery: 0.97 },
+  vet: { farm: 1.08, emergency: 1.14, shelter: 1.19, boarding: 1.12, equine: 0.93, specialty: 1.14, exotic: 1.1, cat: 1.04, teaching: 1.1 },
+  church: { chapel: 1.09, brick: 0.94, mega: 1.12, cathedral: 1.2, storefront: 1.05, country: 0.93, mission: 1.04, school: 1.08, meeting: 1.05 },
+  police: { substation: 1.18, smalltown: 1.15, precinct: 1.33, patrol: 1.19, hq: 1.16, jail: 1.45, community: 1.1, townhall: 1.18, k9: 1.2, courthouse: 1.11, hqsite: 1.12 },
+  firestation: { volunteer: 1.09, twobay: 0.86, tower: 0.96, airport: 0.91, hq: 0.71, brush: 1.06, firehouse: 1.1, rescue: 0.88, academy: 0.9, hqsite: 0.87 },
+  cityhall: { "city-hall": 1.03, "domed-capitol": 1.2, "town-hall-with-fire-bay": 1.06, "municipal-annex": 0.97, "modern-civic-center": 1.09, "public-works-hall": 0.88 },
+  courthouse: { "county-courthouse": 0.93, "courthouse-and-jail": 0.96, "twin-courtroom-courthouse": 0.89, "family-court": 0.93, "federal-courthouse": 1.1, "old-courthouse": 0.93, "justice-center": 1.08, "courthouse-with-law-library": 0.89, "probate-court": 0.97, "courthouse-with-sally-port": 0.9 },
+};
 export const VARIANT_KINDS = Object.keys(VARIANTS);
 /** The kind's plans: [{ id, name }]. @param {string} kind */
 export const variantNames = (kind) => (VARIANTS[kind] || []).map((v) => ({ id: v.id, name: v.name }));
@@ -1141,5 +1160,6 @@ export function variantSpec(kind, rng, o, K) {
   REAL = scaled ? { setting: o.setting || "town" } : null;
   let spec;
   try { spec = v.make(rng, o, K); } finally { REAL = null; }
-  return { ...spec, vid: v.id, vname: v.name, ...(o.civicReal ? { realSize: v.id } : {}), ...(scaled ? { vscale: true } : {}) };
+  const k = scaled && LOOT_K[kind] ? LOOT_K[kind][v.id] : null;
+  return { ...spec, vid: v.id, vname: v.name, ...(o.civicReal ? { realSize: v.id } : {}), ...(scaled ? { vscale: true } : {}), ...(k ? { lootK: k } : {}) };
 }

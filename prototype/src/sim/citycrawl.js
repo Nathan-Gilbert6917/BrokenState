@@ -1218,7 +1218,7 @@ export function placeProfile(state, c, place, n = c.block) {
   if (place.profile && place.profile.v === 1) return place.profile;
   const t = state.tiles[c.tile];
   const map = buildingMap(state, c.tile, placeOption(c, place, n), false);
-  const boxes = (map.containers || []).filter((x) => x.kind !== "body" && x.kind !== "ground" && map.rooms[x.area] && AREAS[map.rooms[x.area].type]).map((x) => [x.area, x.kind, x.f || 0]);
+  const boxes = (map.containers || []).filter((x) => x.kind !== "body" && x.kind !== "ground" && map.rooms[x.area] && AREAS[map.rooms[x.area].type]).map((x) => [x.area, x.kind, x.f || 0, x.lootK || 1]); // lootK: a civic plan at real scale (issue #49)
   const reward = rewardMult(t) * (raidBig(state, map.w, map.h) ? (map.natMap ? raidLootShare(map.natMap[0], map.natMap[1]) : raidLootShare(map.w, map.h)) : 1); // a building at real size: by its plan's map (combat.js searchBox)
   let best = null, worth = 0;
   for (const F of map.floors && map.floors.length ? map.floors : [{ cells: map.cells }]) for (const cell of F.cells) {
@@ -1234,7 +1234,7 @@ export function quickLoot(state, p, c, place, rng = state.rng, n = c.block) {
   const Q = CRAWL.QUICK;
   const prof = placeProfile(state, c, place, n);
   const snap = c.buildings && c.buildings[place.id];
-  const left = snap ? snap.containers.filter((x) => x.kind !== "body" && x.kind !== "ground" && !x.contents && !x.searched && prof.rooms[x.area]).map((x) => [x.area, x.kind, x.f || 0]) : prof.boxes.slice();
+  const left = snap ? snap.containers.filter((x) => x.kind !== "body" && x.kind !== "ground" && !x.contents && !x.searched && prof.rooms[x.area]).map((x) => [x.area, x.kind, x.f || 0, x.lootK || 1]) : prof.boxes.slice();
   const rolls = Math.max(1, Math.round((Q.rolls + (Q.rollsPerBlock || 0) * (n - 1)) * (1 - CRAWL.LOOTED.strip * (place.looted || 0))));
   const scav = bestSkill(state, p, "scavenging");
   const rich = placeRichness(state, c, place, n);
@@ -1244,9 +1244,9 @@ export function quickLoot(state, p, c, place, rng = state.rng, n = c.block) {
   const sup = {}, gear = [];
   let opened = 0;
   for (let i = 0; i < rolls && left.length; i++) {
-    const [area, kind, f] = left.splice(rng.int(0, left.length - 1), 1)[0];
+    const [area, kind, f, lk = 1] = left.splice(rng.int(0, left.length - 1), 1)[0];
     const type = prof.rooms[area];
-    const got = boxFinds(state, rng, { def: boxLoot(type, kind, winter), type, rich: rich * Math.min(FLOOR_RICH.cap, Math.pow(FLOOR_RICH.perFloor, f)), scav, reward: prof.reward, site, gunSite: place.key, deep: n, tileId: c.tile, bid: `q${place.id}-${i}` });
+    const got = boxFinds(state, rng, { def: boxLoot(type, kind, winter), type, rich: rich * Math.min(FLOOR_RICH.cap, Math.pow(FLOOR_RICH.perFloor, f)) * lk, scav, reward: prof.reward, site, gunSite: place.key, deep: n, tileId: c.tile, bid: `q${place.id}-${i}` });
     addSup(sup, got.sup); gear.push(...got.gear);
     opened++;
   }

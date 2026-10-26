@@ -31,7 +31,7 @@
 // poicont.js keeps each building apart).
 import { Rng } from "./rng.js";
 import { hash01 } from "./skills.js";
-import { BUILDINGS, assemble, realScale } from "./buildingmaps.js"; // call-time only (buildingmaps.js imports this module)
+import { BUILDINGS, assemble, realScale, stampLootK } from "./buildingmaps.js"; // call-time only (buildingmaps.js imports this module)
 import { compoundGrid, placeBuilding, guard, parkingLot, compoundResult, compoundVehicle } from "./compound.js";
 import { rollScenes, sceneRng } from "./interiorscenes.js";
 import { mapCap } from "./battlesize.js";
@@ -120,8 +120,9 @@ export function civicSiteMap(state, tileId, option, withVehicle, spec) {
     sp.ground = "none";
     const key = it.main ? option.key : it.key;
     const m = assemble(hr, sp, { key, id, name: it.name, legacy: false });
+    stampLootK(m, sp); // its containers' worth at real scale (civicvariants.js LOOT_K)
     rollScenes(m, sceneRng(state, tileId, { id }), key);
-    return { ...it, k: k++, id, key, m, w: m.building.w, h: m.building.h };
+    return { ...it, k: k++, id, key, m, w: m.building.w, h: m.building.h, nat: sp.natW ? [sp.natW, sp.natH] : null };
   }));
   // ---------- the layout: the rows' widths and depths, within the cap ----------
   const gap = rng.int(CS.GAP[0], CS.GAP[1]);
@@ -265,5 +266,9 @@ export function civicSiteMap(state, tileId, option, withVehicle, spec) {
   const veh = compoundVehicle(C, zones[0], withVehicle);
   const scenes = sceneList.length ? { list: sceneList.map((sc, i) => ({ ...sc, id: i + 1 })), bodies: sceneBodies, piles: scenePiles, pieces: scenePieces, seed: (seedOf(state, "scenebattle", tileId, option.id) % 2147483646) + 1 } : null;
   const map = compoundResult(C, { key: option.key, id: option.id, name: option.name, zones, vehicle: veh, kind: site, extra: { street: true, word: "buildings", civicSite: site, vid: spec.vid, vname: spec.vname, grounds } });
-  return Object.assign(map, { street: true, civicSite: site, deadScale: CS.DEAD[site] ?? 1, scenes });
+  // Each building's plan at its own size (realScale's natW, natH): what its containers hold (campus.js campusLootShare).
+  for (const h of map.plan.houses) { const it = rows.flat().find((x) => x.m && x.k === h.k); if (it && it.nat) { h.natW = it.nat[0]; h.natH = it.nat[1]; } }
+  // natMap: the main building's plan's map (citycrawl.js's quick search: what a container holds, as a building's at real size).
+  const nat = [(spec.natW || spec.bw) + 9, (spec.natH || spec.bh) + 9];
+  return Object.assign(map, { street: true, civicSite: site, deadScale: CS.DEAD[site] ?? 1, natMap: nat, scenes });
 }
