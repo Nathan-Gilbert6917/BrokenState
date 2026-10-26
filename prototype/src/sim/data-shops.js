@@ -27,6 +27,7 @@
 // ROWS: the new kinds' rows in the find tables, by table (each module merges its own: loot.js SITE_FINDS …).
 
 import { OFFICE_KINDS, OFFICE_AREAS, OFFICE_W, OFFICE_FIRMS, OFFICE_ROWS } from "./data-offices.js"; // the office buildings of every kind, with their firms (issue #27)
+import { NEWSHOP_KINDS, NEWSHOP_AREAS, NEWSHOP_W, NEWSHOP_FRANCHISES, NEWSHOP_ROWS } from "./data-newshops.js"; // six more shops (issue #55): pure data too
 
 /** @typedef {{ wall: string, trim: string, sign: string, text: string, accent: string, roof?: string, style: number }} Look */
 /** @typedef {{ fl?: string, depth?: number, wide?: boolean, flat?: number, storeys?: [number, number], room?: string, back?: string, office?: string, media?: string, truck?: boolean, hotel?: string, libs?: Record<string, number>, variants?: string[] }} Plan */
@@ -149,6 +150,7 @@ export const NEW_KINDS = {
     areas: ["liquor", "liquor", "store", "office"], size: 0.5, storeys: [1, 1],
   },
   ...OFFICE_KINDS, // the office buildings (data-offices.js)
+  ...NEWSHOP_KINDS, // the furniture store, laundromat, thrift store, bakery, butcher and deli (data-newshops.js, issue #55)
 };
 
 // ---------- their raid rooms (combat.js AREAS; tags: loot.js AREA_TAGS) ----------
@@ -219,6 +221,7 @@ export const AREA_DEFS = {
   libtech: { tags: ["tech", "office", "school"], def: { name: "Computers", boxes: ["computer", "printer"],
     loot: { electronics: [0.2, 1, 1], parts: [0.2, 1, 1], scrap: [0.3, 1, 2] }, gear: [["laptop", 0.01], ["phone", 0.01], ["camera", 0.005], ["handradio", 0.005]] } },
   ...OFFICE_AREAS,
+  ...NEWSHOP_AREAS, // issue #55's rooms (data-newshops.js)
 };
 
 // ---------- where each stands (shops.js) ----------
@@ -258,6 +261,8 @@ export const PLACE_W = {
   police:      { ...G(0.15, 0.2, 0.2),  crawl: C(0.15, 0.2, 0.05, 1, 1.2, 1.3, true) },
   // the office buildings (data-offices.js): their own dice place them (shops.js officeExtras, officePlaces), not the shops'
   ...OFFICE_W,
+  // issue #55's six shops (data-newshops.js): a new world's only (shops.js: worldcfg.js legacyShopsR2)
+  ...NEWSHOP_W,
 };
 
 // ---------- the franchises ----------
@@ -507,6 +512,8 @@ export const FRANCHISES = {
   // the office buildings' firms (data-offices.js); the tower's are the site type "office"'s (the crawl's "offices" reads
   // them: shops.js franchisesOf)
   ...OFFICE_FIRMS,
+  // issue #55's six shops' chains and local names (data-newshops.js)
+  ...NEWSHOP_FRANCHISES,
 };
 // Restaurants by kind of food, format and size (issue #33, data-eateries.js VARIANTS): every food kind's franchise has
 // its cuisine, format and size (eat); the variants new with it join the lists, with their own look and plan.
@@ -632,6 +639,8 @@ export const ROWS = {
 
 // The office buildings' rows (data-offices.js), each table's own rows first.
 for (const [t, rows] of Object.entries(OFFICE_ROWS)) ROWS[t] = { ...rows, ...(ROWS[t] || {}) };
+// Issue #55's six shops' rows (data-newshops.js), the same way.
+for (const [t, rows] of Object.entries(NEWSHOP_ROWS)) ROWS[t] = { ...rows, ...(ROWS[t] || {}) };
 
 /** Merges rows into a table, never over a row it has (a module's own rows win). @param {Record<string, any>} into @param {Record<string, any>} [rows] */
 export function mergeRows(into, rows) {

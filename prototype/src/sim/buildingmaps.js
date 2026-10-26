@@ -154,6 +154,7 @@ const STYLE_OF = {
   house: "house", farmhouse: "house", cabin: "house", lodge: "house", ranger: "house", motel: "house", neighbourhood: "house",
   sportshop: "shop", electronics: "shop", radioshop: "shop", bookstore: "shop", petstore: "shop", garden: "shop", clothing: "shop", liquor: "shop", restaurant: "shop", bar: "shop", dealer: "shop", library: "office", vet: "office",
   grocery: "shop", corner: "shop", pharmacy: "shop", hardware: "shop", feedstore: "shop", diner: "shop", gasstation: "shop", truckstop: "shop", supermarket: "shop", deptstore: "shop",
+  furnstore: "shop", laundromat: "shop", thrift: "shop", bakery: "shop", butcher: "shop", deli: "shop", // issue #55
   clinic: "office", infirmary: "office", hospital: "office", school: "office", offices: "office", lab: "office", terminal: "office", apartments: "office",
   storefront: "shop", bizpark: "office", cityhall: "office", callcenter: "office", techoffice: "office", station: "office", courthouse: "secure", // issue #27
   gunstore: "secure", pawnshop: "secure", bank: "secure", police: "secure", barracks: "secure", armorybldg: "secure", cellblock: "secure", control: "secure",
@@ -1098,6 +1099,14 @@ function shop(rng, v, o = {}) {
       sales = { split: "x", parts: leaves([[0.55, S({ name: "Shop", type: "store" })], ["*", { role: "dining", name: "Diner", type: "store", hub: true }]]) };
       back = [["*", "kitchen"], [rng.int(3, 4), { role: "stock", name: "Storeroom" }], [3, { role: "office", lock: ["door", 0.3], boxLock: ["safe", 0.3] }], [2, "restroom"]];
       break;
+    // Issue #55's six shops: a new save's plan is always one of their dozen (shopvariants.js); this plain front and back
+    // is only an older save's rule (o.legacy), which never holds one (shops.js: worldcfg.js legacyShopsR2).
+    case "furnstore": case "laundromat": case "thrift": case "bakery": case "butcher": case "deli": {
+      const base = { furnstore: ["Showroom", "furnshow"], laundromat: ["Laundromat", "laundromat"], thrift: ["Sales floor", "thrift"], bakery: ["Shop front", "bakefront"], butcher: ["Shop front", "butcher"], deli: ["Deli", "deli"] }[v];
+      sales = S({ name: base[0], type: base[1] });
+      back = [["*", { role: "stock", type: base[1] }], [rng.int(3, 4), "office"]];
+      break;
+    }
     default: // grocery, the corner store
       sales = S({ name: v === "corner" ? "Store" : "Sales floor", type: "store", ...(tier ? { lay: tier === "corner" ? "cornerstore" : "grocerfloor", maxBoxes: tier === "corner" ? 7 : 6 } : {}) });
       back = [["*", { role: "stock", ...(tier === "grocery" ? { maxBoxes: 2 } : {}) }], [rng.int(3, 4), { role: "office", boxLock: ["safe", 0.2] }], [2, "restroom"]];
@@ -3256,6 +3265,13 @@ export const BUILDINGS = {
   diner:       { name: "Diner", make: (r, o) => shop(r, "diner", o) },
   gasstation:  { name: "Gas station", make: (r, o) => shop(r, "gasstation", o) },
   truckstop:   { name: "Truck stop", make: (r, o) => shop(r, "truckstop", o) },
+  // issue #55's six shops (data-newshops.js): a dozen plans each (shopvariants.js)
+  furnstore:   { name: "Furniture store", make: (r, o) => shop(r, "furnstore", o) },
+  laundromat:  { name: "Laundromat", make: (r, o) => shop(r, "laundromat", o) },
+  thrift:      { name: "Thrift store", make: (r, o) => shop(r, "thrift", o) },
+  bakery:      { name: "Bakery", make: (r, o) => shop(r, "bakery", o) },
+  butcher:     { name: "Butcher", make: (r, o) => shop(r, "butcher", o) },
+  deli:        { name: "Deli", make: (r, o) => shop(r, "deli", o) },
   supermarket: { name: "Supermarket", make: (r, o) => bigstore(r, "supermarket", o) },
   deptstore:   { name: "Department store", make: (r, o) => bigstore(r, "dept", o) },
   clinic:      { name: "Clinic", make: (r, o) => institution(r, "clinic", o) },
@@ -3354,6 +3370,8 @@ export const STOREYS_BY_TYPE = {
   milbunker: [2, 3], mountainbunker: [3, 3], govbunker: [2, 3], shelter: [2, 2], prepper: [2, 3], // bunkers: the Entrance level and the levels below it (bunkerlayout.js)
   // the office buildings (issue #27; officeplans.js SIZE, the crawl's bonus for the city's kinds)
   storefront: [1, 2], bizpark: [1, 3], cityhall: [1, 3], courthouse: [1, 3], callcenter: [1, 2], techoffice: [1, 5], station: [1, 3],
+  // issue #55's six shops (their variants' REAL_SIZE rows: a flat, offices or a second floor above)
+  furnstore: [1, 2], laundromat: [1, 2], thrift: [1, 2], bakery: [1, 2], butcher: [1, 2], deli: [1, 2],
 };
 
 // Which buildings stand at a site, by location type (or the terrain, for open land): a list of building keys (or
@@ -3392,6 +3410,8 @@ export const SITES = {
   bunker_mil: ["mountainbunker"], bunker: ["milbunker"], govbunker: ["govbunker"], shelter: ["shelter"], prepper: ["prepper"],
   // the office buildings (data-offices.js, issue #27): one building each
   storefront: ["storefront"], bizpark: ["bizpark"], cityhall: ["cityhall"], courthouse: ["courthouse"], callcenter: ["callcenter"], techoffice: ["techoffice"], station: ["station"],
+  // issue #55's six shops (data-newshops.js): one building each
+  furnstore: ["furnstore"], laundromat: ["laundromat"], thrift: ["thrift"], bakery: ["bakery"], butcher: ["butcher"], deli: ["deli"],
   // Open land (no site).
   suburb: ["house", ["house", "House across the street"], "garage"], plains: ["farmhouse", "barn"],
   forest: { multi: true, list: ["cabin"] }, hills: { multi: true, list: ["cabin"] }, mountain: { multi: true, list: ["cabin"] },

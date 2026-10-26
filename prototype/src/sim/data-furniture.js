@@ -390,6 +390,12 @@ export const FURNITURE_KINDS = {
   screener:     P("Walk-through scanner", POLE, 30, 120, "fixed", S1, false, ["office"], "none"),
   liquorcab:    P("Liquor cabinet",       HALF, 25, 30, "one", S1, true, ["office", "living", "bar"], "storage:30", true),
   phonebooth:   P("Phone booth",          C(false, 1, false), 30, 200, "fixed", S1, false, ["office"], "none", true),
+  // ---------- issue #55's shops (shoplayout.js): a bakery's floor mixer, a butcher's band saw, a laundromat's change
+  // machine (its quarters: combat.js BOX_LOOT changer) and folding table ----------
+  mixer:        P("Floor mixer",          STEEL, 40, 110, "two", S1, false, ["kitchen"], "none", true),
+  meatsaw:      P("Band saw",             HALF, 30, 120, "two", S1, false, ["kitchen", "bay"], "none", true),
+  changer:      P("Change machine",       FULL, 40, 90, "two", S1, true, ["laundry", "shop"], "storage:10", true),
+  foldtable:    P("Folding table",        HALF, 12, 14, "one", S1, false, ["laundry", "shop", "kitchen"], "work:table"),
   // ---------- lootable decor (issue #13: decor.js places them; light comfort pieces for the base) ----------
   // The plant and the floor lamp stand on a room's floor cell; the painting and the wall clock hang on a wall (decor.js:
   // c.wart = { k, d, piece: true } on the wall cell, the wall's own kind unchanged) and stand on a cell only once set down.

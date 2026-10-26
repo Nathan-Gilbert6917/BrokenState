@@ -203,6 +203,10 @@ export function deserializeState(save) {
   // The placement table (data-placement.js, issue #42): a save from before keeps its POI lists, its crawls' blocks and
   // its buildings as its seed made them (placement.js placing off).
   if (!state.placeV) { state.placeLegacy = true; state.placeV = 1; }
+  // Six more shops (data-newshops.js, issue #55: the furniture store, the laundromat, the thrift store, the bakery, the
+  // butcher, the deli): a save from before gets none of them on its tiles or its crawls' blocks (shops.js, placement.js
+  // placeExtraKind), so its points of interest regenerate as they were.
+  if (!state.shopsR2V) { state.shopsR2Legacy = true; state.shopsR2V = 1; }
   if (!state.woodcutting) {
     for (const b of state.bases || []) if (b.stock && !Number.isFinite(b.stock.wood)) b.stock.wood = 0;
     for (const r of (state.work && state.work.roles) || []) if (r.pri && r.pri.wood == null && r.pri.forage > 0) r.pri.wood = r.pri.forage;

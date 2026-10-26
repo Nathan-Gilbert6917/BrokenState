@@ -24,7 +24,7 @@ import { LOCATIONS } from "./data.js";
 import { hash01 } from "./skills.js";
 import { useSizeClassOf } from "./variantpick.js"; // the shared picker (#41): its plans' size classes by sizeClassOf
 import { settingAt } from "./settings.js"; // the six settings (issue #40): this module adds coast and scenic land
-import { legacyPlace } from "./worldcfg.js";
+import { legacyPlace, legacyShopsR2 } from "./worldcfg.js";
 import { maxLevel } from "./citygrid.js";
 
 export { TILE_CLASSES, SIZE_CLASSES, PLACE };
@@ -124,7 +124,7 @@ export const standsOn = (state, key, tile) => placeMult(state, key, tileClass(st
 
 // The kinds placeExtra adds where the old pools had none: [kind, { class: chance a tile }]. A city centre's medical
 // centre (and the city blocks'), a town's county hospital, big-box store and high school, the country's clinic, chapel
-// and feed store, a farm stand by the road.
+// and feed store, a farm stand by the road; issue #55's country bakery and butcher.
 export const PLACE_EXTRA = [
   ["hospital", { centre: 0.06, city: 0.03, town: 0.0015 }],
   ["supermarket", { town: 0.006 }],
@@ -133,7 +133,11 @@ export const PLACE_EXTRA = [
   ["church", { rural: 0.006, highway: 0.004 }],
   ["feedstore", { rural: 0.004, highway: 0.006 }],
   ["farmstand", { highway: 0.01 }],
+  // Issue #55: a small bakery or butcher in the country (a new world from since them: legacyShopsR2 skips these).
+  ["bakery", { rural: 0.004, highway: 0.003, coast: 0.001 }],
+  ["butcher", { rural: 0.004, highway: 0.002 }],
 ];
+const R2_EXTRA = new Set(["bakery", "butcher"]); // issue #55's: none in a save from before them
 export const PLACE_KNOWN = 0.7; // the share of them known from the start in the known zone (shops.js SHOP.KNOWN)
 /**
  * The kind of one more POI a new world's tile may hold by the table (pois.js generatePois builds it, last, on dice of
@@ -148,6 +152,7 @@ export function placeExtraKind(state, t, list, max) {
   for (const [kind, at] of PLACE_EXTRA) {
     const p = /** @type {Record<string, number>} */ (at)[cls] || 0;
     if (!p || !LOCATIONS[kind] || LOCATIONS[kind].richness > cap || list.some((q) => q.kind === kind) || (t.loc && t.loc.type === kind)) continue;
+    if (R2_EXTRA.has(/** @type {string} */ (kind)) && legacyShopsR2(state)) continue;
     if (hash01(state.seed, "placepoi", t.id, kind) < p) return /** @type {string} */ (kind);
   }
   return null;
