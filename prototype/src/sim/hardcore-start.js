@@ -46,7 +46,7 @@ import { keyWord } from "./water.js"; // supplies as words: "9mm FMJ", "rounds"
 import { GEAR, SUPPLY_KEYS, TRAITS, SKILL_NAMES, clashIn } from "./data.js";
 import { bornTraits, tidyTiers } from "./traits.js"; // what the world's dice rolled at birth, before the newer traits came in
 import { VEHICLE_TYPES, SEATS, createVehicle, addPartyVehicle } from "./vehicles.js";
-import { START_FLEET, fitFleet, seatDrivers } from "./startfleet.js"; // the starting vehicles' slots; those past the car: their tank and condition (call-time only)
+import { START_FLEET, fitFleet, seatDrivers, fleetRoom, vehicleRoom, openLoads } from "./startfleet.js"; // the starting vehicles' slots; those past the car: their tank and condition (call-time only)
 import { newId, makeSurvivor, applyCrew, assignStartingRoles, log, day, hub, addCard, crewDice } from "./world.js";
 import { newItem, packOf, POCKETS, START_DUR, startKit } from "./inventory.js";
 import { randomStarterMods } from "./gunmods.js"; // starting guns may carry a cheap attachment
@@ -62,6 +62,7 @@ const roundsOnly = (rec) => Object.fromEntries(Object.entries(rec || {}).filter(
 // What someone has with them at the start, looked after but worn (inventory.js START_DUR).
 const startItem = (rng, key, q) => newItem(key, q, rng, START_DUR);
 import { Rng } from "./rng.js";
+import { randomTrunk } from "./randomkit.js"; // a back rolled again: filled up to its points (call-time only)
 import { pickStart, chosenStart } from "./startpick.js"; // where you start, rolled again on the same map or picked on it
 import { meleeBump, cookingBump } from "./appearance.js"; // a background's Melee bump: its own die
 import { sightRadius, partyMembers, partyTile, weighTeam } from "./parties.js";
@@ -70,7 +71,7 @@ import { isCrashRun } from "./crashmode.js"; // Crashlanding (2026-10-24): the r
 import { startsWithVehicle } from "./custommode.js"; // Start with a vehicle (2026-10-24): off, no car
 import { isCustomBg } from "./custombg.js";
 import { hardcoreTents } from "./tents.js"; // a one-person tent bag each (tents.js TENTS.HARDCORE; call-time only)
-import { grabStartGear, addPickedSupplies, trunkFromPicks, loadGun, pickOf } from "./startgear.js"; // gear picked on the new-run screen (Customize)
+import { grabStartGear, addPickedSupplies, trunkFromPicks, loadGun, pickOf, pickItem } from "./startgear.js"; // gear picked on the new-run screen (Customize)
 import { hcOutbreakCity } from "./hardcore-outbreak.js";
 import { STAGING, ESTABLISH_LABEL, needText, shelterText, waterSource, buildMapChoice } from "./staging.js";
 import { siteThreat } from "./siteclear.js"; // the dead at a camp's spot (call-time only)
@@ -645,6 +646,15 @@ function rollTrunk(state, rng, A, people) {
   return trunk;
 }
 
+// A back rolled again (🎲 Reroll back, 🎲 Reroll vehicle: f.backRoll; the user's request 2026-10-26: "Set it to fill
+// up to 80 points of materials, gear and ammo on a reroll"): things, supplies, materials and rounds filled up to
+// START_FLEET.REROLL points (randomkit.js randomTrunk, as the screen's Random fills a back) in room kg, on the dice of
+// rng; its rounds for the crew's guns, any thing and material in Custom mode. Returns { supplies, gear }.
+function rerolledBack(state, rng, room, people) {
+  const V = randomTrunk(START_FLEET.REROLL, room, rng, gunCals(people), { fill: true, open: openLoads(state) });
+  return { supplies: { ...V.supplies }, gear: V.items.map((k) => pickItem(k)) };
+}
+
 // ---------- the car ----------
 // Whose car it was (the three's carOdds), what it is (their CARS), its tank and condition (CAR), and what was in the
 // back (TRUNK: supplies and things). Makes the vehicle on the team and loads the cargo. Returns { owner, car, trunk }.
@@ -679,7 +689,7 @@ export function rollCar(state, p, people, keptOwner = null) {
   p.vehicleId = car.id;
   let trunk = rollTrunk(state, rng, A, people);
   if (own) trunk = rollTrunk(state, own, A, people); // rolled again: the back from its own dice too
-  if (fleet0 && fleet0.backRoll != null) trunk = rollTrunk(state, new Rng(fleet0.backRoll), A, people); // the back alone rolled again (🎲 Reroll back), the car as it was
+  if (fleet0 && fleet0.backRoll != null) trunk = A.custom ? rollTrunk(state, new Rng(fleet0.backRoll), A, people) : rerolledBack(state, new Rng(fleet0.backRoll), vehicleRoom(state, car, true), people); // the back rolled again (🎲 Reroll back), the car as it was: up to START_FLEET.REROLL points (a custom background's own back stays its own)
   owner.diceTrunk = { items: trunk.gear.map((it) => pickOf(it)).filter(Boolean), supplies: { ...trunk.supplies } }; // the dice's back (until Start); a gun with the parts it came with
   if (picked) { const mine = trunkFromPicks(fleet0.load); trunk.gear = mine.gear; trunk.supplies = mine.supplies; }
   typeFind(state, trunk.supplies, "travel"); // foods.js: the back's food as what people threw in a car (light, keeps; bread and cheese in the first days)
@@ -742,6 +752,11 @@ function rollVehicle(state, f, i, people, owned, loc, R) {
 // drawn, its own car's back being theirs already: normalStartKit), noted on the slot (f.diceTrunk: As rolled, 👁 Back).
 function rollBack(state, f, owner, rng0, people) {
   const rng = f.backRoll != null ? new Rng(f.backRoll) : rng0; // the back alone rolled again (🎲 Reroll back): its own dice, the vehicle as it was
+  if (f.backRoll != null) { // rolled again: up to START_FLEET.REROLL points (rerolledBack)
+    const dice = rerolledBack(state, rng, fleetRoom(state, state.fleet.indexOf(f)), people);
+    f.diceTrunk = { items: dice.gear.map((it) => pickOf(it)).filter(Boolean), supplies: { ...dice.supplies } };
+    return dice;
+  }
   const own = archetypeOf(state, owner.background);
   const A = own && !own.custom && own.trunk ? own : HC_START.ARCHETYPES[rng.pick(Object.keys(HC_START.ARCHETYPES))];
   const dice = rollTrunk(state, rng, A, people);

@@ -39,7 +39,11 @@
 //   the screen's 🎲 Reroll (ui/startgear.js fleet-reroll); what they put in it is noted on the world's slot as
 //   f.diceTrunk (the car's on its owner, s.diceTrunk), shown by 👁 Back (fleetViewer). backRoll (the user's request
 //   2026-10-25: "ADD A BUTTON TO REROLL WHAT IS IN THE BACK PER VEHICLE"): the back's own dice (the screen's 🎲 Reroll
-//   back, fleet-reroll-back), its kind and tank kept; null: the back on the vehicle's dice after them.
+//   back, fleet-reroll-back), its kind and tank kept; null: the back on the vehicle's dice after them. A back rolled
+//   again (the user's request 2026-10-26: "Set it to fill up to 80 points of materials, gear and ammo on a reroll"):
+//   REROLL points of things, supplies, materials and rounds (randomkit.js randomTrunk, filled), in its room, in place
+//   of the few things a background's trunk table draws (hardcore-start.js rollBack, rollCar). 🎲 Reroll vehicle
+//   rolls its back so too (a new backRoll).
 // - owner (the user's request 2026-10-25: "make each vehicle keep its own dice when removing NEW vehicle new dice"): whose
 //   it is, a place in the crew, pinned on the screen once rolled (with its roll: ui/startgear.js uiFleet), so a vehicle
 //   keeps its owner, kind and back when one before it is removed; null: the next of the crew without one. ＋ Add gives
@@ -56,6 +60,7 @@ export const START_FLEET = {
   KIND: "truck", // a normal start's (and a new Custom vehicle's) kind: the pickup truck
   FUEL: 20, CONDITION: 75, // a vehicle's tank (at most a full one) and condition where nothing rolls them
   ROLL: { FUEL: [0.2, 0.45], CONDITION: [60, 85] }, // a normal or Custom start's vehicles, rolled (hardcore-start.js rollHubFleet): a part-full tank a year on
+  REROLL: 80, // a back rolled again (🎲 Reroll back, 🎲 Reroll vehicle): filled up to this many points (hardcore-start.js rerolledBack)
 };
 // The kinds a Custom vehicle may be: every motor vehicle (vehicles.js VEHICLE_TYPES), no bicycles.
 export const fleetKinds = () => Object.keys(VEHICLE_TYPES).filter((k) => k !== "bike" && VEHICLE_TYPES[k].motor);
@@ -145,11 +150,12 @@ export const openLoads = (state) => isCustomRun(state);
  * (they ride in it too; the drivers of the rest are reckoned there as well).
  * @param {any} state @param {number} i
  */
-export function fleetRoom(state, i) {
-  const v = fleetVehicle(state, i);
+export const fleetRoom = (state, i) => vehicleRoom(state, fleetVehicle(state, i), ridesIn(state, i));
+/** Room in vehicle v's back (kg): its payload, less the crew and what they wear when they ride in it. @param {any} state @param {any} v @param {boolean} riding */
+export function vehicleRoom(state, v, riding) {
   const T = v && VEHICLE_TYPES[v.type];
   if (!T) return 0;
-  const riders = ridesIn(state, i) ? (state.survivors || []).reduce((a, s) => a + RIDER_KG + wornLoad(s), 0) : 0;
+  const riders = riding ? (state.survivors || []).reduce((a, s) => a + RIDER_KG + wornLoad(s), 0) : 0;
   return Math.max(0, Math.round((T.payload || 0) - riders));
 }
 /**
