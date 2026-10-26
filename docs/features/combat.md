@@ -1203,7 +1203,7 @@ The user's request (2026-10-26): "Add a scripted play though of testing taking d
 
 | Scene | Who | What it plays |
 |---|---|---|
-| A | two survivors and the van | one refused the fridge alone; the two lift it (2 actions each), tethered at 30 kg each, carry it out of the house (the tether checked after every move) and load it; the range the same; the sofa (2 cells) set down to the left, parallel, and lifted again; one of the two downed: the sofa drops, the tether ends; a piece upstairs carried down the stairs (both actions each); the van filled up: the sofa stays by the door, in the house's ledger; the pieces loaded in the raid's loot |
+| A | two survivors and the van | one refused the fridge alone; the two lift it (2 actions each), tethered at 30 kg each, carry it out of the house (the tether checked after every move) and load it; the range the same; the sofa (2 cells) set down to the left, parallel, and lifted again; one of the two downed: the sofa drops, the tether ends; a piece upstairs carried down the stairs (both actions each); the van filled up: the sofa stays behind, in the house's ledger; the pieces loaded in the raid's loot |
 | B | one survivor and the van | refused the fridge; the microwave lifted (2 actions; one action left is refused), its 15 kg on the load; the shelves (25 kg: 4 tiles an action from 5) set in the front doorway, a barricade (the frame kept under it): nobody stands in the doorway, and a walker brought to the door crawls over the shelves (half cover, `CRAWL.COST` 4 tiles over the step, its whole turn: 2 tiles to the cell inside with the doorway clear, 6 with the shelves in it); lifted out again, the door is back; carried out at extraction: into the van by itself |
 | C | one survivor on foot | a chair carried out: "Exhausted, the team dropped what it was carrying: a chair. It stands by the door…", in the ledger |
 | D | two survivors on foot | the oven between them dropped from exhaustion; the next raid finds the oven and C's chair by the door and lifts the oven again |
@@ -1219,7 +1219,7 @@ What the script does for itself, and says in the transcript: nobody else on the 
 - A piece loaded into the vehicle during a raid (Load into vehicle) went home but the summary said "Loot: nothing". `stowAct` keeps it in `b.raid.stowed`; `endRaid` lists it in the loot when the vehicle goes home.
 
 **Decisions:**
-- The issue says the extras a full vehicle cannot take are dropped "with the exhaustion message". #18 gives them their own line ("The work van is full: the sofa stays by the door."), which the test checks; the exhaustion message is for no vehicle. Left as #18 built it.
+- The extras a full vehicle cannot take get their own line, not the exhaustion message (that is for no vehicle). The user chose its wording on 2026-10-26: "The work van is full: the sofa stays behind."
 - A pair standing diagonally has no side to set a 2-cell piece down on, parallel to them (`setTargets` offers nothing); the script steps one of them straight beside the other first.
 
 **The browser version** (`prototype/tools/carryplaysmoke.cjs`, by hand, outside the gate): a house raid with two survivors and the vehicle, the Lift order and its "With <name>" chooser clicked in the battle panel, the fridge carried to the vehicle with move orders, Load into vehicle, extraction and the summary, a screenshot at each step (`node tools/carryplaysmoke.cjs <outdir>`).
