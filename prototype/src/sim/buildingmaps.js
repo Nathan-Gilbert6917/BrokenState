@@ -66,7 +66,7 @@ import { rollScenes, sceneRng } from "./interiorscenes.js"; // signs of survival
 import { mallMap, mallHint, mallArchetype, mallDead, mallIntro, deptstorePlan } from "./mall.js"; // shopping malls (issue #30): a strip mall, a regional mall, an outlet centre as one map (compound.js)
 import { mallStyle, MALL_KEYS } from "./malllayout.js";
 import { DOOR_HP } from "./compound.js"; // the door kinds' hit points handed to the shared multi-building code // the malls' own rooms laid out (the cinema, the arcade, mall security, the parking deck)
-import { realFoot, realStoreys, storeyRange, REAL_SIZE } from "./data-buildingsize.js"; // buildings at real size (issue #24)
+import { realFoot, realStoreys, storeyRange, sizeOf, REAL_SIZE } from "./data-buildingsize.js"; // buildings at real size (issue #24)
 import { BUNKER_PLANS, bunkerStyle, levelName } from "./bunkerlayout.js"; // bunkers: the plans, their rooms, their levels below ground (issue #26)
 import { eateryPlan, eateryOf } from "./eaterylayout.js"; // restaurants by kind of food, format and size (issue #33)
 import { industryPlan, industryStyle, INDUSTRY_ROLES, INDUSTRY_KEYS } from "./industrylayout.js"; // warehouses, factories and labs: a dozen plans each (issue #37)
@@ -3005,7 +3005,7 @@ const OFFICE_ORDER = ["cubicles", "open", "meeting", "cubicles", "open", "cantee
 // courtyard grow with them; each part's stretched rooms split in two (twinUp, as realScale's splitUp splits a plan's)
 // until it has about the rooms its own size would have here; boxK as for a plan (the containers to the square metre).
 function shapeAtScale(rng, spec, key, out, cap) {
-  const f = realFoot(rng, key);
+  const f = realFoot(rng, key, spec.realSize);
   if (!f) return;
   let sx = Math.max(1, f.bw / spec.bw), sy = Math.max(1, f.bh / spec.bh);
   if (cap) { sx = Math.min(sx, Math.max(1, cap.w / spec.bw)); sy = Math.min(sy, Math.max(1, cap.h / spec.bh)); }
@@ -3055,7 +3055,7 @@ function twinUp(prog, natIw, natIh, iw, ih) {
   return c;
 }
 export function realScale(rng, spec, key, o = {}) {
-  const R = REAL_SIZE[key];
+  const v = spec && spec.realSize, R = sizeOf(key, v); // spec.realSize: a variant's size in its kind's row (REAL_SIZE sizes: a rural hospital, a city medical centre)
   if (!R || !spec) return spec;
   if (spec.real) return { ...spec, height: Math.max(1, spec.storeys || 1) }; // planned at its real size by its archetype (#25's military plans): as it is, every floor built
   const out = { ...spec, natW: spec.bw, natH: spec.bh, natStoreys: Math.max(1, spec.storeys || 1) };
@@ -3064,24 +3064,24 @@ export function realScale(rng, spec, key, o = {}) {
   // with its floorKinds; #37's named warehouses, factories and labs): its footprint and plan as they are, its height its
   // own, only the floors the tall rule builds.
   if (spec.restorey && R.city) { // #27's firm-less tower: its plan redrawn at the setting's height (realStoreys: a city's towers up to MAX_STOREYS)
-    const height = clampN((realStoreys(rng, key, o.setting) || out.natStoreys) + bonus, 1, MAX_STOREYS), re = spec.restorey(height);
+    const height = clampN((realStoreys(rng, key, o.setting, v) || out.natStoreys) + bonus, 1, MAX_STOREYS), re = spec.restorey(height);
     delete re.restorey;
     return { ...re, height, storeys: openStoreys(height, bonus) };
   }
   if (R.planned || spec.floorKinds || (spec.vid && spec.vid !== "general" && !spec.vclassic)) { // #37's named industrial plans (spec.vid): their own sizes; vclassic: a type's classic layout (buildvariants.js, #32) scaled as the general plan — (industrylayout.js INDUSTRY.SIZE)
     const height = out.natStoreys, built = openStoreys(height, bonus);
-    return { ...spec, height, storeys: built };
+    return { ...spec, height, storeys: built, ...(spec.hotel && built < height ? { topOnBuilt: true } : {}) }; // a tower hotel: the highest floor still reached is its penthouse floor (#29's top plan), the stairs above it blocked
   }
   // Storeys: the height it stands, the floors built.
   let height = out.natStoreys;
-  if (R.city) height = clampN((realStoreys(rng, key, o.setting) || height) + bonus, 1, MAX_STOREYS);
-  else { const r = storeyRange(key, o.setting); if (r) height = clampN(height, r[0], r[1]); }
+  if (R.city) height = clampN((realStoreys(rng, key, o.setting, v) || height) + bonus, 1, MAX_STOREYS);
+  else { const r = storeyRange(key, o.setting, v); if (r) height = clampN(height, r[0], r[1]); }
   const built = openStoreys(height, bonus);
   out.height = height; out.storeys = built;
   if (height >= SCALE.TWO_STAIRS) out.stairs = { ...(spec.stairs || {}), n: 2 };
   // The footprint, and the plan over it (realFoot; a kind with no size of its own here: the archetype's footprint and plan).
   if (spec.shape && !R.own && R.wings !== "along") shapeAtScale(rng, spec, key, out, o.cap || null); // a shape's parts scaled (issue #23; a motel's rooms are its own size: its U is as long as its row)
-  const foot = R.own || spec.shape ? null : realFoot(rng, key);
+  const foot = R.own || spec.shape ? null : realFoot(rng, key, v);
   const flips = Array.from({ length: 64 }, () => !R.wings && rng.chance(0.5)); // each wing turned left for right
   let lay = (prog) => prog, fill = (prog) => prog;
   if (foot) {
@@ -4899,7 +4899,7 @@ export function assemble(rng, spec, opts = {}) {
   const floors = [{ cells, name: floorName(0) }];
   let base = areas.length, nextCid = cid;
   for (let g = 1; g < storeys; g++) {
-    const program = parts ? null : spec.upper ? spec.upper(g, rng, { top: g === storeys - 1 && height === storeys, storeys, bw, bh }) : spec.program; // top: the roof is over it (a taller building's top floor built is not its plant room)
+    const program = parts ? null : spec.upper ? spec.upper(g, rng, { top: g === storeys - 1 && (height === storeys || !!spec.topOnBuilt), storeys, bw, bh }) : spec.program; // top: the roof is over it (a taller building's top floor built is not its plant room; a hotel's is its penthouse floor: topOnBuilt)
     const programs = parts ? parts.map((p) => (p.n > g ? (p.upper ? p.upper(g, rng, { top: g === p.n - 1 && (p.n < storeys || height === storeys), storeys: p.n, bw: p.w, bh: p.h, part: p }) : p.program) : null)) : null; // a shape: each part's floor g, while it has one
     const up = assemble(rng, spec, { ...opts, _floor: g, _program: program, _programs: programs, _runs: runs, _idBase: base, _cid: nextCid, _piece: pieceNo });
     areas.push(...up.rooms); containers.push(...up.containers); lockedDoors.push(...up.lockedDoors);
