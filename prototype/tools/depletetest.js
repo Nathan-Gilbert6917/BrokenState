@@ -43,6 +43,7 @@ import {
 import { SCAV_DEPLETE, SCAV_FLOOR, scavLeft } from "../src/sim/economy.js";
 import { totalRounds } from "../src/sim/rounds.js"; // a group's rounds: by calibre now, with any generic ammo
 import { saveToString, loadFromString } from "../src/sim/save.js";
+import { siteSizeK } from "../src/sim/buildingmaps.js"; // a site's size factor at real scale (issue #24)
 import { renderRight, tileActions } from "../src/ui/ui.js";
 import { tileTooltip } from "../src/ui/render.js";
 
@@ -72,8 +73,16 @@ if (CURVE) {
   const st = world(seed);
   st.aiScavOff = process.argv[4] === "off";
   setAutopilot(st, true, "balanced");
-  const total0 = siteLootTotal(st);
-  const out = { left: {}, died: [], fell: null, trips: 0 };
+  // The loot left where the groups scavenge: the sites within their parties' range (AISCAV.range) of a group's base
+  // when the world is made, not the whole map's. Since the map sizes (67fe4c3, 2026-10-24: Normal 250 × 150, not 64 × 42,
+  // the sites per hex kept) the map holds about 14 times the sites while eight groups take what they did (seed 1: 950 goods home
+  // in 30 days against 597 before), so the map-wide share left went from 94% to 99% on day 30 (94% on day 365) and
+  // every bound below on it measured the map's size, not the groups. The map-wide share is still printed (out.map).
+  const reach = new Set();
+  for (const f of st.factions) for (const b of f.bases) for (const id of st.grid.within(b, AISCAV.range)) { const t = st.tiles[id]; if (t.loc && !t.loc.crash && !t.loc.convoy) reach.add(id); }
+  const reachLoot = () => { let v = 0; for (const id of reach) v += st.tiles[id].loot || 0; return v; };
+  const total0 = reachLoot(), map0 = siteLootTotal(st);
+  const out = { left: {}, map: {}, sites: reach.size, died: [], fell: null, trips: 0 };
   const died = new Set();
   let was = day(st);
   while (day(st) <= days) {
@@ -83,7 +92,7 @@ if (CURVE) {
     // passHours, runs the world's hours inside it), so midnight can fall inside one tick (seed 2 missed day 120).
     if (day(st) !== was) {
       for (const f of st.factions) if (!f.alive && !died.has(f.id)) { died.add(f.id); out.died.push(day(st)); }
-      for (const d of MARKS) if (d >= was && d < day(st)) out.left[d] = siteLootTotal(st) / total0;
+      for (const d of MARKS) if (d >= was && d < day(st)) { out.left[d] = reachLoot() / total0; out.map[d] = siteLootTotal(st) / map0; }
       was = day(st);
     }
   }
@@ -92,6 +101,22 @@ if (CURVE) {
   process.stdout.write(JSON.stringify(out));
   process.exit(0);
 }
+
+// The loot curve's years (the last section) start first and play while the sections below run in this process: the
+// 24 years of the full form are most of its time (about 285 s each with the machine shared, 2026-10-26), and the
+// sections here about 440 s, so one after the other the full form ran past the runner's 40 minutes (issue #63).
+const curveRuns = (async () => {
+  const me = fileURLToPath(import.meta.url);
+  const one = (s, mode) => new Promise((res, rej) => execFile(process.execPath, [me, "--curve", String(s), mode, String(days)], { maxBuffer: 1 << 26 }, (e, out) => (e ? rej(e) : res(JSON.parse(out)))));
+  // At most one year a core at a time (as diplotest's collapse years): 24 years at once on a 4-core machine thrash
+  // it (each child holds a whole world) and finish no sooner.
+  const jobs = curveSeeds.flatMap((s) => [[s, "on"], [s, "off"]]), runs = new Array(jobs.length);
+  let next = 0;
+  const lane = async () => { while (next < jobs.length) { const i = next++; runs[i] = await one(...jobs[i]); } };
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(jobs.length, QUICK ? 2 : availableParallelism())) }, lane));
+  return runs;
+})();
+curveRuns.catch(() => {}); // a child that fails is reported where the curve is awaited (below), not as an unhandled rejection
 
 // A live group with a base, its needs high (empty stock), neutral toward you, and the best site for it.
 function groupWithSite(st, opts = {}) {
@@ -248,8 +273,12 @@ section("Their own land");
   f.scavNext = st.hour + 999; // no party today
   aiScavDaily(st);
   const after = ids.map((id) => st.tiles[id].loot);
-  check(ids.every((id, i) => after[i] <= before[i] && (before[i] <= AISCAV.floor + 1e-9 || Math.abs(after[i] - before[i] * (1 - AISCAV.landRate)) < 1e-9 || after[i] === AISCAV.floor)),
-    `every site they hold loses ${AISCAV.landRate * 100}% a day (${ids.length} sites: ${before.map(r2).join(", ")})`);
+  // At real size (issue #24, 198c24d: aiscav.js aiScavDaily) a site holds siteSizeK times what it did, so the day's
+  // share is landRate / siteSizeK of it: the same loot a day as before, not a share sk times bigger (this check pinned
+  // the plain landRate since then).
+  const sks = ids.map((id) => siteSizeK(st, st.tiles[id]));
+  check(ids.every((id, i) => after[i] <= before[i] && (before[i] <= AISCAV.floor + 1e-9 || Math.abs(after[i] - before[i] * (1 - AISCAV.landRate / sks[i])) < 1e-9 || after[i] === AISCAV.floor)),
+    `every site they hold loses ${AISCAV.landRate * 100}% a day over its size factor (${ids.length} sites: ${before.map(r2).join(", ")} → ${after.map((v) => r2(v)).join(", ")}; siteSizeK ${sks.map(r2).join(", ")})`);
   check(stockSum(f) > stock0, "into their stock");
   check(ids.every((id) => st.tiles[id].owner === f.id), "only sites in their land");
   // The old economy, for comparison (the test switch).
@@ -290,7 +319,10 @@ section("Nothing grows back: tile.loot only falls (crash and event sites aside),
   // miltrucks.js: the abandoned Army convoy is an event site like a crash: it appears with its loot, a group that
   // reaches it strips it (× CONVOY.stripKeep) and when it burns out the tile is back to its old loot (c.prevLoot).
   // pois.js: a site's point of interest keeps using tile.loot as its pool (poiTake lowers it like a search does).
-  const allowed = ["mapgen.js", "scavenge.js", "crashes.js", "factions.js", "conquest.js", "hardcore-groups.js", "hardcore-loot.js", "citycrawl.js", "miltrucks.js", "pois.js"];
+  // crashstart.js (Crashlanding, d4349e1, 2026-10-24; the list was not updated then): the crash world's loot set when it is
+  // made (every tile × CRASH.LOOT 0.55, the heli wreck, the unit's base) and the chain's scripted sites (the overrun base
+  // after the reveal, the secret bunker made mid-game): event sites like the convoy's, never a regrowth.
+  const allowed = ["mapgen.js", "scavenge.js", "crashes.js", "factions.js", "conquest.js", "hardcore-groups.js", "hardcore-loot.js", "citycrawl.js", "miltrucks.js", "pois.js", "crashstart.js"];
   check([...setters].every((n) => allowed.includes(n)), `only ${allowed.join(", ")} set tile.loot outright (found: ${[...setters].join(", ")})`);
   check(takers.has("aiscav.js"), `the groups' scavenging only takes from it (-= in ${[...takers].join(", ")})`);
   check(adds === 0, "nothing adds to it or scales it (+=, *=, /=)");
@@ -300,12 +332,13 @@ section("Nothing grows back: tile.loot only falls (crash and event sites aside),
     check(!/\.(loot|pool)\s*[-+*\/]?=(?!=)/.test(src) && /poiTake\(/.test(src), "the container ledger (poicont.js) lowers pools only through poiTake");
   }
   // grouppois.js (the other groups' raids on POIs, Session 4b) takes only through poicont.js lootPoiAbstract; a POI's own
-  // pool is written only by pois.js (poiTake) and hardcore-loot.js (the hardcore start's surplus, which only fades).
+  // pool is written only by pois.js (poiTake), hardcore-loot.js (the hardcore start's surplus, which only fades) and
+  // crashstart.js crashLootScale (the crash world's pools × CRASH.LOOT 0.55 when it is made, a cut; d4349e1).
   {
     const src = readFileSync(join(dir, "grouppois.js"), "utf8");
     check(!/\.(loot|pool)\s*[-+*\/]?=(?!=)/.test(src) && /lootPoiAbstract\(/.test(src), "the groups' POI raids (grouppois.js) take only through lootPoiAbstract");
     const poolSetters = readdirSync(dir).filter((n) => n.endsWith(".js") && /\bp(oi)?\.pool\s*[-+*\/]?=(?!=)/.test(readFileSync(join(dir, n), "utf8")));
-    check(poolSetters.every((n) => ["pois.js", "hardcore-loot.js"].includes(n)), `only pois.js and hardcore-loot.js write a POI's pool (found: ${poolSetters.join(", ")})`);
+    check(poolSetters.every((n) => ["pois.js", "hardcore-loot.js", "crashstart.js"].includes(n)), `only pois.js, hardcore-loot.js and crashstart.js write a POI's pool (found: ${poolSetters.join(", ")})`);
   }
   // A whole run, hour by hour.
   const st = world(7);
@@ -494,7 +527,10 @@ for (const style of ["balanced", "cautious"]) {
   // far sites it has never seen counted at their full worth and it went for a hardware store 21 tiles out for the
   // scrap, so the check measured where the unknown sites lie, not what it believes of this one.
   for (const t of s2.tiles) if (t.loc && t.id !== h2.tile && s2.grid.distance(t.id, h2.tile) <= P.range + 5 + 4 + EMPTY_RING) { t.loot = AISCAV.floor; s2.knowledge[t.id] = snapshot(s2, t.id); }
-  const believed = near[0];
+  // Out of the hub's sight (state.live): one in view is seen as it is every hour (world.js updateVision), so what you
+  // believe is the real loot. Since the map sizes (67fe4c3, 2026-10-24) seed 42's first site by id is a church 3 tiles
+  // from the hub, in view, its stale "rich" overwritten by hour 7 with what is there.
+  const believed = near.find((t) => !s2.live.has(t.id));
   s2.knowledge[believed.id] = { ...snapshot(s2, believed.id), loot: siteFull(believed) }; // stale: you saw it rich
   let d2 = null, h1 = 0;
   while (d2 == null && h1++ < 24 * 12) {
@@ -529,19 +565,12 @@ section("Determinism and save / load with scavenging parties out");
 // ======================================================================================
 section(`Loot left and group collapse over a year (seeds ${curveSeeds.join(", ")}), scavenging groups on and off`);
 {
-  const me = fileURLToPath(import.meta.url);
-  const one = (s, mode) => new Promise((res, rej) => execFile(process.execPath, [me, "--curve", String(s), mode, String(days)], { maxBuffer: 1 << 26 }, (e, out) => (e ? rej(e) : res(JSON.parse(out)))));
-  // At most one year a core at a time (as diplotest's collapse years): 24 years at once on a 4-core machine thrash
-  // it (each child holds a whole world) and finish no sooner.
-  const jobs = curveSeeds.flatMap((s) => [[s, "on"], [s, "off"]]), runs = new Array(jobs.length);
-  let next = 0;
-  const lane = async () => { while (next < jobs.length) { const i = next++; runs[i] = await one(...jobs[i]); } };
-  await Promise.all(Array.from({ length: Math.max(1, Math.min(jobs.length, QUICK ? 2 : availableParallelism())) }, lane));
+  const runs = await curveRuns; // started at the top
   const on = runs.filter((_, i) => i % 2 === 0), off = runs.filter((_, i) => i % 2 === 1);
   const avg = (list, d) => list.reduce((a, r) => a + r.left[d], 0) / list.length;
   curveSeeds.forEach((s, i) => {
     const a = on[i], b = off[i];
-    console.log(`  seed ${s}: loot left on day ${MARKS.join(" / ")}: ${MARKS.map((d) => pct(a.left[d])).join(" / ")} with scavenging groups (${a.trips} trips, ${a.goods} goods home), ${MARKS.map((d) => pct(b.left[d])).join(" / ")} without; collapsed ${a.died.length} / ${b.died.length} of 8${a.fell || b.fell ? ` (the holdout fell on day ${a.fell || "-"} / ${b.fell || "-"}; the world went on)` : ""}`);
+    console.log(`  seed ${s}: loot left within their reach (${a.sites} sites) on day ${MARKS.join(" / ")}: ${MARKS.map((d) => pct(a.left[d])).join(" / ")} with scavenging groups (${a.trips} trips, ${a.goods} goods home; the whole map ${pct(a.map[M3])}), ${MARKS.map((d) => pct(b.left[d])).join(" / ")} without; collapsed ${a.died.length} / ${b.died.length} of 8${a.fell || b.fell ? ` (the holdout fell on day ${a.fell || "-"} / ${b.fell || "-"}; the world went on)` : ""}`);
   });
   const rOn = on.reduce((a, r) => a + r.died.length, 0) / (8 * on.length), rOff = off.reduce((a, r) => a + r.died.length, 0) / (8 * off.length);
   console.log(`  average loot left: ${MARKS.map((d) => pct(avg(on, d))).join(" / ")} (on), ${MARKS.map((d) => pct(avg(off, d))).join(" / ")} (off); collapse per group per year ${rOff.toFixed(2)} → ${rOn.toFixed(2)}`);

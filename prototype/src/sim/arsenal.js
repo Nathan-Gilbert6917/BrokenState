@@ -1289,7 +1289,7 @@ function payCraft(f, key) {
   if (craftParts(f, r)) payParts(f, craftParts(f, r)); // parts and electronics as one count, the small kit they lack as parts
   for (const [k, q] of Object.entries(r.in || {})) {
     if (k === "parts" || k === "electronics") continue;
-    else if (k === "ammo") takeArsenalRounds(f, q);
+    else if (k === "ammo") spendAmmo(f.stock, Math.min(arsenalRounds(f), q)); // pulled for their powder as your recipe's rounds (crafting.js): no brass picked up, unlike rounds fired (takeArsenalRounds)
     else f.stock[k] = Math.max(0, (f.stock[k] || 0) - q);
   }
   for (const [k, q] of Object.entries(r.gearIn || {})) for (const it of gearInputs(f, k).slice(0, q)) {

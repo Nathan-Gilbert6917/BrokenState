@@ -11,7 +11,7 @@
 //   - the block card's hint only after a Look around (or having been inside), with the Look around button and action;
 //   - a building left and gone back into keeps its folk; save and load mid-raid with a nest and a barricaded group, then
 //     play on with the bot (which answers the card);
-//   - hospitals: a pharmacy on the ground floor and a dispensary on floor 1 (0-based); police: the armory and the evidence
+//   - hospitals: a pharmacy on the ground floor, nothing above (an older save's plan: a dispensary on floor 1, 0-based); police: the armory and the evidence
 //     room on the ground floor.
 // Usage: node tools/floorfolktest.js
 import { totalRounds } from "../src/sim/ammo.js"; // the stash's rounds by calibre
@@ -22,6 +22,7 @@ import { BUILDINGS, assemble, BMAP, runLandings } from "../src/sim/buildingmaps.
 import { Rng } from "../src/sim/rng.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
 import * as CC from "../src/sim/citycrawl.js";
+import { gridOf, maxLevel } from "../src/sim/citygrid.js"; // a city deep enough for the block a section needs
 import { FURNITURE } from "../src/sim/barricade.js"; // a piece shoved onto a top landing (floorfolk.js landingPiece)
 import { FOLK, rollFolk, folkHint, folkTick, resolveBattleCards } from "../src/sim/floorfolk.js";
 import { crawlModal, CRAWL_ACTIONS } from "../src/ui/citycrawl.js";
@@ -37,7 +38,8 @@ function crawlIn(seed, n, skills = {}) {
   const state = createWorld({ seed, factionCount: 7 });
   state.cards.length = 0;
   const h = hub(state);
-  const city = state.tiles.find((t) => t.loc && t.loc.type === "city");
+  // The first city deep enough for block n: since the map sizes (1370d1c, merged 67fe4c3) seed 45's first city has none at depth 5.
+  const city = state.tiles.find((t) => t.loc && t.loc.type === "city" && maxLevel(gridOf(state, t)) >= n);
   for (const k of ["food", "water", "ammo", "meds"]) h.stock[k] = 200;
   const crew = atBase(state, h.id).slice(0, 3);
   for (const s of crew) for (const [k, v] of Object.entries(skills)) s.skills[k] = v;
@@ -465,21 +467,25 @@ console.log("Rooms by floor: the hospital's pharmacy low and dispensary on floor
 {
   let bad = 0, n = 0;
   for (let s = 0; s < 8; s++) {
-    const rng = new Rng(900 + s);
-    const spec = BUILDINGS.hospital.make(rng, {});
-    const m = assemble(rng, spec, { key: "hospital", name: "Hospital" });
-    n++;
-    const ph0 = m.rooms.some((r) => r.role === "pharmroom" && (r.f || 0) === 0);
-    const ph1 = m.rooms.some((r) => r.role === "pharmroom" && (r.f || 0) === 1 && /Dispensary/.test(r.name));
-    const phHigh = m.rooms.some((r) => r.role === "pharmroom" && (r.f || 0) > 1);
-    if (!ph0 || !ph1 || phHigh) { bad++; console.log(`  hospital seed ${s}: pharmacy floors ${m.rooms.filter((r) => r.role === "pharmroom").map((r) => `${r.name}@${r.f}`).join(", ")}`); }
+    // An older save's plan (o.legacy) keeps the dispensary on floor 2; a new save's hospital, room by room since #14
+    // (118bb651) and one of #36's plans, has its one pharmacy on the ground floor behind its vault door, nothing above.
+    for (const legacy of [true, false]) {
+      const rng = new Rng(900 + s);
+      const spec = BUILDINGS.hospital.make(rng, legacy ? { legacy: true } : {});
+      const m = assemble(rng, spec, { key: "hospital", name: "Hospital" });
+      n++;
+      const ph0 = m.rooms.some((r) => r.role === "pharmroom" && (r.f || 0) === 0);
+      const ph1 = m.rooms.some((r) => r.role === "pharmroom" && (r.f || 0) === 1 && /Dispensary/.test(r.name));
+      const phHigh = m.rooms.some((r) => r.role === "pharmroom" && (r.f || 0) > (legacy ? 1 : 0));
+      if (!ph0 || (legacy && !ph1) || phHigh) { bad++; console.log(`  hospital seed ${s}${legacy ? " (older save)" : ""}: pharmacy floors ${m.rooms.filter((r) => r.role === "pharmroom").map((r) => `${r.name}@${r.f}`).join(", ")}`); }
+    }
     const r2 = new Rng(950 + s);
     const ps = BUILDINGS.police.make(r2, {});
     const pm = assemble(r2, ps, { key: "police", name: "Police station" });
     const arm = pm.rooms.filter((r) => r.role === "armory" || r.role === "evidence");
     if (!arm.length || arm.some((r) => (r.f || 0) !== 0)) { bad++; console.log(`  police seed ${s}: ${arm.map((r) => `${r.name}@${r.f}`).join(", ")}`); }
   }
-  check(!bad, `${n} hospitals: a pharmacy on the ground floor, the dispensary on floor 2 and nothing higher; ${n} police stations: gun cage and evidence room on the ground (${bad} bad)`);
+  check(!bad, `${n} hospitals: a pharmacy on the ground floor, an older save's dispensary on floor 2, nothing higher; ${n / 2} police stations: gun cage and evidence room on the ground (${bad} bad)`);
 }
 
 console.log(`\n${passes} passed, ${fails} failed. (${Math.round(performance.now() - t0)} ms)`);
