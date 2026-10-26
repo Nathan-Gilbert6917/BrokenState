@@ -57,7 +57,7 @@ import { officeStyle } from "./officelayout.js"; // their rooms' styles (a leaf'
 import { civicStyle } from "./civiclayout.js"; // police stations, fire stations, schools and churches laid out for their kind (issue #15)
 import { campusStyle, CAMPUS_PLANS, CAMPUS_NAMES } from "./campuslayout.js"; // the college campus buildings laid out for their kind (issue #28)
 import { campusMap, campusLegacy, campusDead, campusIntro, campusFolk } from "./campus.js"; // a college campus: many buildings on one map (issue #28)
-import { zooMap, zooDead, zooIntro, zooHint, zooArchetype, zooBuildings } from "./zoo.js"; // a zoo: its animal houses, enclosures and back of house on one map (issue #59)
+import { zooMap, zooDead, zooIntro, zooHint, zooArchetype, zooBuildings, zooVariant } from "./zoo.js"; // a zoo: its animal houses, enclosures and back of house on one map (issue #59)
 import { zooStyle } from "./zoolayout.js"; // the zoo buildings' rooms (issue #59)
 import { hotelSpec } from "./hotellayout.js"; // hotels: their plans, rooms, grounds and scenes (issue #29)
 import { militaryStyle, militaryOutside, MIL_SIZE } from "./militarylayout.js";
@@ -3624,7 +3624,8 @@ export function buildingSpec(state, tileId, option) {
 export function buildingPlan(state, tileId, option) {
   const B = BUILDINGS[option.key];
   if (B && B.park) { const V = parkVariant(state, tileId, option); return { vid: V.id, vname: V.name }; } // an amusement park: its variant by the tile and its own dice (amusement.js)
-  if (!B || B.compound || B.complex || B.campus || B.zoo) return null; // a zoo's plan: its map's own dice (zoo.js zooVariant)
+  if (B && B.zoo) { const V = zooVariant(state, tileId, option); return { vid: V.id, vname: V.name }; } // a zoo: its plan by the tile and its own dice (zoo.js zooVariant: the pick its map makes; issue #72)
+  if (!B || B.compound || B.complex || B.campus) return null;
   if (B.street) {
     if (legacyRooms(state)) return null;
     const v = pickLayout("neighbourhood", specSeed(state, tileId, option), { layout: option.layout || null, setting: option.setting || settingOfTile(state.tiles[tileId]) });
