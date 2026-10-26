@@ -90,6 +90,7 @@ import { visitorsHour, visitorsDaily } from "./visitors.js";
 import { nomadsHour, nomadsDaily } from "./nomads.js"; // baseless bands that camp, raid the places round them and move on
 import { caravanRaidsHour } from "./caravanraids.js";
 import { noteFinds, discoveryHour, mergeLooked } from "./discovery.js";
+import { aiHuntsDaily } from "./deadhunt.js"; // Hunt the dead: the groups' own hunts (call-time only)
 import { deadPopDaily, deadPopSpread } from "./deadpop.js"; // the dead on the land: the midnight recalculation
 import { ensurePois, poiSnapshot, learnPois, mergePoiFinds } from "./pois.js"; // points of interest on the tiles: their lists, and what a report says of them
 import { hiveBirthHour } from "./hivebirth.js"; // hive birth you can see: rumours, the massing card, a hive risen
@@ -1208,6 +1209,7 @@ function hourOfWorld(state) {
     wanderersDaily(state); // wanderers.js: the survivors you met and left live on (or not); no dice of the world's
     deadPopDaily(state); // deadpop.js (issue #65): the dead and the raiders on the tiles and in their POIs, by their bands and yesterday's noise
     deadPopSpread(state); // deadpop.js: the spread between tiles (the heat epic's #66)
+    aiHuntsDaily(state); // deadhunt.js (issue #68): the groups hunt the dead on their own land now and then
     recomputeOwnership(state);
     claimsDaily(state); // claims.js: claims under a new base, a hive or a hostile camp are lost
     fieldworksDaily(state); // fieldworks.js: relay masts' parts, raids on your field works, the groups' own, towers drawing the dead
