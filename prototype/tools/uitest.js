@@ -1091,9 +1091,16 @@ section("Map terrain detail: decals and rippled water (ui/terraindeco.js, render
     for (const t of st.tiles) for (const m of t.roadLinks || []) if (m > t.id) { const [x0, y0] = g.toPixel(t.id, R.HEX), [x1, y1] = g.toPixel(m, R.HEX); segs.push([x0, y0, x1, y1, t.bridge || st.tiles[m].bridge ? 6.5 : 2.6]); }
     // A pond tile's pond (sim/mapgen.js tile.pond, 2026-10-23) lies flat under a site's sprite and name: not over them.
     const flat = T.decorRows(D).filter((r) => T.flatDecal(r[1])).map((r) => { const [x, y] = g.toPixel(r[0], R.HEX); return [x + r[2], y + r[3]]; });
-    const hitZone = decals.filter(([x, y]) => !flat.some(([fx, fy]) => Math.abs(fx - x) < 0.01 && Math.abs(fy - y) < 0.01)).filter(([x, y, w, h]) => zones.some((z) => x < z[2] - 0.01 && z[0] < x + w - 0.01 && y < z[3] - 0.01 && z[1] < y + h - 0.01)).length;
+    // Each decal is tested only against the zones, flat decals and road links in the grid cells its box touches (binned):
+    // the same tests as against every one, which on the maps of 2026-10-24 (14 times the tiles) took most of an hour.
+    const B = 64, cellKey = (cx, cy) => cx * 1000003 + cy;
+    const bin = (list, box) => { const m = new Map(); for (const it of list) { const [x0, y0, x1, y1] = box(it); for (let cx = Math.floor(x0 / B); cx <= Math.floor(x1 / B); cx++) for (let cy = Math.floor(y0 / B); cy <= Math.floor(y1 / B); cy++) { const k = cellKey(cx, cy); if (!m.has(k)) m.set(k, []); m.get(k).push(it); } } return m; };
+    const near = (m, x0, y0, x1, y1) => { const out = new Set(); for (let cx = Math.floor(x0 / B); cx <= Math.floor(x1 / B); cx++) for (let cy = Math.floor(y0 / B); cy <= Math.floor(y1 / B); cy++) for (const it of m.get(cellKey(cx, cy)) || []) out.add(it); return out; };
+    const flatBins = bin(flat, ([fx, fy]) => [fx - 0.01, fy - 0.01, fx + 0.01, fy + 0.01]), zoneBins = bin(zones, (z) => z);
+    const hitZone = decals.filter(([x, y]) => ![...near(flatBins, x - 0.01, y - 0.01, x + 0.01, y + 0.01)].some(([fx, fy]) => Math.abs(fx - x) < 0.01 && Math.abs(fy - y) < 0.01)).filter(([x, y, w, h]) => [...near(zoneBins, x, y, x + w, y + h)].some((z) => x < z[2] - 0.01 && z[0] < x + w - 0.01 && y < z[3] - 0.01 && z[1] < y + h - 0.01)).length;
     const distSeg = (px, py, s) => { const dx = s[2] - s[0], dy = s[3] - s[1], l = dx * dx + dy * dy, t = Math.max(0, Math.min(1, ((px - s[0]) * dx + (py - s[1]) * dy) / l)); return Math.hypot(s[0] + dx * t - px, s[1] + dy * t - py); };
-    const onRoad = decals.filter(([x, y, w, h]) => segs.some((s) => { // sample the decal's box against the road's band
+    const segBins = bin(segs, (q) => [Math.min(q[0], q[2]) - q[4] / 2, Math.min(q[1], q[3]) - q[4] / 2, Math.max(q[0], q[2]) + q[4] / 2, Math.max(q[1], q[3]) + q[4] / 2]);
+    const onRoad = decals.filter(([x, y, w, h]) => [...near(segBins, x, y, x + w, y + h)].some((s) => { // sample the decal's box against the road's band
       for (let i = 0; i <= 4; i++) for (let j = 0; j <= 4; j++) if (distSeg(x + (w * i) / 4, y + (h * j) / 4, s) < s[4] / 2) return true;
       return false;
     })).length;
