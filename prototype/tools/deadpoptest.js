@@ -11,6 +11,8 @@
 // - a low tile with a low POI: a small roster and almost no reinforcements
 // - the daily rules: low stays low (a POI at 0 stays clear), medium rises more after loud nights, high drifts toward
 //   the cap, refills only from the open ground, nothing over the cap
+// - (#66's fix, 2026-10-26) a quiet day's rise stops at the tile's own level (its default): a tile the spread raised
+//   above it does not climb on to its cap; a count over a cap that fell (a hive died) is trimmed back to it daily
 // - raiders: seeded, in the POI's roster, killed; fieldheat.js's trouble reads the open ground; the AI's raids kill
 //   from the same pools; poiThreat reads the pools
 // - an older save's tile heat folded in on load (deterministically), and a save / load keeps the pools
@@ -237,6 +239,57 @@ section("The daily rules");
   s.hour += 24; deadPopDaily(s);
   check(poiDead(s, x, i) > p1 && poiDead(s, x, i) <= poiCap(s, x, i), `on a high tile the POI refills out of the open ground (${p1} → ${poiDead(s, x, i)}, open ${o1} → ${openDead(s, x)})`);
   check(typeof deadPopSpread === "function", "the spread's hook is there (#66)");
+  // Quiet days rise only to the tile's own level (#66's fix): a tile the spread raised above its default (a medium or a
+  // high rural tile) stays where it is on quiet days, and a loud night still raises it.
+  for (const fill of [0.45, 0.7]) {
+    const s3 = W();
+    const z = s3.tiles.find((x) => !homeIds(s3).has(x.id) && tileClass(s3, x) === "rural" && poiIn(x) >= 0 && deadBand(s3, x).band <= 1);
+    if (!check(!!z, "a low rural tile")) continue;
+    const zc = popCap(s3, z), dflt = tileDead(s3, z);
+    putBack(s3, z, null, Math.round(zc * fill) - tileDead(s3, z)); // what the spread would have brought
+    const z0 = tileDead(s3, z), word = deadBand(s3, z).word;
+    let most = z0;
+    for (let d = 0; d < 120; d++) { s3.hour += 24; deadPopDaily(s3); most = Math.max(most, tileDead(s3, z)); }
+    check(z0 > dflt && most === z0, `a rural tile raised to ${word} (${dflt} → ${z0} of ${zc}) does not climb on quiet days (at most ${most} in 120 days)`);
+    for (let d = 0; d < 20; d++) { noteNoise(s3, z, null, 30); s3.hour += 24; deadPopDaily(s3); }
+    check(tileDead(s3, z) > z0 && tileDead(s3, z) <= zc, `loud nights still raise it toward its cap (${z0} → ${tileDead(s3, z)})`);
+  }
+  // Below its own level, a quiet medium tile still regrows toward it.
+  {
+    const s4 = W();
+    const z = s4.tiles.find((x) => !homeIds(s4).has(x.id) && tileClass(s4, x) === "suburb" && deadBand(s4, x).band >= 2 && tileDead(s4, x) > popCap(s4, x) * 0.5);
+    if (check(!!z, "a suburb above half its cap")) {
+      const own = tileDead(s4, z), zc = popCap(s4, z);
+      drawFromTile(s4, z, 1e6);
+      putBack(s4, z, null, Math.round(zc * 0.35) - tileDead(s4, z));
+      const z0 = tileDead(s4, z);
+      for (let d = 0; d < 200; d++) { s4.hour += 24; deadPopDaily(s4); }
+      check(tileDead(s4, z) > z0 && tileDead(s4, z) <= own, `a quiet medium tile below its own level regrows toward it (${z0} → ${tileDead(s4, z)}, its own ${own})`);
+    }
+  }
+  // A count over its cap is trimmed back to it daily: a POI's excess to the open ground, the tile's lost.
+  {
+    const s5 = W();
+    const z = s5.tiles.find((x) => !homeIds(s5).has(x.id) && tileClass(s5, x) === "town" && poiIn(x) >= 0);
+    if (check(!!z, "a town with a POI")) {
+      const i = poiIn(z), zc = popCap(s5, z), pc = poiCap(s5, z, i);
+      noteNoise(s5, z, null, 1); // stored
+      const r = s5.deadPop[z.id];
+      r.p[i] = pc + 3; r.o = zc; // over both caps (a save from before the trim, a cap that fell)
+      s5.hour += 24; deadPopDaily(s5);
+      check(tileDead(s5, z) <= zc && poiDead(s5, z, i) <= pc, `a tile over its cap comes back to it (${zc + pc + 3} → ${tileDead(s5, z)} of ${zc}), its POI to its own (${poiDead(s5, z, i)} of ${pc})`);
+    }
+    // A hive's land: filled to the hive's ×1.5 cap, then the hive dies.
+    const hz = s5.hives && s5.hives.length ? s5.tiles.find((x) => !homeIds(s5).has(x.id) && x.terrain !== "water" && tileClass(s5, x) === "rural" && popCap(s5, x) > DEADPOP.CAP.rural) : null;
+    if (check(!!hz, "a rural tile on a hive's land")) {
+      putBack(s5, hz, null, popCap(s5, hz) - tileDead(s5, hz));
+      const full = tileDead(s5, hz);
+      s5.hives = [];
+      const after = popCap(s5, hz);
+      s5.hour += 24; deadPopDaily(s5);
+      check(after < full && tileDead(s5, hz) <= after, `its hive gone, its count (${full}) trimmed to its cap without the hive (${tileDead(s5, hz)} of ${after})`);
+    }
+  }
   // Memories fade.
   const s2 = W();
   const y = pick(s2);

@@ -45,6 +45,13 @@
 //   - medium: quiet, a small chance (medP) of a small rise (medRise of the cap); loud, a larger chance (medLoudP) and
 //     rise (medLoudRise);
 //   - high or overrun: drifts toward the cap (highDrift of the gap a day, highLoudDrift after a loud night);
+//   - a quiet day's rise (all three) stops at the tile's own level, its generated default (× quietCeil): only a loud
+//     night raises it past that toward the cap. Without that, every tile the spread (deadspread.js) touched, so stored,
+//     rose to its cap within months (the fix to #66, the user's decision 2026-10-26: a 2-year run had 97% of the land
+//     overrun by year 1); the spread itself still fills the land near the towns, cities and hives up to the caps;
+//   - first, a count over its cap is trimmed to it (a POI's excess goes to the open ground, the tile's is lost: the
+//     dead a hive's land held when its hive died, popCap's HIVE_CAP gone, dispersed and rotted; the spread pushes
+//     nothing for them);
 //   - a POI below its cap refills only out of its own tile's open ground: none on a low tile at 0 (it stays clear); a
 //     POI with some left on a low tile the very small chance of +1; on a medium tile a chance (refillP, refillLoudP when
 //     the POI was loud) of refill of its gap; on a high tile every day (refillHigh, × 2 when loud);
@@ -99,6 +106,7 @@ export const DEADPOP = {
   DAY: {
     lowP: 0.04, medP: 0.15, medRise: 0.02, medLoudP: 0.4, medLoudRise: 0.06, highDrift: 0.05, highLoudDrift: 0.12,
     refillP: 0.12, refillLoudP: 0.35, refill: 0.15, refillHigh: 0.2,
+    quietCeil: 1, // a quiet day's rise stops at this × the tile's default count (its own level); a loud one at the cap (#66 fix)
   },
   // poiThreat (pois.js): + THREAT × (the POI's dead over its default − 1), between THREAT_LO and THREAT_HI.
   THREAT: 0.6, THREAT_LO: -1, THREAT_HI: 1.5,
@@ -459,10 +467,30 @@ export function aiRaidKills(state, tile, i, opts = {}) {
 /** @param {State} state @param {number} id @param {number} d @param {string} what @param {any} [i] */
 const die = (state, id, d, what, i = 0) => hash01(state.seed, "dpday", id, d, what, i);
 /**
- * One stored pool's day (the header's rules): the open ground's rise to its band, the POIs' refill out of it. Returns
- * the record. @param {State} state @param {Tile} t @param {any} r @param {"dead" | "raiders"} kind
+ * A pool over its cap trimmed to it (the header): each POI's excess to the open ground, then the tile's off the open
+ * ground and the POIs (last first), lost. Returns how many were lost. @param {any} r @param {"dead" | "raiders"} kind
+ * @param {number} cap @param {(i: number) => number} pcap @param {number} n the POIs
  */
-function dayOf(state, t, r, kind) {
+function trimToCap(r, kind, cap, pcap, n) {
+  const openK = kind === "dead" ? "o" : "r", poiK = kind === "dead" ? "p" : "q";
+  for (let i = 0; i < n; i++) {
+    const x = (r[poiK][i] || 0) - pcap(i);
+    if (x > 0) { r[poiK][i] -= x; r[openK] += x; }
+  }
+  let over = r[openK] + sumTo(r[poiK], n) - cap;
+  if (over <= 0) return 0;
+  const lost = over;
+  const k = Math.min(over, r[openK]);
+  r[openK] -= k; over -= k;
+  for (let i = n - 1; i >= 0 && over > 0; i--) { const m = Math.min(over, r[poiK][i] || 0); r[poiK][i] -= m; over -= m; }
+  return lost;
+}
+/**
+ * One stored pool's day (the header's rules): the open ground's rise to its band (a quiet one up to the default's
+ * count d0, a loud one up to the cap), the POIs' refill out of it. Returns the record.
+ * @param {State} state @param {Tile} t @param {any} r @param {"dead" | "raiders"} kind @param {{ o: number, p: number[], r: number, q: number[] }} d0
+ */
+function dayOf(state, t, r, kind, d0) {
   const D = DEADPOP.DAY, d = day(state), list = poisOf(t), n = list.length;
   const dead = kind === "dead";
   const openK = dead ? "o" : "r", poiK = dead ? "p" : "q";
@@ -470,14 +498,17 @@ function dayOf(state, t, r, kind) {
   const total = () => r[openK] + sumTo(r[poiK], n);
   const loud = dead ? (r.n || 0) >= DEADPOP.LOUD : (r.rn || 0) >= 1;
   const band = bandOfCount(total(), cap).band;
-  const room = () => Math.max(0, cap - total());
+  // A quiet day rises only up to the tile's own level (its default), a loud one up to the cap.
+  const own = dead ? d0.o + sumTo(d0.p, n) : d0.r + sumTo(d0.q, n);
+  const lim = loud ? cap : Math.min(cap, Math.round(own * D.quietCeil));
+  const room = () => Math.max(0, lim - total());
   let rise = 0;
   if (band <= 1) {
     const allLow = list.every((_, i) => (dead ? bandOfCount(r.p[i] || 0, poiCap(state, t, i)) : bandOfCount(r.q[i] || 0, DEADPOP.POI_RAIDERS.max)).band <= 1);
     if (band === 1 && allLow && die(state, t.id, d, kind + "low") < D.lowP) rise = 1;
   } else if (band === 2) {
     if (die(state, t.id, d, kind + "med") < (loud ? D.medLoudP : D.medP)) rise = Math.max(1, Math.round(cap * (loud ? D.medLoudRise : D.medRise)));
-  } else rise = Math.max(1, Math.round(room() * (loud ? D.highLoudDrift : D.highDrift)));
+  } else if (room() > 0) rise = Math.max(1, Math.round(room() * (loud ? D.highLoudDrift : D.highDrift)));
   r[openK] += Math.min(rise, room());
   // The POIs refill only out of their own tile's open ground.
   const tb = bandOfCount(total(), cap).band;
@@ -496,9 +527,8 @@ function dayOf(state, t, r, kind) {
   return r;
 }
 /** A record back at its default with nothing remembered is dropped. @param {State} state @param {Tile} t @param {any} r */
-function atDefault(state, t, r) {
+function atDefault(state, t, r, d = seedOf(state, t)) {
   if ((r.n || 0) > 0 || (r.k || 0) > 0 || (r.rn || 0) > 0 || Object.keys(r.pn || {}).length) return false;
-  const d = seedOf(state, t);
   const same = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
   return r.o === d.o && r.r === d.r && same(r.p, d.p) && same(r.q, d.q);
 }
@@ -513,13 +543,18 @@ export function deadPopDaily(state) {
     const n = poisOf(t).length;
     while (r.p.length < n) r.p.push(0); // a list that grew (a crash's site): its new places start empty
     while (r.q.length < n) r.q.push(0);
-    dayOf(state, t, r, "dead");
-    dayOf(state, t, r, "raiders");
+    // Over a cap that fell (a hive died: HIVE_CAP gone) trimmed back to it, the excess lost (the header).
+    const cap = popCap(state, t);
+    trimToCap(r, "dead", cap, (i) => poiCap(state, t, i), n);
+    trimToCap(r, "raiders", raiderCap(state, t), () => DEADPOP.POI_RAIDERS.max, n);
+    const d0 = seedOf(state, t);
+    dayOf(state, t, r, "dead", d0);
+    dayOf(state, t, r, "raiders", d0);
     r.n = fade(r.n, DEADPOP.NOISE_DECAY);
     r.k = fade(r.k, DEADPOP.KILL_DECAY);
     r.rn = fade(r.rn, DEADPOP.RAID_DECAY);
     for (const i of Object.keys(r.pn || {})) { const v = fade(r.pn[i], DEADPOP.NOISE_DECAY); if (v) r.pn[i] = v; else delete r.pn[i]; }
-    if (atDefault(state, t, r)) delete S[key];
+    if (atDefault(state, t, r, d0)) delete S[key];
   }
 }
 /** The spread between tiles (the heat epic's #66, deadspread.js spreadDaily): runs right after deadPopDaily. @param {State} state */
