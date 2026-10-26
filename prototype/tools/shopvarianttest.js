@@ -227,7 +227,9 @@ section("#22's tiers: the fronts' pieces in every variant");
 // ---------- 5. loot per area ----------
 // Today's: each kind's loot a 100 cells (all its floors) on dev before the variants (a110710, a new save's plan, 200 seeds
 // as below: #22's corner store, grocery and supermarket by their tiers), against which the variants hold within ±10%.
-const TODAY = { pharmacy: 175.1, gasstation: 87.2, truckstop: 91.4, gunstore: 207.4, pawnshop: 193.9, sportshop: 76.4, electronics: 65.7, radioshop: 67.8, bookstore: 13.3, petstore: 58.4, garden: 43.7, clothing: 31.1, liquor: 29.8, hardware: 113.2, feedstore: 76.3, dealer: 36.2, bank: 16.5, autoshop: 62.8, garage: 75.1, workshop: 68.1, corner: 121.6, grocery: 40.8, supermarket: 57.5 };
+// The bookstore re-baselined for issue #43 (13.3 → 19.1, 200 seeds): its shelves (data-shops.js AREA_DEFS books) held no
+// books of their own before (a bag and a lamp); novels, comics, magazines and a few skill books since.
+const TODAY = { pharmacy: 175.1, gasstation: 87.2, truckstop: 91.4, gunstore: 207.4, pawnshop: 193.9, sportshop: 76.4, electronics: 65.7, radioshop: 67.8, bookstore: 19.1, petstore: 58.4, garden: 43.7, clothing: 31.1, liquor: 29.8, hardware: 113.2, feedstore: 76.3, dealer: 36.2, bank: 16.5, autoshop: 62.8, garage: 75.1, workshop: 68.1, corner: 121.6, grocery: 40.8, supermarket: 57.5 };
 const LN = QUICK ? 60 : 200;
 section(`Loot per kind by the area against today's (${LN} seeds)`);
 {

@@ -201,7 +201,7 @@ export const AREA_DEFS = {
   pitroom: { tags: ["kitchen", "shop", "travel"], def: { name: "Pit room", boxes: ["shelf", "counter", "shelf"], // a BBQ's smokers (issue #33)
     loot: { food: [0.6, 2, 6], preserved: [0.4, 1, 3], wood: [0.5, 10, 30] }, gear: [["knife", 0.06], ["cleaver", 0.04]] } },
   liquor: { tags: ["shop", "crime", "travel", "kitchen", "home"], def: { name: "Liquor shelves", boxes: ["shelf", "shelf", "counter"],
-    loot: { water: [0.6, 2, 6], food: [0.25, 1, 3] }, gear: [["bottle", 0.15], ["whiskey", 0.03], ["vodka", 0.03], ["wine", 0.03], ["bat", 0.02]] } }, // its bottles since issue #43, in place of a pistol and a revolver on every shelf (a supermarket's beer and wine aisle is a liquor room too)
+    loot: { water: [0.6, 2, 6], food: [0.25, 1, 3] }, gear: [["bottle", 0.15], ["whiskey", 0.04], ["vodka", 0.03], ["wine", 0.03], ["scotch", 0.005], ["bat", 0.02]] } }, // its bottles since issue #43, in place of a pistol and a revolver on every shelf (a supermarket's beer and wine aisle is a liquor room too)
   // A library's rooms by what they hold (issue #34, librarylayout.js): the reference and technical rooms (and a
   // genealogy archive) manuals and skill books; the map room maps (no map item in the game: the survival books, "maps,
   // tracks, reading the land", and a compass's worth of kit); the rare-books room valuables; the staff room snacks and
