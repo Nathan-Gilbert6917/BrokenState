@@ -128,6 +128,8 @@ export const LOOT_SENSE = {
   deptstore:      S({ clothing: 0.6, gadgets: 0.3, food: 0.9 }, ARMY),
   bank:           S({ valuables: 0.8, gadgets: 0.5 }, ARMY, { note: "a revolver in a safe-deposit box (the vault)" }),
   library:        S({ books: 0.9 }, NO_GUNS),
+  gym:            S({ drink: 0.9, food: 0.8, medgear: 0.3, clothing: 0.4 }, NO_GUNS, { note: "issue #56: water, protein and bars at the desk and the smoothie bar, first aid, gym bags in the lockers" }),
+  bowling:        S({ drink: 0.9, food: 0.9, liquor: 0.4, tools: 0.6, parts: 0.8 }, [...ARMY, "armour"], { note: "issue #56: the bar's beer and liquor, the snack counter, the pinsetter room's tools and parts" }),
   // Medical.
   vet:            S({ drugs: 0.9, vetmeds: 0.6, medgear: 0.7, surgical: 0.25 }, NO_GUNS),
   clinic:         S({ drugs: 0.9, medgear: 0.9, surgical: 0.4 }, NO_GUNS),

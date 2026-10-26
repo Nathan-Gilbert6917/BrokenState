@@ -133,7 +133,31 @@ export const PLACE_EXTRA = [
   ["church", { rural: 0.006, highway: 0.004 }],
   ["feedstore", { rural: 0.004, highway: 0.006 }],
   ["farmstand", { highway: 0.01 }],
+  ["gym", { centre: 0.08, city: 0.08, suburb: 0.07, town: 0.05, highway: 0.003, rural: 0.003 }], // issue #56: a gym or a bowling alley on a tile now and then
+  ["bowling", { centre: 0.006, city: 0.012, suburb: 0.02, town: 0.015, highway: 0.005, rural: 0.004 }],
 ];
+// The kinds a new world's crawl blocks may hold one of besides their places (citycrawl.js genBlock, on its own dice
+// after every other place): [kind, { class: chance a block }]. Gyms and bowling alleys (issue #56).
+export const CRAWL_EXTRA = [
+  ["gym", { centre: 0.08, city: 0.08, suburb: 0.06, town: 0.06 }],
+  ["bowling", { centre: 0.02, city: 0.03, suburb: 0.05, town: 0.05 }],
+];
+/**
+ * The kind of one more place a new world's crawl block may hold (citycrawl.js genBlock): the kind or null; never one
+ * the block has, never past max. The rolls are the block's own (hash dice), so the places before stay as they were.
+ * @param {State} state @param {number} tileId @param {string} cell @param {any[]} places @param {number} max @param {string} cls
+ * @returns {string | null}
+ */
+export function crawlExtraKind(state, tileId, cell, places, max, cls) {
+  if (!placing(state) || places.length >= max) return null;
+  for (const [kind, at] of CRAWL_EXTRA) {
+    const p = /** @type {Record<string, number>} */ (at)[cls] || 0;
+    const k = /** @type {string} */ (kind);
+    if (!p || places.some((q) => q.key === k) || placeWeight(k, cls) <= 0) continue;
+    if (hash01(state.seed, "crawlplace", tileId, cell, k) < p) return k;
+  }
+  return null;
+}
 export const PLACE_KNOWN = 0.7; // the share of them known from the start in the known zone (shops.js SHOP.KNOWN)
 /**
  * The kind of one more POI a new world's tile may hold by the table (pois.js generatePois builds it, last, on dice of

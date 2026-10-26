@@ -745,7 +745,51 @@ function f_mannequin(p) { // a shop mannequin: a white head and torso, arms down
   V(p, 7, 11, 13, "#9aa1a8"); H(p, 5, 10, 14, "#5e666d");
 }
 
+// ---------- gyms and bowling alleys (issue #56, sim/reclayout.js) ----------
+function f_treadmill(p) { // a treadmill: the black belt on its deck, the uprights, the console with its screen
+  line(p, 1, 14, 13, 11, "#26272a"); H(p, 1, 14, 15, "#3a3b40"); R(p, 1, 12, 13, 13, "#1f1f22");
+  V(p, 12, 3, 12, STEEL); V(p, 14, 3, 12, STEEL); R(p, 10, 1, 15, 3, "#3a3b40"); R(p, 11, 2, 14, 2, "#5ad06a");
+}
+function f_exbike(p) { // an exercise bike: the flywheel, the frame, the saddle and the bars
+  disc(p, 5, 11, 3, "#3a3b40"); p.set(5, 11, STEEL); line(p, 5, 11, 11, 4, "#26272a"); V(p, 11, 4, 13, "#26272a"); H(p, 8, 14, 14, STEELD);
+  R(p, 9, 3, 13, 3, "#5a3424"); line(p, 5, 8, 4, 2, "#26272a"); H(p, 2, 6, 2, STEEL);
+}
+function f_rower(p) { // a rowing machine: the long rail, the sliding seat, the fan wheel at the front, the handle
+  H(p, 1, 15, 12, STEEL); H(p, 1, 15, 13, STEELD); disc(p, 3, 9, 3, "#26272a"); p.set(3, 9, STEEL);
+  R(p, 8, 10, 11, 11, "#26272a"); line(p, 4, 7, 7, 6, "#9aa1a8"); H(p, 6, 9, 6, "#26272a"); for (const x of [2, 14]) V(p, x, 13, 15, STEELD);
+}
+function f_squatrack(p) { // a squat rack: four black uprights, a loaded bar across the hooks
+  for (const x of [2, 5, 10, 13]) V(p, x, 1, 15, "#26272a"); H(p, 2, 13, 1, "#26272a");
+  H(p, 0, 15, 7, "#c9ced3"); for (const x of [0, 15]) R(p, x === 0 ? 0 : 14, 4, x === 0 ? 1 : 15, 10, "#1f1f22");
+}
+function f_dumbbells(p) { // a dumbbell rack: two tiers of black dumbbells, chrome handles, on a steel frame
+  for (const y of [5, 10]) { H(p, 1, 14, y + 2, STEEL); for (let x = 1; x <= 12; x += 4) { R(p, x, y, x, y + 1, "#1f1f22"); H(p, x + 1, x + 1, y, "#c9ced3"); R(p, x + 2, y, x + 2, y + 1, "#1f1f22"); } }
+  legs(p, 2, 13, 13, 15, STEELD);
+}
+function f_punchbag(p) { // a heavy bag: red leather hanging from a chain on its stand
+  V(p, 2, 0, 15, "#26272a"); H(p, 2, 9, 0, "#26272a"); V(p, 8, 1, 2, "#9aa1a8"); box(p, 5, 3, 11, 13, "#a8302a"); V(p, 6, 4, 12, "#c8402f"); H(p, 0, 5, 15, "#26272a");
+}
+function f_yogamats(p) { // a bin of rolled yoga mats in four colours
+  box(p, 2, 9, 13, 15, STEEL);
+  for (const [x, c] of [[3, "#7a4fa0"], [6, "#3a8a8a"], [9, "#c8602a"], [12, "#4f7a3a"]]) { R(p, x, 2, x + 1, 9, c); p.set(x, 2, "#e8e0c8"); }
+}
+function f_ballrack(p) { // a rack of house balls: two rows of coloured balls on a steel frame
+  H(p, 0, 15, 8, STEEL); H(p, 0, 15, 14, STEEL); legs(p, 1, 14, 8, 15, STEELD);
+  [["#2a4a8a", 2], ["#a8302a", 7], ["#2a6a3a", 12]].forEach(([c, x]) => disc(p, x, 5, 2, c));
+  [["#e0a030", 4], ["#5a2a7a", 10]].forEach(([c, x]) => disc(p, x, 11, 2, c));
+}
+function f_shoecubby(p) { // shoe cubbies: a grid of wooden pigeonholes, a pair of red and blue bowling shoes in some
+  box(p, 1, 0, 14, 15, WOOD);
+  for (const x of [5, 10]) V(p, x, 0, 15, WOODD); for (const y of [4, 8, 12]) H(p, 1, 14, y, WOODD);
+  for (const [x, y] of [[2, 2], [7, 6], [12, 10], [2, 10], [12, 2]]) { R(p, x, y, x + 1, y + 1, "#a8302a"); p.set(x + 1, y, "#2a4a8a"); }
+}
+function f_scorer(p) { // a scoring console: the screen on its stand, the keypad below
+  box(p, 3, 1, 12, 8, "#26272a"); R(p, 4, 2, 11, 7, "#1c3a5a"); for (const y of [3, 5]) H(p, 5, 10, y, "#5ad06a");
+  V(p, 7, 9, 13, STEEL); V(p, 8, 9, 13, STEELD); R(p, 5, 10, 10, 11, "#3a3b40"); H(p, 4, 11, 14, STEELD); H(p, 3, 12, 15, STEELD);
+}
+
 export const GEAR_ART = {
+  f_treadmill, f_exbike, f_rower, f_squatrack, f_dumbbells, f_punchbag, f_yogamats, f_ballrack, f_shoecubby, f_scorer,
   f_kiosk, f_concession, f_arcadecab, f_projector, f_mannequin,
   f_dormdesk, f_mailboxes, f_campusbench,
   f_bookstack, f_lowshelf, f_mobileshelf, f_cardcat, f_mapcase, f_booktruck, f_bookreturn, f_computer, f_printer, f_microfilm, f_selfcheck, f_readtable, f_carrel, f_globe, f_lectern, f_woodstove,

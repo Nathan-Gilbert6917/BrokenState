@@ -117,6 +117,8 @@ export const PLACEMENT_ROWS = {
   truckstop: "highway 2 M, rural 0.3 M, town 0.2 M",
   autoshop: "centre 0.4 S, city 1 M, suburb 1.4 M, town 1.4 S, highway 0.6 S, rural 0.2 S",
   motel: "roadside",
+  gym: "centre 1.4 L, city 1.4 M, suburb 1.4 M, town 1.2 S, highway 0.3 S, rural 0.3 S", // issue #56: a YMCA or a health club downtown, chain gyms, boxing gyms and climbing gyms in the city and suburbs, a dojo, a yoga studio or a strip-mall gym in a town, a powerlifting barn out of town
+  bowling: "centre 0.4 M, city 1 M, suburb 1.4 L, town 1.2 M, highway 0.5 M, rural 0.4 M", // a bowling bar or a bowl upstairs downtown, the 24- to 40-lane centres in the suburbs, a small-town alley in the country
   hotel: "centre 2 H, city 1.6 L, suburb 1 M, town 0.8 S, highway 0.3 S, coast 0.3 M, scenic 0.2 M", // a convention hotel downtown, a town's inn
   // ---- malls ----
   mall: "centre 0.6 H, city 1 H, suburb 1.4 L", // a regional mall: a city's own site

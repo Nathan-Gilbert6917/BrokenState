@@ -27,7 +27,7 @@
 // its map, ui/citycrawl.js).
 import { crashSiphon } from "./crashstart.js"; // Crashlanding (2026-10-24): limited fuel can be siphoned
 import { legacyRooms } from "./worldcfg.js"; // an older save: the checkpoint as it always was (issue #25)
-import { placeMult, crawlClass } from "./placement.js"; // a new world's blocks weighted by the placement table (issue #42)
+import { placeMult, crawlClass, crawlExtraKind } from "./placement.js"; // a new world's blocks weighted by the placement table (issue #42)
 import { typeFind } from "./foods.js"; // a crawl's food finds as items
 import { keyWord } from "./water.js"; // supplies as words: "9mm FMJ", "rounds"
 import { Rng } from "./rng.js";
@@ -79,6 +79,8 @@ import { piecesOut, piecesText, crawlPieces as homePieces } from "./furnihome.js
 import { gridOf, inGrid, isEdge, levelOf, ringOf, maxLevel, entryOf, headingToward, turn, rimOf, pathToRim, dirTo, keyOf, xyOf, DIRS, DIR_NAMES, cellsOf } from "./citygrid.js"; // the round grid of blocks (2026-10-13)
 
 // ---------- tuning ----------
+// A gym's or a bowling alley's crawl place (issue #56): a shop's dead and richness.
+const CRAWL_PLACE = { dead: 1, rich: 1, w: 0, deep: 0, from: 1 };
 export const CRAWL = {
   MAX_BLOCK: 8,                 // the heart of the city: no block beyond this one
   PLACES: [2, 4],               // places on a block (2–3 at the edge; a fourth more likely deeper)
@@ -510,6 +512,9 @@ export function genBlock(state, c, cell = c.cell) {
   // A strip mall now and then (issue #30, mall.js: its whole row of shops one place; never a regional mall, too big for a
   // block), on its own dice after everything above.
   if (places.length < CRAWL.PLACES[1] && hash01(state.seed, "crawlmall", c.tile, cell) < CRAWL.STRIPMALL[setting] && placeMult(state, "stripmall", cls) > 0) addPlace(new Rng(seedOf(state.seed, "crawlmall", c.tile, cell)), "stripmall", { dead: 1.2, rich: 1.1, w: 0, deep: 0, from: 1 }, places.length);
+  // placement.js (issue #56, a new world only): a gym or a bowling alley now and then, on its own dice after everything above.
+  const rec = crawlExtraKind(state, c.tile, cell, places, CRAWL.PLACES[1], cls);
+  if (rec && BUILDINGS[rec]) addPlace(new Rng(seedOf(state.seed, "crawlplace", c.tile, cell)), rec, CRAWL_PLACE, places.length);
   // This visit: a place may be shut.
   if (places.length > 2 && vr.chance(CRAWL.BLOCKED)) {
     const pl = vr.pick(places);

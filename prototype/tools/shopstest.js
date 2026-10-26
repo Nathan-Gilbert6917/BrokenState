@@ -50,6 +50,7 @@ import { launchExpedition } from "../src/sim/parties.js";
 import { startScavenge, searchHour } from "../src/sim/scavenge.js";
 import * as CC from "../src/sim/citycrawl.js";
 import { rollArea } from "../src/sim/citycrawl.js";
+import { CRAWL_EXTRA } from "../src/sim/placement.js"; // issue #56: the crawl's gym or bowling alley roll
 import { cellsOf, keyOf } from "../src/sim/citygrid.js";
 import { SHOP, SHOP_KINDS, settingOf, franchiseById, franchiseName, shopExtras } from "../src/sim/shops.js";
 import { NEW_KINDS, AREA_DEFS, PLACE_W, FRANCHISES } from "../src/sim/data-shops.js";
@@ -181,9 +182,10 @@ section("The city and town crawls: shops and services on the blocks, as franchis
         SHOP.CRAWL = { city: [], town: [] };
         HOTELS.CRAWL = { city: 0, town: 0, deep: 0, max: 0 }; // a hotel (issue #29, hotels.js) rolls after the shops: off too
         CC.CRAWL.STRIPMALL = { city: 0, town: 0 }; // a strip mall (issue #30, citycrawl.js) rolls after the hotel: off too
+        const savedR = CRAWL_EXTRA.splice(0); // a gym or a bowling alley (issue #56, placement.js) rolls after the strip mall: off too
         const b2 = CC.genBlock(st, c2, key);
-        SHOP.CRAWL = saved; HOTELS.CRAWL = savedH; CC.CRAWL.STRIPMALL = savedM;
-        const shops = blk.places.slice(b2.places.length).filter((pl) => pl.key !== "hotel" && pl.key !== "stripmall");
+        SHOP.CRAWL = saved; HOTELS.CRAWL = savedH; CC.CRAWL.STRIPMALL = savedM; CRAWL_EXTRA.push(...savedR);
+        const shops = blk.places.slice(b2.places.length).filter((pl) => pl.key !== "hotel" && pl.key !== "stripmall" && pl.key !== "gym" && pl.key !== "bowling");
         extras += shops.length;
         for (const pl of shops) {
           byKind[type][pl.key] = (byKind[type][pl.key] || 0) + 1;
