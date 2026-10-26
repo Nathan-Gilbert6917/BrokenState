@@ -90,10 +90,24 @@ export function clearSiteFirst(state, p, at) {
   if (p.siteClear === tile) return false;
   const th = siteThreat(state, tile);
   if (!th.count) { p.siteClear = tile; return false; }
+  // Optional on the tile's own map (issue #70, the heat epic #64 §4: "siteclear's clear the spot first becomes
+  // optional"): the player's Set up without clearing (p.noClear, ui/campsite.js): no fight, the dead stay out on the
+  // camp's grounds (leaveGrounds, after the camp stands: campscout.js runs their attacks and the clearing order).
+  if (p.noClear === tile) { p.siteClear = tile; p.campGrounds = th.count; log(state, `${tileLabel(state, tile).replace(/^\w/, (m) => m.toUpperCase())}: the team sets up camp without clearing the ${th.count} of the dead about the spot: they stay out on the camp's grounds.`, "warn"); return false; }
   p.phase = "engaged";
   log(state, `${tileLabel(state, tile).replace(/^\w/, (m) => m.toUpperCase())}: ${th.count} of the dead between the team and its camp's spot. They have to be cleared first.`, "danger");
   startCombat(state, { tile, partyId: p.id, enemy: { kind: "zombies", count: th.count, power: th.power, name: th.name, mix: th.mix }, ambush: null, canRetreat: true, handler: "siteClear", layout: "siteClear", context: { partyId: p.id, tile, at: [at[0], at[1]] }, deadPop: { tile, poi: null, roster: th.count } }); // deadpop.js: the kills off the tile's open ground
   return true;
+}
+
+// A camp set up without clearing its spot (clearSiteFirst, p.noClear): the dead left about it are its grounds' dead
+// (campscout.js base.grounds: their attacks, Defend the camp, Clear the dead from the base grounds), known (the team saw
+// them), never more than the tile's open ground holds.
+export function leaveGrounds(state, base, n) {
+  const dead = Math.min(n, openDead(state, base.tile));
+  if (!(dead > 0)) return null;
+  base.grounds = { dead, dead0: dead, known: true, blind: false, next: state.hour + 6, waves: 0, killed: 0, raids: 0 };
+  return base.grounds;
 }
 
 registerCombatHandler("siteClear", (state, result, setup) => {

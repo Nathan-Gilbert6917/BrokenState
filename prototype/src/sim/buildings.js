@@ -1,5 +1,6 @@
 // @ts-check
 // Buildings, workshop stations and the construction queue for every base (hub and outposts).
+import { poiFits, POICAMP } from "./poicamp.js"; // a camp inside a POI: what fits on its map (issue #70; call-time only)
 import { FOODS, addFood, qtyOf } from "./foods.js"; // a station's food out (the kitchen's jars, the pen's eggs and milk)
 import { campBecameShelter, baseUpgraded } from "./staging.js"; // a camp built up into a shelter (the founding)
 import { log, atBase, skill, newId, day, localId } from "./world.js";
@@ -1117,6 +1118,7 @@ export function placeProblem(base, type) {
   if (def.campOnly && !isCamp(base)) return isShelter(base) ? "Camps only (this is a shelter already)" : "Camps only (this is a base already)";
   // A defence for bigger bases (BUILDINGS size, DEF_SIZE): as the base grows, more of them open up.
   if (def.size && !sizeFits(base, def.size)) return opensAt(def.size);
+  if (base.poiCamp && !poiFits(base, type)) return POICAMP.NO_ROOM; // poicamp.js: a camp inside a POI: its map never grows (the step ups too, only if they fit)
   if (isCamp(base)) {
     if (!CAMP.build[type]) return type === "hub_up" ? "Build the camp up into a shelter first (its shelter shack)" : base.type === "outpost" ? "Available once the camp is an outpost (its outpost house)" : SHELTER.build[type] ? "Available once the shelter stands (build the camp up first)" : "Available once it is a base (camp → shelter → base)";
   } else if (isShelter(base) && !SHELTER.build[type]) return "Not at a shelter: build it up into a base first";

@@ -64,7 +64,7 @@ import { itemLoad } from "./inventory.js";
 import { defaultSite, siteProblem, siteYield, clearCampSite, BASE_GRID, siteLand } from "./basemap.js"; // the camp's own spot on its 500 × 500 map, its 5 × 5 cleared (call-time only)
 import { SITE, siteLevel } from "./basescatter.js";
 import { siteInfo, pickWords } from "./siteinfo.js"; // the spot's facts: why the game picked its own (call-time only)
-import { clearSiteFirst, threatWords } from "./siteclear.js"; // the dead at a town's, a city's or an infected tile's camp spot cleared first
+import { clearSiteFirst, threatWords, leaveGrounds } from "./siteclear.js"; // the dead at a town's, a city's or an infected tile's camp spot cleared first
 import { tileScouted, scoutOrBlind, blindCamp, groundsHour, blindSite } from "./campscout.js"; // scouted first, or set up blind: the dead on the grounds (2026-10-23)
 import { isChopTool, bestChop } from "./woodcutting.js"; // a cutting tool on the team fells the spot's trees quicker (call-time only)
 import { pitchArmoryBags, strikeTents, campTentsDaily, isTentBag, tentsText, tentBeds } from "./tents.js"; // tent bags: a quicker camp, beds under cover, struck back into bags
@@ -137,7 +137,7 @@ export function campProblem(state, tile) {
   const t = state.tiles[tile];
   if (!t || (t.terrain === "water" && !t.bridge)) return "Not on open water.";
   if (t.hive) return "Not on a hive.";
-  if (state.bases.some((b) => b.tile === tile)) return "You already have a base here.";
+  if (state.bases.some((b) => b.tile === tile && b.poi == null)) return "You already have a base here."; // poicamp.js: one normal base a tile (a camp inside one of its POIs is another)
   if (crawlTile(t)) return CRAWL_WHY; // citycrawl.js: no base on a town's or a city's crawl tile (2026-10-23; elsewhere in a town the dead are cleared first: siteclear.js)
   if (state.factions.some((f) => f.alive && f.bases.includes(tile)) || (t.owner != null && t.owner !== "player")) return "Another group holds this land.";
   return null;
@@ -149,7 +149,7 @@ const busyTeam = (state, p) => p.phase === "engaged" || (state.engagement && sta
 export function campOption(state, p, tile = partyTile(p)) {
   if (!p || p.owner !== "player" || p.kind !== "expedition" || p.caravan || p.crewRole != null) return null;
   const t = state.tiles[tile];
-  if (!t || (t.terrain === "water" && !t.bridge) || state.bases.some((b) => b.tile === tile)) return null;
+  if (!t || (t.terrain === "water" && !t.bridge) || state.bases.some((b) => b.tile === tile && b.poi == null)) return null; // a camp inside a POI here leaves the tile's own map free (poicamp.js)
   // desc is worked out when it is read (and kept): its setup hours lay the tile's 500 × 500 land (staging.js
   // siteSetup → basemap.js siteLand), a fifth of a second or more on a tile not seen before, while most callers (the
   // governor's checks, startOrder) only read .mission and .disabled.
@@ -203,11 +203,14 @@ export function pitchArrive(state, p, mission) {
   delete p.pitched;
   const blind = p.campBlind === tile;
   delete p.campBlind;
+  const grounds = p.campGrounds || 0; // siteclear.js: set up without clearing the spot (p.noClear): the dead stay on its grounds
+  delete p.campGrounds; delete p.noClear;
   // Establish base queues no step up (the user's request 2026-10-23: "Remove the shelter that gets auto set when you
   // establish a camp"): the Shelter shack is on the Build list, put down where you want it (the governor queues its own:
   // autopilot.js campYard). Build outpost keeps its outpost house queued: it puts the camp on the supply runs.
   const base = makeCamp(state, p, tile, { up: mission !== "camp" }); // the step up placed by hand (makeCamp queueUp)
   if (blind) blindCamp(state, base); // campscout.js: the dead on its grounds, the map past the camp unknown
+  else if (grounds) leaveGrounds(state, base, grounds); // siteclear.js: the dead not cleared first, out on its grounds
   return `${base.name}: camp set up.`;
 }
 // Back-compat names (tools, older callers).

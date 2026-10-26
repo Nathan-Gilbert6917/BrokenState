@@ -19,7 +19,8 @@
 //   sitePanel(state, b, cui, prev)  the view's side panel (ui/combat.js)
 //   siteHoverText(state, b, h)      the hover line (ui/combat.js previewText)
 //   siteKey(state, e, confirm)      Enter sets up camp on the spot picked, Esc lets the game pick
-//   CS_ACTIONS                      cs-ok sets up camp on the spot picked, cs-auto lets the game pick (sim/basemap.js defaultSite)
+//   CS_ACTIONS                      cs-ok sets up camp on the spot picked, cs-auto lets the game pick (sim/basemap.js defaultSite),
+//                                   cs-noclear sets up without clearing the dead first (they stay on the grounds; issue #70)
 import { pendingSite, pickSite, autoSite, durText, levelWords } from "../sim/staging.js";
 import { siteProblem, openSiteView, defaultSite, BASE_GRID, GRID } from "../sim/basemap.js";
 import { SITE } from "../sim/basescatter.js";
@@ -161,7 +162,7 @@ export function sitePanel(state, b, cui, preview = "") {
       ${why ? `<div class="danger">${esc(why)}</div>` : `<div><b>${esc(w.time)}</b> to set up: ${esc(w.text.replace(/^.*? to set up \(/, "").replace(/\)$/, ""))}.</div><div>Gives <b>${esc(w.gives)}</b>.</div>${w.axe ? `<div class="muted">${esc(w.axe)}</div>` : ""}${siteFacts(info)}${pickLine(info)}`}
     </div>
     ${dead.ok ? deadCard(dead) : ""}
-    <div class="cbfoot"><button data-action="cs-auto"${tip("Let the game pick: the best spot in reach by the setup's time, the lie of the land, sight lines, room to grow, wood, the river and the road (Esc)")}>Let the game pick <span class="key">Esc</span></button><button class="primary" data-action="cs-ok" ${why ? "disabled" : ""}${tip("Set up camp with its fire in the middle of the gold square (Enter)")}>Set up camp here <span class="key">Enter</span></button></div>`;
+    <div class="cbfoot">${dead.ok && dead.dead && dead.dead.count && !why ? `<button data-action="cs-noclear"${tip("Set up camp here without fighting the dead first: they stay out on the camp's grounds, coming at it now and then (Defend the camp) until you clear them (Clear the dead from the base grounds)")}>Set up without clearing</button>` : ""}<button data-action="cs-auto"${tip("Let the game pick: the best spot in reach by the setup's time, the lie of the land, sight lines, room to grow, wood, the river and the road (Esc)")}>Let the game pick <span class="key">Esc</span></button><button class="primary" data-action="cs-ok" ${why ? "disabled" : ""}${tip("Set up camp with its fire in the middle of the gold square (Enter)")}>Set up camp here <span class="key">Enter</span></button></div>`;
 }
 
 // The view closes first: a spot with the dead about it opens their fight at once (sim/siteclear.js clearSiteFirst).
@@ -169,6 +170,14 @@ export const CS_ACTIONS = {
   "cs-ok": (state) => {
     const p = viewTeam(state), b = state.combat;
     if (!p || !b.site.sel || siteProblem(state, b.site.tile, b.site.sel)) return;
+    state.combat = null;
+    pickSite(state, p, b.site.sel);
+  },
+  // Clearing the spot first is optional (sim/siteclear.js clearSiteFirst, p.noClear; issue #70): the dead stay on the grounds.
+  "cs-noclear": (state) => {
+    const p = viewTeam(state), b = state.combat;
+    if (!p || !b.site.sel || siteProblem(state, b.site.tile, b.site.sel)) return;
+    p.noClear = b.site.tile;
     state.combat = null;
     pickSite(state, p, b.site.sel);
   },
