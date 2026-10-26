@@ -46,8 +46,8 @@
 // electronics).
 //
 // Maps: battlesize.js MAP_CAP.datacenter 400 × 400. A compound plan's map is its campus (dcCampusMap), cut to fit.
-// Older saves: a new type and a new POI kind (a new world's placement table only places it), so nothing an older save
-// holds changes.
+// Older saves: a new type and a new POI kind (a new world's placement table only places it), and a save from before
+// them (save.js dcLegacy: no state.dcV) gets none on its tiles (placement.js placeExtraKind), so nothing it holds changes.
 import { Rng } from "./rng.js";
 import { hash01 } from "./skills.js";
 import { registerVariants, pickVariant } from "./variantpick.js"; // the shared picker (issue #41)
