@@ -40,6 +40,7 @@ import { newRunScreen } from "../src/ui/newgame.js";
 import { loadOptions } from "../src/ui/saves.js";
 import { isTentBag, TENTS } from "../src/sim/tents.js"; // the hardcore start's tent bags
 import { assignedRole } from "../src/sim/noidle.js"; // noidle: a job with no work, its people helping elsewhere
+import { gunsFrom } from "../src/sim/gundist.js"; // the prepper's gun: swapGun's pick of its kind
 
 // Setting up a camp takes an hour (staging.js STAGING.PITCH): skipped here, the camp (a base) stands at once.
 // Establish base at once, and the player places its shelter shack from the Build list (the user's request 2026-10-23:
@@ -150,7 +151,8 @@ section("The prepper: when one of the three is a prepper, they fled with a duffl
     const extras = inBag.filter((it) => !P.KIT.includes(it.key)).length;
     check(extras >= P.EXTRA_N[0] && extras <= P.EXTRA_N[1] && inBag.every((it) => !packSize(it) && !GEAR[it.key].bulky), `seed ${st.seed}: ${extras} extras from the prepper's list, everything fits a pack`);
     const w = pr.gear.weapon;
-    check(!!w && (w.key === "knife" || P.GUNS[w.key]), `seed ${st.seed}: a knife or a gun (${w && w.key})`);
+    // A gun from GUNS, or one of its kind gundist.js swapGun gives for it from the prepper's own draws ("hc:prepper").
+    check(!!w && (w.key === "knife" || Object.keys(P.GUNS).some((k) => k === w.key || gunsFrom("hc:prepper", { near: k })[w.key] > 0)), `seed ${st.seed}: a knife or a gun (${w && w.key})`);
     if (w && P.GUNS[w.key]) { guns++; if (totalRounds(p.supplies) >= P.AMMO) ammoOk++; } else knives++;
     const traited = pr.traits.includes("prepper");
     if (traited) withTrait++;

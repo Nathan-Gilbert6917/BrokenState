@@ -686,11 +686,12 @@ has(Weather.growthFactor, "growthFactor"); has(Weather.cropDamage, "cropDamage")
   check(h5.stock.meds < 10, `the base treats the sick automatically (meds 10 → ${h5.stock.meds})`);
 }
 
-// 7. Fuel is scarce: gas stations, truck stops, airports and military bases are the real sources.
+// 7. Fuel is scarce: gas stations, truck stops, airports and military bases are the real sources (an air base, issue #25,
+// both an airfield and a military base: its fuel bladders and fuel trucks).
 {
   console.log("Fuel");
   const share = (t) => (LOCATIONS[t].loot.fuel || 0) / Object.values(LOCATIONS[t].loot).reduce((a, v) => a + v, 0);
-  const sources = ["gas", "truckstop", "airport", "military"];
+  const sources = ["gas", "truckstop", "airport", "military", "airbase"];
   // The abandoned Army convoy (miltrucks.js, a temporary road site) is military trucks with their tanks: a fuel source
   // in between, more than anywhere ordinary, less than a military base's motor pool.
   const military = ["convoy"];
