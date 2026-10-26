@@ -249,7 +249,7 @@ export function decorate(cells, W, H, rooms, rid, o) {
           spots.push(along ? [x0 + t, cy] : [cx, y0 + t]);
         }
       }
-      for (const [x, y] of spots) if (ridAt(x, y) === room.id) { const c = at(x, y); if (c.k !== "stairs" && c.k !== "ladder") c.deco = { k: "light", lt: D.light }; }
+      for (const [x, y] of spots) if (ridAt(x, y) === room.id) { const c = at(x, y); if (c.k !== "stairs" && c.k !== "ladder") c.deco = c.deco && c.deco.k === "rug" ? { ...c.deco, lt: D.light } : { k: "light", lt: D.light }; } // a rug laid by the room's layout (a library's story rug, issue #34) keeps its place under the light
     }
     // A rug: a patch wholly inside the room, over whatever stands there (not the stairs).
     if (D.rug && h("rug?", room.id) < D.rug && room.iw >= 2 && room.ih >= 2) {
