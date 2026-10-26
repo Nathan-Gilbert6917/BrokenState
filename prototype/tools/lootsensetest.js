@@ -49,6 +49,7 @@ const BASELINE = {
   theatre: 73.7, parkgarage: 557.6, chapel: 152.2, healthcentre: 508.4, milbunker: 1415.1, mountainbunker: 1827.5,
   govbunker: 1037.7, shelter: 151.4, prepper: 273.0, regionalmall: 17794.1, stripmall: 2735.9, outlet: 3947.1,
   cinema: 52.7, arcade: 53.4, mallservices: 89.9, mallrestrooms: 18.5, vacantunit: 5.9,
+  datacenter: 802.6, // issue #51 (a new type: measured on its own branch, the city tile's plans)
   museum: 404.8, // issue #58 (a new type: its own line, measured on its branch)
   amusement: 1996.8, // issue #60 (a new type: its own line, taken on its branch)
   // issue #55's six shops, new (--baseline, 2026-10-26)

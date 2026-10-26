@@ -188,6 +188,11 @@ export const PLACEMENT_ROWS = {
   govbunker: "centre 0.6 L, city 1 L, highway 0.3 L, coast 0.3 L, scenic 0.6 L",
   shelter: "centre 0.6 M, city 1 M, suburb 1.2 M, town 0.8 M",
   prepper: "hideout",
+  // ---- data centres (issue #51, datacenter.js) ----
+  // A colocation hall or a playout centre downtown, edge sites, exchanges and container sites in towns (medium), the
+  // hyperscale campuses, cloud regions and the government's out by the highways and in the suburbs (large halls: a
+  // campus is many large buildings, never one huge one).
+  datacenter: "centre 0.8 L, city 1 L, suburb 1 L, town 0.6 M, highway 1.5 L",
   // ---- amusement parks (issue #60, amusement.js: its variant by the class, variantpick.js) ----
   amusement: "centre 1 H, city 1 L, suburb 1.2 L, town 1 L, highway 0.8 L, coast 1 L, scenic 0.3 L, rural 0.25 L", // a destination theme park by a city's centre (huge), a regional park, a water park or a fun park in the city and its suburbs, a fairground in a town, a pier or a funfair on the coast
   // ---- the places themselves (a town, a city and the bare land as sites: their own buildings) ----

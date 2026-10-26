@@ -340,6 +340,15 @@ export const REAL_SIZE = {
   parkgarage:   { w: [30, 48], d: [18, 32], storeys: [2, 6], set: "town", planned: true },
   chapel:       { w: [14, 24], d: [22, 36], storeys: [1, 2], set: "town", wings: "back" },
   healthcentre: { w: [15, 25], d: [12, 20], storeys: [1, 3], set: "town" },
+  // Data centres (issue #51, datacenter.js): planned at their own size, a row a plan (a campus's: one of its halls; its
+  // operations building dcadmin and gatehouse dcgate), metres at CELL_M.
+  datacenter: { w: [24, 90], d: [16, 52], storeys: [1, 5], set: "town", planned: true, sizes: {
+    colo: { w: [44, 56], d: [30, 38], storeys: [3, 5] }, hyperscale: { w: [70, 90], d: [40, 52], storeys: [1, 1] }, edge: { w: [30, 40], d: [22, 28], storeys: [1, 1] },
+    telecom: { w: [24, 32], d: [18, 24], storeys: [2, 4] }, bankdr: { w: [38, 48], d: [28, 34], storeys: [2, 2] }, govdc: { w: [50, 64], d: [34, 42], storeys: [2, 2] },
+    research: { w: [34, 44], d: [24, 30], storeys: [2, 2] }, bunker: { w: [50, 58], d: [28, 34], storeys: [2, 3] }, crypto: { w: [36, 46], d: [16, 20], storeys: [1, 1] },
+    container: { w: [30, 38], d: [24, 28], storeys: [1, 1] }, playout: { w: [36, 44], d: [26, 32], storeys: [2, 2] }, cloudregion: { w: [60, 80], d: [36, 46], storeys: [2, 2] },
+    enterprise: { w: [38, 48], d: [26, 32], storeys: [2, 2] }, dcadmin: { w: [30, 38], d: [16, 20], storeys: [2, 2] }, dcgate: { w: [8, 10], d: [6, 8], storeys: [1, 1] },
+  } },
 };
 
 // Civic and medical buildings at real scale (issue #49 of the round-2 epic #39, the user's request 2026-10-26: "updating

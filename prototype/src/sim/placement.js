@@ -24,7 +24,7 @@ import { LOCATIONS } from "./data.js";
 import { hash01 } from "./skills.js";
 import { useSizeClassOf } from "./variantpick.js"; // the shared picker (#41): its plans' size classes by sizeClassOf
 import { settingAt } from "./settings.js"; // the six settings (issue #40): this module adds coast and scenic land
-import { legacyPlace, legacyShopsR2 } from "./worldcfg.js";
+import { legacyPlace, legacyShopsR2, legacyDc } from "./worldcfg.js";
 import { maxLevel } from "./citygrid.js";
 
 export { TILE_CLASSES, SIZE_CLASSES, PLACE };
@@ -139,6 +139,7 @@ export const PLACE_EXTRA = [
   // Issue #55: a small bakery or butcher in the country (a new world from since them: legacyShopsR2 skips these).
   ["bakery", { rural: 0.0015, highway: 0.0015, coast: 0.0005 }],
   ["butcher", { rural: 0.0015, highway: 0.001 }],
+  ["datacenter", { centre: 0.03, city: 0.012, suburb: 0.006, town: 0.004, highway: 0.004 }], // data centres (issue #51): by the power and the fibre; last, so the kinds before keep their picks
 ];
 const R2_EXTRA = new Set(["bakery", "butcher"]); // issue #55's: none in a save from before them
 export const PLACE_KNOWN = 0.7; // the share of them known from the start in the known zone (shops.js SHOP.KNOWN)
@@ -156,6 +157,7 @@ export function placeExtraKind(state, t, list, max) {
     const p = /** @type {Record<string, number>} */ (at)[cls] || 0;
     if (!p || !LOCATIONS[kind] || LOCATIONS[kind].richness > cap || list.some((q) => q.kind === kind) || (t.loc && t.loc.type === kind)) continue;
     if (R2_EXTRA.has(/** @type {string} */ (kind)) && legacyShopsR2(state)) continue;
+    if (kind === "datacenter" && legacyDc(state)) continue; // issue #51: none in a save from before them
     if (hash01(state.seed, "placepoi", t.id, kind) < p) return /** @type {string} */ (kind);
   }
   return null;

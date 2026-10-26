@@ -8,6 +8,7 @@
 //     stands;
 //   - the crawl: a city crawl's heart holds more hospitals than its rim;
 //   - older worlds: their POI lists and crawl blocks hash exactly as before the table (placeLegacy), a save from before
+//     the data centres gets none (dcLegacy, issue #51); a save from before
 //     loads as one; a new world's are the table's.
 // Usage: node tools/placementtest.js [worlds]
 import { createHash } from "node:crypto";
@@ -168,6 +169,14 @@ console.log("\nOlder worlds");
   delete st.placeV;
   const back = deserializeState(serializeState(st));
   check(!!back.placeLegacy, "a save from before the table loads as an older world (placeLegacy)");
+  // Data centres (issue #51): a new world carries dcV; a save from before them loads with none on its tiles (dcLegacy).
+  const dc = createWorld({ seed: 4242, factionCount: 3, size: "small" });
+  check(dc.dcV === 1 && !dc.dcLegacy, "a new world carries dcV (issue #51)");
+  delete dc.dcV;
+  const dcBack = deserializeState(serializeState(dc));
+  for (const t of dcBack.tiles) delete t.pois;
+  ensurePois(dcBack);
+  check(!!dcBack.dcLegacy && !dcBack.tiles.some((t) => (t.pois || []).some((p) => p.kind === "datacenter")), "a save from before the data centres loads as one (dcLegacy): none on its tiles");
 }
 
 console.log(`\n${passed} passed, ${failed} failed (${((performance.now() - t0) / 1000).toFixed(1)} s)`);

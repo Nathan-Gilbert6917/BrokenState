@@ -352,7 +352,7 @@ export function fitMargins(bw, bh, margins, [tw, th], cap = null) {
 // police, fire stations, city halls and courthouses 300 (a headquarters on its site), the clinics, infirmaries and vets
 // the default (the dials, at most 300). The run's raid map dial goes to 300, so a cap of 300 or more never changes an older
 // save's map.
-export const MAP_CAP = { hotel: 200, prison: 400, jail: 130, cinema: 80, parkgarage: 80, regionalmall: 500, stripmall: 500, outlet: 500, amusement: 500, hospital: 350, church: 350, police: 300, firestation: 300, cityhall: 300, courthouse: 300 }; // a prison's complex up to the user's 400 × 400, a county jail's 130 (issue #31, prison.js); a mall's cinema and parking garage at their real size, a mall's whole map (issue #30, mall.js MALL.CAP); an amusement park's whole map, a theme park's up to 500 × 500 (issue #60, amusement.js)
+export const MAP_CAP = { datacenter: 400, hotel: 200, prison: 400, jail: 130, cinema: 80, parkgarage: 80, regionalmall: 500, stripmall: 500, outlet: 500, amusement: 500, hospital: 350, church: 350, police: 300, firestation: 300, cityhall: 300, courthouse: 300 }; // a prison's complex up to the user's 400 × 400, a county jail's 130 (issue #31, prison.js); a mall's cinema and parking garage at their real size, a mall's whole map (issue #30, mall.js MALL.CAP); an amusement park's whole map, a theme park's up to 500 × 500 (issue #60, amusement.js); a data centre campus up to the user's 400 × 400 (issue #51, datacenter.js)
 // Issue #55's six shops: the round's default cap (epic #39: 300 × 300); a big-box furniture showroom's map is about 90 × 80.
 for (const k of ["furnstore", "laundromat", "thrift", "bakery", "butcher", "deli"]) MAP_CAP[k] = 300;
 export const mapCap = (key) => MAP_CAP[key] || null;

@@ -71,7 +71,7 @@ console.log("Older saves");
   const BASE = { 4242: ["5226b79c7af26b02", "20bca0896464f29f"], 4243: ["8d084359037daebc", "3f97f8daf3c304db"] };
   const run = (seed, legacy) => {
     const st = createWorld({ seed, factionCount: 3, size: "small" });
-    if (legacy) { st.shopsR2Legacy = true; st.civicLegacy = true; } // a save from before #55 is from before #49's civic real scale too (save.js marks both)
+    if (legacy) { st.shopsR2Legacy = true; st.civicLegacy = true; st.dcLegacy = true; } // a save from before #55 is from before #49's civic real scale and #51's data centres too (save.js marks all three)
     for (const t of st.tiles) delete t.pois;
     ensurePois(st);
     const blocks = [];
