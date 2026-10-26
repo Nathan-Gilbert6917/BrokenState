@@ -236,6 +236,9 @@ export function deserializeState(save) {
   // Gyms and bowling alleys (reclayout.js, issue #56): a save from before gets none on its tiles or its crawls' blocks
   // (placement.js placeExtraKind, crawlExtraKind), so its points of interest and blocks regenerate as they were.
   if (!state.recV) { state.recLegacy = true; state.recV = 1; }
+  // Golf courses, campgrounds and RV parks (outdoors.js, issue #61): a save from before gets none of the new places on
+  // its tiles and keeps its campgrounds' street map (worldcfg.js legacyOutdoors).
+  if (!state.outdoorsV) { state.outdoorsLegacy = true; state.outdoorsV = 1; }
   if (!state.woodcutting) {
     for (const b of state.bases || []) if (b.stock && !Number.isFinite(b.stock.wood)) b.stock.wood = 0;
     for (const r of (state.work && state.work.roles) || []) if (r.pri && r.pri.wood == null && r.pri.forage > 0) r.pri.wood = r.pri.forage;

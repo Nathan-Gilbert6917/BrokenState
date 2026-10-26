@@ -923,15 +923,16 @@ export function mapHerdCanvas(kind, n, yaw = 315, frame = 0) {
 // that go out for survey, quick look and any other order that makes sense"), walking in their kit and at work out there:
 // "survey" (a Quick look) and "fullsurvey" (a Survey) a cap and the glasses up to the eyes, "snare" bending to set or
 // check a snare, "gather" (boat materials on the shore) bending to pick them up, a sack on the back, "claim" pacing the
-// tile with a stick, or at the spot driving the marker post in with a sledge; "well" digging with a pick, on the spot.
+// tile with a stick, or at the spot driving the marker post in with a sledge; "well" digging with a pick, on the spot;
+// "deadhunt" (Hunt the dead, sim/deadhunt.js) in a cap with a pack and a rifle, sweeping the tile out and back.
 export const WORK_JOBS = new Set(["wood", "stone", "fish", "water", "survey", "fullsurvey", "snare", "gather", "claim", "well"]); // the jobs with a pose of their own at work
 const LOOKOUT = new Set(["survey", "fullsurvey"]), STOOP = new Set(["snare", "gather"]);
 export function mapWorkerCanvas(job, color, yaw = 315, frame = 0, load = "", work = false) {
   const y = roundYaw(yaw), f = clampFrame(frame), w = work && WORK_JOBS.has(job) && !load;
   return cached(`worker:${job}:${color}:${y}:${f}:${load}${w ? ":work" : ""}`, GRIDS.solo, y, f, (g) => mapWorkerCanvas(job, color, y, g, load, w), () => {
     const F = [], heavy = load === "logs" || load === "game";
-    const look = { cloth: color, pack: job === "hunt" || job === "fish" || LOOKOUT.has(job), hat: job === "hunt" || LOOKOUT.has(job) || job === "claim" ? "cap" : job === "forage" || job === "wood" || job === "snare" ? "straw" : job === "stone" || job === "well" ? "cap" : "", hatColor: shade(color, -0.4), load: !!load, carry: load };
-    look.arm = heavy ? "none" : job === "hunt" ? "rifle" : job === "scavenge" ? "bar" : job === "wood" ? "axe" : job === "stone" || job === "well" ? "pick" : job === "fish" ? "rod" : job === "forage" ? "basket" : job === "water" ? "buckets" : job === "claim" ? (w ? "mallet" : "staff") : LOOKOUT.has(job) && w ? "binoc" : "none";
+    const look = { cloth: color, pack: job === "hunt" || job === "deadhunt" || job === "fish" || LOOKOUT.has(job), hat: job === "hunt" || job === "deadhunt" || LOOKOUT.has(job) || job === "claim" ? "cap" : job === "forage" || job === "wood" || job === "snare" ? "straw" : job === "stone" || job === "well" ? "cap" : "", hatColor: shade(color, -0.4), load: !!load, carry: load };
+    look.arm = heavy ? "none" : job === "hunt" || job === "deadhunt" ? "rifle" : job === "scavenge" ? "bar" : job === "wood" ? "axe" : job === "stone" || job === "well" ? "pick" : job === "fish" ? "rod" : job === "forage" ? "basket" : job === "water" ? "buckets" : job === "claim" ? (w ? "mallet" : "staff") : LOOKOUT.has(job) && w ? "binoc" : "none";
     if (job === "claim" && w) look.post = true;
     if (load === "basket") look.arm = "basket";
     if (load === "buckets") look.arm = "buckets";

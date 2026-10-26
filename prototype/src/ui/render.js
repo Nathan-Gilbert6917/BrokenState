@@ -2185,7 +2185,7 @@ function soloGait(p, s) {
 // gathering orders"): a Quick look and a Survey (the glasses up out there, turned slowly round), Snares (set or checked
 // out there), Gather materials on the shore (picked up at the water's edge), Claim this tile (the tile paced out, the
 // marker post driven in at the spot); Dig a well works on the spot like Gather stone. The same ring over them.
-const GATHER = { wood: "wood", stone: "stone", hunt: "hunt", fish: "fish", forage: "forage", water: "water", survey: "survey", fullsurvey: "fullsurvey", snare: "snare", gather: "gather", claim: "claim", well: "well" };
+const GATHER = { wood: "wood", stone: "stone", hunt: "hunt", fish: "fish", forage: "forage", water: "water", survey: "survey", fullsurvey: "fullsurvey", snare: "snare", gather: "gather", claim: "claim", well: "well", deadhunt: "deadhunt" }; // deadhunt: Hunt the dead (sim/deadhunt.js), out on a sweep and back like a Survey
 export const gatherJob = (p) => (p && p.phase === "task" && p.task ? GATHER[p.task.type] || null : null);
 const GATHER_FIGS = 3;
 const GATHER_MS = { wood: 420, stone: 480, fish: 900, water: 700, well: 520, claim: 560, snare: 650, gather: 600 }; // half a cycle: a swing, the rod worked, a bucket filled, a bend down
@@ -2194,7 +2194,7 @@ const ROAMS = new Set(["hunt", "forage"]);
 // An outing: r how far out (world px × size, the hex is HEX), ms a trip's length, stay how many stay at the spot (a
 // claim's post). A trip: out (OUTING.out of it), there at the job (.at), back (.back), a breath at the spot; each one
 // its own way round the spot, a new way each trip.
-const OUTINGS = { survey: { r: 14, ms: 5200 }, fullsurvey: { r: 20, ms: 8000 }, snare: { r: 12, ms: 6400 }, gather: { r: 10, ms: 5600 }, claim: { r: 16, ms: 7000, stay: 1 } };
+const OUTINGS = { survey: { r: 14, ms: 5200 }, fullsurvey: { r: 20, ms: 8000 }, deadhunt: { r: 18, ms: 6800 }, snare: { r: 12, ms: 6400 }, gather: { r: 10, ms: 5600 }, claim: { r: 16, ms: 7000, stay: 1 } };
 const OUTING = { out: 0.3, at: 0.3, back: 0.3, pan: 50 }; // pan: the glasses turned this many degrees either way
 const LOOKOUTS = new Set(["survey", "fullsurvey"]);
 // Where one of them is on its trip, which way it faces and its frame; work: at the job (out there).

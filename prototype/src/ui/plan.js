@@ -115,7 +115,7 @@ export function planSection(state, pl, est) {
       ${addBtn("nearby", `Scavenge nearby (${add.count} within ${add.radius})`)} ×${num("count", add.count, 1, 4)} r${num("radius", add.radius, 1, 6)}
       ${addBtn("camp", `Rest ${hrs(add.camp)}`)}${num("camp", add.camp, 1, 240)}h
       ${addBtn("wait", `Wait ${add.wait}h`)}${num("wait", add.wait, 1, 72)}h
-      ${addBtn("forage", `Forage ${add.hunt ?? 8}h`)}${addBtn("hunt", `Hunt ${add.hunt ?? 8}h`)}${addBtn("fish", `Fish ${add.hunt ?? 8}h`)}${addBtn("wood", `Cut wood ${add.hunt ?? 8}h`)}${num("hunt", add.hunt ?? 8, 2, 24)}h ${addBtn("snare", "Snares")}
+      ${addBtn("forage", `Forage ${add.hunt ?? 8}h`)}${addBtn("hunt", `Hunt ${add.hunt ?? 8}h`)}${addBtn("fish", `Fish ${add.hunt ?? 8}h`)}${addBtn("wood", `Cut wood ${add.hunt ?? 8}h`)}${addBtn("deadhunt", `Hunt the dead ${add.hunt ?? 8}h`)}${addBtn("deadhunt", "· Stealthy", ` data-stance="stealthy"`)}${addBtn("deadhunt", "· Lure", ` data-stance="lure"`)}${num("hunt", add.hunt ?? 8, 2, 24)}h ${addBtn("snare", "Snares")}
       ${addBtn("gather", "Gather")}${addBtn("water", "Fetch water")}${activeCrashes(state).length ? addBtn("searcharea", "Search the area") : ""}
       <select data-action="pl-addmove"${tip("Move on to another known site near the target")}><option value="">Move to a site…</option>${targets.map((t) => `<option value="${t.tile}">${esc(t.name)} (${t.dist} tiles${t.job ? "" : `, loot ~${Math.round((knownLoot(state, t.tile) || 0) * 100)}%`})</option>`).join("")}</select>
       ${addBtn("home", "Return home")}
@@ -158,7 +158,8 @@ export const PLAN_ACTIONS = {
     if (d.k === "wait") step.hours = a.wait;
     if (d.k === "nearby") { step.radius = a.radius; step.count = a.count; }
     if (d.k === "sweep") Object.assign(step, sweepOpts({ radius: a.sradius ?? 3, hours: a.shours ?? 12 }));
-    if (d.k === "hunt" || d.k === "fish" || d.k === "forage" || d.k === "wood") step.hours = a.hunt ?? 8;
+    if (d.k === "hunt" || d.k === "fish" || d.k === "forage" || d.k === "wood" || d.k === "deadhunt") step.hours = a.hunt ?? 8;
+    if (d.k === "deadhunt") step.stance = d.stance || "normal"; // Hunt the dead (sim/deadhunt.js): Stealthy, Normal, Lure
     if (d.k === "move") return;
     plan.steps.push(step);
     plan.preset = "custom";

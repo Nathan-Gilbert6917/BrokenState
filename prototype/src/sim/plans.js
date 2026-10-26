@@ -29,6 +29,7 @@ import { fieldHeatHour, fireLit } from "./fieldheat.js";
 import { foodNeedFactor } from "./weather.js";
 import { sweepEstimate, sweepOpts, SURVEY, LOOK } from "./survey.js";
 import { huntHours } from "./orders.js";
+import { deadHuntHours, deadHuntLabel, huntStance } from "./deadhunt.js"; // Hunt the dead (issue #68)
 import {
   HUNT, MEAT_KG, huntTeam, expectHunt, fishKit, expectFish, snareLine, snareHours, expectSnare, packFishingGear, meatIn,
   huntMixOf, huntArrowsFor, packHuntArrows,
@@ -64,6 +65,7 @@ export const STEP_KINDS = {
   forage:   { label: "Forage", desc: "Gather wild food around the target for some hours (foraging.js): berries, nuts, mushrooms, greens, roots and apples. Anyone can; Farming and Scouting help. Forest is best, farmland good, towns little; summer and autumn plentiful, spring some, winter almost nothing. Quiet, but time on one spot builds Heat." },
   wood:     { label: "Cut wood", desc: "Cut wood around the target for some hours (woodcutting.js): the winter's heating. Forest is best, hills fair, farmland and suburbs little, a city next to nothing. An axe cuts about three times as much as bare hands (a bow saw, a machete or a sledgehammer less); daylight only. Wood is heavy in bulk (0.1 kg a piece: three in a forest for 8 hours cut about 40 kg): a vehicle carries far more home. Loud: time on one spot builds Heat faster than most work." },
   fish:     { label: "Fish", desc: "Fish a river or lake shore for some hours with a fishing rod or net (the hub's goes along if nobody carries one). Quiet. Ice fishing in a freeze needs a crowbar, machete or axe and catches half." },
+  deadhunt: { label: "Hunt the dead", desc: "Sweep the tile's open ground for the dead for some hours (deadhunt.js), Stealthy, Normal or Lure (loud on purpose: more and bigger groups). Each group met asks Attack (a small fight on the tile's own land) or Retreat (an escape check); every one killed lowers the tile's count of the dead. Zombies only." },
   snare:    { label: "Snares (2h)", desc: "Set a line of 8 snares (snare wire, or 2 scrap of fence wire), or check a line of yours already there (1h): collect the catch and leave it set. Quiet; a rabbit a day or so in good country; come back within 2–3 days." },
   searcharea: { label: "Search the area", desc: "Find a downed aircraft or supply drop in its search circle: look around at the spots that clear the most unsearched ground (2h each, up to 8), then search the wreck when it turns up (crashes.js)." },
   home:     { label: "Return home", desc: "Head back with everything carried. The plan ends there." },
@@ -135,6 +137,7 @@ export function stepsToOrders(state, steps, tile) {
       case "forage": out.push({ type: "forage", hours: huntHours(s), ...place }); break;
       case "wood": out.push({ type: "wood", hours: huntHours(s), ...place }); break;
       case "snare": out.push({ type: "snare", ...(s.mode ? { mode: s.mode } : {}), ...place }); break;
+      case "deadhunt": out.push({ type: "deadhunt", hours: deadHuntHours(s), stance: huntStance(s), ...place }); break; // deadhunt.js
       case "wait": out.push({ type: "wait", hours: Math.max(1, Math.round(s.hours || 6)) }); break;
       case "move": if (s.tile != null) { out.push({ type: "move", tile: s.tile }); at = s.tile; known = true; } break;
       case "searcharea": out.push({ type: "searcharea", crash: s.crash ?? null, explore: s.explore !== false }); known = false; break;
@@ -155,6 +158,7 @@ export const stepLabel = (state, s) => {
     case "fish": return `Fish ${clockText(huntHours(s))}`;
     case "forage": return `Forage ${clockText(huntHours(s))}`;
     case "wood": return `Cut wood ${clockText(huntHours(s))}`;
+    case "deadhunt": return deadHuntLabel(s);
     case "snare": return s.mode === "check" ? "Check the snares" : s.mode === "set" ? "Set snares" : "Snares: set (or check)";
     case "move": return `Move to ${tileLabel(state, s.tile)}`;
     default: return STEP_KINDS[s.kind]?.label || s.kind;
@@ -280,6 +284,7 @@ export function estimatePlan(state, { memberIds, dest, vehicle, stance, fuel, mi
     else if (s.kind === "water") stay("Fetch water", FETCH_WATER_HOURS);
     else if (s.kind === "camp") stay(stepLabel(state, s), s.hours || 24, "camp", s);
     else if (s.kind === "wait") stay(stepLabel(state, s), s.hours || 6);
+    else if (s.kind === "deadhunt") stay(stepLabel(state, s), deadHuntHours(s)); // deadhunt.js (a card's wait comes on top)
     else if (s.kind === "searcharea") stay("Search the area (estimate: about 3 looks, then the wreck)", SEARCH_AREA_HOURS);
     else if (s.kind === "wood") {
       // Wood (woodcutting.js): what fits on top of the load so far; it weighs the team down on the way home.
