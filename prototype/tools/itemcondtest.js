@@ -318,6 +318,9 @@ for (const f of ["site", "area", "wares"]) { nlStash.push([ARSENAL_FINDS, f, ARS
 //   the gun distribution (gundist.js swapGun: a listed gun swapped for one of its source's pool on a hash; off, every
 //   source yields its own list on the same dice).
 for (const f of ["site", "area", "wares"]) { nlStash.push([PART_FINDS, f, PART_FINDS[f]]); PART_FINDS[f] = {}; }
+// - the frag grenade the armoury's and the barracks' small finds had (loot.js AREA_FINDS; the Army's only since issue #43,
+//   in AREA_LAUNCHERS at an Army site): put back, first in each table at its old weight, so the small finds hash as before.
+for (const [a, w] of [["armory", 1], ["barracks", 0.5]]) if (!AREA_FINDS[a].items.frag) { nlStash.push([AREA_FINDS[a], "items", AREA_FINDS[a].items]); AREA_FINDS[a].items = { frag: w, ...AREA_FINDS[a].items }; }
 GUN_DIST.off = true;
 // - the wind-up and the military flashlight (lights.js windlight / tacflash, night sight by the hour, ab69f1b): rows
 //   appended to LIGHT_FINDS, so a light find picks from a longer table (one draw all the same: the keys move, not the

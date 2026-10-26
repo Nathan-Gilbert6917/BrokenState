@@ -111,7 +111,8 @@ export const KITS = {
       workshop: o(6, R("workshop", "toolcrib", { name: "Workshop" })), store: o(5, R("storage", "hparts", { name: "Spares store", type: "workshop", lock: ["door", 0.4], boxLock: ["safe", 0.3] })),
       office: o(5, R("office", "squadron", { name: "Engineer's office" })), break: o(5, R("breakroom", "breakroom", {})), wash: o(3, WASH()), switch: o(7, R("lab", "tequip", { name: "Switchgear room", type: "control" })),
       lockers: o(5, R("lockerroom", "guardroom", { name: "Locker room", type: "lockers" })), gen: o(6, R("genroom", "tequip", { name: "Generator room", type: "workshop" })), records: o(5, R("evidence", "records", { name: "Records", type: "office" })),
-      batteries: o(5, R("pantry", "tequip", { name: "Battery room", type: "workshop" })), bunks: o(6, R("dorm", "fdorm", { name: "Duty bunk room", type: "barracks" })), first: o(4, R("nurse", "medic", { name: "First aid", type: "nurse" })),
+      // bunks: a house's since issue #43, as the radio station's bunk room (a barracks' were its sniper rifles and LMGs)
+      batteries: o(5, R("pantry", "tequip", { name: "Battery room", type: "workshop" })), bunks: o(6, R("dorm", "fdorm", { name: "Duty bunk room", type: "house" })), first: o(4, R("nurse", "medic", { name: "First aid", type: "nurse" })),
     },
   },
   radio: {
