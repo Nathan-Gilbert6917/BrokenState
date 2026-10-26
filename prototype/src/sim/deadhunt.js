@@ -32,10 +32,11 @@
 // midnight after the day's recalculation): the same encounter chance and group sizes, each fight by the shared
 // resolver of the fights nobody watches (groupfight.js fightSides), its kills off the same pool. It keeps their home
 // tiles low.
-// Hash dice from the world seed (skills.js hash01) outside the battles; inside them the battle's own.
+// Hash dice from the world seed (skills.js hash01) outside the battles, keyed on ids counted from the world's own start
+// (world.js localId: two worlds of a seed in one process roll the same); inside the battles the battle's own.
 /** @import { State } from "./types" */
 import { hash01 } from "./skills.js";
-import { log, addCard, isNight, combatPower, day } from "./world.js";
+import { log, addCard, isNight, combatPower, day, localId } from "./world.js";
 import { partyMembers, partyTile, tileLabel, teamName, awaitOrders, wipeIfEmpty, bestSkill } from "./parties.js";
 import { registerCombatHandler, registerBattleLayout, registerBattleSize, byNumbersOdds, RETREAT } from "./combat.js";
 import { fightNow } from "./defences.js";
@@ -205,8 +206,8 @@ export function deadHuntHour(state, p) {
   const S = DEAD_HUNT.STANCES[huntStance(t)];
   if (S.noise > 0) noteNoise(state, tile, null, S.noise);
   const pe = encounterChance(state, tile, t.stance, bestSkill(state, p, "scouting"));
-  if (!(pe > 0) || hash01(state.seed, "dhunt", p.id, state.hour, t.done) >= pe) return;
-  const n = rollGroup(state, tile, t.stance, [p.id, state.hour, t.done]); // drawn out of the open ground when it is fought (huntFight)
+  if (!(pe > 0) || hash01(state.seed, "dhunt", localId(state, p.id), state.hour, t.done) >= pe) return;
+  const n = rollGroup(state, tile, t.stance, [localId(state, p.id), state.hour, t.done]); // drawn out of the open ground when it is fought (huntFight)
   if (n <= 0) return;
   t.enc = { n, at: state.hour };
   t.met = (t.met || 0) + 1;
@@ -235,7 +236,7 @@ export function encounterCard(state, p, n) {
 export function huntRetreat(state, p) {
   const t = p.task, e = t.enc, tile = partyTile(p);
   const odds = retreatOdds(state, p, e.n, t.stance);
-  if (hash01(state.seed, "dhflee", p.id, e.at, t.met) * 100 < odds) {
+  if (hash01(state.seed, "dhflee", localId(state, p.id), e.at, t.met) * 100 < odds) {
     t.enc = null; // they stay out on the open ground
     t.fled = (t.fled || 0) + 1;
     const text = `${teamName(state, p)} slipped away from ${e.n === 1 ? "one of the dead" : `${e.n} of the dead`} and hunts on.`;
@@ -354,14 +355,14 @@ export function huntAbstract(state, f, tile, people, { hours = DEAD_HUNT.AI.hour
   for (let h = 0; h < hours && team.length; h++) {
     const scouting = Math.max(0, ...team.map((s) => (s.skills && s.skills.scouting) || 0));
     const pe = encounterChance(state, tile, stance, scouting);
-    if (!(pe > 0) || hash01(state.seed, "aihunt", f.id, tile, state.hour, h) >= pe) continue;
-    const n = drawFromTile(state, tile, rollGroup(state, tile, stance, [f.id, tile, state.hour, h]));
+    if (!(pe > 0) || hash01(state.seed, "aihunt", localId(state, f.id), tile, state.hour, h) >= pe) continue;
+    const n = drawFromTile(state, tile, rollGroup(state, tile, stance, [localId(state, f.id), tile, state.hour, h]));
     if (n <= 0) continue;
     out.met++;
     const { power } = deadKind(state, tile);
     // The fight's own dice (the world's stream untouched: a hunt nobody watches changes nothing else's rolls).
     const keep = state.rng;
-    state.rng = new Rng(Math.floor(hash01(state.seed, "aihuntfight", f.id, tile, state.hour, h) * 2147483645) + 1);
+    state.rng = new Rng(Math.floor(hash01(state.seed, "aihuntfight", localId(state, f.id), tile, state.hour, h) * 2147483645) + 1);
     let fight, fell;
     try {
       fight = fightSides(state, { f, people: team, kind: "militia" }, { f: null, people: [], kind: "zombies", count: n, power: n * power });
@@ -383,7 +384,7 @@ export function aiHuntsDaily(state) {
   for (const f of state.factions || []) {
     if (!f.alive || f.outsider || !Array.isArray(f.people) || !Array.isArray(f.bases)) continue;
     for (const tile of f.bases) {
-      if (hash01(state.seed, "aihuntday", f.id, tile, d) >= 1 / A.every) continue;
+      if (hash01(state.seed, "aihuntday", localId(state, f.id), tile, d) >= 1 / A.every) continue;
       if (deadBand(state, tile).band < A.band || openDead(state, tile) <= 0) continue;
       const people = fightersOf(state, f, { tile, n: A.team }).filter((s) => s.health >= DEAD_HUNT.HURT + 20);
       if (people.length < A.min) continue;
