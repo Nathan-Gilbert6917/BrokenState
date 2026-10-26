@@ -314,3 +314,4 @@ Detail: [ui.md](../features/ui.md).
 - **Snow on buildings**: in winter, snow on roofs by its depth and on walls, fences, tents, cars and props in the open [ui/roofsnow, ui/isoview] `tools/roofsnowtest.js`. [details](../features/ui.md#snow-on-buildings)
 - **Audio**: adaptive music director and synth score, ambience, SFX for guns, melee, zombies, doors, vehicles [ui/music*, ui/amb*, ui/sfx*].
 - **Dev tools**: reveal the map; headless balance and test tools in `prototype/tools`.
+- **Merge gate for dev**: the typecheck and the shared core tests in parallel, failing checks against a shrink-only baseline; `--against <ref>` diffs them `tools/gate.js`. [details](testing.md#before-merging-to-dev-the-gate)
