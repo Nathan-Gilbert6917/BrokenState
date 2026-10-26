@@ -50,7 +50,8 @@
 //     the POI was loud) of refill of its gap; on a high tile every day (refillHigh, × 2 when loud);
 //   - raiders the same, "loud" read as "seen raiding here" (rn: other groups' raids, noteRaid);
 //   - nothing goes above the cap; the noise, the kills and the raids seen fade.
-// Then deadPopSpread (an empty hook: the spread between tiles is #66's) runs.
+// Then deadPopSpread runs: the spread between tiles (deadspread.js spreadDaily, #66: out from the towns, cities and
+// hives, ring by ring, up to each tile's cap).
 // AI PARITY (docs/adr/0001): the groups' raids (grouppois.js raidPoiAsGroup) kill from and are counted on the same
 // pools (aiRaidKills), and their noise counts the same.
 // Hash dice from the world seed (skills.js hash01), never state.rng: the same run for the same seed.
@@ -62,6 +63,7 @@ import { tileClass, sizeFor } from "./placement.js";
 import { hordeGrowth } from "./eras.js";
 import { cfgOf } from "./worldcfg.js";
 import { zombieToughness } from "./hives.js"; // call-time only
+import { spreadDaily } from "./deadspread.js"; // call-time only (the spread between tiles, #66)
 
 export const DEADPOP = {
   // The most dead a tile can hold, by land class (placement.js TILE_CLASSES).
@@ -520,9 +522,27 @@ export function deadPopDaily(state) {
     if (atDefault(state, t, r)) delete S[key];
   }
 }
-/** The spread between tiles (the heat epic's #66): runs right after deadPopDaily. Empty until then. @param {State} state */
-// eslint-disable-next-line no-unused-vars
-export function deadPopSpread(state) {}
+/** The spread between tiles (the heat epic's #66, deadspread.js spreadDaily): runs right after deadPopDaily. @param {State} state */
+export function deadPopSpread(state) {
+  spreadDaily(state);
+}
+/**
+ * The tile's dead now (tileDead), without building its default's lists for a tile nobody touched (deadspread.js reads
+ * every tile near the towns and cities each day). @param {State} state @param {Tile} t
+ */
+export function deadNow(state, t) {
+  const r = rec(state, t);
+  if (r) return r.o + sumTo(r.p, poisOf(t).length);
+  const cap = popCap(state, t);
+  if (!cap) return 0;
+  const n = poisOf(t).length;
+  let sum = 0;
+  for (let i = 0; i < n; i++) sum += Math.min(cap, poiSeed(state, t, i));
+  const cls = landClass(state, t), hz = hiveLand(state, t) || (t.hive ? 1 : 0);
+  const fill = clamp((DEADPOP.FILL[cls] + DEADPOP.INF_FILL * (t.infection || 0) + (hz ? DEADPOP.HIVE_FILL : 0)) * hordeGrowth(state), 0, 1);
+  const total = Math.round(cap * fill * (1 + (hash01(state.seed, "dptile", t.id) - 0.5) * 2 * DEADPOP.JITTER));
+  return Math.max(0, Math.min(cap, total) - sum) + sum; // seedOf's o + Σ p
+}
 
 // ---------- older saves ----------
 /**
