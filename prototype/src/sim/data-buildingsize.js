@@ -87,18 +87,18 @@ export const REAL_SIZE = {
   firestation: { w: [20, 30], d: [14, 22], storeys: [1, 2], set: "town" },
   offices:     { w: [20, 40], d: [15, 30], storeys: [2, 4], city: [6, 10], set: "city" },
   lab:         { w: [20, 40], d: [15, 25], storeys: [1, 3], set: "town" },
-  barracks:    { w: [40, 50], d: [15, 17], storeys: [2, 3], set: "rural", planned: true },
+  barracks:    { w: [40, 50], d: [15, 17], storeys: [1, 3], set: "rural", planned: true },
   armorybldg:  { w: [17, 21], d: [12, 14], storeys: [1, 1], set: "rural", planned: true },
   cellblock:   { w: [40, 48], d: [24, 27], storeys: [2, 2], set: "rural", planned: true },
   messhall:    { w: [26, 32], d: [17, 20], storeys: [1, 1], set: "rural", planned: true },
-  control:     { w: [15, 25], d: [12, 18], storeys: [1, 3], set: "rural" },
+  control:     { w: [15, 25], d: [12, 18], storeys: [1, 4], set: "rural" },
   radio:       { w: [8, 12], d: [6, 9], storeys: [1, 1], set: "rural" }, // a transmitter hut
   terminal:    { w: [80, 90], d: [40, 44], storeys: [1, 2], set: "rural", planned: true },
   // #25's military bases, air bases, airports and prisons (militarylayout.js): planned at these sizes by their own plans
-  hq:          { w: [26, 32], d: [17, 20], storeys: [2, 2], set: "rural", planned: true },
+  hq:          { w: [26, 32], d: [17, 20], storeys: [1, 3], set: "rural", planned: true },
   aidstation:  { w: [17, 21], d: [13, 15], storeys: [1, 1], set: "rural", planned: true },
   gatehouse:   { w: [8, 10], d: [6, 7], storeys: [1, 1], set: "rural", planned: true },
-  tower:       { w: [9, 11], d: [9, 11], storeys: [4, 5], set: "rural", planned: true },
+  tower:       { w: [9, 11], d: [9, 11], storeys: [2, 6], set: "rural", planned: true },
   flightops:   { w: [24, 28], d: [15, 17], storeys: [1, 2], set: "rural", planned: true },
   supply:      { w: [40, 48], d: [25, 29], storeys: [1, 1], set: "rural", planned: true }, // a military base's warehouse (no archetype of its own: the warehouse's plan at a base)
   // #27's office buildings of every kind (officeplans.js: its SIZE is these rows; a firm's corporate tower the
