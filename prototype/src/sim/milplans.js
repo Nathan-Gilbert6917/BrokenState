@@ -27,6 +27,7 @@
 //   court      the rooms round a central hall (the entrance hall): a strip each side, a band behind
 //   stack      a tower's: the stair shaft, one room a floor (the plan's floors list, bottom to top)
 import { hash01 } from "./skills.js";
+import { registerVariants, pickVariant } from "./variantpick.js"; // the shared picker (issue #41)
 
 /** @typedef {{ s: number, leaf: any }} Opt */
 /** @typedef {{ id: string, name: string, lay: string, rooms: string[], upper?: string[], storeys?: number, scale?: number[], ways?: number, floors?: string[] }} Plan */
@@ -364,6 +365,9 @@ export const MIL_PLANS = {
     P("regional", "Regional tower", "stack", [], { floors: ["entry", "store", "rest", "weather", "main"] }),
   ],
 };
+// The registry's views (variantpick.js, issue #41): "mil:<key>", pinned by id (o.plan), else the building's hash dice
+// (read, never consumed) uniform over the list, as before.
+for (const key of Object.keys(MIL_PLANS)) registerVariants(`mil:${key}`, MIL_PLANS[key].map((p) => ({ id: p.id, name: p.name, src: p })));
 export const MIL_PLAN_KEYS = Object.keys(MIL_PLANS);
 
 // ---------- the layouts ----------
@@ -440,8 +444,7 @@ export function stackFloor(K, p, f) {
 export function milVariant(key, rng, o, std, size) {
   const list = MIL_PLANS[key];
   if (!list) return std();
-  let p = o && o.plan ? list.find((q) => q.id === o.plan) : null;
-  if (!p) p = list[Math.floor(hash01(rng.state, "milplan", key) * list.length) % list.length];
+  const p = /** @type {any} */ (pickVariant(`mil:${key}`, rng, { plan: (o && o.plan) || null, r: hash01(rng.state, "milplan", key) })).src;
   if (p.id === "standard") return { ...std(), vid: p.id, vname: p.name };
   const K0 = KITS[key], air = (o && o.site === "airbase") || key === "flightops";
   const K = key === "hangar" && air ? { ...K0, main: { ...K0.main, milAir: true } } : K0; // an air base's hangar floor holds military aircraft (militarylayout.js hfloor)
@@ -546,10 +549,11 @@ export const MIL_SITES = {
     L("private", "Private jet centre", ["tower", ["control", "Operations building"]], "wire", 0, "front", "side"),
   ] },
 };
+for (const type of Object.keys(MIL_SITES)) registerVariants(`milsite:${type}`, MIL_SITES[type].layouts.map((l) => ({ id: l.id, name: l.name, src: l }))); // the site layouts (variantpick.js, issue #41)
 // The layout of a site's tile (hash dice of its id and name; null for a type with none).
 export function milSiteOf(tile) {
   const t = tile && tile.loc && MIL_SITES[tile.loc.type];
   if (!t) return null;
-  return t.layouts[Math.floor(hash01(tile.id, "milsite", tile.loc.name || "") * t.layouts.length) % t.layouts.length];
+  return /** @type {any} */ (pickVariant(`milsite:${tile.loc.type}`, null, { r: hash01(tile.id, "milsite", tile.loc.name || "") })).src;
 }
 export const milSiteById = (type, id) => (MIL_SITES[type] ? MIL_SITES[type].layouts.find((l) => l.id === id) || null : null);

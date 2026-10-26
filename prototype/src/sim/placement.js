@@ -22,6 +22,7 @@
 import { PLACEMENT, TILE_CLASSES, SIZE_CLASSES, SIZE_AREA, PLACE } from "./data-placement.js";
 import { LOCATIONS } from "./data.js";
 import { hash01 } from "./skills.js";
+import { useSizeClassOf } from "./variantpick.js"; // the shared picker (#41): its plans' size classes by sizeClassOf
 import { settingAt } from "./settings.js"; // the six settings (issue #40): this module adds coast and scenic land
 import { legacyPlace } from "./worldcfg.js";
 import { maxLevel } from "./citygrid.js";
@@ -91,6 +92,7 @@ export function sizeClassOf(w, d, storeys = 1) {
   const i = SIZE_AREA.findIndex((x) => a < x);
   return SIZE_CLASSES[i < 0 ? SIZE_CLASSES.length - 1 : i];
 }
+useSizeClassOf(sizeClassOf); // the variant picker classes a plan by its foot with it (variantpick.js, #41)
 /**
  * What the variant picker is passed for a building of kind key on a tile (variantpick.js pickVariant's ctx, #41):
  * { tileClass, setting, size }: setting the six-word one (settingAtClass: coast and scenic land rural; settingOfClass gives

@@ -13,6 +13,10 @@
 // PENDING_OWNER: the types whose owner (#32's split and the other tickets of the epic) has not yet reached 12, and
 // this ticket's own while it gets there: reported, never failed. Empty since 2026-10-26: every type of the epic (#7)
 // reaches 12 (a new type that falls short goes here with its ticket until it does).
+// THE REGISTRY (variantpick.js, issue #41: the shared picker every type's plans go through): every registered type
+// (variantKeys; a plan's own sub-plans, opts.sub, aside) has MIN_PLANS entries or more, ids unique; every entry is
+// reachable by the dice (some setting, site or franchise its table names, some roll) and its pin returns it (by id; by
+// index or name where the type pins so); an older save's pick is null.
 // Usage: node tools/varianttest.js [seeds per setting, default 24; BS_QUICK=1: 20]
 import { createWorld } from "../src/sim/world.js";
 import { BUILDINGS, buildingMap, buildingSpec } from "../src/sim/buildingmaps.js";
@@ -23,6 +27,7 @@ import { poiPlace } from "../src/sim/poiraid.js";
 import { planSignature } from "./plansig.js";
 import { boxLoot } from "../src/sim/combat.js";
 import { GEAR, supValue } from "../src/sim/data.js";
+import { variantKeys, variantsOf, variantOpts, pickVariant, pickFrom, variantFor } from "../src/sim/variantpick.js";
 
 // The types another ticket owns until it lands (issue #32 "Ownership"): none left (every ticket of the epic has landed).
 export const PENDING_OWNER = {
@@ -176,6 +181,56 @@ for (const r of rows) if (r.loot) console.log(`  ${r.key.padEnd(15)} ${r.loot}`)
   check(named > 0, "no POI has a layout");
   check(!wrong, `${wrong} POIs whose building or name does not follow their layout`);
   console.log(`\nPOIs with a layout: ${named}`);
+}
+
+// ---------- the registry (variantpick.js) ----------
+{
+  const keys = variantKeys(), types = keys.filter((k) => !variantOpts(k).sub);
+  check(types.length >= 100, `${types.length} registered types (want every type with named plans)`);
+  const unreachable = [], short = [], pins = [], dup = [];
+  const ROLLS = Array.from({ length: 240 }, (_, i) => (i + 0.5) / 240);
+  for (const key of keys) {
+    const list = variantsOf(key), opts = variantOpts(key);
+    if (!opts.sub && list.length < MIN_PLANS) short.push(`${key} ${list.length}`);
+    if (new Set(list.map((e) => e.id)).size !== list.length) dup.push(key);
+    for (let i = 0; i < list.length; i++) {
+      const e = list[i];
+      if (pickVariant(key, null, { plan: e.id }) !== e) pins.push(`${key}/${e.id}`);
+      if (opts.index && pickVariant(key, null, { plan: i }) !== e) pins.push(`${key}#${i}`);
+    }
+    // Reachable: some roll, with no setting or one of the words its weights name (a setting, a site), alone or with a
+    // franchise its plans name.
+    const words = [null, ...new Set(list.flatMap((e) => Object.keys(e.w || {})))];
+    const frs = [null, ...new Set(list.flatMap((e) => e.fr || []))];
+    const seen = new Set();
+    for (const w of words) for (const fr of frs) for (const r of ROLLS) {
+      for (const ctx of [{ setting: w, franchise: fr, r }, { site: w, franchise: fr, r }]) { const got = pickVariant(key, null, ctx); if (got) seen.add(got.id); }
+    }
+    for (const e of list) if (!seen.has(e.id)) unreachable.push(`${key}/${e.id}`);
+    check(pickVariant(key, null, { legacy: true }) === null, `${key}: an older save's pick is null`);
+  }
+  check(!short.length, `registered types with fewer than ${MIN_PLANS} plans: ${short.join(", ")}`);
+  check(!dup.length, `registered types with an id twice: ${dup.join(", ")}`);
+  check(!pins.length, `${pins.length} pins that do not return their plan (${pins.slice(0, 5).join(", ")})`);
+  check(!unreachable.length, `${unreachable.length} plans the dice never reach (${unreachable.slice(0, 8).join(", ")})`);
+  // The rules on a list of its own (pickFrom: not registered, so the counts above stay the game's).
+  const D = [
+    { id: "a", name: "A", w: { city: 1, rural: 0 }, fr: ["chain"] },
+    { id: "b", name: "B", w: { city: 0, rural: 1, coast: 3 }, sizeClass: "small" },
+    { id: "c", name: "C", w: { any: 1 }, sizeClass: "large", tile: ["scenic"] },
+  ];
+  const all = (ctx, o = {}) => new Set(ROLLS.map((r) => (pickFrom(D, null, { ...ctx, r }, o) || {}).id));
+  const eq = (set, ids) => set.size === ids.length && ids.every((i) => set.has(i));
+  check(pickFrom(D, null, { plan: "b", setting: "city", r: 0.1 }) === D[1] && pickFrom(D, null, { plan: 2, r: 0.1 }, { index: true }) === D[2] && pickFrom(D, null, { plan: 2, r: 0.1 }) !== null, "a pinned plan always wins (by id; by index where the type pins so)");
+  check(eq(all({ franchise: "chain" }), ["a"]) && eq(all({ franchise: "none" }), ["a", "b", "c"]), "a franchise narrows the pool (one with no plans of its own: all)");
+  check(eq(all({ setting: "city" }), ["a", "c"]) && eq(all({ setting: "rural" }), ["b", "c"]), "the setting's weights: a plan weighed 0 there never stands there; w.any where unnamed");
+  check(eq(all({ size: "small" }), ["b"]) && eq(all({ tileClass: "scenic" }), ["c"]), "the size class and the tile class narrow the pool (#42's placementCtx)");
+  check(eq(all({ tileClass: "coast" }), ["b", "c"]) && [...ROLLS].filter((r) => pickFrom(D, null, { tileClass: "coast", r }) === D[1]).length > ROLLS.length / 2, "an entry's w keyed by tile class weighs it there (3 to w.any's 1; unnamed and no w.any: 0)");
+  check(pickFrom(D, null, { legacy: true, plan: "a" }) === null, "an older save's pick is null, pinned or not");
+  check(variantFor(types[0], variantsOf(types[0])[0].id) === variantsOf(types[0])[0] && variantFor(types[0], "no such plan") === null, "variantFor finds a plan by id, null for none");
+  const S = { state: 12345 };
+  check(pickFrom(D, S, {}) === pickFrom(D, S, {}) && S.state === 12345, "no dice given: hash dice read from the building's dice, never consumed");
+  console.log(`\nThe registry: ${types.length} types (${keys.length - types.length} sub-plan lists), ${keys.reduce((a, k) => a + variantsOf(k).length, 0)} plans`);
 }
 
 console.log(`\n${passes} passed, ${fails} failed`);
