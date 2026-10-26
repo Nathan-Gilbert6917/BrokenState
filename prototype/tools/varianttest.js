@@ -11,8 +11,8 @@
 // roomsLegacy rule); a POI's layout names it (pois.js poiName); the motel's are each checked for their own rooms
 // (motelChecks); every layout's loot is printed (the tables' value and the containers a building).
 // PENDING_OWNER: the types whose owner (#32's split and the other tickets of the epic) has not yet reached 12, and
-// this ticket's own while it gets there: reported, never failed. An owner removes its types as each reaches 12; the
-// integration pass that closes the epic (#7) empties the map.
+// this ticket's own while it gets there: reported, never failed. Empty since 2026-10-26: every type of the epic (#7)
+// reaches 12 (a new type that falls short goes here with its ticket until it does).
 // Usage: node tools/varianttest.js [seeds per setting, default 24; BS_QUICK=1: 20]
 import { createWorld } from "../src/sim/world.js";
 import { BUILDINGS, buildingMap, buildingSpec } from "../src/sim/buildingmaps.js";
@@ -24,21 +24,9 @@ import { planSignature } from "./plansig.js";
 import { boxLoot } from "../src/sim/combat.js";
 import { GEAR, supValue } from "../src/sim/data.js";
 
-// The types another ticket owns until it lands (issue #32 "Ownership"): their plans come from their own tickets.
+// The types another ticket owns until it lands (issue #32 "Ownership"): none left (every ticket of the epic has landed).
 export const PENDING_OWNER = {
-  school: "#23",
-  barracks: "#25", armorybldg: "#25", motorpool: "#25", messhall: "#25", hangar: "#25", terminal: "#25", control: "#25", radio: "#25",
-  hq: "#25", aidstation: "#25", gatehouse: "#25", tower: "#25", flightops: "#25", // #25 (closed): the integration pass
-  mountainbunker: "#26", // #26 (closed): Crashlanding's bunker, one plan by design
-  offices: "#27", storefront: "#27", bizpark: "#27", cityhall: "#27", courthouse: "#27", callcenter: "#27", techoffice: "#27", station: "#27", // #27 (closed)
-  hotel: "#29", // #29 (closed)
-  cellblock: "#31",
   cinema: "#30", arcade: "#30", mallservices: "#30", mallrestrooms: "#30", vacantunit: "#30", // #30: a mall's own units (mall.js mallArchetype), varied by the mall round them; their own dozen plans still to come
-  // #35: shops and services
-  pharmacy: "#35", gasstation: "#35", truckstop: "#35", gunstore: "#35", pawnshop: "#35", sportshop: "#35", electronics: "#35", radioshop: "#35",
-  bookstore: "#35", petstore: "#35", garden: "#35", clothing: "#35", liquor: "#35", hardware: "#35", feedstore: "#35", dealer: "#35",
-  autoshop: "#35", garage: "#35", workshop: "#35", bank: "#35", corner: "#35", grocery: "#35", supermarket: "#35",
-  hospital: "#36", infirmary: "#36", clinic: "#36", vet: "#36", church: "#36", police: "#36", firestation: "#36", // #36: civic and medical
 };
 
 
