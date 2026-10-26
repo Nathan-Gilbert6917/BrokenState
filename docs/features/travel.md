@@ -253,7 +253,7 @@ The user's request 2026-10-26 (issue #42, round-2 epic #39): "Stadiums, zoos hos
   - POI lists draw their kinds by the table's weight for the tile's class (pois.js `generatePois`: the same dice, weighted; a kind the row says never stands there is not drawn);
   - shops and offices as POIs and in the crawl are weighted by it too (shops.js `shopExtras`, `shopPlaces`: × `placeMult`), as are a crawl block's own places (citycrawl.js `genBlock`), so a city crawl's heart holds hospitals and its rim none;
   - bunkers, malls and hotels never stand where their row says not (`standsOn`), and a crawl's strip mall only on its rim or in a town;
-  - one more POI by the table where the old pools had none (`placeExtraKind`, `PLACE_EXTRA`, on dice of its own after everything but the hotel (a hotel stays last), marked `extra: "place"`, known in the known zone 70% of the time, never beside a site it would out-rank): a hospital on a centre tile 6%, a city block 3%, a town tile 0.15%; a big-box store 0.6% and a high school 0.8% of a town's tiles; a clinic, a chapel, a feed store, a farm stand in the country (0.2–1%).
+  - one more POI by the table where the old pools had none (`placeExtraKind`, `PLACE_EXTRA`, on dice of its own after everything but the hotel (a hotel stays last), marked `extra: "place"`, known in the known zone 70% of the time, never beside a site it would out-rank): a hospital on a centre tile 6%, a city block 3%, a town tile 0.15%; a big-box store 0.6% and a high school 0.8% of a town's tiles; a clinic, a chapel, a feed store, a farm stand in the country (0.2–1%). Issue #55: a small bakery or butcher in the country (0.1–0.15%; [six more shops](#six-more-shops-furniture-store-laundromat-thrift-store-bakery-butcher-deli)).
 - **The variant picker** (variantpick.js, #41): `placementCtx(state, tile, key)` is its ctx, `{ tileClass, setting, size }` (`setting` one of the six settings, centre, city, suburb, town, rural, highway, #40's `settings.js SETTINGS`: `settingAtClass`, coast and scenic land rural; `settingOfClass` gives the layouts' rural / town / city; `size` the table's for the kind there); `crawlCtx(c, n, key)` the same for a crawl block. buildingmaps.js `siteWhere` passes a new world's `tileClass` to the archetypes' make opts. Also exported: `placeWeight(key, cls)`, `sizeFor(key, cls)`, `classesOf(key)`, `cityDistance(state, id)`, `TILE_CLASSES`, `SIZE_CLASSES`, `PLACE` (`CENTRE_R` 1, `BIG_R` 2).
 - **Older worlds** keep their POIs, crawl blocks and buildings exactly: placementtest.js regenerates two worlds as older saves and compares their hashes with dev's before the table (016f555).
 - **Measured** (tools/placementtest.js over 100 small worlds): 28 checks green in 40 s; no huge building more than 2 tiles from a city's heart; 60.5% of 692 hospitals within 2 tiles of one (the rest a city's ring hospitals, large there, and towns' county hospitals); 99.9% of the buildings on rural tiles small or medium, none huge; 85% of 5,400 towns with a large building and all with small ones; a world of 6 cities holds 6.9 hospitals, 52 clinics, 71 churches, 343 houses; a city crawl's heart 8.4% hospitals among its places, its rim none.
@@ -845,6 +845,129 @@ Issue #34 (the user's request 2026-10-25: "add library variants with several lay
 - **Which**: the place's franchise (`FRANCHISES.library`, each with `plan.libs`, its variants' weights): Central Library → the central library; Carnegie Library → a Carnegie; Branch Library → a modern branch (70%) or a strip-mall library; County Library → a county library (85%) or the bookmobile depot; Memorial Library → a Carnegie, a county or a historic library. New names: Calder Free Public Library (a Carnegie or a county), Pinecrest Reading Room and Millbrook Village Library (rural), Lakeside Branch Library (modern), Westgate Library Express (strip mall), County Bookmobile Depot, The Athenaeum and Harmon Hall Library (historic), Elm Street House Library (a converted house; Millbrook Village Library is a rural reading room or a house library), Juniper Children's Library, Calder County Law Library (downtown, rare), Calder College Library (downtown, rarer: #28's campus places its own) and Harlan County Historical Society (the towns; a Memorial Library is one now and then). A library with no franchise (a site's from before franchises): `LIBRARY.ANY`'s weights.
 - **Where** (the franchise's weights by setting, `franchiseFor`): the rural reading rooms in the towns (a town's ring is where the game's villages and rural towns stand), Carnegies and county libraries in towns and cities, modern branches and strip-mall libraries in the suburbs, the central library downtown only (weight 0.25 among the downtown names, about 1 in 15 of a city block's libraries, none in a suburb or a town; a strict once-a-city rule would need a ledger per city and is left out), the historic libraries rare everywhere. The city crawl's places are the same buildings, so a block holds a library of its variant's size (a crawl place keeps its franchise: `placeOption` variant).
 - An older save's libraries keep their layout (`legacyRooms`), and a saved place keeps its franchise and name.
+
+## Six more shops: furniture store, laundromat, thrift store, bakery, butcher, deli
+Issue #55 of the round-2 epic #39, the user's request 2026-10-26: "furniture store, laundromat, thrift store, bakery, butcher, deli". Modules: [data-newshops (the kinds, rooms, weights, chains, loot rows and the dozen plans a kind), shopvariants (the plans, merged into VARIANT_TYPES), shoplayout (the rooms' styles and two scenes), data-buildingsize (REAL_SIZE, a sizes row a variant), data-placement, placement, shops, lootsense, data-furniture; ui/mapsprites, ui/isoview, ui/itemart/furniture]. Test `tools/newshopstest.js`; also `tools/shopvarianttest.js`, `tools/lootsensetest.js`, `tools/placementtest.js`.
+- **The kinds** (site types, buildings, one building a site; `data-newshops.js` NEWSHOP_KINDS merged into data-shops.js NEW_KINDS as the office buildings are):
+  - **Furniture store** (`furnstore`): the showroom full of liftable pieces (sofas, beds, wardrobes, chests of drawers, tables and chairs, desks, a piano, appliances: the carry system's best target, about 100 pieces in a store on average, a big-box showroom hundreds), its warehouse (pallet racks, the pieces waiting to go out, a forklift) and delivery dock. Showrooms by their show: a mattress store's beds, an appliance floor's rows of washers with fridges at their ends and stoves, ovens and dryers along the walls, an antique store's piano, wardrobes and display cases, a country barn's rustic sets, a clearance corner's used pieces. Its pieces are for sale, empty: no nightstand pistol in a showroom (`NEWSHOP_BOX` nightstand@furnshow).
+  - **Laundromat** (`laundromat`): rows of washers back to back, dryers along a wall (both liftable, #19), the change machine by the door (new piece, a container of quarters: a cashbox now and then, locked 60%), folding tables (new piece), chairs, a vending machine; the attendant's office, a wash-and-fold counter, a dry cleaner's press room, a boiler room.
+  - **Thrift store** (`thrift`): racks of clothes, shelves of housewares, bins (crates), a corner of used furniture; a book room, a toys-and-games room, a collectibles room of cases; the sorting room (folding tables and donation bags) and the donation dock; a junk barn's or a flea market's rows of shelving, bins and furniture.
+  - **Bakery** (`bakery`): the shop front's display and pastry cases, the bread racks, a drinks fridge; the bakehouse's deck ovens (#33's) and floor mixers (new piece), an oven, the bench, proofing racks; the flour store (dry-goods shelving, sacks, a barrel); the walk-in; a cake decorating room; a wholesale bakery's dispatch dock.
+  - **Butcher** (`butcher`): the run of butcher's cases, a cold case and a chest freezer; the cutting room's band saw (new piece), blocks and slicer; the walk-in cooler and freezer; the smokehouse's smokers; a sausage kitchen; a game processing bay.
+  - **Deli** (`deli`): the cases across the room, the slicer behind them, the drinks fridges; its prep kitchen and dry store are #33's (`eaterylayout.js` eatkitchen and eatdry, cuisine "deli": the slicer and the flat-top, #33's food mix "eat:deli"), so a standalone deli shares #33's deli code; #22's in-store deli stays the grocer's (no code twice). Cheese room, seating, a caterer's dispatch, a smokehouse.
+- **A dozen plans a kind** (`NEWSHOP_TYPES`, merged into shopvariants.js VARIANT_TYPES and registered with the shared picker as `shop:<kind>`, #41): spec.vid / spec.vname (#40); each variant drawn at its own REAL_SIZE sizes row (`data-buildingsize.js`, metres and storeys, #24: `realVariant`), picked within the placement table's size class where it stands (`placement.js sizeFor` on the tile class a new world passes: the registry entry's sizeClass, S small, M medium, L and XL large), by its chain (`plan.variants`) and by the setting's weights. The franchise narrows first (a chain's format), so 87% of places take the table's size (6 small worlds).
+- **Where** (new worlds only; `worldcfg.js legacyShopsR2`, save.js `shopsR2Legacy` / world.js `shopsR2V`): they join the shops' rolls (`shops.js shopKinds`; data-shops.js PLACE_W, × the placement table's weight) on city blocks, a city's suburbs and a town's ring, and on the crawl's blocks; a small bakery or butcher in the country by `placement.js PLACE_EXTRA` (a bakery 0.15% of rural and highway tiles, a butcher 0.15% rural, 0.1% highway). An older save regenerates its POIs and crawl blocks exactly (`tools/newshopstest.js` holds two worlds' hashes from dev before the ticket, de58b4c; placementtest.js's older saves are older still).
+  - The placement rows (`data-placement.js`): furniture store centre 0.4 M, city 0.8 M, suburb 1.6 L, town 1 M, highway 0.6 L, rural 0.1 S; laundromat centre 1 S, city 1.4 M, suburb 1 M, town 1 S, highway 0.2 S; thrift store centre 0.6 S, city 1 M, suburb 1.2 L, town 1.2 M, highway 0.4 L, rural 0.2 S; bakery centre 1.2 S, city 1.2 M, suburb 1 M, town 1.4 S, highway 0.3 S, coast 0.2 S, scenic 0.1 S, rural 0.5 S; butcher centre 0.6 S, city 0.8 M, suburb 0.8 M, town 1.4 S, highway 0.3 S, rural 0.6 S; deli centre 1.6 S, city 1.4 M, suburb 0.8 S, town 0.8 S, highway 0.2 S.
+  - Measured (12 small new worlds): 128 furniture stores, 127 laundromats, 160 thrift stores, 281 bakeries, 202 butchers, 95 delis as POIs, 107 of them in the country (bakeries and butchers), 119 on the towns' crawls.
+- **Map caps**: the biggest plan is the big-box furniture showroom, 56–68 × 44–56 m (cells) with its lot: well inside the default 300 × 300 (`battlesize.js` MAP_CAP); no map over 300 × 300, so no perf budget run is needed.
+- **Loot** (#43's table, `lootsense.js` LOOT_SENSE; `tools/lootsensetest.js` BASELINE, a building's value: furniture store 150.9, laundromat 35.8, thrift store 61.7, bakery 42.8, butcher 60.7, deli 73.6, near the grocery's 191.5 and the bookstore's 42.3 by size). No guns, rounds or the Army's things in their own rooms (a flat above's and a car's are personal). Rooms (`NEWSHOP_AREAS`): a showroom's drawers little (a box cutter, candles; the furniture itself is the find), the warehouse's packing, timber and a little propane; a laundromat's soap, shampoo, coins, lost bags and phones, the vending machine's snacks (foods.js MIXES "laundry"); a thrift store's clothes and bags, novels, comics, magazines, puzzle books, records, trading cards, watches and the odd gold chain, a bat, a golf club, a lantern, a camp stove; a bakery's flour, sugar, oats and bread that spoils in days (MIXES "bakery"), coffee and tea; a butcher's frozen and ground meat, sausage and jerky (MIXES "butcher"), cleavers, steak and fillet knives; a deli's cheese, cold cuts and bread (#33's "eat:deli"), drinks. The find tables' rows: `NEWSHOP_ROWS` (small finds, blades, books, cash boxes, food mixes, conditions, locks).
+- **New pieces** (`data-furniture.js`, each with an iso sprite and, all liftable, an item drawing): floor mixer (two-person lift, 110 kg), band saw (two, 120 kg), change machine (two, 90 kg, a container), folding table (one, 14 kg).
+- **Scenes** (`registerScene` with `when`, on a map laid out by these styles): `laundrycamp` (cots between the machines, a jug of water and the last snacks, maybe the one who lived there), `showroomwall` (a showroom's or a thrift floor's own wardrobes, chests and chairs shoved across its doors, spent brass behind them); the walk-in hiding place (`walkin`) now in a bakery's, a butcher's and a deli's walk-ins, a stockroom shelter (`stockshelter`) unchanged.
+- **Map sprites** (`ui/mapsprites.js`): each in its chain's look, a shop front with a sofa and lamp, washer doors, a rail of coats, loaves, hanging hams, salamis and cheese in the window.
+- **Franchises** (`NEWSHOP_FRANCHISES`, fictional): Homestead Furniture, SleepWell Mattress, FurnitureLand, Calder Appliance Co., Old Barn Antiques, Loft Living Design; Suds City Laundromat, Bubbles Wash & Fold, Spin Cycle Coin Laundry, Press & Co. Cleaners; Good Hands Thrift, Second Chance Resale, St. Vincent's Shop, Retro Rack Vintage, Hank's Junk Barn; Golden Crust Bakery, La Petite Boulangerie, Dozen Donuts, Bread Basket Wholesale, La Mesa Panadería, Grandma's Pie Place; Prime Cuts Meat Market, Kowalski & Sons Butchers, Al-Noor Halal Meats, Buck's Game Processing, Market Hall Meats; Katzman's Delicatessen, Salvatore's Salumeria, Corner Deli, Smokestack Deli & Catering, Graze Market & Deli.
+- **The variants** (the rooms besides any flat above; sizes the REAL_SIZE row's, metres = cells):
+
+**furnstore** (12): franchises Homestead Furniture (family, antique, unfinished, barn); SleepWell Mattress (mattress, clearance); FurnitureLand (bigbox, outlet, twofloor, homestore); Calder Appliance Co. (appliance, homestore, clearance); Old Barn Antiques (antique, barn, gallery); Loft Living Design (gallery, twofloor, family)
+
+| Variant | Rooms | Plan | Size (m) | Storeys |
+|---|---|---|---|---|
+| Mattress store (`mattress`) | Showroom, Warehouse, Restroom | front and back | small 10–13 × 16–20 | 1 |
+| Big-box furniture showroom (`bigbox`) | Showroom, Bedroom gallery, Warehouse, Delivery dock, Manager's office, Break room, Restroom | service corridor | large 56–68 × 44–56 | 1–2 (sales floor) |
+| Antique store (`antique`) | Antiques, Restoration room | side column | small 13–16 × 16–22 | 1–2 (flat) |
+| Appliance store (`appliance`) | Appliance floor, Warehouse, Delivery dock, Office | front and back | medium 22–30 × 22–28 | 1 |
+| Family furniture store (`family`) | Showroom, Warehouse, Office (safe), Restroom | front and back | medium 16–22 × 20–26 | 1 |
+| Furniture warehouse outlet (`outlet`) | Showroom, Delivery dock, Office, Warehouse | L of back rooms | large 32–42 × 26–34 | 1 |
+| Design gallery with a studio upstairs (`gallery`) | Showroom, Bedroom gallery, Design studio, Warehouse, Restroom | three bands | medium 14–18 × 18–22 | 2 (offices) |
+| Country furniture barn (`barn`) | Showroom, Warehouse | side column | medium 24–32 × 18–24 | 1 |
+| Unfinished furniture and repair shop (`unfinished`) | Showroom, Upholstery and repair shop, Warehouse | front and back | small 12–16 × 14–18 | 1 |
+| Home store with an appliance floor (`homestore`) | Showroom, Appliance floor, Warehouse, Manager's office, Restroom | front and back | large 30–40 × 24–30 | 1 |
+| Clearance centre (`clearance`) | Showroom, Clearance corner, Warehouse, Office | service corridor | medium 20–26 × 22–28 | 1 |
+| Two-floor furniture store (`twofloor`) | Showroom, Warehouse, Delivery dock, Office | front and back | large 22–28 × 22–28 | 2 (sales floor) |
+
+**laundromat** (12): franchises Suds City Laundromat (coin, allnight, strip, student); Bubbles Wash & Fold (washfold, attended, cafe, coin); Spin Cycle Coin Laundry (coin, corner, roadside, flat); Press & Co. Cleaners (drycleaner, commercial, attended)
+
+| Variant | Rooms | Plan | Size (m) | Storeys |
+|---|---|---|---|---|
+| Coin laundry (`coin`) | Laundromat, Supply closet, Restroom | front and back | small 7–9 × 14–18 | 1 |
+| Attended laundromat with an office (`attended`) | Laundromat, Supply closet, Attendant's office, Restroom | front and back | medium 10–13 × 16–20 | 1 |
+| Wash-and-fold service (`washfold`) | Laundromat, Wash-and-fold counter, Supply closet, Attendant's office | three bands | medium 10–13 × 18–22 | 1 |
+| Laundromat and dry cleaner (`drycleaner`) | Laundromat, Dry-cleaning press room, Wash-and-fold counter, Supply closet, Restroom | service corridor | large 14–18 × 20–24 | 1 |
+| Corner laundromat (`corner`) | Laundromat, Attendant's office | side column | small 13–15 × 12–15 | 1 |
+| 24-hour superwash (`allnight`) | Laundromat, Waiting lounge, Supply closet, Boiler room, Attendant's office, Restroom | front and back | large 18–24 × 20–26 | 1 |
+| Laundromat with a flat above (`flat`) | Laundromat, Supply closet | front and back | small 7–9 × 14–17 | 2 (flat) |
+| Laundromat café (`cafe`) | Laundromat, Café counter, Supply closet, Restroom | front and back | large 14–18 × 16–20 | 1 |
+| Strip-mall laundromat (`strip`) | Laundromat, Supply closet, Attendant's office | front and back | medium 9–12 × 16–20 | 1 |
+| Student laundry with an L of back rooms (`student`) | Laundromat, Supply closet, Attendant's office, Restroom | L of back rooms | medium 13–15 × 16–20 | 1 |
+| Roadside wash-house with showers (`roadside`) | Laundromat, Showers, Attendant's office | side column | medium 13–16 × 14–18 | 1 |
+| Commercial laundry with a boiler room (`commercial`) | Laundromat, Boiler room, Wash-and-fold counter, Break room, Office | service corridor | large 16–22 × 20–26 | 1 |
+
+**thrift** (12): franchises Good Hands Thrift (superstore, dockside, twofloor, charity); Second Chance Resale (hospice, consign, toys, books); St. Vincent's Shop (church, charity, books); Retro Rack Vintage (vintage, consign, flea); Hank's Junk Barn (barn, flea, dockside)
+
+| Variant | Rooms | Plan | Size (m) | Storeys |
+|---|---|---|---|---|
+| Charity shop (`charity`) | Sales floor, Sorting room, Restroom | front and back | small 9–12 × 14–18 | 1 |
+| Church thrift store (`church`) | Sales floor, Sorting room, Office | front and back | medium 12–16 × 16–20 | 1 |
+| Thrift superstore with a donation dock (`superstore`) | Sales floor, Furniture corner, Sorting room, Donation dock, Break room, Manager's office, Restroom | service corridor | large 30–40 × 28–36 | 1 |
+| Vintage clothing boutique (`vintage`) | Sales floor, Fitting rooms, Back room | front and back | small 9–11 × 14–18 | 1–2 (flat) |
+| Hospice resale shop with a furniture corner (`hospice`) | Sales floor, Furniture corner, Sorting room, Restroom | front and back | medium 14–18 × 18–22 | 1 |
+| Thrift shop with a book room (`books`) | Sales floor, Sorting room, Book room | side column | medium 15–18 × 16–20 | 1 |
+| Country junk barn (`barn`) | Sales floor, Furniture yard | side column | large 20–28 × 16–22 | 1 |
+| Consignment shop (`consign`) | Sales floor, Collectibles room, Fitting rooms, Back room, Office | three bands | medium 12–16 × 18–22 | 1 |
+| Donation centre and thrift outlet (`dockside`) | Sales floor, Sorting room, Office, Donation dock | L of back rooms | large 22–28 × 22–28 | 1 |
+| Kids' resale and toy exchange (`toys`) | Sales floor, Toys and games, Sorting room, Restroom | front and back | medium 14–18 × 16–22 | 1–2 (flat) |
+| Two-floor thrift emporium (`twofloor`) | Sales floor, Sorting room, Donation dock, Restroom | front and back | large 18–24 × 20–24 | 2 (sales floor) |
+| Indoor flea market (`flea`) | Market hall, Back room, Office, Restroom | front and back | large 30–38 × 24–30 | 1 |
+
+**bakery** (12): franchises Golden Crust Bakery (village, corner, artisan, offices); La Petite Boulangerie (patisserie, cafe, cake); Dozen Donuts (donut, corner); Bread Basket Wholesale (wholesale, bagel); La Mesa Panadería (panaderia, cafe, bagel, corner); Grandma's Pie Place (farm, village, cake)
+
+| Variant | Rooms | Plan | Size (m) | Storeys |
+|---|---|---|---|---|
+| Village bakery (`village`) | Shop front, Bakehouse, Flour store | front and back | small 7–9 × 12–15 | 1–2 (flat) |
+| French patisserie (`patisserie`) | Shop front, Café, Bakehouse, Walk-in cooler, Restroom | front and back | medium 10–13 × 14–18 | 1 |
+| Donut shop (`donut`) | Shop front, Bakehouse, Flour store | front and back | small 8–10 × 12–15 | 1 |
+| Wholesale bakery with a dispatch dock (`wholesale`) | Shop front, Bakehouse, Packing and dispatch, Flour store, Walk-in cooler, Office, Restroom | service corridor | large 20–26 × 20–26 | 1 |
+| Cake shop with a decorating room (`cake`) | Shop front, Cake decorating room, Bakehouse, Walk-in cooler | three bands | medium 10–13 × 16–20 | 1 |
+| Bagel bakery (`bagel`) | Shop front, Bakehouse, Flour store | side column | medium 13–16 × 12–16 | 1 |
+| Bakery café (`cafe`) | Shop front, Café, Bakehouse, Flour store, Walk-in cooler, Restroom | front and back | large 14–18 × 16–20 | 1 |
+| Corner bakery (`corner`) | Shop front, Bakehouse | side column | small 13–15 × 11–14 | 1 |
+| Artisan bread bakery with a flour store (`artisan`) | Shop front, Bakehouse, Restroom, Flour store | L of back rooms | medium 13–15 × 14–18 | 1 |
+| Bakery with offices upstairs (`offices`) | Shop front, Bakehouse, Walk-in cooler, Office | front and back | medium 10–13 × 14–18 | 2 (offices) |
+| Panadería (`panaderia`) | Shop front, Bakehouse, Flour store, Restroom | service corridor | medium 14–17 × 15–18 | 1 |
+| Farm bakery and pie shop (`farm`) | Shop front, Café, Bakehouse, Flour store | front and back | medium 12–16 × 12–16 | 1 |
+
+**butcher** (12): franchises Prime Cuts Meat Market (meatmarket, delibutcher, packer); Kowalski & Sons Butchers (family, sausage, flat, smokehouse); Al-Noor Halal Meats (halal, wrap, stall); Buck's Game Processing (game, ranch, smokehouse, family); Market Hall Meats (stall, family, delibutcher)
+
+| Variant | Rooms | Plan | Size (m) | Storeys |
+|---|---|---|---|---|
+| Family butcher (`family`) | Shop front, Cutting room, Walk-in cooler | front and back | small 7–9 × 13–16 | 1 |
+| Butcher and smokehouse (`smokehouse`) | Shop front, Cutting room, Smokehouse, Walk-in cooler | front and back | medium 10–13 × 15–19 | 1 |
+| Meat market with walk-ins (`meatmarket`) | Shop front, Cutting room, Walk-in cooler, Walk-in freezer, Office, Restroom | service corridor | large 14–18 × 18–22 | 1 |
+| Country game processor (`game`) | Shop front, Cutting room, Walk-in cooler, Game processing bay, Walk-in freezer | side column | large 16–20 × 14–18 | 1 |
+| Halal butcher (`halal`) | Shop front, Cutting room, Walk-in cooler | side column | small 13–15 × 12–15 | 1 |
+| Sausage maker (`sausage`) | Shop front, Sausage kitchen, Smokehouse, Walk-in cooler | three bands | medium 10–13 × 16–20 | 1 |
+| Wholesale meat packer (`packer`) | Shop front, Cutting room, Walk-in freezer, Walk-in cooler, Break room, Office, Restroom | service corridor | large 24–30 × 24–30 | 1 |
+| Butcher with a deli counter (`delibutcher`) | Shop front, Deli counter, Cutting room, Walk-in cooler | front and back | medium 11–14 × 15–18 | 1 |
+| Butcher's shop with the family flat above (`flat`) | Shop front, Cutting room, Walk-in cooler | front and back | small 7–9 × 13–16 | 2 (flat) |
+| Butcher with an L of cold rooms (`wrap`) | Shop front, Cutting room, Walk-in cooler, Walk-in freezer | L of back rooms | medium 13–15 × 14–18 | 1 |
+| Ranch meat shop (`ranch`) | Shop front, Cutting room, Walk-in freezer, Smokehouse | front and back | large 14–18 × 16–20 | 1 |
+| Market hall butcher's stall (`stall`) | Shop front, Cutting room | front and back | small 6–8 × 9–11 | 1 |
+
+**deli** (12): franchises Katzman's Delicatessen (nyc, lunch, foodhall); Salvatore's Salumeria (salumeria, market, classic); Corner Deli (classic, flat, sandwich, wrap); Smokestack Deli & Catering (smokehouse, caterer, country, classic); Graze Market & Deli (market, foodhall, wrap)
+
+| Variant | Rooms | Plan | Size (m) | Storeys |
+|---|---|---|---|---|
+| Neighbourhood deli (`classic`) | Deli, Prep kitchen, Walk-in cooler | front and back | small 7–9 × 12–15 | 1 |
+| New York–style delicatessen (`nyc`) | Deli, Seating, Prep kitchen, Walk-in cooler, Dry store, Restroom | front and back | large 14–18 × 18–22 | 1 |
+| Italian salumeria (`salumeria`) | Deli, Cheese room, Dry store, Prep kitchen, Walk-in cooler | three bands | medium 10–13 × 16–20 | 1 |
+| Sandwich shop deli (`sandwich`) | Deli, Prep kitchen | front and back | small 6–8 × 10–13 | 1 |
+| Deli and market with a cheese room (`market`) | Deli, Prep kitchen, Cheese room, Walk-in cooler, Dry store, Restroom | service corridor | large 16–20 × 20–24 | 1 |
+| Deli and caterer (`caterer`) | Deli, Prep kitchen, Catering dispatch, Walk-in cooler | front and back | medium 11–14 × 15–18 | 1 |
+| Corner deli with a flat above (`flat`) | Deli, Prep kitchen | side column | small 13–15 × 12–15 | 2 (flat) |
+| Smokehouse deli (`smokehouse`) | Deli, Prep kitchen, Smokehouse, Walk-in cooler | front and back | medium 11–14 × 15–18 | 1 |
+| Gourmet food hall deli (`foodhall`) | Deli, Seating, Prep kitchen, Cheese room, Walk-in cooler, Dry store, Office, Restroom | service corridor | large 20–24 × 20–24 | 1 |
+| Deli with an L of stores (`wrap`) | Deli, Prep kitchen, Dry store, Walk-in cooler | L of back rooms | medium 13–15 × 14–17 | 1 |
+| Country store deli (`country`) | Deli, Prep kitchen, Dry store | front and back | medium 11–14 × 13–16 | 1–2 (flat) |
+| Downtown lunch deli with offices above (`lunch`) | Deli, Prep kitchen, Walk-in cooler, Restroom | front and back | medium 11–13 × 14–17 | 2 (offices) |
 
 ## Bunkers as places
 Issue #26 (the user's request 2026-10-25: "Add bunker buildings"). Points of interest on their own dice after the shops (pois.js `bunkerExtra`, `BUNKER_POI`; hash dice of the seed and the tile, never the world's: every seed's map is as it was, and an older save's lists gain the bunker at their end as they gained the shops), one bunker at most on a tile, within `POI.MAX`:

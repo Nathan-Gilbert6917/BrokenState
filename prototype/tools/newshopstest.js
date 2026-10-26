@@ -123,7 +123,7 @@ console.log(`New worlds (${WORLDS})`);
   check(NEWSHOP_KEYS.every((k) => n[k] > 0), "every kind stands somewhere in new worlds");
   check(country > 0, `a bakery or a butcher out in the country (${country})`);
   check(crawl > 0, `the six on the towns' crawls (${crawl})`);
-  check(sized > 0 && sizedOk / sized >= 0.75, `a place's plan of the placement table's size class for its tile (${sizedOk} of ${sized})`);
+  check(sized > 0 && sizedOk / sized >= 0.8, `a place's plan of the placement table's size class for its tile (${sizedOk} of ${sized})`);
   check(!Object.keys(byClass).some((k) => / (scenic|coast|rural|highway)$/.test(k) && !/^(bakery|butcher|furnstore|thrift|laundromat|deli) /.test(k)), "nothing odd in the country");
 }
 
