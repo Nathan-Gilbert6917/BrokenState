@@ -2,9 +2,12 @@
 // The one setting vocabulary (issue #40 of the round-2 epic #39, agreed with #42's placement table): where a building
 // stands, as every variant picker (variantpick.js, #41) and the placement table by setting (#42) read it.
 //
-//   centre    a city's own tile (state.cityIds: its downtown; #42's stadiums, zoos and hospitals stand in and near it)
-//   city      the rest of a city's tiles (terrain "city"), and a site the map calls urban (loc.zone "urban")
-//   suburb    a city's suburbs (shops.js settingOf: a suburb tile within SHOP.CITY_R of a city)
+//   centre    a city's own tile (state.cityIds: its downtown) and its city tiles within CENTRE_R of it (#42's rule:
+//             the heart and the ring of city blocks round it; stadiums, zoos and hospitals stand in and near it)
+//   city      the rest of a city's tiles (terrain "city")
+//   suburb    a city's suburbs (shops.js settingOf: a suburb tile within SHOP.CITY_R of a city), and a site the map
+//             calls urban off the city's terrain (loc.zone "urban": a city's hospital, mall or school out in its suburbs;
+//             #42: the suburbs, so their buildings take the suburbs' sizes, not downtown's)
 //   town      a town's ring (the other suburb tiles), and a site in a town (loc.zone "town")
 //   highway   open land with a road through it (a truck stop's, a motel's, a strip's)
 //   rural     everything else: farms, the countryside's sites, open land
@@ -37,13 +40,20 @@ export const isSetting = (s) => SETTINGS.includes(s);
  */
 export function settingAt(state, tile) {
   if (!tile) return "town";
-  const cities = (state && state.cityIds) || [];
-  if (tile.terrain === "city") return cities.includes(tile.id) ? "centre" : "city";
+  if (tile.terrain === "city" || (tile.loc && tile.loc.type === "city")) return tile.terrain !== "water" && nearHeart(state, tile.id) ? "centre" : "city";
   const z = tile.loc && tile.loc.zone;
-  if (z === "urban") return "city";
-  if (z === "town") return "town";
   if (tile.terrain === "suburb") return (state && state.grid ? shopSetting(state, tile) : "town") === "suburb" ? "suburb" : "town";
+  if (z === "urban") return "suburb";
+  if (z === "town") return "town";
   return tile.road ? "highway" : "rural";
+}
+// A city's centre: its heart (state.cityIds) and the tiles within CENTRE_R of it (#42's rule).
+export const CENTRE_R = 1;
+/** @param {any} state @param {number} id */
+function nearHeart(state, id) {
+  const cities = (state && state.cityIds) || [], g = state && state.grid;
+  if (cities.includes(id)) return true;
+  return !!(g && g.distance) && cities.some((c) => g.distance(c, id) <= CENTRE_R);
 }
 
 /** Where a building stands: its setting and its site's type (null off a site). @param {any} state @param {any} tile @returns {{ setting: Setting, site: string | null }} */

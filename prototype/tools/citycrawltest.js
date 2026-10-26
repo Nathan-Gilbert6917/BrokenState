@@ -951,7 +951,12 @@ const outAndBack = (state, p, c, pl) => { const b = state.combat; walkOut(state)
   p.vehicleId = car.id; p.vehicleIds = [car.id];
   const pl2 = testPlace(state, c, "deptstore", 78);
   const best = CC.placeProfile(state, c, pl2).best;
-  CC.quickSearch(state, p, pl2);
+  // No fight on this search: the check is the piece going out to the vehicle, and a fight the dice roll (at least
+  // QUICK.fightMin) can end the crawl first, so whether it passed hung on the world's dice (a new world's placement
+  // table, issue #42, moved them).
+  const Q = CC.CRAWL.QUICK, fightWas = [Q.fight, Q.perBlock, Q.fightMin, Q.fightMax];
+  Q.fight = 0; Q.perBlock = 0; Q.fightMin = 0; Q.fightMax = 0;
+  try { CC.quickSearch(state, p, pl2); } finally { [Q.fight, Q.perBlock, Q.fightMin, Q.fightMax] = fightWas; }
   check(!best || ((c.atVehicle || []).length === 1 && liftDef(best).carry === "one" && pl2.pieceTaken === best), `a vehicle at the rim: one "one" piece by worth goes out to it (${best})`);
   void prof;
   // The hive crawl takes nothing new.
