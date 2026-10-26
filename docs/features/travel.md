@@ -880,6 +880,7 @@ Survey and Quick look find and rate the places on a tile; a scavenge or raid goe
 - **Per-POI threat**: true = danger + infection + heat + hive land; the estimate is a word with skulls that goes stale; the picked-over bands [pois `poiThreat`, `poiThreatEstimate`, `poiBand`].
 - **One POI at a time**: a scavenge or raid on a tile with places goes into one POI. The dialogue card in the browser; a site with several buildings lists each building and the street so one pick goes straight in [poiraid `poiPickCard`, `poiRaidSetup` building]; picked with no building (or a tile without places that has buildings), a card asks which before the raid map is made, never on it (the user's request 2026-10-25: [the building picked before the raid map](combat.md#the-building-picked-before-the-raid-map)). The best known one for the autopilot, crews and tools; a search that strips one moves on to the next; the POI's building is the raid map; its own pool; raiding a place on another group's base tile is hostile [poiraid, scavenge, ui/poipick; combat `createRaid` richness and areas].
 - The autopilot sends POI surveys [survey `poiSurveyCandidate`].
+- On the map a team on a Survey or a Quick look walks out from its spot and back, glasses up out there, a ring filling over the spot (the user's request 2026-10-26: [out on an order](economy.md#a-team-at-a-gathering-order-on-the-map)) [ui/render, ui/mapfigures].
 
 ## Walking to a POI
 Each place on a tile is 5–20 minutes' walk away, shown on a map of the tile; the team walks there, and leaves the tile by an edge.
