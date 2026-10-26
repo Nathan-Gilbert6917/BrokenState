@@ -28,7 +28,8 @@ let pass = 0, fail = 0;
 const check = (ok, what) => { if (ok) pass++; else { fail++; console.log(`  FAIL: ${what}`); } return !!ok; };
 const section = (t) => console.log(t);
 // The hub without its start's Lodge, beds and tent (world.js HUB_LAYOUT: the tent keeps 30 kg dry): the core's room alone.
-const W = () => { const st = createWorld({ seed: SEED, factionCount: 6 }); st.visitorsOff = true; st.bases[0].buildings = st.bases[0].buildings.filter((b) => b.type === "farm_plot"); return st; };
+// The starting vehicle pinned to the pickup these checks are about: since d0adaca (2026-10-25) it is rolled by its owner's background (seed 42: a work van, 800 kg), as vehupgradetest pins it.
+const W = () => { const st = createWorld({ seed: SEED, factionCount: 6, fleet: [{ type: "truck" }] }); st.visitorsOff = true; st.bases[0].buildings = st.bases[0].buildings.filter((b) => b.type === "farm_plot"); return st; };
 const asCamp = (b) => { b.tier = 0; b.camp = true; b.buildings = []; b.construction = []; };
 const asShelter = (b) => { b.tier = 0; delete b.camp; b.buildings = []; b.construction = []; };
 const mkOutpost = (st, tile) => { const o = { id: newId(), tile, type: "outpost", name: "Test Outpost", stock: {}, radio: false, watchtower: false, buildings: [], construction: [], armory: [] }; st.bases.push(o); return o; };
