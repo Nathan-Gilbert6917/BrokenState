@@ -249,6 +249,27 @@ export const FURNITURE_KINDS = {
   compressor:  P("Air compressor",    HALF, 30, 45, "two", S1, false, ["bay"], "none", true),
   cot:         P("Cot",               HALF, 8, 7, "one", S12, false, ["school", "church", "ward"], "bed:cot"),
   candles:     P("Candlesticks",      POLE, 5, 6, "one", S1, true, ["church"], "comfort:0.1"),
+  // ---------- prisons and jails (issue #31: prisonlayout.js lays them) ----------
+  // A cell's steel bunk (a shelf over it) and its steel toilet-and-sink unit are bolted to the wall; a day room's steel
+  // table has its four stools fixed to it; a control room's panel of door switches and monitors (its switch opens a
+  // block's cell doors: prison.js cellSwitch); a visitation booth's glass partition and phone (seen through, half cover).
+  // The property room's lockers are #25's intake lockers, the metal detector #27's walk-through scanner and #25's X-ray
+  // scanner (rows below).
+  steelbunk:   P("Steel bunk",          HALF, 60, 70, "fixed", S12, false, ["cells"], "none", true),
+  steeltoilet: P("Steel toilet and sink", HALF, 50, 55, "fixed", S1, false, ["cells", "bath"], "none", true),
+  daytable:    P("Day-room table",      HALF, 60, 160, "fixed", S22, false, ["cells", "dining"], "none"),
+  ctrlpanel:   P("Control panel",       HALF, 50, 120, "fixed", S21, false, ["office", "control"], "none", true),
+  visitbooth:  P("Visitation booth",    HALF, 40, 90, "fixed", S1, false, ["office"], "none"),
+  // ---------- college campuses (issue #28: campuslayout.js lays them; campus.js the grounds) ----------
+  // A dorm room's desk with its hutch (its mini fridge is #29's minibar piece, `minifridge`), a lecture hall's bolted
+  // row of seats (its lectern, a library's study carrel: #34's; a teaching lab's fume hood: #37's `fumehood`), a residence hall's
+  // wall of mailboxes; outdoors a bench, a statue on its plinth and a fountain on the quads and in the courtyards.
+  dormdesk:    P("Dorm desk",        HALF, 20, 25, "one", S1, true, ["bedroom", "school"], "work:desk", true),
+  lectureseat: P("Lecture seating",  HALF, 40, 120, "fixed", S21, false, ["school"], "none"),
+  mailboxes:   P("Mailbox wall",     FULL, 50, 90, "two", S1, true, ["office", "school"], "storage:20", true),
+  campusbench: P("Bench",            HALF, 20, 40, "two", S21, false, ["yard"], "comfort:0.3"),
+  statue:      P("Statue",           STEEL, 120, 900, "fixed", S1, false, ["yard"], "none"),
+  fountain:    P("Fountain",         HALF, 80, 1500, "fixed", S22, false, ["yard"], "none"),
   // ---------- bunkers (issue #26: bunkerlayout.js lays them) ----------
   // The fixed fittings: the steel frame round a blast door, the air filtration plant, the water and fuel tanks, a
   // decontamination shower, the escape shaft's ladder and the vent stack up on the hillside. The hazmat suit rack and the

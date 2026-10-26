@@ -16,10 +16,14 @@
 //     steps are "stairs" on every floor it joins (the top step marked), its landings walkable on all of them, every room
 //     of every floor reachable from a landing, no step a door's approach; Go up only from the top step, arriving there
 //     a floor up with the upper landing next to it; a save from before (one-cell stairwells, no runs) still loads and
-//     plays, and a building's kept snapshot from before restores its one-cell stairwells.
+//     plays, and a building's kept snapshot from before restores its one-cell stairwells;
+//   - footprint shapes (issue #23): a part with fewer storeys is open air above and one storey high (a gym's tall),
+//     every floor up reached from its stairs, the runs in a part with every storey; a crawl's shaped school kept and
+//     given back as it was left.
 // Usage: node tools/storeytest.js [seeds=6]
 import { turnToBox } from "../src/sim/vision.js";
 import { MIL_KEYS } from "../src/sim/militarylayout.js"; // issue #25: the military buildings at their real size
+import { CAMPUS_KEYS } from "../src/sim/campuslayout.js"; // issue #28: the campus buildings at theirs
 import { createWorld, hub, atBase } from "../src/sim/world.js";
 import { launchExpedition } from "../src/sim/parties.js";
 import {
@@ -88,7 +92,7 @@ console.log(`Generation: every type (${Object.keys(BUILDINGS).length}), ${SEEDS}
       const W = m.w, H = m.h;
       // The map fits the footprint and its margins, and is one of the size classes.
       const cap = mapCap(key); // a hotel's map up to 200 × 200 with its grounds (issue #29)
-      const [maxW, maxH] = MIL_KEYS.has(key) ? [300, 300] : cap ? [cap, cap] : spec.foot === "huge" || spec.foot === "xl" ? [spec.bw + 12, spec.bh + 16] : [48, 36]; // a huge footprint: the map no bigger than it needs; issue #25: the military buildings at their real size (the maps up to 300 × 300, #24)
+      const [maxW, maxH] = MIL_KEYS.has(key) ? [300, 300] : CAMPUS_KEYS.has(key) || key === "campus" ? [300, 300] : cap ? [cap, cap] : spec.foot === "huge" || spec.foot === "xl" ? [spec.bw + 12, spec.bh + 16] : [48, 36]; // a huge footprint: the map no bigger than it needs; issue #25: the military buildings at their real size (the maps up to 300 × 300, #24)
       if (W < spec.bw + 8 || H < spec.bh + 9 || W > maxW || H > maxH) errs.push(`map ${W}x${H} for a ${spec.bw}x${spec.bh} footprint`);
       const cls = sizeClass(W, H);
       if (spec.foot === "tower" && !["S", "M"].includes(cls)) errs.push(`a tower on a ${cls} map`);
@@ -432,6 +436,62 @@ console.log("The city crawl: taller deeper in, the card's count, a building left
   check(b2.units.filter((x) => x.side === "enemy" && x.f > 0 && !x.dead).length === upCount && (!up1 || b2.units.some((x) => x.f === up1.f && x.x === up1.x && x.y === up1.y)), "the dead upstairs are where they were");
   check(b2.units.every((x) => x.side !== "player" || (x.f === 0 && !x.away)), "the team comes in on the ground floor");
   for (const o of b2.units.filter((x) => x.side === "player" && !x.dead && !x.left)) { o.x = z.x0 + 1; o.y = z.y0 + 1; o.ap = 2; combatAct(state, { type: "extract", unit: o.id }); }
+  finishCombat(state, b2.setup, b2.result);
+}
+
+console.log("Footprint shapes: parts with fewer storeys (issue #23)");
+{
+  // A shape's part with fewer storeys than its building (a school's gym, a hospital's ER, a garage) is open air on the
+  // floors above it, its walls one storey high unless it is a tall one; every floor up is reached from its stairs; every
+  // stair run stands in a part with every storey.
+  let n = 0, lowParts = 0, bad = [];
+  for (const key of ["school", "hospital", "police", "firestation", "motel", "house", "farmhouse", "offices", "apartments", "corner"]) for (let s = 0; s < Math.max(10, SEEDS * 3); s++) {
+    const rng = new Rng(61000 + s * 7919), spec = BUILDINGS[key].make(rng, { shapes: true });
+    if (!spec.shape || spec.storeys < 2) continue;
+    const m = assemble(rng, spec, { key, name: key });
+    n++;
+    const P = m.building.parts, inside = (p, x, y) => x > p.x0 && y > p.y0 && x < p.x0 + p.w - 1 && y < p.y0 + p.h - 1, only = (p, x, y) => P.every((q) => q === p || !(x >= q.x0 && y >= q.y0 && x < q.x0 + q.w && y < q.y0 + q.h));
+    for (const p of P) {
+      if (p.storeys >= m.storeys) continue;
+      lowParts++;
+      for (let f = p.storeys; f < m.storeys; f++) for (let y = p.y0; y < p.y0 + p.h; y++) for (let x = p.x0; x < p.x0 + p.w; x++) if (only(p, x, y) && m.floors[f].cells[y * m.w + x].k !== "void") { bad.push(`${key} #${s} ${p.name} floor ${f}`); y = Infinity; break; }
+      for (let y = p.y0; y < p.y0 + p.h; y++) for (let x = p.x0; x < p.x0 + p.w; x++) { const c = m.cells[y * m.w + x]; if (only(p, x, y) && c.t === 2 && p.storeys === 1 && !p.tall) { bad.push(`${key} #${s} ${p.name}: two-storey walls`); y = Infinity; break; } }
+    }
+    for (const r of m.runs || []) for (const [x, y] of [...runSteps(r), ...runLandings(r)]) if (!P.some((p) => p.storeys >= m.storeys && inside(p, x, y))) bad.push(`${key} #${s}: a run outside a full part`);
+    for (let f = 1; f < m.storeys; f++) {
+      const F = m.floors[f].cells, [sx, sy] = m.stairs[0], seen = walk(F, m.w, m.h, sx, sy);
+      for (let i = 0; i < m.w * m.h; i++) if (CELL[F[i].k] && CELL[F[i].k].walk && !seen[i]) { bad.push(`${key} #${s} floor ${f} unreachable`); break; }
+    }
+  }
+  check(!bad.length && lowParts > 0, `${n} shaped buildings with storeys, ${lowParts} lower parts: open air above, a one-storey part's walls one storey high (a gym's tall), every floor up reached from its stairs, the runs in a part with every storey${bad.length ? `: ${bad.slice(0, 4).join("; ")}` : ""}`);
+  // The city crawl: a shaped school kept as it was left (every floor, its parts' cells) and given back.
+  const state = createWorld({ seed: 33, factionCount: 7 });
+  const h = hub(state), city = state.tiles.find((t) => t.loc && t.loc.type === "city");
+  for (const k of ["food", "water", "ammo", "meds"]) h.stock[k] = 200;
+  const res = launchExpedition(state, { memberIds: atBase(state, h.id).slice(0, 3).map((x) => x.id), dest: city.id, mission: "scavenge", stance: "normal", vehicleId: null, supplies: { food: 6, water: 6, ammo: 60, meds: 3 } });
+  const p = res.party;
+  p.path = [city.id]; p.idx = 0; p.dest = city.id; p.phase = "engaged";
+  CC.startCrawl(state, p);
+  const c = p.crawl, blk = CC.blockOf(c);
+  const school = { id: "t-s", slot: 4, key: "school", name: "School on Test Street", kind: "School", dead: 1, rich: 1, raiders: false, looted: 0, blocked: null, quick: false };
+  blk.places = [school];
+  const err = CC.enterPlace(state, p, school.id, { map: true });
+  const b = state.combat;
+  const shapeOf = (bb) => JSON.stringify(bb.raid.plan.building.parts);
+  check(!err && b && b.raid.plan.building.parts && b.raid.plan.building.parts.length >= 4, `a crawl's school is shaped (${b && b.raid.plan.building.shape}, ${b && b.w} × ${b && b.h}, ${b && b.floors ? b.floors.length : 1} floors)`);
+  const box = b.raid.containers.find((x) => (x.f || 0) === 0);
+  box.searched = true;
+  const lowCell = (() => { const P = b.raid.plan.building.parts.find((q) => q.storeys < b.floors.length); return P ? [P.x0 + 1, P.y0 + 1] : null; })();
+  const z = b.raid.zones[0];
+  for (const o of b.units.filter((x) => x.side === "player" && !x.dead && !x.left)) { o.x = z.x0 + 1; o.y = z.y0 + 1; o.f = 0; o.ap = 2; combatAct(state, { type: "extract", unit: o.id }); }
+  finishCombat(state, b.setup, b.result);
+  const snap = c.buildings[school.id];
+  check(snap && snap.floors && snap.floors.length === b.floors.length, `the school is kept with its ${b.floors.length} floors`);
+  CC.enterPlace(state, p, school.id, { map: true });
+  const b2 = state.combat;
+  check(b2 && shapeOf(b2) === shapeOf(b) && b2.floors.every((F, f) => F.cells.map((q) => q.k).join() === b.floors[f].cells.map((q) => q.k).join()) && b2.raid.containers.some((x) => x.id === box.id && x.searched)
+    && (!lowCell || b2.floors[b2.floors.length - 1].cells[lowCell[1] * b2.w + lowCell[0]].k === "void"), "going back in gives it back as it was left: its parts, every floor's cells (a lower part open air above), what was searched");
+  for (const o of b2.units.filter((x) => x.side === "player" && !x.dead && !x.left)) { o.x = z.x0 + 1; o.y = z.y0 + 1; o.f = 0; o.ap = 2; combatAct(state, { type: "extract", unit: o.id }); }
   finishCombat(state, b2.setup, b2.result);
 }
 

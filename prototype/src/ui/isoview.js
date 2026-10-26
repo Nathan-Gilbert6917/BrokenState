@@ -210,23 +210,41 @@ function sceneFor(b) {
   const key = `${b.w}x${b.h}:${fl}:${sig}`;
   if (sceneCache && sceneCache.b === b && sceneCache.key === key) return sceneCache;
   const n = b.w * b.h, comp = new Int16Array(n).fill(-1), blds = [];
-  for (let i = 0; i < n; i++) {
-    if (comp[i] >= 0 || b.cells[i].f !== "floor") continue;
-    const id = blds.length, cells = [], q = [i];
-    comp[i] = id;
+  // A building of parts (sim/buildingmaps.js c.bp: a footprint shape's main block, wings and annexes, issue #23): each
+  // part a component of its own (its own roof and height); grp the building it belongs to (cut away as one, one roof
+  // material). Every other building is one part: its component is its building, as before.
+  const grp = new Int16Array(n).fill(-1), gmat = [], members = [];
+  const flood = (i, mark, id, same) => {
+    const out = [], q = [i];
+    mark[i] = id;
     while (q.length) {
-      const j = q.pop(); cells.push(j);
+      const j = q.pop(); out.push(j);
       const x = j % b.w, y = (j / b.w) | 0;
       for (const [dx, dy] of VD) {
         const nx = x + dx, ny = y + dy;
         if (nx < 0 || ny < 0 || nx >= b.w || ny >= b.h) continue;
         const k = ny * b.w + nx;
-        if (comp[k] < 0 && b.cells[k].f === "floor") { comp[k] = id; q.push(k); }
+        if (mark[k] < 0 && b.cells[k].f === "floor" && same(j, k)) { mark[k] = id; q.push(k); }
       }
     }
+    return out;
+  };
+  for (let i = 0; i < n; i++) if (grp[i] < 0 && b.cells[i].f === "floor") { const g = gmat.length; gmat.push(Math.floor(hash3(i, b.w, 7) * 4)); members.push([]); flood(i, grp, g, () => true); }
+  for (let i = 0; i < n; i++) {
+    if (comp[i] >= 0 || b.cells[i].f !== "floor") continue;
+    const id = blds.length, cells = flood(i, comp, id, (j, k) => b.cells[j].bp === b.cells[k].bp);
     let two = false, inner = 0;
     for (const j of cells) { const c = b.cells[j]; if (c.t === 2 || c.k === "loft") two = true; if (!WALLISH.has(c.k)) inner++; }
-    blds.push({ id, cells, top: two ? WALL2 : WALL1, two, inner, mat: Math.floor(hash3(i, b.w, 7) * 4) });
+    blds.push({ id, cells, top: two ? WALL2 : WALL1, two, inner, mat: gmat[grp[i]], grp: grp[i] });
+    members[grp[i]].push(id);
+  }
+  // A lower part's roof seen from a floor above it (its cells open air on this floor; c.bs on the ground floor: the
+  // part's storeys): the roof at its storeys' height, in its building's material.
+  let low = null;
+  if (fl) {
+    const G = b.floors[0].cells, gg = new Int16Array(n).fill(-1), gm = [];
+    for (let i = 0; i < n; i++) if (gg[i] < 0 && G[i].f === "floor") { const id = gm.length; gm.push(0); const cs = []; const q = [i]; gg[i] = id; while (q.length) { const j = q.pop(); cs.push(j); const x = j % b.w, y = (j / b.w) | 0; for (const [dx, dy] of VD) { const nx = x + dx, ny = y + dy, k = ny * b.w + nx; if (nx >= 0 && ny >= 0 && nx < b.w && ny < b.h && gg[k] < 0 && G[k].f === "floor") { gg[k] = id; q.push(k); } } } const up = cs.find((j) => comp[j] >= 0); gm[id] = up != null ? blds[comp[up]].mat : 0; }
+    for (let i = 0; i < n; i++) if (isVoid(b.cells[i]) && G[i].bs > 0 && G[i].bs <= fl) { if (!low) low = { top: new Int16Array(n), mat: new Uint8Array(n) }; low.top[i] = G[i].bs * LV; low.mat[i] = gm[gg[i]]; }
   }
   // The shell: a building's cells on its outside edge (next to a cell of no building or the map's edge). Seen from the
   // street, so drawn even where nobody has looked inside (the interior's fog of war: drawIso).
@@ -242,7 +260,7 @@ function sceneFor(b) {
   // Single wall cells (no floor: a raid's locked doors in the open) stand alone.
   const pits = []; // the fire pits: their flames, sparks, smoke and glow drawn each frame while lit (drawCampfireIso)
   for (let i = 0; i < n; i++) if (b.cells[i].k === "firepit") pits.push(i);
-  sceneCache = { b, key, comp, blds, ext, sig, pits, groundKey: `${b.w}x${b.h}:${fl}:${fsig}` };
+  sceneCache = { b, key, comp, blds, members, low, ext, sig, pits, groundKey: `${b.w}x${b.h}:${fl}:${fsig}` };
   iso.builds.scene++;
   return sceneCache;
 }
@@ -1224,6 +1242,35 @@ const FURN_DRAW = {
     return [...flegs(0.24, 0.72, 0.06, 0.9, 5, s0, 0.04), run(ax, 0.22, 0.78, 5, 7, canvas, 0.04, 0.96)];
   } },
   candles: { top: 18, p: () => [{ cyl: [0.5, 0.5, 0.12], z0: 0, z1: 1, m: flatM(FURNC.gold) }, fbox(0.48, 0.52, 0.48, 0.52, 1, 12, flatM(FURNC.gold)), fbox(0.3, 0.7, 0.47, 0.53, 12, 13, flatM(FURNC.gold)), fbox(0.3, 0.36, 0.47, 0.53, 13, 18, flatM(FURNC.cream)), fbox(0.64, 0.7, 0.47, 0.53, 13, 18, flatM(FURNC.cream)), fbox(0.47, 0.53, 0.47, 0.53, 13, 18, flatM(FURNC.cream))] },
+  // ---------- college campuses (issue #28, sim/campuslayout.js, sim/campus.js) ----------
+  // A dorm desk with its hutch of shelves, a mini fridge under a cell's height, a lecture hall's row of folding seats on
+  // a steel rail, a lectern with its slanted top, a fume hood's steel box with a glass sash, a study carrel's wood
+  // walls round its desk, a mailbox wall of little brass doors; outdoors a slatted bench, a bronze statue on a stone
+  // plinth, a fountain's stone basin with water in it.
+  dormdesk: { top: 20, p: (o) => {
+    const ax = along(o), w = flatM(PAL.woodDk);
+    return [run(ax, 0.22, 0.28, 0, 9, w, 0.1, 0.16), run(ax, 0.22, 0.78, 0, 9, fdrawers(PAL.woodLt, 3), 0.6, 0.9), run(ax, 0.18, 0.82, 9, 10, fwood(PAL.woodLt), 0.06, 0.94), run(ax, 0.18, 0.34, 10, 20, fwood(PAL.wood, 120), 0.06, 0.94), run(ax, 0.34, 0.38, 15, 16, flatM(PAL.woodDk), 0.06, 0.94)];
+  } },
+  lectureseat: { top: 12, p: (o) => {
+    const ax = along(o), seat = (f, s, t, X, Y) => (f === "top" ? mul(FURNC.scrubs, 0.9 + n2(X, Y, 121) * 0.1) : Math.floor(X) % 8 < 1 ? FURNC.black : mul(FURNC.scrubs, 0.8));
+    return [run(ax, 0.6, 0.66, 0, 6, flatM(FURNC.steel), 0.02, 0.98), run(ax, 0.3, 0.7, 5, 6, seat, 0.02, 0.98), run(ax, 0.66, 0.74, 5, 12, seat, 0.02, 0.98), run(ax, 0.2, 0.26, 8, 9, flatM(PAL.woodLt), 0.02, 0.98)];
+  } },
+  mailboxes: { top: 26, p: (o) => {
+    const ax = along(o), face = (f, s, t, X) => (f === "top" ? PAL.woodDk : Math.floor(t) % 4 < 1 || Math.floor(X) % 3 < 1 ? PAL.woodDk : Math.floor(t) % 4 === 2 && Math.floor(X) % 3 === 2 ? FURNC.chrome : mul(FURNC.gold, 0.85));
+    return [run(ax, 0.26, 0.6, 0, 26, face, 0.04, 0.96)];
+  } },
+  campusbench: { top: 10, p: (o) => {
+    const ax = along(o), slat = (f, s, t, X) => (Math.floor(X) % 3 < 1 ? mul(PAL.woodDk, 1.1) : f === "top" ? mul(PAL.woodLt, 1.1) : PAL.wood), iron = flatM(FURNC.black);
+    return [run(ax, 0.3, 0.7, 0, 5, iron, 0.06, 0.12), run(ax, 0.3, 0.7, 0, 5, iron, 0.88, 0.94), run(ax, 0.3, 0.72, 5, 6, slat, 0.02, 0.98), run(ax, 0.66, 0.72, 6, 10, slat, 0.02, 0.98)];
+  } },
+  statue: { top: 40, p: (o, v) => {
+    const bronze = (f, s, t, X, Y) => mul(hex("#4f6a52"), (f === "top" ? 1.2 : 0.9) + n2(X, Y, 125 + v) * 0.15);
+    return [fbox(0.18, 0.82, 0.18, 0.82, 0, 12, (f, s, t, X, Y) => mul(PAL.stone, (f === "top" ? 1.2 : 1) + n2(X, Y, 126) * 0.08)), fbox(0.4, 0.6, 0.4, 0.6, 12, 26, bronze), fbox(0.32, 0.68, 0.44, 0.56, 22, 30, bronze), { cyl: [0.5, 0.5, 0.09], z0: 30, z1: 36, m: bronze }, fbox(0.58, 0.64, 0.46, 0.54, 26, 40, bronze)];
+  } },
+  fountain: { top: 12, p: (o) => {
+    const stone = (f, s, t, X, Y) => mul(PAL.stone, (f === "top" ? 1.25 : 1) + n2(X, Y, 127) * 0.08), water = (f, s, t, X, Y) => mul(FURNC.water, 1.1 + n2(X, Y, 128) * 0.2);
+    return [fbox(0.04, 0.96, 0.04, 0.96, 0, 4, water), fbox(0, 1, 0, 0.1, 0, 6, stone), fbox(0, 1, 0.9, 1, 0, 6, stone), fbox(0, 0.1, 0.1, 0.9, 0, 6, stone), fbox(0.9, 1, 0.1, 0.9, 0, 6, stone), ...(o.v & 1 ? [{ cyl: [0.5, 0.5, 0.12], z0: 0, z1: 12, m: stone }] : [])];
+  } },
   // ---------- bunkers (issue #26, sim/bunkerlayout.js) ----------
   // A blast door's steel frame (riveted, yellow and black hazard bands); the air filtration plant's grey housing and its
   // duct; a water tank's blue cylinder, a fuel tank's red one on a cradle; a decontamination shower's frame with its
@@ -1600,6 +1647,32 @@ const FURN_DRAW = {
     const ax = along(o), glass = (f, s, t, X, Y, sw) => { const w = sw || 16; if (f === "top" || t > 26 || t < 1 || s < 1 || s > w - 1) return mul(FURNC.steel, 0.85); return mul(FURNC.water, 1.25 + n2(X, Y, 134) * 0.08); };
     return [run(ax, 0.16, 0.84, 0, 28, glass, 0.12, 0.88), run(ax, 0.2, 0.4, 9, 10, flatM(PAL.woodLt), 0.2, 0.8)];
   } },
+  // ---------- prisons and jails (issue #31, sim/prisonlayout.js) ----------
+  // A steel bunk bolted to the wall with a shelf over it; a steel toilet with its sink on the same block; a day room's
+  // steel table with four stools on posts; a control panel's sloped desk of switches and lit monitors; a visitation
+  // booth's counter under a pane of glass with a phone on the wall.
+  steelbunk: { top: 16, p: (o) => {
+    const ax = along(o), s0 = flatM(mul(FURNC.steel, 0.9)), mat = (f, s, t, X, Y) => (f === "top" ? mul(FURNC.scrubs, 0.85 + n2(X, Y, 91) * 0.1) : mul(FURNC.scrubs, 0.7));
+    return [run(ax, 0.2, 0.8, 0, 5, s0, 0.02, 0.98), run(ax, 0.22, 0.78, 5, 7, mat, 0.04, 0.96), run(ax, 0.16, 0.26, 12, 13, s0, 0.04, 0.96), run(ax, 0.16, 0.2, 7, 16, s0, 0.04, 0.96)];
+  } },
+  steeltoilet: { top: 14, p: (o) => {
+    const ax = along(o), st = (f) => (f === "top" ? FURNC.chrome : mul(FURNC.chrome, 0.85));
+    return [run(ax, 0.2, 0.42, 0, 14, st, 0.18, 0.82), run(ax, 0.42, 0.62, 9, 11, flatM(FURNC.chrome), 0.3, 0.7), fcyl(ax, 0.6, 0.5, 0.16, 0, 6, st), fcyl(ax, 0.6, 0.5, 0.1, 6, 6.5, flatM(FURNC.ring))];
+  } },
+  daytable: { top: 12, p: (o) => {
+    const s0 = flatM(mul(FURNC.steel, 0.95)), top = (f) => (f === "top" ? mul(FURNC.chrome, 0.95) : mul(FURNC.steel, 0.8));
+    const j = o.j & 15, eu = j & 3 ? 0 : 0.1, ev = j & 12 ? 0 : 0.1;
+    return [fbox(0.46, 0.54, 0.46, 0.54, 0, 11, s0), fbox(eu, 1 - eu, ev, 1 - ev, 11, 12, top), { cyl: [0.12, 0.12, 0.1], z0: 0, z1: 7, m: s0 }, { cyl: [0.88, 0.88, 0.1], z0: 0, z1: 7, m: s0 }];
+  } },
+  ctrlpanel: { top: 18, p: (o) => {
+    const ax = along(o), face = (f, s, t, X) => { if (f === "top") return Math.floor(X) % 3 < 1 ? FURNC.led : n2(X, s, 92) > 0.8 ? FURNC.red : FURNC.black; return mul(FURNC.beige, 0.8); };
+    const scr = (f, s, t, X, Y) => (f === "top" ? FURNC.black : n2(X, Y, 93) > 0.5 ? mul(FURNC.screen, 1.6) : FURNC.screen);
+    return [run(ax, 0.3, 0.8, 0, 10, flatM(mul(FURNC.beige, 0.75)), 0.02, 0.98), run(ax, 0.32, 0.78, 10, 11, face, 0.04, 0.96), run(ax, 0.2, 0.3, 11, 18, scr, 0.08, 0.92)];
+  } },
+  visitbooth: { top: 22, p: (o) => {
+    const ax = along(o), glass = (f, s, t, X, Y) => (n2(X, Y, 94) > 0.85 ? mul(FURNC.bag, 1.2) : FURNC.bag);
+    return [run(ax, 0.3, 0.7, 0, 9, flatM(mul(FURNC.beige, 0.8)), 0, 1), run(ax, 0.47, 0.53, 9, 22, glass, 0.04, 0.96), run(ax, 0.04, 0.1, 9, 22, flatM(FURNC.steel), 0, 1), run(ax, 0.9, 0.96, 9, 22, flatM(FURNC.steel), 0, 1), run(ax, 0.53, 0.6, 14, 17, flatM(FURNC.black), 0.12, 0.2)];
+  } },
   // ---------- lootable decor (issue #13, sim/decor.js) ----------
   // A plant in a clay pot, a floor lamp with its shade; a painting and a wall clock as they stand once set down (on a
   // wall they are drawn on its face: wartTexel).
@@ -1953,6 +2026,17 @@ function primsOf(k, o) {
       for (const d of [3, 1]) if (j & (1 << d)) for (const z of [5, 8.5, 12]) out.push(arm(d, z));
       out.push({ u0: 0.455, u1: 0.545, v0: 0.455, v1: 0.545, z0: 0, z1: 13, m: post });
       for (const d of [0, 2]) if (j & (1 << d)) for (const z of [5, 8.5, 12]) out.push(arm(d, z));
+      return out;
+    }
+    case "pfence": {
+      // A prison's perimeter fence (sim/prison.js): steel posts, a panel of chain-link mesh two levels high along the
+      // line (towards the neighbours in it; across the tile alone), a coil of razor wire along its top.
+      const post = flatM(PAL.metalDk), mesh = (f, s, t, X, Y) => ((Math.floor(X + t) + Math.floor(X - t)) % 3 < 1 ? hex("#b4b8b4") : null), coil = (f, s, t, X, Y) => (n2(X, Y, 96) > 0.5 ? hex("#c8ccc8") : hex("#8a8e8a"));
+      const j = o.j & 15 || (along(o) === "u" ? 3 : 12), out = [];
+      const arm = (d, z0, z1, m, w = 0.015) => { const [du, dv] = VD[d]; const a0 = du ? Math.min(0.5, 0.5 + du * 0.5) : 0.5 - w, a1 = du ? Math.max(0.5, 0.5 + du * 0.5) : 0.5 + w, c0 = dv ? Math.min(0.5, 0.5 + dv * 0.5) : 0.5 - w, c1 = dv ? Math.max(0.5, 0.5 + dv * 0.5) : 0.5 + w; return { u0: a0, u1: a1, v0: c0, v1: c1, z0, z1, m }; };
+      for (const d of [3, 1]) if (j & (1 << d)) out.push(arm(d, 1, 30, mesh), arm(d, 30, 34, coil, 0.12));
+      out.push({ u0: 0.45, u1: 0.55, v0: 0.45, v1: 0.55, z0: 0, z1: 32, m: post });
+      for (const d of [0, 2]) if (j & (1 << d)) out.push(arm(d, 1, 30, mesh), arm(d, 30, 34, coil, 0.12));
       return out;
     }
     case "fieldgate": {
@@ -2343,7 +2427,7 @@ function snowPrims(list, sn) {
 // in the yard or the street. Not the trees and bushes (ui/seasontrees.js), the ground and its hills, a fire, a well's
 // mouth, the hive's warm flesh, furniture, stairs and ladders.
 const SNOW_ON = new Set(["wall", "window", "door", "idoor", "boarded", "bdoor", "doorway", "smashed", "odoor", "palisade", "gate", "tower", "stand", "walkway", "roof",
-  "fence", "wirefence", "fieldgate", "wire", "rail", "sandbag", "barricade", "tanktrap", "crate", "hay", "barrel", "pump", "car", "truck", "vehicle", "boulder", "rock", "rubble", "breach",
+  "fence", "wirefence", "pfence", "fieldgate", "wire", "rail", "sandbag", "barricade", "tanktrap", "crate", "hay", "barrel", "pump", "car", "truck", "vehicle", "boulder", "rock", "rubble", "breach",
   "tent", "torn", "log", "stump"]);
 export const snowProbe = { roofSprite: (...a) => roofSprite(...a), sprite: (...a) => sprite(...a), SNOW_ON }; // tools/roofsnowtest.js
 // A roof piece over one cell of a building: a flat slab at the walls' height with a lip on the outside edges. sn: the
@@ -2373,6 +2457,26 @@ function roofSprite(mat, top, edges, fog, sn = 0, v = 0) {
   return s;
 }
 
+// Overhead on the active floor (drawIso): per cell the art height of what covers it (0 none) and its roof's look: a
+// covered walkway's canopy (c.canopy, sim/compound.js connect: a metal roof a storey up), a bridge's deck on a floor
+// above (c.bridge: its underside the storeys up it is). Cached by the battle, its floor and the cells' revision.
+let overCache = null;
+function overheadFor(b) {
+  const fl = floorNo(b), key = `${b.w}x${b.h}:${fl}:${b.rev || 0}:${b.floors ? b.floors.length : 1}`;
+  if (overCache && overCache.b === b && overCache.key === key) return overCache;
+  const n = b.w * b.h, top = new Int16Array(n), mat = new Uint8Array(n);
+  let cnt = 0;
+  const cur = b.cells;
+  for (let i = 0; i < n; i++) if (cur[i].canopy) { top[i] = LV + 6; mat[i] = 1; cnt++; }
+  const F = floorsOf(b);
+  if (F) for (let g = F.length - 1; g > fl; g--) {
+    const cs = F[g].cells;
+    for (let i = 0; i < n; i++) if (cs[i].bridge || (cs[i].k === "rail" && cs[i].f === "floor")) { top[i] = (g - fl) * LV - 3; mat[i] = 3; cnt++; }
+  }
+  overCache = { b, key, top, mat, n: cnt };
+  return overCache;
+}
+const focusNear = (focus, x, y) => !!focus && focus.some(([fx, fy]) => Math.max(Math.abs(fx - x), Math.abs(fy - y)) <= 2);
 // The storeys below the active floor (floorsOf): the building's outer wall mass under one footprint cell, from the
 // ground up to the floor's base, no interior. faces: 1 the east (+u) side, 2 the south (+v) side, only where the
 // neighbour in that direction is outside the footprint (the faces inside are hidden by the raised floor in front).
@@ -2402,6 +2506,7 @@ const FLOORC = {
   tile: hex("#7a7668"), conc: hex("#5e5d5a"), carpet: hex("#4e3e44"), barn: hex("#5e5040"), straw: hex("#8a7440"),
   // The room-appropriate floors of 2026-10-25 (issue #13): kitchens' and wards' lino, a bathroom's checker, a home's
   // hardwood (narrow, warm) and a cabin's or a barn's planks (the old floorboards), a gym's rubber, the bays' steel plate.
+  pool: hex("#4a7a94"), track: hex("#8a4a3a"), // a campus's drained pool and running track (issue #28)
   lino: hex("#8a8a76"), checkA: hex("#8e8a80"), checkB: hex("#34322e"), hardwood: hex("#7a5636"), rubber: hex("#3a3c3e"), steel: hex("#6a6e72"),
   // A hotel's grounds (issue #29, sim/hotellayout.js): the pool deck's paving, the empty pool's pale tiles (leaves and
   // a dark puddle at its deep end), a tennis court's green with its white lines.
@@ -2510,9 +2615,11 @@ function floorColor(c, k, x, y, lx, ly, mud, R = null, lf = 0, pd = 0, pe = 0) {
       else if (c.fl === "hardwood") { const row = ty >> 2, off = hash3(x, y * 4 + row, 8) * 16; col = ty % 4 === 0 ? mul(FLOORC.hardwood, 0.7) : (tx + off) % 16 < 1 ? mul(FLOORC.hardwood, 0.76) : mul(FLOORC.hardwood, 0.9 + hash3(x * 2 + Math.floor((tx + off) / 16), y * 4 + row, 3) * 0.18 + q * 0.04); } // narrow boards, joints staggered
       else if (c.fl === "marble") { const vein = Math.abs(((tx + ty * 0.6 + hash3(x, y, 11) * 9) % 7) - 3.5) < 0.35; col = tx % 16 === 0 || ty % 16 === 0 ? mul(FLOORC.marble, 0.78) : vein ? mul(FLOORC.marble, 0.8 + q * 0.06) : mul(FLOORC.marble, 1 + q * 0.05); } // slabs a cell each, a vein across
       else if (c.fl === "rubber") col = (tx % 4 === 1 && ty % 4 === 1) ? mul(FLOORC.rubber, 1.25) : mul(FLOORC.rubber, 0.92 + q * 0.08); // studded mats
+      else if (c.fl === "pool") col = tx % 6 === 0 || ty % 6 === 0 ? mul(FLOORC.pool, 0.78) : mul(FLOORC.pool, 0.94 + q * 0.08); // a drained pool's blue tiles (sim/campuslayout.js)
       else if (c.fl === "steel") col = ((tx + ty) % 6 === 0 && (tx >> 1) % 2 === 0) || ((tx - ty + 16) % 6 === 3 && (tx >> 1) % 2 === 1) ? mul(FLOORC.steel, 1.22) : tx === 0 || ty === 0 ? mul(FLOORC.steel, 0.7) : mul(FLOORC.steel, 0.9 + q * 0.08); // diamond plate
       else col = ty % 4 === 0 ? mul(FLOORC.floor, 0.68) : mul(FLOORC.floor, 0.88 + hash3(x * 4 + Math.floor((tx + (Math.floor(ty / 4) % 2) * 8) / 16), y * 4 + Math.floor(ty / 4), 3) * 0.2);
       break;
+    case "track": col = ty === 7 || ty === 8 ? mul(FLOORC.track, 1.35) : mul(FLOORC.track, 0.9 + q * 0.12); break; // a running track's red surface, its lane line (sim/campus.js)
     case "rubble": col = q > 0.82 ? mul(FLOORC.rubble, 1.35) : q < 0.1 ? mul(FLOORC.rubble, 0.6) : mul(FLOORC.rubble, 0.92 + v * 0.1); break;
     case "roof": col = mul(FLOORC.roof, 0.86 + q * 0.2); break;
     case "paving": col = tx % 8 === 0 || ty % 8 === 0 ? mul(FLOORC.paving, 0.78) : mul(FLOORC.paving, 0.9 + q * 0.12); break;
@@ -2744,7 +2851,7 @@ const JOINS = {
   wall: WALLISH, window: WALLISH, door: WALLISH, bdoor: WALLISH, doorway: WALLISH, smashed: WALLISH, idoor: WALLISH, odoor: WALLISH, boarded: WALLISH,
   rack: new Set(["rack", "shelf"]), bed: new Set(["bed"]), bars: new Set(["bars", "wall", "idoor", "odoor"]), table: new Set(["table"]),
   palisade: new Set(["palisade", "gate", "breach", "siegeladder"]), gate: new Set(["palisade", "gate", "breach", "siegeladder"]),
-  fence: new Set(["fence", "fieldgate"]), fieldgate: new Set(["fence", "wirefence", "fieldgate"]), wirefence: new Set(["wirefence", "fieldgate"]), wire: new Set(["wire"]), rail: new Set(["rail"]), sandbag: new Set(["sandbag", "barricade"]), barricade: new Set(["barricade", "sandbag"]),
+  fence: new Set(["fence", "fieldgate"]), fieldgate: new Set(["fence", "wirefence", "fieldgate"]), wirefence: new Set(["wirefence", "fieldgate"]), pfence: new Set(["pfence", "gate", "wall"]), wire: new Set(["wire"]), rail: new Set(["rail"]), sandbag: new Set(["sandbag", "barricade"]), barricade: new Set(["barricade", "sandbag"]),
   walkway: new Set(["walkway", "tower", "stand"]), stand: new Set(["stand", "walkway", "tower"]), trench: new Set(["trench"]), shelf: WALLISH, locker: WALLISH, cabinet: WALLISH, counter: WALLISH,
   rise: new Set(["rise", "slope"]), // high ground: its banks fall away on the sides with none beside it (prims rise)
   crag: new Set(["crag"]), // a mountain's ridge: one mass of rock (prims crag)
@@ -3003,7 +3110,7 @@ function blockTop0(k, o) {
     case "vehicle": return o.car ? (o.car.body === "bike" ? 11 : o.car.body === "truck" || MIL_TOPS[o.car.body] ? VEH_TOP : o.car.i > 0 && o.car.i < o.car.L - 1 ? VEH_TOP : Math.round(9 * vehZ(VEH_ROOF.car))) : VEH_TOP;
     case "locker": return 26; case "shelf": return 24; case "pump": return 22; case "gunsafe": return 22;
     case "boulder": return STONE.H.tall[1]; case "crate": return o.v >= 2 ? 22 : 13;
-    case "fence": return 14; case "fieldgate": return 13; case "wirefence": return 13; case "barricade": return 16; case "sandbag": return 13; case "hay": return 13; case "cabinet": return 14; case "counter": return 12; case "well": return 12; case "barrel": return 13;
+    case "fence": return 14; case "fieldgate": return 13; case "wirefence": return 13; case "pfence": return 34; case "barricade": return 16; case "sandbag": return 13; case "hay": return 13; case "cabinet": return 14; case "counter": return 12; case "well": return 12; case "barrel": return 13;
     case "rock": return STONE.H.short[1]; case "wire": return 10; case "rail": return 13; case "tanktrap": return 12;
     case "outline": return 9; case "tent": return 18; case "torn": return 5; case "firepit": return 7; case "lamp": return 38; case "spot": return 24; // the base map (sim/basemap.js; torn: sim/softcover.js)
     case "bush": return 12; case "stump": return 6; case "log": return 7; // its scatter (sim/basescatter.js)
@@ -3465,7 +3572,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   // before). Roofs off cuts every one away. Placing defenders (the deploy step), your own base and a battle that is
   // over keep the old rule: one of your people inside, an enemy you see inside, the mouse inside.
   const cut = new Set();
-  const cutAt = (x, y) => { const bid = scene.comp[y * b.w + x]; if (bid >= 0) cut.add(bid); };
+  const cutAt = (x, y) => { const bid = scene.comp[y * b.w + x]; if (bid >= 0) for (const id of scene.members[scene.blds[bid].grp]) cut.add(id); }; // the whole building, every part of it
   if (!iso.roofs) scene.blds.forEach((B) => cut.add(B.id));
   const open = !!H.allKnown || b.over || b.phase === "deploy";
   if (open) {
@@ -3487,7 +3594,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   snowLook = snowOnFor(state, b); // the snow on the buildings (ui/roofsnow.js): in looksFor's key and the sprites' keys
   const looks = looksFor(b, scene, cut, "draw", focus);
   const seenB = new Set(); // buildings any of whose cells your people see: their roof is not fogged
-  for (const B of scene.blds) for (const j of B.cells) if (v.vis[j]) { seenB.add(B.id); break; }
+  for (const B of scene.blds) for (const j of B.cells) if (v.vis[j]) { for (const id of scene.members[B.grp]) seenB.add(id); break; } // a part seen: its building's roofs
   // Inside a building (the fog of war indoors, the user's request 2026-10-12): you see the rooms your people see; a
   // cell nobody has seen yet (H.known: ui/combat.js, what your people have ever seen on this floor) is dark and empty
   // (its furniture, containers and room name not drawn; the building's shell is seen from outside); a cell seen
@@ -3832,6 +3939,9 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   const nbOn = !!(b.layout && b.deployPlan && b.deployPlan.fort); // the base map's layout mode: its no-build margin (nbMark)
   if (bdb) for (const d of [...beyond.keys()].filter((k) => k < 0).sort((p, q) => p - q)) drawBeyond(d);
   // By diagonal (u + v) from the back; in a straight view by row (v).
+  // What is overhead (a compound's links, issue #28: sim/compound.js): a covered walkway's canopy on the active floor,
+  // and the deck of a bridge on a floor above it seen from under it (its own roof); none with Roofs off.
+  const over = iso.roofs ? overheadFor(b) : null;
   for (let d = 0; d <= lastD; d++) {
     drawBeyond(d);
     const uLo = st ? 0 : Math.max(0, d - (Hv - 1)), uHi = st ? Wv - 1 : Math.min(Wv - 1, d);
@@ -3848,6 +3958,17 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
         const faces = massFaces(uu, vv);
         const mass = faces ? massSprite(scene.comp[i] >= 0 ? scene.blds[scene.comp[i]].mat : 0, lift, faces, fog) : null;
         if (mass) ctx.drawImage(mass.cv, Math.round(sx + mass.ox * S), Math.round(sy0 + mass.oy * S), Math.ceil(mass.w * S), Math.ceil(mass.h * S));
+      }
+      const lowTop = scene.low ? scene.low.top[i] : 0;
+      if (lowTop) { // a lower part's roof under the active floor (a shape's gym, garage, annex): its wall mass and its roof
+        const lowAt = (du, dv) => { const nu = uu + du, nv = vv + dv; if (nu < 0 || nv < 0 || nu >= Wv || nv >= Hv) return false; const [nx, ny] = fromView(nu, nv, r, b.w, b.h); const j = ny * b.w + nx; return scene.low.top[j] > 0 || !isVoid(b.cells[j]); };
+        const faces = (lowAt(1, 0) ? 0 : 1) | (lowAt(0, 1) ? 0 : 2), mat = scene.low.mat[i];
+        const mass = faces ? massSprite(mat, lowTop, faces, fog) : null;
+        if (mass) ctx.drawImage(mass.cv, Math.round(sx + mass.ox * S), Math.round(sy0 + mass.oy * S), Math.ceil(mass.w * S), Math.ceil(mass.h * S));
+        let edges = 0;
+        VD.forEach(([du, dv], k) => { const nu = uu + du, nv = vv + dv; if (nu < 0 || nv < 0 || nu >= Wv || nv >= Hv) { edges |= 1 << k; return; } const [nx, ny] = fromView(nu, nv, r, b.w, b.h); if (scene.low.top[ny * b.w + nx] !== lowTop) edges |= 1 << k; });
+        const roof = roofSprite(mat, lowTop, edges, fog, snowLook, snowLook ? Math.floor(hash3(x, y, 61) * 4) : 0);
+        ctx.drawImage(roof.cv, Math.round(sx + roof.ox * S), Math.round(sy0 + roof.oy * S), Math.ceil(roof.w * S), Math.ceil(roof.h * S));
       }
       if (L && !unknownCell(i)) {
         const spr = sprOf(L, fog);
@@ -3898,6 +4019,20 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
       VD.forEach(([du, dv], k) => { const nu = uu + du, nv = vv + dv; if (nu < 0 || nv < 0 || nu >= Wv || nv >= Hv) { edges |= 1 << k; return; } const [nx, ny] = fromView(nu, nv, r, b.w, b.h); if (scene.comp[ny * b.w + nx] !== bid) edges |= 1 << k; });
       const B = scene.blds[bid], spr = roofSprite(B.mat, B.top, edges, !seenB.has(bid), snowLook, snowLook ? Math.floor(hash3(x, y, 61) * 4) : 0); // snow on it, its drifts by the cell
       if (fade.has(i)) ctx.globalAlpha = 0.35;
+      ctx.drawImage(spr.cv, Math.round(sx + spr.ox * S), Math.round(sy + spr.oy * S), Math.ceil(spr.w * S), Math.ceil(spr.h * S));
+      ctx.globalAlpha = 1;
+    }
+    if (over && over.n) for (let uu = uLo; uu <= uHi; uu++) {
+      const vv = st ? d : d - uu;
+      const [x, y] = fromView(uu, vv, r, b.w, b.h), i = y * b.w + x, top = over.top[i];
+      if (!top) continue;
+      const sx = artX(uu, vv, st) * S + FR.X0, sy = artY(uu, vv, st) * S + FR.Y0 - (lift && !isVoid(b.cells[i]) ? lift : 0) * S;
+      if (sx < -margin || sx > cw + margin || sy < -margin || sy > ch + margin * 2) continue;
+      let edges = 0;
+      VD.forEach(([du, dv], k) => { const nu = uu + du, nv = vv + dv; if (nu < 0 || nv < 0 || nu >= Wv || nv >= Hv) { edges |= 1 << k; return; } const [nx, ny] = fromView(nu, nv, r, b.w, b.h); if (over.top[ny * b.w + nx] !== top) edges |= 1 << k; });
+      const spr = roofSprite(over.mat[i], top, edges, !vis[i], snowLook, snowLook ? Math.floor(hash3(x, y, 62) * 4) : 0);
+      // Under it or close in front of one of your people: see-through, as a cut-away roof.
+      ctx.globalAlpha = fade.has(i) || focusNear(focus, x, y) ? 0.3 : 0.92;
       ctx.drawImage(spr.cv, Math.round(sx + spr.ox * S), Math.round(sy + spr.oy * S), Math.ceil(spr.w * S), Math.ceil(spr.h * S));
       ctx.globalAlpha = 1;
     }

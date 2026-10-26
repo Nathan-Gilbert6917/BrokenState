@@ -9,7 +9,10 @@
 //     within ±15% of today's (the same archetype's plan at its old size, an older save's: legacyScale), the kind's
 //     average over the seeds;
 //   - an older save keeps its buildings exactly (the archetype's own footprint and storeys, the map cell for cell);
-//   - every kind's map connected (every walkable cell of every floor reached from the front, through the stairs).
+//   - every kind's map connected (every walkable cell of every floor reached from the front, through the stairs);
+//   - the kinds with a dozen named plans (civicvariants.js, issue #36): the checks above on each kind's "general" plan
+//     (#14's or #15's, the one realScale lays out); every named plan within its own row ("<kind>.<plan id>": its footprint
+//     and storeys, planned: realScale leaves it as it is).
 // Prints the size table in metres and the densities, new against old.
 // Usage: node tools/scaletest.js [seeds=200] [--quick]
 import { createWorld } from "../src/sim/world.js";
@@ -19,6 +22,7 @@ import { CELL, RAID_W, RAID_H } from "../src/sim/combat.js";
 import { cleanCfg } from "../src/sim/worldcfg.js";
 import { fitMargins, buildingDeadScale, BIG } from "../src/sim/battlesize.js";
 import { Rng } from "../src/sim/rng.js";
+import { VARIANTS } from "../src/sim/civicvariants.js"; // a dozen named plans per civic and medical kind (issue #36)
 
 const QUICK = process.argv.includes("--quick") || process.env.BS_QUICK === "1";
 const SEEDS = Number(process.argv.slice(2).find((a) => /^\d+$/.test(a)) || (QUICK ? 40 : 200));
@@ -26,6 +30,7 @@ let pass = 0, fail = 0;
 const check = (ok, what) => { if (ok) pass++; else fail++; console.log(`  ${ok ? "ok  " : "FAIL"} ${what}`); return ok; };
 const t0 = Date.now();
 const KEYS = Object.keys(BUILDINGS).filter((k) => !BUILDINGS[k].street);
+const GENERAL = (key) => (VARIANTS[key] ? { plan: "general" } : {}); // a kind with named plans (issue #36): the one realScale lays out (the named ones: their own rows, below)
 
 // The floor area (cells) and what is on it: rooms, containers, and the dead the map would hold for a roster of 10.
 // The dead as placeInterior counts them (a big map's scales on: a world made since the dials), on the map the plan gets
@@ -72,7 +77,7 @@ const dens = [];
     let wMin = Infinity, wMax = 0, dMin = Infinity, dMax = 0, wings = 0, tall = 0, scaledN = 0;
     for (let s = 0; s < SEEDS; s++) {
       const setting = s % 3 === 0 ? "city" : s % 3 === 1 ? "town" : "rural";
-      const r0 = new Rng(9001 + s * 131 + key.length * 7), nat = BUILDINGS[key].make(r0, {});
+      const r0 = new Rng(9001 + s * 131 + key.length * 7), nat = BUILDINGS[key].make(r0, GENERAL(key));
       const spec = realScale(r0, nat, key, { setting, storeyBonus: s % 5 === 4 ? 1 : 0 });
       const wm = spec.bw * CELL_M, dm = spec.bh * CELL_M;
       wMin = Math.min(wMin, wm); wMax = Math.max(wMax, wm); dMin = Math.min(dMin, dm); dMax = Math.max(dMax, dm);
@@ -104,7 +109,7 @@ const dens = [];
       }
       if (!heavy || s % 16 === 0) { const lost = connected(m); if (lost) { badConn++; if (badConn <= 5) console.log(`    ${key} seed ${s}: ${lost} walkable cells not reached`); } }
       if (!scaled) continue; // the densities of what realScale laid out
-      const r1 = new Rng(9001 + s * 131 + key.length * 7), old = BUILDINGS[key].make(r1, {}), mo = assemble(r1, old, { key, name: key });
+      const r1 = new Rng(9001 + s * 131 + key.length * 7), old = BUILDINGS[key].make(r1, GENERAL(key)), mo = assemble(r1, old, { key, name: key });
       const a = measure(spec, m), b = measure(old, mo);
       for (const k of Object.keys(acc.n)) { acc.n[k] += a[k]; acc.o[k] += b[k]; }
     }
@@ -135,6 +140,23 @@ console.log("\nDensity per square metre of floor, new against today's (the kind'
   check(!off, `rooms, containers and the dead per square metre within ±${TOL * 100}% of today's for every kind this ticket sizes (${off} off; #22's, #23's, #25's and #26's own designs shown, not judged)`);
 }
 
+console.log("\nThe named civic and medical plans at their own rows (civicvariants.js, issue #36)");
+{
+  let bad = 0, n = 0;
+  for (const [kind, list] of Object.entries(VARIANTS)) for (const v of list) {
+    if (v.id === "general") continue;
+    const R = REAL_SIZE[`${kind}.${v.id}`];
+    if (!R || !R.planned) { bad++; console.log(`    ${kind}.${v.id}: no planned row`); continue; }
+    for (let s = 0; s < 6; s++) {
+      const r = new Rng(9101 + s * 131), nat = BUILDINGS[kind].make(r, { plan: v.id }), spec = realScale(r, nat, kind, { setting: ["city", "town", "rural"][s % 3] });
+      n++;
+      const wm = spec.bw * CELL_M, dm = spec.bh * CELL_M;
+      if (spec.natW != null || wm < R.w[0] || wm > R.w[1] || dm < R.d[0] || dm > R.d[1] || spec.height < R.storeys[0] || spec.height > R.storeys[1] || spec.storeys !== openStoreys(spec.height, 0)) { bad++; if (bad <= 5) console.log(`    ${kind}.${v.id}: ${wm} × ${dm} m, ${spec.height} storeys (${spec.storeys} built) against ${R.w.join("–")} × ${R.d.join("–")}, ${R.storeys.join("–")}`); }
+    }
+  }
+  check(!bad, `every named plan's footprint and storeys within its own row, laid out as drawn (${n} builds, ${bad} outside)`);
+}
+
 console.log("\nAn older save keeps its buildings exactly; a new world's city towers are tall");
 {
   const st = createWorld({ seed: 31, factionCount: 6 });
@@ -150,7 +172,7 @@ console.log("\nAn older save keeps its buildings exactly; a new world's city tow
   const m1 = buildingMap(st, tile.id, opt, false), m2 = buildingMap(st, tile.id, opt, false);
   check(m1.w === m2.w && m1.cells.every((c, i) => JSON.stringify(c) === JSON.stringify(m2.cells[i])), "an older save's building is the same map every visit");
   delete st.scaleLegacy;
-  const big = buildingMap(st, tile.id, { id: "hospital", key: "hospital", name: "Hospital" }, false);
+  const big = buildingMap(st, tile.id, { id: "hospital", key: "hospital", name: "Hospital", plan: "general" }, false); // the general hospital (issue #36: a named plan has its own row)
   check(big.w <= 300 && big.h <= 300 && big.w >= 290 && big.building.w >= 60, `a city hospital at the largest raid map dial: map ${big.w} × ${big.h}, the building ${big.building.w} × ${big.building.h}`);
 }
 

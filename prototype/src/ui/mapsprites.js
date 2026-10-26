@@ -2558,7 +2558,7 @@ function paintStation(arg) {
 const POI_PAINT = {
   city: paintCityCenter, town: paintTownCenter, police: paintPolice, hospital: paintHospital, pharmacy: paintPharmacy,
   supermarket: paintSupermarket, gunstore: paintGunStore, hardware: paintHardware, autoshop: paintAutoShop, apartments: paintApartments,
-  office: paintOffice, school: paintSchool, firestation: paintFireStation, warehouse: paintWarehouse, mall: paintMall, univ: paintUniversity,
+  office: paintOffice, school: paintSchool, firestation: paintFireStation, warehouse: paintWarehouse, mall: paintMall, univ: paintUniversity, college: paintUniversity,
   grocery: paintGrocery, clinic: paintClinic, gas: paintGas, diner: paintDiner, motel: paintMotel, church: paintChurch, feedstore: paintFeedStore,
   farm: paintFarm, barn: paintBarn, ranch: paintRanch, cabin: paintCabin, lodge: paintLodge, campground: paintCampground, ranger: paintRanger,
   radiotower: paintRadioTower, truckstop: paintTruckStop, quarry: paintQuarry, crashsite: paintCrashSite,
@@ -2571,6 +2571,7 @@ const POI_PAINT = {
   house: paintHouse, neighbourhood: paintNeighbourhood, garage: paintGarage, corner: paintCorner, pizza: paintPizza,
   farmstand: paintFarmstand, shed: paintShed, blind: paintBlind, campsite: paintCampsite, hikercamp: paintHikercamp, mineshack: paintMineshack, bunker: () => paintBunkerPortal(false), govbunker: () => paintBunkerPortal(true), shelter: paintFalloutShelter, prepper: paintPrepper, // bunkers (issue #26)
   pawnshop: paintPawnShop, // sim/shops.js
+  jail: paintPolice, // sim/pois.js jailExtra: a county jail, a station's look
   // The shops and services (sim/data-shops.js NEW_KINDS), each painted in its franchise's look.
   sportshop: paintSportShop, electronics: paintElectronics, radioshop: paintRadioShop, bookstore: paintBookstore, library: paintLibrary,
   petstore: paintPetStore, garden: paintGarden, clothing: paintClothing, vet: paintVet, dealer: paintDealer, restaurant: paintRestaurant,

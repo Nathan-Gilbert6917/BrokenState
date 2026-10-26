@@ -112,6 +112,7 @@ export const BOX_FINDS = {
     crash_news: { p: 0.05, items: { gearcase: 3 } },
     airport: { p: 0.03, items: { gearcase: 2, cashbox: 1 } },
     univ: { p: 0.02, items: { gearcase: 2, cashbox: 1 } },
+    college: { p: 0.02, items: { gearcase: 1, cashbox: 1 } },
   },
   area: {
     house: { p: 0.03, items: { cashbox: 2, firebox: 2, toolbox: 0.6, gearcase: 0.5 } },

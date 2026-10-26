@@ -34,11 +34,11 @@ const STEEL = new Set(["warehouse", "factory", "hangar", "motorpool", "autoshop"
 const cellAt = (b, x, y) => (b && b.cells && x >= 0 && y >= 0 && x < b.w && y < b.h ? b.cells[y * b.w + x] : null);
 const raidDoorAt = (b, x, y) => ((b && (b.raid ? b.raid.doors : b.doors)) || []).find((d) => d.x === x && d.y === y && (d.f || 0) === (b.floor || 0)) || null; // a raid's locked doors, a field map's houses' (sim/combat.js b.doors)
 // A door in the building's outer wall (sim/buildingmaps.js plan.building; a street of houses: plan.buildings, each
-// house), else one with the outdoors on a side.
+// house), else one with the outdoors on a side (always so for a shaped building's, issue #23: its walls are not its box's).
 export function exteriorDoor(b, x, y) {
   const P = b && b.raid && b.raid.plan;
   const rs = P ? P.buildings || (P.building ? [P.building] : null) : null;
-  if (rs) return rs.some((r) => x >= r.x0 && y >= r.y0 && x < r.x0 + r.w && y < r.y0 + r.h && (x === r.x0 || y === r.y0 || x === r.x0 + r.w - 1 || y === r.y0 + r.h - 1));
+  if (rs && !rs.some((r) => r.parts)) return rs.some((r) => x >= r.x0 && y >= r.y0 && x < r.x0 + r.w && y < r.y0 + r.h && (x === r.x0 || y === r.y0 || x === r.x0 + r.w - 1 || y === r.y0 + r.h - 1));
   let inside = false, outside = false;
   for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
     const n = cellAt(b, x + dx, y + dy);

@@ -59,7 +59,7 @@ const value = (def) => { let v = 0; for (const [k, [p, lo, hi]] of Object.entrie
 
 // ---------- the motel's first five as laid out (the user's request: "add motel varients"), every motel room ----------
 // Each motel layout as the issue lays it out: every room a bed, a TV stand, a chest of drawers and its bathroom (a
-// toilet); the motor court's outdoor stair, ice and vending nook, laundry, manager's flat and empty pool behind its
+// toilet); the motor court's (#23's L or U round its lot in a new save: its laundry, the manager's room; as a rectangle) outdoor stair, ice and vending nook, laundry, manager's flat and empty pool behind its
 // fence; the strip's one storey, neon sign and shed; the chain's breakfast area and rooms off a corridor on 2–3
 // storeys; the motor lodge's several buildings (the lodge's diner, cabins with a kitchenette); the extended stay's
 // studios with a stove, a fridge and a sink, its guest laundry and gym.
@@ -76,7 +76,10 @@ function motelChecks(m, lay) {
   if (!rooms.length || baths.length < rooms.length) err(`${baths.length} bathrooms for ${rooms.length} rooms`);
   const studio = (a) => { const k = kinds(a); return k.has("stove") && k.has("fridge") && k.has("sink"); };
   const cells0 = grid(0);
-  if (lay === "court") {
+  if (lay === "court" && m.building && m.building.parts) { // a new save's motor court round its lot (#23's L or U: buildingmaps.js motelShaped)
+    if (m.storeys !== 2 || m.building.parts.length < 3) err("not an L or a U of two storeys");
+    if (!named(/Laundry/).length || !named(/Manager/).length) err("no laundry or manager's room");
+  } else if (lay === "court") {
     if (m.storeys !== 2 || !(m.runs || []).some((r) => r.out)) err("not two storeys up an outside stair");
     if (!named(/Ice and vending/).some((a) => kinds(a).has("vending"))) err("no ice and vending nook");
     if (!named(/Laundry/).length) err("no laundry");

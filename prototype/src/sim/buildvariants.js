@@ -238,7 +238,8 @@ export function pickLayout(key, seed, o = {}, lay = null, allow = null) {
   const list = layoutsOf(key);
   if (!list.length) return null;
   const pinned = layoutById(key, o && o.layout) || layoutById(key, o && typeof o.plan === "string" ? o.plan : null) || layoutById(key, lay); // o.plan: dev's pin of a named plan (setup.raid.place.plan, #26 and #37's)
-  const id = pinned ? pinned.id : layoutFor(key, o && o.setting, hash01(seed, "layout", key), allow);
+  const set = o && (o.lset || (["rural", "town", "city"].includes(o.setting) ? o.setting : null)); // lset: buildingmaps.js makeSpec's (the tile's: o.setting there is #35's and #36's own word for it)
+  const id = pinned ? pinned.id : layoutFor(key, set, hash01(seed, "layout", key), allow);
   const l = layoutById(key, id) || list[0];
   return { id: l.id, name: l.name, classic: l === list[0] }; // classic: the type's plan as it stood (buildingmaps.js realScale scales it as the general plan)
 }

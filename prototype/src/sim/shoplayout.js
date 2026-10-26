@@ -42,6 +42,9 @@
 //   - a dealer's showroom (cars on the tiles, desks), service bays (a car on a lift, tool chests, a workbench, tyre
 //     racks, an air compressor), a parts counter; a warehouse's pallet racks in rows and a forklift; a factory floor of
 //     machine tools with tool chests between; a barn's stalls of fence and its tack room (saddle racks).
+// The shops' and services' layout variants (shopvariants.js, issue #35) use these styles room by room, plus a big
+// shop's service corridor (servicehall: staff lockers and shelving along its back wall); a narrow front the aisles or the
+// counter could not row still gets its rack, its cold case or the pawn counter's bars along a wall.
 // Density: every style tops its room up to the containers it held before (c.target, × SHOP.BOXES[style] where the old
 // furnishing held more), so a shop holds what it did within ±10% (tools/shopstest.js, 200 seeds a kind).
 import { hash01 } from "./skills.js";
@@ -315,8 +318,10 @@ export const COMMERCIAL_STYLES = {
     share(L, "minimart");
     checkout(L);
     along(L, "coldcase", Math.max(2, Math.floor(L.c.h / 2)), [L.variant(2, "cold") ? "e" : "w"]);
+    if (!L.has("coldcase")) along(L, "coldcase", 2, [L.variant(2, "cold") ? "w" : "e", "n"]); // that wall all doors (a narrow shop's, issue #35): the other
     aisles(L, { box: "shelf" });
     fill(L, ["shelf", "coldcase"]);
+    if (!L.has("coldcase")) L.need("coldcase", P(L));
   },
   // ---------- grocery stores by size (issue #22) ----------
   // A corner store: the counter with its till by the door, the drinks fridges along a side wall, the chest freezer of ice
@@ -433,6 +438,7 @@ export const COMMERCIAL_STYLES = {
     if (key === "garden") some(L, "pottingbench", 2, { prefer: "middle" });
     aisles(L, { box: key === "feedstore" || key === "garden" ? "crate" : "shelf" });
     fill(L, key === "garden" ? ["crate", "shelf"] : ["shelf"]);
+    if (!L.has("rack")) L.wall("rack", { plain: true }) || L.centre("rack", { plain: true }); // a front the aisles could not row (a narrow one, issue #35): its shelving along a wall
   },
   // A hardware store: tool aisles, the key-cutting counter (a workbench with a counter beside it), the checkout.
   hardware(L) {
@@ -457,6 +463,8 @@ export const COMMERCIAL_STYLES = {
     const c = L.c, y = Math.max(c.y0 + 2, c.y1 - 2);
     checkout(L);
     counterRow(L, y, "displaycase", { box: "displaycase", every: 3, from: 2, to: 2, ends: "bars" });
+    if (!L.has("bars")) L.wall("bars", { sides: ["n", "w", "e"], plain: true }); // a counter too short for its caged ends (issue #35): the cage on a wall
+    if (!L.has("displaycase")) L.wall("displaycase", P(L, { prefer: "middle" })) || L.need("displaycase", P(L));
     fill(L, ["shelf", "displaycase", "gunrack"]);
   },
   // An electronics or a radio shop: the counter with the workbench behind it at the back, display cases, shelves.
@@ -705,6 +713,13 @@ export const COMMERCIAL_STYLES = {
   vendnook(L) { L.wall("vending", P(L)) || L.need("vending", P(L)); L.wall("icemachine"); },
   // The motel's upper walkway: the ice machine.
   walkway(L) { L.wall("icemachine", { sides: ["n"], prefer: "corner" }); },
+  // A big shop's service corridor behind the sales floor (issue #35, shopvariants.js corridor plans): staff lockers and
+  // shelving along its back wall, a 1-cell walk kept in front of them.
+  servicehall(L) {
+    const c = L.c;
+    if (Math.min(c.w, c.h) < 2) return;
+    L.run(["locker", "shelf", "locker", "shelf", "locker"], [c.w >= c.h ? "n" : "w"], { plain: () => full(L) });
+  },
   // ---------- banks ----------
   // The banking hall: teller windows along its back wall, queue posts in front of them, chairs, the desks.
   bankhall(L) {
@@ -808,7 +823,7 @@ export function styleName(room, key) {
     case "lobby": return key === "bank" ? (room.atm ? "atmlobby" : "bankhall") : key === "library" ? "circulation" : "officelobby";
     case "reception": return "motelfront";
     case "motelroom": return "motelroom";
-    case "corridor": return key === "motel" ? "walkway" : null;
+    case "corridor": return key === "motel" ? "walkway" : /^Service corridor/.test(n) ? "servicehall" : null; // servicehall: a big shop's (shopvariants.js, issue #35)
     case "barnfloor": return "stalls";
     case "tack": return "tack";
     case "dayroom": return key === "bar" ? "stage" : null;

@@ -252,7 +252,7 @@ Shops with richer gun, gear and building-material finds, as POIs and as places o
 - The user's requests 2026-10-21: sporting goods with football gear, a goalie mask, hockey sticks, bats, clubs and bows; electronics, radio shops, bookstores, libraries, groceries, diners, clinics, motels, churches, auto shops, pet stores, fire and police stations, garden centers, clothing stores, vets, car dealerships, pizza and other restaurants, banks, bars and liquor stores, "more common in areas that makes sense", "versions that fit the setting", "many variants … different franchises including colors, layout".
 - **14 new site types**: sportshop, electronics, radioshop, bookstore, library, petstore, garden, clothing, vet, dealer, restaurant, bank, bar, liquor. Their raid rooms (a vault, a bar, liquor shelves, a showroom, bookshelves…), buildings and find rows are data merged by each owning module (`data-shops.js` NEW_KINDS, AREA_DEFS, ROWS, `mergeRows`).
 - **Where**: a weight on a city block, a city's suburbs and a town's ring (`PLACE_W`, `settingOf`); up to two on a suburb or city tile and up to two besides a crawl block's own places, each on its own dice after the list (`shopExtras`, `shopPlaces`).
-- **Franchises**: 4–10 fictional chains and local names per kind, old kinds too (`FRANCHISES`: a name, weights by setting, a look of colours and a style for the map painter, a plan for the building: floor, front-room depth and name, width, a flat above, storeys, the back's arrangement). Every place of such a kind is one (`poi.v`, a crawl place's `v`, `franchiseFor`), named by it (pois `poiName`, the crawl's card), drawn by it (ui/mapsprites, render `siteLook` variant) and laid out by it (buildingmaps `planOf`; a building saved before franchises keeps its layout).
+- **Franchises**: 4–10 fictional chains and local names per kind, old kinds too (`FRANCHISES`: a name, weights by setting, a look of colours and a style for the map painter, a plan for the building: floor, front-room depth and name, width, a flat above, storeys, the back's arrangement). Every place of such a kind is one (`poi.v`, a crawl place's `v`, `franchiseFor`), named by it (pois `poiName`, the crawl's card), drawn by it (ui/mapsprites, render `siteLook` variant) and laid out by it (buildingmaps `planOf`; a building saved before franchises keeps its layout; a new save's is one of the franchise's layout variants: [A dozen layout variants per type](#a-dozen-layout-variants-per-type)).
 - **Inside, laid out for their kind** (issue #16, the user's request 2026-10-25: "Special buildings [...] should have furniture, appliances, decor, rooms and layouts that make sense for the type of building"; `shoplayout.js`, the rules in [combat.md](combat.md#raids-into-building-interiors)). The franchise's plan still sets the depth, width, floor and back rooms, its look the wall colour (decor). New saves only; an older save's buildings are as they were. The rooms and their pieces:
   - **Shop fronts**: aisles of shelving in rows a walk apart (a row shifts off the lanes between the doors), a shelf to search at each end and every few cells, a checkout with its register by the front door. A liquor store, a gas station and a truck stop's shop (a grocery and a corner store on an older save's plan): a cold case run along a side wall (drinks); a new save's grocery stores by size below. A gun store: the gun counter (display cases across the room) and gun racks along the wall behind it. A pawn shop: the pawn counter of display cases caged in bars at its ends. A bookstore: bookshelves in rows and a reading table. A pet store: fish tanks along a wall, cages of bars. A garden center: potting benches. Clothing: clothes racks in rows. Electronics and a radio shop: the workbench at the back with a counter in front of it, display cases. Hardware: tool aisles and a key-cutting counter (a workbench and a counter). A pharmacy, sporting goods (clothes racks too), a feed store: aisles.
   - **Shop back rooms**: the stockroom (shelves to search, crates stacked between), the manager's office (a desk and chair, filing, the safe always locked where the office locks a safe), the staff toilet (a toilet and a sink, two in a long restroom), the fitting rooms (cubicle partitions, a stool in each stall, clothes racks), the gun cage (gun racks, lockers, a crate), the dispensary (the pharmacist's counter, shelves), the repair bench (a workbench, a tool chest, shelves), a garden center's greenhouse (glass walls, potting benches) and a lumber or garden yard (pallet racks in rows, crates).
@@ -414,6 +414,412 @@ Shops with richer gun, gear and building-material finds, as POIs and as places o
   - **The rooms' loot** (`OFFICE_AREAS`: `techfloor`, `dental`, `studio`, `execsuite`, `civichall`, `courtoffice`, `courtev`, `callfloor`; `OFFICE_BOX`: headset desk, news desk, mail sorter, liquor cabinet, a tech office's fridges of drinks, a dentist's instrument cabinet, the courthouse's evidence lockers): offices' electronics, snacks, first aid and paper (scrap); the executive suite's safe, valuables, whiskey and a pistol now and then; the courthouse's evidence lockers of confiscated knives and small guns and its holding cell; the dentist's meds and tools; the station's radios, cameras and batteries; the tech office's laptops and phones. Containers by floor area (`officelayout OFFICE.CELLS`): loot per cell within ±10% of the old tower's over all twelve plans (0.34 a cell over 200 seeds: storefront +1%, business park +7%, tower −7%, city hall +6%, courthouse +3%, call center +5%, tech office +7%, station −5%).
   - **Older saves**: a save from before (`officesV` missing: save.js marks it `officesLegacy`, worldcfg `legacyOffices`) gets none of the new places on its tiles or its crawls' blocks and its towers no firm (shops `noFirm`): its POI lists and blocks hash the same as before. The 59 old archetypes build exactly as before in old and new saves (checked by hash against origin/dev, 12 seeds each).
 
+### A dozen layout variants per type
+Issue #35 of the interiors epic #7, the user's requests 2026-10-25: "every building should have several varients"; "for buildings with no to only a few varients create a dozen varients per building type". `shopvariants.js` (the tables and the builder), called from buildingmaps `shop`, `bigstore`, `dealer`, `bank` and `openfloor` for a new save; test `tools/shopvarianttest.js`, renders `tools/shopshot.cjs`.
+- **The types** (23): the pharmacy, the gas station, the truck stop, every franchise shop kind (gun store, pawn shop, sporting goods, electronics, radio, bookstore, pet store, garden center, clothing, liquor, hardware), the feed store, the car dealer, the auto shop, the garage, the workshop, the bank, and #22's corner store, grocery and supermarket. 12 named plans each (`VARIANT_TYPES[type].variants`).
+- **The rule**: a variant is a plan of its own, not a recolour. Every pair of a type's variants differs in at least two of: the room list, the arrangement, the entrances, a corridor or an open plan, the size, the storeys (the test checks every pair from the tables). The footprint shapes (#23's L, T and U) are not on dev yet; the arrangements are rectangles.
+- **The arrangements** (`VARIANT_LAYS`): front and back (the sales floor over a back strip of rooms), a service corridor (2 wide, between the front and the back strip: staff lockers and shelving along its back wall, shoplayout `servicehall`), three bands (the front, a middle band of counter rooms or offices, the back strip; at least 15 deep), a side column (the front the full depth, rooms down one side: the dice pick the side; the front keeps 8 cells across), an L of back rooms (the back strip and a side column). A service bay at one end with its roller door where the plan has one.
+- **Sizes** (`SIZES`, cells of a metre): #24's real-world size of each type (data-buildingsize `REAL_SIZE`, metres across the front and front to back) cut into quarters, S the smallest to XL the biggest (a pharmacy 12–14 × 14–17 to 18–20 × 22–24, a gas station 15–18 × 10–11 to 23–25 × 14–15, a truck stop 25–29 × 15–18 to 36–40 × 22–25, a dealer 30–35 × 20–24 to 45–50 × 31–35); these rows are `planned` in REAL_SIZE (realScale leaves the plans as drawn). #22's tiers keep #22's footprints (`TIER_SIZES`: the corner store 10–14 across, the grocery 20–26 × 17–20, the supermarket 54–58 × 36–40). A footprint of 700+ cells and 30+ across is the "xl" class (its map its footprint and margins). A bigger plan's rooms hold more containers by their area over today's footprint (`TODAY_AREA`, `scaleBoxes`), × the type's `boxes` (tuned: below).
+- **Ways in**: the front door always; by the plan a back door, a side door, a second entrance, a fire exit, a loading door (a roller), a yard gate, a drive-through window, bay doors front and back (`EXITS`).
+- **Upstairs** (`UPPER`): the shop's flat, offices (a corridor of offices, a meeting room, records, a break room), an upper stockroom, an upper sales floor, a feed mill's grain loft, a truck stop's drivers' bunks; the supermarket's mezzanine or a food hall. A franchise with a flat above (`plan.flat`: a bodega, a used bookshop, an outfitter) rolls it on a one-storey plan, as before. Storey ranges in `STOREYS_BY_TYPE` (most of these types 1–2, the bank 1–3).
+- **Each kind's signature in every plan**: the pharmacy's dispensary, the gun store's gun cage (locked behind its vault door on the dice, 80%), the pawn shop's gun case, the bank's vault behind its vault door and its ATM lobby, the gas station's and the truck stop's pumps on the lot (a new save's pumps take the row beside, or the lot beside the building, when trucks or the ways to the exits fill theirs), the truck stop's shop, diner and kitchen (its diner one of #33's truck-stop diners: eaterylayout `eateryVariant`, its counter and grill, its kitchen's line and its food), the garden center's greenhouse, the clothing store's fitting rooms, the hardware store's tool crib; #22's rooms in every grocery tier (the corner store's store and stockroom, the grocery's sales floor, stockroom and walk-in cooler, the supermarket's café, restrooms, bakery, pharmacy, deli and butcher, warehouse with 2–3 dock doors, walk-in cooler and freezer, baler and cash office). The fronts' pieces as #16 laid them (a narrow front: its rack, its cold case or its pawn counter's bars along a wall where the aisles or the counter could not take them).
+- **Picked** (`shopVariant`, the plan's first roll): a place's own variant id (`option.plan`, as #37's plans: a strip mall's slot, a test, a render) first; else among its franchise's variants (`FRANCHISES` `plan.variants`: each franchise maps to the plans that fit it, a kind's franchises together covering all 12), weighted by the setting (`variantSetting` from the tile: a city "city", a suburb "town", a road through the country "highway", else "rural"; "strip" for a strip mall's slot), on the building's dice. With no setting every variant alike.
+- **Names**: each variant has a name ("Chain drugstore with a drive-through", "Old service station with repair bays"). The map's plan carries it (`plan.variant`, its id `plan.vid`, as #37's) and the raid's opening lines start with it; the tile panel's places show it after the place's name (ui/poiview `poiLayout`), the crawl's block card after the kind (citycrawl `placeHint`); a franchise's place keeps its franchise's name on the POI and the map.
+- **For a strip mall** (#30): `shopPlan(kind, { layout, size, setting, variant, seed })` returns a kind's plan for a slot.
+- **Loot**: within ±10% a 100 cells (all floors) of today's (dev before the variants, a new save's plan, 200 seeds; the test's `TODAY`): pharmacy 0%, gas station +6%, truck stop −1%, gun store +3%, pawn shop −6%, sporting goods +5%, electronics +5%, radio −6%, bookstore +3%, pet store −3%, garden +6%, clothing +6%, liquor −5%, hardware −5%, feed store +6%, dealer −3%, bank +4%, auto shop +3%, garage 0%, workshop −2%, corner store +9%, grocery −7%, supermarket +8%. The densities `boxes`: bookstore 0.8, liquor 0.55, sporting goods 0.93, feed store 0.94, clothing 0.95, pawn shop 1.05, dealer 1.08, garage 1.08, grocery 0.9. tools/shopstest.js compares these types by the area too (#22's corner store and grocery by the building, as before).
+- **Older saves**: an older save (`roomsLegacy`) keeps every building's old plan: all 77 archetypes build the same maps as on dev (cells, containers and their ids, rooms, locked doors; checked by hash, 12 seeds each).
+- **The variants**, by type (the rooms besides the front room; ways in counting the front door):
+**pharmacy** (12)
+
+| Variant | Rooms | Plan | Size | Ways in | Storeys |
+|---|---|---|---|---|---|
+| Chain drugstore with a drive-through (`drivethru`) | Drive-through window, Dispensary, Stockroom, Office, Restroom | side column | M 14–16 × 17–19 | 3 | 1 |
+| Independent pharmacy with a soda fountain (`fountain`) | Soda fountain, Dispensary, Stockroom, Office | front and back | M 14–16 × 17–19 | 2 | 1–2 (flat) |
+| Compounding pharmacy (`compounding`) | Dispensary, Compounding lab, Stockroom, Restroom | three bands | S 12–14 × 15–17 | 2 | 1 |
+| Hospital outpatient pharmacy (`outpatient`) | Waiting area, Dispensary, Vaccine fridge room, Stockroom, Office | service corridor | L 16–18 × 19–22 | 3 | 1 |
+| Strip-mall pharmacy (`stripmall`) | Dispensary, Stockroom, Restroom | front and back | S 12–14 × 14–17 | 2 | 1 |
+| 24-hour pharmacy with a photo counter (`allnight`) | Photo counter, Dispensary, Stockroom, Break room, Manager's office, Restroom | front and back | L 16–18 × 19–22 | 3 | 1 |
+| Country drugstore (`country`) | Stockroom, Dispensary | side column | M 14–16 × 17–19 | 2 | 1–2 (flat) |
+| Pharmacy with a walk-in clinic (`clinic`) | Dispensary, Consultation room, Stockroom, Restroom | service corridor | L 16–18 × 19–22 | 3 | 1 |
+| Two-storey main street apothecary (`apothecary`) | Dispensary, Stockroom, Office | front and back | M 14–16 × 17–19 | 3 | 2 (offices) |
+| Discount pharmacy warehouse (`discount`) | Dispensary, Stockroom, Receiving, Office, Restroom | L of back rooms | XL 18–20 × 22–24 | 4 | 1 |
+| Highway drug and sundries store (`highway`) | Office, Restroom, Vaccine fridge room, Dispensary, Stockroom | L of back rooms | M 14–16 × 17–19 | 3 | 1 |
+| Mall pharmacy with a mezzanine stockroom (`mezzanine`) | Dispensary, Stockroom, Restroom | front and back | M 14–16 × 17–19 | 2 | 2 (stockroom) |
+
+**gasstation** (12): franchises PetroStar (kiosk, carwash, deli, plaza); Blue Falcon Gas (service, tyres, citycorner, carwash); Greenleaf Fuel (general, bait, filling, towing); Sundown Gas & Go (fuelstop, plaza, kiosk, towing, deli)
+
+| Variant | Rooms | Plan | Size | Ways in | Storeys |
+|---|---|---|---|---|---|
+| Pump island and kiosk (`kiosk`) | Storeroom, Restroom, 2 pumps | front and back | S 15–18 × 10–11 | 1 | 1 |
+| Convenience store with a car wash (`carwash`) | Storeroom, Restroom, Car wash, 3 pumps | front and back | M 18–20 × 11–13 | 4 | 1 |
+| Old service station with repair bays (`service`) | Storeroom, Office, Service bay, 2 pumps | front and back | M 18–20 × 11–13 | 3 | 1 |
+| Highway travel plaza (`plaza`) | Coffee and snack bar, Storeroom, Break room, Office, Restroom, 4 pumps | front and back | XL 23–25 × 14–15 | 3 | 1 |
+| Rural general store with pumps (`general`) | Storeroom, Feed and seed, 1 pump | front and back | M 18–20 × 11–13 | 3 | 1–2 (flat) |
+| City corner gas station (`citycorner`) | Office, Storeroom, 2 pumps | side column | S 15–18 × 10–11 | 2 | 1 |
+| Gas station with a tyre shop (`tyres`) | Storeroom, Tyre store, Restroom, Tyre shop, 3 pumps | front and back | L 20–23 × 13–14 | 3 | 1 |
+| Lakeside gas and bait (`bait`) | Storeroom, Bait room, 1 pump | front and back | S 15–18 × 10–11 | 3 | 1 |
+| Two-bay garage with a towing yard (`towing`) | Storeroom, Office, Parts room, Service bay, 2 pumps | front and back | L 20–23 × 13–14 | 4 | 1 |
+| Modern convenience station with a deli counter (`deli`) | Deli counter, Storeroom, Walk-in cooler, Break room, Restroom, 4 pumps | service corridor | L 20–23 × 13–14 | 3 | 1 |
+| 1950s filling station with an attendant's office (`filling`) | Attendant's office, Service bay, 2 pumps | side column | L 20–23 × 13–14 | 2 | 1 |
+| Fuel stop with a lunch counter and showers (`fuelstop`) | Lunch counter, Storeroom, Showers, Restroom, 3 pumps | front and back | L 20–23 × 13–14 | 3 | 1 |
+
+**truckstop** (12)
+
+| Variant | Rooms | Plan | Size | Ways in | Storeys |
+|---|---|---|---|---|---|
+| Truck stop diner with showers and a drivers' lounge (`classic`) | Diner, Kitchen, Showers, Drivers' lounge, Restroom, 3 pumps | front and back | M 29–33 × 18–20 | 2 | 1 |
+| Travel centre with a food court and a chapel (`travel`) | Food court, Diner, Kitchen, Storeroom, Chapel, Showers, Office, Restroom, 3 pumps | service corridor | XL 36–40 × 23–25 | 3 | 1 |
+| CAT scale and tyre shop (`scale`) | Diner, Kitchen, CAT scale house, Storeroom, Restroom, Tyre shop, 3 pumps | front and back | L 33–36 × 20–23 | 3 | 1 |
+| Old truck stop with a service bay (`oldstop`) | Diner, Kitchen, Storeroom, Office, Restroom, Service bay, 3 pumps | front and back | M 29–33 × 18–20 | 4 | 1 |
+| Diesel island and café (`diesel`) | Diner, Kitchen, Storeroom, Restroom, 3 pumps | front and back | S 25–29 × 15–18 | 1 | 1 |
+| Truck stop with drivers' bunks upstairs (`bunks`) | Diner, Kitchen, Storeroom, Office, Restroom, 3 pumps | front and back | L 33–36 × 20–23 | 2 | 2 (bunks) |
+| Highway plaza with two entrances (`plaza`) | Diner, Drivers' lounge, Showers, Kitchen, Storeroom, Restroom, 3 pumps | three bands | L 33–36 × 20–23 | 3 | 1 |
+| Rural fuel-and-feed stop (`feedstop`) | Diner, Feed room, Kitchen, Restroom, 3 pumps | L of back rooms | M 29–33 × 18–20 | 3 | 1 |
+| Chain travel stop (`chain`) | Diner, Showers, Drivers' lounge, Restroom, Kitchen, Receiving, Office, 3 pumps | L of back rooms | XL 36–40 × 23–25 | 4 | 1 |
+| Truck stop with a truck wash (`truckwash`) | Diner, Kitchen, Storeroom, Truck wash, 3 pumps | front and back | L 33–36 × 20–23 | 4 | 1 |
+| Truckers' café and store (`cafe`) | Diner, Kitchen, Storeroom, 3 pumps | front and back | S 25–29 × 15–18 | 2 | 1–2 (flat) |
+| Mega travel centre with a tyre shop and chapel (`mega`) | Diner, Kitchen, Chapel, Showers, CAT scale house, Restroom, Tyre shop, 3 pumps | service corridor | XL 36–40 × 23–25 | 5 | 1 |
+
+**gunstore** (12): franchises Big Iron Guns (main, corner, narrow, wrap); Patriot Firearms (strip, twofloor, twin, counter); Tactical Supply Co. (superstore, flagship, outlet); Hunter's Rest Gun Shop (roadside, counter, outlet)
+
+| Variant | Rooms | Plan | Size | Ways in | Storeys |
+|---|---|---|---|---|---|
+| Main street gun shop (`main`) | Gun cage, Back room, Office | front and back | M 12–14 × 14–16 | 2 | 1 |
+| Gun shop with the owner's flat above (`narrow`) | Back room, Gun cage | front and back | S 10–12 × 12–14 | 2 | 2 (flat) |
+| Corner gun shop with a side door (`corner`) | Back room, Gun cage, Restroom | front and back | M 12–14 × 14–16 | 3 | 1 |
+| Strip-mall gun counter (`strip`) | Gun cage, Back room | front and back | S 10–12 × 12–14 | 2 | 1 |
+| Tactical supply superstore (`superstore`) | Back room, Gun cage, Gunsmith's bench, Break room, Manager's office, Restroom | service corridor | XL 16–18 × 18–20 | 3 | 1 |
+| Gun shop with an indoor range (`outlet`) | Gun cage, Indoor range | side column | L 14–16 × 16–18 | 2 | 1 |
+| Two-floor firearms store (`twofloor`) | Back room, Gun cage, Office | front and back | M 12–14 × 14–16 | 3 | 2 (sales floor) |
+| Gun shop with an L of back rooms (`wrap`) | Office, Restroom, Gun cage, Back room | L of back rooms | M 12–14 × 14–16 | 2 | 1 |
+| Gunsmith and gun shop (`counter`) | Gunsmith's bench, Gun cage, Back room, Office | three bands | M 12–14 × 15–16 | 2 | 1 |
+| Guns and ammo, two shopfronts (`twin`) | Ammo and reloading, Back room, Gun cage, Manager's office, Restroom | front and back | L 14–16 × 16–18 | 3 | 1 |
+| Roadside hunting and gun shop (`roadside`) | Back room, Gun cage | side column | L 14–16 × 16–18 | 3 | 1–2 (flat) |
+| Flagship firearms outfitter (`flagship`) | Ammo and reloading, Back room, Gun cage, Gunsmith's bench, Office, Restroom | service corridor | XL 16–18 × 18–20 | 4 | 2 (offices) |
+
+**pawnshop** (12): franchises Quick Cash Pawn (main, strip, narrow, wrap); Gold & Gun Exchange (flagship, counter, twin); Silver Dollar Pawn (roadside, outlet, corner); Main Street Loan (twofloor, superstore, corner)
+
+| Variant | Rooms | Plan | Size | Ways in | Storeys |
+|---|---|---|---|---|---|
+| Main street pawn shop (`main`) | Gun case, Back room, Office | front and back | M 12–13 × 14–16 | 2 | 1 |
+| Pawn shop with a flat above (`narrow`) | Back room, Gun case | front and back | S 10–12 × 12–14 | 2 | 2 (flat) |
+| Corner pawn and loan (`corner`) | Back room, Gun case, Restroom | front and back | M 12–13 × 14–16 | 3 | 1 |
+| Strip-mall pawn counter (`strip`) | Gun case, Back room | front and back | S 10–12 × 12–14 | 2 | 1 |
+| Pawn superstore (`superstore`) | Back room, Gun case, Jewellery safe room, Break room, Manager's office, Restroom | service corridor | XL 15–16 × 18–20 | 3 | 1 |
+| Pawn shop with a storage yard (`outlet`) | Gun case, Storage yard | side column | L 13–15 × 16–18 | 2 | 1 |
+| Two-floor pawn exchange (`twofloor`) | Back room, Gun case, Office | front and back | M 12–13 × 14–16 | 3 | 2 (sales floor) |
+| Pawn shop with an L of back rooms (`wrap`) | Office, Restroom, Gun case, Back room | L of back rooms | M 12–13 × 14–16 | 2 | 1 |
+| Pawn shop with a jewellery safe room (`counter`) | Jewellery safe room, Gun case, Back room, Office | three bands | M 12–13 × 15–16 | 2 | 1 |
+| Pawn and electronics, two shopfronts (`twin`) | Electronics and tools, Back room, Gun case, Manager's office, Restroom | front and back | L 13–15 × 16–18 | 3 | 1 |
+| Roadside trading post (`roadside`) | Back room, Gun case | side column | L 13–15 × 16–18 | 3 | 1–2 (flat) |
+| Gold and gun exchange (`flagship`) | Electronics and tools, Back room, Gun case, Jewellery safe room, Office, Restroom | service corridor | XL 15–16 × 18–20 | 4 | 2 (offices) |
+
+**sportshop** (12): franchises Peak Sports (superstore, flagship, twofloor); All-Star Athletics (main, corner, wrap, strip); Trailhead Outfitters (outlet, roadside, counter); Big Buck Sporting Goods (counter, roadside, outlet); Riverbend Bait & Tackle (narrow, roadside, main); Summit Outdoor Co. (flagship, twin, superstore)
+
+| Variant | Rooms | Plan | Size | Ways in | Storeys |
+|---|---|---|---|---|---|
+| Sporting goods store (`main`) | Fitting rooms, Stockroom, Office | front and back | M 19–21 × 18–21 | 2 | 1 |
+| Bike and ski shop with a flat above (`narrow`) | Stockroom, Fitting rooms | front and back | S 16–19 × 16–18 | 2 | 2 (flat) |
+| Corner sports shop (`corner`) | Stockroom, Fitting rooms, Restroom | front and back | M 19–21 × 18–21 | 3 | 1 |
+| Strip-mall sports outlet (`strip`) | Fitting rooms, Stockroom | front and back | S 16–19 × 16–18 | 2 | 1 |
+| Sports superstore (`superstore`) | Stockroom, Fitting rooms, Gun counter, Break room, Manager's office, Restroom | service corridor | XL 24–26 × 23–25 | 3 | 1 |
+| Outdoor outfitter with a boat yard (`outlet`) | Fitting rooms, Boat yard | side column | L 21–24 × 21–23 | 2 | 1 |
+| Two-floor sports store (`twofloor`) | Stockroom, Fitting rooms, Office | front and back | M 19–21 × 18–21 | 3 | 2 (sales floor) |
+| Team sports shop (`wrap`) | Office, Restroom, Fitting rooms, Stockroom | L of back rooms | M 19–21 × 18–21 | 2 | 1 |
+| Hunting and fishing counter (`counter`) | Gun counter, Fitting rooms, Stockroom, Office | three bands | M 19–21 × 18–21 | 2 | 1 |
+| Sports and camping, two shopfronts (`twin`) | Camping and fishing, Stockroom, Fitting rooms, Manager's office, Restroom | front and back | L 21–24 × 21–23 | 3 | 1 |
+| Bait and tackle on the road (`roadside`) | Stockroom, Fitting rooms | side column | L 21–24 × 21–23 | 3 | 1–2 (flat) |
+| Flagship outdoor store (`flagship`) | Camping and fishing, Stockroom, Fitting rooms, Gun counter, Office, Restroom | service corridor | XL 24–26 × 23–25 | 4 | 2 (offices) |
+
+**electronics** (12): franchises VoltMart (superstore, outlet, twin); Circuit Town (main, corner, strip, twofloor); MegaByte Electronics (flagship, superstore, twin); Hi-Fi Hut (wrap, narrow, main); Hometown TV & Repair (counter, roadside, narrow)
+
+| Variant | Rooms | Plan | Size | Ways in | Storeys |
+|---|---|---|---|---|---|
+| Electronics store (`main`) | Repair bench, Stockroom, Office | front and back | M 17–19 × 16–18 | 2 | 1 |
+| TV shop with a flat above (`narrow`) | Stockroom, Repair bench | front and back | S 14–17 × 14–16 | 2 | 2 (flat) |
+| Corner electronics shop (`corner`) | Stockroom, Repair bench, Restroom | front and back | M 17–19 × 16–18 | 3 | 1 |
+| Strip-mall phone and gadget store (`strip`) | Repair bench, Stockroom | front and back | S 14–17 × 14–16 | 2 | 1 |
+| Electronics megastore (`superstore`) | Stockroom, Repair bench, Home theatre room, Break room, Manager's office, Restroom | service corridor | XL 22–24 × 20–22 | 3 | 1 |
+| Electronics warehouse outlet (`outlet`) | Repair bench, Warehouse pickup | side column | L 19–22 × 18–20 | 2 | 1 |
+| Two-floor electronics store (`twofloor`) | Stockroom, Repair bench, Office | front and back | M 17–19 × 16–18 | 3 | 2 (sales floor) |
+| Hi-fi shop (`wrap`) | Office, Restroom, Repair bench, Stockroom | L of back rooms | M 17–19 × 16–18 | 2 | 1 |
+| TV and radio repair shop (`counter`) | Home theatre room, Repair bench, Stockroom, Office | three bands | M 17–19 × 16–18 | 2 | 1 |
+| Computers and TVs, two shopfronts (`twin`) | Phones and computers, Stockroom, Repair bench, Manager's office, Restroom | front and back | L 19–22 × 18–20 | 3 | 1 |
+| Roadside satellite and TV dealer (`roadside`) | Stockroom, Repair bench | side column | L 19–22 × 18–20 | 3 | 1–2 (flat) |
+| Flagship electronics store (`flagship`) | Phones and computers, Stockroom, Repair bench, Home theatre room, Office, Restroom | service corridor | XL 22–24 × 20–22 | 4 | 2 (offices) |
+
+**radioshop** (12): franchises Signal Hill Radio (main, corner, wrap); Wavelength Electronics (superstore, twofloor, twin, flagship); CB Corner (counter, roadside, strip); Antenna Joe's (outlet, roadside, counter, narrow); Frequency Supply (flagship, superstore, main)
+
+| Variant | Rooms | Plan | Size | Ways in | Storeys |
+|---|---|---|---|---|---|
+| Radio shop (`main`) | Repair bench, Stockroom, Office | front and back | M 13–14 × 14–16 | 2 | 1 |
+| Radio shop with a flat above (`narrow`) | Stockroom, Repair bench | front and back | S 12–13 × 13–14 | 2 | 2 (flat) |
+| Corner radio and parts (`corner`) | Stockroom, Repair bench, Restroom | front and back | M 13–14 × 14–16 | 3 | 1 |
+| Strip-mall radio counter (`strip`) | Repair bench, Stockroom | front and back | S 12–13 × 13–14 | 2 | 1 |
+| Electronic parts supply (`superstore`) | Stockroom, Repair bench, Antenna stock, Break room, Manager's office, Restroom | service corridor | XL 15–16 × 17–18 | 3 | 1 |
+| Radio shop with a tower parts yard (`outlet`) | Repair bench, Tower parts yard | side column | L 14–15 × 16–17 | 2 | 1 |
+| Two-floor ham radio store (`twofloor`) | Stockroom, Repair bench, Office | front and back | M 13–14 × 14–16 | 3 | 2 (sales floor) |
+| Radio shop with an L of back rooms (`wrap`) | Office, Restroom, Repair bench, Stockroom | L of back rooms | M 13–14 × 14–16 | 2 | 1 |
+| Radio repair shop (`counter`) | Antenna stock, Repair bench, Stockroom, Office | three bands | M 13–14 × 15–16 | 2 | 1 |
+| CB and scanners, two shopfronts (`twin`) | CB and scanner counter, Stockroom, Repair bench, Manager's office, Restroom | front and back | L 14–15 × 16–17 | 3 | 1 |
+| Truckers' CB shop (`roadside`) | Stockroom, Repair bench | side column | L 14–15 × 16–17 | 3 | 1–2 (flat) |
+| Communications outfitter (`flagship`) | CB and scanner counter, Stockroom, Repair bench, Antenna stock, Office, Restroom | service corridor | XL 15–16 × 17–18 | 4 | 2 (offices) |
+
+**bookstore** (12): franchises Dog-Eared Books (main, counter, wrap); Chapter & Verse (superstore, flagship, twofloor); Second Story Used Books (narrow, roadside, outlet); Bound & Found (corner, strip, twin); Readwell's (flagship, twin, superstore)
+
+| Variant | Rooms | Plan | Size | Ways in | Storeys |
+|---|---|---|---|---|---|
+| Bookshop (`main`) | Rare books room, Back room, Office | front and back | M 12–14 × 15–17 | 2 | 1 |
+| Used bookshop with a flat above (`narrow`) | Back room, Rare books room | front and back | S 10–12 × 12–15 | 2 | 2 (flat) |
+| Corner bookshop (`corner`) | Back room, Rare books room, Restroom | front and back | M 12–14 × 15–17 | 3 | 1 |
+| Strip-mall bookstore (`strip`) | Rare books room, Back room | front and back | S 10–12 × 12–15 | 2 | 1 |
+| Book superstore (`superstore`) | Back room, Rare books room, Reading café, Break room, Manager's office, Restroom | service corridor | XL 16–18 × 20–22 | 3 | 1 |
+| Book barn and warehouse (`outlet`) | Rare books room, Book warehouse | side column | L 14–16 × 17–20 | 2 | 1 |
+| Two-floor bookstore (`twofloor`) | Back room, Rare books room, Office | front and back | M 12–14 × 15–17 | 3 | 2 (sales floor) |
+| Bookshop with an L of back rooms (`wrap`) | Office, Restroom, Rare books room, Back room | L of back rooms | M 12–14 × 15–17 | 2 | 1 |
+| Bookshop with a reading café (`counter`) | Reading café, Rare books room, Back room, Office | three bands | M 12–14 × 15–17 | 2 | 1 |
+| Books and children's books, two shopfronts (`twin`) | Children's books, Back room, Rare books room, Manager's office, Restroom | front and back | L 14–16 × 17–20 | 3 | 1 |
+| Roadside book barn (`roadside`) | Back room, Rare books room | side column | L 14–16 × 17–20 | 3 | 1–2 (flat) |
+| Flagship bookstore with a café (`flagship`) | Children's books, Back room, Rare books room, Reading café, Office, Restroom | service corridor | XL 16–18 × 20–22 | 4 | 2 (offices) |
+
+**petstore** (12): franchises Paws & Claws (superstore, twin, flagship); Happy Tails Pet Supply (main, corner, strip); Fins & Feathers (twin, wrap, twofloor); The Feed Bin (outlet, roadside, counter); Wagmore Pet Mart (flagship, superstore, narrow)
+
+| Variant | Rooms | Plan | Size | Ways in | Storeys |
+|---|---|---|---|---|---|
+| Pet shop (`main`) | Fish room, Stockroom, Office | front and back | M 16–18 × 14–16 | 2 | 1 |
+| Pet shop with a flat above (`narrow`) | Stockroom, Fish room | front and back | S 14–16 × 12–14 | 2 | 2 (flat) |
+| Corner pet shop (`corner`) | Stockroom, Fish room, Restroom | front and back | M 16–18 × 14–16 | 3 | 1 |
+| Strip-mall pet supply (`strip`) | Fish room, Stockroom | front and back | S 14–16 × 12–14 | 2 | 1 |
+| Pet superstore (`superstore`) | Stockroom, Fish room, Grooming room, Break room, Manager's office, Restroom | service corridor | XL 20–22 × 18–20 | 3 | 1 |
+| Pet and feed warehouse (`outlet`) | Fish room, Feed warehouse | side column | L 18–20 × 16–18 | 2 | 1 |
+| Two-floor pet store (`twofloor`) | Stockroom, Fish room, Office | front and back | M 16–18 × 14–16 | 3 | 2 (sales floor) |
+| Pet shop with an L of back rooms (`wrap`) | Office, Restroom, Fish room, Stockroom | L of back rooms | M 16–18 × 14–16 | 2 | 1 |
+| Pet shop with a grooming salon (`counter`) | Grooming room, Fish room, Stockroom, Office | three bands | M 16–18 × 15–16 | 2 | 1 |
+| Pets and aquariums, two shopfronts (`twin`) | Aquarium hall, Stockroom, Fish room, Manager's office, Restroom | front and back | L 18–20 × 16–18 | 3 | 1 |
+| Country pet and feed (`roadside`) | Stockroom, Fish room | side column | L 18–20 × 16–18 | 3 | 1–2 (flat) |
+| Flagship pet store with a groomer (`flagship`) | Aquarium hall, Stockroom, Fish room, Grooming room, Office, Restroom | service corridor | XL 20–22 × 18–20 | 4 | 2 (offices) |
+
+**garden** (12): franchises Green Thumb Garden Center (superstore, flagship, twin); Blooming Acres Nursery (outlet, roadside); Sunflower Garden Supply (main, corner, strip, narrow); Root & Branch (outlet, counter, wrap); Hillcrest Greenhouses (twofloor, roadside, flagship)
+
+| Variant | Rooms | Plan | Size | Ways in | Storeys |
+|---|---|---|---|---|---|
+| Garden centre (`main`) | Greenhouse, Potting shed, Office | front and back | M 21–24 × 16–18 | 2 | 1 |
+| Florist and garden shop with a flat above (`narrow`) | Potting shed, Greenhouse | front and back | S 18–21 × 14–16 | 2 | 2 (flat) |
+| Corner garden shop (`corner`) | Potting shed, Greenhouse, Restroom | front and back | M 21–24 × 16–18 | 3 | 1 |
+| Strip-mall garden supply (`strip`) | Greenhouse, Potting shed | front and back | S 18–21 × 14–16 | 2 | 1 |
+| Garden superstore (`superstore`) | Potting shed, Greenhouse, Tool shed, Break room, Manager's office, Restroom | service corridor | XL 27–30 × 20–22 | 3 | 1 |
+| Nursery with a yard (`outlet`) | Greenhouse, Yard stock | side column | L 24–27 × 18–20 | 2 | 1 |
+| Two-floor garden store (`twofloor`) | Potting shed, Greenhouse, Office | front and back | M 21–24 × 16–18 | 3 | 2 (sales floor) |
+| Garden centre with an L of sheds (`wrap`) | Office, Restroom, Greenhouse, Potting shed | L of back rooms | M 21–24 × 16–18 | 2 | 1 |
+| Garden shop with a tool shed (`counter`) | Tool shed, Greenhouse, Potting shed, Office | three bands | M 21–24 × 16–18 | 2 | 1 |
+| Garden and outdoor living, two shopfronts (`twin`) | Outdoor living, Potting shed, Greenhouse, Manager's office, Restroom | front and back | L 24–27 × 18–20 | 3 | 1 |
+| Roadside nursery (`roadside`) | Potting shed, Greenhouse | side column | L 24–27 × 18–20 | 3 | 1–2 (flat) |
+| Flagship garden centre (`flagship`) | Outdoor living, Potting shed, Greenhouse, Tool shed, Office, Restroom | service corridor | XL 27–30 × 20–22 | 4 | 2 (offices) |
+
+**clothing** (12): franchises Threadline (superstore, flagship, twofloor); Denim & Co. (main, corner, strip); Western Wear Outlet (roadside, outlet); Workwear Depot (outlet, counter, wrap); Urban Thread (narrow, twin, corner); Mackinaw Outfitters (narrow, roadside, main); Velvet Lane Boutique (twin, counter, strip)
+
+| Variant | Rooms | Plan | Size | Ways in | Storeys |
+|---|---|---|---|---|---|
+| Clothing store (`main`) | Fitting rooms, Stockroom, Office | front and back | M 15–17 × 17–19 | 2 | 1 |
+| Boutique with a flat above (`narrow`) | Stockroom, Fitting rooms | front and back | S 12–15 × 14–17 | 2 | 2 (flat) |
+| Corner clothing shop (`corner`) | Stockroom, Fitting rooms, Restroom | front and back | M 15–17 × 17–19 | 3 | 1 |
+| Strip-mall clothing store (`strip`) | Fitting rooms, Stockroom | front and back | S 12–15 × 14–17 | 2 | 1 |
+| Clothing superstore (`superstore`) | Stockroom, Fitting rooms, Alterations room, Break room, Manager's office, Restroom | service corridor | XL 20–22 × 22–24 | 3 | 1 |
+| Factory outlet (`outlet`) | Fitting rooms, Outlet stockroom | side column | L 17–20 × 19–22 | 2 | 1 |
+| Two-floor fashion store (`twofloor`) | Stockroom, Fitting rooms, Office | front and back | M 15–17 × 17–19 | 3 | 2 (sales floor) |
+| Clothing store with an L of back rooms (`wrap`) | Office, Restroom, Fitting rooms, Stockroom | L of back rooms | M 15–17 × 17–19 | 2 | 1 |
+| Tailor and clothier (`counter`) | Alterations room, Fitting rooms, Stockroom, Office | three bands | M 15–17 × 17–19 | 2 | 1 |
+| Clothes and shoes, two shopfronts (`twin`) | Shoe department, Stockroom, Fitting rooms, Manager's office, Restroom | front and back | L 17–20 × 19–22 | 3 | 1 |
+| Western and work wear barn (`roadside`) | Stockroom, Fitting rooms | side column | L 17–20 × 19–22 | 3 | 1–2 (flat) |
+| Flagship fashion store (`flagship`) | Shoe department, Stockroom, Fitting rooms, Alterations room, Office, Restroom | service corridor | XL 20–22 × 22–24 | 4 | 2 (offices) |
+
+**liquor** (12): franchises Spirit Shoppe (main, corner, wrap); Bottle King (superstore, outlet, flagship); Package Liquors (roadside, strip, counter); Corner Cork Wine & Spirits (narrow, counter, twofloor); Liberty Liquor (main, twin, strip); Hops & Barley (outlet, roadside, twin)
+
+| Variant | Rooms | Plan | Size | Ways in | Storeys |
+|---|---|---|---|---|---|
+| Liquor store (`main`) | Walk-in beer cooler, Back room, Office | front and back | M 12–14 × 14–16 | 2 | 1 |
+| Off-licence with a flat above (`narrow`) | Back room, Walk-in beer cooler | front and back | S 10–12 × 12–14 | 2 | 2 (flat) |
+| Corner liquor store (`corner`) | Back room, Walk-in beer cooler, Restroom | front and back | M 12–14 × 14–16 | 3 | 1 |
+| Strip-mall liquor store (`strip`) | Walk-in beer cooler, Back room | front and back | S 10–12 × 12–14 | 2 | 1 |
+| Liquor superstore (`superstore`) | Back room, Walk-in beer cooler, Wine cellar, Break room, Manager's office, Restroom | service corridor | XL 16–18 × 18–20 | 3 | 1 |
+| Liquor warehouse (`outlet`) | Walk-in beer cooler, Keg and case warehouse | side column | L 14–16 × 16–18 | 2 | 1 |
+| Two-floor wine and spirits (`twofloor`) | Back room, Walk-in beer cooler, Office | front and back | M 12–14 × 14–16 | 3 | 2 (sales floor) |
+| Liquor store with an L of back rooms (`wrap`) | Office, Restroom, Walk-in beer cooler, Back room | L of back rooms | M 12–14 × 14–16 | 2 | 1 |
+| Wine merchant with a cellar (`counter`) | Wine cellar, Walk-in beer cooler, Back room, Office | three bands | M 12–14 × 15–16 | 2 | 1 |
+| Beer and wine, two shopfronts (`twin`) | Wine room, Back room, Walk-in beer cooler, Manager's office, Restroom | front and back | L 14–16 × 16–18 | 3 | 1 |
+| Roadside package store (`roadside`) | Back room, Walk-in beer cooler | side column | L 14–16 × 16–18 | 3 | 1–2 (flat) |
+| Flagship wine and spirits (`flagship`) | Wine room, Back room, Walk-in beer cooler, Wine cellar, Office, Restroom | service corridor | XL 16–18 × 18–20 | 4 | 2 (offices) |
+
+**hardware** (12): franchises Handy Hank's Hardware (main, corner, narrow); Builders Supply Co. (superstore, flagship, twin); Nail & Bolt Hardware (strip, wrap, counter, twofloor); Lumber Barn (outlet, roadside); Fix-It Depot (superstore, twin, flagship)
+
+| Variant | Rooms | Plan | Size | Ways in | Storeys |
+|---|---|---|---|---|---|
+| Hardware store (`main`) | Tool crib, Lumber and stock, Office | front and back | M 21–24 × 18–21 | 2 | 1 |
+| Hardware shop with a flat above (`narrow`) | Lumber and stock, Tool crib | front and back | S 18–21 × 16–18 | 2 | 2 (flat) |
+| Corner hardware store (`corner`) | Lumber and stock, Tool crib, Restroom | front and back | M 21–24 × 18–21 | 3 | 1 |
+| Strip-mall hardware store (`strip`) | Tool crib, Lumber and stock | front and back | S 18–21 × 16–18 | 2 | 1 |
+| Home improvement superstore (`superstore`) | Lumber and stock, Tool crib, Key and paint counter, Break room, Manager's office, Restroom | service corridor | XL 27–30 × 23–25 | 3 | 1 |
+| Lumber yard and hardware (`outlet`) | Tool crib, Lumber yard | side column | L 24–27 × 21–23 | 2 | 1 |
+| Two-floor hardware store (`twofloor`) | Lumber and stock, Tool crib, Office | front and back | M 21–24 × 18–21 | 3 | 2 (sales floor) |
+| Hardware store with an L of back rooms (`wrap`) | Office, Restroom, Tool crib, Lumber and stock | L of back rooms | M 21–24 × 18–21 | 2 | 1 |
+| Hardware store with a key and paint counter (`counter`) | Key and paint counter, Tool crib, Lumber and stock, Office | three bands | M 21–24 × 18–21 | 2 | 1 |
+| Hardware and paint, two shopfronts (`twin`) | Paint and plumbing, Lumber and stock, Tool crib, Manager's office, Restroom | front and back | L 24–27 × 21–23 | 3 | 1 |
+| Farm and ranch hardware (`roadside`) | Lumber and stock, Tool crib | side column | L 24–27 × 21–23 | 3 | 1–2 (flat) |
+| Flagship builders' supply (`flagship`) | Paint and plumbing, Lumber and stock, Tool crib, Key and paint counter, Office, Restroom | service corridor | XL 27–30 × 23–25 | 4 | 2 (offices) |
+
+**feedstore** (12)
+
+| Variant | Rooms | Plan | Size | Ways in | Storeys |
+|---|---|---|---|---|---|
+| Farm-supply barn with a bale yard (`supplybarn`) | Fencing and bale yard, Feed room, Office | side column | L 20–23 × 16–18 | 2 | 1 |
+| Grain co-op with bins (`coop`) | Grain bins, Feed room, Office, Restroom | front and back | L 20–23 × 16–18 | 2 | 1 |
+| Western store with saddles and boots (`western`) | Western wear, Saddle and tack room, Feed room, Office | front and back | M 18–20 × 14–16 | 3 | 1 |
+| Country feed store (`country`) | Feed room, Office | front and back | M 18–20 × 14–16 | 2 | 1 |
+| Tack and saddlery (`tack`) | Saddle and tack room, Office | front and back | S 15–18 × 12–14 | 2 | 1 |
+| Farm and ranch centre (`ranch`) | Western wear, Feed room, Vet supplies, Saddle and tack room, Office, Restroom | service corridor | XL 23–25 × 18–20 | 3 | 1 |
+| Old feed mill (`mill`) | Grain bins, Feed room | three bands | M 18–20 × 15–16 | 3 | 2 (grain loft) |
+| Livestock supply with a vet counter (`livestock`) | Vet supplies, Office, Feed room | L of back rooms | M 18–20 × 14–16 | 2 | 1 |
+| Feed and hardware (`feedhardware`) | Hardware, Feed room, Office | front and back | L 20–23 × 16–18 | 3 | 1 |
+| Roadside hay and feed shed (`hayshed`) | Fencing and bale yard | side column | S 15–18 × 12–14 | 3 | 1 |
+| Seed and garden supply (`seed`) | Feed room, Greenhouse, Office | front and back | M 18–20 × 14–16 | 2 | 1–2 (flat) |
+| Farmers' co-op store with offices upstairs (`towncoop`) | Feed room, Grain bins, Restroom | service corridor | M 18–20 × 14–16 | 2 | 2 (offices) |
+
+**dealer** (12): franchises Calder Motors (franchise, automall, glass); Bargain Bob's Used Cars (usedlot, rental, superstore); Highline Auto Mall (automall, boutique, glass); Truck Country (truck, country, rv); Hometown Auto Sales (franchise, country, bodyshop, motorcycle); Prestige Imports (boutique, glass, motorcycle)
+
+| Variant | Rooms | Plan | Size | Ways in | Storeys |
+|---|---|---|---|---|---|
+| New car dealer with service bays (`franchise`) | Parts room, Sales office, Restroom, Service bays | front and back | M 35–40 × 24–28 | 3 | 1 |
+| Used car lot office (`usedlot`) | Office, Restroom | front and back | S 30–35 × 20–24 | 2 | 1 |
+| Auto mall with a finance floor (`automall`) | Parts room, Sales office, Finance office, Restroom, Service bays | service corridor | L 40–45 × 28–31 | 4 | 2 (offices) |
+| Truck and tractor dealer (`truck`) | Parts room, Sales office, Service bays | front and back | L 40–45 × 28–31 | 3 | 1 |
+| Import boutique showroom (`boutique`) | Sales office, Finance office, Restroom | front and back | M 35–40 × 24–28 | 1 | 1 |
+| RV and boat dealer (`rv`) | Sales office, Finance office, Parts room, Accessories store, RV service bay | three bands | L 40–45 × 28–31 | 4 | 1 |
+| Motorcycle dealer (`motorcycle`) | Gear and helmets, Parts room, Bike workshop | front and back | M 35–40 × 24–28 | 3 | 1 |
+| Dealer with a body shop (`bodyshop`) | Paint booth, Parts room, Sales office, Service bays | front and back | M 35–40 × 24–28 | 4 | 1 |
+| Glass-front showroom on the strip (`glass`) | Sales office, Finance office, Restroom | front and back | L 40–45 × 28–31 | 3 | 1 |
+| Country dealer and garage (`country`) | Sales office, Restroom, Parts room, Service bays | L of back rooms | M 35–40 × 24–28 | 4 | 1 |
+| Car rental and sales (`rental`) | Rental desk, Wash bay | side column | S 30–35 × 20–24 | 2 | 1 |
+| Used car superstore (`superstore`) | Parts room, Sales office, Finance office, Break room, Restroom, Service bays | service corridor | XL 45–50 × 31–35 | 5 | 1 |
+
+**bank** (12): franchises First Calder Bank (marble, corner, drivethru, headquarters, trust); Mercantile Trust (tower, grand, headquarters, marble); Farmers & Merchants Bank (farmers, smalltown, grand); Liberty Savings & Loan (savings, drivethru, driveup); Granite National Bank (marble, tower, grand); Union Credit Union (creditunion, driveup, savings, corner)
+
+| Variant | Rooms | Plan | Size | Ways in | Storeys |
+|---|---|---|---|---|---|
+| Small-town bank (`smalltown`) | ATM lobby, Teller line, Vault, Manager's office | front and back | S 15–19 × 15–18 | 2 | 1 |
+| Branch with a drive-through (`drivethru`) | ATM lobby, Drive-up teller window, Teller line, Vault, Safe-deposit room, Restroom | side column | M 19–23 × 18–20 | 2 | 1 |
+| Big city bank with a marble hall (`marble`) | ATM lobby, Teller line, Vault, Safe-deposit room, Manager's office, Records, Restroom | three bands | L 23–26 × 20–23 | 3 | 2–3 (offices) |
+| Credit union in a strip mall (`creditunion`) | ATM lobby, Teller line, Vault, Restroom | front and back | S 15–19 × 15–18 | 2 | 1 |
+| Savings and loan with loan offices (`savings`) | ATM lobby, Loan office, Teller line, Vault, Manager's office | service corridor | M 19–23 × 18–20 | 2 | 1 |
+| Farmers' bank with a loan office (`farmers`) | ATM lobby, Manager's office, Loan office, Teller line, Vault | L of back rooms | M 19–23 × 18–20 | 2 | 1 |
+| Bank tower lobby (`tower`) | ATM lobby, Teller line, Vault, Safe-deposit room, Records, Break room, Restroom | service corridor | L 23–26 × 20–23 | 3 | 3 (offices) |
+| Corner bank with two doors (`corner`) | ATM lobby, Teller line, Vault, Safe-deposit room, Manager's office | front and back | M 19–23 × 18–20 | 3 | 1 |
+| Old grand bank with offices above (`grand`) | ATM lobby, Vault, Teller line, Manager's office | front and back | L 23–26 × 20–23 | 1 | 2 (offices) |
+| Branch with a drive-up ATM (`driveup`) | ATM lobby, Drive-up teller window, Teller line, Vault | side column | S 15–19 × 15–18 | 3 | 1 |
+| Trust company with private offices (`trust`) | ATM lobby, Loan office, Vault, Safe-deposit room, Manager's office | three bands | M 19–23 × 18–20 | 2 | 1 |
+| Regional bank headquarters (`headquarters`) | ATM lobby, Night deposit, Teller line, Vault, Safe-deposit room, Records, Manager's office, Break room, Restroom | service corridor | XL 26–30 × 23–25 | 4 | 2–3 (offices) |
+
+**autoshop** (12): franchises Quick Lube Express (drivethru, wash, small); Hank's Garage & Tow (tow, flat, standard); Precision Auto Repair (standard, engine, counter, fleet); Tire Town (tyres, heavy, counter); Main Street Muffler (small, paint, engine)
+
+| Variant | Rooms | Plan | Size | Ways in | Storeys |
+|---|---|---|---|---|---|
+| Two-bay repair shop (`standard`) | Office, Parts room | side column | M 18–20 × 14–16 | 3 | 1 |
+| Quick lube with drive-through bays (`drivethru`) | Office, Restroom | side column | M 18–20 × 14–16 | 3 | 1 |
+| Tyre and brake shop (`tyres`) | Office, Tyre store | side column | M 18–20 × 14–16 | 3 | 1 |
+| Body shop with a paint booth (`paint`) | Office, Parts room, Paint booth, Restroom | L of back rooms | L 20–23 × 16–18 | 3 | 1 |
+| Engine and transmission shop (`engine`) | Office, Parts room, Engine room, Restroom | front and back | L 20–23 × 16–18 | 3 | 1 |
+| Muffler shop (`small`) | Office | side column | S 15–18 × 12–14 | 2 | 1 |
+| Fleet service garage (`fleet`) | Office, Parts room, Break room, Restroom | side column | XL 23–25 × 18–20 | 4 | 1 |
+| Garage and tow yard (`tow`) | Office, Parts room, Tow gear store | L of back rooms | M 18–20 × 14–16 | 3 | 1 |
+| Country garage with a flat above (`flat`) | Office, Parts room | side column | M 18–20 × 14–16 | 2 | 2 (flat) |
+| Detailing and car wash (`wash`) | Office, Wash bay, Parts room | front and back | M 18–20 × 14–16 | 3 | 1 |
+| Auto parts and repair (`counter`) | Parts counter, Office, Parts room, Restroom | three bands | M 18–20 × 15–16 | 3 | 1 |
+| Heavy truck repair (`heavy`) | Office, Parts room, Restroom | side column | L 20–23 × 16–18 | 3 | 1 |
+
+**garage** (12)
+
+| Variant | Rooms | Plan | Size | Ways in | Storeys |
+|---|---|---|---|---|---|
+| Town garage (`standard`) | Office, Parts room | side column | M 12–13 × 9–10 | 3 | 1 |
+| Drive-through garage (`drivethru`) | Office, Restroom | side column | M 12–13 × 9–10 | 3 | 1 |
+| Garage with a tyre store (`tyres`) | Office, Tyre store | side column | M 12–13 × 9–10 | 3 | 1 |
+| Body shop and garage (`paint`) | Office, Parts room, Paint booth, Restroom | L of back rooms | L 13–15 × 10–11 | 3 | 1 |
+| Garage with a workshop (`engine`) | Office, Parts room, Workshop, Restroom | front and back | L 13–15 × 10–11 | 3 | 1 |
+| Lock-up garage (`small`) | Office | side column | S 10–12 × 8–9 | 2 | 1 |
+| Municipal vehicle garage (`fleet`) | Office, Parts room, Break room, Restroom | side column | XL 15–16 × 11–12 | 4 | 1 |
+| Breakdown and recovery garage (`tow`) | Office, Parts room, Tow gear store | L of back rooms | M 12–13 × 9–10 | 3 | 1 |
+| Garage with a flat above (`flat`) | Office, Parts room | side column | M 12–13 × 9–10 | 2 | 2 (flat) |
+| Garage with a wash bay (`wash`) | Office, Wash bay, Parts room | front and back | M 12–13 × 9–10 | 3 | 1 |
+| Garage with a parts counter (`counter`) | Parts counter, Office, Parts room, Restroom | three bands | M 12–13 × 15 | 3 | 1 |
+| Bus and truck garage (`heavy`) | Office, Parts room, Restroom | side column | L 13–15 × 10–11 | 3 | 1 |
+
+**workshop** (12)
+
+| Variant | Rooms | Plan | Size | Ways in | Storeys |
+|---|---|---|---|---|---|
+| Welding shop (`standard`) | Office, Parts room | side column | M 14–16 × 11–12 | 3 | 1 |
+| Fabrication shop with through doors (`drivethru`) | Office, Restroom | side column | M 14–16 × 11–12 | 3 | 1 |
+| Steel stockholder's shop (`tyres`) | Office, Material store | side column | M 14–16 × 11–12 | 3 | 1 |
+| Sign shop with a spray booth (`paint`) | Office, Parts room, Spray booth, Restroom | L of back rooms | L 16–18 × 12–13 | 3 | 1 |
+| Machine shop (`engine`) | Office, Parts room, Machine room, Restroom | front and back | L 16–18 × 12–13 | 3 | 1 |
+| Small engine repair (`small`) | Office | side column | S 12–14 × 10–11 | 2 | 1 |
+| Contractor's workshop (`fleet`) | Office, Parts room, Break room, Restroom | side column | XL 18–20 × 13–14 | 4 | 1 |
+| Joinery with a timber store (`tow`) | Office, Parts room, Timber store | L of back rooms | M 14–16 × 11–12 | 3 | 1 |
+| Blacksmith's forge with a flat above (`flat`) | Office, Parts room | side column | M 14–16 × 11–12 | 2 | 2 (flat) |
+| Boat repair shop (`wash`) | Office, Loading bay, Parts room | front and back | M 14–16 × 11–12 | 3 | 1 |
+| Trade counter and workshop (`counter`) | Trade counter, Office, Parts room, Restroom | three bands | M 14–16 × 15 | 3 | 1 |
+| Heavy fabrication works (`heavy`) | Office, Parts room, Restroom | side column | L 16–18 × 12–13 | 3 | 1 |
+
+**corner** (12): franchises Quik Stop (classic, twodoor, cooler, kiosk); Seven Star Mart (booth, laundro, sidestock); Penny Mart (post, general, flat, wrap); Night Owl (booth, bodega, kiosk, wrap)
+
+| Variant | Rooms | Plan | Size | Ways in | Storeys |
+|---|---|---|---|---|---|
+| Corner shop (`classic`) | Stockroom, Office, Restroom | front and back | M 11–13 × 10–12 | 2 | 1–2 (flat) |
+| Bodega with a deli counter (`bodega`) | Deli counter, Stockroom, Restroom | front and back | M 11–13 × 10–12 | 2 | 1 |
+| Shop with the owner's flat above (`flat`) | Stockroom, Restroom | front and back | S 10–11 × 10–11 | 2 | 2 (flat) |
+| Corner store with two doors (`twodoor`) | Stockroom, Office | front and back | M 11–13 × 10–12 | 3 | 1 |
+| Village shop and post office (`post`) | Post office counter, Stockroom, Restroom | front and back | L 13–14 × 11–12 | 2 | 1 |
+| Newsagent kiosk (`kiosk`) | Stockroom | front and back | S 10–11 × 10–11 | 1 | 1 |
+| Beer-and-ice store with a walk-in (`cooler`) | Stockroom, Walk-in cooler | front and back | M 11–13 × 10–12 | 2 | 1 |
+| Corner market with its stock on the side (`sidestock`) | Stockroom | side column | L 13–14 × 11–12 | 2 | 1 |
+| Late-night store with a cashier's booth (`booth`) | Cashier's booth, Stockroom | front and back | M 11–13 × 10–12 | 2 | 1 |
+| Corner store and laundromat (`laundro`) | Laundromat, Stockroom, Restroom | front and back | L 13–14 × 11–12 | 2 | 1 |
+| General store with a back storeroom (`general`) | Office, Back storeroom, Stockroom | L of back rooms | M 11–13 × 10–12 | 3 | 1 |
+| Corner store with an L of back rooms (`wrap`) | Office, Restroom, Stockroom | L of back rooms | L 13–14 × 11–12 | 2 | 2 (flat) |
+
+**grocery** (12): franchises FreshWay Market (dock, corridor, pharmacy); Value Basket (neighbourhood, bakery, international, twostorey); Hilltop Grocers (butcher, florist, country); Mercer's General Store (country, coop, butcher); Corner Bodega (international, annex, coop); Harvest Foods (bakery, florist, pharmacy, annex)
+
+| Variant | Rooms | Plan | Size | Ways in | Storeys |
+|---|---|---|---|---|---|
+| Neighbourhood grocery (`neighbourhood`) | Stockroom, Walk-in cooler, Office, Restroom | front and back | M 20–23 × 17–20 | 3 | 1 |
+| Grocery with an in-store bakery (`bakery`) | Bakery, Stockroom, Walk-in cooler, Restroom | front and back | M 20–23 × 17–20 | 2 | 1 |
+| Butcher and grocer (`butcher`) | Butcher, Walk-in cooler, Stockroom, Office | front and back | S 20–21 × 17–18 | 3 | 1 |
+| Grocery with a loading dock (`dock`) | Stockroom, Walk-in cooler, Walk-in freezer, Office | front and back | L 23–26 × 18–20 | 3 | 1 |
+| Grocery with a pharmacy counter (`pharmacy`) | Pharmacy counter, Stockroom, Walk-in cooler, Restroom | front and back | M 20–23 × 17–20 | 3 | 1 |
+| Food co-op with offices upstairs (`coop`) | Stockroom, Walk-in cooler, Members' room | front and back | S 20–21 × 17–18 | 2 | 2 (offices) |
+| International market (`international`) | Stockroom, Walk-in cooler, Dry goods room, Restroom | front and back | M 20–23 × 17–20 | 2 | 1 |
+| Grocery with a beer and wine annex (`annex`) | Beer and wine, Stockroom, Walk-in cooler, Restroom | L of back rooms | L 23–26 × 18–20 | 2 | 1 |
+| Two-storey grocery with a stockroom above (`twostorey`) | Stockroom, Walk-in cooler, Restroom | front and back | L 23–26 × 18–20 | 3 | 2 (stockroom) |
+| Grocery with a service corridor (`corridor`) | Stockroom, Walk-in cooler, Walk-in freezer, Office, Break room, Restroom | service corridor | L 23–26 × 18–20 | 3 | 1 |
+| Market with a florist (`florist`) | Florist, Stockroom, Walk-in cooler, Restroom | front and back | S 20–21 × 17–18 | 3 | 1 |
+| Country supermarket with a feed corner (`country`) | Stockroom, Walk-in cooler, Feed and seed | front and back | M 20–23 × 17–20 | 3 | 1 |
+
+**supermarket** (12)
+
+| Variant | Rooms | Plan | Size | Ways in | Storeys |
+|---|---|---|---|---|---|
+| Supermarket (`classic`) | #22's rooms | #22's | M 54–56 × 36–38 | 2 front, 2–3 docks, fire exit | 1–2 (mezzanine) |
+| Supermarket with a fuel station (`fuel`) | 4 pumps | #22's | M 54–56 × 36–38 | 1 front, 2 docks, fire exit | 1 |
+| Supermarket with a garden centre (`garden`) | Garden centre | #22's | L 56–58 × 37–40 | 2 front, 2 docks | 1 |
+| Supermarket with a liquor store (`liquor`) | Liquor store | #22's | M 54–56 × 36–38 | 2 front, 2 docks, fire exit | 1 |
+| Two-storey supermarket (`mezzanine`) | #22's rooms | #22's | L 56–58 × 37–40 | 2 front, 3 docks, fire exit | 2 (mezzanine) |
+| Supermarket with a bank branch (`bank`) | Bank branch | #22's | M 54–56 × 36–38 | 1 front, 2 docks, fire exit | 1 |
+| City supermarket with a food hall upstairs (`foodhall`) | #22's rooms | #22's | L 56–58 × 37–40 | 2 front, 2 docks | 2 (food hall) |
+| Discount warehouse grocery (`discount`) | #22's rooms | #22's | L 56–58 × 37–40 | 1 front, 3 docks | 1 |
+| Supermarket with doors at both ends (`twoends`) | #22's rooms | #22's | M 54–56 × 36–38 | 2 front, 2 docks, fire exit, 2 side | 1 |
+| Supermarket with a florist and photo lab (`florist`) | Florist, Photo lab | #22's | M 54–56 × 36–38 | 2 front, 2–3 docks, fire exit | 1 |
+| Regional supermarket and hardware (`regional`) | Hardware corner | #22's | M 54–56 × 36–38 | 1 front, 2 docks, fire exit | 1 |
+| Hypermarket with a fuel station and a mezzanine (`hyper`) | 4 pumps | #22's | L 56–58 × 37–40 | 2 front, 2 docks, fire exit | 2 (mezzanine) |
+
 ### Library variants
 Issue #34 (the user's request 2026-10-25: "add library variants with several layouts and sizes"; module `librarylayout.js`, test `tools/librarytest.js`, the rooms and rules in [combat.md Libraries](combat.md#libraries)). A new save's library is one of thirteen variants (the user's later request the same day: "for buildings with no to only a few varients create a dozen varients per building type"), each with two plans: a **rural one-room reading room** (10–12 m), a **Carnegie library** (19–25 × 17–20, 1–2 storeys: the rotunda and wings of stacks), a **modern branch** (26–32 × 20–24: glass front, open hall, children's area, teen space, computer bank), a **county library** (31–38 × 25–29, 2 storeys: local history, genealogy, technical services and a loading door), a **central city library** (50–56 × 40–44, 4–8 storeys: atrium, grand reading room, children's floor, floors of stacks, rare books, auditorium, café, closed stacks), a **historic or private library** (23–28 × 20–25, 2–3 storeys: panelled rooms, the gallery over the reading hall, the librarian's flat), a **bookmobile depot**, a **library in a strip mall**, a **library in a converted house**, a **children's library**, a **law library**, a **university research library** and a **historical society or archive**.
 - **Which**: the place's franchise (`FRANCHISES.library`, each with `plan.libs`, its variants' weights): Central Library → the central library; Carnegie Library → a Carnegie; Branch Library → a modern branch (70%) or a strip-mall library; County Library → a county library (85%) or the bookmobile depot; Memorial Library → a Carnegie, a county or a historic library. New names: Calder Free Public Library (a Carnegie or a county), Pinecrest Reading Room and Millbrook Village Library (rural), Lakeside Branch Library (modern), Westgate Library Express (strip mall), County Bookmobile Depot, The Athenaeum and Harmon Hall Library (historic), Elm Street House Library (a converted house; Millbrook Village Library is a rural reading room or a house library), Juniper Children's Library, Calder County Law Library (downtown, rare), Calder College Library (downtown, rarer: #28's campus places its own) and Harlan County Historical Society (the towns; a Memorial Library is one now and then). A library with no franchise (a site's from before franchises): `LIBRARY.ANY`'s weights.
@@ -426,11 +832,25 @@ Issue #26 (the user's request 2026-10-25: "Add bunker buildings"). Points of int
 - Crashlanding's mountain bunker stays its own site (`bunker_mil`, crashstart.js), now with its building.
 - Each opens its building (buildingmaps.js `SITES`: `bunker_mil` → `mountainbunker`, `bunker` → `milbunker`, `govbunker`, `shelter`, `prepper`); the rest of the POI flow (surveys, the per-POI raid, the container ledger, tile heat, other groups surveying and raiding them through `aiscav`) is the shared one. Their loot by place: loot.js tags (`bunker` military, guns, camp; `govbunker` tech, office, military; `shelter` kitchen, medical, camp; `prepper` camp, hunt, guns, kitchen, outdoor). The building: [combat.md Bunkers](combat.md#bunkers).
 
+
+## Prisons and county jails as places
+The user's request (2026-10-25, issue #31): "add … prisons max of 400x400". The maps are in [combat.md "Prisons"](combat.md#prisons).
+- **The prison site** (data.js `LOCATIONS.prison`, mapgen.js: one on a Normal map, two on Large and Huge) is a state prison or a maximum-security penitentiary by its own dice (prison.js `prisonKind`, 35% maximum security). Its raid opens one complex: `siteBuildings(tile, state)` gives the one option `prison`, so no building is picked. The headless search and the other groups' raids read the site's loot as before.
+- **The county jail** (new `LOCATIONS.jail`, "County jail", danger 2, richness 0.6, town; its world-map sprite is the police station's) is a point of interest. Every town has one on the tile of its suburb ring that the dice pick (pois.js `jailTile`: the lowest hash among the ring's tiles that can hold POIs). It comes after the campsite and before the shops (`jailExtra`, `extra: "jail"`). Its tile's own list is one shorter, so the jail keeps its place among `POI.MAX`. It is known where its tile is in the known zone. A raid on it (poiraid.js `poiPlace`, `SITES.jail`) opens the jail and its pods. The jail's finds alias a prison's (loot.js).
+- **Older saves** (worldcfg.js `legacyPrisons`; save.js marks a save with no `state.prisonV`): no jails, and a prison keeps its pick of one building.
+- Tests: `tools/prisontest.js` (a jail by every town, the jail's raid), `tools/poitest.js` (the jail extra), `tools/shopstest.js` (never over 4 places).
 ## Air bases
 
 - **Air bases** (issue #25, the user's request 2026-10-25: "yes open a ticket for the military buildings bases, airports, air bases, etc that fits too"): a location type of its own, `airbase` (data.js `LOCATIONS`: "Air base", ✈, special, danger 3, public; fuel, ammunition and parts; military gear, flares, chest rigs). Its buildings (buildingmaps.js `SITES.airbase`): two hangars of aircraft, the control tower, flight operations, barracks and a mess hall, laid out as [combat.md](combat.md#raids-into-building-interiors) says; its street map's areas `AREA_SETS.airbase` (a hangar, a barracks, an armory, a warehouse); its finds by the military, guns and crash themes (loot.js `SITE_TAGS`), its guns from the military's bands (gundist.js, itemcond.js), its locks (locks.js: a hangar key), a raid map of the Large class (battlesize.js), its map sprite (ui/mapsprites.js `paintAirBase`: an olive hangar, a grey fighter, a tower).
   - Where (mapgen.js, at the end of the land's making): some of the military sites are air bases, one in six of them and never the first (a Normal map's 11–12: two; Small one; Large three), picked by hash dice of the tile, so nothing else on the map changes; named "<nearest town> Air base". They stay in `state.militaryIds` (military sites: the soldiers' dead, the groups that hold a base); Custom's "Military sites" count includes them (one once it asks for two or more). Crashlanding's unit falls back only to a Guard base (crashstart.js).
   - Test `tools/interiortest.js` (air bases on generated maps at a sensible rate; the site's buildings).
+
+## Universities and colleges
+Issue #28 (the user's request 2026-10-25: "Add college campus maps that are max 500x500 with connected and disconnected buildings courtyards and dorms").
+- **The university** (`univ`, as before: one in the first city, "<City> University") is a campus now: its site opens one campus map (buildingmaps.js `SITES.univ = ["campus"]`), a state university three times in four, else a liberal arts college. An older save's university whose lab, offices or cafeteria a raid already went into keeps that choice of buildings (`SITES_LEGACY`); one nobody raided becomes a campus.
+- **The college** (`college`, new: data.js `LOCATIONS.college`, "College", glyph Co, town, danger 1, public; parts, meds, scrap, food; a bag, a bat, a fire axe): mapgen.js gives `COLLEGE.P` 12% of the towns one, two or three tiles out on land with no site or hive, on hash dice of the town laid after the town rings (every other draw of a seed's map is as it was). Named from `COLLEGE_NAMES` (campus.js) after the town or from the list ("Granite Valley Community College", "Ashby Technical College", "Prairie View College", "St. Augustine College", "Whitcombe College"), never a name another site has; `COLLEGE.COMMUNITY` 55% are community colleges (`tile.loc.campus`), the rest liberal arts colleges. About 15–20 a Normal map. Its finds (loot.js `SITE_TAGS` school, office, tech, books, sport; `SITE_FINDS` phones, laptops, consoles), its books (skills.js), its locks (locks.js: a maintenance key, a safe), a raid map of the Large class (battlesize.js), its street map's areas (`AREA_SETS.college`), its map sprite (the university's, ui/mapsprites.js).
+- The campus itself, its buildings, links, quads, dead, loot and scenes: [combat.md "Campuses"](combat.md#campuses). City crawls never get a campus (too big for a block).
+- The POI rules: a campus is its site POI's one map; the ledger keeps each building's containers apart, and the headless search and other groups' raids take from it a building at a time (poicont.js `poiHouses`).
 
 ## Hotels and their chains
 
@@ -441,10 +861,12 @@ The user's request 2026-10-25 (issue #29 of the interiors epic #7): "add hotel 2
   - business hotels: **Interstate Inn & Suites** (suburb 1, town 0.7, city 0.5), **Meridian Business Hotel** (city 1, suburb 0.8, town 0.3);
   - resorts: **Pinecrest Lodge Resort** (scenic 1, town 0.12), **Lakeshore Grand Resort** (scenic 0.8, suburb and town 0.08);
   - city towers: **Calder Grand Hotel** (city 1), **Harbor View Tower** (city 0.8).
+  - Since issue #38 (2026-10-25, the user's "every building should have several varients" and "for buildings with no to only a few varients create a dozen varients per building type"), a chain a kind more, so a dozen variants a kind have chains to carry them: **Timberline Lodges** (inns: town 0.6, suburb 0.1), **Keystone Suites** (business: suburb 0.8, town 0.5, city 0.4), **Sundance Resorts & Casino** (resorts: scenic 0.6, town 0.06, suburb 0.05), **Pinnacle Tower Hotels** (towers: city 0.7). Twelve chains; the kinds where they stood before (no inn or resort in a city block, no tower in a town, only resorts in scenic land).
+- **Each chain's variants** (issue #38; `plan.variants`, the variants of data-hotels.js `HOTEL_VARIANTS` that fit it, 5–8 a chain, every variant in at least one): a hotel POI's variant (`poi.hv`) is drawn by `hotels.js hotelVariantOf` from its chain's list, weighed by the setting (`HotelVariant.w`: a boutique hotel or a convention-centre hotel downtown, a budget box or a highway inn & suites in the suburbs and towns, no dude ranch in the suburbs), on dice of its own (`hash01(seed, "hotelvar", tile)`) after everything else, so the POI's other fields and every other list are as they were. Its name shows it: `pois.js poiName` "Willow Creek Inn (Victorian B&B)"; `poiraid.js poiPlace` hands it to the building as `plan`. A crawl hotel draws its variant the same way (`place.hv`, `hash01(seed, "crawlhotelvar", tile, cell)`, by the crawl's city, suburb or town setting; `citycrawl.js placeOption` passes it as `plan`, unless the block's snapshot kept another chain). A hotel POI made before the variants (no `hv`) keeps its kind's classic plan, #29's, cell for cell. The plans: [combat.md](combat.md#raids-into-building-interiors) ("Hotel variants"). Test `tools/hotelvarianttest.js`.
 - **As points of interest** (hotels.js `hotelExtra`, from pois.js `generatePois` last, on dice of its own after the shops, so a world's lists and a save's changes to them stay as they were): a tile holds a hotel at `HOTELS.AT` by its setting (`hotelSetting`: shops.js `settingOf`'s city block, city suburb or town ring; else **scenic land** on or by a road: forest, hills, a mountain, or any land by water): a city block 9%, a city's suburb 6%, a town's ring 4.5%, scenic land 0.6%; never past `POI.MAX` (4), never two on a tile, never beside a site it would out-rank; known in the known zone `SHOP.KNOWN` of the time (a survey finds the rest). Its chain by the setting's weights: a town's 62% inns, 32% business hotels, 6% resorts; a suburb's 73% business hotels, 24% inns, 3% resorts; a city's 54% towers, 46% business hotels; scenic land's resorts only (tools/hoteltest.js over 300 seeds: 9.1%, 5.9%, 4.6%, 0.6%). Three generated worlds held 285 hotels (town 158, scenic 72, suburb 36, city 19: city blocks are often full). Its building: buildingmaps.js `SITES.hotel` (poiraid.js `poiPlace`: the chain's name and layout).
 - **In the crawl** (hotels.js `hotelPlace`, from citycrawl.js `genBlock` after the shops, on dice of its own): a block with room for one more place (`CRAWL.PLACES[1]`) holds a hotel at `HOTELS.CRAWL` (a city's 7%, a town's 6%, +1.5% a block deeper, at most 15%; measured 7.9% / 9.1% / 15.4% at blocks 1, 3, 6 of a city); its place's richness 1.05 and its dead 1.2 (`HOTELS.PLACE`); its chain the crawl's (shops.js `crawlFranchise`: downtown 55% towers, 45% business hotels; a town's 60% inns, 34% business hotels, 6% resorts). Its upper floors hold survivors or raiders (floorfolk.js: the penthouse first).
 - **The map sprite** (ui/mapsprites.js `paintHotel`, by the chain's kind in its colours): a gabled inn with its porch and sign, a business hotel's slab of windows and porte-cochere, a resort's long low lodge with the pool in front, a tower with its crown and sign.
-- Modules: [hotels, hotellayout, data-shops, pois, citycrawl genBlock, shops franchiseFor, buildingmaps SITES; ui/mapsprites].
+- Modules: [hotels (`hotelVariantOf`), hotellayout, data-hotels, data-shops, pois (`poiName`), poiraid (`poiPlace`), citycrawl genBlock and `placeOption`, shops franchiseFor, buildingmaps SITES; ui/mapsprites].
 
 ## POI surveys and the per-POI raid flow
 Survey and Quick look find and rate the places on a tile; a scavenge or raid goes into one POI at a time.
