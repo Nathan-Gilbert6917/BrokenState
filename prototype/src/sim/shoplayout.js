@@ -946,10 +946,10 @@ Object.assign(COMMERCIAL_STYLES, {
       fill(L, ["shelf", "counter"]);
       return;
     }
-    L.run(["deckoven", "deckoven", "oven", "sink"], [ws[0] ? ws[0].side : "n"], { plain: () => full(L) });
-    must(L, "deckoven");
-    L.wall("mixer", { prefer: "corner" }); if (c.w * c.h >= 20) L.wall("mixer", { prefer: "corner" });
-    must(L, "mixer");
+    must(L, "deckoven", { sides: ws[0] ? [ws[0].side] : undefined }); // the bakehouse's signature first: a small one fills up
+    must(L, "mixer", { prefer: "corner" });
+    L.run(["deckoven", "oven", "sink"], [ws[0] ? ws[0].side : "n"], { plain: () => full(L) });
+    if (c.w * c.h >= 20) L.wall("mixer", { prefer: "corner" });
     if (c.w * c.h >= 16) L.centre("counter", P(L));
     some(L, "breadrack", 2);
     fill(L, ["dryshelf", "breadrack", "counter"]);

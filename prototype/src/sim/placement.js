@@ -134,8 +134,8 @@ export const PLACE_EXTRA = [
   ["feedstore", { rural: 0.004, highway: 0.006 }],
   ["farmstand", { highway: 0.01 }],
   // Issue #55: a small bakery or butcher in the country (a new world from since them: legacyShopsR2 skips these).
-  ["bakery", { rural: 0.004, highway: 0.003, coast: 0.001 }],
-  ["butcher", { rural: 0.004, highway: 0.002 }],
+  ["bakery", { rural: 0.0015, highway: 0.0015, coast: 0.0005 }],
+  ["butcher", { rural: 0.0015, highway: 0.001 }],
 ];
 const R2_EXTRA = new Set(["bakery", "butcher"]); // issue #55's: none in a save from before them
 export const PLACE_KNOWN = 0.7; // the share of them known from the start in the known zone (shops.js SHOP.KNOWN)
