@@ -18,6 +18,7 @@
 import { createWorld } from "../src/sim/world.js";
 import { BUILDINGS, assemble, realScale, MAX_STOREYS, OPEN_STOREYS, openStoreys, buildingMap, buildingSpec, settingOf, BMAP } from "../src/sim/buildingmaps.js";
 import { REAL_SIZE, CELL_M, storeyRange, realFoot, sizeOf } from "../src/sim/data-buildingsize.js";
+import { layoutsOf } from "../src/sim/buildvariants.js";
 import { CELL, RAID_W, RAID_H } from "../src/sim/combat.js";
 import { cleanCfg } from "../src/sim/worldcfg.js";
 import { fitMargins, buildingDeadScale, BIG } from "../src/sim/battlesize.js";
@@ -92,13 +93,14 @@ const dens = [];
         if (!okW || !okD) { badFoot++; if (badFoot <= 5) console.log(`    ${key}: ${wm} × ${dm} m outside ${R.w.join("–")} × ${R.d.join("–")}`); }
       } else if (spec.bw !== nat.bw || spec.bh !== nat.bh) { badFoot++; console.log(`    ${key}: another ticket's size changed (${nat.bw}×${nat.bh} → ${spec.bw}×${spec.bh})`); }
       if (!scaled && !R.own && !redrawn && (spec.bw !== nat.bw || spec.bh !== nat.bh || spec.height !== (nat.storeys || 1))) { badFoot++; console.log(`    ${key}: a planned building laid out again (${nat.bw}×${nat.bh} → ${spec.bw}×${spec.bh}, ${nat.storeys} → ${spec.height} storeys)`); }
-      const range = storeyRange(key, setting);
+      const lay = spec.vid && !spec.vclassic ? spec.vid : undefined; // a layout's own storeys (REAL_SIZE sizes: #32's apartment layouts)
+      const range = storeyRange(key, setting, lay);
       const bonus = s % 5 === 4 ? 1 : 0;
       if (range && R.city && (spec.height < range[0] || spec.height > Math.min(MAX_STOREYS, range[1] + bonus))) { badStorey++; console.log(`    ${key} (${setting}): ${spec.height} storeys outside ${range.join("–")}`); }
       if (range && !R.city && scaled && (spec.height < range[0] || spec.height > range[1])) { badStorey++; console.log(`    ${key}: ${spec.height} storeys outside ${range.join("–")}`); }
       if (spec.height > MAX_STOREYS || (!spec.real && spec.storeys !== openStoreys(spec.height, bonus))) { badOpen++; console.log(`    ${key}: ${spec.storeys} floors built of ${spec.height}`); } // #25's (spec.real): every floor built
-      if (city[key] && setting === "city") city[key].add(spec.height);
-      if (town[key] && setting === "town") town[key].add(spec.height);
+      if (city[key] && setting === "city" && !(lay && sizeOf(key, lay) !== R)) city[key].add(spec.height); // the kind's own row (an apartment block's corridor layout), not a layout with a row of its own
+      if (town[key] && setting === "town" && !(lay && sizeOf(key, lay) !== R)) town[key].add(spec.height);
       if (spec.wings > 1) wings++;
       if (spec.height > spec.storeys) tall++;
       // The map, and the same building at its old size (an older save's).
@@ -111,9 +113,15 @@ const dens = [];
         if (!top.some((c) => c.k === "stairs" && c.sealUp && (c.top || c.step == null))) { badSeal++; console.log(`    ${key}: ${spec.height} storeys, ${spec.storeys} built, the stairs up not blocked`); }
       }
       if (!heavy || s % 16 === 0) { const lost = connected(m); if (lost) { badConn++; if (badConn <= 5) console.log(`    ${key} seed ${s}: ${lost} walkable cells not reached`); } }
-      if (!scaled) continue; // the densities of what realScale laid out
-      const r1 = new Rng(9001 + s * 131 + key.length * 7), old = BUILDINGS[key].make(r1, GENERAL(key)), mo = assemble(r1, old, { key, name: key });
-      const a = measure(spec, m), b = measure(old, mo);
+      // The densities of what realScale laid out: this seed's plan, or (a seed whose dice picked one of #32's named layouts,
+      // drawn at its own size and not judged here) the kind's classic layout on the same dice, so every seed counts.
+      const classic = !scaled && layoutsOf(key).length ? { ...GENERAL(key), layout: layoutsOf(key)[0].id } : null;
+      if (!scaled && !classic) continue;
+      const o0 = classic || GENERAL(key), rc = new Rng(9001 + s * 131 + key.length * 7);
+      const spc = classic ? realScale(rc, BUILDINGS[key].make(rc, o0), key, { setting, storeyBonus: bonus }) : spec, mc = classic ? assemble(rc, spc, { key, name: key }) : m;
+      if (spc.natW == null) continue;
+      const r1 = new Rng(9001 + s * 131 + key.length * 7), old = BUILDINGS[key].make(r1, o0), mo = assemble(r1, old, { key, name: key });
+      const a = measure(spc, mc), b = measure(old, mo);
       for (const k of Object.keys(acc.n)) { acc.n[k] += a[k]; acc.o[k] += b[k]; }
     }
     const per = (A, k) => (A[k] / (k === "dead" ? A.floorsArea : A.area)) * 1000;
