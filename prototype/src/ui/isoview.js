@@ -210,23 +210,41 @@ function sceneFor(b) {
   const key = `${b.w}x${b.h}:${fl}:${sig}`;
   if (sceneCache && sceneCache.b === b && sceneCache.key === key) return sceneCache;
   const n = b.w * b.h, comp = new Int16Array(n).fill(-1), blds = [];
-  for (let i = 0; i < n; i++) {
-    if (comp[i] >= 0 || b.cells[i].f !== "floor") continue;
-    const id = blds.length, cells = [], q = [i];
-    comp[i] = id;
+  // A building of parts (sim/buildingmaps.js c.bp: a footprint shape's main block, wings and annexes, issue #23): each
+  // part a component of its own (its own roof and height); grp the building it belongs to (cut away as one, one roof
+  // material). Every other building is one part: its component is its building, as before.
+  const grp = new Int16Array(n).fill(-1), gmat = [], members = [];
+  const flood = (i, mark, id, same) => {
+    const out = [], q = [i];
+    mark[i] = id;
     while (q.length) {
-      const j = q.pop(); cells.push(j);
+      const j = q.pop(); out.push(j);
       const x = j % b.w, y = (j / b.w) | 0;
       for (const [dx, dy] of VD) {
         const nx = x + dx, ny = y + dy;
         if (nx < 0 || ny < 0 || nx >= b.w || ny >= b.h) continue;
         const k = ny * b.w + nx;
-        if (comp[k] < 0 && b.cells[k].f === "floor") { comp[k] = id; q.push(k); }
+        if (mark[k] < 0 && b.cells[k].f === "floor" && same(j, k)) { mark[k] = id; q.push(k); }
       }
     }
+    return out;
+  };
+  for (let i = 0; i < n; i++) if (grp[i] < 0 && b.cells[i].f === "floor") { const g = gmat.length; gmat.push(Math.floor(hash3(i, b.w, 7) * 4)); members.push([]); flood(i, grp, g, () => true); }
+  for (let i = 0; i < n; i++) {
+    if (comp[i] >= 0 || b.cells[i].f !== "floor") continue;
+    const id = blds.length, cells = flood(i, comp, id, (j, k) => b.cells[j].bp === b.cells[k].bp);
     let two = false, inner = 0;
     for (const j of cells) { const c = b.cells[j]; if (c.t === 2 || c.k === "loft") two = true; if (!WALLISH.has(c.k)) inner++; }
-    blds.push({ id, cells, top: two ? WALL2 : WALL1, two, inner, mat: Math.floor(hash3(i, b.w, 7) * 4) });
+    blds.push({ id, cells, top: two ? WALL2 : WALL1, two, inner, mat: gmat[grp[i]], grp: grp[i] });
+    members[grp[i]].push(id);
+  }
+  // A lower part's roof seen from a floor above it (its cells open air on this floor; c.bs on the ground floor: the
+  // part's storeys): the roof at its storeys' height, in its building's material.
+  let low = null;
+  if (fl) {
+    const G = b.floors[0].cells, gg = new Int16Array(n).fill(-1), gm = [];
+    for (let i = 0; i < n; i++) if (gg[i] < 0 && G[i].f === "floor") { const id = gm.length; gm.push(0); const cs = []; const q = [i]; gg[i] = id; while (q.length) { const j = q.pop(); cs.push(j); const x = j % b.w, y = (j / b.w) | 0; for (const [dx, dy] of VD) { const nx = x + dx, ny = y + dy, k = ny * b.w + nx; if (nx >= 0 && ny >= 0 && nx < b.w && ny < b.h && gg[k] < 0 && G[k].f === "floor") { gg[k] = id; q.push(k); } } } const up = cs.find((j) => comp[j] >= 0); gm[id] = up != null ? blds[comp[up]].mat : 0; }
+    for (let i = 0; i < n; i++) if (isVoid(b.cells[i]) && G[i].bs > 0 && G[i].bs <= fl) { if (!low) low = { top: new Int16Array(n), mat: new Uint8Array(n) }; low.top[i] = G[i].bs * LV; low.mat[i] = gm[gg[i]]; }
   }
   // The shell: a building's cells on its outside edge (next to a cell of no building or the map's edge). Seen from the
   // street, so drawn even where nobody has looked inside (the interior's fog of war: drawIso).
@@ -242,7 +260,7 @@ function sceneFor(b) {
   // Single wall cells (no floor: a raid's locked doors in the open) stand alone.
   const pits = []; // the fire pits: their flames, sparks, smoke and glow drawn each frame while lit (drawCampfireIso)
   for (let i = 0; i < n; i++) if (b.cells[i].k === "firepit") pits.push(i);
-  sceneCache = { b, key, comp, blds, ext, sig, pits, groundKey: `${b.w}x${b.h}:${fl}:${fsig}` };
+  sceneCache = { b, key, comp, blds, members, low, ext, sig, pits, groundKey: `${b.w}x${b.h}:${fl}:${fsig}` };
   iso.builds.scene++;
   return sceneCache;
 }
@@ -3552,7 +3570,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   // before). Roofs off cuts every one away. Placing defenders (the deploy step), your own base and a battle that is
   // over keep the old rule: one of your people inside, an enemy you see inside, the mouse inside.
   const cut = new Set();
-  const cutAt = (x, y) => { const bid = scene.comp[y * b.w + x]; if (bid >= 0) cut.add(bid); };
+  const cutAt = (x, y) => { const bid = scene.comp[y * b.w + x]; if (bid >= 0) for (const id of scene.members[scene.blds[bid].grp]) cut.add(id); }; // the whole building, every part of it
   if (!iso.roofs) scene.blds.forEach((B) => cut.add(B.id));
   const open = !!H.allKnown || b.over || b.phase === "deploy";
   if (open) {
@@ -3574,7 +3592,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
   snowLook = snowOnFor(state, b); // the snow on the buildings (ui/roofsnow.js): in looksFor's key and the sprites' keys
   const looks = looksFor(b, scene, cut, "draw", focus);
   const seenB = new Set(); // buildings any of whose cells your people see: their roof is not fogged
-  for (const B of scene.blds) for (const j of B.cells) if (v.vis[j]) { seenB.add(B.id); break; }
+  for (const B of scene.blds) for (const j of B.cells) if (v.vis[j]) { for (const id of scene.members[B.grp]) seenB.add(id); break; } // a part seen: its building's roofs
   // Inside a building (the fog of war indoors, the user's request 2026-10-12): you see the rooms your people see; a
   // cell nobody has seen yet (H.known: ui/combat.js, what your people have ever seen on this floor) is dark and empty
   // (its furniture, containers and room name not drawn; the building's shell is seen from outside); a cell seen
@@ -3938,6 +3956,17 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
         const faces = massFaces(uu, vv);
         const mass = faces ? massSprite(scene.comp[i] >= 0 ? scene.blds[scene.comp[i]].mat : 0, lift, faces, fog) : null;
         if (mass) ctx.drawImage(mass.cv, Math.round(sx + mass.ox * S), Math.round(sy0 + mass.oy * S), Math.ceil(mass.w * S), Math.ceil(mass.h * S));
+      }
+      const lowTop = scene.low ? scene.low.top[i] : 0;
+      if (lowTop) { // a lower part's roof under the active floor (a shape's gym, garage, annex): its wall mass and its roof
+        const lowAt = (du, dv) => { const nu = uu + du, nv = vv + dv; if (nu < 0 || nv < 0 || nu >= Wv || nv >= Hv) return false; const [nx, ny] = fromView(nu, nv, r, b.w, b.h); const j = ny * b.w + nx; return scene.low.top[j] > 0 || !isVoid(b.cells[j]); };
+        const faces = (lowAt(1, 0) ? 0 : 1) | (lowAt(0, 1) ? 0 : 2), mat = scene.low.mat[i];
+        const mass = faces ? massSprite(mat, lowTop, faces, fog) : null;
+        if (mass) ctx.drawImage(mass.cv, Math.round(sx + mass.ox * S), Math.round(sy0 + mass.oy * S), Math.ceil(mass.w * S), Math.ceil(mass.h * S));
+        let edges = 0;
+        VD.forEach(([du, dv], k) => { const nu = uu + du, nv = vv + dv; if (nu < 0 || nv < 0 || nu >= Wv || nv >= Hv) { edges |= 1 << k; return; } const [nx, ny] = fromView(nu, nv, r, b.w, b.h); if (scene.low.top[ny * b.w + nx] !== lowTop) edges |= 1 << k; });
+        const roof = roofSprite(mat, lowTop, edges, fog, snowLook, snowLook ? Math.floor(hash3(x, y, 61) * 4) : 0);
+        ctx.drawImage(roof.cv, Math.round(sx + roof.ox * S), Math.round(sy0 + roof.oy * S), Math.ceil(roof.w * S), Math.ceil(roof.h * S));
       }
       if (L && !unknownCell(i)) {
         const spr = sprOf(L, fog);

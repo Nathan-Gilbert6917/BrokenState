@@ -144,6 +144,8 @@ export const legacyRooms = (state) => !!(state && state.roomsLegacy);
 // A save from before the prison complexes (issue #31, save.js prisonLegacy: no state.prisonV): a prison keeps its pick
 // of one building (buildingmaps.js SITES.prison) and no town has a county jail (pois.js jailExtra).
 export const legacyPrisons = (state) => !!(state && (state.prisonLegacy || state.roomsLegacy));
+// A save from before buildings had footprint shapes (save.js shapesLegacy, issue #23): every building the rectangle it was.
+export const legacyShapes = (state) => legacyRooms(state) || !!(state && state.shapesLegacy);
 // A save from before buildings at real size (issue #24, save.js scaleLegacy; an older one still, roomsLegacy): every
 // building keeps the footprint and storeys its archetype gave it (buildingmaps.js realScale is not applied).
 export const legacyScale = (state) => !!(state && (state.scaleLegacy || state.roomsLegacy));
