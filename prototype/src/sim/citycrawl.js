@@ -27,6 +27,7 @@
 // its map, ui/citycrawl.js).
 import { crashSiphon } from "./crashstart.js"; // Crashlanding (2026-10-24): limited fuel can be siphoned
 import { legacyRooms } from "./worldcfg.js"; // an older save: the checkpoint as it always was (issue #25)
+import { placeMult, crawlClass } from "./placement.js"; // a new world's blocks weighted by the placement table (issue #42)
 import { typeFind } from "./foods.js"; // a crawl's food finds as items
 import { keyWord } from "./water.js"; // supplies as words: "9mm FMJ", "rounds"
 import { Rng } from "./rng.js";
@@ -474,6 +475,7 @@ export function genBlock(state, c, cell = c.cell) {
   const pool = Object.keys(PLACE_POOL).filter((k) => BUILDINGS[k] && n >= PLACE_POOL[k].from);
   const places = [];
   const setting = t.loc && t.loc.type === "town" ? "town" : "city"; // shops.js: a town's crawl or a city's
+  const cls = crawlClass(c, n, setting); // placement.js (issue #42): the block's class; a new world weighs its picks by the table
   const addPlace = (rng, key, P, j) => {
     const street = rng.chance(0.6) ? streetA : STREETS[rng.int(0, STREETS.length - 1)];
     const id = `${cell}p${j}`;
@@ -495,19 +497,19 @@ export function genBlock(state, c, cell = c.cell) {
   // its own places (as many fewer of those, so the block keeps to its most); every other block as it was.
   const civic = civicPlaces(state, c.tile, cell === civicBlock(state, c), setting, (k) => !!BUILDINGS[k]);
   for (let j = 0; j < Math.min(nPlaces, CRAWL.PLACES[1] - civic.length); j++) {
-    const left = pool.filter((k) => !places.some((pl) => pl.key === k));
-    const key = rng.weighted(left, (k) => Math.max(0.02, PLACE_POOL[k].w + PLACE_POOL[k].deep * (n - 1)));
+    const left = pool.filter((k) => !places.some((pl) => pl.key === k) && placeMult(state, k, cls) > 0);
+    const key = rng.weighted(left, (k) => Math.max(0.02, PLACE_POOL[k].w + PLACE_POOL[k].deep * (n - 1)) * placeMult(state, k, cls));
     addPlace(rng, key, PLACE_POOL[key], j);
   }
   civic.forEach((key, j) => addPlace(new Rng(seedOf(state.seed, "crawlcivic", c.tile, cell, j)), key, OFFICE_CIVIC[key].crawl, places.length));
   // shops.js: up to two shops or services besides, on their own dice (the places above are as they were).
-  const extra = shopPlaces(state, c.tile, cell, places, CRAWL.PLACES[1], n, setting, (k) => !!BUILDINGS[k]);
+  const extra = shopPlaces(state, c.tile, cell, places, CRAWL.PLACES[1], n, setting, (k) => !!BUILDINGS[k], cls);
   extra.forEach((key, j) => addPlace(new Rng(seedOf(state.seed, "crawlshop", c.tile, cell, j)), key, PLACE_W[key].crawl, places.length));
   // hotels.js: a hotel now and then, on dice of its own after the shops (the places above are as they were).
   if (BUILDINGS.hotel && hotelPlace(state, c.tile, cell, places, CRAWL.PLACES[1], n, setting)) addPlace(new Rng(seedOf(state.seed, "crawlhotel", c.tile, cell)), "hotel", HOTELS.PLACE, places.length);
   // A strip mall now and then (issue #30, mall.js: its whole row of shops one place; never a regional mall, too big for a
   // block), on its own dice after everything above.
-  if (places.length < CRAWL.PLACES[1] && hash01(state.seed, "crawlmall", c.tile, cell) < CRAWL.STRIPMALL[setting]) addPlace(new Rng(seedOf(state.seed, "crawlmall", c.tile, cell)), "stripmall", { dead: 1.2, rich: 1.1, w: 0, deep: 0, from: 1 }, places.length);
+  if (places.length < CRAWL.PLACES[1] && hash01(state.seed, "crawlmall", c.tile, cell) < CRAWL.STRIPMALL[setting] && placeMult(state, "stripmall", cls) > 0) addPlace(new Rng(seedOf(state.seed, "crawlmall", c.tile, cell)), "stripmall", { dead: 1.2, rich: 1.1, w: 0, deep: 0, from: 1 }, places.length);
   // This visit: a place may be shut.
   if (places.length > 2 && vr.chance(CRAWL.BLOCKED)) {
     const pl = vr.pick(places);

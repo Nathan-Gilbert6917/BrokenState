@@ -47,6 +47,7 @@ import { hash01 } from "./skills.js";
 import { PLACE_W, FRANCHISES } from "./data-shops.js";
 import { OFFICE_W, COUNTY_SEAT } from "./data-offices.js"; // the office buildings: their own rolls (issue #27)
 import { legacyOffices } from "./worldcfg.js"; // a save from before them: none of the office places, its towers without firms
+import { placeMult, tileClass, crawlClass } from "./placement.js"; // call-time only: a new world's picks weighted by the placement table (issue #42)
 
 export const SHOP = {
   // POIs: the chance of a first and a second shop on a tile, by the setting; KNOWN: the share of them known from the
@@ -118,13 +119,14 @@ export function shopExtras(state, t, list, knownZone, max) {
   const set = settingOf(state, t);
   if (!set) return [];
   const out = [];
+  const cls = tileClass(state, t);
   const site = list.find((p) => p.site);
   const cap = site && LOCATIONS[site.kind] ? LOCATIONS[site.kind].richness : Infinity; // never out-ranks the site
   // One more place of the kinds, by its dice (salts: the roll's own names).
   const roll = (kinds, salt, j) => {
     const have = new Set([...list, ...out].map((p) => p.kind));
     if (t.loc) have.add(t.loc.type);
-    const kind = pickW(kinds.filter((k) => !have.has(k) && LOCATIONS[k] && LOCATIONS[k].richness <= cap), (k) => PLACE_W[k][set], hash01(state.seed, `${salt}kind`, t.id, j));
+    const kind = pickW(kinds.filter((k) => !have.has(k) && LOCATIONS[k] && LOCATIONS[k].richness <= cap), (k) => PLACE_W[k][set] * placeMult(state, k, cls), hash01(state.seed, `${salt}kind`, t.id, j)); // placeMult: a new world's table (1 in an older one)
     if (!kind) return;
     const spread = SHOP.POOL[0] + (SHOP.POOL[1] - SHOP.POOL[0]) * hash01(state.seed, `${salt}pool`, t.id, j);
     const pool = Math.min(1, LOCATIONS[kind].richness * (t.terrain === "city" ? SHOP.URBAN_RICH : 1) * spread);
@@ -145,13 +147,14 @@ export function shopExtras(state, t, list, knownZone, max) {
 /**
  * The kinds a crawl block has besides its places (citycrawl.js genBlock): [] to 2 kinds (BUILDINGS keys). n: the
  * block's level; setting: "city" or "town" (the crawl's); has: the building key exists.
- * @param {State} state @param {number} tileId @param {string} cell @param {any[]} places @param {number} max @param {number} n @param {string} setting @param {(k: string) => boolean} has
+ * cls: the block's class (placement.js crawlClass), for a new world's placement table.
+ * @param {State} state @param {number} tileId @param {string} cell @param {any[]} places @param {number} max @param {number} n @param {string} setting @param {(k: string) => boolean} has @param {string} [cls]
  */
-export function shopPlaces(state, tileId, cell, places, max, n, setting, has) {
+export function shopPlaces(state, tileId, cell, places, max, n, setting, has, cls = crawlClass(null, n, setting)) {
   const out = [];
   const pick = (kinds, w, r) => {
     const taken = new Set([...places.map((p) => p.key), ...out]);
-    return pickW(kinds.filter((k) => has(k) && !taken.has(k) && n >= PLACE_W[k].crawl.from), (k) => { const c = PLACE_W[k].crawl; return Math.max(w, (c[setting] ?? c.city) + c.deep * (n - 1)); }, r);
+    return pickW(kinds.filter((k) => has(k) && !taken.has(k) && n >= PLACE_W[k].crawl.from), (k) => { const c = PLACE_W[k].crawl; return Math.max(w, (c[setting] ?? c.city) + c.deep * (n - 1)) * placeMult(state, k, cls); }, r);
   };
   (SHOP.CRAWL[setting] || SHOP.CRAWL.city).forEach((chance, j) => {
     if (places.length + out.length >= max || hash01(state.seed, "crawlshop", tileId, cell, j) >= chance) return;

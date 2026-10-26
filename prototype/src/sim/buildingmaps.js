@@ -76,6 +76,7 @@ import { variantSpec } from "./civicvariants.js"; // a dozen plans each for the 
 import { settingOf as shopSetting } from "./shops.js"; // a site's setting with its suburbs (city, suburb, town) picks among a kind's plans (issue #36)
 import { libraryPlan, libraryStyle } from "./librarylayout.js"; // libraries: thirteen variants and their plans, their rooms (issue #34)
 import { pickLayout, settingOfTile, LAYOUTS } from "./buildvariants.js"; // the homes' and the motel's layout variants (issue #32): which plan a building takes, its name
+import { placing, tileClass } from "./placement.js"; // a new world's tile class for the variant picker (issue #42)
 export { libraryPlan }; // mall.js: the civic strip's library (#30)
 
 export const BMAP = {
@@ -3513,7 +3514,7 @@ export function settingOf(tile) {
 export function siteWhere(state, tileId) {
   const t = state && state.tiles ? state.tiles[tileId] : null;
   if (!t) return null;
-  return { setting: shopSetting(state, t) || settingOf(t), site: t.loc ? t.loc.type : null };
+  return { setting: shopSetting(state, t) || settingOf(t), site: t.loc ? t.loc.type : null, ...(placing(state) ? { tileClass: tileClass(state, t) } : {}) }; // tileClass: a new world's (placement.js, issue #42): the variant picker's size by the placement table (sizeFor)
 }
 const scaleOf = (state, tileId) => (legacyScale(state) ? null : { setting: settingOf(state.tiles[tileId]) });
 // The archetype's spec for a building at a site (its storeys and footprint) without building the map: the same dice

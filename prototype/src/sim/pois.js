@@ -61,6 +61,7 @@ import { hotelVariantName } from "./data-hotels.js"; // a hotel's variant's name
 import { hotelExtra } from "./hotels.js"; // call-time only: a hotel a tile may hold (issue #29)
 import { layoutFor, layoutName, poiLayoutKey, settingOfTile } from "./buildvariants.js"; // a POI's building layout (issue #32): its name and its plan
 import { legacyRooms, legacyPrisons } from "./worldcfg.js"; // an older save: no layouts, no county jails
+import { placing, placeMult, standsOn, tileClass, placeExtraKind, PLACE_KNOWN } from "./placement.js"; // call-time only: a new world's kinds by the placement table (issue #42)
 
 export const POI = {
   MAX: 4,                 // POIs a tile can hold, the site among them
@@ -160,10 +161,14 @@ export function generatePois(state, t) {
     if (under.length) pool = under;
   }
   const extras = [];
+  // A new world draws the kinds by the placement table's weights for the tile's class (placement.js, issue #42; a kind
+  // it says never stands there is not drawn); an older one evenly, as it always did.
+  const cls = placing(state) ? tileClass(state, t) : null;
   for (let i = 0; i < n; i++) {
-    const cands = pool.filter((k) => REPEATABLE.has(k) || !extras.some((p) => p.kind === k));
+    const cands = pool.filter((k) => (REPEATABLE.has(k) || !extras.some((p) => p.kind === k)) && (!cls || placeMult(state, k, cls) > 0));
     if (!cands.length) break;
-    const kind = cands[Math.floor(hash01(state.seed, "poikind", t.id, i) * cands.length)];
+    const r = hash01(state.seed, "poikind", t.id, i);
+    const kind = cls ? weighted(cands, (k) => placeMult(state, k, cls), r) : cands[Math.floor(r * cands.length)];
     extras.push(makePoi(state, t, kind, false, i + 1, [...out, ...extras]));
   }
   // Richest first: the top POI of a bare tile is index 0 (ties by a hash of the tile and the kind).
@@ -192,15 +197,33 @@ export function generatePois(state, t) {
   out.push(...shopExtras(state, t, out, inKnownZone(state, t), POI.MAX));
   // Bunkers (issue #26): now and then one, on their own dice after everything above (bunkerExtra).
   const bunker = bunkerExtra(state, t, out, inKnownZone(state, t));
-  if (bunker) out.push(bunker);
+  if (bunker && standsOn(state, bunker.kind, t)) out.push(bunker); // standsOn: a new world's placement table (issue #42)
   // Shopping malls (issue #30): now and then a strip mall in a town or a suburb, an outlet centre by a highway, on their
   // own dice after everything above but the hotel (mallExtra; a hotel stays last).
   const mall = mallExtra(state, t, out, inKnownZone(state, t));
-  if (mall) out.push(mall);
+  if (mall && standsOn(state, mall.kind, t)) out.push(mall);
   // hotels.js: now and then a hotel (a town's inn, a city's tower, a resort in scenic land), on its own dice after all.
   const hotel = hotelExtra(state, t, out, inKnownZone(state, t));
-  if (hotel) out.push(hotel);
+  if (hotel && standsOn(state, "hotel", t)) out.push(hotel);
+  // placement.js (issue #42, a new world only): one more of the kinds the table puts where the pools above have none (a
+  // city centre's medical centre, a town's county hospital or big-box store, a chapel in the country), on its own dice
+  // after everything above.
+  const more = placeExtraKind(state, t, out, POI.MAX);
+  if (more) {
+    const poi = makePoi(state, t, more, false, POI.MAX + 1, out);
+    poi.hidden = !(inKnownZone(state, t) && hash01(state.seed, "placeknown", t.id) < PLACE_KNOWN);
+    out.push({ ...poi, extra: "place" });
+  }
   return out;
+}
+// A weighted pick of keys by w(key) with the dice r (keys in a fixed order: the same dice, the same pick).
+/** @param {string[]} keys @param {(k: string) => number} w @param {number} r */
+function weighted(keys, w, r) {
+  const ws = keys.map((k) => Math.max(0, w(k) || 0));
+  const tot = ws.reduce((a, b) => a + b, 0);
+  let x = r * tot;
+  for (let i = 0; i < keys.length; i++) { x -= ws[i]; if (x < 0 && ws[i] > 0) return keys[i]; }
+  return keys[keys.length - 1];
 }
 
 // A county jail (issue #31, prison.js): every town has one, on the tile of its suburb ring (within POI.TOWN_R) that its
