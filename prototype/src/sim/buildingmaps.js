@@ -3339,7 +3339,7 @@ export const BUILDINGS = {
   vacantunit:   { name: "Vacant unit", make: (r, o) => mallArchetype("vacantunit", r, o) },
   // An amusement park (issue #60, amusement.js parkMap): the whole park on one map (compound.js); make gives one of its
   // food stands (the archetype tests, the crawl's storey count).
-  amusement:    { name: "Amusement park", make: (r, o) => PARK_PLANS.stand(r, o), park: true },
+  amusement:    { name: "Amusement park", make: (r, o) => alone(PARK_PLANS.stand(r, o)), park: true },
 };
 // The storeys a type can have, [min, max] (the city crawl's bonus can add to offices and apartments, up to MAX_STOREYS).
 export const STOREYS_BY_TYPE = {
