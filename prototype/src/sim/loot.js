@@ -39,7 +39,7 @@ export const SITE_TAGS = {
   town: ["home", "shop", "sport", "garage", "crime"], city: ["home", "shop", "office", "crime", "police"],
   farm: ["farm", "home", "hunt", "tools"], gas: ["travel", "shop", "garage"], mall: ["mall", "shop", "sport", "tech", "home"],
   hospital: ["medical", "office"], police: ["police", "guns", "prison"], military: ["military", "guns", "camp"], airbase: ["military", "guns", "crash"],
-  prison: ["prison", "police", "guns", "crime"], univ: ["school", "office", "tech", "medical", "books"], dam: ["industry", "tools"],
+  prison: ["prison", "police", "guns", "crime"], univ: ["school", "office", "tech", "medical", "books"], college: ["school", "office", "tech", "books", "sport"], dam: ["industry", "tools"],
   airport: ["travel", "tech", "crash"], factory: ["industry", "tools"], quarry: ["industry", "tools"],
   autoshop: ["garage", "tools"], pharmacy: ["medical", "shop"], supermarket: ["shop", "kitchen"], gunstore: ["guns", "hunt"],
   hardware: ["tools", "shop", "farm"], apartments: ["home", "kitchen"], office: ["office", "tech"], school: ["school", "sport", "books"],
@@ -70,6 +70,7 @@ export const AREA_TAGS = {
   pumps: ["travel"], gunshop: ["guns", "hunt"], hardware: ["tools", "shop", "farm", "industry", "garage"], pawnshop: ["shop", "guns", "hunt", "crime", "home", "outdoor", "camp", "tools", "sport", "tech", "travel"], lockers: ["school", "sport"], chapel: ["church"],
   milwreck: ["military", "crash"], medwreck: ["medical", "crash"], newswreck: ["tech", "crash"], fuselage: ["crash", "travel"],
   cargodrop: ["crash", "camp", "military"],
+  dormroom: ["home", "school", "sport"], // a residence hall's rooms (issue #28)
   roadcars: ["travel", "home", "garage"], // the cars people fled in (combat.js AREAS.roadcars)
   miltrucks: ["military", "travel"], // Army trucks (miltrucks.js: their cargo is truckLoot)
 };
@@ -204,6 +205,7 @@ export const SITE_FINDS = {
   military: { p: 0.145, items: { frag: 1.5, heatpack: 1, cigarettes: 2, chocolate: 2, instcoffee: 2, coffee: 0.5, smokegren: 2, flare: 2, batteries: 2, cards: 1, puritabs: 0.5, toothpaste: 1, deodorant: 1, wetwipes: 1.5 } },
   prison: { p: 0.147, items: { tobacco: 3, cigarettes: 2, cards: 2, smokegren: 1, cuffs: 2, razors: 1, toothpaste: 1.5, deodorant: 1 } },
   univ: { p: 0.148, items: { phone: 2, laptop: 2, console: 1, camera: 1, candy: 1, guitar: 0.5, toiletpaper: 1, deodorant: 1, makeup: 0.5, lipbalm: 0.5, solderiron: 0.5 } }, // solderiron: the electronics recipes' iron (data-tools.js, 2026-10-24), here and below where boards were worked on
+  college: { p: 0.14, items: { phone: 2, laptop: 2, console: 1, candy: 1, guitar: 0.5, toiletpaper: 1, deodorant: 1, makeup: 0.5, lipbalm: 0.5 } }, // a town's college (issue #28): a university's, smaller
   dam: { p: 0.06, items: { batteries: 2, toiletpaper: 1, solderiron: 0.5 } },
   airport: { p: 0.217, items: { cigarettes: 2, cigars: 1, scotch: 1, watch: 2, phone: 2, laptop: 1, camera: 1, smokes: 1, photos: 1, candy: 1, flare: 1, perfume: 2, makeup: 1, wetwipes: 1, toothpaste: 1 } },
   factory: { p: 0.06, items: { batteries: 1, toiletpaper: 1, solderiron: 0.5 } },
@@ -382,7 +384,7 @@ for (const t of ["autoshop", "gas", "truckstop", "crashsite", "convoy", "wreck",
 for (const t of ["factory", "dam", "workshop", "warehouse", "quarry"]) PARTS_MIX[t] = { carparts: 0.1, electronics: 0.1 }; // machine parts 0.8
 for (const t of ["gunstore", "gunshop", "armory", "barracks", "milwreck", "crash_mil"]) PARTS_MIX[t] = { gunparts: 0.6 };
 PARTS_MIX.pawnshop = { gunparts: 0.4 }; // shops.js
-for (const t of ["radiotower", "univ", "lab", "office", "control", "airport", "hangar", "newswreck", "crash_news", "mall"]) PARTS_MIX[t] = { electronics: 0.6 };
+for (const t of ["radiotower", "univ", "college", "lab", "office", "control", "airport", "hangar", "newswreck", "crash_news", "mall"]) PARTS_MIX[t] = { electronics: 0.6 };
 PARTS_MIX.military = { gunparts: 0.4, electronics: 0.2, carparts: 0.2 };
 PARTS_MIX.police = { gunparts: 0.3, electronics: 0.1, carparts: 0.1 };
 // n parts found at a place of this type: { parts, carparts, gunparts, electronics } (only the kinds found).
@@ -535,6 +537,7 @@ export const AREA_FINDS = {
   newswreck: { p: 0.1, items: { camera: 3, laptop: 1, phone: 2, solderiron: 0.4 } },
   fuselage: { p: 0.122, items: { phone: 2, watch: 1, photos: 2, scotch: 1, cigarettes: 1, laptop: 1, camera: 1, perfume: 1, makeup: 0.5, wetwipes: 0.5 } },
   cargodrop: { p: 0.075, items: { chocolate: 2, instcoffee: 1, flare: 1, batteries: 1, puritabs: 1, wetwipes: 1, toothpaste: 0.5 } },
+  dormroom: { p: 0.16, items: { phone: 3, laptop: 2.5, console: 1.5, camera: 0.5, tcards: 1, cards: 1, photos: 1, guitar: 0.4, harmonica: 0.2, vodka: 0.8, smokes: 0.6, candy: 1.5, chocolate: 1, batteries: 1, lighters: 0.6, deodorant: 1.5, toothpaste: 1, shampoo: 1, makeup: 0.6, lipbalm: 0.6, wetwipes: 0.5, alarmclock: 0.6, pocketradio: 0.3 } }, // a residence hall's rooms (issue #28): the students' things
 };
 
 // A weighted pick from { key: weight } with a number in [0, 1).

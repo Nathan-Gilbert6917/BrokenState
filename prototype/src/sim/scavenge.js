@@ -28,6 +28,7 @@ import {
 } from "./parties.js";
 import { poiAt, poiPool, poiTake, poiName, knownPois, visitPoi, tileHeat, addTileHeat, exitHeat, shotsHere, noteTileHeat, TILE_HEAT } from "./pois.js"; // the place searched: its kind, its pool, its visits; the tile's heat
 import { poiRaidEnd, lootPoiAbstract, poiHouses, CONT } from "./poicont.js"; // the containers a place keeps between visits; a street of houses
+import { folkAfterPlace } from "./floorfolk.js"; // a campus's survivors who agreed to join (issue #28)
 import { raidVehiclePick } from "./walkers.js"; // fewer people than vehicles after a raid: which go on
 import { poiTileRaid, poiPickFor, poiRaidSetup, raidBuildings, buildingPickFor } from "./poiraid.js"; // which place, and the raid map it opens (a site's building picked before it)
 import { attitude, changeGoodwill } from "./factions.js";
@@ -281,6 +282,7 @@ export function afterRaid(state, result, setup, battle = null) {
   const team = p && state.parties.includes(p) && partyMembers(state, p).length ? `${teamName(state, p)}: ` : "";
   if (pc) for (const line of [pc.fullText, pc.text]) if (line) log(state, `${team}${line}`, "warn");
   if (!p || !state.parties.includes(p)) return;
+  if (battle && battle.raid && battle.raid.plan && battle.raid.plan.campus && result.outcome === "extracted") folkAfterPlace(state, p, battle); // campus.js: students who agreed to join wait outside (floorfolk.js, as after a crawl's place)
   if (!partyMembers(state, p).length) {
     wipeParty(state, p);
     return;

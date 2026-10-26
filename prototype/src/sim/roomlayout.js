@@ -571,7 +571,7 @@ function chairRow(L, face) {
 export const MEDICAL_STYLES = {
   /** @param {ReturnType<typeof roomLayout>} L */
   er(L) {
-    const n = clampM(Math.floor((L.c.w * L.c.h) / MED.BED_AREA), MED.BAYS);
+    const n = Math.min(L.room.bays || Infinity, clampM(Math.floor((L.c.w * L.c.h) / MED.BED_AREA), MED.BAYS)); // bays: a plan's own most (civicvariants.js: a small ER keeps room for its triage desk)
     L.wall("medcart", { prefer: "corner" });
     for (const g of bedsWithStands(L, "gurney", n, ["ivstand"])) {
       if (L.boxes() < L.target()) L.beside(g, "medcab");
@@ -657,7 +657,9 @@ export const MEDICAL_STYLES = {
     // a container of its own (BOX_LOOT.ambulance).
     if (Math.min(c.w, c.h) >= 3 && Math.max(c.w, c.h) >= 5) {
       const ax = c.w >= c.h ? "x" : "y";
-      for (const [x, y] of c.innerSpots().slice(0, 12)) { if (L.lane(x, y)) continue; if (c.vehicle(x, y, { ax, len: 4, kind: "truck", body: "ambulance", box: "ambulance" })) break; }
+      // Every spot in turn (#14 tried the first twelve, in this order: a bay it filled is as it was; a small bay of a named
+      // plan, issue #36, finds its spot further on).
+      for (const [x, y] of c.innerSpots()) { if (L.lane(x, y)) continue; if (c.vehicle(x, y, { ax, len: 4, kind: "truck", body: "ambulance", box: "ambulance" })) break; }
     }
     L.wall("gurney", { size: [2, 1] });
     L.fill(["shelf"]);
@@ -738,5 +740,6 @@ MEDICAL_STYLES.breakroom = MEDICAL_STYLES.staffroom;
 // by role; null for a role with none (the room keeps buildingmaps.js FURNISH).
 /** @param {any} room @param {string | undefined} key */
 export function medicalStyle(room, key) {
+  if (room.civic) return null; // a room marked with a civic style keeps it (civiclayout.js: a prison infirmary's cells, issue #36)
   return MED_KEYS.has(key || "") ? MEDICAL_STYLES[room.role] || null : null;
 }
