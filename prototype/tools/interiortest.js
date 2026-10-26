@@ -72,6 +72,7 @@ import { rollScenes } from "../src/sim/interiorscenes.js";
 import { COMMERCIAL_KEYS, styleName } from "../src/sim/shoplayout.js";
 import { CIVIC_STYLES } from "../src/sim/civiclayout.js";
 import { MIL_KEYS, MILITARY_STYLES, MIL_SIZE } from "../src/sim/militarylayout.js";
+import { CAMPUS_KEYS } from "../src/sim/campuslayout.js";
 import { BUNKER_STYLES, BUNKER_KEYS, BUNKER_VARIANTS } from "../src/sim/bunkerlayout.js"; // bunkers (issue #26)
 import { INDUSTRY_KEYS, plansOf } from "../src/sim/industrylayout.js"; // warehouses, factories and labs (issue #37)
 import { BUNKER_POI, POI } from "../src/sim/pois.js";
@@ -136,7 +137,7 @@ console.log(`Every archetype (${Object.keys(BUILDINGS).length}), ${SEEDS} seeds 
       const errs = [];
       const cap = mapCap(key); // a hotel's map up to 200 × 200 (its grounds round it, issue #29)
       const huge = spec.foot === "huge" || spec.foot === "xl" || (m.building && m.building.w >= 50); // a bunker at real-world scale (bunkerlayout.js BUNKER.SIZE, issue #26); the supermarket since issue #22: past the largest size class, its map its footprint and margins
-      if (W < 14 || H < 14 || (MIL_KEYS.has(key) ? W > 300 || H > 300 : W > (cap || (huge ? m.building.w + 12 : 44)) || H > (cap || (huge ? m.building.h + 16 : 34)))) errs.push(`size ${W}x${H}`); // issue #25: the military buildings at their real size (the maps up to 300 × 300, #24)
+      if (W < 14 || H < 14 || (MIL_KEYS.has(key) || CAMPUS_KEYS.has(key) || key === "campus" ? W > 300 || H > 300 : W > (cap || (huge ? m.building.w + 12 : 44)) || H > (cap || (huge ? m.building.h + 16 : 34)))) errs.push(`size ${W}x${H}`); // issue #25: the military buildings at their real size (the maps up to 300 × 300, #24)
       const z0 = m.zones[0];
       const start = [z0.x0 + 1, z0.y0 + (s % 2 === 1 ? 0 : 1)];
       if (!CELL[m.cells[start[1] * W + start[0]].k].walk) errs.push("the front zone is blocked");

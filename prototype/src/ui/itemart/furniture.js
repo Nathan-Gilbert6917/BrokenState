@@ -371,6 +371,18 @@ function f_exambed(p) { // an exam bed: a padded teal top with a raised end, the
   line(p, 1, 3, 4, 6, "#4f7b88"); R(p, 4, 6, 15, 7, "#4f7b88"); H(p, 4, 15, 5, "#eef0f2"); box(p, 3, 8, 14, 15, "#c9b48a"); H(p, 4, 13, 11, "#957f58");
 }
 
+// ---------- the college campuses' pieces (#28, sim/campuslayout.js and sim/campus.js) ----------
+function f_dormdesk(p) { // a dorm desk: a pale top over a drawer stack, a hutch of shelves with books and a lamp
+  R(p, 0, 8, 15, 9, WOODL); box(p, 9, 10, 14, 15, WOOD); H(p, 10, 13, 12, WOODD); legs(p, 1, 8, 10, 15, WOODD);
+  box(p, 1, 0, 14, 7, WOOD); H(p, 2, 13, 4, WOODD); R(p, 3, 1, 6, 3, "#3a6fb0"); R(p, 8, 2, 9, 3, "#c8402f"); R(p, 11, 5, 12, 7, "#e6e04a");
+}
+function f_mailboxes(p) { // a mailbox wall: rows of little brass doors in a wooden frame, a keyhole on each
+  box(p, 0, 0, 15, 15, WOODD); for (let y = 1; y <= 13; y += 4) for (let x = 1; x <= 13; x += 4) { R(p, x, y, x + 2, y + 2, "#c9a446"); p.set(x + 2, y + 1, "#5a4a20"); }
+}
+function f_campusbench(p) { // a park bench: wooden slats on black iron ends, the back rest
+  for (const y of [2, 4]) H(p, 0, 15, y, WOODL); for (const y of [8, 10]) H(p, 0, 15, y, WOOD); H(p, 0, 15, 5, WOODD);
+  for (const x of [1, 14]) { V(p, x, 1, 15, "#26272a"); } line(p, 1, 11, 0, 15, "#26272a"); line(p, 14, 11, 15, 15, "#26272a");
+}
 // ---------- the hotels' pieces (#29, sim/hotellayout.js) ----------
 function f_frontdesk(p) { // a reception desk: a panelled wood front, a pale marble top, a little brass bell on it
   R(p, 0, 5, 15, 6, "#e2dcc8"); H(p, 0, 15, 5, "#f2ede0"); box(p, 1, 7, 14, 15, WOOD);
@@ -709,6 +721,7 @@ function f_liquorcab(p) { // a liquor cabinet: dark wood, glass doors with bottl
 }
 
 export const GEAR_ART = {
+  f_dormdesk, f_mailboxes, f_campusbench,
   f_bookstack, f_lowshelf, f_mobileshelf, f_cardcat, f_mapcase, f_booktruck, f_bookreturn, f_computer, f_printer, f_microfilm, f_selfcheck, f_readtable, f_carrel, f_globe, f_lectern, f_woodstove,
   f_drum, f_labfreezer,
   f_frontdesk, f_suitcase, f_minifridge, f_luggagecart, f_banquet, f_loungechair, f_lounger,
