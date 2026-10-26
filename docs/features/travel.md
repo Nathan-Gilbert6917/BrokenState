@@ -1104,6 +1104,20 @@ All in [deadspread] (`spreadDaily`, tunables `DEADSPREAD`), run from `deadpop de
 - **How slow** (seed 42, Normal, `rural`, `coast` and `scenic` tiles next to a source, days until full):
   - the spread alone: beside a city's suburbs a median of 123 days (25% by 91, 75% by 163), beside a town 294 (227 to 372). In a year, about 10% of the farmland fills.
   - with `deadPopDaily` too (the game as it runs): beside the suburbs 19 days (15 to 24), beside a town 47 (40 to 56). The spread stores the tiles it touches, and #65's daily rules then raise a stored medium tile (15% a day for +2% of its cap) and drift a high one toward its cap (5% of the gap a day), so the two together fill the land far faster than the spread alone. Untouched tiles never creep, because they are not stored. See the headless run below.
+- **A 2-year headless run** (`tools/deadspreadrun.js 2 42 normal`, the autopilot, 47 minutes): share of land at each band (none / low / medium / high / overrun) and the mean count.
+
+  | class | tiles | day 1 | day 92 | day 183 | year 1 | year 2 |
+  |---|---|---|---|---|---|---|
+  | centre (cap 600, ×1.5 on hive land) | 117 | 820; 8% high, 92% overrun | 867; 100% overrun | 856; 100% overrun | 856; 100% overrun | 851; 100% overrun |
+  | suburb (140) | 359 | 145; 16/56/28% med/high/overrun | 186; 100% overrun | 186; 100% | 186; 100% | 181; 9% high, 91% overrun |
+  | town (100) | 2530 | 37; 4/94/2% low/med/high | 79; 1/19/40/41% | 99; 96% overrun | 100; 96% overrun | 99; 92% overrun |
+  | highway (50) | 2595 | 17; 55/40/4% low/med/high | 32; 29% low, 38% overrun | 44; 76% overrun | 51; 99% overrun | 51; 98% overrun |
+  | rural (36) | 9835 | 9; 86/13/1% low/med/high | 17; 62% low, 23% overrun | 26; 31% low, 56% overrun | 36; 97% overrun | 36; 99% overrun |
+  | coast (32) | 1761 | 10; 78% low | 17; 52% low, 29% overrun | 26; 65% overrun | 33; 98% overrun | 33; 99% overrun |
+  | scenic (24) | 19139 | 6; 88% low | 12; 62% low, 28% overrun | 18; 60% overrun | 24; 96% overrun | 25; 99% overrun |
+
+  The cities stay highest in counts at every sample (centre > city > suburb > town > rural > scenic), and the rural land holds its own cap (36) and no more from the spread. About 190 tiles (155 rural) sit over their cap from day 183. Their caps fell when the hives near them died (`popCap`'s ×1.5 on hive land); the spread never puts any there, and #65's pools do not trim a count when its cap falls. **Most of the land is overrun within about 9 months**, because #65's daily rules raise every stored tile (above). Slowing that is a tuning of `DEADPOP.DAY` (#65's), not of the spread; it was reported to the heat epic's orchestrator on 2026-10-26.
+- **Pacing report** (`tools/poipacingtest.js 4 42,43,44 normal`), before (origin/dev) and after: 11 of 11 passed on both. In year 4, the share picked over round bases a year old was 56% / 54% / 57% before and 51% / 52% / 58% after, within the spread between seeds. The run took about 35% longer (2252 s against 1597 s for seed 42). The extra time is `deadPopDaily` going over the 36k stored tiles (about 245 ms a day at Normal once the land is stored, plus 70 ms of spread).
 - **Where it lands**: on the receiver's open ground (`putBack(state, tile, null, n)`), never in its POIs; `deadPopDaily`'s refill moves it in.
 - **Order-free**: every rate reads the counts as they stood at the start of the pass, so the order tiles are visited in never matters.
 - **Performance**: one pass a day visits the sources, the relays and the tiles next to them only, with typed scratch arrays kept per map (no allocation per tile), and works out a hex's neighbours in place. `deadpop deadNow(state, tile)` is `tileDead` without building an untouched tile's default lists. About 180 ms a day on Huge (500 × 300, seed 42, 11,791 sources) on this machine.
