@@ -1643,7 +1643,7 @@ function vet(rng, o = {}) {
 // (data-shops.js FRANCHISES.hotel plan.hotel; a sample plan's by the dice), its grounds round it; its map up to
 // battlesize.js MAP_CAP.hotel (200 × 200).
 function hotel(rng, o = {}) {
-  return hotelSpec(rng, { ...o, plan: planOf("hotel", o), maxStoreys: MAX_STOREYS });
+  return hotelSpec(rng, { ...o, vid: typeof o.plan === "string" ? o.plan : o.vid || null, plan: planOf("hotel", o), maxStoreys: MAX_STOREYS }); // o.plan: one of its kind's dozen variants (data-hotels.js, issue #38)
 }
 
 function apartments(rng, o = {}) {

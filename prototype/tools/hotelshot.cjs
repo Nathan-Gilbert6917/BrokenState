@@ -1,6 +1,7 @@
 // Hotels (issue #29): each kind's building in the real game, fully revealed with the roofs off, saved as PNGs: the
 // ground floor, a guest floor and the top floor (hotel-<franchise>-f<n>.png), and the whole map zoomed out with its
-// grounds. Usage: NODE_PATH=$(npm root -g) node tools/hotelshot.cjs [outdir] [franchise ids...]
+// grounds. Usage: NODE_PATH=$(npm root -g) node tools/hotelshot.cjs [outdir] [franchise ids...]; a franchise id may name
+// one of its variants (issue #38: "willowcreek:inn-bnb", shot as hotel-willowcreek-inn-bnb-f<n>.png).
 // The building is loaded directly (setup.raid.place = { id, key, name, variant }); revealed by filling ui/combat.js
 // cui.cache.vis and .known.cells after a refresh. Prints one line a shot, and any page error.
 const { chromium } = require("playwright");
@@ -19,7 +20,8 @@ const port = 5300 + Math.floor(Math.random() * 600);
   try {
     await new Promise((r) => setTimeout(r, 700));
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined });
-    for (const v of wanted) {
+    for (const want of wanted) {
+      const [v, plan] = want.split(":");
       const page = await browser.newPage({ viewport: { width: 1500, height: 950 }, deviceScaleFactor: 1 });
       const errs = [];
       page.on("pageerror", (e) => errs.push(String(e)));
@@ -28,7 +30,7 @@ const port = 5300 + Math.floor(Math.random() * 600);
       await page.waitForFunction(() => window.game && document.querySelector('[data-action="begin"]'), null, { timeout: 30000 });
       await page.click('[data-action="begin"]');
       await page.waitForFunction(() => window.game.state.started, null, { timeout: 30000 });
-      const setup = await page.evaluate(async ({ v }) => {
+      const setup = await page.evaluate(async ({ v, plan }) => {
         const P = await import("/src/sim/parties.js"), W = await import("/src/sim/world.js"), S = await import("/src/sim/scavenge.js");
         const st = game.state, hub = W.hub(st);
         const t = st.tiles.find((x) => x.id !== hub.tile && x.loc && x.loc.type === "town" && !st.bases.some((b) => b.tile === x.id)) || st.tiles.find((x) => x.id !== hub.tile && x.terrain !== "water");
@@ -41,10 +43,10 @@ const port = 5300 + Math.floor(Math.random() * 600);
         p.path = [t.id]; p.idx = 0; p.phase = "engaged";
         game.ui.speed = 0;
         const groups = S.raidEnemies(st, t.id).map((g) => ({ ...g, count: 0 })); // nobody about: the building itself
-        game.combat.start({ mode: "raid", tile: t.id, partyId: p.id, canRetreat: true, ambush: null, handler: "scavenge", enemy: { kind: "mixed", count: 0, power: 3, name: "the dead", groups }, raid: { heat0: 5, choose: true, poi: null, kind: null, place: { id: `hotelshot-${v}`, key: "hotel", name: "Hotel", variant: v }, building: null }, plan: true, context: {} });
+        game.combat.start({ mode: "raid", tile: t.id, partyId: p.id, canRetreat: true, ambush: null, handler: "scavenge", enemy: { kind: "mixed", count: 0, power: 3, name: "the dead", groups }, raid: { heat0: 5, choose: true, poi: null, kind: null, place: { id: `hotelshot-${v}`, key: "hotel", name: "Hotel", variant: v, ...(plan ? { plan } : {}) }, building: null }, plan: true, context: {} });
         const b = st.combat;
         return b ? { w: b.w, h: b.h, floors: b.floors ? b.floors.length : 1 } : null;
-      }, { v });
+      }, { v, plan });
       if (!setup) { console.log(v, "no raid"); bad++; await page.close(); continue; }
       await page.waitForTimeout(500);
       await page.evaluate(() => { const e = document.querySelector('[data-action="cb-plan"][data-v="enter"]:not([disabled])'); if (e) e.click(); });
@@ -73,11 +75,11 @@ const port = 5300 + Math.floor(Math.random() * 600);
           reveal();
           U.drawCombat(game.state, performance.now());
           window.__reveal = () => { reveal(); U.drawCombat(game.state, performance.now()); };
-          return { floor: f, name: b.floors ? b.floors[f].name : "Ground floor", zoom: I.iso.zoom, rooms: b.raid.areas.filter((a) => !a.outdoor && (a.f || 0) === f).length };
+          return { floor: f, variant: b.raid.plan.variant || "", name: b.floors ? b.floors[f].name : "Ground floor", zoom: I.iso.zoom, rooms: b.raid.areas.filter((a) => !a.outdoor && (a.f || 0) === f).length };
         }, { f });
         await page.waitForTimeout(400);
         await page.evaluate(() => { document.querySelectorAll("[data-action=gd-note-ok]").forEach((e) => e.click()); document.querySelectorAll(".tipbox, .coach, .gd-note").forEach((e) => e.remove && e.remove()); window.__reveal(); });
-        const shot = path.join(outDir, `hotel-${v}-f${f}.png`);
+        const shot = path.join(outDir, `hotel-${v}${plan ? `-${plan}` : ""}-f${f}.png`);
         await page.screenshot({ path: shot });
         console.log(shot, JSON.stringify(info));
       }

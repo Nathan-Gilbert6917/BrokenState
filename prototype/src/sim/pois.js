@@ -57,6 +57,7 @@ import { localId } from "./world.js";
 import { zombieToughness } from "./hives.js"; // hive land: the dead are more and tougher there (the threat's hive bonus)
 import { campsiteExtra, campDanger, noteCampSeen } from "./campsite.js"; // call-time only: the extra campsite a tile may hold, its state in the threat, a look at it
 import { shopExtras, franchiseFor, franchisesOf, franchiseName, settingOf, noFirm } from "./shops.js"; // call-time only: the shops a suburb or city block may hold, a place's franchise
+import { hotelVariantName } from "./data-hotels.js"; // a hotel's variant's name (issue #38)
 import { hotelExtra } from "./hotels.js"; // call-time only: a hotel a tile may hold (issue #29)
 import { legacyPrisons } from "./worldcfg.js"; // an older save: no county jails
 
@@ -323,6 +324,7 @@ export const poiDef = (poi) => (poi ? LOCATIONS[poi.kind] : null);
 export function poiName(t, i) {
   const p = poiAt(t, i);
   if (!p) return "";
+  if (!isSitePoi(t, i) && p.hv && hotelVariantName(p.hv)) return `${franchiseName(p.kind, p.v)} (${hotelVariantName(p.hv)})`; // a hotel's variant (issue #38): "Willow Creek Inn (Victorian B&B)"
   return isSitePoi(t, i) ? t.loc.name : p.v ? franchiseName(p.kind, p.v) : LOCATIONS[p.kind].name; // shops.js: a franchise's name
 }
 

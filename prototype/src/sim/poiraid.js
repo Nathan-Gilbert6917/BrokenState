@@ -227,7 +227,7 @@ export function poiPlace(t, i) {
   if (!list || !list.length) return null;
   const [key, name] = Array.isArray(list[0]) ? list[0] : [list[0], null];
   // shops.js: a franchise's name and layout (variant; a POI saved before franchises keeps its old building)
-  return { id: `poi${i}:${key}`, key, name: poi.v ? franchiseName(poi.kind, poi.v) : name || (BUILDINGS[key] ? BUILDINGS[key].name : LOCATIONS[poi.kind].name), ...(poi.v ? { variant: poi.v, kind: poi.kind } : {}) };
+  return { id: `poi${i}:${key}`, key, name: poi.v ? franchiseName(poi.kind, poi.v) : name || (BUILDINGS[key] ? BUILDINGS[key].name : LOCATIONS[poi.kind].name), ...(poi.v ? { variant: poi.v, kind: poi.kind } : {}), ...(poi.hv ? { plan: poi.hv } : {}) }; // hv: a hotel's variant (issue #38)
 }
 
 // The tile's scavenge text for the panels: "3 places known, possibly more unknown" ("" off a POI tile).
