@@ -397,6 +397,22 @@ export const FURNITURE_KINDS = {
   floorlamp: P("Floor lamp",   POLE, 5, 6, "one", S1, false, ["living", "bedroom", "office"], "comfort:0.1"),
   painting:  P("Painting",     POLE, 5, 4, "one", S1, false, ["living", "dining", "bedroom", "office", "church"], "comfort:0.2", true),
   wallclock: P("Wall clock",   POLE, 3, 2, "one", S1, false, ["living", "kitchen", "office", "school", "ward"], "comfort:0.05", true),
+  // ---------- amusement parks (issue #60, amusement.js) ----------
+  // The rides out on the grounds (fixed: bolted down, tonnes of steel): a roller coaster's track on its supports and a
+  // car of its train stalled on it, a Ferris wheel's base and its lowest gondola, a spinning teacup, a bumper car on its
+  // floor, a water slide's tower, a trampoline court's bed, the mini-golf windmill, a holiday light display, a ticket
+  // booth at the gate; and a go-kart off its track (two people lift it: its tank still has fuel in it).
+  coastertrack: P("Coaster track",   C(false, 1, false), 80, 400, "fixed", S1, false, ["park"], "none"),
+  coastercar:   P("Coaster car",     HALF, 60, 600, "fixed", S21, false, ["park"], "none"),
+  ferriswheel:  P("Ferris wheel",    FULL, 120, 6000, "fixed", S22, false, ["park"], "none"),
+  teacup:       P("Spinning teacup", HALF, 50, 400, "fixed", S22, false, ["park"], "none"),
+  bumpercar:    P("Bumper car",      HALF, 40, 180, "fixed", S1, false, ["park"], "none"),
+  waterslide:   P("Water slide",     FULL, 80, 3000, "fixed", S22, false, ["park"], "none"),
+  trampoline:   P("Trampoline",      C(false, 0, false), 30, 150, "fixed", S22, false, ["park"], "none"),
+  windmill:     P("Mini-golf windmill", HALF, 40, 300, "fixed", S22, false, ["park"], "none"),
+  lightdisplay: P("Light display",   POLE, 15, 60, "fixed", S1, false, ["park"], "none"),
+  ticketbooth:  P("Ticket booth",    FULL, 60, 500, "fixed", S1, false, ["park"], "none"),
+  gokart:       P("Go-kart",         HALF, 30, 90, "two", S21, true, ["park", "bay"], "storage:10"),
 };
 
 // The cells' rules for combat.js CELL (merged at load: Object.assign(CELL, furnitureCells())).

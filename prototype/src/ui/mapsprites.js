@@ -1085,6 +1085,20 @@ function paintMall() {
   return p;
 }
 
+// An amusement park (sim/amusement.js, issue #60): a Ferris wheel's ring and spokes, a roller coaster's hill of track,
+// a striped tent and the gate's booth.
+function paintAmusement() {
+  const p = painter(26, 22), white = "#e8e4d8", steel = "#9aa1a8";
+  for (let a = 0; a < 24; a++) { const t = (a / 24) * Math.PI * 2; p.set(Math.round(8 + Math.cos(t) * 6), Math.round(8 + Math.sin(t) * 6), white); }
+  for (let a = 0; a < 6; a++) { const t = (a / 6) * Math.PI * 2; for (let r = 1; r < 6; r++) p.set(Math.round(8 + Math.cos(t) * r), Math.round(8 + Math.sin(t) * r), steel); p.rect(Math.round(8 + Math.cos(t) * 6) - 1, Math.round(8 + Math.sin(t) * 6), Math.round(8 + Math.cos(t) * 6), Math.round(8 + Math.sin(t) * 6) + 1, a % 2 ? RED : GOLD); }
+  for (let y = 9; y <= 19; y++) { p.set(6 - Math.floor((y - 9) / 4), y, steel); p.set(10 + Math.floor((y - 9) / 4), y, steel); }
+  for (let x = 13; x <= 25; x++) { const y = Math.round(16 - Math.sin(((x - 13) / 12) * Math.PI) * 9); p.set(x, y, RED); for (let yy = y + 1; yy <= 19; yy += 3) p.set(x, yy, shade(steel, -0.2)); }
+  for (let r = 0; r < 4; r++) p.rect(16 - r, 13 + r, 20 + r, 13 + r, r % 2 ? white : RED);
+  p.rect(14, 17, 22, 19, shade(white, -0.15)); p.rect(17, 17, 19, 19, DARK_WIN);
+  p.rect(0, 20, 25, 21, ASPHALT); for (let x = 1; x <= 24; x += 4) p.set(x, 21, "#d8d4c8");
+  return p;
+}
+
 function paintUniversity() {
   const p = painter(22, 20);
   const stone = "#cbc2aa";
@@ -2572,6 +2586,7 @@ const POI_PAINT = {
   farmstand: paintFarmstand, shed: paintShed, blind: paintBlind, campsite: paintCampsite, hikercamp: paintHikercamp, mineshack: paintMineshack, bunker: () => paintBunkerPortal(false), govbunker: () => paintBunkerPortal(true), shelter: paintFalloutShelter, prepper: paintPrepper, // bunkers (issue #26)
   pawnshop: paintPawnShop, // sim/shops.js
   stripmall: paintMall, outlet: paintMall, // sim/mall.js (issue #30): the mall's own sprite for now
+  amusement: paintAmusement, // sim/amusement.js (issue #60): a park, a fairground, a water park
   jail: paintPolice, // sim/pois.js jailExtra: a county jail, a station's look
   // The shops and services (sim/data-shops.js NEW_KINDS), each painted in its franchise's look.
   sportshop: paintSportShop, electronics: paintElectronics, radioshop: paintRadioShop, bookstore: paintBookstore, library: paintLibrary,

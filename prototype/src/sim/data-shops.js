@@ -27,6 +27,7 @@
 // ROWS: the new kinds' rows in the find tables, by table (each module merges its own: loot.js SITE_FINDS …).
 
 import { OFFICE_KINDS, OFFICE_AREAS, OFFICE_W, OFFICE_FIRMS, OFFICE_ROWS } from "./data-offices.js"; // the office buildings of every kind, with their firms (issue #27)
+import { PARK_KINDS, PARK_AREA_DEFS } from "./data-parks.js"; // amusement parks, fairgrounds and water parks (issue #60): pure data too
 import { TOWER_AREAS } from "./data-radiotower.js"; // a radio tower compound's rooms (issue #54)
 
 /** @typedef {{ wall: string, trim: string, sign: string, text: string, accent: string, roof?: string, style: number }} Look */
@@ -150,6 +151,7 @@ export const NEW_KINDS = {
     areas: ["liquor", "liquor", "store", "office"], size: 0.5, storeys: [1, 1],
   },
   ...OFFICE_KINDS, // the office buildings (data-offices.js)
+  ...PARK_KINDS, // the amusement parks (data-parks.js, issue #60)
 };
 
 // ---------- their raid rooms (combat.js AREAS; tags: loot.js AREA_TAGS) ----------
@@ -220,6 +222,7 @@ export const AREA_DEFS = {
   libtech: { tags: ["tech", "office", "school"], def: { name: "Computers", boxes: ["computer", "printer"],
     loot: { electronics: [0.2, 1, 1], parts: [0.2, 1, 1], scrap: [0.3, 1, 2] }, gear: [["laptop", 0.01], ["phone", 0.01], ["camera", 0.005], ["handradio", 0.005]] } },
   ...OFFICE_AREAS,
+  ...PARK_AREA_DEFS, // a park's rooms (data-parks.js, issue #60)
   ...TOWER_AREAS, // radio towers (issue #54, data-radiotower.js)
 };
 

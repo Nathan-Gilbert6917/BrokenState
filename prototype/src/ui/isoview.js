@@ -1209,6 +1209,51 @@ const FURN_DRAW = {
     const ax = along(o), stripe = (f, s, t, X) => (f === "top" ? (Math.floor(X / 3) % 2 ? FURNC.red : FURNC.cream) : FURNC.gold), horse = (f) => (f === "top" ? FURNC.cream : mul(FURNC.cream, 0.85));
     return [run(ax, 0, 1, 0, 2, flatM(FURNC.gold), 0, 1), fcyl(ax, 0.5, 0.5, 0.06, 2, 22, flatM(FURNC.chrome)), fcyl(ax, 0.3 + (v & 1) * 0.4, 0.5, 0.1, 6, 11, horse), run(ax, 0, 1, 22, 24, stripe, 0, 1)];
   } },
+  // ---------- amusement parks (issue #60, sim/amusement.js) ----------
+  coastertrack: { top: 20, p: (o) => {
+    const ax = along(o), beam = flatM(mul(FURNC.red, 1.1)), rail = flatM(FURNC.chrome);
+    return [run(ax, 0.42, 0.58, 0, 16, beam, 0.42, 0.58), run(ax, 0.14, 0.86, 16, 18, flatM(FURNC.steel), 0.1, 0.9), run(ax, 0.16, 0.24, 18, 20, rail, 0, 1), run(ax, 0.76, 0.84, 18, 20, rail, 0, 1)];
+  } },
+  coastercar: { top: 24, p: (o, v) => {
+    const ax = along(o), body = (f, s, t) => (f === "top" ? mul(FURNC.black, 1.2) : t > 4 ? (v & 1 ? FURNC.gold : FURNC.red) : FURNC.steel);
+    return [run(ax, 0.14, 0.86, 16, 18, flatM(FURNC.steel), 0, 1), run(ax, 0.18, 0.82, 18, 24, body, 0.04, 0.96), run(ax, 0.3, 0.7, 23, 24, flatM(FURNC.black), 0.2, 0.8)];
+  } },
+  ferriswheel: { top: 40, p: (o) => {
+    const ax = along(o), leg = flatM(FURNC.white), cab = (f) => (f === "top" ? FURNC.cream : FURNC.red);
+    return [run(ax, 0, 1, 0, 2, flatM(mul(FURNC.steel, 0.8)), 0, 1), run(ax, 0.1, 0.18, 2, 40, leg, 0.3, 0.38), run(ax, 0.82, 0.9, 2, 40, leg, 0.62, 0.7), fcyl(ax, 0.5, 0.5, 0.2, 2, 12, cab), run(ax, 0.46, 0.54, 12, 40, flatM(FURNC.chrome), 0.46, 0.54)];
+  } },
+  teacup: { top: 12, p: (o, v) => {
+    const ax = along(o), cup = (f, s, t, X) => (f === "top" ? mul(FURNC.cloth, 0.9) : Math.floor(X / 3) % 2 ? FURNC.cream : [FURNC.red, FURNC.gold, FURNC.felt][v % 3]);
+    return [run(ax, 0, 1, 0, 1, flatM(FURNC.steel), 0, 1), fcyl(ax, 0.5, 0.5, 0.42, 1, 10, cup), fcyl(ax, 0.5, 0.5, 0.08, 10, 12, flatM(FURNC.chrome))];
+  } },
+  bumpercar: { top: 10, p: (o, v) => {
+    const ax = along(o), body = (f) => (f === "top" ? mul([FURNC.red, FURNC.gold, FURNC.water][v % 3], 1.15) : [FURNC.red, FURNC.gold, FURNC.water][v % 3]);
+    return [run(ax, 0.12, 0.88, 0, 3, flatM(FURNC.black), 0.08, 0.92), run(ax, 0.16, 0.84, 3, 7, body, 0.12, 0.88), run(ax, 0.46, 0.54, 7, 10, flatM(FURNC.chrome), 0.8, 0.86)];
+  } },
+  waterslide: { top: 36, p: (o) => {
+    const ax = along(o), tube = (f, s, t) => (f === "top" ? mul(FURNC.water, 1.3) : Math.floor(t / 4) % 2 ? FURNC.gold : mul(FURNC.water, 1.1));
+    return [run(ax, 0.1, 0.16, 0, 36, flatM(FURNC.steel), 0.1, 0.16), run(ax, 0.84, 0.9, 0, 36, flatM(FURNC.steel), 0.84, 0.9), run(ax, 0.1, 0.9, 32, 34, flatM(FURNC.white), 0.1, 0.9), fcyl(ax, 0.5, 0.5, 0.3, 4, 30, tube)];
+  } },
+  trampoline: { top: 6, p: (o) => {
+    const ax = along(o), bed = (f) => (f === "top" ? FURNC.black : FURNC.water);
+    return [...flegs(0.06, 0.9, 0.06, 0.9, 4, flatM(FURNC.steel)), run(ax, 0.04, 0.96, 4, 6, bed, 0.04, 0.96)];
+  } },
+  windmill: { top: 30, p: (o) => {
+    const ax = along(o), barn = (f, s, t) => (f === "top" ? mul(FURNC.red, 0.7) : t > 14 ? mul(FURNC.red, 0.8) : FURNC.cream);
+    return [run(ax, 0.2, 0.8, 0, 18, barn, 0.2, 0.8), run(ax, 0.45, 0.55, 12, 30, flatM(PAL.woodLt), 0.1, 0.9), run(ax, 0.45, 0.55, 20, 22, flatM(PAL.woodLt), 0.82, 0.86)];
+  } },
+  lightdisplay: { top: 16, p: (o, v) => {
+    const ax = along(o), bulbs = (f, s, t, X, Y) => (n2(Math.floor(X / 2), Math.floor(Y / 2) + v, 191) > 0.5 ? mul(FURNC.amber, 1.2) : n2(X, Y, 192) > 0.5 ? FURNC.red : FURNC.led);
+    return [run(ax, 0.46, 0.54, 0, 8, flatM(FURNC.black), 0.46, 0.54), run(ax, 0.2, 0.8, 8, 16, bulbs, 0.44, 0.56)];
+  } },
+  ticketbooth: { top: 26, p: (o) => {
+    const ax = along(o), wall = (f, s, t) => (f === "top" ? FURNC.red : t > 8 && t < 16 ? FURNC.glassDk : FURNC.cream), roof = (f, s, t, X) => (Math.floor(X / 3) % 2 ? FURNC.red : FURNC.cream);
+    return [run(ax, 0.14, 0.86, 0, 22, wall, 0.14, 0.86), run(ax, 0.06, 0.94, 22, 26, roof, 0.06, 0.94)];
+  } },
+  gokart: { top: 8, p: (o, v) => {
+    const ax = along(o), body = (f) => (f === "top" ? mul([FURNC.red, FURNC.gold, FURNC.felt][v % 3], 1.2) : [FURNC.red, FURNC.gold, FURNC.felt][v % 3]);
+    return [fcyl(ax, 0.2, 0.12, 0.1, 0, 3, flatM(FURNC.black)), fcyl(ax, 0.8, 0.12, 0.1, 0, 3, flatM(FURNC.black)), fcyl(ax, 0.2, 0.88, 0.1, 0, 3, flatM(FURNC.black)), fcyl(ax, 0.8, 0.88, 0.1, 0, 3, flatM(FURNC.black)), run(ax, 0.26, 0.74, 1, 4, body, 0.04, 0.96), run(ax, 0.34, 0.66, 4, 8, flatM(FURNC.black), 0.4, 0.62)];
+  } },
   mannequin: { top: 22, p: () => [{ cyl: [0.5, 0.5, 0.14], z0: 0, z1: 1, m: flatM(FURNC.steel) }, fbox(0.48, 0.52, 0.48, 0.52, 1, 8, flatM(FURNC.steel)), { cyl: [0.5, 0.5, 0.15], z0: 8, z1: 18, m: flatM(FURNC.cloth) }, { cyl: [0.5, 0.5, 0.09], z0: 18, z1: 22, m: flatM(FURNC.cloth) }] },
   dumpster: { top: 14, p: (o) => {
     const ax = along(o), green = (f, s, t, X, Y) => (f === "top" ? mul(hex("#2f5a3a"), 0.8) : mul(hex("#2f5a3a"), 0.9 + n2(X, Y, 186) * 0.12));
