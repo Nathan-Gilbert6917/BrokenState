@@ -3351,11 +3351,11 @@ const NEIGHBOURHOODS = {
   culdesac: { closed: "east", allow: ["ranch"] }, // a cul-de-sac of ranch houses
   // the last of its buildings a farm shed (a garage's plan): the country road's houses keep their outbuildings
   rural: { road: "dirt", walk: "dirt", yard: "field", GAP: 8, SIDE: 5, CARS: [0, 1], TREES: [6, 10], BINS: [0, 1], allow: ["twostorey", "ranch", "mobile"],
-    make: (k, r, n, o) => (k === n - 1 ? { ...BUILDINGS.garage.make(r, { ...o, layout: "garage" }), key: "garage" } : { ...BUILDINGS.house.make(r, { ...o, street: true, allow: ["twostorey", "ranch", "mobile"] }), key: "house" }),
+    make: (k, r, n, o) => (k === n - 1 ? { ...BUILDINGS.garage.make(r, { ...o, layout: "garage" }), key: "garage", out: true } : { ...BUILDINGS.house.make(r, { ...o, street: true, allow: ["twostorey", "ranch", "mobile"] }), key: "house" }),
     name: (k, n, no) => (k === n - 1 ? "Farm shed" : no) },
   // a trailer park: mobile homes on their lots along a gravel loop, the park office and its coin laundry last
   trailer: { road: "gravel", walk: "gravel", yard: "dirt", GAP: 3, fences: false, CARS: [2, 4], BINS: [2, 4],
-    make: (k, r, n, o) => (k === n - 1 ? { ...parkOffice(r), key: "house" } : { ...BUILDINGS.house.make(r, { ...o, street: true, layout: "mobile" }), key: "house" }),
+    make: (k, r, n, o) => (k === n - 1 ? { ...parkOffice(r), key: "house", out: true } : { ...BUILDINGS.house.make(r, { ...o, street: true, layout: "mobile" }), key: "house" }),
     name: (k, n) => (k === n - 1 ? "Park office" : `Lot ${k + 1}`) },
   suburb: { allow: ["ranch", "splitlevel", "bungalow"] },                    // ranch houses, split-levels and bungalows behind their lawns
   row: { allow: ["townhouse"], GAP: 1, fences: false, TREES: [1, 3] },      // townhouses wall to wall, three storeys each
@@ -3368,7 +3368,7 @@ const NEIGHBOURHOODS = {
     make: (k, r, n, o) => ({ ...BUILDINGS.cabin.make(r, { ...o, layout: LAKE_CABINS[k % LAKE_CABINS.length] }), key: "cabin" }) },
   // a crossroads hamlet: farmhouses down a dirt road, a pole barn last
   hamlet: { road: "dirt", walk: "dirt", yard: "field", GAP: 7, SIDE: 4, CARS: [0, 1], TREES: [3, 6], BINS: [0, 1], fences: false,
-    make: (k, r, n, o) => (k === n - 1 ? { ...BUILDINGS.barn.make(r, { ...o, layout: "pole" }), key: "barn" } : { ...BUILDINGS.farmhouse.make(r, { ...o, allow: ["farmhouse", "oldfarm", "foursquare", "tenant", "stonehouse"] }), key: "farmhouse" }),
+    make: (k, r, n, o) => (k === n - 1 ? { ...BUILDINGS.barn.make(r, { ...o, layout: "pole" }), key: "barn", out: true } : { ...BUILDINGS.farmhouse.make(r, { ...o, allow: ["farmhouse", "oldfarm", "foursquare", "tenant", "stonehouse"] }), key: "farmhouse" }),
     name: (k, n, no) => (k === n - 1 ? "Barn" : no) },
 };
 const LAKE_CABINS = ["lake", "log", "porch", "tworoom", "loft"];
@@ -3423,7 +3423,7 @@ export function streetMap(state, tileId, option, withVehicle, def = null, varian
     spec.ground = "none";
     const ukey = spec.key || hkey; // a building's own archetype (a country road's farm shed)
     const m = assemble(hr, spec, { key: ukey, id, name: BUILDINGS[ukey].name, legacy: legacyRooms(state) });
-    houses.push({ k, row, col, m, bw: spec.bw, bh: spec.bh, flip: row === 1, name: def && def.name ? def.name(k, n, `No. ${no0 + 2 * col + row}`) : `No. ${no0 + 2 * col + row}`, x0: 0, y0: 0, rect: null, variant: spec.vid || null });
+    houses.push({ k, row, col, m, bw: spec.bw, bh: spec.bh, flip: row === 1, name: def && def.name ? def.name(k, n, `No. ${no0 + 2 * col + row}`) : `No. ${no0 + 2 * col + row}`, x0: 0, y0: 0, rect: null, variant: spec.vid || null, out: !!spec.out }); // out: an outbuilding (a farm shed, a park office, a barn: def.make's)
   }
   // The layout: the north row's fronts in line along the north sidewalk, the south row's along the south one.
   const inRow = (r) => houses.filter((h) => h.row === r);
@@ -3609,7 +3609,7 @@ export function streetMap(state, tileId, option, withVehicle, def = null, varian
   const plan = {
     key: option.key, id: option.id, name: option.name, w: W, h: H, street: true, building: houses[0].rect, buildings: houses.map((h) => ({ ...h.rect })),
     ...(variant ? { variant: variant.name, vid: variant.id } : {}), ...(def && def.word ? { word: def.word } : {}), // the layout (buildvariants.js); what its buildings are called (a motor lodge's "buildings")
-    houses: houses.map((h) => ({ k: h.k, name: h.name, row: h.row, ...h.rect, front: h.front, rooms: areas.filter((a) => a.house === h.k).map((a) => a.id), ...(h.variant ? { vid: h.variant } : {}) })),
+    houses: houses.map((h) => ({ k: h.k, name: h.name, row: h.row, ...h.rect, front: h.front, rooms: areas.filter((a) => a.house === h.k).map((a) => a.id), ...(h.variant ? { vid: h.variant } : {}), ...(h.out ? { out: true } : {}) })),
     tall: true, storeys, stairs: stairs.map((s) => s.slice()), runs: runs.map((r) => ({ ...r })),
     rooms: areas.filter((a) => !a.outdoor).map((a) => ({ id: a.id, f: a.f, name: a.name, role: a.role, type: a.type, x0: a.x0, y0: a.y0, w: a.w, h: a.h, locked: a.locked, up: a.up, hub: a.hub, entry: a.entry, house: a.house })),
     front: houses[0].front, exits: zoneExits(),
