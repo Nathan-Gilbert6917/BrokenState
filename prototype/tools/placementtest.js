@@ -195,7 +195,7 @@ console.log("\nOlder worlds");
   ensurePois(zwBack);
   check(!!zwBack.zooLegacy && !zwBack.tiles.some((t) => (t.pois || []).some((p) => p.kind === "zoo")), "a save from before the zoos loads as one (zooLegacy): none on its tiles");
   // Golf courses, campgrounds and RV parks (issue #61): a new world carries outdoorsV and has them; a save from before
-  // them loads with none of them on its tiles (outdoorsLegacy).
+  // them loads with none of them on its tiles (outdoorsLegacy) beyond its own campground sites (mapgen.js's, p.site).
   const OUT = ["golfcourse", "rvpark", "campground"];
   const ow = createWorld({ seed: 4242, factionCount: 3, size: "small" });
   check(ow.outdoorsV === 1 && !ow.outdoorsLegacy, "a new world carries outdoorsV (issue #61)");
@@ -204,7 +204,7 @@ console.log("\nOlder worlds");
   const owBack = deserializeState(serializeState(ow));
   for (const t of owBack.tiles) delete t.pois;
   ensurePois(owBack);
-  check(!!owBack.outdoorsLegacy && !owBack.tiles.some((t) => (t.pois || []).some((p) => OUT.includes(p.kind))), "a save from before the golf courses, campgrounds and RV parks loads as one (outdoorsLegacy): none of them as POIs");
+  check(!!owBack.outdoorsLegacy && !owBack.tiles.some((t) => (t.pois || []).some((p) => OUT.includes(p.kind) && !p.site)), "a save from before the golf courses, campgrounds and RV parks loads as one (outdoorsLegacy): none of them as POIs (its campground sites as they were)");
 }
 
 console.log(`\n${passed} passed, ${failed} failed (${((performance.now() - t0) / 1000).toFixed(1)} s)`);
