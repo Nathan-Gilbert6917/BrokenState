@@ -238,7 +238,7 @@ export const REAL_SIZE = {
   maintenance:  { w: [22, 40], d: [11, 20], storeys: [1, 2], set: "town", planned: true },
   theatre:      { w: [24, 46], d: [13, 28], storeys: [1, 3], set: "town", planned: true },
   parkgarage:   { w: [30, 48], d: [18, 32], storeys: [2, 6], set: "town", planned: true },
-  chapel:       { w: [14, 24], d: [22, 36], storeys: [1, 1], set: "town", wings: "back" },
+  chapel:       { w: [14, 24], d: [22, 36], storeys: [1, 2], set: "town", wings: "back" },
   healthcentre: { w: [15, 25], d: [12, 20], storeys: [1, 3], set: "town" },
 };
 
