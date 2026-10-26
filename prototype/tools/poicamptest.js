@@ -28,6 +28,8 @@ import { raidPoiAsGroup } from "../src/sim/grouppois.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
 import { killDead, poiDead } from "../src/sim/deadpop.js";
 import * as PC from "../src/sim/poicamp.js";
+import { siteThreat, clearSiteFirst, leaveGrounds } from "../src/sim/siteclear.js";
+import { partyTile as partyTileOf } from "../src/sim/parties.js";
 
 const seed = Number(process.argv[2] || 42);
 let fails = 0, passes = 0;
@@ -335,6 +337,24 @@ section("Build mode on the raid map");
   finishCombat(st, b3.setup, b3.result);
   const job = base.construction.find((c) => c.type === "storebox");
   check(!!job && job.at && job.at[0] === s.at[0] && job.progress > 0 && job.progress < job.hours, `the unfinished site is in the camp's construction queue at its spot (${job && `${job.progress}/${job.hours} h`})`);
+}
+
+section("Clearing the spot first is optional on the tile's own map");
+{
+  const st4 = W();
+  const t4 = st4.tiles.find((x) => siteThreat(st4, x.id).count > 0 && !x.hive && !st4.bases.some((q) => q.tile === x.id));
+  const p4 = team(st4, 2);
+  p4.path = [t4.id]; p4.idx = 0; p4.dest = t4.id; p4.phase = "task"; p4.task = { type: "pitch", hours: 2, done: 0 };
+  p4.noClear = t4.id;
+  const n = siteThreat(st4, t4.id).count;
+  const fought = clearSiteFirst(st4, p4, [0, 0]);
+  check(!fought && !st4.combat && p4.campGrounds === n && p4.siteClear === t4.id, `Set up without clearing: no fight, the ${n} of the dead noted for the grounds`);
+  const fake = { tile: t4.id };
+  leaveGrounds(st4, fake, n);
+  check(fake.grounds && fake.grounds.dead > 0 && fake.grounds.known && !fake.grounds.blind, `they stay out on the camp's grounds (${fake.grounds && fake.grounds.dead}, known)`);
+  delete p4.noClear; delete p4.siteClear;
+  check(partyTileOf(p4) === t4.id && clearSiteFirst(st4, p4, [0, 0]) === true, "without it the dead are fought first, as before");
+  st4.combat = null;
 }
 
 section("Save and load");
