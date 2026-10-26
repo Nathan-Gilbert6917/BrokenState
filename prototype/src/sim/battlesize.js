@@ -359,6 +359,8 @@ export const MAP_CAP = { zoo: 500, mine: 400, quarry: 400, datacenter: 400, hote
 // Issue #55's six shops: the round's default cap (epic #39: 300 × 300); a big-box furniture showroom's map is about 90 × 80.
 for (const k of ["furnstore", "laundromat", "thrift", "bakery", "butcher", "deli"]) MAP_CAP[k] = 300;
 MAP_CAP.gym = 300; MAP_CAP.bowling = 300; // issue #56 (reclayout.js): the default, for the deep, narrow strip gyms and bowling alleys past the small maps (the 40-lane centre 92 × 55)
+// Issue #61: a golf course, a campground and an RV park (outdoors.js OUTDOOR.CAP) at the epic's default 300 × 300.
+for (const k of ["golfcourse", "campground", "rvpark"]) MAP_CAP[k] = 300;
 export const mapCap = (key) => MAP_CAP[key] || null;
 export function buildingTarget(tile, single, state = null) {
   if (legacyRaids(state)) return single ? raidDims(tile, state) : dimsAt(S); // an older save: the old targets

@@ -264,6 +264,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
     farmV: 1, // farms and ranches as whole sites, sheds and farm stands of their own (issue #62; save.js: an older save keeps its farms)
     towerV: 1, // radio towers: a radio tower site is the tower compound a base can power (radiotower.js, issue #54; save.js: an older save keeps its transmitter hut)
     placeV: 1, // where buildings stand by the placement table (data-placement.js, issue #42; save.js: an older save keeps its places)
+    outdoorsV: 1, // golf courses, campgrounds and RV parks as places (outdoors.js, issue #61; save.js: an older save gets none, its campgrounds' street map)
     officesV: 1, // the office buildings of every kind and their firms (data-offices.js; save.js: an older save gets none)
     civicV: 1, // civic and medical buildings at real scale, their big plans and sites (civicvariants.js, civicsite.js, issue #49; save.js: an older save keeps its plans)
     stadV: 1, // sports stadiums and arenas (stadium.js, issue #57; save.js: an older save's tiles get none)

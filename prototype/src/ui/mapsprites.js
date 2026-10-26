@@ -1405,6 +1405,33 @@ function paintCampground() {
   return p;
 }
 
+// A golf course (sim/outdoors.js, issue #61): the fairway's mown stripes running up to a green with its flag, a bunker
+// beside it, the clubhouse at the front with its white walls and a green roof.
+function paintGolfCourse() {
+  const p = painter(20, 17);
+  p.rect(0, 6, 19, 16, GRASS);
+  for (let y = 6; y <= 16; y++) for (let x = 0; x <= 19; x++) if ((x + y) % 6 < 3) p.set(x, y, shade(GRASS, 0.12)); // the mown stripes
+  p.rect(12, 6, 18, 9, shade(GRASS, 0.32)); p.rect(13, 5, 17, 5, shade(GRASS, 0.32));               // the green
+  p.rect(9, 8, 11, 9, SAND); p.set(10, 7, shade(SAND, 0.2));                                          // the bunker
+  flag(p, 15, 0, RED, 6, 3);
+  pine(p, 2, 9, 7);
+  house(p, 3, 12, 11, 4, WHITE, "#3f6a3a", { rh: 2 });
+  p.rect(14, 15, 18, 16, shade(DIRT, 0.1)); car(p, 13, 11, WHITE);                                    // a golf cart on the path
+  return p;
+}
+// An RV park (sim/outdoors.js, issue #61): a motorhome and a trailer on their gravel pads, the park office, a pine.
+function paintRvPark() {
+  const p = painter(18, 15);
+  p.rect(0, 12, 17, 14, shade(DIRT, 0.25));
+  const rv = (x, y, w, c) => { p.rect(x, y, x + w, y + 3, c); p.rect(x, y, x + w, y, shade(c, 0.25)); p.rect(x + 1, y + 1, x + 2, y + 1, GLASS); p.rect(x + w - 3, y + 1, x + w - 1, y + 1, GLASS); p.rect(x, y + 3, x + w, y + 3, shade(c, -0.35)); p.set(x + 1, y + 4, TIRE); p.set(x + w - 1, y + 4, TIRE); };
+  rv(1, 8, 7, WHITE);          // a motorhome
+  rv(10, 9, 5, "#d8c8a0");     // a travel trailer
+  p.rect(5, 6, 9, 6, "#7a4a2a"); // the awning's stripe
+  house(p, 11, 3, 6, 4, BOARDS, ROOF_GRAY, { rh: 2 });
+  pine(p, 2, 6, 6);
+  return p;
+}
+
 function paintRanger() {
   const p = painter(18, 15);
   // Fire lookout tower.
@@ -2768,6 +2795,7 @@ const POI_PAINT = {
   // The office buildings (sim/data-offices.js, issue #27); the office tower's firms: paintOffice's look.
   storefront: paintStorefront, bizpark: paintBizpark, cityhall: paintCityHall, courthouse: paintCourthouse, callcenter: paintCallCenter,
   techoffice: paintTechOffice, station: paintStation,
+  golfcourse: paintGolfCourse, rvpark: paintRvPark, // sim/outdoors.js (issue #61); the campground keeps its own
 };
 
 // A kind with no painter of its own (a point of interest added without one, pois.js): a plain small building on a
