@@ -110,8 +110,13 @@ export const BY_KIND = {
   prison: { opened: 2, lockdown: 2, guardstand: 2, takeover: 2, bus: 2, quiet: 0.5, barricade: 0.5 }, jail: { opened: 2, lockdown: 2, guardstand: 2, takeover: 2, quiet: 0.5 }, // prisonlayout.js's own come first (issue #31)
 };
 // A scene of another module's (the special buildings' layouts): def { w, place(ctx, room?) → scene | null, kinds?, when?
-// (ctx → whether the map can have it: kept out of the weighted draw otherwise) }.
-export function registerScene(name, def) { SCENE_KINDS[name] = def; }
+// (ctx → whether the map can have it: kept out of the weighted draw otherwise) }. A name is registered once: a second
+// module taking a name already taken would silently replace the first one's scene (issue #72: the radio tower's took
+// the station's lastbroadcast), so it throws.
+export function registerScene(name, def) {
+  if (SCENE_KINDS[name]) throw new Error(`registerScene: the scene "${name}" is already registered`);
+  SCENE_KINDS[name] = def;
+}
 
 // The building's own dice for its scenes: the world seed, the tile and the building's option id.
 export const sceneRng = (state, tileId, option) => new Rng(Math.floor(hash01(state.seed, "scenes", tileId, option && option.id != null ? option.id : option && option.key) * 4294967296) || 1);

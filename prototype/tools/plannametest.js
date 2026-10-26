@@ -83,7 +83,11 @@ const GOLDEN = {
   mountainbunker: "nv1cg2.twqldz", govbunker: "rrmjr6.xvw2l1", shelter: "b8hpej.x7xxhr", prepper: "s64ew2.y9ewyj",
   regionalmall: "oi0i0e.9jy7uk", stripmall: "d84s7v.ihjhex", outlet: "yjmtk6.9xi056", cinema: "bjwb7c.sk046q",
   arcade: "4fx8nr.y9hjfs", mallservices: "bs9jxr.dewn7z", mallrestrooms: "1ipqw3.h4grrs",
-  vacantunit: "35skdb.ugnhfp"
+  vacantunit: "35skdb.ugnhfp",
+  // The types added after #40 (#49, #51, #54, #55, #60), taken on dev 2026-10-26 (issue #72) with --golden; the
+  // ones above unchanged.
+  museum: "ke8s5b.pz59ra", furnstore: "wssqkg.nxwpsq", laundromat: "mo1wwg.wq8gck", thrift: "ywi6w1.1rwe60", bakery: "20n5w4.8fd645",
+  butcher: "3n9nu1.949674", deli: "ucjk23.45xld2", radiotower: "28y5ut.mslivu", datacenter: "3g8k4u.50550s", amusement: "7qyzj9.ru5nqy"
 };
 
 // ---------- every type ----------
@@ -183,7 +187,7 @@ check(rows.filter((r) => r.plans).length >= 40, `${rows.filter((r) => r.plans).l
 {
   const diff = [];
   for (const key of Object.keys(BUILDINGS)) { const h = legacyHash(key); if (GOLDEN[key] !== undefined && GOLDEN[key] !== h) diff.push(key); }
-  check(Object.keys(GOLDEN).length >= Object.keys(BUILDINGS).length - 5, `the older save's golden hashes cover ${Object.keys(GOLDEN).length} types`);
+  check(Object.keys(GOLDEN).length >= Object.keys(BUILDINGS).length - 5, `the older save's golden hashes cover ${Object.keys(GOLDEN).length} types (none for ${Object.keys(BUILDINGS).filter((k) => GOLDEN[k] === undefined).join(", ")}: add them from --golden)`);
   check(!diff.length, `an older save's buildings changed: ${diff.join(", ")}`);
 }
 
