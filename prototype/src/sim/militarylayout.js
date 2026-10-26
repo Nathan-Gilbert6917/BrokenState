@@ -600,14 +600,15 @@ function ring(api, inset, k) {
   return n;
 }
 // Watchtowers inside the ring's corners (combat.js tower: climbed, a lookout two levels up).
-function towers(api, inset) {
+function towers(api, inset, most = MIL.TOWERS) {
   const { W, H } = api;
   let n = 0;
+  if (most <= 0) return 0;
   for (const [x, y] of [[inset, inset], [W - 1 - inset, inset], [inset, H - 1 - inset], [W - 1 - inset, H - 1 - inset]]) {
     for (const [dx, dy] of [[0, 0], [x < W / 2 ? 1 : -1, 0], [0, y < H / 2 ? 1 : -1], [x < W / 2 ? 1 : -1, y < H / 2 ? 1 : -1]]) {
       if (api.outsideFree(x + dx, y + dy) && api.block(x + dx, y + dy, "tower")) { n++; break; }
     }
-    if (n >= MIL.TOWERS) break;
+    if (n >= most) break;
   }
   return n;
 }
@@ -633,6 +634,29 @@ function gatehouse(api, fenceY) {
   if (api.outsideFree(bx, by) && api.block(bx, by, "guardbooth")) {
     n++;
     for (const [dx, dy] of [[1, 0], [0, -1], [1, -1]]) if (api.outsideFree(bx + dx, by + dy)) api.block(bx + dx, by + dy, "sandbag");
+  }
+  return n;
+}
+// The gatehouse at the side gap of the fence (the fence's column x = fenceX): as gatehouse, turned.
+function gatehouseSide(api, fenceX) {
+  const { H, cells, I } = api;
+  let best = null;
+  for (let y = 1; y < H - 1; y++) {
+    if (cells[I(fenceX, y)].k === "fence") continue;
+    let e = y;
+    while (e + 1 < H - 1 && cells[I(fenceX, e + 1)].k !== "fence") e++;
+    if ((!best || e - y > best[1] - best[0]) && e - y >= 2) best = [y, e];
+    y = e;
+  }
+  if (!best) return 0;
+  let n = 0;
+  for (const y of [best[0] - 1, best[1] + 1]) {
+    if (cells[I(fenceX, y)] && cells[I(fenceX, y)].k === "fence") { api.clear(fenceX, y); if (api.block(fenceX, y, "barrier")) n++; else api.block(fenceX, y, "fence"); }
+  }
+  const bx = fenceX + 2, by = best[1] + 2;
+  if (api.outsideFree(bx, by) && api.block(bx, by, "guardbooth")) {
+    n++;
+    for (const [dx, dy] of [[1, 0], [0, 1], [1, 1]]) if (api.outsideFree(bx + dx, by + dy)) api.block(bx + dx, by + dy, "sandbag");
   }
   return n;
 }
@@ -674,16 +698,26 @@ function fuelFarm(api, n) {
 /** @param {string} kind @param {any} api */
 export function militaryOutside(kind, api) {
   const { rng, W, H, cells, I, bx0, by0, bx1, by1, spec } = api;
-  const out = { fence: 0, towers: 0, gate: 0, helo: null, plane: null, truck: null, fuel: 0, yard: 0 };
+  // The site's layout (milplans.js MIL_SITES, spec.sl: a new save's), else the default: wire and a fence, four towers,
+  // the gate on the front, the apron across the front (an airport's unfenced).
+  const sl = spec.sl || { fence: kind === "airfield" && !spec.milAir ? "open" : "wire", towers: kind === "airfield" && !spec.milAir ? 0 : MIL.TOWERS, gate: "front", runway: "front" };
+  const out = { fence: 0, towers: 0, gate: 0, helo: null, plane: null, truck: null, fuel: 0, yard: 0, layout: spec.sl ? spec.sl.id : null, runway: null };
   if (kind === "airfield") {
-    // The apron across the front: road cells (the taxiway's centre line drawn with them), an aircraft wreck and a
-    // fire truck parked on it.
-    for (let y = by1 + 2; y < H; y++) for (let x = 0; x < W; x++) { const c = cells[I(x, y)]; if (c.k === "open") c.f = "road"; }
-    const front = [(bx0 + bx1) / 2, Math.min(H - 4, by1 + 5)];
-    out.plane = parked(api, spec.milAir ? { kind: "truck", len: 6, wide: 4, body: "jet", box: "jet", label: "fighter jet wreck" } : { kind: "truck", len: 8, wide: 6, body: "airliner", box: "airliner", label: "airliner wreck" }, front, spec.milAir ? "milwreck" : "fuselage", "Apron");
-    out.truck = parked(api, { kind: "truck", len: 5, body: "engine", box: "firetruck", label: "crash tender" }, [bx1 - 4, front[1]], "wreck", "Fire truck");
+    // The apron (road cells: the taxiway's centre line drawn with them) across the front, down the side or along the
+    // back (sl.runway), an aircraft wreck and a fire truck parked on it.
+    const rw = sl.runway || "front";
+    out.runway = rw;
+    const onApron = rw === "side" ? (x) => x >= bx1 + 2 : null;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const c = cells[I(x, y)];
+      if (c.k !== "open") continue;
+      if (rw === "front" ? y >= by1 + 2 : rw === "back" ? y <= by0 - 2 : onApron(x)) c.f = "road";
+    }
+    const at = rw === "side" ? [Math.min(W - 6, bx1 + 6), (by0 + by1) / 2] : rw === "back" ? [(bx0 + bx1) / 2, Math.max(4, by0 - 6)] : [(bx0 + bx1) / 2, Math.min(H - 4, by1 + 5)];
+    out.plane = parked(api, spec.milAir ? { kind: "truck", len: 6, wide: 4, body: "jet", box: "jet", label: "fighter jet wreck" } : { kind: "truck", len: 8, wide: 6, body: "airliner", box: "airliner", label: "airliner wreck" }, at, spec.milAir ? "milwreck" : "fuselage", "Apron");
+    out.truck = parked(api, { kind: "truck", len: 5, body: "engine", box: "firetruck", label: "crash tender" }, rw === "side" ? [at[0], at[1] + 6] : [bx1 - 4, at[1]], "wreck", "Fire truck");
     if (spec.milAir) out.fuel = fuelFarm(api, rng.int(2, 3));
-    if (!spec.milAir) { api.scatter("car", rng.int(1, 3)); return out; }
+    if (sl.fence === "open") { api.scatter("car", rng.int(1, 3)); return out; }
   }
   if (kind === "prisonyard") {
     // The exercise yard behind the cell block: a fenced rectangle, weight benches in it.
@@ -694,19 +728,21 @@ export function militaryOutside(kind, api) {
       for (let i = 0; i < 2; i++) { const x = x0 + 2 + i * 3, y = y0 + 2; if (api.outsideFree(x, y) && api.block(x, y, "weightbench")) out.yard++; }
     }
   }
-  // The perimeter: barbed wire along the map's edge, the fence a cell in (a prison's double: the wire fence two in), a
-  // watchtower inside each corner; gaps where the ways out run (the zones: block keeps them open).
-  ring(api, 0, "wire");
-  out.fence = ring(api, 1, "fence");
-  if (kind === "prisonyard") ring(api, 2, "wirefence");
-  out.towers = towers(api, kind === "prisonyard" ? 3 : 2);
-  if (kind === "compound" || kind === "airfield") out.gate = gatehouse(api, H - 2);
+  // The perimeter (sl.fence): barbed wire along the map's edge and the fence a cell in ("wire"), a second fence inside it
+  // ("double"; a prison's always), a line of sandbags ("sandbag"), or nothing ("open"); watchtowers inside its corners
+  // (sl.towers); gaps where the ways out run (the zones: block keeps them open).
+  const fence = kind === "prisonyard" ? "double" : sl.fence;
+  if (fence === "wire" || fence === "double") { ring(api, 0, "wire"); out.fence = ring(api, 1, "fence"); }
+  if (fence === "double") ring(api, 2, "wirefence");
+  if (fence === "sandbag") out.fence = ring(api, 1, "sandbag");
+  if (fence !== "open") out.towers = towers(api, kind === "prisonyard" ? 3 : fence === "double" ? 3 : 2, kind === "prisonyard" ? MIL.TOWERS : sl.towers);
+  if ((kind === "compound" || kind === "airfield") && (fence === "wire" || fence === "double")) out.gate = sl.gate === "side" ? gatehouseSide(api, 1) || gatehouse(api, H - 2) : gatehouse(api, H - 2);
   if (kind === "compound" && spec.helipad) {
     const pad = [Math.min(W - 6, bx1 + 7), (by0 + by1) / 2];
     for (let y = Math.round(pad[1]) - 3; y <= Math.round(pad[1]) + 3; y++) for (let x = pad[0] - 3; x <= pad[0] + 3; x++) if (x > 0 && y > 0 && x < W && y < H && cells[I(x, y)].k === "open") cells[I(x, y)].f = "road";
     out.helo = parked(api, { kind: "truck", len: 5, body: "helo", box: "helo", label: "helicopter wreck" }, pad, "milwreck", "Helipad");
   }
-  api.scatter("sandbag", rng.int(2, 4)); api.scatter("crate", rng.int(1, 3));
+  api.scatter("sandbag", rng.int(2, 4) + (fence === "open" ? 4 : 0)); api.scatter("crate", rng.int(1, 3));
   return out;
 }
 

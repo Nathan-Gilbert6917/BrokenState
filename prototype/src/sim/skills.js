@@ -549,6 +549,7 @@ export function readHours(state, s, key, hours) {
 export const BOOK_SITES = {
   school: { p: 0.15, books: ["gardenbook", "talkbook", "medbook", "comic", "novel", "survivalbook", "diybook", "cookbook"] },
   univ: { p: 0.18, books: ["surgerybook", "enginebook", "medbook", "leadbook", "talkbook", "gardenbook", "forgebook", "chefbook"] },
+  college: { p: 0.14, books: ["enginebook", "medbook", "leadbook", "talkbook", "gardenbook", "chefbook"] }, // a town's college (issue #28)
   police: { p: 0.12, books: ["gunbook", "lockbook", "leadbook", "medbook"] },
   military: { p: 0.15, books: ["armymanual", "gunbook", "survivalbook", "leadbook", "medbook", "bushcraftbook", "prepbook"] },
   apartments: { p: 0.08, books: ["comic", "novel", "gardenbook", "talkbook", "enginebook", "magazines", "puzzlebook", "diybook", "cookbook"] },

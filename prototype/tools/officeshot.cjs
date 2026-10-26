@@ -2,7 +2,8 @@
 // revealed, one PNG a floor (a tower: its ground, a middle and its top floor): each loaded straight into a raid as a
 // place (setup.raid.place = { id, key, name, variant }), the roofs off, the dead sent away, every cell seen (ui/combat.js
 // cui.cache.vis and .known.cells filled after a refresh). Prints one JSON line a shot and the page's errors.
-// Usage: NODE_PATH=$(npm root -g) node tools/officeshot.cjs [outdir] [key:variant ...]
+// Usage: NODE_PATH=$(npm root -g) node tools/officeshot.cjs [outdir] [key:firm[:plan] ...] (plan: one of the kind's twelve
+// named plans by its index, officeplans.js OFFICE_VARIANTS; else by the building's dice)
 // e.g. officeshot.cjs /tmp/offices offices:caldertrust courthouse:district station:channel9
 const { chromium } = require("playwright");
 const { spawn } = require("child_process");
@@ -22,7 +23,7 @@ const port = 5300 + Math.floor(Math.random() * 600);
     const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined });
     const errs = [];
     for (const want of WANT) {
-      const [key, variant] = want.split(":");
+      const [key, variant, planNo] = want.split(":");
       const page = await browser.newPage({ viewport: { width: 1500, height: 950 }, deviceScaleFactor: 1 });
       page.on("pageerror", (e) => errs.push(`${want}: ${e}`));
       page.on("console", (m) => { if (m.type() === "error") errs.push(`${want}: ${m.text()}`); });
@@ -30,7 +31,7 @@ const port = 5300 + Math.floor(Math.random() * 600);
       await page.waitForFunction(() => window.game && document.querySelector('[data-action="begin"]'), null, { timeout: 30000 });
       await page.click('[data-action="begin"]');
       await page.waitForFunction(() => window.game.state.started, null, { timeout: 30000 });
-      const setup = await page.evaluate(async ({ key, variant }) => {
+      const setup = await page.evaluate(async ({ key, variant, planNo }) => {
         const P = await import("/src/sim/parties.js"), W = await import("/src/sim/world.js"), B = await import("/src/sim/buildingmaps.js");
         const st = game.state, hub = W.hub(st);
         st.hour = Math.floor(st.hour / 24) * 24 + 12; // noon
@@ -43,11 +44,11 @@ const port = 5300 + Math.floor(Math.random() * 600);
         const p = r.party;
         p.path = [t.id]; p.idx = 0; p.phase = "engaged";
         game.ui.speed = 0;
-        const place = { id: `shot-${key}-${variant}`, key, name: B.BUILDINGS[key].name, variant, ...(key === "offices" ? { kind: "office" } : {}) };
+        const place = { id: `shot-${key}-${variant}`, key, name: B.BUILDINGS[key].name, variant, ...(key === "offices" ? { kind: "office" } : {}), ...(planNo != null ? { plan: Number(planNo) } : {}) };
         game.combat.start({ mode: "raid", tile: t.id, partyId: p.id, canRetreat: true, ambush: null, handler: "scavenge", enemy: { kind: "mixed", count: 1, power: 1, name: "the dead", groups: [{ kind: "zombie", count: 1, power: 1 }] }, raid: { heat0: 0, choose: true, poi: null, kind: null, place, building: null }, plan: true, context: {} });
         const b = st.combat;
         return b ? { w: b.w, h: b.h } : null;
-      }, { key, variant });
+      }, { key, variant, planNo });
       if (!setup || setup.error) { console.log(JSON.stringify({ want, error: "no raid", setup })); await page.close(); continue; }
       await page.waitForTimeout(500);
       await page.evaluate(() => { const e = document.querySelector('[data-action="cb-plan"][data-v="enter"]:not([disabled])'); if (e) e.click(); });
@@ -80,10 +81,10 @@ const port = 5300 + Math.floor(Math.random() * 600);
           if (cache && cache.vis) cache.vis.fill(1);
           if (cache && cache.known && cache.known.cells) cache.known.cells.fill(1);
           game.refresh();
-          return { f, name: b.floors ? b.floors[f].name : "Ground floor", rooms: rooms.map((r) => r.name).filter((x, i, a) => a.indexOf(x) === i).slice(0, 14), pieces: [...new Set(b.cells.filter((c) => c.f === "floor" && !["open", "wall", "window", "idoor", "odoor", "door", "stairs", "void"].includes(c.k)).map((c) => c.k))].slice(0, 30) };
+          return { f, plan: b.raid.plan && b.raid.plan.variant, name: b.floors ? b.floors[f].name : "Ground floor", rooms: rooms.map((r) => r.name).filter((x, i, a) => a.indexOf(x) === i).slice(0, 14), pieces: [...new Set(b.cells.filter((c) => c.f === "floor" && !["open", "wall", "window", "idoor", "odoor", "door", "stairs", "void"].includes(c.k)).map((c) => c.k))].slice(0, 30) };
         }, f);
         await page.waitForTimeout(500);
-        const shot = path.join(outDir, `${key}-${variant}-f${f}.png`);
+        const shot = path.join(outDir, `${key}-${variant}${planNo != null ? `-p${planNo}` : ""}-f${f}.png`);
         await page.screenshot({ path: shot });
         console.log(JSON.stringify({ shot, ...info }));
       }
