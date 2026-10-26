@@ -713,9 +713,10 @@ const outAndBack = (state, p, c, pl) => { const b = state.combat; walkOut(state)
     pl = testPlace(state, c, "apartments", slot);
     if (CC.placeStoreys(state, c, pl) < 2) continue;
     CC.enterPlace(state, p, pl.id, { map: true });
-    if (state.combat && state.combat.raid.scenes) b = state.combat; else { state.combat = null; c.inside = null; }
+    const liftable = (bb) => { const C = cellsOfF(bb, 0); return C.some((q, i) => { const d = liftDef(q.k); return d && d.carry === "one" && d.item && bb.reach[i] && q.pc == null; }); }; // a piece to lift in reach (a shaped block's, issue #23, can have none by the door)
+    if (state.combat && state.combat.raid.scenes && liftable(state.combat)) b = state.combat; else { state.combat = null; c.inside = null; }
   }
-  check(!!b, "test setup: a block of flats of 2+ storeys with scenes");
+  check(!!b, "test setup: a block of flats of 2+ storeys with scenes and a piece to lift in reach");
   const R = b.raid;
   const u = b.units.find((x) => x.side === "player" && !x.dead);
   const home = [u.x, u.y, u.f || 0];

@@ -346,7 +346,7 @@ export function fitMargins(bw, bh, margins, [tw, th], cap = null) {
 // (the run's raid map dials and the building's own size decide). A hotel's 200 × 200 (issue #29, the user's request
 // 2026-10-25: "add hotel 200x200 max"): the hotel and its grounds (parking, the drive, the pool, the gardens) within it
 // (hotellayout.js sizes its grounds to fit).
-export const MAP_CAP = { hotel: 200 };
+export const MAP_CAP = { hotel: 200, prison: 400, jail: 130 }; // a prison's complex up to the user's 400 × 400, a county jail's 130 (issue #31, prison.js)
 export const mapCap = (key) => MAP_CAP[key] || null;
 export function buildingTarget(tile, single, state = null) {
   if (legacyRaids(state)) return single ? raidDims(tile, state) : dimsAt(S); // an older save: the old targets
@@ -354,9 +354,11 @@ export function buildingTarget(tile, single, state = null) {
 }
 // The outside of a building's map topped up with props (never inside the building or within a tile of it, nor in or
 // next to an extraction zone).
+// A shaped building (buildingmaps.js spec.shape, issue #23): within a tile of its parts, not its box (a courtyard gets cover).
 export function densifyOutside(map, rng, terrain) {
   const B = map.building, zs = map.zones || [];
-  const keep = (x, y) => (x >= B.x0 - 1 && x <= B.x0 + B.w && y >= B.y0 - 1 && y <= B.y0 + B.h) || zs.some((z) => x >= z.x0 - 1 && x <= z.x0 + z.w && y >= z.y0 - 1 && y <= z.y0 + z.h);
+  const near = (r, x, y) => x >= r.x0 - 1 && x <= r.x0 + r.w && y >= r.y0 - 1 && y <= r.y0 + r.h;
+  const keep = (x, y) => (B.parts ? B.parts.some((p) => near(p, x, y)) : near(B, x, y)) || zs.some((z) => x >= z.x0 - 1 && x <= z.x0 + z.w && y >= z.y0 - 1 && y <= z.y0 + z.h);
   return densify(map.cells, map.w, map.h, rng, { target: coverTarget(terrain), keep });
 }
 

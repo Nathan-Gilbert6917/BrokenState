@@ -407,6 +407,7 @@ export const HEAD_FINDS = {
   crash_mil: { p: 0.05, items: { highcut: 0.8, commset: 1, ballvisor: 0.4, helmetlight: 0.5 } },
   convoy: { p: 0.04, items: { commset: 1, helmetlight: 1, earplugs: 1 } },
   prison: { p: 0.02, items: { riotvisor: 1 } },
+  jail:   { p: 0.02, items: { riotvisor: 1 } }, // a county jail (issue #31): the prison's
 };
 export const AREA_HEAD = {
   workshop: { p: 0.04, items: { hardhat: 2, earmuffs: 1, earplugs: 1, helmetlight: 0.5 } },
