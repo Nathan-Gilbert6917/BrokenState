@@ -79,7 +79,7 @@ import { TEAMMEET_ACTIONS, TEAMMEET_CHANGE } from "./ui/teammeet.js"; // teams t
 import { toggleFleetIds, leadId } from "./ui/fleetpick.js"; // the planners' vehicle picker (up to four)
 import { TEAMFORM_ACTIONS, TEAMFORM_CHANGE, teamFormDrop, teamFormKey, teamFormEsc, formTeamCtx } from "./ui/teamform.js"; // Form a team at a base; Edit team
 import { CARRY_ACTIONS, CARRY_CHANGE, carryHtml, askQty, carryKey } from "./ui/carry.js"; // supplies in pockets, packs and arms; the ground; how much to collect
-import { LAND_ACTIONS, LAND_CHANGE, landHtml, askLand, landKey } from "./ui/landorder.js";
+import { LAND_ACTIONS, LAND_CHANGE, landHtml, askLand, landKey, asksHours } from "./ui/landorder.js";
 import { callBack, detach, isSome, splittable } from "./sim/detach.js";
 import { isLandJob } from "./sim/landest.js"; // some of a team out on a job of their own: Call back // Forage, Hunt, Fish, Cut wood, Gather stone: how many hours, and what they would bring
 import { renameBase } from "./sim/basenames.js";
@@ -914,6 +914,7 @@ function xpOrderOf(d) {
   if (d.type === "sweep") Object.assign(o, sweepOpts({ radius: d.radius, hours: d.hours })); // a survey here (sim/survey.js)
   if (d.hours && d.type !== "camp") o.hours = Number(d.hours); // hunt, fish (sim/hunting.js)
   if (d.mode) o.mode = d.mode; // snares: set, check, lift
+  if (d.type === "deadhunt") o.stance = d.stance || "normal"; // Hunt the dead (sim/deadhunt.js): Stealthy, Normal, Lure
   return o;
 }
 const actions = {
@@ -1115,7 +1116,7 @@ const actions = {
     const now = startsNow(p);
     if (askLand(state, ui, d, { via: "xp", type: d.type, tile: now ? partyTile(p) : queueEndTile(state, p), startHour: state.hour + (now ? 0 : queueAhead(state, p)) })) return;
     // ui/whopick.js: who does it (a team of two or more; the land jobs asked it in their box above)
-    if (!isLandJob(d.type) && splittable([xpOrderOf(d)]) && askWho(state, ui, d, { via: "xp", label: describeOrder(state, xpOrderOf(d)) })) return;
+    if (!asksHours(d.type) && splittable([xpOrderOf(d)]) && askWho(state, ui, d, { via: "xp", label: describeOrder(state, xpOrderOf(d)) })) return;
     if (askQty(state, ui, d)) return; // ui/carry.js: how much water to fetch (the box gives d.qty)
     const o = xpOrderOf(d);
     // Some of the team picked (sim/detach.js): they go off and do it now; the rest stay.
