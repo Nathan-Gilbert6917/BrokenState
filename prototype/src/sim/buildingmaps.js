@@ -3205,7 +3205,7 @@ export function realScale(rng, spec, key, o = {}) {
 const sizeKCache = new Map();
 export function siteSizeK(state, tile) {
   if (!tile || legacyScale(state)) return 1;
-  const sb = siteBuildings(tile);
+  const sb = siteBuildings(tile, legacyFarms(state) ? { farmLegacy: true } : null); // an older save's farm: its buildings as they were (issue #62)
   if (!sb || !sb.options.length) return 1;
   const setting = settingOf(tile);
   let sum = 0;
