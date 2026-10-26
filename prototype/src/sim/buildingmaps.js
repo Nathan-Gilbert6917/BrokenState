@@ -67,6 +67,7 @@ import { realFoot, realStoreys, storeyRange, REAL_SIZE } from "./data-buildingsi
 import { BUNKER_PLANS, bunkerStyle, levelName } from "./bunkerlayout.js"; // bunkers: the plans, their rooms, their levels below ground (issue #26)
 import { eateryPlan, eateryOf } from "./eaterylayout.js"; // restaurants by kind of food, format and size (issue #33)
 import { industryPlan, industryStyle, INDUSTRY_ROLES, INDUSTRY_KEYS } from "./industrylayout.js"; // warehouses, factories and labs: a dozen plans each (issue #37)
+import { hasVariants, shopVariantSpec, variantSetting } from "./shopvariants.js"; // a dozen layout variants a shop and service type (issue #35; a new save's plan)
 import { pieceDef } from "./data-furniture.js"; // a yard piece that holds loot (spec.yardPieces)
 import { variantSpec } from "./civicvariants.js"; // a dozen plans each for the hospital, infirmary, clinic, vet, church, police and fire station (issue #36)
 import { settingOf as shopSetting } from "./shops.js"; // a site's setting with its suburbs (city, suburb, town) picks among a kind's plans (issue #36)
@@ -449,6 +450,10 @@ function shop(rng, v, o = {}) {
     const kind = v === "diner" && o.kind === "pizza" ? "pizza" : v;
     return eateryPlan(rng, eateryOf(kind, o.variant, hash01(rng.state, "eatery")), planOf(v, o));
   }
+  if (!o.legacy && hasVariants(v)) { // issue #35: the type's 12 named plans (shopvariants.js), #23's shape on a new save's
+    const sp = shopVariantSpec(v, rng, o, withPlan, planOf(v === "gasstation" ? "gas" : v, o));
+    return o.shapes ? shopShape(rng, sp, sp.backParts, null) : sp;
+  }
   const gas = v === "gasstation", truck = v === "truckstop";
   const plan = planOf(v === "gasstation" ? "gas" : v, o); // data-shops.js: the franchise's layout
   const tier = !o.legacy && (v === "corner" || v === "grocery") ? v : null; // issue #22: the corner store and the grocery by size
@@ -624,7 +629,7 @@ function shopBack(v, back, plan, o) {
 
 // Big stores: a wide sales floor of aisles, the deli or a sports section, a back room with racks and a loading dock.
 function bigstore(rng, v, o = {}) {
-  if (v === "supermarket" && !o.legacy) return supermarket(rng, o); // issue #22 (o.shapes: a new save's dock annex and notched entrance, #23): really big (an older save's and every department store's as below)
+  if (v === "supermarket" && !o.legacy) { const sp = shopVariantSpec("supermarket", rng, o); return o.shapes ? superShape(rng, sp) : sp; } // issue #22: really big; issue #35: its 12 plans (shopvariants.js), #23's shape on a new save (an older save's and every department store's as below)
   const bw = rng.int(26, 30), bh = rng.int(18, 21);
   const dept = v === "dept";
   const salesFloor = dept
@@ -701,6 +706,21 @@ function supermarket(rng, o = {}) {
   const front = { split: "x", parts: flip ? [[8, pharmSide], ["*", floor]] : [["*", floor], [8, pharmSide]] };
   const aw = rng.int(14, 18), ah = rng.int(6, 8), dockX = flip ? bw - aw - rng.int(2, 4) : rng.int(2, 4); // the warehouse's end
   return { ...spec, ...shapeOf("notch", [
+    { x: 0, y: ah - 1, w: bw, h: backD + 2, name: "Back of house", program: back, upper: two ? () => mezz().parts[1][1] : null, storeys: two ? 2 : 1 },
+    { x: cafeLeft ? sw : 0, y: ah - 1 + backD + 1, w: bw - sw, h: fh, name: "Store", main: true, program: front, upper: two ? () => mezz().parts[0][1] : null, storeys: two ? 2 : 1 },
+    { x: cafeLeft ? 0 : bw - sw - 1, y: ah - 1 + backD + 1, w: sw + 1, h: fh - ny, storeys: 1, name: "Café side", program: cafeSide },
+    { x: dockX, y: 0, w: aw, h: ah, storeys: 1, tall: true, name: "Receiving dock", program: { role: "warefloor", name: "Receiving dock", type: "store", lay: "warehouse", hub: true, maxBoxes: 6, nextTo: ["warefloor"] } },
+  ]), program: null, upper: null };
+}
+
+// A supermarket variant's shape (issue #35's plans, shopvariants.js superSpec; a new save's, #23's as supermarket's
+// above): the receiving dock an annex out the back behind the warehouse, the café's side notched back from the front.
+function superShape(rng, sp) {
+  const { bw, bh } = sp, { cafeSide, pharmSide, floor, back, flip, backD, two, mezz } = sp.parts;
+  const ny = 3, sw = 9, fh = bh - backD - 1, cafeLeft = !flip;
+  const front = { split: "x", parts: flip ? [[8, pharmSide], ["*", floor]] : [["*", floor], [8, pharmSide]] };
+  const aw = rng.int(14, 18), ah = rng.int(6, 8), dockX = flip ? bw - aw - rng.int(2, 4) : rng.int(2, 4);
+  return { ...sp, parts: undefined, ...shapeOf("notch", [
     { x: 0, y: ah - 1, w: bw, h: backD + 2, name: "Back of house", program: back, upper: two ? () => mezz().parts[1][1] : null, storeys: two ? 2 : 1 },
     { x: cafeLeft ? sw : 0, y: ah - 1 + backD + 1, w: bw - sw, h: fh, name: "Store", main: true, program: front, upper: two ? () => mezz().parts[0][1] : null, storeys: two ? 2 : 1 },
     { x: cafeLeft ? 0 : bw - sw - 1, y: ah - 1 + backD + 1, w: sw + 1, h: fh - ny, storeys: 1, name: "Café side", program: cafeSide },
@@ -916,6 +936,7 @@ function institution(rng, v, o = {}) {
 
 // Open floors: a warehouse, a factory, a hangar, a motor pool, an auto shop, a workshop, a barn, a machine shed.
 function openfloor(rng, v, o = {}) { // o.legacy: an older save (its hangar, motor pool and a base's warehouse as they were)
+  if (!o.legacy && hasVariants(v)) return shopVariantSpec(v, rng, o, withPlan, planOf(v, o)); // issue #35: the auto shop's, the garage's and the workshop's 12 plans (shopvariants.js)
   switch (v) {
     case "warehouse": {
       if (!o.legacy && o.site === "military") return milPlan(rng, "supply", o); // a base's supply warehouse (issue #25)
@@ -1511,6 +1532,7 @@ function motelShaped(rng) {
 // on its lot (plan.back "lot"), a truck dealer's mostly bays ("service").
 function dealer(rng, o = {}) {
   const plan = planOf("dealer", o);
+  if (!o.legacy) return shopVariantSpec("dealer", rng, o, withPlan, plan); // issue #35: its 12 plans (shopvariants.js)
   const lot = plan.back === "lot", svc = plan.back === "service";
   const bw = (lot ? rng.int(12, 14) : rng.int(19, 23)) + (plan.wide ? 3 : 0), bh = lot ? rng.int(9, 10) : rng.int(12, 14);
   const sd = Math.max(4, Math.round((bh - 2) * (plan.depth ?? 0.55)));
@@ -1532,6 +1554,7 @@ function dealer(rng, o = {}) {
 // and the manager's office behind; the bigger banks have offices above (plan.storeys).
 function bank(rng, o = {}) {
   const plan = planOf("bank", o);
+  if (!o.legacy) return shopVariantSpec("bank", rng, o, withPlan, plan); // issue #35: its 12 plans (shopvariants.js)
   const bw = rng.int(16, 19) + (plan.wide ? 3 : 0), bh = rng.int(12, 14);
   const n = plan.storeys ? rng.int(plan.storeys[0], plan.storeys[1]) : 1;
   const hall = { role: "lobby", entry: true, name: "Banking hall", type: "office" };
@@ -1976,9 +1999,9 @@ export const BUILDINGS = {
   factory:     { name: "Factory", make: (r, o = {}) => (o.legacy ? openfloor(r, "factory") : industryPlan("factory", r, o, () => openfloor(r, "factory"))) }, // a dozen plans (industrylayout.js, issue #37)
   hangar:      { name: "Hangar", make: (r, o) => openfloor(r, "hangar", o) },
   motorpool:   { name: "Motor pool", make: (r, o) => openfloor(r, "motorpool", o) },
-  autoshop:    { name: "Auto shop", make: (r) => openfloor(r, "autoshop") },
-  garage:      { name: "Garage", make: (r) => openfloor(r, "garage") },
-  workshop:    { name: "Workshop", make: (r) => openfloor(r, "workshop") },
+  autoshop:    { name: "Auto shop", make: (r, o) => openfloor(r, "autoshop", o) },
+  garage:      { name: "Garage", make: (r, o) => openfloor(r, "garage", o) },
+  workshop:    { name: "Workshop", make: (r, o) => openfloor(r, "workshop", o) },
   machineshed: { name: "Machine shed", make: (r) => openfloor(r, "machineshed") },
   barn:        { name: "Barn", make: (r) => openfloor(r, "barn") },
   church:      { name: "Church", make: (r, o) => church(r, o) },
@@ -2018,12 +2041,12 @@ export const BUILDINGS = {
 // The storeys a type can have, [min, max] (the city crawl's bonus can add to offices and apartments, up to MAX_STOREYS).
 export const STOREYS_BY_TYPE = {
   house: [2, 2], farmhouse: [2, 2], cabin: [1, 1], lodge: [2, 2], ranger: [1, 1],
-  grocery: [1, 2], corner: [1, 2], pharmacy: [1, 1], gunstore: [1, 1], pawnshop: [1, 1], hardware: [1, 1], feedstore: [1, 1], diner: [1, 1], gasstation: [1, 1], truckstop: [1, 1],
+  grocery: [1, 2], corner: [1, 2], pharmacy: [1, 2], gunstore: [1, 2], pawnshop: [1, 2], hardware: [1, 2], feedstore: [1, 2], diner: [1, 1], gasstation: [1, 2], truckstop: [1, 2], // issue #35: a variant's flat, offices or stockroom above (shopvariants.js)
   supermarket: [1, 2], deptstore: [1, 2],
   clinic: [1, 3], infirmary: [1, 3], hospital: [1, 7], police: [1, 5], school: [2, 3], offices: [3, MAX_STOREYS], lab: [1, 3], barracks: [1, 3], armorybldg: [1, 1],
   cellblock: [1, 2], messhall: [1, 2], control: [1, 4], radio: [1, 1], terminal: [1, 3], firestation: [1, 3], // issue #25: a new save's cell block two tiers, its mess hall one storey
   hq: [1, 3], aidstation: [1, 1], gatehouse: [1, 1], tower: [2, 6], flightops: [1, 2], // issue #25's dozen plans a type (milplans.js): a company orderly room of one storey, a staff college of three, towers of 2–6
-  warehouse: [1, 3], factory: [1, 3], hangar: [1, 1], motorpool: [1, 1], autoshop: [1, 1], garage: [1, 1], workshop: [1, 1], machineshed: [1, 1], barn: [1, 1],
+  warehouse: [1, 3], factory: [1, 3], hangar: [1, 1], motorpool: [1, 1], autoshop: [1, 2], garage: [1, 2], workshop: [1, 2], machineshed: [1, 1], barn: [1, 1],
   church: [1, 2], motel: [2, 2], apartments: [3, 6], neighbourhood: [2, 2], prison: [1, 2], jail: [1, 2], hotel: [2, 10], // a hotel: an inn 2–3, a resort 2–4, a business hotel 4–6, a tower 8–10 (within MAX_STOREYS)
   // the shops and services of data-shops.js (a franchise's plan can add a flat above or more floors)
   sportshop: [1, 2], electronics: [1, 2], radioshop: [1, 2], bookstore: [1, 2], petstore: [1, 2], garden: [1, 2], clothing: [1, 2], liquor: [1, 2],
@@ -2164,8 +2187,8 @@ export function buildingHint(key) {
 const specSeed = (state, tileId, option) => Math.floor(hash01(state.seed, "bmap", tileId, option.id) * 4294967296);
 // scale: the real-size step (realScale: { setting }); null for an older save's buildings (worldcfg.js legacyScale: the
 // archetype's own footprint and storeys, as they were).
-const makeSpec = (rng, option, legacy = false, scale = null, officesOld = false, where = null, shapes = false) => { // shapes: footprint shapes (a save from since issue #23: worldcfg.js legacyShapes) // where: siteWhere's setting and site (civicvariants.js, issue #36) // officesOld: an older save's firm-less office tower as it was (worldcfg.js legacyOffices, #27) // variant, kind: the place's franchise and kind (data-shops.js plans); legacy: an older save's plan (worldcfg.js legacyRooms: an apartment's flats one room each)
-  const spec = BUILDINGS[option.key].make(rng, { storeyBonus: option.storeyBonus || 0, variant: option.variant || null, kind: option.kind || null, legacy: legacy && !NEW_KEYS.has(option.key), shapes, ...(where || {}), site: option.site || (where && where.site) || null, ...(officesOld ? { officesLegacy: true } : {}), ...(option.plan != null ? { plan: option.plan } : {}) }); // plan: one of the kind's named plans (bunkerlayout.js BUNKER_VARIANTS: a city hall's shelter, #27; industrylayout.js INDUSTRY_PLANS, #37)
+const makeSpec = (rng, option, legacy = false, scale = null, officesOld = false, where = null, shapes = false, vset = null) => { // vset: a shop's or a service's variant by its setting (shopvariants.js variantSetting, issue #35; its plan by id: option.plan) // shapes: footprint shapes (a save from since issue #23: worldcfg.js legacyShapes) // where: siteWhere's setting and site (civicvariants.js, issue #36) // officesOld: an older save's firm-less office tower as it was (worldcfg.js legacyOffices, #27) // variant, kind: the place's franchise and kind (data-shops.js plans); legacy: an older save's plan (worldcfg.js legacyRooms: an apartment's flats one room each)
+  const spec = BUILDINGS[option.key].make(rng, { storeyBonus: option.storeyBonus || 0, variant: option.variant || null, kind: option.kind || null, legacy: legacy && !NEW_KEYS.has(option.key), shapes, ...(where || {}), site: option.site || (where && where.site) || null, ...(officesOld ? { officesLegacy: true } : {}), ...(option.plan != null ? { plan: option.plan } : {}), vset: option.vset || vset }); // plan: one of the kind's named plans (bunkerlayout.js BUNKER_VARIANTS: a city hall's shelter, #27; industrylayout.js INDUSTRY_PLANS, #37)
   return scale ? realScale(rng, spec, option.key, { ...scale, storeyBonus: option.storeyBonus || 0 }) : spec;
 };
 // The archetypes issue #25 added (no older plan): laid out the new way in an older save too.
@@ -2189,14 +2212,14 @@ const scaleOf = (state, tileId) => (legacyScale(state) ? null : { setting: setti
 // The archetype's spec for a building at a site (its storeys and footprint) without building the map: the same dice
 // buildingMap rolls, so the block card can say how many storeys a place has.
 export function buildingSpec(state, tileId, option) {
-  return makeSpec(new Rng(specSeed(state, tileId, option)), option, legacyRooms(state), scaleOf(state, tileId), legacyOffices(state), siteWhere(state, tileId), !legacyShapes(state));
+  return makeSpec(new Rng(specSeed(state, tileId, option)), option, legacyRooms(state), scaleOf(state, tileId), legacyOffices(state), siteWhere(state, tileId), !legacyShapes(state), variantSetting(state.tiles[tileId]));
 }
 export function buildingMap(state, tileId, option, withVehicle) {
   if (BUILDINGS[option.key] && BUILDINGS[option.key].complex) { const m = prisonMap(state, tileId, option, withVehicle, { legacy: legacyRooms(state) }); rollScenes(m, sceneRng(state, tileId, option), option.key, option.scenes || null); postBodies(m); return m; } // a prison's or a jail's complex (prison.js); its scenes (prisonlayout.js) over all its buildings
   if (BUILDINGS[option.key] && BUILDINGS[option.key].campus) return campusMap(state, tileId, option, withVehicle); // a college campus (campus.js: its buildings' scenes rolled in each)
   if (BUILDINGS[option.key] && BUILDINGS[option.key].street) { const m = streetMap(state, tileId, option, withVehicle); rollScenes(m, sceneRng(state, tileId, option), option.key); return m; } // a street of houses (the neighbourhood); its scenes (interiorscenes.js) through the houses
   const rng = new Rng(specSeed(state, tileId, option));
-  const spec = makeSpec(rng, option, legacyRooms(state), scaleOf(state, tileId), legacyOffices(state), siteWhere(state, tileId), !legacyShapes(state));
+  const spec = makeSpec(rng, option, legacyRooms(state), scaleOf(state, tileId), legacyOffices(state), siteWhere(state, tileId), !legacyShapes(state), variantSetting(state.tiles[tileId]));
   // battlesize.js: at least the site's raid map (more outside around a single-building site's plan, a city's or a
   // town's building the run's largest), the new ground topped up with cover. The floor plan itself is the archetype's.
   const tile = state.tiles[tileId], sb = siteBuildings(tile, state);
@@ -3290,7 +3313,18 @@ export function assemble(rng, spec, opts = {}) {
       if (!outsideFree(x, y) || !outsideFree(x, y - 1) && !outsideFree(x, y + 1)) continue;
       if (box(null, x, y, "pump", a)) placed++;
     }
-    if (placed) { Object.assign(a, { x0: bx0, y0: y - 2, w: bw, h: 5 }); outdoor.push(a); }
+    // A new save's (issue #35: a gas station's pumps in every plan): the lot's trucks or the ways to the exits took that
+    // row, the rows either side, the lot beside the building too (no dice: an older save's lot as it was).
+    let py = y;
+    if (!placed && !opts.legacy) for (const yy of [y - 1, y + 1, y + 2]) {
+      if (yy <= by1 + 1 || yy >= H - 1) continue;
+      for (let x = 1; x < W - 1 && placed < spec.pumps; x += 2) { // the lot either side of the building too
+        if (!outsideFree(x, yy) || !outsideFree(x, yy - 1) && !outsideFree(x, yy + 1)) continue;
+        if (box(null, x, yy, "pump", a)) { placed++; py = yy; x++; }
+      }
+      if (placed) break;
+    }
+    if (placed) { Object.assign(a, py === y ? { x0: bx0, y0: y - 2, w: bw, h: 5 } : { x0: 0, y0: py - 2, w: W, h: 5 }); outdoor.push(a); }
   }
   // The supermarket's box truck at the loading dock (issue #22; spec.dockTruck): backed up to the dock beside a roller
   // door (its bay; the door's own way out to the edge and the ring round the building left clear), its cargo box a
@@ -3475,7 +3509,7 @@ export function assemble(rng, spec, opts = {}) {
     front: { x: front.x, y: front.y },
     ...(spec.variant ? { variant: spec.variant } : {}), // a plan's name among its kind's (bunkerlayout.js BUNKER_VARIANTS)
     exits: exits.map((e) => ({ side: e.side, name: e.name, x: e.x, y: e.y, cells: e.cells, locked: e.locked, roller: e.roller, zone: e.zone })),
-    ...(spec.vname ? { variant: spec.vname, vid: spec.vid } : {}), // the plan's name (industrylayout.js: a warehouse's, a factory's, a lab's)
+    ...(spec.vname ? { variant: spec.vname, vid: spec.vid } : {}), // the plan's name (industrylayout.js: a warehouse's, a factory's, a lab's; shopvariants.js: a shop's or a service's, issue #35)
   };
   return { w: W, h: H, cells, rooms: areas, containers, zones, vehicle, exits, front, lockedDoors, plan, building: plan.building, floors, stairs: plan.stairs, runs: plan.runs, storeys, height, deadK: spec.deadK || 0, natMap: spec.deadK ? spec.natMap || [spec.natW + BMAP.MARGIN.left + BMAP.MARGIN.right, spec.natH + BMAP.MARGIN.front + BMAP.MARGIN.back] : null };
 }
