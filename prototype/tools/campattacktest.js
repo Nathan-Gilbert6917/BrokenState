@@ -249,6 +249,8 @@ section("A base past the camp stage that holds: a small wave cut down at the wal
   const wave = attackNow(w, h, { trickle: true });
   const card = w.cards.find((x) => x.campAttack === h.id);
   const line = w.log.find((l) => /cut down at the walls/.test(l.text));
+  setRaiders(w, h.tile, raiderCap(w, h.tile));
+  check(attackOdds(w, h).raiders === 0, "raider bands never go for a main hub (the hostile groups' raids do)");
   check(!!wave && ((!card && !!line && openDead(w, h.tile) === o0 - wave.d) || !!card), card ? `the hub would not hold ${wave && wave.d}: a card` : `the hub: "${line && line.text}" (${o0} → ${openDead(w, h.tile)})`);
 }
 

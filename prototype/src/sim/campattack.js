@@ -19,16 +19,17 @@
 //     every 5–6 days, the top of low (0.28) every 3 weeks, 0.15 every 5 months; at 0 never. One roll for the whole tile, at the loudest base's multiplier, and the
 //     wave goes to that base: several bases on one tile (one per POI and one normal base, #70) share it, never
 //     multiplied by the number of bases.
-//   - RAIDERS (per tile, shared): a band from the tile's raiders (deadpop.js poiRaiders of a POI camp's POI first, then
+//   - RAIDERS (per tile, shared; camps and outposts only, never a main hub: banded): a band from the tile's raiders (deadpop.js poiRaiders of a POI camp's POI first, then
 //     the open ground's). Chance an hour RAID_P × fill³ of the raiders against their cap (raiderCap): at the cap about
 //     every 3 days, 0.7 every 10 days, a medium level (0.45) every 5 weeks, a low one hardly ever. The hostile groups' raids
 //     (factions.js launchRaid) and the hives' hordes (hordes.js) are not these and are unchanged.
-// THE MULTIPLIERS (mult): night NIGHT (the dead move in the dark; DAY by day: raiders the same both); the tile's noise
+// THE MULTIPLIERS (mult): night NIGHT (the dead move in the dark; DAY by day: raiders the same both); for the dead only, the tile's noise
 // memory (deadpop.js noiseOf: shots, loud kills, other groups' raids, the last few days) × (1 + noise × NOISE_K), at most
 // NOISE_HI; the base's own loudness (its base Heat, hordes.js baseHeat: its people, the fire, the vehicles, the
 // workshops, the generator, shots lately; an AI home: half its people) × (LOUD_BASE + heat × LOUD_K) between LOUD_LO and
-// LOUD_HI; its stance and kit: running silent (hiding.js base.silent) × SILENT, camouflage netting standing × CAMO.
-// No attack comes within COOLDOWN hours of the last at that base, to an empty base (nobody home), during a fight or
+// LOUD_HI; raiders only: × RAID_SOFT ÷ the base's defence (factions.js baseDefense), between SOFT_LO and 1 (bandits pick
+// soft targets: a small camp is theirs, a strong hub hardly ever); its stance and kit: running silent (hiding.js base.silent) × SILENT, camouflage netting standing × CAMO.
+// No attack comes within COOLDOWN hours of the last at that base (no raider band within RAID_COOLDOWN of the last band), to an empty base (nobody home), during a fight or
 // while the last card is unanswered.
 // THE WAVE (waveSource: where a wave comes from, one function #71 replaces with the POI camp's Not cleared rooms):
 // the grounds' part first (GROUNDS_WAVE, + GROUNDS_BIG over GROUNDS_BIG_AT left, at most what is left), then the
@@ -40,7 +41,9 @@
 // (Defend the camp: the base defence battle on the base map, defences.js fightNow, handler "campAttack"; or keep out of
 // their way: food and meds spoiled). A base past the camp stage whose defences hold the wave (defences.js holdCheck)
 // cuts it down at the walls by the numbers, a line in the log and no card; one that would not hold gets the card.
-// Raiders the same ("Raiders found …": Defend, or hide and lose some of the stores).
+// Raiders the same ("Raiders found …": Defend, or hide and lose some of the stores), except that a base past the camp
+// stage whose defence (factions.js baseDefense) is RAID_HOLD × the band's strength sees them size it up and move on (the
+// band back on the open ground).
 // THE KILLS (settleWave, the handler and by the numbers): the grounds' share first (campscout.js takeDead: off the
 // grounds and the tile), then the drawn: all put back (putBack, putBackRaiders) and the killed taken off through
 // deadpop.js killDead / killRaiders (the recent-kill memory and the noise: loud with guns), so the ones that walked away
@@ -50,8 +53,8 @@
 // POI camp grounds) roll by the same rules and draw from the same pools; a wave is fought by the numbers at once:
 // their defence (AI_PERSON a person at home + AI_WALL a wall works) against the wave (a raider counts RAIDER_WEIGHT):
 // all killed when it holds, else as many as it holds, the rest put back and the stores spoiled (AI_SPOIL).
-// SAVES: base.campAttack = { after, n, wave: { g, d, r, rp, poi } } (the next hour an attack may come, the attacks so
-// far, the wave out at the camp now)
+// SAVES: base.campAttack = { after, rafter, n, wave: { g, d, r, rp, poi } } (the next hour an attack may come, a raider
+// band may come, the attacks so far, the wave out at the camp now)
 // are plain data; a base without it (an older save) starts with none pending and no cooldown; nothing else is stored.
 import { hash01 } from "./skills.js";
 import { popCap, raiderCap, openDead, openRaiders, poiRaiders, noiseOf, deadBand, raiderBand, drawFromTile, drawRaiders, putBack, putBackRaiders, killDead, killRaiders } from "./deadpop.js";
@@ -63,6 +66,7 @@ import { baseHeat } from "./hordes.js";
 import { homesOf } from "./groupbases.js";
 import { membersAt } from "./members.js";
 import { siteThreat } from "./siteclear.js";
+import { baseDefense } from "./factions.js";
 import { tileThreatEstimate } from "./threatknow.js"; // #67: the levels as your people see them
 import { scaleFood } from "./foods.js";
 import { GROUNDS, groundsWord, takeDead } from "./campscout.js"; // call-time only (campscout.js groundsHour calls this module)
@@ -76,9 +80,12 @@ export const CAMP_ATTACK = {
   LOUD_BASE: 0.75, LOUD_K: 0.025, LOUD_LO: 0.6, LOUD_HI: 2,  // the base's own Heat
   SILENT: 0.7, CAMO: 0.8,                                    // running silent, camouflage netting
   COOLDOWN: 6,                                               // hours after an attack before the next at that base
+  RAID_COOLDOWN: 72,
+  RAID_SOFT: 14, SOFT_LO: 0.1,                               // raiders pick soft targets: × (RAID_SOFT ÷ the base's defence), between SOFT_LO and 1                                         // hours after a raider band before the next band at that base
   GROUNDS_WAVE: [3, 8], GROUNDS_BIG: 4, GROUNDS_BIG_AT: 30,  // the grounds' part of a wave
   TRICKLE_MIN: 2, TRICKLE_SHARE: 0.03, TRICKLE_MAX: 10, TRICKLE_LOUD: 1.5, // the trickle's part (× 1 + noise / 100, at most TRICKLE_LOUD)
   RAID_BAND: [2, 5],                                         // a raider band: 2 + 3 × the raider fill, ± 1
+  RAID_HOLD: 1.5,                                            // a base past the camp stage with this × a band's strength in defence: they move on
   RAIDER_POWER: 3.5,                                         // a raider's power on the card's fight (campsite.js CAMPSITE.POWER)
   WAVE_MAX: 20,                                              // a battle's most (combat.js MAX_ENEMIES)
   SPOIL: 0.9, RAID_TAKE: 0.85,                               // kept out of their way: the food and meds kept; hid from raiders: the stores kept
@@ -140,14 +147,23 @@ export function attackMult(state, x, dead = true) {
   const parts = [];
   let m = 1;
   if (dead) { m *= night ? C.NIGHT : C.DAY; parts.push(night ? "night" : "day"); }
-  const nm = Math.min(C.NOISE_HI, 1 + noise * C.NOISE_K);
+  const nm = dead ? Math.min(C.NOISE_HI, 1 + noise * C.NOISE_K) : 1; // noise draws the dead, not raiders
   if (nm > 1.05) parts.push(`the tile's noise ×${Math.round(nm * 10) / 10}`);
   const lm = clamp(C.LOUD_BASE + loud * C.LOUD_K, C.LOUD_LO, C.LOUD_HI);
   parts.push(`the base's own Heat ×${Math.round(lm * 100) / 100}`);
   m *= nm * lm;
+  if (!dead) { const sm = softTarget(state, x); if (sm < 0.99) { m *= sm; parts.push(`its defence ×${Math.round(sm * 100) / 100} (raiders pick soft targets)`); } }
   if (x.base.silent) { m *= C.SILENT; parts.push("running silent"); }
   if (!x.f && x.base.buildings && count(x.base, "camo") > 0) { m *= C.CAMO; parts.push("camouflage netting"); }
   return { mult: m, night, noise, loud, parts };
+}
+// Raiders pick soft targets: a band's strength (RAID_SOFT: a usual band × RAIDER_POWER) over the base's defence
+// (factions.js baseDefense; a group's home: AI_PERSON a person at home + AI_WALL a wall works, × 3), between SOFT_LO and 1.
+function softTarget(state, x) {
+  let def = 0;
+  if (x.f) def = (membersAt(x.f, x.base.tile).length * C.AI_PERSON + ((x.f.works && x.f.works[x.base.tile] && x.f.works[x.base.tile].walls) || 0) * C.AI_WALL) * 3;
+  else { try { def = baseDefense(state, x.base); } catch { def = 0; } }
+  return clamp(C.RAID_SOFT / Math.max(1, def), C.SOFT_LO, 1);
 }
 /** The grounds' chance an hour before the multipliers. @param {any} state @param {any} base */
 export const groundsRate = (state, base) => { const g = groundsLeft(state, base); return g > 0 ? C.GROUNDS_P * Math.max(C.GROUNDS_LO, Math.min(1, g / C.GROUNDS_FULL)) : 0; };
@@ -170,11 +186,12 @@ export function attackOdds(state, base) {
   const list = basesOn(state, base.tile);
   const x = list.find((e) => e.base === base) || { base, key: "", f: null };
   const a = attackMult(state, x, true), ar = attackMult(state, x, false);
-  const lt = loudest(state, list.length ? list : [x], true), lr = loudest(state, list.length ? list : [x], false);
+  const lt = loudest(state, list.length ? list : [x], true);
   const target = !lt || lt.x.base === base;
   const g = Math.min(1, groundsRate(state, base) * a.mult);
   const t = target ? Math.min(1, trickleRate(state, base.tile, list) * a.mult) : 0;
-  const r = !lr || lr.x.base === base ? Math.min(1, raidRate(state, base.tile) * ar.mult) : 0;
+  const rl = list.filter((e) => banded(e.base)), lr2 = rl.length ? loudest(state, rl, false) : null;
+  const r = banded(base) && (!lr2 || lr2.x.base === base) ? Math.min(1, raidRate(state, base.tile) * ar.mult) : 0;
   const any = 1 - (1 - g) * (1 - t) * (1 - r);
   return { grounds: g, trickle: t, raiders: r, any, every: any > 0 ? 1 / any : Infinity, mult: a.mult, parts: a.parts, target };
 }
@@ -285,7 +302,8 @@ export function campAttackHour(state) {
     const lt = loudest(state, can, true);
     if (lt && die(state, "t", tile, state.hour) < trickleRate(state, tile, list) * lt.a.mult) hit(lt.x, "trickle");
     const free = can.filter((x) => !hits.has(x)); // a raider band never comes in the same hour as the dead
-    const lr = free.length ? loudest(state, free, false) : null;
+    const rfree = free.filter((x) => banded(x.base) && !(x.base.campAttack && state.hour < (x.base.campAttack.rafter || 0)));
+    const lr = rfree.length ? loudest(state, rfree, false) : null;
     if (lr && die(state, "r", tile, state.hour) < raidRate(state, tile) * lr.a.mult) hit(lr.x, "raiders");
     for (const [x, h] of hits) {
       const w = waveSource(state, x.base, h, list);
@@ -293,6 +311,7 @@ export function campAttackHour(state) {
       const s = ca(x.base);
       s.after = state.hour + C.COOLDOWN;
       s.n = (s.n || 0) + 1;
+      if (h.raiders) s.rafter = state.hour + C.RAID_COOLDOWN;
       if (x.base.grounds && h.grounds) x.base.grounds.next = state.hour + C.COOLDOWN;
       if (x.f) aiWave(state, x, w);
       else playerWave(state, x.base, w);
@@ -315,6 +334,10 @@ export function attackNow(state, base, hit = { grounds: true }) {
   if (x.f) aiWave(state, x, w); else playerWave(state, base, w);
   return w;
 }
+// Raider bands go for camps and outposts, never a main hub (yours or a group's: the hostile groups' raids are what come at
+// those, factions.js launchRaid).
+/** @param {any} base */
+export const banded = (base) => !!base && base.type !== "hub";
 // Can an attack come to this base now?
 function ready(state, x) {
   const b = x.base, s = b.campAttack;
@@ -335,6 +358,15 @@ export function playerWave(state, base, w) {
     if (hc.holds) {
       const k = settleWave(state, base, w, dead, 0);
       log(state, `${dead} of the dead came out of ${groundsWord(state, base.tile)} at ${base.name}: cut down at the walls (${k.dead} killed).`, "info");
+      return null;
+    }
+  }
+  if (raiders && !dead && !isShelter(base)) {
+    let def = 0;
+    try { def = baseDefense(state, base); } catch { def = 0; }
+    if (def >= raiders * C.RAIDER_POWER * C.RAID_HOLD) {
+      settleWave(state, base, w, 0, 0);
+      log(state, `A band of ${raiders} raiders from round ${groundsWord(state, base.tile)} sized up ${base.name}'s defences and moved on.`, "info");
       return null;
     }
   }
