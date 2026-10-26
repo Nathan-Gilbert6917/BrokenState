@@ -389,6 +389,7 @@ const NEW_AREAS = ["hardware", "pawnshop", ...Object.keys(AREA_DEFS)]; // raid r
 // and the interiors epic's (#7) rooms with finds of their own: the prison's (#25 militarylayout.js), the campus dorm (#28),
 // the school hall (#23), the fire station's engine bay (#36)
 NEW_AREAS.push("pcells", "parmory", "pcontrol", "pkitchen", "plaundry", "property", "pstores", "dormroom", "schoolhall", "enginebay");
+NEW_AREAS.push("feedroom", "rootcellar", "toolshed", "vetroom", "fuelstore", "standshop"); // the farm's own rooms (issue #62: loot.js FARM_AREAS, the rooms they stand for's finds)
 // (only the flashbang hook: the roster's guns and the rounds by calibre stay, they are in the baselines above)
 const takeHooks = (re) => { const out = TRUCK_LOOT_HOOKS.filter((f) => re.test(String(f))); for (const f of out) TRUCK_LOOT_HOOKS.splice(TRUCK_LOOT_HOOKS.indexOf(f), 1); return out; };
 const takeFlashHooks = () => takeHooks(/truckflash/);

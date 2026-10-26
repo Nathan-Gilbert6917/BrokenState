@@ -134,6 +134,18 @@ export const REAL_SIZE = {
     lights: { w: [220, 280], d: [200, 260], storeys: [1, 1] }, trampoline: { w: [120, 140], d: [110, 130], storeys: [1, 2] },
     western: { w: [260, 320], d: [240, 300], storeys: [1, 2] },
   } },
+  // #59's zoos: a site of many buildings on one map (zoo.js zooMap lays it out from its variant's grid, zoolayout.js
+  // ZOO_SIZE its buildings): a sizes row per variant, the site's width and depth in metres (the whole map, a metre a
+  // cell) and its buildings' storeys (zoo.js caps every building's at the row's most: a city zoo's keepers' block of
+  // two, a city aquarium's three levels, a university zoo's research building of three, the rest one).
+  zoo: { set: "city", own: true, storeys: [1, 3], sizes: { // measured over 40 sites a plan (tools/zootest.js holds every map to its row)
+    cityzoo: { w: [360, 464], d: [294, 390], storeys: [1, 2] }, cityaquarium: { w: [321, 349], d: [194, 218], storeys: [1, 3] },
+    safari: { w: [298, 458], d: [301, 352], storeys: [1, 1] }, researchzoo: { w: [163, 239], d: [136, 199], storeys: [1, 3] },
+    primate: { w: [167, 195], d: [175, 208], storeys: [1, 1] }, townzoo: { w: [142, 169], d: [125, 147], storeys: [1, 1] },
+    birdpark: { w: [147, 175], d: [160, 189], storeys: [1, 1] }, petting: { w: [91, 112], d: [112, 133], storeys: [1, 1] },
+    reptile: { w: [95, 116], d: [89, 139], storeys: [1, 1] }, rescue: { w: [91, 143], d: [112, 133], storeys: [1, 1] },
+    bigcat: { w: [104, 165], d: [124, 145], storeys: [1, 1] }, roadside: { w: [87, 104], d: [83, 130], storeys: [1, 1] },
+  } },
   // Institutions
   clinic:      { w: [15, 25], d: [12, 20], storeys: [1, 2], set: "town" },
   infirmary:   { w: [15, 25], d: [12, 20], storeys: [1, 2], set: "rural" },
@@ -351,6 +363,27 @@ export const REAL_SIZE = {
       kilnmill: { w: [36, 40], d: [20, 24], storeys: [1, 1] },
     } },
   barn:        { w: [15, 30], d: [10, 20], storeys: [1, 1], set: "rural" }, // plus its hayloft (a raised room on one grid)
+  // The farm's own buildings (issue #62, farmplans.js FARM_PLANS): each plan drawn at its row's size, one storey (a
+  // metre a cell; a shed's rooms are small, but a person and a shelf fit in each).
+  shed: { w: [6, 10], d: [5, 7], storeys: [1, 1], set: "rural", planned: true, sizes: {
+    tool: { w: [7, 9], d: [5, 6] }, potting: { w: [8, 10], d: [6, 7] }, pump: { w: [7, 8], d: [5, 6] }, smoke: { w: [6, 7], d: [7, 8] }, rootcellar: { w: [7, 9], d: [8, 9] },
+    spring: { w: [7, 9], d: [6, 7] }, coop: { w: [9, 11], d: [6, 7] }, wood: { w: [7, 9], d: [5, 6] }, crib: { w: [9, 11], d: [6, 7] }, outhouse: { w: [8, 9], d: [6, 7] },
+    well: { w: [7, 8], d: [6, 6] }, gen: { w: [7, 9], d: [6, 7] }, ice: { w: [8, 9], d: [6, 7] },
+  } },
+  farmstand: { w: [8, 26], d: [6, 14], storeys: [1, 1], set: "rural", planned: true, sizes: {
+    shack: { w: [8, 10], d: [7, 8] }, producebarn: { w: [16, 20], d: [12, 14] }, pyo: { w: [10, 12], d: [7, 8] }, honey: { w: [10, 12], d: [7, 8] }, pumpkin: { w: [14, 18], d: [10, 12] },
+    xmas: { w: [10, 12], d: [6, 7] }, market: { w: [20, 26], d: [9, 11] }, egg: { w: [8, 10], d: [6, 7] }, cider: { w: [12, 14], d: [9, 10] }, berry: { w: [9, 11], d: [8, 9] },
+    flower: { w: [12, 14], d: [8, 9] }, maple: { w: [11, 13], d: [8, 9] }, creamery: { w: [12, 15], d: [10, 11] },
+  } },
+  // A farm and a ranch (farmstead.js): one map of many buildings; their rows are their farmhouse's (BUILDINGS make: the
+  // hint, the archetype tests), each building on the map its own type's row.
+  farm:  { w: [12, 18], d: [10, 14], storeys: [1, 2], set: "rural" },
+  ranch: { w: [12, 18], d: [10, 14], storeys: [1, 2], set: "rural" },
+  farmbldg: { w: [9, 44], d: [7, 24], storeys: [1, 1], set: "rural", planned: true, sizes: {
+    milkhouse: { w: [9, 11], d: [7, 8] }, greenhouse: { w: [22, 30], d: [9, 11] }, packshed: { w: [22, 28], d: [14, 17] }, coldstore: { w: [18, 22], d: [13, 15] }, winery: { w: [22, 28], d: [16, 19] },
+    bunkhouse: { w: [15, 18], d: [9, 11] }, arena: { w: [36, 44], d: [20, 24] }, stable: { w: [24, 30], d: [13, 15] }, sugarhouse: { w: [10, 12], d: [8, 9] }, processing: { w: [14, 16], d: [10, 12] },
+    cookhouse: { w: [15, 18], d: [10, 12] }, feedmill: { w: [14, 16], d: [12, 14] }, scalehouse: { w: [10, 12], d: [7, 8] },
+  } },
   // #28's college campus buildings: planned at their own real size (campuslayout.js CAMPUS_SIZE and campusplans.js's
   // named plans, a metre a cell; these rows their range over the plans); on a campus each is laid out as it is
   // (campus.js), raided alone through realScale like #25's. The chapel and the health centre are the church's and the

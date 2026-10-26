@@ -234,8 +234,11 @@ console.log("Which sites use which buildings");
   check(!missing.length, `every location type in AREA_SETS has buildings or keeps the street map (${missing.join(", ") || "all covered"})`);
   const bad = Object.values(SITES).flatMap((e) => (Array.isArray(e) ? e : e.list)).map((e) => (Array.isArray(e) ? e[0] : e)).filter((k) => !BUILDINGS[k]);
   check(!bad.length, `every building named by a site exists (${bad.join(", ") || "ok"})`);
-  const single = siteBuildings({ loc: { type: "pharmacy" }, terrain: "city" }), multi = siteBuildings({ loc: { type: "farm" }, terrain: "plains" });
-  check(single.single && !multi.single && multi.options.length === 2, "a pharmacy is one building, a farmstead two (farmhouse and barn)");
+  // A farm: one map of the whole place in a new save (issue #62, farmstead.js), its farmhouse and barn in an older one.
+  const single = siteBuildings({ loc: { type: "pharmacy" }, terrain: "city" }), multi = siteBuildings({ loc: { type: "farm" }, terrain: "plains" }, { farmLegacy: true });
+  const farmNew = siteBuildings({ loc: { type: "farm" }, terrain: "plains" }, {});
+  check(single.single && !multi.single && multi.options.length === 2, "a pharmacy is one building, an older save's farmstead two (farmhouse and barn)");
+  check(farmNew.single && farmNew.options[0].key === "farm", "a new save's farm is one map of the whole place");
   const opts = buildingOptions({ loc: { type: "town" }, terrain: "suburb" });
   check(opts && opts.at(-1).id === "street" && opts.every((o) => o.hint) && new Set(opts.map((o) => o.id)).size === opts.length, `a town offers ${opts.length - 1} buildings and the street, each with a hint ("${opts[0].hint.slice(0, 60)}…")`);
   check(!siteBuildings({ loc: { type: "campground" }, terrain: "forest" }) && !siteBuildings({ loc: { type: "crash_mil" }, terrain: "plains" }), "campgrounds and crash sites keep the street map");
@@ -335,16 +338,16 @@ console.log("A site with several buildings: picked before the map");
 {
   // The choice is made before the raid map (poiraid.js buildingPickCard / buildingPickFor, the user's request
   // 2026-10-25; tools/buildingpicktest.js the whole flow): the map itself never offers it.
-  const r = raidAt(["town", "farm", "city"], { raid: { choose: true } });
+  const r = raidAt(["town", "city"], { raid: { choose: true } });
   const b = r.b;
   const opts = raidBuildings(r.st, r.tile);
   check(opts && opts.length >= 3 && opts[opts.length - 1].id === "street", `the choice before the map: ${opts ? opts.length - 1 : 0} buildings and the street (${opts ? opts.map((o) => o.name).join(", ") : ""})`);
   check(!b.raid.choose && !b.raid.interior, "a raid with none picked is the street map, nothing to choose on it");
   const pick = opts[0];
-  const r1 = raidAt(["town", "farm", "city"], { raid: { building: pick.id } });
+  const r1 = raidAt(["town", "city"], { raid: { building: pick.id } });
   const nb = r1.b;
   check(r1.tile.id === r.tile.id && nb.raid.interior && nb.raid.interior.id === pick.id && !nb.raid.choose && nb.units.filter((u) => u.side === "player").length === r1.crew.length, `the ${pick.name.toLowerCase()} picked before the map opens its own map (${nb.w}x${nb.h}, ${nb.raid.areas.filter((a) => !a.outdoor).length} rooms)`);
-  const r3 = raidAt(["town", "farm", "city"], { pick: true, seed: 1200 });
+  const r3 = raidAt(["town", "city"], { pick: true, seed: 1200 });
   const want = buildingPickFor(r3.st, r3.tile.id, raidBuildings(r3.st, r3.tile));
   autoPlayerTurn(r3.st);
   check(!r3.st.combat.raid.choose && (want === "street" ? !r3.st.combat.raid.interior : r3.st.combat.raid.interior && r3.st.combat.raid.interior.id === want), `the AI's pick is made before the map by its own dice (${r3.st.combat.raid.interior ? r3.st.combat.raid.interior.name : "the street"}), then it plays that map`);

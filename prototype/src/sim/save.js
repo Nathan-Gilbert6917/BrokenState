@@ -203,6 +203,9 @@ export function deserializeState(save) {
   // The placement table (data-placement.js, issue #42): a save from before keeps its POI lists, its crawls' blocks and
   // its buildings as its seed made them (placement.js placing off).
   if (!state.placeV) { state.placeLegacy = true; state.placeV = 1; }
+  // The farms renovated (farmstead.js, farmplans.js, issue #62): a save from before keeps its farms' and ranches' pick of
+  // buildings and its sheds' and farm stands' old buildings (worldcfg.js legacyFarms).
+  if (!state.farmV) { state.farmLegacy = true; state.farmV = 1; }
   // Civic and medical buildings at real scale (issue #49): a save from before keeps their plans at their drawn sizes
   // and none of the new plans or sites (worldcfg.js legacyCivic), so its places and their containers stay as they were.
   if (!state.civicV) { state.civicLegacy = true; state.civicV = 1; }
@@ -222,6 +225,9 @@ export function deserializeState(save) {
   // Mines and quarries (minelayout.js, issue #52): a save from before keeps its quarry sites' workshop and its mine
   // shacks' cabin (their maps and containers as they were) and gets no new mines or quarries (worldcfg.js legacyMines).
   if (!state.minesV) { state.minesLegacy = true; state.minesV = 1; }
+  // Zoos (zoo.js, issue #59): a save from before gets none on its tiles (placement.js placeExtraKind, worldcfg.js
+  // legacyZoo), so its points of interest regenerate as they were.
+  if (!state.zooV) { state.zooLegacy = true; state.zooV = 1; }
   // Golf courses, campgrounds and RV parks (outdoors.js, issue #61): a save from before gets none of the new places on
   // its tiles and keeps its campgrounds' street map (worldcfg.js legacyOutdoors).
   if (!state.outdoorsV) { state.outdoorsLegacy = true; state.outdoorsV = 1; }

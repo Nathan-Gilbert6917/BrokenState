@@ -101,6 +101,9 @@ section("Layout: the same containers on every visit");
     st.combat = null;
   }
   const site = st.tiles.find((t) => t.loc && t.loc.type === "farm" && isSitePoi(t, 0));
+  // An older save's farm (farmLegacy: its farmhouse, its barn and the street); a new save's is one map of the whole
+  // place since issue #62 (farmstead.js: tools/farmsteadtest.js).
+  st.farmLegacy = true;
   if (check(!!site, "a farm site exists")) {
     const a = raid(st, p, site, 0);
     check(!a.raid.choose && !a.raid.interior && a.raid.poiDice === "poi0:street", `a site POI with no building picked opens on its street map, no buildings to choose there (${a.raid.poiDice})`);
@@ -109,9 +112,10 @@ section("Layout: the same containers on every visit");
     check(sig(raid(st, p, site, 0, { vehicle: true })) === sa, "the site's street map is the same every visit (its own dice)");
     const fb = sig(raid(st, p, site, 0, { building: "farmhouse" }));
     check(fb && fb === sig(raid(st, p, site, 0, { building: "farmhouse", vehicle: true })), "and so is its farmhouse");
-    check(poiMapCount(site, 0) === 3, `the farm site has three maps (farmhouse, barn, the street): ${poiMapCount(site, 0)}`);
+    check(poiMapCount(site, 0, st) === 3 && poiMapCount(site, 0, { ...st, farmLegacy: false }) === 1, `an older save's farm site has three maps (farmhouse, barn, the street), a new save's one: ${poiMapCount(site, 0, st)}`);
     st.combat = null;
   }
+  st.farmLegacy = false;
 }
 
 section("Contents: each container's own dice");

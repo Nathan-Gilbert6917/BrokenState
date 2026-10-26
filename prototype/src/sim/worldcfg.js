@@ -144,6 +144,9 @@ export const legacyRooms = (state) => !!(state && state.roomsLegacy);
 // A save from before the prison complexes (issue #31, save.js prisonLegacy: no state.prisonV): a prison keeps its pick
 // of one building (buildingmaps.js SITES.prison) and no town has a county jail (pois.js jailExtra).
 export const legacyPrisons = (state) => !!(state && (state.prisonLegacy || state.roomsLegacy));
+// A save from before the farms were renovated (issue #62, save.js farmLegacy: no state.farmV): a farm and a ranch keep
+// their pick of buildings (buildingmaps.js SITES), its shed and farm stand POIs a machine shed's and a corner shop's.
+export const legacyFarms = (state) => !!(state && (state.farmLegacy || state.roomsLegacy));
 // A save from before buildings had footprint shapes (save.js shapesLegacy, issue #23): every building the rectangle it was.
 export const legacyShapes = (state) => legacyRooms(state) || !!(state && state.shapesLegacy);
 // A save from before buildings at real size (issue #24, save.js scaleLegacy; an older one still, roomsLegacy): every
@@ -174,6 +177,9 @@ export const legacySaw = (state) => !!(state && state.sawLegacy);
 // A save from before the mines and quarries (issue #52, save.js minesLegacy: no state.minesV): its quarry sites keep the
 // workshop and its mine shacks the cabin (buildingmaps.js SITES), and it gets no new mine or quarry POIs (placement.js).
 export const legacyMines = (state) => !!(state && (state.minesLegacy || state.roomsLegacy));
+// A save from before the zoos (issue #59, save.js zooLegacy: no state.zooV): its tiles get none (placement.js
+// placeExtraKind), so its points of interest stay as they were.
+export const legacyZoo = (state) => !!(state && state.zooLegacy);
 // A save from before the golf courses, campgrounds and RV parks (issue #61, save.js outdoorsLegacy: no state.outdoorsV):
 // its points of interest get none of them (placement.js PLACE_EXTRA), and its campgrounds keep their street map
 // (buildingmaps.js OUTDOOR_SITES), so its places stay as they were.

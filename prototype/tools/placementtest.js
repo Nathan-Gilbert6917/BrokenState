@@ -8,7 +8,7 @@
 //     stands;
 //   - the crawl: a city crawl's heart holds more hospitals than its rim;
 //   - older worlds: their POI lists and crawl blocks hash exactly as before the table (placeLegacy), a save from before
-//     the data centres gets none (dcLegacy, issue #51), nor one from before the sawmills (sawLegacy, issue #53); a save from before
+//     the data centres gets none (dcLegacy, issue #51), nor one from before the sawmills (sawLegacy, issue #53) or the zoos (zooLegacy, issue #59); a save from before
 //     loads as one; a new world's are the table's.
 // Usage: node tools/placementtest.js [worlds]
 import { createHash } from "node:crypto";
@@ -147,7 +147,7 @@ console.log("\nOlder worlds");
   const BASE = { 4242: ["9fe2456855e99de6", "1d818c3569a06463"], 4243: ["2de2a78738056c6b", "960da84ac7d53f41"] };
   const run = (seed, legacy) => {
     const st = createWorld({ seed, factionCount: 3, size: "small" });
-    if (legacy) { st.placeLegacy = true; st.shopsR2Legacy = true; st.civicLegacy = true; st.minesLegacy = true; } // a save from before the table is from before #55's shops #49's civic real scale and #52's mines too (save.js marks them all)
+    if (legacy) { st.placeLegacy = true; st.shopsR2Legacy = true; st.civicLegacy = true; st.minesLegacy = true; st.farmLegacy = true; } // a save from before the table is from before #55's shops #49's civic real scale and #52's mines and #62's farms too (their sheds and farm stands keep no layout) (save.js marks them all)
     for (const t of st.tiles) delete t.pois;
     ensurePois(st);
     const blocks = [];
@@ -185,6 +185,26 @@ console.log("\nOlder worlds");
   for (const t of swBack.tiles) delete t.pois;
   ensurePois(swBack);
   check(!!swBack.sawLegacy && !swBack.tiles.some((t) => (t.pois || []).some((p) => p.kind === "sawmill")), "a save from before the sawmills loads as one (sawLegacy): none on its tiles");
+  // Zoos (issue #59): a new world carries zooV; a save from before them loads with none on its tiles (zooLegacy).
+  const zw = createWorld({ seed: 4242, factionCount: 3, size: "small" });
+  check(zw.zooV === 1 && !zw.zooLegacy, "a new world carries zooV (issue #59)");
+  check(zw.tiles.some((t) => (t.pois || []).some((p) => p.kind === "zoo")), "a new world has a zoo on its tiles (issue #59)");
+  delete zw.zooV;
+  const zwBack = deserializeState(serializeState(zw));
+  for (const t of zwBack.tiles) delete t.pois;
+  ensurePois(zwBack);
+  check(!!zwBack.zooLegacy && !zwBack.tiles.some((t) => (t.pois || []).some((p) => p.kind === "zoo")), "a save from before the zoos loads as one (zooLegacy): none on its tiles");
+  // Golf courses, campgrounds and RV parks (issue #61): a new world carries outdoorsV and has them; a save from before
+  // them loads with none of them on its tiles (outdoorsLegacy).
+  const OUT = ["golfcourse", "rvpark", "campground"];
+  const ow = createWorld({ seed: 4242, factionCount: 3, size: "small" });
+  check(ow.outdoorsV === 1 && !ow.outdoorsLegacy, "a new world carries outdoorsV (issue #61)");
+  check(ow.tiles.some((t) => (t.pois || []).some((p) => p.kind === "golfcourse")) && ow.tiles.some((t) => (t.pois || []).some((p) => p.kind === "rvpark")), "a new world has golf courses and RV parks on its tiles (issue #61)");
+  delete ow.outdoorsV;
+  const owBack = deserializeState(serializeState(ow));
+  for (const t of owBack.tiles) delete t.pois;
+  ensurePois(owBack);
+  check(!!owBack.outdoorsLegacy && !owBack.tiles.some((t) => (t.pois || []).some((p) => OUT.includes(p.kind))), "a save from before the golf courses, campgrounds and RV parks loads as one (outdoorsLegacy): none of them as POIs");
 }
 
 console.log(`\n${passed} passed, ${failed} failed (${((performance.now() - t0) / 1000).toFixed(1)} s)`);
