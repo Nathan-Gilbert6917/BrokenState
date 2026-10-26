@@ -202,18 +202,18 @@ export function generatePois(state, t) {
   // own dice after everything above but the hotel (mallExtra; a hotel stays last).
   const mall = mallExtra(state, t, out, inKnownZone(state, t));
   if (mall && standsOn(state, mall.kind, t)) out.push(mall);
-  // hotels.js: now and then a hotel (a town's inn, a city's tower, a resort in scenic land), on its own dice after all.
-  const hotel = hotelExtra(state, t, out, inKnownZone(state, t));
-  if (hotel && standsOn(state, "hotel", t)) out.push(hotel);
   // placement.js (issue #42, a new world only): one more of the kinds the table puts where the pools above have none (a
   // city centre's medical centre, a town's county hospital or big-box store, a chapel in the country), on its own dice
-  // after everything above.
+  // after everything above but the hotel (a hotel stays last).
   const more = placeExtraKind(state, t, out, POI.MAX);
   if (more) {
     const poi = makePoi(state, t, more, false, POI.MAX + 1, out);
     poi.hidden = !(inKnownZone(state, t) && hash01(state.seed, "placeknown", t.id) < PLACE_KNOWN);
     out.push({ ...poi, extra: "place" });
   }
+  // hotels.js: now and then a hotel (a town's inn, a city's tower, a resort in scenic land), on its own dice after all.
+  const hotel = hotelExtra(state, t, out, inKnownZone(state, t));
+  if (hotel && standsOn(state, "hotel", t)) out.push(hotel);
   return out;
 }
 // A weighted pick of keys by w(key) with the dice r (keys in a fixed order: the same dice, the same pick).
