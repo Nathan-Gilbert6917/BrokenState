@@ -1321,7 +1321,7 @@ function institution(rng, v, o = {}) {
       };
     }
     case "school": {
-      if (!o.legacy && o.shapes) return schoolShaped(rng); // much larger and shaped (issue #23)
+      if (!o.legacy && o.shapes) return schoolVariant(rng, o); // much larger and shaped, one of a dozen named plans (issue #23)
       if (!o.legacy) return schoolPlan(rng);
       const bw = rng.int(26, 30), bh = rng.int(16, 18);
       const n = rng.int(2, 3); // classrooms above
@@ -1782,7 +1782,7 @@ function schoolPlan(rng) {
 // different depths), cross (a nave and its transept). Only a new save's buildings have them (o.shapes: worldcfg.js
 // legacyShapes; an older save's keep the rectangle its dice always gave).
 /** The spec of a shape: its bounding box from its parts (moved so the box starts at 0, 0). @param {string} kind @param {any[]} parts */
-function shapeOf(kind, parts) {
+export function shapeOf(kind, parts) {
   const x0 = Math.min(...parts.map((p) => p.x)), y0 = Math.min(...parts.map((p) => p.y));
   for (const p of parts) { p.x -= x0; p.y -= y0; }
   return { bw: Math.max(...parts.map((p) => p.x + p.w)), bh: Math.max(...parts.map((p) => p.y + p.h)), shape: { kind, parts } };
@@ -1790,7 +1790,7 @@ function shapeOf(kind, parts) {
 // Two parts in a row (a notched corner, an L, a stepped back): the box W × H with a corner of nx × ny cut out at the
 // front or the back (end "front" | "back"), on the left or the right. a: the full-depth part's plan, b: the other's.
 // Returns [full, short] parts (their rects; the caller adds program and the rest).
-function notchParts(W, H, nx, ny, end, left) {
+export function notchParts(W, H, nx, ny, end, left) {
   const fullW = W - nx, short = { y: end === "front" ? 0 : ny, w: nx + 1, h: H - ny };
   return left ? [{ x: nx, y: 0, w: fullW, h: H }, { x: 0, ...short }] : [{ x: 0, y: 0, w: fullW, h: H }, { x: fullW - 1, ...short }];
 }
@@ -1798,7 +1798,7 @@ function notchParts(W, H, nx, ny, end, left) {
 // A rectangle's spec with a wing on one side (left or right by the dice), flush with its front, its back short of the
 // main block's or past it (a stepped back: an L) and fewer storeys (a lower roof); a corridor plan with the main
 // block's front band depth keeps the two corridors in line through the shared wall.
-function withSideWing(rng, spec, wing) {
+export function withSideWing(rng, spec, wing) {
   const left = rng.chance(0.5), { bw, bh } = spec, dy = Math.max(0, wing.h - bh);
   return { ...spec, ...shapeOf("L", [
     { x: left ? wing.w - 1 : 0, y: dy, w: bw, h: bh, name: wing.mainName || "Main block", main: true, program: spec.program, upper: spec.upper },
@@ -1817,8 +1817,10 @@ const wingDepth = (rng, fd, bh) => { const lo = fd + 7, d = rng.int(lo, bh + 4);
 // and a science and art wing (labs, the art room, the shop class, the music room), the gym an annex at the far end of
 // a wing (one tall storey: bleachers, two locker rooms), the cafeteria and its kitchen (a walk-in behind its cold room
 // door) at the end of the other. #15's room styles (civiclayout.js CIVIC_STYLES) furnish every room.
-function schoolShaped(rng) {
-  const n = rng.int(2, 3);
+// opt (the variants, schoolVariant): kind (U, F, E), n (storeys), aud (an auditorium beside the main block: the high
+// school), middle (the middle school's band room and home economics room in place of the library's neighbour and the art room).
+function schoolShaped(rng, opt = {}) {
+  const n = opt.n || rng.int(2, 3);
   const C = (o = {}) => ({ role: "classroom", civic: "classroom", ...o });
   const hall = { type: "schoolhall", civic: "schoolhall", boxTarget: 10 };
   const corridor = (o = {}) => ({ role: "corridor", ...hall, ...o });
@@ -1829,7 +1831,8 @@ function schoolShaped(rng) {
   const lw = rng.int(6, 7), atLeft = rng.chance(0.5);
   const office = [[4, { role: "office", name: "Principal's office", lock: ["door", 0.3], boxLock: ["safe", 0.2], civic: "principal" }], [5, { role: "office", name: "Front office", civic: "staffroom", type: "office" }], [lw, { role: "lobby", entry: true, name: "Lobby", type: "office", civic: "slobby" }], [4, { role: "nurse", civic: "nurse" }]];
   const lib = [rng.int(8, 10), { role: "storage", name: "Library", type: "office", maxBoxes: 5, civic: "library" }];
-  const band = atLeft ? [["*", C()], ...office, lib, ["*", C()], ["*", C()]] : [["*", C()], ["*", C()], lib, ...office, ["*", C()]];
+  const extra = opt.middle ? [7, C({ name: "Band room", maxBoxes: 2 })] : ["*", C()];
+  const band = atLeft ? [["*", C()], ...office, lib, extra, ["*", C()]] : [["*", C()], extra, lib, ...office, ["*", C()]];
   const mainProgram = { split: "y", parts: [[fd, { split: "x", parts: leaves(band) }], [2, corridor()]] };
   const mainUpper = (g, r) => ({ split: "y", parts: [[fd, { split: "x", parts: leaves([["*", C()], ["*", C()], [5, { role: "breakroom", name: "Staff room", type: "office", civic: "staffroom" }], ["*", C()], [6, { role: "workshop", name: r.chance(0.5) ? "Shop class" : "Art room", type: "office", maxBoxes: 2, civic: "shopclass" }], ["*", C()]]) }], [2, corridor()]] });
   // A wing back from the main block: a corridor down its middle (joining the main corridor through the shared wall),
@@ -1846,7 +1849,7 @@ function schoolShaped(rng) {
     upper: () => wingPlan([rowOf(classLen, C), rowOf(classLen, C)]),
   };
   const sci = (o) => () => C(o);
-  const sciRows = (g) => (g ? [rowOf(sciLen, C), rowOf(sciLen, sci({ name: "Music room" }))] : [rowOf(sciLen, sci({ name: "Science lab", type: "lab", civic: "sciencelab" })), [["*", { role: "workshop", name: "Art room", type: "office", maxBoxes: 2, civic: "shopclass" }], ...rowOf(sciLen, sci({ name: "Science lab", type: "lab", civic: "sciencelab" })).slice(1)]]);
+  const sciRows = (g) => (g ? [rowOf(sciLen, C), rowOf(sciLen, sci({ name: "Music room" }))] : [rowOf(sciLen, sci({ name: "Science lab", type: "lab", civic: "sciencelab" })), [["*", { role: "workshop", name: opt.middle ? "Home economics room" : "Art room", type: "office", maxBoxes: 2, civic: "shopclass" }], ...rowOf(sciLen, sci({ name: "Science lab", type: "lab", civic: "sciencelab" })).slice(1)]]);
   const sciWing = { w: 18, len: sciLen, storeys: sciN, name: "Science and art wing", wing: true, program: wingPlan(sciRows(0)), upper: (g) => wingPlan(sciRows(g)) };
   // The annexes at a wing's far end: the gym (one tall storey) and the cafeteria with its kitchen.
   const lockersLeft = rng.chance(0.5);
@@ -1857,7 +1860,7 @@ function schoolShaped(rng) {
   const caf = { w: cw, h: ch, storeys: 1, name: "Cafeteria", wing: true, program: { split: "x", parts: rng.chance(0.5) ? [kitchen, ["*", { role: "cafeteria", civic: "cafeteria" }]] : [["*", { role: "cafeteria", civic: "cafeteria" }], kitchen] } };
   // Where the wings stand on the main block's back wall (x of each wing's left wall), and which annex each carries.
   const roomE = W >= cw + 20 + 18 + 7; // a spine and two end wings need the width
-  const kind = rng.weighted(roomE ? ["U", "F", "E"] : ["U", "F"], (q) => (q === "U" ? 2 : 1));
+  const kind = opt.kind || rng.weighted(roomE ? ["U", "F", "E"] : ["U", "F"], (q) => (q === "U" ? 2 : 1));
   const flip = rng.chance(0.5); // the classroom wing on the left or the right
   let wings;
   if (kind === "U") wings = [{ ...classWing, x: 0, annex: gym }, { ...sciWing, x: W - sciWing.w, annex: caf }];
@@ -1877,11 +1880,199 @@ function schoolShaped(rng) {
       parts.push({ x: ax, y: wy0 - a.h + 1, w: a.w, h: a.h, storeys: a.storeys, name: a.name, program: a.program, ...(a.tall ? { tall: true } : {}), ...(a.gym ? { gym: true } : {}), ...(a.wing ? { wing: true } : {}) });
     }
   }
+  if (opt.aud) { // the auditorium beside the main block, flush with its front and deeper: seats facing the stage at its back
+    const aw = Math.max(12, Math.min(rng.int(14, 18), 81 - W)), ah = mainH + rng.int(4, 6), right = rng.chance(0.5);
+    parts.push({ x: right ? W - 1 : -aw + 1, y: mainH - ah, w: aw, h: ah, storeys: 1, tall: true, name: "Auditorium",
+      program: { split: "y", parts: [["*", { role: "office", name: "Auditorium", type: "office", civic: "briefing", hub: true, maxBoxes: 2, nextTo: ["corridor", "lobby"] }], [4, { role: "storage", name: "Stage and wings", type: "office" }]] } });
+  }
   return {
     ...shapeOf(kind, parts), front: { width: 2 }, ground: "town", storeys: n, foot: "large", upper: null, stairs: ENDS, // at the ends of a corridor that rises every storey (the main block's)
     exits: [{ side: "back", roles: ["gym", "cafeteria"], chance: 0.9, lock: 0.3 }, { side: "back", roles: ["corridor"], chance: 0.5, lock: 0.4, name: "Wing door" }, { side: "left", roles: ["corridor"], chance: 0.9, lock: 0.3 }, { side: "right", roles: ["corridor"], chance: 0.9, lock: 0.3 }, { side: sideRoom(rng), roles: ["gym"], chance: 0.6, lock: 0.3 }],
   };
 }
+// The school's variants (a new save's, the user's request 2026-10-25: "for buildings with no to only a few varients
+// create a dozen varients per building type"): a dozen plans, each a shape of its own, named (spec.vid, spec.vname:
+// the map's and the place's name for it), picked by the setting (o.setting: SCHOOL_VARIANTS' weights) or pinned
+// (o.plan: its id). #15's room styles furnish them all.
+export const SCHOOL_VARIANTS = [
+  { id: "rural", name: "One-room schoolhouse", w: { rural: 3, town: 0, city: 0 } },
+  { id: "finger", name: "Finger-plan school", w: { rural: 1, town: 2, city: 0 } },
+  { id: "k8", name: "Brick K-8 school", w: { rural: 2, town: 2, city: 2 } },
+  { id: "openplan", name: "Open-plan school", w: { rural: 0, town: 1, city: 1 } },
+  { id: "highschool", name: "Suburban high school", w: { rural: 1, town: 3, city: 1 } },
+  { id: "campus", name: "Campus high school", w: { rural: 0, town: 1, city: 1 } },
+  { id: "magnet", name: "STEM magnet school", w: { rural: 0, town: 1, city: 2 } },
+  { id: "vocational", name: "Vocational high school", w: { rural: 0, town: 1, city: 2 } },
+  { id: "academy", name: "Private academy", w: { rural: 0, town: 1, city: 2 } },
+  { id: "charter", name: "Charter school", w: { rural: 0, town: 1, city: 2 } },
+  { id: "middle", name: "Middle school", w: { rural: 1, town: 2, city: 1 } },
+  { id: "elementary", name: "Elementary school", w: { rural: 2, town: 3, city: 1 } },
+];
+function schoolVariant(rng, o = {}) {
+  const pinned = o.plan ? SCHOOL_VARIANTS.find((v) => v.id === o.plan) : null;
+  const set = o.setting === "city" || o.setting === "rural" ? o.setting : "town";
+  const v = pinned || rng.weighted(SCHOOL_VARIANTS, (q) => q.w[set] || 0.01);
+  const spec = SCHOOL_PLANS[v.id](rng);
+  return { ...spec, vid: v.id, vname: v.name };
+}
+// The rooms and parts the plans share.
+const sC = (o = {}) => ({ role: "classroom", civic: "classroom", ...o });
+const sHall = (o = {}) => ({ role: "corridor", type: "schoolhall", civic: "schoolhall", boxTarget: 8, ...o });
+const sLobby = (o = {}) => ({ role: "lobby", entry: true, name: "Lobby", type: "office", civic: "slobby", ...o });
+const sPrinc = (name = "Principal's office") => ({ role: "office", name, lock: ["door", 0.3], boxLock: ["safe", 0.2], civic: "principal" });
+const sOffice = { role: "office", name: "Front office", type: "office", civic: "staffroom" };
+const sStaff = { role: "breakroom", name: "Staff room", type: "office", civic: "staffroom" };
+const sNurse = { role: "nurse", civic: "nurse" };
+const sLib = (name = "Library") => ({ role: "storage", name, type: "office", maxBoxes: 5, civic: "library" });
+const sShop = (name) => ({ role: "workshop", name, type: "office", maxBoxes: 2, civic: "shopclass" });
+const sLab = (name = "Science lab") => sC({ name, type: "lab", civic: "sciencelab" });
+const sKitchen = () => ({ split: "y", parts: leaves([["*", { role: "kitchen", name: "School kitchen", maxBoxes: 1, civic: "skitchen" }], [2, { role: "pantry", name: "Walk-in", type: "kitchen", dk: "coldroom", civic: "walkin" }]]) });
+const sRows = (n, leaf) => Array.from({ length: Math.max(1, n) }, (_, i) => ["*", leaf(i)]);
+// A gym part's plan (the court, the two locker rooms at one end) and a cafeteria's (the hall, its kitchen at one end).
+const sGym = (rng, name = "Gym") => { const lk = [5, { split: "y", parts: leaves([["*", { role: "lockerroom", name: "Boys' locker room", civic: "plockers" }], ["*", { role: "lockerroom", name: "Girls' locker room", civic: "plockers" }]]) }], g = ["*", { role: "gym", name, civic: "gym" }]; return { split: "x", parts: rng.chance(0.5) ? [lk, g] : [g, lk] }; };
+const sCaf = (rng, name = "Cafeteria") => { const k = [5, sKitchen()], c = ["*", { role: "cafeteria", name, civic: "cafeteria" }]; return { split: "x", parts: rng.chance(0.5) ? [k, c] : [c, k] }; };
+// A block along the front: its band of rooms (the leaves left to right), a corridor of lockers behind it.
+const sFront = (band, fd = 7) => ({ split: "y", parts: [[fd, { split: "x", parts: leaves(band) }], [2, sHall()]] });
+// A wing back from a block: a corridor down its middle, a row of rooms each side.
+const sWing = (left, right) => ({ split: "x", parts: [["*", { split: "y", parts: leaves(left) }], [2, sHall({ name: "Wing corridor" })], ["*", { split: "y", parts: leaves(right) }]] });
+const sExits = (more = []) => [{ side: "back", roles: ["gym", "cafeteria"], chance: 0.8, lock: 0.3 }, { side: "left", roles: ["corridor"], chance: 0.7, lock: 0.3 }, { side: "right", roles: ["corridor"], chance: 0.7, lock: 0.3 }, ...more];
+const sSpec = (kind, parts, n, more = {}) => ({ ...shapeOf(kind, parts), front: { width: 2 }, ground: "town", storeys: n, foot: "large", program: null, upper: null, stairs: { roles: ["corridor", "lobby"], n: 1 }, exits: sExits(), ...more });
+const SCHOOL_PLANS = {
+  // A one-room schoolhouse: the schoolroom, the cloakroom at the door and the teacher's room, a woodshed on its side.
+  rural(rng) {
+    const W = rng.int(13, 16), H = rng.int(10, 12), right = rng.chance(0.5);
+    return sSpec("annex", [
+      { x: right ? 0 : 5, y: 0, w: W, h: H, name: "Schoolhouse", main: true, program: { split: "y", parts: [[3, { split: "x", parts: leaves([["*", { role: "foyer", name: "Cloakroom", entry: true, type: "office", hub: true }], [4, { role: "office", name: "Teacher's room", civic: "principal" }]]) }], ["*", sC({ name: "Schoolroom", maxBoxes: 3 })]] } },
+      { x: right ? W - 1 : 0, y: rng.int(1, 3), w: 6, h: 6, name: "Woodshed", program: { role: "storage", name: "Woodshed", type: "cabin", nextTo: ["classroom", "foyer"] } },
+    ], 1, { ground: "rural", foot: "small", exits: [{ side: "back", roles: ["classroom"], chance: 0.6, lock: 0.2 }] });
+  },
+  // A 1950s finger plan: one storey, a long front block (the offices, the multipurpose room) and three classroom
+  // fingers of different lengths back from it, the gym at the end of the middle one.
+  finger(rng) {
+    const W = rng.int(50, 58), fw = 12;
+    const finger = (len) => ({ split: "x", parts: [["*", { split: "y", parts: leaves(sRows(Math.floor((len - 1) / 7), () => sC())) }], [2, sHall({ name: "Finger corridor" })]] });
+    const band = [["*", sC()], [4, sPrinc()], [5, sOffice], [6, sLobby()], [4, sNurse], [8, sLib()], [9, { role: "cafeteria", name: "Multipurpose room", civic: "cafeteria" }], [5, sKitchen()], ["*", sC()]];
+    const lens = [rng.int(16, 23), rng.int(16, 23), rng.int(16, 23)], xs = [0, rng.int(fw + 6, Math.floor(W / 2) - 2), W - fw];
+    const parts = [{ x: 0, y: 0, w: W, h: 12, name: "Front block", main: true, program: sFront(band) }];
+    xs.forEach((x, i) => parts.push({ x, y: -lens[i] + 1, w: fw, h: lens[i], name: `Finger ${i + 1}`, wing: true, program: finger(lens[i]) }));
+    const gw = rng.int(16, 18), gh = rng.int(11, 13), gx = clampN(xs[1] + fw - gw + rng.int(0, 3), fw + 2, xs[2] - gw - 2); // clear of the outer fingers
+    parts.push({ x: gx, y: -lens[1] - gh + 2, w: gw, h: gh, storeys: 1, tall: true, gym: true, name: "Gym", program: sGym(rng) });
+    return sSpec("E", parts, 1);
+  },
+  // A two-storey brick K-8: a compact block (3 storeys at times), a classroom wing behind on one side, the gym beside it
+  // flush with the front, the cafeteria in the wing.
+  k8(rng) {
+    const n = rng.int(2, 3), W = rng.int(30, 36), len = rng.int(16, 20), right = rng.chance(0.5), gw = rng.int(16, 19), gh = rng.int(13, 15);
+    const band = [["*", sC({ name: "Kindergarten" })], [4, sPrinc()], [6, sLobby()], [4, sNurse], ["*", sC()]];
+    const wing = (g) => sWing(g ? sRows(2, () => sC()) : [["*", sC()], [8, { role: "cafeteria", civic: "cafeteria" }]], g ? [["*", sC()], [7, sLib()]] : [[5, sKitchen()], ["*", sC()]]);
+    const wx = right ? W - 20 : 0;
+    return sSpec("L", [
+      { x: 0, y: len - 1, w: W, h: 12, storeys: n, name: "School block", main: true, program: sFront(band), upper: (g) => sFront([["*", sC()], ["*", sC()], [5, sStaff], ["*", sC()]]) },
+      { x: wx, y: 0, w: 20, h: len, storeys: Math.min(n, 2), wing: true, name: "Classroom wing", program: wing(0), upper: () => wing(1) },
+      { x: right ? -gw + 1 : W - 1, y: len - 1 + 12 - gh, w: gw, h: gh, storeys: 1, tall: true, gym: true, name: "Gym", program: sGym(rng) },
+    ], n);
+  },
+  // A 1970s open-plan school: one storey, a deep square block of open learning pods round the media centre and the
+  // commons, the offices along the front, the gym out the back off the middle.
+  openplan(rng) {
+    const W = rng.int(36, 42), H = rng.int(28, 32), gw = rng.int(20, 24), gh = rng.int(12, 14);
+    const pods = { split: "y", parts: leaves([["*", sC({ name: "Learning pod", maxBoxes: 4 })], ["*", sC({ name: "Learning pod", maxBoxes: 4 })]]) };
+    const middle = { split: "y", parts: [["*", sLib("Media centre")], [8, { split: "x", parts: [["*", { role: "cafeteria", name: "Commons", civic: "cafeteria" }], [5, sKitchen()]] }]] };
+    const program = { split: "y", parts: [[7, { split: "x", parts: leaves([["*", sOffice], [4, sPrinc()], [7, sLobby()], [4, sNurse], ["*", sStaff]]) }], [2, sHall({ name: "Concourse" })], ["*", { split: "x", parts: [["*", pods], [12, middle], ["*", pods]] }]] };
+    return sSpec("annex", [
+      { x: 0, y: gh - 1, w: W, h: H, name: "School", main: true, program },
+      { x: rng.int(2, W - gw - 2), y: 0, w: gw, h: gh, storeys: 1, tall: true, gym: true, name: "Gym", program: sGym(rng) },
+    ], 1);
+  },
+  // The suburban high school: the U, F or E round a yard (schoolShaped), and an auditorium beside the main block.
+  highschool(rng) { return schoolShaped(rng, { aud: true }); },
+  // A campus high school: an admin block at the front, a covered walkway back to the commons (the cafeteria, the
+  // kitchen and the library), a hall of classrooms each side of it (the east one on two storeys) and the gym behind.
+  campus(rng) {
+    const aw = rng.int(22, 26), bw = rng.int(26, 30), ww = rng.int(20, 24), ew = rng.int(22, 28), gw = rng.int(18, bw - 6); // the gym short of the halls: the yards either side of its walkway stay open
+    const hall = (name) => (g) => ({ split: "y", parts: [["*", { split: "x", parts: leaves(sRows(Math.floor(ww / 7), () => sC())) }], [2, sHall({ name })], ["*", { split: "x", parts: leaves([...sRows(Math.floor(ww / 7) - 1, () => sC()), ["*", g ? sC() : sLab()]]) }]] });
+    const by = 0, bx = 0, lk = rng.int(6, 8);
+    const ax = bx + rng.int(1, bw - aw - 1), lx = ax + Math.floor(aw / 2) - 3; // the walkways 4 cells inside: whatever the rooms each end, two of them face a room
+    const parts = [
+      { x: bx, y: by, w: bw, h: 12, storeys: 1, name: "Commons", program: { split: "x", parts: [["*", { role: "cafeteria", name: "Commons", civic: "cafeteria" }], [5, sKitchen()], [9, sLib()]] } },
+      { x: lx, y: by + 11, w: 6, h: lk + 1, storeys: 1, name: "Covered walkway", program: { role: "corridor", name: "Covered walkway", hub: true } },
+      { x: ax, y: by + 11 + lk, w: aw, h: 12, storeys: 1, name: "Admin block", main: true, program: { split: "x", parts: leaves([["*", sOffice], [4, sPrinc()], [7, sLobby({ name: "Entrance hall" })], [4, sNurse], ["*", sStaff]]) } },
+      { x: bx - ww + 1, y: by - 4, w: ww, h: 20, storeys: 1, name: "West hall", wing: true, program: hall("West hall corridor")(0) },
+      { x: bx + bw - 1, y: by - 5, w: ew, h: 20, storeys: 2, name: "East hall", wing: true, program: hall("East hall corridor")(0), upper: hall("East hall corridor") },
+      { x: bx + 9, y: by - lk, w: 6, h: lk + 1, storeys: 1, name: "Gym walkway", program: { role: "corridor", name: "Gym walkway", hub: true } },
+      { x: bx + 2, y: by - lk - 13, w: gw, h: 14, storeys: 1, tall: true, gym: true, name: "Gym", program: sGym(rng, "Field house") },
+    ];
+    return sSpec("campus", parts, 2, { stairs: { roles: ["corridor"], n: 1 } });
+  },
+  // A STEM magnet school: a two-storey block (a computer lab upstairs) and a science wing of labs, the makerspace and
+  // the robotics lab, a multipurpose room in place of a gym.
+  magnet(rng) {
+    const W = rng.int(38, 44), len = rng.int(18, 22), right = rng.chance(0.5);
+    const wing = (g) => sWing(g ? [["*", sLab("Chemistry lab")], ["*", sLab("Physics lab")]] : [["*", sLab("Biology lab")], ["*", sShop("Makerspace")]], g ? [["*", sC({ name: "Computer lab" })], ["*", sLab()]] : [["*", sShop("Robotics lab")], ["*", sLab()]]);
+    return sSpec("L", [
+      { x: 0, y: len - 1, w: W, h: 12, storeys: 2, name: "Main block", main: true, program: sFront([["*", sC()], [6, sLobby()], [4, sPrinc()], [4, sNurse], [5, sOffice], ["*", sC()]]), upper: () => sFront([["*", sC({ name: "Computer lab" })], [8, sLib("Media centre")], [5, sStaff], ["*", sC()]]) },
+      { x: right ? W - 20 : 0, y: 0, w: 20, h: len, storeys: 2, wing: true, name: "Science wing", program: wing(0), upper: () => wing(1) },
+      { x: right ? 0 : W - 15, y: len - 9, w: 15, h: 9, storeys: 1, name: "Multipurpose room", program: { split: "x", parts: [["*", { role: "gym", name: "Multipurpose room", civic: "gym" }], [5, sKitchen()]] } },
+    ], 2);
+  },
+  // A vocational high school: a two-storey main block and the shop wing behind it (one tall storey: the auto shop
+  // behind its roller door, the welding, wood and electrical shops), the gym beside the main block.
+  vocational(rng) {
+    const W = rng.int(32, 38), sw = rng.int(26, 30), sh = rng.int(16, 19), sx = rng.int(1, W - sw - 1), gw = rng.int(16, 19), gh = rng.int(13, 15), right = rng.chance(0.5);
+    const shops = { split: "y", parts: [["*", { split: "x", parts: leaves([["*", { role: "bays", name: "Auto shop", type: "garage", maxBoxes: 4 }], ["*", sShop("Welding shop")]]) }], [2, sHall({ name: "Shop corridor" })], ["*", { split: "x", parts: leaves([["*", sShop("Wood shop")], ["*", sShop("Electrical shop")]]) }]] };
+    return sSpec("T", [
+      { x: 0, y: sh - 1, w: W, h: 12, storeys: 2, name: "Main block", main: true, program: sFront([["*", sC()], [4, sPrinc()], [6, sLobby()], [4, sNurse], [8, { role: "cafeteria", civic: "cafeteria" }], [5, sKitchen()]]), upper: () => sFront([["*", sC()], ["*", sC()], [5, sStaff], [7, sLib()], ["*", sC()]]) },
+      { x: sx, y: 0, w: sw, h: sh, storeys: 1, tall: true, wing: true, name: "Shop wing", program: shops },
+      { x: right ? W - 1 : -gw + 1, y: sh - 1 + 12 - gh, w: gw, h: gh, storeys: 1, tall: true, gym: true, name: "Gym", program: sGym(rng) },
+    ], 2, { exits: sExits([{ side: "back", roles: ["bays"], chance: 1, roller: true, width: 2, lock: 0.3, name: "Shop door" }]) });
+  },
+  // A private academy: a three-storey main hall (the entrance hall, the headmaster's study, classrooms, the common
+  // room upstairs), the chapel behind it off the middle, the dining hall wing on one side, the library on the other.
+  academy(rng) {
+    const W = rng.int(48, 54), cw = rng.int(12, 14), cl = rng.int(14, 18), dw = rng.int(13, 15), dl = rng.int(11, 13), lw = rng.int(10, 12), ll = rng.int(9, 11);
+    const side = Math.max(dw, lw), cx = rng.int(side + 2, W - side - cw - 2), left = rng.chance(0.5); // the chapel clear of both side wings
+    const parts = [
+      { x: 0, y: cl - 1, w: W, h: 12, storeys: 3, name: "Main hall", main: true, program: sFront([["*", sC()], [5, sOffice], [7, sLobby({ name: "Entrance hall" })], [5, sPrinc("Headmaster's study")], ["*", sC()]]), upper: (g) => sFront(g === 1 ? [["*", sC()], [7, { role: "dayroom", name: "Common room", type: "house" }], ["*", sC()]] : [["*", sC()], [5, sStaff], ["*", sC()]]) },
+      { x: cx, y: 0, w: cw, h: cl, storeys: 1, tall: true, name: "Chapel", program: { role: "nave", name: "Chapel", civic: "nave", maxBoxes: 2 } },
+      { x: left ? 0 : W - dw, y: cl - dl, w: dw, h: dl, storeys: 1, wing: true, name: "Dining hall", program: sCaf(rng, "Dining hall") },
+      { x: left ? W - lw : 0, y: cl - ll, w: lw, h: ll, storeys: 1, wing: true, name: "Library", program: sLib() },
+    ];
+    return sSpec("T", parts, 3);
+  },
+  // A charter school in a converted office block: two storeys of classrooms partitioned along the old corridor, the
+  // old loading bay at the back a multipurpose room (its roller door still there): a stepped back.
+  charter(rng) {
+    const W = rng.int(26, 30), H = rng.int(16, 18), aw = rng.int(12, 16), ah = rng.int(8, 10), right = rng.chance(0.5);
+    const fd = Math.floor((H - 5) / 2);
+    return sSpec("stepped", [
+      { x: 0, y: ah - 1, w: W, h: H, storeys: 2, name: "Converted offices", main: true, program: corridorPlan([["*", sC()], [6, sLobby({ name: "Reception" })], [5, sOffice], ["*", sC()]], [["*", sC()], ["*", sC()], [3, { role: "restroom", civic: "washroom" }]], fd, 2, { type: "schoolhall", civic: "schoolhall", boxTarget: 6 }), upper: () => corridorPlan([["*", sC()], ["*", sC()], [5, sStaff]], [["*", sC()], [6, sLib()], ["*", sC()]], fd, 2, { type: "schoolhall", civic: "schoolhall", boxTarget: 6 }) },
+      { x: right ? W - aw : 0, y: 0, w: aw, h: ah, storeys: 1, tall: true, gym: true, name: "Old loading bay", program: { role: "gym", name: "Multipurpose room", civic: "gym", nextTo: ["corridor", "classroom"] } },
+    ], 2, { ground: "city", exits: sExits([{ side: "back", roles: ["gym"], chance: 0.8, roller: true, width: 2, lock: 0.4, name: "Loading door" }]) });
+  },
+  // A middle school: the F round a yard on two storeys, the band room and the home economics room.
+  middle(rng) { return schoolShaped(rng, { kind: "F", n: 2, middle: true }); },
+  // An elementary school: one storey, an L (the kindergarten at one end of the front, a classroom wing back from the
+  // other, the all-purpose room beside the front) and two or three portable classrooms in the yard behind, each its
+  // own door.
+  elementary(rng) {
+    const W = rng.int(40, 46), len = rng.int(16, 20), right = rng.chance(0.5), aw = rng.int(14, 17), ah = rng.int(12, 14);
+    const band = [["*", sC({ name: "Kindergarten" })], [4, sPrinc()], [6, sLobby()], [4, sNurse], [5, sOffice], [7, sLib()], ["*", sC()]];
+    const wx = right ? W - 20 : 0;
+    const parts = [
+      { x: 0, y: len - 1, w: W, h: 12, name: "School", main: true, program: sFront(band) },
+      { x: wx, y: 0, w: 20, h: len, wing: true, name: "Classroom wing", program: sWing(sRows(Math.floor((len - 1) / 7), () => sC()), sRows(Math.floor((len - 1) / 7), () => sC())) },
+      { x: right ? -aw + 1 : W - 1, y: len - 1 + 12 - ah, w: aw, h: ah, storeys: 1, tall: true, gym: true, name: "All-purpose room", program: { split: "x", parts: [["*", { role: "gym", name: "All-purpose room", civic: "gym" }], [5, sKitchen()]] } },
+    ];
+    const free0 = right ? 1 : 22, free1 = right ? W - 22 : W - 2; // the yard behind the front block, clear of the wing
+    const np = Math.min(rng.int(2, 3), Math.floor((free1 - free0 + 3) / 11)); // 9 wide, 2 apart at least
+    for (let i = 0; i < np; i++) {
+      const px = free0 + (np > 1 ? Math.floor(((free1 - free0 - 8) * i) / (np - 1)) : 0);
+      parts.push({ x: px, y: len - 1 - 5 - 7, w: 9, h: 7, storeys: 1, name: `Portable ${i + 1}`, program: sC({ name: `Portable classroom ${i + 1}`, ownDoor: "front" }) });
+    }
+    return sSpec("L", parts, 1);
+  },
+};
+
 // A police station (a new save's, issue #23): the station block as #15 laid it out (the front desk, the squad room, the
 // lockers and the chief's office along the front, the corridor, the armory, the evidence room and the cell block
 // behind) and the sally port an annex beside it at the back, one storey, the cell block's end against it: an L.
@@ -3220,7 +3411,7 @@ export function buildingOptions(tile, state = null) {
   if (!sb || sb.single) return null;
   const [bw, bh] = buildingTarget(tile, false, state), [sw, sh] = raidDims(tile, state);
   // An industrial building by its plan's name (industrylayout.js: "Cold-storage warehouse"), where the site has not named it.
-  const named = (o) => (state && INDUSTRIAL.has(o.key) && o.name === BUILDINGS[o.key].name && tile.id != null ? { name: buildingSpec(state, tile.id, o).vname || o.name } : {});
+  const named = (o) => (state && (INDUSTRIAL.has(o.key) || o.key === "school") && o.name === BUILDINGS[o.key].name && tile.id != null ? { name: buildingSpec(state, tile.id, o).vname || o.name } : {});
   // A home's or a motel's by its layout's name (buildvariants.js, issue #32): "Ranch house", or "House on the corner (ranch house)".
   const laid = (o) => { if (!state || !state.tiles || tile.id == null || !LAYOUTS[o.key]) return {}; const sp = buildingSpec(state, tile.id, o); return sp.vname ? { layout: sp.vid, name: o.name === BUILDINGS[o.key].name ? sp.vname : `${o.name} (${sp.vname.toLowerCase()})` } : {}; };
   const out = sb.options.map((o) => ({ ...o, ...buildingHint(o.key), map: `${bw} × ${bh}+`, ...named(o), ...laid(o) }));
