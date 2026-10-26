@@ -422,14 +422,21 @@ export function searchHour(state) {
   // follow, and what you left in the ones you opened comes away with the team.
   const take = (0.05 * ap.loot * (perk("salvager") ? 0.6 : 1)) / (e.poi != null ? poiHouses(state, t, e.poi) : siteSizeK(state, t)); // a street of houses: one house at a time (poicont.js poiHouses); a site's buildings at real size: a smaller share an hour of more (buildingmaps.js siteSizeK, the groups' the same: aiscav.js)
   let leftLine = "";
+  const names = [];
+  const carry = (got) => {
+    if (!got || !got.boxes) return;
+    for (const [k, q] of Object.entries(got.left.sup)) { e.found.supplies[k] = (e.found.supplies[k] || 0) + q; names.push(`${q} ${keyWord(k)}`); }
+    for (const g of got.left.gear) { e.found.gear.push(g); names.push(g.name); }
+  };
   if (e.poi != null) {
-    const got = lootPoiAbstract(state, "player", t, e.poi, take, { floor: CONT.FLOOR });
-    if (got && got.boxes) {
-      const names = [];
-      for (const [k, q] of Object.entries(got.left.sup)) { e.found.supplies[k] = (e.found.supplies[k] || 0) + q; names.push(`${q} ${keyWord(k)}`); }
-      for (const g of got.left.gear) { e.found.gear.push(g); names.push(g.name); }
-      if (names.length) leftLine = ` From what was left in a container here before: ${names.join(", ")}.`;
-    }
+    carry(lootPoiAbstract(state, "player", t, e.poi, take, { floor: CONT.FLOOR }));
+    // Picked over: every container has been gone through, so what you left in yours comes away now, not on the hour's
+    // dice (issue #45: a search that reached the floor in five hours moved on and left a flashlight of yours behind).
+    // The whole pool asked for is a share of 1 (poicont.js lootPoiAbstract), with the floor at the pool: nothing more
+    // taken from it, only your containers emptied.
+    const pool = poiPool(t, e.poi);
+    if (pool <= PICKED_OVER && pool > 0) carry(lootPoiAbstract(state, "player", t, e.poi, pool, { floor: pool }));
+    if (names.length) leftLine = ` From what was left in a container here before: ${names.join(", ")}.`;
   } else takePoi(t, e.poi, take);
   // The place picked clean: on to the next place known here with something left (poiraid.js), or the search is
   // done with this tile (the caller's rules extract).

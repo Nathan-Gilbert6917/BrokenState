@@ -820,6 +820,31 @@ for (const [k, d] of Object.entries(AREA_DEFS)) if (!AREA_TAGS[k]) AREA_TAGS[k] 
 mergeRows(SITE_FINDS, ROWS.SITE_FINDS); mergeRows(AREA_FINDS, ROWS.AREA_FINDS); mergeRows(LIGHT_FINDS, ROWS.LIGHT_FINDS); mergeRows(CART_FINDS, ROWS.CART_FINDS);
 mergeRows(HUNT_FINDS, ROWS.HUNT_FINDS); mergeRows(BUILDMAT_FINDS, ROWS.BUILDMAT_FINDS); mergeRows(SITE_WOOD, ROWS.SITE_WOOD); mergeRows(AREA_WOOD, ROWS.AREA_WOOD);
 mergeRows(SITE_ARROWS, ROWS.SITE_ARROWS); mergeRows(AREA_ARROWS, ROWS.AREA_ARROWS); mergeRows(PARTS_MIX, ROWS.PARTS_MIX);
+// Issue #45 (tools/loottest.js ran again after an import cycle that had crashed it since 2026-10-25): the epic #7 rooms
+// with no theme of their own yet, and where the things their finds hold are kept. The item tags only say where a
+// thing belongs (the game reads them for guns and catalogue parts alone, none of which change here); the three rooms'
+// tags feed their part, gun and ammunition pools as every room's do.
+Object.assign(AREA_TAGS, {
+  schoolhall: ["home", "school", "sport"], // a school's corridor lockers: the students' own things, as a dorm room's (dormroom)
+  enginebay: ["fire", "tools", "garage"], // a fire station's engine bay (issue #36): the station's tools, a truck bay
+  flightgear: ["military", "camp"], // an air base's flight gear room: the crews' survival kit, as a barracks'
+});
+const addTags = (k, ...tags) => { ITEM_TAGS[k] = [...new Set([...(ITEM_TAGS[k] || []), ...tags])]; };
+// Books on the shelves: the bookstore's, the library's rooms (data-shops.js books, libref, libmaps, librare) and the
+// court's offices (data-offices.js courtoffice); a few collectibles kept with the rare books.
+for (const k of ["novel", "comic", "magazines", "puzzlebook"]) addTags(k, "books", "home", "shop", "school");
+for (const k of ["cookbook", "gardenbook", "survivalbook", "diybook", "medbook", "enginebook", "forgebook", "surgerybook", "lockbook", "gunbook", "scavbook", "leadbook", "talkbook", "bushcraftbook"]) addTags(k, "books", "home", "school");
+addTags("armymanual", "books", "military"); addTags("tcards", "books"); addTags("silverware", "books"); addTags("telescope", "outdoor");
+addTags("traumakit", "medical", "military", "police", "fire", "crash"); // a trauma kit (the crash start's own, a bunker's aid station)
+addTags("makeshiftpick", "prison", "crime"); // a shiv-maker's lock pick, in the cells
+// The things an office's desks and a front desk keep: a torch and spare batteries, a smoker's pack, a bag.
+addTags("flashlight", "office", "prison"); addTags("batteries", "office"); addTags("cigarettes", "office"); addTags("backpack", "office");
+addTags("handradio", "police", "prison"); // the guards' radios (a prison's armory and its control room)
+// The pistol in the mayor's desk (data-offices.js cityhall's gear; lootsense.js: "a pistol in the mayor's desk now and
+// then"): a tag of its own, "desk", on the pistol and city hall alone. No gun use, part or calibre theme reads it, so
+// no other place's pools change (the guns' "office" or the hall's "home" would have put guns and parts in offices).
+addTags("pistol", "desk"); SITE_TAGS.cityhall = [...new Set([...(SITE_TAGS.cityhall || []), "desk"])];
+addTags("bandagekit", "school"); addTags("waterfilter", "mall", "sport"); addTags("knife", "medical"); // a nurse's office; the outlet's camping aisle; a dentist's tray
 // Prisons and county jails (issue #31, prison.js): a jail's finds are a prison's, and the prison's own rooms (combat.js
 // AREAS pcells, pcontrol, parmory, pkitchen...) find what the rooms they stand for find (the cell block's, the armory's).
 const PRISON_AREAS = { pcells: "cellblock", pcontrol: "cellblock", parmory: "armory", pkitchen: "kitchen", pstores: "warehouse", property: "pawnshop", plaundry: "house" };
@@ -827,3 +852,11 @@ for (const T of [SITE_TAGS, SITE_FINDS, GUNMOD_FINDS, SITE_MODS, SITE_GRENADES, 
 for (const T of [AREA_TAGS, AREA_GUNMODS, AREA_MODS, AREA_GRENADES, AREA_LAUNCHERS, AREA_FINDS, AREA_WOOD, AREA_SHEETS, AREA_ARROWS, AREA_RELOAD]) for (const [k, v] of Object.entries(PRISON_AREAS)) if (T[v] && !T[k]) T[k] = T[v];
 AREA_TAGS.pbus = ["travel", "police"];
 AREA_TAGS.parmory = ["prison", "police", "guns"]; // riot gear and shotguns, not the Army's
+// ... so the armory's tables it was given above keep only what fits that: no launchers, rockets or Army optics in a
+// prison's armory (issue #45: tools/loottest.js found the copied AREA_LAUNCHERS / AREA_MODS rows, m203, at4, rpg and
+// the acog, there). A table left with nothing goes.
+for (const T of [AREA_GUNMODS, AREA_MODS, AREA_GRENADES, AREA_LAUNCHERS]) {
+  if (!T.parmory || T.parmory !== T.armory) continue;
+  const items = Object.fromEntries(Object.entries(T.parmory.items).filter(([k]) => fitsTags(k, AREA_TAGS.parmory)));
+  if (Object.keys(items).length) T.parmory = { ...T.parmory, items }; else delete T.parmory;
+}

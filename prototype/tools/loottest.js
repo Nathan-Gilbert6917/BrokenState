@@ -37,6 +37,7 @@ import { BLADE_FINDS, AREA_BLADES, WARE_BLADES } from "../src/sim/blades.js"; //
 import { SURV_FINDS, AREA_SURV, WARE_SURV } from "../src/sim/survival.js"; // survival gear (its own dice)
 import { TOOL_FINDS, AREA_TOOLS, CAR_TOOLS, WARE_TOOLS } from "../src/sim/toolreqs.js"; // tools for building and crafting (their own dice)
 import { BOX_FINDS } from "../src/sim/data-boxes.js"; // lock boxes and cases (boxes.js, its own dice)
+import { liftKinds, liftDef } from "../src/sim/furnicarry.js"; // furniture lifted off a map becomes its item
 import { POWER_FINDS, AREA_POWER } from "../src/sim/data-power.js"; // found generators, spotlights, fridges (electric.js, their own dice)
 import { ARSENAL_FINDS } from "../src/sim/data-guns.js"; // the arsenal of 2026-10-10 (gunfinds.js: their own dice)
 import { gunsFrom } from "../src/sim/gundist.js";
@@ -138,6 +139,9 @@ for (const [t, p] of Object.entries(ARSENAL_FINDS.wares)) if (p > 0) addAll(Obje
 for (const [t, p] of Object.entries(PART_FINDS.site)) if (p > 0) addAll(Object.keys(partPool(SITE_TAGS[t] || [])), `partfind:${t}`);
 for (const [a, p] of Object.entries(PART_FINDS.area)) if (p > 0) addAll(Object.keys(partPool(AREA_TAGS[a] || [])), `raid:${a}`);
 for (const [t, p] of Object.entries(PART_FINDS.wares)) if (p > 0) addAll(Object.keys(partPool(PART_FINDS.WARE_TAGS[t] || [])), `sold:${t}`);
+// Furniture and fixtures lifted off a map (furnicarry.js liftDef: the piece becomes its item, epic #7's issue #12): a
+// source of their own. Issue #45: the audit crashed on import from 2026-10-25 and never saw them.
+for (const k of liftKinds()) { const d = liftDef(k); if (d && d.item) addAll([d.item], `furniture:${k}`); }
 
 console.log("Sources");
 check(!unknown.length, `every listed item exists in GEAR${unknown.length ? ` (unknown: ${unknown.join(", ")})` : ""}`);
