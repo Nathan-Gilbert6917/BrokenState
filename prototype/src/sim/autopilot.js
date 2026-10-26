@@ -37,6 +37,8 @@ import { itemScore, equipPeople, equipTools } from "./equip.js"; // the one hand
 import { planRepairs, benchWanted, repairCrafterWanted, repairHold, autoFieldRepairs, partNeeds, partDeficit, partPlan, kitWants, spareGun, queueRepair } from "./repair.js"; // the autopilot's repairs of worn gear // the autopilot fits loose gun attachments
 import { equipKit, governPlates } from "./carrykit.js"; // carry kit: rigs, plates in the carriers, spare magazines; spare plates kept // the autopilot's repairs of worn gear // the autopilot fits loose gun attachments
 import { GEAR, LOCATIONS, SUPPLIES, FACTION_TYPES, supValue, supWeight } from "./data.js";
+import { DEAD_HUNT, govHuntPick } from "./deadhunt.js"; // Hunt the dead (issue #68): the governor's hunts on its bases' tiles
+import { deadBand } from "./deadpop.js";
 import { log, day, hourOfDay, hub, alive, atBase, residents, skill, combatPower, gearEffect, factionById, survivorById, snapshot, armedFactor, archerCount, ARROWS, meleeAimBonus, meleeDmgMult } from "./world.js";
 import {
   launchExpedition, estimateTrip, startReturn, partyMembers, partyTile, tileLabel, teamName, orderOptions, orderMove,
@@ -653,6 +655,7 @@ export function autopilotDaily(state) {
   planSupplyRuns(state);
   planTrip(state);
   hubFoodRun(state); // a hunting or fishing trip when the food is short, outside the style's trip cadence
+  huntRuns(state); // deadhunt.js: a team hunts the dead on a base's own tile when they are medium or above there
   campaignReport(state); // one line a morning: what the campaign waits for
   supplyReport(state); // one line a morning when water or food is short: hauled, traded, made against drunk / eaten
   governorPlans(state); // defenceplan.js: a plan by role for a base whose battle map changed
@@ -5197,6 +5200,29 @@ function hubFoodRun(state) {
     return party;
   }
   return null;
+}
+
+// ---------- hunting the dead (deadhunt.js, issue #68) ----------
+// The heat epic #64 §6: "The governor sends hunts on its own bases' tiles when they are medium or above and it has the
+// strength." Each morning, for each base: the dead on its tile medium or above (deadpop.js deadBand), no team hunting
+// there already, none in the last GOV.every days, no threat at the gate and no storm; GOV.team of its fittest (by
+// combat power, 80 health or more, not the leader, not sick) go when GOV.home more stay (govHuntPick). They sweep the
+// tile for GOV.hours in the Normal stance and come home; each group met is attacked when the odds are good (the card's
+// ai: DEAD_HUNT.GOV.odds), else they slip away.
+export function huntRuns(state) {
+  if (gov(state).noHunting) return;
+  for (const base of [...state.bases]) {
+    if (wxNow(state).severe || threatAt(state, base).urgent) continue;
+    const home = atBase(state, base.id).filter((s) => !s.woundInfected && !s.inBed && !s.pinned && !s.leader && tripFit(state, s));
+    const pick = govHuntPick(state, base, home);
+    if (!pick.ids.length) continue;
+    const G = DEAD_HUNT.GOV;
+    const res = launchExpedition(state, { memberIds: pick.ids, fromBaseId: base.id, dest: base.tile, mission: "move", stance: "normal", supplies: { food: 1, water: 1 }, plan: { preset: "custom", steps: [{ kind: "deadhunt", hours: G.hours, stance: "normal" }, { kind: "home" }] } });
+    if (res.error) continue;
+    base.lastHunt = day(state);
+    res.party.apDeadHunt = true;
+    say(state, `Hunt the dead: ${names(pick.ids.map((id) => survivorById(state, id)))} sweep ${tileLabel(state, base.tile)} for ${G.hours}h (the dead there are ${deadBand(state, base.tile).word}).`);
+  }
 }
 
 // ---------- food from the land (hunting.js) ----------

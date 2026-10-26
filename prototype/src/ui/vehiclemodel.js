@@ -383,7 +383,7 @@ export const MODEL_NAMES = Object.keys(MODELS);
 // team's own vehicle ("vehicle") by its type (placeVehicle: VEHICLE_TYPES), else by its body: the Army trucks, the map's
 // box trucks, and a parked car a sedan at 2 × 3, a van or a pickup at 2 × 4 by its dice (as the prisms drew them).
 const CIVIC_MODEL = { engine: "fireengine", ambulance: "ambulance", police: "police", bookmobile: "van" }; // bookmobile: a bookmobile depot's van (sim/librarylayout.js, issue #34)
-const BODY_PAINT = { bookmobile: "#2d5a8a" }; // a body's own livery (the county library's blue)
+const BODY_PAINT = { bookmobile: "#2d5a8a", rv: "#dcd6c6", golfcart: "#e4e2da" }; // a body's own livery (the county library's blue; an RV's cream, a golf cart's white: sim/outdoors.js)
 const CIVIC_PAINT = { fireengine: "#a8241c", ambulance: "#dcdad2", police: "#22252a" };
 const AIR_PAINT = { jet: "#7d848c", helo: "#4d5a32", cargoplane: "#6b7058", airliner: "#d8d8d0" };
 const BY_TYPE = { truck: "pickup", sedan: "sedan", suv: "suv", hummer: "humvee", van: "van", miltruck: "m35", bike: "bicycle" };
@@ -395,7 +395,7 @@ export function modelOf(car) {
   if (CIVIC_MODEL[b]) return CIVIC_MODEL[b]; // a fire station's engine and ambulance, a police car (sim/civiclayout.js)
   if (car.kind === "vehicle") return BY_TYPE[car.type] || (b === "truck" ? "pickup" : "sedan");
   if (BY_TYPE[car.type]) return BY_TYPE[car.type]; // a team's vehicle parked at a base (sim/basemap.js: a "car" cell with its type): drawn as its type, not a box truck
-  if (b === "truck" || car.kind === "truck") return "boxtruck";
+  if (b === "truck" || car.kind === "truck" || b === "rv") return "boxtruck"; // rv: an RV or a trailer on its pad (sim/outdoors.js), a box body
   return car.L === 3 ? "sedan" : (car.v || 0) % 2 ? "van" : "pickup";
 }
 // The look: the colour, the weather on it and its upgrades. The team's own in its blue (an Army truck olive, its canvas
@@ -410,7 +410,7 @@ export function lookOf(car) {
   else if (model === "m35" || model === "humvee" || model === "mrap") { o.color = cond === "wrecked" ? MIL_WRECK : own && model === "humvee" ? mixHex(OLIVE_DARK, car.color || TEAM_BLUE, 0.5) : MIL_OLIVE; if (own && model === "m35") o.tint = car.color || TEAM_BLUE; }
   else if (car.color) { o.color = car.color; o.rust = false; } // a colour of its own (another group's vehicle in the trade window)
   else if (own) o.color = TEAM_BLUE;
-  else if (model === "boxtruck") o.color = BOX_RUST;
+  else if (model === "boxtruck" && !BODY_PAINT[car.body]) o.color = BOX_RUST; // an RV's own cream (BODY_PAINT, below)
   else if (BODY_PAINT[car.body]) o.color = BODY_PAINT[car.body];
   else if (CIVIC_PAINT[model]) o.color = CIVIC_PAINT[model];
   else if (AIR_PAINT[model]) o.color = AIR_PAINT[model];

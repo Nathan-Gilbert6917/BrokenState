@@ -23,7 +23,8 @@ import { partyMembers, tileLabel, clockFrac } from "../sim/parties.js";
 import { poiRows, poiRowText } from "../sim/poiraid.js";
 import { baseSpot, walkMap, walkPos } from "../sim/poiwalk.js";
 import { tileMapBg, poiMapSvg, PM_W, PM_H, toMap } from "./poimap.js";
-import { morePoisHidden, tileHeatEstimate } from "../sim/pois.js";
+import { morePoisHidden } from "../sim/pois.js";
+import { tileThreatLine, poiThreatCell } from "./threatui.js"; // the dead and raiders as known (issue #67)
 import { LOCATIONS } from "../sim/data.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -35,15 +36,12 @@ const THREAT_COLOR = ["var(--good)", "var(--text)", "var(--warn)", "var(--danger
 export function threatHtml(est) {
   if (!est) return `<span class="muted"${tip("Nobody has sized this place up: a Survey of the tile (8h) or a visit records a threat estimate.")}>threat unknown</span>`;
   const when = `${est.src === "survey" ? "surveyed" : "seen"} ${est.age < 1 ? "today" : `${Math.floor(est.age)}d ago`}`;
-  return `<span style="color:${THREAT_COLOR[est.band]}"${tip(`What your people made of it when they looked (${when}): the kind of place, the infection here, how stirred up the tile is (its heat), hive land. An estimate: the error grows with the days since (${Math.round(est.err * 100)}% now), so an old look says less. True threat decides the fight.`)}>${esc(est.word)}${est.skulls ? ` ${est.skulls}` : ""}</span> <span class="muted small">(${when}${est.stale ? ", stale" : ""})</span>`;
+  return `<span style="color:${THREAT_COLOR[est.band]}"${tip(`What your people made of it when they looked (${when}): the kind of place, the infection here, how many of the dead it holds, hive land. An estimate: the error grows with the days since (${Math.round(est.err * 100)}% now), so an old look says less. True threat decides the fight.`)}>${esc(est.word)}${est.skulls ? ` ${est.skulls}` : ""}</span> <span class="muted small">(${when}${est.stale ? ", stale" : ""})</span>`;
 }
 
-// The tile's heat as last seen (sim/pois.js tileHeatEstimate: the dead's band, deadpop.js): a line over the rows, or "" without a look.
-export function heatLine(state, tile) {
-  const h = tileHeatEstimate(state, tile);
-  if (!h) return "";
-  return `<div class="text small"><span${tip("Tile heat: how many of the dead are about this tile and its places, as your people last saw it (none, low, medium, high, overrun of what the land can hold). Kills bring it down; noise draws the tile's dead in, and the places refill from it. As last seen: what changed since is not known.")}>Tile heat: <span style="color:${THREAT_COLOR[h.band]}">${esc(h.word)}</span></span> <span class="muted">(seen ${h.age < 1 ? "today" : `${Math.floor(h.age)}d ago`}${h.stale ? ", stale" : ""})</span></div>`;
-}
+// The line over the places: the dead and raiders on the tile as last seen, live while the team is there (ui/threatui.js,
+// sim/threatknow.js tileThreatEstimate); "" without a look.
+export const threatLine = (state, tile) => tileThreatLine(state, tile);
 
 // The card's screen: the tile map, the picked place's details and its buttons, the list of places folded at the side.
 export function poiPickModal(state, card) {
@@ -58,7 +56,7 @@ export function poiPickModal(state, card) {
   const likely = (r) => { const def = LOCATIONS[r.kind]; return `${def ? def.name : r.kind}: likely ${Object.keys((def && def.loot) || {}).slice(0, 4).join(", ") || "little"}.`; };
   const walk = (r) => `<span class="${r.mins ? "" : "muted"}"${tip(r.mins ? `Minutes ${r.drive ? "by the team's vehicle" : "on foot"} from where the team stands on the tile (the place it last went into, else the edge it came onto the tile by, else its base here), over the ground between: brush, slopes, rubble, a road (a tile is about an hour across on foot, half that driven). Picking it starts the way there when the clock runs, then the raid.` : "The team stands at this place: it goes straight in.")}>${r.mins ? `${r.drive ? "🚗" : "🚶"} ${r.mins} min` : "📍 You are here"}</span>`;
   // What is known of a place: its visits and threat, then the campsite, the containers, another group in it now.
-  const facts = (r) => `<span class="muted">${esc(r.visits)}</span> · ${threatHtml(r.threat)}${r.camp ? `<br><span${tip("A campsite: abandoned (a few of the dead about, the best loot left), overrun (a pack of the dead among the tents) or an active raider camp (a band round a lit fire; at night some asleep in the tents). As your people last saw it: a survey or a visit looks again. Tents can be taken down and carried off.")}>${esc(r.camp)}</span>` : ""}${r.cont ? `<br><span class="muted">${esc(r.cont)}</span>` : ""}${r.raiding ? `<br><span class="danger">Another group is raiding it right now.</span>` : ""}`;
+  const facts = (r) => `<span class="muted">${esc(r.visits)}</span> · ${threatHtml(r.threat)}${r.dead ? `<br>${poiThreatCell(r.dead)}` : ""}${r.camp ? `<br><span${tip("A campsite: abandoned (a few of the dead about, the best loot left), overrun (a pack of the dead among the tents) or an active raider camp (a band round a lit fire; at night some asleep in the tents). As your people last saw it: a survey or a visit looks again. Tents can be taken down and carried off.")}>${esc(r.camp)}</span>` : ""}${r.cont ? `<br><span class="muted">${esc(r.cont)}</span>` : ""}${r.raiding ? `<br><span class="danger">Another group is raiding it right now.</span>` : ""}`;
   const bandHtml = (r) => `<span style="color:${BAND_COLOR[r.band]}"${tip("What is left against what the place held untouched: rich (60%+), some (30%+), little (10%+), picked clean. Each place has its own loot, and nothing grows back.")}>${esc(r.bandName)}</span>`;
   // The map.
   const wm = p ? walkMap(state, p, rows.map((r) => r.i), tile) : { from: { spot: [0, 0], poi: null, edge: null }, places: [] };
@@ -96,7 +94,7 @@ export function poiPickModal(state, card) {
   return `<div class="box wide poipick">
     <h1>${esc(card.title)}</h1>
     <div class="where">${esc(tileLabel(state, tile))}${who ? ` · ${esc(who)}` : ""}</div>
-    ${heatLine(state, tile)}
+    ${threatLine(state, tile)}
     <div class="text small">${rows.length === 1 ? "One place is known here" : `${rows.length} places are known here`}${more ? `, <span${tip("Something here may still be off your map: a Survey of the tile (8h) finds what hides, a Quick look (2h) has a chance at each. Never a count.")}>possibly more unknown</span>` : ""}. The team goes into one at a time, walking there first: pick a place on the map${rows.length > 1 ? " (or in the list of places)" : ""}, then run the clock. The dashed lines are the ways on foot from where your team stands; the arrows on the sides leave the tile that way.</div>
     <div class="pm-body">${map}${list}</div>
     <div class="choices">${rest.map(({ c, i }) => `<button data-action="choice" data-i="${i}"${tip(c.hint)}>${esc(c.label)}${c.hint ? `<span class="hint">${esc(c.hint)}</span>` : ""}</button>`).join("")}</div>

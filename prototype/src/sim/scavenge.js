@@ -29,7 +29,7 @@ import {
   partyMembers, bestSkill, carryCapacity, partyCapacity, cargoLoad, cargoRoom, supplyLoad, unitsThatFit, awaitOrders, tileLabel, wipeParty,
   wipeIfEmpty, leaveVehicle, addGearToCargo, PICKED_OVER, teamName,
 } from "./parties.js";
-import { poiAt, poiPool, poiTake, poiName, knownPois, visitPoi, addTileHeat, exitHeat, shotsHere, noteTileHeat, TILE_HEAT } from "./pois.js"; // the place searched: its kind, its pool, its visits; the tile's noise (tile heat's wrappers)
+import { poiAt, poiPool, poiTake, poiName, knownPois, visitPoi, addTileHeat, exitHeat, shotsHere, notePoiThreat, TILE_HEAT } from "./pois.js"; // the place searched: its kind, its pool, its visits, a look at what is left there; the tile's noise (tile heat's wrappers)
 import { DEADPOP, poiDead, poiRaiders, poiDefault, tileDead, openRaiders, earshot, noiseOf, surgeDraw, killDead, noteNoise, deadBand } from "./deadpop.js"; // the dead and raiders on the tile and in its POIs (issue #65)
 import { poiRaidEnd, lootPoiAbstract, poiHouses, CONT } from "./poicont.js"; // the containers a place keeps between visits; a street of houses
 import { folkAfterPlace } from "./floorfolk.js"; // a campus's survivors who agreed to join (issue #28)
@@ -294,7 +294,7 @@ export function afterRaid(state, result, setup, battle = null) {
   else takePoi(t, poi, 0.07 * r.searched);
   if (poi != null) {
     noteNoise(state, t, poi, exitHeat(APPROACHES[raidApproach(r.heat)].heat, shotsHere(state, setup.tile))); // deadpop.js: the tile's noise memory (tile heat's) and the place's
-    noteTileHeat(state, t);
+    notePoiThreat(state, t, poi, "visit"); // pois.js / threatknow.js (issue #67): coming out, a look at the dead left in the place and on the tile
   }
   // Guards who saw you, or died, hold it against you.
   if (r.alerted) for (const id of setup.context.factionIds || []) {
@@ -348,7 +348,7 @@ export function searchExitHeat(state, e, shots = true) {
   const ap = APPROACHES[e.approach] || APPROACHES.normal;
   noteNoise(state, e.tile, e.poi, exitHeat(ap.heat, shots ? e.shots || 0 : 0)); // deadpop.js: the tile's noise memory (tile heat's) and the place's
   if (shots) e.shots = 0;
-  noteTileHeat(state, e.tile);
+  notePoiThreat(state, e.tile, e.poi, "visit"); // pois.js / threatknow.js (issue #67): coming out, a look at the dead left in the place and on the tile
 }
 
 export function engagementParty(state) {

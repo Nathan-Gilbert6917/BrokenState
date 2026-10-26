@@ -1220,6 +1220,69 @@ The user's request (2026-10-26, issue #59 of the round-2 epic #39): "zoos", maps
 - **Scenes** (zoolayout.js, `registerScene` with `when`; rolled on the whole map, key "zoo": `SCENES.ODDS.zoo` 0.95, `COUNT_BY.zoo` [0.8, 0.5], `BY_KIND.zoo`): `emptycages` (an animal house's dens standing open and empty, their doors forced or wide, blood and a trail toward the keepers' door, a keeper's clipboard: "LET THEM OUT"); `keepersstand` (the keepers' last stand: a keepers' room boarded from inside, a table against the door, one or two keepers' bodies, the dart rifle's case with spare darts and the sedatives, the dead they put down outside); `escaped` (an enclosure broken open: 3–6 metres of its fence torn down, the keepers' gate wide, the remains of what was kept there, sometimes a keeper's body by the gate). The usual scenes (overrun, barricade, choke, quiet) come too, less often.
 - **Raid and the State Map**: the arrival line names the plan and its buildings; the intro (`zooIntro`) the buildings, the exhibits, the enclosures where the beasts walk, the back of house and the ways out (both ends of the road: the team comes in at the west end with its vehicle; north of the zoo, west of the zoo, behind the back of house). poicont.js `poiHouses` counts its buildings (`zooBuildings`) for the headless search and the AI's. ui/mapsprites.js `paintZoo` (the entrance arch, a giraffe over the fence).
 
+## Golf courses, campgrounds and RV parks
+
+The user's request (2026-10-26, round-2 epic #39, issue #61): "golf clubhouse, camp grounds, RV parks". Each is one raid map of the whole place (`outdoors.js outdoorMap`), built on compound.js as a campus is: its buildings in a row along the access road (two rows when they do not fit), each its own plan, rooms, containers and signs of survival, and its grounds behind them. Map caps: 300 × 300 (`battlesize.js MAP_CAP`, the epic's default); the maps measured 113 × 102 (a primitive site) to 261 × 255 (a resort clubhouse), each built in 2–125 ms.
+
+- **The kinds.** `golfcourse` and `rvpark` are new site types (`data-outdoors.js OUTDOOR_KINDS`, merged by data-shops.js into data.js LOCATIONS, loot.js SITE_TAGS, combat.js AREA_SETS, battlesize.js SIZES.SITE), placed as POIs (`buildingmaps.js SITES`). `campground` is mapgen.js's old forest site: a new world's opens the whole place (`buildingmaps.js OUTDOOR_SITES`), and a new world's lakes and woods may hold one more as a POI.
+- **The variants** (registered with the shared picker, variantpick.js, under the kind's key; picked with #42's `placementCtx`: the tile's class, its setting and the placement table's size class for the kind, each variant's own `sizeClass`; a pin by `option.layout` or `option.plan`; the map's `vid` / `vname`; buildingmaps.js `buildingPlan` gives the same variant without building the map, from the site's own dice: `outdoorVariant`). Main building sizes: `data-buildingsize.js REAL_SIZE golfcourse / campground / rvpark`, a `sizes` row per variant.
+
+| Golf course (`GOLF_VARIANTS`) | Size | Buildings | Grounds |
+|---|---|---|---|
+| Country club | large | clubhouse (2 storeys: dining room, lobby, pro shop, kitchen, grill-room bar, men's and women's locker rooms, manager's office; ballroom, members' lounge, board room), cart barn, maintenance shed, starter's hut, pool house | 5–9 holes, ponds, bunkers, a pool, a parking lot |
+| Municipal course | medium | clubhouse (grill room, pro shop, snack-bar kitchen, locker room, pro's office), cart barn, maintenance shed, starter's hut | 5–9 holes |
+| Resort clubhouse | large | clubhouse (2 storeys: lobby, pro shop, terrace restaurant, spa locker rooms, terrace bar, kitchen, director's office; banquet hall, golf suites), cart barn, maintenance shed, starter's hut, pool house | 6–9 holes, a lake to the north, a pool |
+| Links clubhouse | medium | stone clubhouse (2 storeys: the Nineteenth hole bar, pro shop, locker room, secretary's office, kitchen; members' dining room, trophy room, steward's flat), maintenance shed, starter's hut | 5–8 holes among dunes, few trees, by the water |
+| Driving range | small | range shed (ball shop, snack counter, ball room), maintenance shed | the range: the tee line under its canopy, targets, floodlights, netting |
+| Mini-golf and range | small | mini-golf office (counter, snack bar, office), range shed | a mini-golf course of up to 18 walled felt holes, a range |
+| Par-3 course | small | municipal clubhouse, starter's hut | 3–6 short holes |
+| Executive nine | medium | municipal clubhouse, cart barn, starter's hut | 4–7 holes |
+| Prairie course | medium | municipal clubhouse, maintenance shed, cart barn | 5–8 holes on open field, many bunkers |
+| Parkland club | large | country clubhouse, cart barn, maintenance shed, starter's hut | 6–9 holes among many trees and ponds, five ways out |
+| Old private club | large | links clubhouse, cart barn, maintenance shed, starter's hut, pool house | 5–9 holes, a pool |
+| Lakeside golf club | large | resort clubhouse, cart barn, maintenance shed, starter's hut | 5–8 holes, a lake, a boat launch |
+
+| Campground (`CAMP_VARIANTS`) | Size | Buildings | Grounds |
+|---|---|---|---|
+| State park campground | large | entrance station (the ranger station's fee booth), campground office (camp store, staff kitchen, coin laundry, showers), 1–2 bathhouses | 2 loops, 24–40 tent sites, a pavilion |
+| Primitive campsite | medium | a vault toilet | 6–12 sites on the dirt, no pads |
+| Scout camp | large | mess hall (the camp lodge), craft lodge (the scout lodge), nurse's cabin, bathhouse, 3–6 bunkhouse cabins | a loop of 8–14 sites, a tent field, a pavilion |
+| Group camp | large | mess hall, bathhouse, 2–4 bunkhouse cabins | 6–10 sites, a tent field, a pavilion |
+| Glamping resort | large | reception lodge (the retreat lodge), bathhouse, 3–6 yurts, pool house | 8–16 sites of four-person safari tents, a pavilion, a pool, a lot |
+| Lake campground | large | campground office, bait and tackle, bathhouse | 16–28 sites, a lake, a boat launch and a dock |
+| Forest service campground | medium | ranger station, 1–2 vault toilets | 10–18 sites in the trees |
+| Riverside campground | medium | campground office, boat shed, bathhouse | 12–20 sites, a river, a launch |
+| Backpackers' camp | medium | visitor centre, vault toilet, 2–3 trail shelters | 8–14 sites on the dirt |
+| Summer youth camp | medium | mess hall, nurse's cabin, bathhouse, 4–6 cabins | a tent field, a pavilion, a lake and a launch |
+| Family campground | large | campground office, bathhouse, 2–4 cabins, pool house | 2 loops, 20–34 sites (campers among them), a pavilion, a pool, a lot |
+| Hunters' camp | medium | hunting lodge, skinning shed, 1–3 cabins | 6–12 sites |
+
+| RV park (`RV_VARIANTS`) | Size | Buildings | Grounds |
+|---|---|---|---|
+| Highway RV park | medium | park office (front desk, park store, manager's office, store room), laundry and showers | 2–4 rows of pads, the dump station, a pool |
+| Resort RV park | large | park office, rec hall (hall, kitchen, card room), laundry, pool house | 3–5 rows, big rigs, a court, the dump station, a pool, a lot |
+| Mobile home and RV park | large | park office, laundry, 4–7 mobile homes | 2–3 rows, the dump station |
+| Desert boondocking lot | small | a vault toilet | 8–16 RVs where they stopped on the dirt |
+| Lakeside RV resort | large | park office, bait and tackle, laundry | 2–4 rows, a lake, a boat launch |
+| Overnight RV stop | small | park office | 1–2 rows, the dump station |
+| Snowbird park | large | park office, rec hall, laundry | 3–5 full rows, a court, a pool |
+| Work camp | small | crew office, laundry | 1–3 rows of crew trailers, a fuel tank |
+| Old trailer court | medium | park office, laundry, 1–3 mobile homes | 2–3 rows of old trailers |
+| RV park in the pines | medium | park office, laundry | 2–3 rows among the trees |
+| Riverside RV park | medium | park office, laundry | 2–3 rows, a river, a launch |
+| Motorcoach resort | large | park office, rec hall, pool house, laundry | 3–4 rows of motorcoaches, a court, a pool, a lot |
+
+- **The grounds.** Golf (`golfGrounds`): holes as strips north to south, each a fairway (floor `fairway`, mown stripes) from a tee to a green (`green`), bunkers (`sand`), a pond beside it now and then, a cart path, trees between the holes; carts parked by the cart barn and out on the paths (AREAS `golfcart`, each a container), the fuel tank by the cart barn. Campgrounds (`campGrounds`): gravel loops with 6 × 6 sites along both sides, each a pad, a picnic table, a fire ring, a cooler (AREAS `tentsite`), a tent (campsite.js's tent cells, its storage a `tent` container rolled by campsite.js `tentBoxLoot`), a parked car or a camper; a group field of tents, a pavilion. RV parks (`rvGrounds`): drives with a row of back-in pads either side, each pad's RV or trailer a container (AREAS `rvpad`: a box body, ui/vehiclemodel.js `rv`), a hook-up light, a picnic table; the dump station, a court, a fuel tank. Shared: a fenced drained pool with loungers (`pool`), a lake or a river along the north edge with a gravel ramp, a dock and boat trailers (`launch`). Everything goes through compound.js `guard`: nothing cuts a walkable cell off from the way in.
+- **The ways out**: both ends of the access road (the team's vehicle at the west), then by the variant's `ways` the north edge (none with water there), the west and the east edges.
+- **The dead**: the site's roster × `deadScale` (the built and used area / 2,500, ^0.7, 1 to 3.5); `outsideDead` of them on the grounds (golf 45%, campground 55%, RV park 60%: buildingmaps.js placeInterior reads `map.outsideDead`, else BMAP.OUTSIDE_DEAD).
+- **Loot** (`data-outdoors.js OUTDOOR_AREAS`; `lootsense.js LOOT_SENSE` rows golfcourse, campground, rvpark): the pro shop (clubs, bags, a jacket), the clubhouse bar (data-shops.js's bar: liquor, its gun behind the counter now and then), the cart barn (fuel, parts, tools), the golf carts (a bag of clubs, water); the camp store (food, water, propane and camp fuel, first aid, camping gear), the bathhouse's first-aid box, the tent sites' coolers, the tents' storage; each RV's stores (food, water, propane, fuel, first aid, camping gear, a revolver or a shotgun now and then: lootsense.js PERSONAL, someone's home), the coin laundry (clothes and bags). A building's container holds what it would in its own map (`outdoorshare.js outdoorLootShare`), an outdoor one what it would on an ordinary raid map; Heat by what was searched (`outdoorHeatRate`).
+- **Scenes**: `lastround` (registerScene, `when` the map has a bar): a clubhouse bar's last round, glasses on the bar and the ones who drank it; the buildings' usual scenes too (rolled on each building as a campus's).
+- **AI parity**: other groups loot them through the POI rules; poicont.js `poiHouses` counts the place's buildings and a share of its grounds (`outdoorHouses`).
+- **Placement** (#42): `data-placement.js PLACEMENT_ROWS` golfcourse (suburb large, town and city medium, a driving range small by the road), rvpark (highway medium, coast large, scenic medium, rural small), campground (coast large, scenic medium); `placement.js PLACE_EXTRA` (a new world only, its own dice): golf courses on 2% of suburb tiles, 1.2% of town tiles and a few in the country, RV parks on 1.2% of highway tiles, 0.6% of coast and fewer elsewhere, a campground on 0.4% of coast tiles.
+- **Older saves**: a save from before (no `state.outdoorsV`: save.js marks it `outdoorsLegacy`, worldcfg.js `legacyOutdoors`) gets none of the new places and its campgrounds keep their street map; nothing of an existing type changed.
+- Modules: outdoors.js, outdoorshare.js, data-outdoors.js, buildingmaps.js (BUILDINGS golfcourse, campground, rvpark; SITES; OUTDOOR_SITES), data-buildingsize.js, data-placement.js, placement.js, lootsense.js, poicont.js, combat.js, battlesize.js, ui/mapsprites.js (`paintGolfCourse`, `paintRvPark`), ui/isoview.js (the floors), ui/vehiclemodel.js (the bodies).
+- Tests: `tools/varianttest.js` (36 new plans, every one reachable and pinned; each kind 12+ distinct plans), `tools/lootsensetest.js` (the three rows and their baselines), `tools/placementtest.js`, `tools/plannametest.js`, `tools/poispritetest.js`, `tools/maptest.js`, `tools/loottest.js`.
+
 ## Libraries
 The user's requests (2026-10-25, issue #34 of the interiors epic #7): "add library variants with several layouts and sizes"; then "for buildings with no to only a few varients create a dozen varients per building type" (relayed by the orchestrator: at least 12 named variants). Module `sim/librarylayout.js`; test `tools/librarytest.js`; renders `tools/libraryshot.cjs` (every plan loaded straight into a raid, `setup.raid.place = { id, key: "library", name, variant: "<variant>/<plan>" }`, fully revealed, one image a floor).
 - **Thirteen variants, twenty-six plans** (`LIBRARY_VARIANTS`, `LIBRARY.SIZE`: a cell a metre, outer walls included; #24's `REAL_SIZE.library` row marks them `planned`, so `realScale` leaves each variant's footprint as drawn, and the spec's `real` builds every floor). `buildingmaps.js library` calls `libraryPlan(rng, { variant })` for a new save; each variant has two plans by the building's dice (`libraryVariant`):
