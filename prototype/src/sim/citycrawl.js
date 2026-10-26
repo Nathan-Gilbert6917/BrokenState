@@ -70,9 +70,9 @@ import { crawlGuns } from "./gunfinds.js";
 import { deepShift, cacheChance, isFine, valuePerKg, wantOf, DEEP } from "./deeploot.js"; // deeper blocks hold what is dear by the kilo; a full team swaps
 import { itemValue } from "./valuation.js";
 import { atBase } from "./world.js";
-import { shopPlaces, civicPlaces, crawlFranchise, franchiseName } from "./shops.js"; // the shops and services on a block besides its own (their own dice), a place's franchise
+import { shopPlaces, civicPlaces, crawlFranchise, franchiseName, SHOP } from "./shops.js"; // the shops and services on a block besides its own (their own dice), a place's franchise
 import { PLACE_W } from "./data-shops.js"; // a shop's crawl place stats (rich, dead, rare)
-import { hotelPlace, HOTELS } from "./hotels.js"; // a hotel on a block now and then (issue #29), its place stats
+import { hotelPlace, hotelVariantOf, HOTELS } from "./hotels.js"; // a hotel on a block now and then (issue #29), its place stats
 import { OFFICE_CIVIC } from "./data-offices.js"; // city hall's and the courthouse's (issue #27)
 import { piecesOut, piecesText, crawlPieces as homePieces } from "./furnihome.js"; // furniture carried out of a building: the vehicle or exhaustion at the rim (issue #18; the walk's pace: carryPace, by pairs)
 import { gridOf, inGrid, isEdge, levelOf, ringOf, maxLevel, entryOf, headingToward, turn, rimOf, pathToRim, dirTo, keyOf, xyOf, DIRS, DIR_NAMES, cellsOf } from "./citygrid.js"; // the round grid of blocks (2026-10-13)
@@ -481,6 +481,7 @@ export function genBlock(state, c, cell = c.cell) {
     const v = crawlFranchise(state, c.tile, cell, j, key, setting, n); // shops.js: its franchise (its name, its layout; none for a kind without)
     const place = {
       id, slot: j, key, name: `${v ? franchiseName(key, v) : BUILDINGS[key].name} on ${street}`, kind: BUILDINGS[key].name, rare: !!P.rare, ...(v ? { v } : {}),
+      ...(key === "hotel" && v ? { hv: hotelVariantOf(v, setting === "town" ? "town" : n <= SHOP.OUTER ? "suburb" : "city", hash01(state.seed, "crawlhotelvar", c.tile, cell)) } : {}), // a hotel's variant (issue #38), on dice of its own
       dead: P.dead * (0.85 + rng.next() * 0.3), rich: P.rich, raiders,
       looted: mem.looted[id] || 0, // picked over by an earlier crawl
       blocked: null, quick: false,
@@ -604,7 +605,7 @@ export const placeOption = (c, place, n = c.block) => {
   const snap = c.buildings && c.buildings[place.id];
   const variant = (snap ? snap.v : place.v) || null;
   const scenes = { dead: place.dead ?? 1, raiders: !!place.raiders, looted: place.looted || 0, rich: place.rich ?? 1, survivors: !!(place.folk && place.folk.survivors) };
-  return { id: `cc${n}-${place.slot}`, key: place.key, name: place.name, storeyBonus: storeyBonus(n), ...(variant ? { variant } : {}), scenes };
+  return { id: `cc${n}-${place.slot}`, key: place.key, name: place.name, storeyBonus: storeyBonus(n), ...(variant ? { variant } : {}), ...(place.hv && variant === place.v ? { plan: place.hv } : {}), scenes }; // plan: a hotel's variant (issue #38)
 };
 // How many storeys a place has (the block card): the archetype's dice for this place, without building its map.
 export function placeStoreys(state, c, place, n = c.block) {
@@ -621,20 +622,22 @@ export function placeHeight(state, c, place, n = c.block) {
 // The block card's hint line (issue #21 rule 4): the kind, its storeys (this place's own, placeStoreys) and the kind's
 // signature rooms from its archetype (buildingmaps.js buildingHint: a sample plan's rooms), the most numerous first, then
 // the first of the rest, the plain ones (HINT_PLAIN: corridors, restrooms, storage...) left out: "Hospital: 4 floors,
-// wards, a pharmacy" (a taller one "Office building: 4 floors open of 9, offices"). At most HINT_ROOMS rooms.
+// wards, a pharmacy" (a taller one "Office building: 4 floors open of 9, offices"). At most HINT_ROOMS rooms. A shop's or
+// a service's layout variant after its kind (shopvariants.js, issue #35): "Pharmacy (Chain drugstore with a
+// drive-through): 1 floor, …".
 const HINT_PLAIN = new Set(["Corridor", "Restroom", "Bathroom", "Bath", "Storage", "Lobby", "Office", "Landing", "Walkway", "Stockroom", "Storeroom", "Back room", "Linen room",
   "Utility room", "Maintenance", "Supply room", "Reception", "Front desk", "Waiting room", "Break room", "Flat", "Restrooms"]);
 const HINT_ROOMS = 2;
 const plural = (w) => (/s$/.test(w) ? w : /[^aeiou]y$/.test(w) ? `${w.slice(0, -1)}ies` : `${w}s`);
 export function placeHint(state, c, place, n = c.block) {
-  const st = placeStoreys(state, c, place, n), ht = placeHeight(state, c, place, n);
+  const st = placeStoreys(state, c, place, n), ht = placeHeight(state, c, place, n), lay = (buildingSpec(state, c.tile, placeOption(c, place, n)).layout || {}).name || ""; // lay: a shop's or a service's variant (shopvariants.js, issue #35)
   const sig = (buildingHint(place.key).sig || []).filter((r) => !HINT_PLAIN.has(r.name) || r.n >= 4); // a plain room the kind is made of counts (an office tower's offices)
   const many = sig.filter((r) => r.n > 1).sort((a, b) => b.n - a.n).slice(0, 1);
   const rest = sig.filter((r) => !many.includes(r));
   const rooms = [...many, ...rest.filter((r) => r.n === 1), ...rest.filter((r) => r.n > 1)].slice(0, HINT_ROOMS);
   const one = (w) => (/s$| and /.test(w) ? w : aWord(w)); // "sporting goods", "lumber and stock": no article
   const words = rooms.map((r) => (r.n > 1 ? plural(r.name.toLowerCase()) : one(r.name.toLowerCase())));
-  return `${place.kind}: ${st} ${st === 1 ? "floor" : "floors"}${ht > st ? ` open of ${ht}` : ""}${words.length ? `, ${words.join(", ")}` : ""}`; // a tower's floors above are blocked off
+  return `${place.kind}${lay ? ` (${lay})` : ""}: ${st} ${st === 1 ? "floor" : "floors"}${ht > st ? ` open of ${ht}` : ""}${words.length ? `, ${words.join(", ")}` : ""}`; // a tower's floors above are blocked off
 }
 
 // ---------- the team ----------

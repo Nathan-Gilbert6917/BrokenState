@@ -25,6 +25,7 @@ export const BLADE_FINDS = {
   pawnshop: { p: 0.07, items: { huntknife: 1.5, bowie: 1, survivalknife: 1.5, lockback: 1.5, bayonet: 0.5 } }, // shops.js
   police: { p: 0.03, items: { flipknife: 1.5, balisong: 1, shiv: 0.3 } }, // the evidence lockers
   prison: { p: 0.05, items: { shiv: 3, flipknife: 0.5 } },
+  jail:   { p: 0.05, items: { shiv: 3, flipknife: 0.5 } }, // a county jail (issue #31): the prison's
   military: { p: 0.05, items: { bayonet: 2, survivalknife: 1 } },
   crash_mil: { p: 0.03, items: { bayonet: 1, survivalknife: 0.5 } },
   convoy: { p: 0.03, items: { bayonet: 1, survivalknife: 0.5 } },

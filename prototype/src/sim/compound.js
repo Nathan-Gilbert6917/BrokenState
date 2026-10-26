@@ -15,7 +15,8 @@
 //     way up turned), a piece's facing (c.fc), a car's cells, the decor's sides; o.solid: the world sides ("n", "s",
 //     "e", "w") whose outer wall is shared with a neighbour (its windows walled up: an inline shop's side walls).
 //     Returns the placed record (its rect, front door, exits with their world side, rooms).
-//   - connect(C, from, to, o): a corridor ("corridor": walls both sides, a door at each end), a covered walkway
+//   - connect(C, from, to, o): a corridor ("corridor": walls both sides, a door at each end; o.sally: a cross wall with a
+//     third door in its middle, two doors with a space between: a prison's sally port, #31), a covered walkway
 //     ("walkway": open sides, a canopy over it, c.canopy) or a bridge between two upper floors ("bridge": floor o.f,
 //     railings both sides) along a straight line of cells from one building's outer wall to another's; a room of its
 //     own (role o.role, else "corridor") so the dead and the living path through it. Returns the area. link(C, a, b, o)
@@ -214,6 +215,15 @@ export function connect(C, from, to, o = {}) {
     if (!c) continue;
     if (c.k === "wall" || c.k === "window" || c.k === "smashed") { const dk = o.dk || (kind === "walkway" ? "glass" : "wood"), hp = DOOR_HP[dk] || DOOR_HP.wood || 30; cells[I(x, y)] = { ...c, k: kind === "walkway" ? "odoor" : "idoor", dk, hp, mhp: hp }; delete cells[I(x, y)].win; } // its hit points by its kind (DOOR_HP)
     doors.push([x, y]);
+  }
+  // A sally port (o.sally, prison.js): a cross wall half way along with its own door (at the line's first row).
+  if (o.sally && kind === "corridor" && len - 1 >= 5) {
+    const s = Math.floor(len / 2);
+    for (let j = 0; j < wd; j++) {
+      const x = horiz ? x0 + s * sx : x0 + j, y = horiz ? y0 + j : y0 + s * sy;
+      cells[I(x, y)] = j === 0 ? { k: "idoor", f: "floor", fl, dk: o.dk || "wood", sally: true } : { k: "wall", f: "floor" };
+      if (j === 0) doors.push([x, y]);
+    }
   }
   const xs = [x0, x1, horiz ? x0 : x0 + wd - 1], ys = [y0, y1, horiz ? y0 + wd - 1 : y0];
   const area = {

@@ -63,7 +63,9 @@
 //     seeds: the lobby with its reception desk, key rack and locked safe; guest floors of rooms each with a bed and its
 //     en suite bathroom (a toilet, a sink, a tub or a shower); housekeeping on every guest floor; two stair runs at 6+
 //     floors (every big hotel has two); the laundry and the kitchen (and its walk-in) back of house; every walkable cell
-//     reachable on every floor; the map within 200 × 200; an inn's 10–20 rooms; the loot of each kind, reported.
+//     reachable on every floor; the map within 200 × 200; an inn's 10–20 rooms; the loot of each kind, reported. Each of
+//     the kind's dozen variants in turn (issue #38: data-hotels.js), the kind's own rooms checked on its classic plan (#29's);
+//     each variant's own in tools/hotelvarianttest.js.
 //   - warehouses, factories and labs (industrylayout.js, issue #37): every one of their plans pinned is reached from the
 //     front and up its stairs, nothing cut off, with its signature pieces (tools/industryvarianttest.js goes further).
 // Usage: node tools/interiortest.js [seeds per archetype] [raids]
@@ -77,7 +79,7 @@ import { noiseAt } from "../src/sim/stealth.js";
 import { newItem, stow } from "../src/sim/inventory.js";
 import { raidEnemies } from "../src/sim/scavenge.js";
 import { raidBuildings, buildingPickFor } from "../src/sim/poiraid.js"; // a site's building, picked before the map
-import { BUILDINGS, SITES, assemble, siteBuildings, buildingMap, buildingOptions, placeOccupantGroups, windowsNear, BMAP, runSteps, runLandings } from "../src/sim/buildingmaps.js";
+import { SCHOOL_VARIANTS, BUILDINGS, SITES, assemble, siteBuildings, buildingMap, buildingOptions, placeOccupantGroups, windowsNear, BMAP, runSteps, runLandings } from "../src/sim/buildingmaps.js";
 import { HOME_STYLES, HOME_KEYS, MEDICAL_STYLES, MED_KEYS } from "../src/sim/roomlayout.js";
 import { rollScenes } from "../src/sim/interiorscenes.js";
 import { COMMERCIAL_KEYS, styleName } from "../src/sim/shoplayout.js";
@@ -95,6 +97,7 @@ import { Rng } from "../src/sim/rng.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
 import { mapCap } from "../src/sim/battlesize.js"; // a building's own map cap (a hotel's 200 × 200, issue #29)
 import { HOTEL } from "../src/sim/hotellayout.js";
+import { hotelVariantsOf, CLASSIC } from "../src/sim/data-hotels.js"; // a dozen variants a kind (issue #38)
 import { FRANCHISES } from "../src/sim/data-shops.js";
 
 const SEEDS = Number(process.argv[2] || 6);
@@ -656,7 +659,7 @@ console.log("\nHomes room by room (roomlayout.js)");
     let v = 0, n = 0;
     for (let s = 0; s < 200; s++) {
       const rng = new Rng(9000 + s * 104729 + 5);
-      const m = assemble(rng, BUILDINGS.house.make(rng, { legacy }), { key: "house", name: "House", legacy });
+      const m = assemble(rng, BUILDINGS.house.make(rng, { legacy, layout: "twostorey" }), { key: "house", name: "House", legacy }); // the classic two-storey house, furnished old and new (its other layouts' loot: tools/varianttest.js, issue #32)
       for (const c of m.containers) { const a = m.rooms.find((r) => r.id === c.area); if (a && a.type) { v += value(boxLoot(a.type, c.kind)); n++; } }
     }
     return { v: v / 200, n: n / 200 };
@@ -982,7 +985,7 @@ console.log("\nPolice stations, fire stations, schools and churches laid out for
   const sw = createWorld({ seed: 11, factionCount: 2 }), stiles = sw.tiles.filter((t) => t.loc).slice(0, 4);
   const seenKinds = new Set();
   let turnedOk = true;
-  for (const key of ["police", "school", "church"]) for (let i = 0; i < (key === "church" ? 60 : 30); i++) { // a church's pewdoors comes up about one map in 14: 60 of them (issue #24's real-size churches drew a run of 30 without it)
+  for (const key of ["police", "school", "church"]) for (let i = 0; i < (key === "police" ? 30 : 60); i++) { // a church's pewdoors comes up about one map in 14: 60 of them (issue #24's real-size churches drew a run of 30 without it); a school's gymshelter one in 10 (issue #23's one-room schoolhouse has no gym)
     const m = buildingMap(sw, stiles[i % stiles.length].id, { key, id: `${key}-${i}`, name: key }, false);
     for (const sc of (m.scenes && m.scenes.list) || []) {
       seenKinds.add(sc.kind);
@@ -1082,9 +1085,10 @@ console.log("\nFootprint shapes: buildings that are not boxes (issue #23)");
   // schools, hospitals, churches and motels are not plain rectangles, and an L, a T or a U turns up for each.
   const share = {};
   const CLASSIC = new Set(["police", "firestation", "hospital", "church"]); // issue #36's dozen plans a kind: the classic plan ("general") is the shaped one
+  const LAYOUT = { house: "twostorey", motel: "court" }; // issue #32's dozen layouts a kind: the classic layout is the shaped one
   for (const key of ["house", "school", "hospital", "church", "motel", "police", "firestation", "offices", "apartments", "grocery", "gasstation"]) {
     const t = { n: 0, shaped: 0, kinds: {} };
-    for (let s = 0; s < 200; s++) { const sp = BUILDINGS[key].make(new Rng(31000 + s * 7919), { shapes: true, ...(CLASSIC.has(key) ? { plan: "general" } : {}) }); t.n++; if (sp.shape) { t.shaped++; t.kinds[sp.shape.kind] = (t.kinds[sp.shape.kind] || 0) + 1; } }
+    for (let s = 0; s < 200; s++) { const sp = BUILDINGS[key].make(new Rng(31000 + s * 7919), { shapes: true, ...(CLASSIC.has(key) ? { plan: "general" } : {}), ...(LAYOUT[key] ? { layout: LAYOUT[key] } : {}) }); t.n++; if (sp.shape) { t.shaped++; t.kinds[sp.shape.kind] = (t.kinds[sp.shape.kind] || 0) + 1; } }
     share[key] = t;
   }
   const line = (k) => `${k} ${share[k].shaped}/${share[k].n} (${Object.entries(share[k].kinds).map(([q, n]) => `${q} ${n}`).join(", ")})`;
@@ -1099,23 +1103,48 @@ console.log("\nFootprint shapes: buildings that are not boxes (issue #23)");
   let sOk = 0, foot = 0, floorsNew = 0, floorsOld = 0, footOld = 0;
   const S = 60;
   for (let s = 0; s < S; s++) {
-    const rng = new Rng(41000 + s * 7919), spec = BUILDINGS.school.make(rng, { shapes: true }), m = assemble(rng, spec, { key: "school", name: "School", noDecor: true });
+    const rng = new Rng(41000 + s * 7919), spec = BUILDINGS.school.make(rng, { shapes: true, plan: "highschool" }), m = assemble(rng, spec, { key: "school", name: "School", noDecor: true });
     const P = spec.shape.parts;
-    if (spec.bw >= 50 && spec.bw <= 70 && spec.bh >= 34 && spec.bh <= 46 && P.filter((p) => p.wing).length >= 2 && P.some((p) => p.gym && p.storeys === 1 && p.tall)) sOk++;
+    if (spec.bw >= 50 && spec.bw <= 80 && spec.bh >= 34 && spec.bh <= 46 && P.filter((p) => p.wing).length >= 2 && P.some((p) => p.gym && p.storeys === 1 && p.tall)) sOk++;
     foot += area(m, true); floorsNew += area(m, false);
     const r2 = new Rng(41000 + s * 7919), m2 = assemble(r2, BUILDINGS.school.make(r2, {}), { key: "school", name: "School", noDecor: true });
     footOld += area(m2, true); floorsOld += area(m2, false);
   }
-  check(sOk === S, `every school a 50–70 × 34–46 box with two wings or more and a gym annex of one tall storey (${sOk} of ${S})`);
+  check(sOk === S, `every suburban high school (the school's biggest plan) a 50–80 × 34–46 box (its auditorium past the issue's 70: a school at real size, 60–120 m) with two wings or more and a gym annex of one tall storey (${sOk} of ${S})`);
   const ratio = floorsNew / floorsOld;
   check(ratio >= 2 && ratio <= 3, `a school's floors (every storey) ${ratio.toFixed(2)} times the old school's (${Math.round(floorsNew / S)} cells against ${Math.round(floorsOld / S)}; its footprint ${(foot / footOld).toFixed(2)} times)`);
+  // The school's dozen plans (SCHOOL_VARIANTS, the user's request 2026-10-25: "a dozen varients per building type"):
+  // each built when pinned, named on the map's plan, laid out from its own room list (no two alike), every one keeping
+  // the shape rules above; each setting's dice reach the plans it weighs, all twelve over the three settings.
+  const lootVal = (def) => { let v = 0; for (const [k, [p, lo, hi]] of Object.entries(def.loot)) v += Math.min(0.95, p) * ((lo + hi) / 2) * supValue(k); for (const [k, p] of def.gear) v += p * ((GEAR[k] && GEAR[k].value) || 0); return v; };
+  const vOk = [], vRooms = new Map(), vLoot = [];
+  for (const v of SCHOOL_VARIANTS) {
+    let ok = true, val = 0, cellsN = 0;
+    const names = new Set();
+    for (let s = 0; s < 12; s++) {
+      const rng = new Rng(43000 + s * 7919), spec = BUILDINGS.school.make(rng, { shapes: true, plan: v.id }), m = assemble(rng, spec, { key: "school", name: "School", noDecor: true });
+      if (spec.vid !== v.id || m.plan.variant !== v.name || !m.building.parts || !m.rooms.some((r) => r.role === "classroom")) ok = false;
+      for (const r of m.rooms) if (!r.outdoor) names.add(r.name.replace(/ \d+$/, ""));
+      for (const c of m.containers) { const a = m.rooms.find((r) => r.id === c.area); if (a && a.type) val += lootVal(boxLoot(a.type, c.kind)); }
+      cellsN += area(m, false);
+    }
+    if (ok) vOk.push(v.id);
+    vRooms.set(v.id, [...names].sort().join("|"));
+    vLoot.push(`${v.name} ${(val / 12).toFixed(0)} (${((val / cellsN) * 100).toFixed(1)}/100 cells)`);
+  }
+  check(vOk.length === SCHOOL_VARIANTS.length && SCHOOL_VARIANTS.length >= 12, `the school's ${SCHOOL_VARIANTS.length} plans each built when pinned, named, shaped, with classrooms (${vOk.length} ok)`);
+  check(new Set(vRooms.values()).size === SCHOOL_VARIANTS.length, `no two school plans share their room list (${new Set(vRooms.values()).size} distinct)`);
+  const seenV = new Set();
+  for (const setting of ["rural", "town", "city"]) for (let s = 0; s < 300; s++) seenV.add(BUILDINGS.school.make(new Rng(44000 + s * 7919), { shapes: true, setting }).vid);
+  check(seenV.size === SCHOOL_VARIANTS.length, `every school plan turns up by the settings' dice (${seenV.size} of ${SCHOOL_VARIANTS.length})`);
+  console.log(`    the plans' loot: ${vLoot.join("; ")}`);
   // The loot: room by room as before (#14, #15, #16's styles), so a building holds what it did where its floor is about
   // the same (within ±10%) and more where it grew: the school by its area (reported per 100 cells of floor).
   const value = (def) => { let v = 0; for (const [k, [p, lo, hi]] of Object.entries(def.loot)) v += Math.min(0.95, p) * ((lo + hi) / 2) * supValue(k); for (const [k, p] of def.gear) v += p * ((GEAR[k] && GEAR[k].value) || 0); return v; };
-  const lootOf = (key, shapes, n = 120) => {
+  const lootOf = (key, shapes, n = 120, more = {}) => {
     let v = 0, cellsN = 0;
     for (let s = 0; s < n; s++) {
-      const rng = new Rng(9000 + s * 104729 + 5), m = assemble(rng, BUILDINGS[key].make(rng, { shapes, ...(["police", "firestation", "hospital", "church"].includes(key) ? { plan: "general" } : {}) }), { key, name: key, noDecor: true });
+      const rng = new Rng(9000 + s * 104729 + 5), m = assemble(rng, BUILDINGS[key].make(rng, { shapes, ...more, ...(["police", "firestation", "hospital", "church"].includes(key) ? { plan: "general" } : {}) }), { key, name: key, noDecor: true });
       for (const c of m.containers) { const a = m.rooms.find((r) => r.id === c.area); if (a && a.type) v += value(boxLoot(a.type, c.kind)); }
       cellsN += area(m, false);
     }
@@ -1127,7 +1156,7 @@ console.log("\nFootprint shapes: buildings that are not boxes (issue #23)");
     rows.push(`${key} ${b.v.toFixed(1)} against ${a.v.toFixed(1)}`);
     check(Math.abs(b.v / a.v - 1) <= 0.1, `a shaped ${key} holds what it did within ±10%: ${b.v.toFixed(1)} against ${a.v.toFixed(1)} (its floor ${b.cells.toFixed(0)} cells against ${a.cells.toFixed(0)})`);
   }
-  const so = lootOf("school", false), sn = lootOf("school", true);
+  const so = lootOf("school", false), sn = lootOf("school", true, 120, { plan: "highschool" }); // the issue's big school: the suburban high school
   const per = (x) => (x.v / x.cells) * 100;
   check(sn.v > so.v * 1.4 && Math.abs(per(sn) / per(so) - 1) <= 0.35, `the big school holds more by its floor: ${sn.v.toFixed(1)} against ${so.v.toFixed(1)} (${per(sn).toFixed(1)} against ${per(so).toFixed(1)} per 100 cells: its new floor is mostly classrooms and corridors of lockers)`);
   // Older saves: a building's spec seed gives the rectangle it always did (the roomsLegacy saves and those since #10
@@ -1147,7 +1176,7 @@ console.log("\nFootprint shapes: buildings that are not boxes (issue #23)");
   const tile = st.tiles.find((t) => t.loc);
   const oldMap = buildingMap({ ...st, shapesLegacy: true }, tile.id, { id: "s1", key: "school", name: "School" }, false);
   const newMap = buildingMap(st, tile.id, { id: "s1", key: "school", name: "School" }, false);
-  check(!oldMap.building.parts && newMap.building.parts && newMap.building.parts.length >= 4, `a school at a site: the old save's the rectangle (${oldMap.building.w} × ${oldMap.building.h}), a new one's shaped (${newMap.building.shape}, ${newMap.building.w} × ${newMap.building.h}, ${newMap.w} × ${newMap.h} map)`);
+  check(!oldMap.building.parts && !oldMap.plan.variant && newMap.building.parts && newMap.building.parts.length >= 2 && newMap.plan.variant, `a school at a site: the old save's the rectangle (${oldMap.building.w} × ${oldMap.building.h}), a new one's one of the dozen plans, shaped (${newMap.plan.variant}: ${newMap.building.shape}, ${newMap.building.w} × ${newMap.building.h}, ${newMap.w} × ${newMap.h} map)`);
   // The neighbourhood's street: 3–5 houses still, shaped ones among them, each fitting its plot, every cell reached.
   let streets = 0, shapedHouses = 0, houses = 0, streetBad = 0;
   for (let i = 0; i < 12; i++) {
@@ -1163,19 +1192,19 @@ console.log("\nFootprint shapes: buildings that are not boxes (issue #23)");
 // ======================================================================================
 console.log("\nHotels room by room (hotellayout.js): an inn, a business hotel, a resort, a city tower");
 {
-  const N = Math.max(SEEDS, 4);
+  const N = Math.max(SEEDS, 12); // a dozen variants a kind (issue #38), each in turn
   const value = (def) => { let v = 0; for (const [k, [p, lo, hi]] of Object.entries(def.loot)) v += Math.min(0.95, p) * ((lo + hi) / 2) * supValue(k); for (const [k, p] of def.gear) v += p * ((GEAR[k] && GEAR[k].value) || 0); return v; };
   const byKind = {};
   for (const kind of HOTEL.KINDS) {
     const ids = FRANCHISES.hotel.filter((f) => f.plan.hotel === kind).map((f) => f.id);
     const errs = [], rep = byKind[kind] = { maps: 0, w: [], h: [], storeys: [], rooms: [], boxes: [], loot: [], area: [] };
     for (let s = 0; s < N; s++) {
-      const v = ids[s % ids.length];
+      const v = ids[s % ids.length], vid = hotelVariantsOf(kind)[s % hotelVariantsOf(kind).length].id, classic = vid === CLASSIC[kind]; // issue #38: each variant (the kind's own rooms below: the classic plan's, #29's)
       const rng = new Rng(61000 + s * 7919 + kind.length * 17);
-      const spec = BUILDINGS.hotel.make(rng, { variant: v });
+      const spec = BUILDINGS.hotel.make(rng, { variant: v, plan: vid });
       let m;
       try { m = assemble(rng, spec, { key: "hotel", name: "Hotel", withVehicle: s % 2 === 1 }); } catch (e) { errs.push(`${v} ${s}: ${e.message}`); continue; }
-      const tag = `${v} ${s}`;
+      const tag = `${v} ${vid} ${s}`;
       if (spec.hotel !== kind) errs.push(`${tag}: a ${spec.hotel}`);
       rep.maps++; rep.w.push(m.w); rep.h.push(m.h); rep.storeys.push(m.storeys);
       const grids = m.floors || [{ cells: m.cells }];
@@ -1197,7 +1226,7 @@ console.log("\nHotels room by room (hotellayout.js): an inn, a business hotel, a
       if (!lobby || !inside(lobby).includes("frontdesk") || !inside(lobby).includes("keyrack")) errs.push(`${tag}: no reception desk and key rack in the lobby`);
       else if (!m.containers.some((c) => c.area === lobby.id && c.kind === "safe" && c.lockKind)) errs.push(`${tag}: no locked safe at the front desk`);
       // Guest floors: rooms of beds, each with its en suite bathroom (a toilet, a sink, a tub or a shower).
-      const guest = shop("guestroom");
+      const guest = rooms.filter((a) => a.shop === "guestroom" || a.shop === "studio"); // an extended-stay's studios (issue #38)
       if (guest.length < 1) errs.push(`${tag}: no guest rooms`);
       for (const r of guest) {
         if (!inside(r).includes("bed")) errs.push(`${tag}: ${r.name} has no bed`);
@@ -1221,9 +1250,9 @@ console.log("\nHotels room by room (hotellayout.js): an inn, a business hotel, a
       if (kind !== "inn" && !shop("walkin").length) errs.push(`${tag}: no walk-in cold room`);
       // The kind's own rooms.
       const need = { inn: ["parlour", "breakfast", "ownersflat"], business: ["hotelrestaurant", "conference", "bizcentre", "giftshop", "luggage", "liftlobby"], resort: ["ballroom", "spa", "hotelgym", "hotelrestaurant", "barroom", "liftlobby"], tower: ["penthouse", "barroom", "ballroom", "parking", "liftlobby", "hotelgym"] }[kind];
-      for (const k of need) if (!shop(k).length) errs.push(`${tag}: no ${k}`);
-      if (kind === "resort" && !["Pool deck", "Tennis court"].every((n) => m.rooms.some((a) => a.outdoor && a.name === n))) errs.push(`${tag}: no pool deck or tennis court in the grounds`);
-      if (kind === "resort" && !m.cells.some((c) => c.f === "pool")) errs.push(`${tag}: the pool deck has no pool`);
+      if (classic) for (const k of need) if (!shop(k).length) errs.push(`${tag}: no ${k}`); // a variant's own rooms: tools/hotelvarianttest.js
+      if (classic && kind === "resort" && !["Pool deck", "Tennis court"].every((n) => m.rooms.some((a) => a.outdoor && a.name === n))) errs.push(`${tag}: no pool deck or tennis court in the grounds`);
+      if (classic && kind === "resort" && !m.cells.some((c) => c.f === "pool")) errs.push(`${tag}: the pool deck has no pool`);
       if (kind === "tower" && !shop("penthouse").some((a) => (a.f || 0) === m.storeys - 1)) errs.push(`${tag}: the penthouse is not on the top floor`);
       if (kind === "inn" && (guest.length < 10 || guest.length > 20)) errs.push(`${tag}: ${guest.length} rooms`);
       if (shop("liftlobby").length && !shop("liftlobby").every((a) => inside(a).includes("liftdoor"))) errs.push(`${tag}: a lift lobby with no lift doors`);

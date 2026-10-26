@@ -57,7 +57,10 @@ import { localId } from "./world.js";
 import { zombieToughness } from "./hives.js"; // hive land: the dead are more and tougher there (the threat's hive bonus)
 import { campsiteExtra, campDanger, noteCampSeen } from "./campsite.js"; // call-time only: the extra campsite a tile may hold, its state in the threat, a look at it
 import { shopExtras, franchiseFor, franchisesOf, franchiseName, settingOf, noFirm } from "./shops.js"; // call-time only: the shops a suburb or city block may hold, a place's franchise
+import { hotelVariantName } from "./data-hotels.js"; // a hotel's variant's name (issue #38)
 import { hotelExtra } from "./hotels.js"; // call-time only: a hotel a tile may hold (issue #29)
+import { layoutFor, layoutName, poiLayoutKey, settingOfTile } from "./buildvariants.js"; // a POI's building layout (issue #32): its name and its plan
+import { legacyRooms, legacyPrisons } from "./worldcfg.js"; // an older save: no layouts, no county jails
 
 export const POI = {
   MAX: 4,                 // POIs a tile can hold, the site among them
@@ -134,7 +137,10 @@ function makePoi(state, t, kind, site, slot, before = []) {
     const onTile = new Set(before.filter((p) => p.kind === kind && p.v).map((p) => p.v));
     if (onTile.has(v)) { const ids = franchisesOf(kind).map((f) => f.id), at = ids.indexOf(v); v = ids.map((_, i) => ids[(at + 1 + i) % ids.length]).find((id) => !onTile.has(id)) || v; }
   }
-  return { kind, hidden: false, pool: pool == null ? null : Math.min(1, pool), visits: 0, lastDay: null, cont: null, threatStamp: null, stripped: false, ...(site ? { site: true } : {}), ...(v ? { v } : {}) };
+  // A kind with no franchise takes one of its building's layouts (buildvariants.js, issue #32): its plan and its name
+  // ("Ranch house", "Dairy barn"); not in an older save (its buildings keep their plans: worldcfg.js legacyRooms).
+  const lay = v || legacyRooms(state) ? null : layoutFor(poiLayoutKey(kind), settingOfTile(t), hash01(state.seed, "poilay", t.id, slot));
+  return { kind, hidden: false, pool: pool == null ? null : Math.min(1, pool), visits: 0, lastDay: null, cont: null, threatStamp: null, stripped: false, ...(site ? { site: true } : {}), ...(v ? { v } : {}), ...(lay ? { lay } : {}) };
 }
 // The tile's list from the world seed and the tile (no state.rng: the same for a world made before POIs existed).
 /** @param {State} state @param {Tile} t */
@@ -143,7 +149,8 @@ export function generatePois(state, t) {
   const site = permanentSite(t);
   const [bMin, bMax, eMin, eMax] = COUNTS[t.terrain];
   const [lo, hi] = site ? [eMin, Math.min(eMax, POI.MAX - 1)] : [bMin, bMax];
-  const n = lo + Math.floor(hash01(state.seed, "poin", t.id) * (hi - lo + 1));
+  // A town's county jail (jailExtra) keeps its place among POI.MAX: its tile's own list one shorter (a new world only).
+  const n = Math.min(lo + Math.floor(hash01(state.seed, "poin", t.id) * (hi - lo + 1)), jailTile(state, t) ? POI.MAX - 1 - (site ? 1 : 0) : Infinity);
   const out = [];
   let pool = poiKinds(t.terrain);
   if (site) {
@@ -178,6 +185,9 @@ export function generatePois(state, t) {
   // own dice after the list above, so the list before it (and a save's changes to it) stays as it was.
   const camp = campsiteExtra(state, t, out, inKnownZone(state, t));
   if (camp) out.push(camp);
+  // prison.js: a town's county jail on one tile of its suburb ring (jailExtra), on dice of its own after the above.
+  const jail = jailExtra(state, t, out);
+  if (jail) out.push(jail);
   // shops.js: up to two shops or services on a suburb or a city block, on their own dice after everything above.
   out.push(...shopExtras(state, t, out, inKnownZone(state, t), POI.MAX));
   // Bunkers (issue #26): now and then one, on their own dice after everything above (bunkerExtra).
@@ -191,6 +201,35 @@ export function generatePois(state, t) {
   const hotel = hotelExtra(state, t, out, inKnownZone(state, t));
   if (hotel) out.push(hotel);
   return out;
+}
+
+// A county jail (issue #31, prison.js): every town has one, on the tile of its suburb ring (within POI.TOWN_R) that its
+// own dice pick (the lowest hash01(seed, "jail", town, tile) among the ring's tiles that can hold POIs; jailTile), that
+// tile's own list one shorter so the jail keeps its place among POI.MAX; a tile by two towns may get two picks but
+// holds one. Known as the site is (a town's landmark: never hidden in the known zone). An
+// older save (worldcfg.js legacyPrisons) has none, so its POI lists load as they were.
+/** Does this tile hold a town's county jail? @param {State} state @param {Tile} t */
+export function jailTile(state, t) {
+  if (legacyPrisons(state) || !state.grid || !t || t.terrain !== "suburb") return false;
+  for (const id of state.grid.within(t.id, POI.TOWN_R)) {
+    const o = state.tiles[id];
+    if (!o || !o.loc || o.loc.type !== "town") continue;
+    let best = null, bv = Infinity;
+    for (const j of state.grid.within(o.id, POI.TOWN_R)) {
+      const q = state.tiles[j];
+      if (!q || q.terrain !== "suburb" || !poiEligible(state, q)) continue;
+      const v = hash01(state.seed, "jail", o.id, j);
+      if (v < bv) { bv = v; best = j; }
+    }
+    if (best === t.id) return true;
+  }
+  return false;
+}
+/** @param {State} state @param {Tile} t @param {any[]} list */
+export function jailExtra(state, t, list) {
+  if (!jailTile(state, t) || list.some((p) => p.kind === "jail") || list.length >= POI.MAX) return null;
+  const pool = Math.min(1, LOCATIONS.jail.richness * (POI.POOL[0] + (POI.POOL[1] - POI.POOL[0]) * hash01(state.seed, "jailpool", t.id)));
+  return { kind: "jail", hidden: !inKnownZone(state, t), pool, visits: 0, lastDay: null, cont: null, threatStamp: null, stripped: false, extra: "jail" };
 }
 
 // ---------- bunkers (issue #26, bunkerlayout.js) ----------
@@ -318,7 +357,8 @@ export const poiDef = (poi) => (poi ? LOCATIONS[poi.kind] : null);
 export function poiName(t, i) {
   const p = poiAt(t, i);
   if (!p) return "";
-  return isSitePoi(t, i) ? t.loc.name : p.v ? franchiseName(p.kind, p.v) : LOCATIONS[p.kind].name; // shops.js: a franchise's name
+  if (!isSitePoi(t, i) && p.hv && hotelVariantName(p.hv)) return `${franchiseName(p.kind, p.v)} (${hotelVariantName(p.hv)})`; // a hotel's variant (issue #38): "Willow Creek Inn (Victorian B&B)"
+  return isSitePoi(t, i) ? t.loc.name : p.v ? franchiseName(p.kind, p.v) : p.lay ? layoutName(poiLayoutKey(p.kind), p.lay) || LOCATIONS[p.kind].name : LOCATIONS[p.kind].name; // shops.js: a franchise's name; buildvariants.js: a layout's
 }
 
 // ---------- pools ----------

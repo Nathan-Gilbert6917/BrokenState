@@ -17,6 +17,7 @@
 //   set      the setting it is usually found in (rural | town | city): the tests' and the docs' only;
 //   own      the size belongs to another ticket (#22: the corner store, grocery, supermarket and department store;
 //            #23: the school; #26: the bunkers): its archetype's own dice are kept (only the storeys rule applies);
+//            (#35's shops and services are planned: shopvariants.js SIZES cuts these rows into its size classes)
 //   planned  the archetype's own plan is drawn at this size (#25's military buildings: militarylayout.js MIL_SIZE is these
 //            rows, read through realFoot; #27's office buildings: officeplans.js SIZE; #34's libraries: librarylayout.js LIBRARY.SIZE): realScale leaves its footprint as
 //            it is (and #25's storeys; #27's tall towers keep only the floors the tall rule builds);
@@ -42,27 +43,27 @@ export const REAL_SIZE = {
   apartments:  { w: [25, 50], d: [15, 25], storeys: [3, 6], city: [6, 10], set: "city" },
   neighbourhood: { w: [12, 16], d: [9, 13], small: [0.35, [10, 12], [9, 11]], storeys: [2, 2], set: "town" }, // one of its houses
   // Shops and services
-  pharmacy:    { w: [12, 20], d: [14, 24], storeys: [1, 1], set: "town" },
-  gunstore:    { w: [10, 18], d: [12, 20], storeys: [1, 1], set: "town" },
-  pawnshop:    { w: [10, 16], d: [12, 20], storeys: [1, 1], set: "town" },
-  sportshop:   { w: [16, 26], d: [16, 25], storeys: [1, 2], set: "town" },
-  electronics: { w: [14, 24], d: [14, 22], storeys: [1, 2], set: "town" },
-  radioshop:   { w: [12, 16], d: [13, 18], storeys: [1, 2], set: "town" },
-  bookstore:   { w: [10, 18], d: [12, 22], storeys: [1, 2], set: "town" },
-  petstore:    { w: [14, 22], d: [12, 20], storeys: [1, 2], set: "town" },
-  garden:      { w: [18, 30], d: [14, 22], storeys: [1, 1], set: "town" },
-  clothing:    { w: [12, 22], d: [14, 24], storeys: [1, 2], set: "town" },
-  liquor:      { w: [10, 18], d: [12, 20], storeys: [1, 2], set: "town" },
-  hardware:    { w: [18, 30], d: [16, 25], storeys: [1, 1], set: "town" },
-  feedstore:   { w: [15, 25], d: [12, 20], storeys: [1, 1], set: "rural" },
+  pharmacy:    { w: [12, 20], d: [14, 24], storeys: [1, 1], set: "town", planned: true },
+  gunstore:    { w: [10, 18], d: [12, 20], storeys: [1, 1], set: "town", planned: true },
+  pawnshop:    { w: [10, 16], d: [12, 20], storeys: [1, 1], set: "town", planned: true },
+  sportshop:   { w: [16, 26], d: [16, 25], storeys: [1, 2], set: "town", planned: true },
+  electronics: { w: [14, 24], d: [14, 22], storeys: [1, 2], set: "town", planned: true },
+  radioshop:   { w: [12, 16], d: [13, 18], storeys: [1, 2], set: "town", planned: true },
+  bookstore:   { w: [10, 18], d: [12, 22], storeys: [1, 2], set: "town", planned: true },
+  petstore:    { w: [14, 22], d: [12, 20], storeys: [1, 2], set: "town", planned: true },
+  garden:      { w: [18, 30], d: [14, 22], storeys: [1, 1], set: "town", planned: true },
+  clothing:    { w: [12, 22], d: [14, 24], storeys: [1, 2], set: "town", planned: true },
+  liquor:      { w: [10, 18], d: [12, 20], storeys: [1, 2], set: "town", planned: true },
+  hardware:    { w: [18, 30], d: [16, 25], storeys: [1, 1], set: "town", planned: true },
+  feedstore:   { w: [15, 25], d: [12, 20], storeys: [1, 1], set: "rural", planned: true },
   restaurant:  { w: [8, 54], d: [9, 40], storeys: [1, 2], set: "town", planned: true }, // #33: by its format and size (the eat* rows)
   pizza:       { w: [8, 54], d: [9, 40], storeys: [1, 1], set: "town", planned: true },
   bar:         { w: [8, 54], d: [9, 40], storeys: [1, 2], set: "town", planned: true },
   diner:       { w: [8, 54], d: [9, 40], storeys: [1, 1], set: "town", planned: true },
-  gasstation:  { w: [15, 25], d: [10, 15], storeys: [1, 1], set: "rural" }, // plus the forecourt and its canopy outside
-  truckstop:   { w: [25, 40], d: [15, 25], storeys: [1, 1], set: "rural" },
-  bank:        { w: [15, 30], d: [15, 25], storeys: [1, 2], set: "town" },
-  dealer:      { w: [30, 50], d: [20, 35], storeys: [1, 2], set: "town" },
+  gasstation:  { w: [15, 25], d: [10, 15], storeys: [1, 1], set: "rural", planned: true }, // plus the forecourt and its canopy outside
+  truckstop:   { w: [25, 40], d: [15, 25], storeys: [1, 1], set: "rural", planned: true },
+  bank:        { w: [15, 30], d: [15, 25], storeys: [1, 2], set: "town", planned: true },
+  dealer:      { w: [30, 50], d: [20, 35], storeys: [1, 2], set: "town", planned: true },
   library:     { w: [9, 56], d: [10, 44], storeys: [1, 8], set: "town", planned: true }, // #34: thirteen variants drawn at their real size (librarylayout.js LIBRARY.SIZE), a rural reading room to an 8-storey central library
   vet:         { w: [15, 20], d: [12, 18], storeys: [1, 2], set: "town" },
   motel:       { w: [40, 70], d: [10, 14], storeys: [2, 2], set: "rural", wings: "along" },
@@ -212,14 +213,36 @@ export const REAL_SIZE = {
   eatmedium:   { w: [16, 22], d: [13, 16], set: "town", planned: true },
   eatlarge:    { w: [26, 34], d: [18, 22], set: "town", planned: true },
   eathuge:     { w: [50, 54], d: [36, 40], set: "town", planned: true }, // a banquet hall, a buffet palace: the shared rule's huge footprint (≥ 50 wide, 1800 cells; storeytest), as the supermarket (#33)
+  // #31's prisons and county jails (prison.js, prisonlayout.js): planned at these sizes by their own plans. "prison" and
+  // "jail" are the complexes' sample building (the chow hall: buildingmaps.js BUILDINGS make; their maps of many
+  // buildings are prison.js PRISON.KINDS); a housing unit by where it stands (a state prison's or a penitentiary's
+  // block, death row, the segregation unit, a jail's pod); the main corridor's length and the gatehouse's depth are the
+  // complex's (own).
+  prison:      { w: [30, 38], d: [22, 26], storeys: [1, 1], set: "rural", planned: true },
+  jail:        { w: [30, 38], d: [22, 26], storeys: [1, 1], set: "town", planned: true },
+  pblock:      { w: [54, 66], d: [21, 24], storeys: [2, 2], set: "rural", planned: true }, // two tiers of cells round the day room
+  pdeathrow:   { w: [30, 36], d: [21, 24], storeys: [2, 2], set: "rural", planned: true },
+  pseg:        { w: [28, 34], d: [21, 24], storeys: [1, 1], set: "rural", planned: true },
+  ppod:        { w: [26, 32], d: [21, 24], storeys: [2, 2], set: "town", planned: true },
+  pcontrol:    { w: [24, 28], d: [11, 13], storeys: [1, 1], set: "rural", planned: true },
+  pchow:       { w: [30, 38], d: [22, 26], storeys: [1, 1], set: "rural", planned: true },
+  pinfirmary:  { w: [28, 34], d: [17, 17], storeys: [1, 1], set: "rural", planned: true },
+  pchapel:     { w: [14, 18], d: [22, 26], storeys: [1, 1], set: "rural", planned: true },
+  pschool:     { w: [30, 36], d: [16, 16], storeys: [1, 1], set: "rural", planned: true },
+  pworks:      { w: [40, 50], d: [16, 20], storeys: [1, 1], set: "rural", planned: true },
+  padmin:      { w: [26, 32], d: [14, 14], storeys: [2, 2], set: "rural", planned: true },
+  parmory:     { w: [16, 20], d: [12, 12], storeys: [1, 1], set: "rural", planned: true },
+  jailmain:    { w: [42, 48], d: [21, 21], storeys: [2, 2], set: "town", planned: true },
+  pspine:      { set: "rural", own: true },
+  pgate:       { set: "rural", own: true },
   // Open floors
   warehouse:   { w: [40, 80], d: [25, 50], storeys: [1, 1], set: "town" }, // one tall storey
   factory:     { w: [50, 100], d: [30, 60], storeys: [1, 1], set: "town" },
   hangar:      { w: [50, 58], d: [40, 46], storeys: [1, 1], set: "rural", planned: true },
   motorpool:   { w: [40, 48], d: [26, 30], storeys: [1, 1], set: "rural", planned: true },
-  autoshop:    { w: [15, 25], d: [12, 20], storeys: [1, 1], set: "town" },
-  garage:      { w: [10, 16], d: [8, 12], storeys: [1, 1], set: "town" },
-  workshop:    { w: [12, 20], d: [10, 14], storeys: [1, 1], set: "rural" },
+  autoshop:    { w: [15, 25], d: [12, 20], storeys: [1, 1], set: "town", planned: true },
+  garage:      { w: [10, 16], d: [8, 12], storeys: [1, 1], set: "town", planned: true },
+  workshop:    { w: [12, 20], d: [10, 14], storeys: [1, 1], set: "rural", planned: true },
   machineshed: { w: [12, 20], d: [8, 14], storeys: [1, 1], set: "rural" },
   barn:        { w: [15, 30], d: [10, 20], storeys: [1, 1], set: "rural" }, // plus its hayloft (a raised room on one grid)
   // #28's college campus buildings: planned at their own real size (campuslayout.js CAMPUS_SIZE and campusplans.js's
@@ -238,7 +261,7 @@ export const REAL_SIZE = {
   maintenance:  { w: [22, 40], d: [11, 20], storeys: [1, 2], set: "town", planned: true },
   theatre:      { w: [24, 46], d: [13, 28], storeys: [1, 3], set: "town", planned: true },
   parkgarage:   { w: [30, 48], d: [18, 32], storeys: [2, 6], set: "town", planned: true },
-  chapel:       { w: [14, 24], d: [22, 36], storeys: [1, 1], set: "town", wings: "back" },
+  chapel:       { w: [14, 24], d: [22, 36], storeys: [1, 2], set: "town", wings: "back" },
   healthcentre: { w: [15, 25], d: [12, 20], storeys: [1, 3], set: "town" },
 };
 

@@ -15,12 +15,16 @@
 // place holds a hotel at HOTELS.CRAWL (+ deep a block deeper in), on dice of its own; its franchise is the crawl's
 // (shops.js crawlFranchise: a town's inns, the outer blocks' business hotels, downtown's towers).
 //
+// ITS VARIANT (issue #38: data-hotels.js, a dozen a kind): the POI's hv, the crawl place's, by its chain's list, the
+// setting and dice of their own (hotelVariantOf); the POI's name and the raid's opening line name it.
+//
 // The rates over 300 worlds' dice are measured by tools/hoteltest.js and stated in docs/features/travel.md.
 /** @import { State, Tile } from "./types" */
 import { LOCATIONS } from "./data.js";
 import { hash01 } from "./skills.js";
-import { settingOf, franchiseFor, SHOP } from "./shops.js";
+import { settingOf, franchiseFor, franchiseById, SHOP } from "./shops.js";
 import { nearRoad } from "./discovery.js"; // a resort stands by a road
+import { hotelVariantFor } from "./data-hotels.js"; // its variant (issue #38)
 
 export const HOTELS = {
   AT: { city: 0.09, suburb: 0.06, town: 0.045, scenic: 0.006 }, // a tile's chance of a hotel, by its setting
@@ -56,7 +60,18 @@ export function hotelExtra(state, t, list, knownZone) {
   const pool = Math.min(1, def.richness * (t.terrain === "city" ? HOTELS.URBAN_RICH : 1) * spread);
   const hidden = !(knownZone && hash01(state.seed, "hotelknown", t.id) < SHOP.KNOWN);
   const v = franchiseFor("hotel", set, hash01(state.seed, "hotelfr", t.id));
-  return { kind: "hotel", hidden, pool, visits: 0, lastDay: null, cont: null, threatStamp: null, stripped: false, extra: "hotel", ...(v ? { v } : {}) };
+  const hv = v ? hotelVariantOf(v, set, hash01(state.seed, "hotelvar", t.id)) : null; // its variant (issue #38): on dice of its own
+  return { kind: "hotel", hidden, pool, visits: 0, lastDay: null, cont: null, threatStamp: null, stripped: false, extra: "hotel", ...(v ? { v } : {}), ...(hv ? { hv } : {}) };
+}
+
+/**
+ * A hotel's variant (data-hotels.js, issue #38) by its chain (v: FRANCHISES.hotel id: its kind and plan.variants), the
+ * setting ("city", "suburb", "town", "scenic") and the dice r (0–1); null for a chain that is not a hotel's.
+ * @param {string} v @param {string | null} setting @param {number} r
+ */
+export function hotelVariantOf(v, setting, r) {
+  const f = franchiseById("hotel", v);
+  return f && f.plan && f.plan.hotel ? hotelVariantFor(f.plan.hotel, f.plan.variants, setting, r) : null;
 }
 
 /**

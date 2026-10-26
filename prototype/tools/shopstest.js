@@ -22,7 +22,8 @@
 //   restaurant a kitchen with a range and a walk-in cold room behind a steel door (a pizza place a pizza oven); every
 //   motel room a bed and a bathroom; the bank's vault locked, its ATM; the office tower's desks, meeting rooms, server
 //   racks; every container on its piece and reachable, every room's floor one walk; the same building the same layout;
-//   loot per kind within ±10% of the old layout over 200 seeds; an older save's buildings furnished the old way; their
+//   loot per kind within ±10% of the old layout over 200 seeds (a type with variants, issue #35: by the area); an older
+//   save's buildings furnished the old way; their
 //   signs of survival (a motel room held, a stockroom shelter, a counter stand, a walk-in) on the new layouts only
 // Usage: node tools/shopstest.js [seed]
 import { createWorld, hub, atBase } from "../src/sim/world.js";
@@ -31,11 +32,13 @@ import { SITE_TAGS, AREA_TAGS, BUILDMAT_FINDS, SITE_WOOD } from "../src/sim/loot
 import { AREA_SETS, AREAS, WEAPONS } from "../src/sim/combat.js";
 import { SITES, BUILDINGS, buildingHint, buildingMap, siteBuildings, assemble } from "../src/sim/buildingmaps.js";
 import { COMMERCIAL_KEYS, styleName } from "../src/sim/shoplayout.js";
+import { hasVariants } from "../src/sim/shopvariants.js"; // issue #35: the types with a dozen variants (their loot by the area)
 import { HOTELS } from "../src/sim/hotels.js"; // a crawl block's hotel rolls after its shops (issue #29)
 import { pieceDef } from "../src/sim/data-furniture.js";
 import { boxLoot, CELL } from "../src/sim/combat.js";
 import { supValue } from "../src/sim/data.js";
 import { rollScenes } from "../src/sim/interiorscenes.js";
+import { LAYOUTS } from "../src/sim/buildvariants.js"; // a type's layouts (issue #32): the loot is the classic's, furnished old and new
 import { SIZES } from "../src/sim/battlesize.js";
 import { SITE_KIT, AREA_KIT } from "../src/sim/carrykit.js";
 import { SURV_FINDS, AREA_SURV } from "../src/sim/data-survival.js";
@@ -368,9 +371,9 @@ section("Laid out for their kind (shoplayout.js, issue #16)");
   const N = process.env.BS_QUICK ? 10 : 30;
   const FK = { gasstation: "gas" };
   const KEYS = [...COMMERCIAL_KEYS];
-  const make = (key, s, legacy = false, noDecor = false) => {
+  const make = (key, s, legacy = false, noDecor = false, layout = null) => {
     const fr = FRANCHISES[FK[key] || key] || [], rng = new Rng(9000 + s * 104729 + key.length);
-    return assemble(rng, BUILDINGS[key].make(rng, { variant: fr.length ? fr[s % fr.length].id : null, legacy, officesLegacy: true }), { key, name: key, legacy, noDecor }); // officesLegacy: the office tower #16 laid out (a new save's are officeplans.js's plans, issue #27: tools/officestest.js)
+    return assemble(rng, BUILDINGS[key].make(rng, { variant: fr.length ? fr[s % fr.length].id : null, legacy, officesLegacy: true, layout }), { key, name: key, legacy, noDecor }); // officesLegacy: the office tower #16 laid out (a new save's are officeplans.js's plans, issue #27: tools/officestest.js)
   };
   const grid = (m, f) => (m.floors ? m.floors[f].cells : m.cells);
   const inside = (m, a) => { const out = []; for (let y = a.y0 + 1; y < a.y0 + a.h - 1; y++) for (let x = a.x0 + 1; x < a.x0 + a.w - 1; x++) out.push([x, y, grid(m, a.f)[y * m.w + x]]); return out; };
@@ -457,7 +460,8 @@ section("Laid out for their kind (shoplayout.js, issue #16)");
   check(KEYS.filter((k) => sig(make(k, 3)) !== sig(make(k, 4))).length >= KEYS.length - 1, "two of a kind lay out differently");
   // Loot per kind: the old layout (legacy) against the new over 200 seeds, by the tables' value (as tools/interiortest.js).
   const value = (def) => { let v = 0; for (const [k, [p, lo, hi]] of Object.entries(def.loot)) v += Math.min(0.95, p) * ((lo + hi) / 2) * supValue(k); for (const [k, p] of def.gear) v += p * ((GEAR[k] && GEAR[k].value) || 0); return v; };
-  const total = (key, legacy) => { let v = 0; for (let s = 0; s < 200; s++) { const m = make(key, s, legacy); for (const c of m.containers) { const a = m.rooms.find((r) => r.id === c.area); if (a && a.type) v += value(boxLoot(a.type, c.kind)); } } return v / 200; };
+  const classic = (key) => (LAYOUTS[key] ? LAYOUTS[key][0].id : null); // the plan the furnishing replaced (its other layouts' loot: tools/varianttest.js)
+  const tally = (key, legacy) => { let v = 0, area = 0; for (let s = 0; s < 200; s++) { const m = make(key, s, legacy, false, classic(key)); area += m.building.w * m.building.h * (m.storeys || 1); for (const c of m.containers) { const a = m.rooms.find((r) => r.id === c.area); if (a && a.type) v += value(boxLoot(a.type, c.kind)); } } return { v: v / 200, dens: (v / area) * 100 }; };
   const off = [], rows = [];
   // The supermarket is twice the store it was each way since issue #22: its own check below (by the area), not this one;
   // the restaurants, pizza places, diners and bars come in sizes from a kiosk to a banquet hall since issue #33: their
@@ -465,8 +469,11 @@ section("Laid out for their kind (shoplayout.js, issue #16)");
   // issue #37 (industrylayout.js): their loot held to today's by the floor cell in tools/industryvarianttest.js; the hotel
   // (issue #29) never had an old layout (no older save holds one): its loot by the area in tools/interiortest.js; the library is
   // thirteen variants from a one-room reading room to an 8-storey central library since issue #34: its loot by the area in
-  // tools/librarytest.js.
-  for (const key of KEYS.filter((k) => !["supermarket", "deptstore", "restaurant", "pizza", "diner", "bar", "warehouse", "factory", "hotel", "library"].includes(k))) { const b = total(key, true), a = total(key, false), r = a / b - 1; rows.push(`${key} ${(r * 100).toFixed(0)}%`); if (Math.abs(r) > 0.1) off.push(`${key} ${a.toFixed(0)} against ${b.toFixed(0)}`); }
+  // tools/librarytest.js. A type with a dozen variants of every size since issue #35 (shopvariants.js: "loot per kind
+  // within ±10% per area"): by the area, a 100 cells of all its floors (tools/shopvarianttest.js holds them to today's
+  // too); #22's corner store and grocery keep #22's footprints, by the building as before.
+  const byArea = (k) => hasVariants(k) && !["corner", "grocery"].includes(k);
+  for (const key of KEYS.filter((k) => !["supermarket", "deptstore", "restaurant", "pizza", "diner", "bar", "warehouse", "factory", "hotel", "library"].includes(k))) { const B = tally(key, true), A = tally(key, false), area = byArea(key), b = area ? B.dens : B.v, a = area ? A.dens : A.v, r = a / b - 1; rows.push(`${key} ${(r * 100).toFixed(0)}%${area ? " a cell" : ""}`); if (Math.abs(r) > 0.1) off.push(`${key} ${a.toFixed(0)} against ${b.toFixed(0)}${area ? " a 100 cells" : ""}`); }
   check(!off.length, `every kind holds what it did within ±10% (200 seeds each: ${off.join("; ") || rows.join(", ")})`);
   // An older save: furnished the old way (none of the new pieces, no style's marks).
   const NEWK = new Set(["freezercase", "islandfreezer", "meatcase", "freezershelf", "producebin", "breadrack", "selfcheckout", "cartcorral", "baler", "aislesign", "range", "fryer", "pizzaoven", "coldshelf", "jukebox", "pooltable", "clothesrack", "gunrack", "tank", "pottingbench", "palletrack", "tirerack", "compressor", "carlift", "machine", "forklift", "saddlerack", "cubicle", "whiteboard", "watercooler", "secdesk", "keyrack", "icemachine", "teller", "deposit", "atm", "stanchion", "checkout", "displaycase", "coldcase", "barcounter", "barstool", "desk", "filing", "bookshelf"]);

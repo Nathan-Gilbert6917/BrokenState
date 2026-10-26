@@ -97,6 +97,8 @@ const UPSTAIRS_TYPES = new Set(["offices", "apartments", "police"]); // interior
 // squatters the same rooms, a prison's control room, a terminal's security; survivors a barracks' day room, a prison's
 // day room, a terminal's gates and lounges, a mess hall.
 const KIND_ROOMS = { police: { hostile: ["squad", "armory"] }, school: { neutral: ["gym"] }, church: { neutral: ["nave"] },
+  // Prisons and jails (issue #31, prisonlayout.js marks): whoever holds one keeps to a housing unit's day room or dorm.
+  prison: { hostile: ["dayroom", "dorm"], neutral: ["dayroom", "dorm"] }, jail: { hostile: ["dayroom"], neutral: ["dayroom"] },
   hq: { military: ["ops", "comms", "mlobby"], hostile: ["ops", "comms"] }, barracks: { military: ["bay", "dutydesk"], hostile: ["bay", "mdayroom"], neutral: ["mdayroom", "bay"] },
   armorybldg: { military: ["issue"], hostile: ["issue", "armorer"] }, gatehouse: { military: ["guardpost"], hostile: ["guardpost"] }, motorpool: { military: ["vbays", "dispatchm"], hostile: ["dispatchm"] },
   messhall: { neutral: ["mess"], hostile: ["mess"] }, aidstation: { neutral: ["aidward"] }, hangar: { military: ["hfloor"], hostile: ["hoffice", "hfloor"] }, tower: { military: ["cab"], hostile: ["cab"] },
@@ -355,7 +357,7 @@ export function interiorOccupants(state, tile, plan) {
       : Array.from({ length: g.count }, () => ({ kit: g.kind, weapon: swapGun(kitGunSource(g.kind), rng.pick(kit.weapons), rng), power: g.power })); // gundist.js: a gun of their kind in the band
     const hostile = !g.side || g.side === "hostile";
     const kinds = plan && KIND_ROOMS[plan.key] && KIND_ROOMS[plan.key][hostile ? "hostile" : g.side];
-    const theirs = g.at ? rooms.filter((r) => r.bunker === g.at) : kinds ? rooms.filter((r) => kinds.includes(r.civic) || kinds.includes(r.bunker)) : []; // g.at: the remnant's own room
+    const theirs = g.at ? rooms.filter((r) => r.bunker === g.at) : kinds ? rooms.filter((r) => kinds.includes(r.civic) || kinds.includes(r.bunker) || kinds.includes(r.prison)) : []; // g.at: the remnant's own room
     const theirsUp = theirs.filter((r) => upstairs.includes(r));
     const pool = theirsUp.length ? theirsUp : theirs.length ? theirs : hostile ? (upstairs.length ? upstairs : rooms) : rooms; // the armed squatters (no side: the raid's guards)
     const room = pool.length ? pool[Math.floor(hash01(state.seed, "wander-room", tileId, state.hour, i) * pool.length)] : null;

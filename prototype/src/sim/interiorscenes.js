@@ -66,6 +66,7 @@ export const SCENES = {
   ODDS: {
     house: 0.6, farmhouse: 0.6, cabin: 0.5, lodge: 0.55, apartments: 0.7, motel: 0.65, neighbourhood: 0.6,
     hospital: 0.9, clinic: 0.75, infirmary: 0.7, vet: 0.5, pharmacy: 0.55,
+    prison: 1, jail: 0.95, // prison.js's complexes (issue #31): prisonlayout.js's scenes
     police: 0.8, firestation: 0.6, school: 0.7, church: 0.4, barracks: 0.75, cellblock: 0.6, messhall: 0.5,
     grocery: 0.55, supermarket: 0.6, deptstore: 0.55, offices: 0.6, library: 0.45, bank: 0.5,
     warehouse: 0.35, factory: 0.35, barn: 0.25, garage: 0.35, gasstation: 0.45, diner: 0.45,
@@ -73,6 +74,7 @@ export const SCENES = {
     dorm: 0.7, lecturehall: 0.55, sciencehall: 0.6, dininghall: 0.65, studentunion: 0.55, univlibrary: 0.5, athletics: 0.5, admin: 0.45, security: 0.6,
   },
   COUNT: [0.35, 0.12],   // a second scene, a third (of a building with scenes)
+  COUNT_BY: { prison: [0.95, 0.75], jail: [0.6, 0.3] }, // a complex of many buildings (prison.js, issue #31): more of them
   ALIVE: 0.3,            // an upper floor's barricaded room: nobody died there (floorfolk.js's survivors may hold it)
   DEAD: [3, 6],          // the dead an overrun survivor took with them
   STAND_DEAD: [2, 4],    // the dead on the stairs of a last stand (part of them on the floor below)
@@ -105,6 +107,7 @@ export const BY_KIND = {
   church: { barricade: 2, quiet: 1.5 }, school: { barricade: 2, choke: 1.5 },
   house: { barricade: 1.5, quiet: 1.5 }, apartments: { barricade: 2, stand: 1.5 }, motel: { barricade: 2 },
   supermarket: { choke: 1.5, overrun: 1.5 }, offices: { stand: 1.5, choke: 1.5 },
+  prison: { opened: 2, lockdown: 2, guardstand: 2, takeover: 2, bus: 2, quiet: 0.5, barricade: 0.5 }, jail: { opened: 2, lockdown: 2, guardstand: 2, takeover: 2, quiet: 0.5 }, // prisonlayout.js's own come first (issue #31)
 };
 // A scene of another module's (the special buildings' layouts): def { w, place(ctx, room?) → scene | null, kinds?, when?
 // (ctx → whether the map can have it: kept out of the weighted draw otherwise) }.
@@ -447,7 +450,8 @@ export function rollScenes(map, rng, key, place = null) {
   const bias = sceneBias(key, place);
   const odds = bias ? bias.odds : SCENES.ODDS[key] ?? SCENES.DEFAULT;
   if (!rng.chance(odds)) return null;
-  const want = 1 + (rng.chance(SCENES.COUNT[0]) ? 1 + (rng.chance(SCENES.COUNT[1]) ? 1 : 0) : 0);
+  const CN = SCENES.COUNT_BY[key] || SCENES.COUNT;
+  const want = 1 + (rng.chance(CN[0]) ? 1 + (rng.chance(CN[1]) ? 1 : 0) : 0);
   const ctx = context(map, rng, key);
   const by0 = BY_KIND[key] || {};
   const by = bias ? Object.fromEntries(Object.keys(SCENE_KINDS).map((k) => [k, (by0[k] ?? 1) * (bias.w[k] ?? 1)])) : by0;
