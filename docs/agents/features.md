@@ -131,6 +131,7 @@ Detail: [travel.md](../features/travel.md).
 - **Carry weight and load bands**, physical supply carrying, carry kit and rigs; full hands in a fight [load, carry, carrykit, ui/carry]. [details](../features/travel.md#the-hands-in-a-fight)
 - **Carrying furniture**: lift 2 actions; alone slow, two tethered at half weight (drawn held) [furnicarry, carry, carrykit, ui/figures] `tools/furnicarrytest.js` `carryviewtest.js`. [details](../features/travel.md#carrying-furniture-and-appliances)
 - **Extracting with furniture**: into the vehicle by itself, else dropped at the door from exhaustion (a POI keeps it) [furnihome, furnicarry, poicont] `tools/furnihometest.js`. [details](../features/travel.md#extracting-with-a-piece-in-the-arms)
+- **Carry playthrough**: a scripted raid, crawl and base run carrying pieces with one and two survivors, with and without a vehicle [furnicarry, furnihome] `tools/carryplaytest.js`. [details](../features/combat.md#the-carry-playthrough-issue-48)
 - **Vehicles**: fuel, condition, breakdowns, bicycles; found cars, military trucks, road blockages and repairs, vehicle trade [vehicles, foundcars, miltrucks, roadblocks, vehicletrade]. [details](../features/travel.md#vehicles)
   - A team's piece and a parked marker on the State Map show the vehicle's type (pickup, sedan, SUV, van, Hummer, Army truck) [ui/mapfigures, ui/mapsprites, ui/render]. [details](../features/travel.md#the-maps-vehicles-by-type)
   - Every vehicle window shows the vehicle's model: the Vehicles tab, the cargo and trunk, the fleet chips and picks, Starting vehicles, the car row, trade [ui/vehiclemodel]. [details](../features/travel.md#the-maps-vehicles-by-type)
@@ -193,6 +194,7 @@ Detail: [combat.md](../features/combat.md).
 - **Office buildings by kind**: storefronts, parks, towers, city hall, courts, call centers, stations, firms [officeplans, officelayout, data-offices] `tools/officestest.js`. [details](../features/travel.md#shops-and-services-as-places-as-franchises)
 - **A dozen layouts per shop and service**: 12 named plans for each of 23 types, by dice, franchise and setting [shopvariants, buildingmaps, data-shops] `tools/shopvarianttest.js`. [details](../features/travel.md#a-dozen-layout-variants-per-type)
 - **Stealth**: takedowns, facing and view cones, sneaking, lights and darkness, indoor light switches [stealth, vision, indoorlight, ailights].
+- **Loot that makes sense**: every building type's signature finds and what is never there, checked over 100 buildings a kind, loot ±10% [lootsense, combat, loot] `tools/lootsensetest.js`. [details](../features/combat.md#loot-that-makes-sense)
 - **Vaulting half cover**: over waist-high cells at extra cost, landing winded [combat]. [details](../features/combat.md#vaulting-half-cover)
 - **Windows and the kinds of door**: window states (open, locked, broken) and door kinds with their own hit points, sight and locks [windows, buildingmaps, locks]. [details](../features/combat.md#windows-and-the-kinds-of-door)
 - **Raiders and the dead fight each other in a raid**; unseen shots are heard and marked in the fog [crossfire] `tools/crossfiretest.js`. [details](../features/combat.md#raiders-and-the-dead-fight-each-other-in-a-raid)
@@ -209,7 +211,7 @@ Detail: [combat.md](../features/combat.md).
 - **Things on the ground** and searching bodies [ground]; the ground in a survivor's inventory window [ui/inventory, carry]. [details](../features/combat.md#the-ground-in-a-survivors-inventory)
 - **Retreat**: "Sound the retreat" and break-off policies for auto-resolved fights [combat, breakoff]. [details](../features/combat.md#retreat)
 - **Third side**: neutrals and soldiers who are neither your team nor its enemies [thirdside].
-- **Talking to other groups in a raid**: call out, truce, trade, recruit or ally for the battle; treachery and grudges [parley, thirdside]. [details](../features/combat.md#talking-to-other-groups-in-a-raid)
+- **Talking to other groups in a raid**: call out, truce, trade, recruit or ally for the battle; treachery and grudges [parley, thirdside] `tools/parleytest.js`. [details](../features/combat.md#talking-to-other-groups-in-a-raid)
 - **Orders to allies**: give an allied survivor an order for 1 action; they may ignore it [allyorders]. [details](../features/combat.md#orders-to-allies)
 - **Siege kit**: ladders, rams and frag grenades; groups and raiders bring only their own [siege, arsenal, visitors]. [details](../features/combat.md#siege-kit)
 - **Vehicles in battle**: Humvee gunners, ramming gates; every car and truck a low-poly model by its type [combat, ui/vehiclemodel, ui/isoview, ui/figures] `tools/vehiclemodeltest.js`. [details](../features/combat.md#vehicles-in-battle)

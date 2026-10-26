@@ -470,8 +470,8 @@ export const SITE_LAUNCHERS = {
   convoy: { p: 0.02, items: { m203: [0.5, 1, 1], a_40mm_he: [3, 1, 2], at4: [1.5, 1, 1], m79: [0.5, 1, 1] } },
 };
 export const AREA_LAUNCHERS = {
-  armory: { p: 0.05, items: { m203: [0.6, 1, 1], a_40mm_he: [4, 1, 3], a_40mm_smoke: [1, 1, 2], m79: [1, 1, 1], at4: [0.8, 1, 1], m32: [0.15, 1, 1], rpg: [0.15, 1, 1], a_rocket_heat: [0.4, 1, 2] } },
-  barracks: { p: 0.03, items: { m203: [0.8, 1, 1], a_40mm_he: [3, 1, 1], at4: [1, 1, 1], m79: [0.5, 1, 1] } },
+  armory: { p: 0.05, items: { frag: [1.5, 1, 2], m203: [0.6, 1, 1], a_40mm_he: [4, 1, 3], a_40mm_smoke: [1, 1, 2], m79: [1, 1, 1], at4: [0.8, 1, 1], m32: [0.15, 1, 1], rpg: [0.15, 1, 1], a_rocket_heat: [0.4, 1, 2] } },
+  barracks: { p: 0.03, items: { frag: [1.2, 1, 1], m203: [0.8, 1, 1], a_40mm_he: [3, 1, 1], at4: [1, 1, 1], m79: [0.5, 1, 1] } },
   milwreck: { p: 0.04, items: { m203: [0.6, 1, 1], a_40mm_he: [2, 1, 2], m79: [1, 1, 1], at4: [1, 1, 1] } },
   motorpool: { p: 0.02, items: { at4: [1, 1, 1], a_40mm_he: [1, 1, 1] } },
 };
@@ -488,10 +488,13 @@ export function rollSiteLaunchers(state, tileId, mult = 1, salt = "") {
   for (let i = 0; i < got[1]; i++) out.push(lootItem(got[0], siteSource(t.loc.type), hash01(state.seed, "gldur", tileId, state.hour, salt, i)));
   return out;
 }
-// A raid container's launcher find (AREA_LAUNCHERS), by its area type.
+// The Army's own places (issue #43): a launcher or a frag grenade in a container only there, not in a police armoury,
+// a farm shed's generator room (a motor pool by its type) or a fallout shelter's ration store (barracks by theirs).
+export const ARMY_SITES = new Set(["military", "airbase", "bunker_mil", "bunker", "govbunker", "crash_mil", "convoy", "airdrop"]);
+// A raid container's launcher find (AREA_LAUNCHERS), by its area type, at an Army site (ARMY_SITES).
 export function rollAreaLaunchers(state, tileId, areaType, site = null, salt = "") {
   const a = AREA_LAUNCHERS[areaType];
-  if (!a || hash01(state.seed, "areagl", tileId, salt) >= a.p) return [];
+  if (!a || !ARMY_SITES.has(site) || hash01(state.seed, "areagl", tileId, salt) >= a.p) return [];
   const got = pickGrenades(a.items, hash01(state.seed, "areaglpick", tileId, salt), hash01(state.seed, "areagln", tileId, salt));
   if (!got) return [];
   const out = [];
@@ -513,8 +516,8 @@ export const AREA_FINDS = {
   workshop: { p: 0.05, items: { batteries: 1, toiletpaper: 1, solderiron: 1 } }, // solderiron: the electronics recipes' iron (2026-10-24)
   warehouse: { p: 0.08, items: { toiletpaper: 2, batteries: 2, soap: 1, cigarettes: 1, candles: 1 } },
   office: { p: 0.108, items: { phone: 2, laptop: 2, photos: 1, watch: 0.5, cigars: 0.3, scotch: 0.3, stamps: 0.3, makeup: 0.5 } },
-  armory: { p: 0.05, items: { frag: 1, cuffs: 2, smokegren: 1, flare: 1 } },
-  barracks: { p: 0.127, items: { frag: 0.5, heatpack: 1, cigarettes: 2, chocolate: 2, instcoffee: 1, cards: 2, smokegren: 1, batteries: 1, puritabs: 0.5, deodorant: 1, toothpaste: 1, wetwipes: 1 } },
+  armory: { p: 0.05, items: { cuffs: 2, smokegren: 1, flare: 1 } }, // its frag grenade the Army's only since issue #43 (AREA_LAUNCHERS: a police armoury holds none)
+  barracks: { p: 0.127, items: { heatpack: 1, cigarettes: 2, chocolate: 2, instcoffee: 1, cards: 2, smokegren: 1, batteries: 1, puritabs: 0.5, deodorant: 1, toothpaste: 1, wetwipes: 1 } },
   motorpool: { p: 0.05, items: { batteries: 2, flare: 1, lighters: 1 } },
   enginebay: { p: 0.05, items: { flare: 2, batteries: 1, lighters: 1 } }, // a fire station's engine bay (issue #15)
   schoolhall: { p: 0.04, items: { phone: 2, candy: 2, chocolate: 1, cards: 1, deodorant: 1, tcards: 0.5 } }, // a school corridor's lockers (issue #15)
