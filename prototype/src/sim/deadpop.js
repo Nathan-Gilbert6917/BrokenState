@@ -322,6 +322,18 @@ export function drawRaiders(state, tile, n) {
   r.r -= k;
   return k;
 }
+/** Raiders drawn that got away go back: into POI i (if given) or the open ground, never over the cap (issue #69: a band that attacked a camp). Returns how many. @param {State} state @param {Tile | number} tile @param {number | null} poiIndex @param {number} n */
+export function putBackRaiders(state, tile, poiIndex, n) {
+  const t = tileOf(state, tile);
+  n = Math.floor(n || 0);
+  if (!t || n <= 0) return 0;
+  const k = Math.min(n, Math.max(0, raiderCap(state, t) - tileRaiders(state, t)));
+  if (k <= 0) return 0;
+  const r = rec(state, t, true);
+  if (poiIndex != null && poiIndex >= 0 && poiIndex < poisOf(t).length) r.q[poiIndex] = (r.q[poiIndex] || 0) + k;
+  else r.r += k;
+  return k;
+}
 
 // ---------- noise and memories ----------
 /** Adds to the tile's noise memory (and POI i's, if given), up to NOISE_MAX; returns the tile's after. @param {State} state @param {Tile | number} tile @param {number | null} poiIndex @param {number} amount */
