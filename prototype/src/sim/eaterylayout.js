@@ -38,9 +38,10 @@
 // the preserved draws, combat.js reads the area's mix), the kitchens knives and cleavers (blades.js kitchen), a BBQ's
 // pit room and a food truck propane.
 import { hash01 } from "./skills.js";
+import { registerVariants, pickVariant, pickFrom } from "./variantpick.js"; // the shared picker (issue #41)
 import { registerScene, SCENES, SCENE_KINDS } from "./interiorscenes.js";
 import { COMMERCIAL_STYLES, fill, full, P, checkout, share, counterRow, stools, tables, booths, some, rowFrom, frontDoor } from "./shoplayout.js";
-import { EAT_SIZE, FORMATS, CUISINES, VARIANTS, SITDOWN, COUNTER, variantById } from "./data-eateries.js";
+import { EAT_SIZE, FORMATS, CUISINES, VARIANTS, SITDOWN, COUNTER } from "./data-eateries.js";
 
 export const EATERY = {
   SIZE: EAT_SIZE,
@@ -60,11 +61,14 @@ const SIZE_FOOT = { tiny: "small", small: "small", medium: "medium", large: "lar
 /** A place's restaurant variant by its kind (restaurant, pizza, diner, bar) and franchise id; none: one by the dice. */
 export function eateryOf(kind, id, r = 0) {
   const k = kind === "pizza" || kind === "diner" || kind === "bar" ? kind : "restaurant";
-  const v = variantById(k, id);
-  if (v) return v;
-  const list = VARIANTS.filter((x) => x.kind === k);
-  return list[Math.floor(r * list.length) % list.length];
+  // variantpick.js (issue #41): "eatery:<kind>", pinned by the franchise's id, else the caller's dice r, uniform.
+  return /** @type {any} */ (pickVariant(`eatery:${k}`, null, { plan: id || null, r })).src;
 }
+// The registry's views (variantpick.js): each kind's variants, their weights by setting (city, suburb, town).
+/** @param {any} v */
+const viewOf = (v) => ({ id: v.id, name: v.name, w: { ...(v.w || {}) }, src: v });
+const VIEWS = new Map(VARIANTS.map((v) => [v, viewOf(v)]));
+for (const k of [...new Set(VARIANTS.map((v) => v.kind))]) registerVariants(`eatery:${k}`, VARIANTS.filter((v) => v.kind === k).map((v) => VIEWS.get(v)));
 /**
  * A variant for another building's restaurant (#29's hotels, #30's mall food court, a truck stop): by format (one or
  * a list; SITDOWN / COUNTER from data-eateries.js), cuisine (one or a list), setting (one of the places: "main",
@@ -90,10 +94,7 @@ export function eateryVariant(q = {}) {
     for (const fresh of [true, false]) {
       const list = VARIANTS.filter((v) => (!fmt || fmt.includes(v.format)) && ok(v) && (!fresh || !avoid.has(v.id)) && weight(v) > 0);
       if (!list.length) continue;
-      const tot = list.reduce((a, v) => a + weight(v), 0);
-      let x = (q.r ?? 0.5) * tot;
-      for (const v of list) { x -= weight(v); if (x < 0) return v; }
-      return list[list.length - 1];
+      return /** @type {any} */ (pickFrom(list.map((v) => VIEWS.get(v)), null, { setting: set && W[set] ? set : null, r: q.r ?? 0.5 })).src; // variantpick.js (issue #41): the tier's list, weighted by the setting
     }
   }
   return null;
