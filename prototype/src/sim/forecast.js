@@ -10,7 +10,8 @@
 // heating against the wood and fuel in store (upkeep.js heatUse, woodcutting.js woodNeed), the generators' fuel
 // (power.js powerStatus), crops and the frost (weather.js cropDamage), the worm's course (worm.js WORM.BRAIN_FROM),
 // illness, teams in the field (plans.js foodDays, needs.js teamWater, parties.js hoursLeft), a night march, the dead
-// massing for a new hive (hivebirth.js siteView) and wars with you (playerwars.js).
+// massing for a new hive (hivebirth.js siteView), wars with you (playerwars.js) and the dead on a base's own tile
+// (threatknow.js tileThreatEstimate: deadpop.js's pools as your people there see them, live; issue #67).
 //
 // Fog of war: only what the player could know. A horde counts when you see it now, a watchtower tracks it, the
 // lookouts warned of it or you saw the dead within 2 tiles of it in the last day; a raid when the lookouts saw it, you
@@ -42,6 +43,7 @@ import { teamWater, hungerOf, thirstOf, NEEDS } from "./needs.js";
 import { siteView } from "./hivebirth.js";
 import { atWarWithYou } from "./playerwars.js";
 import { nearbyView, everyText } from "./campattack.js"; // issue #69: the attacks on a base by the dead and raiders nearby
+import { tileThreatEstimate } from "./threatknow.js"; // the dead on the land as your people see it (issue #67): the pools round a base
 
 export const THREAT = {
   DAYS: 7,
@@ -56,6 +58,7 @@ export const THREAT = {
   HOLD_WATCH: 0.6,   // a horde under this share of what the defences hold is only a watch
   GATHER_NEAR: 10,   // a hive due this close to a base
   CROP_KILL: 0.2,    // a day the forecast says kills this share of a crop
+  DEAD_WATCH: 3, DEAD_DANGER: 4, // the dead on a base's tile (threatknow.js bands 0–4): high a watch, overrun a danger
 };
 const DAY_H = 24;
 const r1 = (v) => Math.round(v * 10) / 10;
@@ -549,4 +552,23 @@ function campAttacks(ctx) {
     }
   }
 }
-const SOURCES = [hordes, raids, weatherSrc, stores, cold, power, sickness, teams, gatherings, campAttacks];
+// The dead on a base's own tile (deadpop.js's pools, read live by the people there: threatknow.js tileThreatEstimate): a
+// high tile is a watch for the week, an overrun one a danger; its open ground feeds the grounds attacks and a loud
+// fight's reinforcements.
+function deadNear(ctx) {
+  const { state } = ctx;
+  for (const b of peopled(state)) {
+    const e = tileThreatEstimate(state, b.tile);
+    if (!e || e.dead.band < THREAT.DEAD_WATCH) continue;
+    const level = e.dead.band >= THREAT.DEAD_DANGER ? 2 : 1;
+    ctx.add({
+      key: `deadland:${b.id}`, day: null, kind: "deadland", level, icon: "☠",
+      text: `The dead are ${e.dead.word} round ${b.name}`,
+      confidence: e.live ? 0.7 : 0.4, source: e.live ? "Seen from the base" : "Last survey", target: baseRef(b),
+      why: `About ${e.dead.lo}–${e.dead.hi} of the dead on ${b.name}'s tile and in its places (${e.dead.word} for the land${e.raiders && e.raiders.band ? `; raiders ${e.raiders.word}` : ""}). Its open ground feeds the attacks on the grounds and whatever a loud fight draws in. Kill them quietly, or draw them onto your walls on purpose, to bring the level down.`,
+      go: { tile: b.tile },
+    });
+  }
+}
+
+const SOURCES = [hordes, raids, weatherSrc, stores, cold, power, sickness, teams, gatherings, deadNear, campAttacks];

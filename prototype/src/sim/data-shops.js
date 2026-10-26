@@ -28,6 +28,7 @@
 
 import { ZOO_AREAS } from "./data-zoo.js"; // a zoo's keepers' rooms, food prep, animal houses and gift shop (issue #59)
 import { OFFICE_KINDS, OFFICE_AREAS, OFFICE_W, OFFICE_FIRMS, OFFICE_ROWS } from "./data-offices.js"; // the office buildings of every kind, with their firms (issue #27)
+import { OUTDOOR_KINDS, OUTDOOR_AREAS, OUTDOOR_ROWS } from "./data-outdoors.js"; // golf courses and RV parks (issue #61), pure data too
 import { PARK_KINDS, PARK_AREA_DEFS } from "./data-parks.js"; // amusement parks, fairgrounds and water parks (issue #60): pure data too
 import { NEWSHOP_KINDS, NEWSHOP_AREAS, NEWSHOP_W, NEWSHOP_FRANCHISES, NEWSHOP_ROWS } from "./data-newshops.js"; // six more shops (issue #55): pure data too
 import { TOWER_AREAS } from "./data-radiotower.js"; // a radio tower compound's rooms (issue #54)
@@ -171,6 +172,7 @@ export const NEW_KINDS = {
     areas: ["lanes", "bowlbar", "shoecounter", "pinsetter", "kitchen"], size: 1, storeys: [1, 2],
   },
   ...OFFICE_KINDS, // the office buildings (data-offices.js)
+  ...OUTDOOR_KINDS, // golf courses and RV parks (data-outdoors.js, issue #61)
   ...PARK_KINDS, // the amusement parks (data-parks.js, issue #60)
   ...NEWSHOP_KINDS, // the furniture store, laundromat, thrift store, bakery, butcher and deli (data-newshops.js, issue #55)
   ...STADIUM_KINDS, // the stadiums and arenas (data-stadiums.js, issue #57)
@@ -272,6 +274,7 @@ export const AREA_DEFS = {
   proshop: { tags: ["sport", "shop", "travel"], def: { name: "Pro shop", boxes: ["displaycase", "shelf", "counter"],
     loot: { scrap: [0.4, 1, 3], water: [0.15, 1, 1] }, gear: [["slingbag", 0.05], ["duffle", 0.06], ["backpack", 0.03], ["kneeguards", 0.02]] } },
   ...OFFICE_AREAS,
+  ...OUTDOOR_AREAS, // the golf courses', campgrounds' and RV parks' rooms (data-outdoors.js, issue #61)
   ...PARK_AREA_DEFS, // a park's rooms (data-parks.js, issue #60)
   ...NEWSHOP_AREAS, // issue #55's rooms (data-newshops.js)
   ...TOWER_AREAS, // radio towers (issue #54, data-radiotower.js)
@@ -698,6 +701,7 @@ export const ROWS = {
 
 // The office buildings' rows (data-offices.js), each table's own rows first.
 for (const [t, rows] of Object.entries(OFFICE_ROWS)) ROWS[t] = { ...rows, ...(ROWS[t] || {}) };
+for (const [t, rows] of Object.entries(OUTDOOR_ROWS)) ROWS[t] = { ...rows, ...(ROWS[t] || {}) }; // data-outdoors.js (issue #61)
 // Issue #55's six shops' rows (data-newshops.js), the same way.
 for (const [t, rows] of Object.entries(NEWSHOP_ROWS)) ROWS[t] = { ...rows, ...(ROWS[t] || {}) };
 for (const [t, rows] of Object.entries(STADIUM_ROWS)) ROWS[t] = { ...rows, ...(ROWS[t] || {}) }; // the stadiums' (data-stadiums.js, issue #57)

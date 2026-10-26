@@ -63,6 +63,7 @@ import { baseHeat } from "./hordes.js";
 import { homesOf } from "./groupbases.js";
 import { membersAt } from "./members.js";
 import { siteThreat } from "./siteclear.js";
+import { tileThreatEstimate } from "./threatknow.js"; // #67: the levels as your people see them
 import { scaleFood } from "./foods.js";
 import { GROUNDS, groundsWord, takeDead } from "./campscout.js"; // call-time only (campscout.js groundsHour calls this module)
 
@@ -190,12 +191,16 @@ export function attackEvery(state, base) {
 export const everyText = (h) => (!isFinite(h) || h > 24 * 60 ? "hardly ever" : h < 48 ? `every ~${Math.max(1, Math.round(h / 5) * 5)} h` : `every ~${Math.round(h / 24)} days`);
 /**
  * The Camp tab's line (ui/ui.js nearbyRow) and the forecast's: { text ("the dead medium, raiders low · an attack every
- * ~30 h"), why, every, warn }. The levels are the bands of the tile the base stands on (you are on it: live, §11).
+ * ~30 h"), why, every, warn }. The levels are the player's estimate of the tile (threatknow.js, #67: live while the
+ * base is on it), else its bands.
  * @param {any} state @param {any} base
  */
 export function nearbyView(state, base) {
   const o = attackEvery(state, base);
-  const d = deadBand(state, base.tile), r = raiderBand(state, base.tile);
+  // The player's estimate (threatknow.js, #67: live while the base is on the tile), else the bands themselves (a group's).
+  let e = null;
+  try { e = base.group ? null : tileThreatEstimate(state, base.tile); } catch { e = null; }
+  const d = (e && e.dead) || deadBand(state, base.tile), r = (e && e.raiders) || raiderBand(state, base.tile);
   const g = groundsLeft(state, base);
   const parts = [`the dead ${d.word}`, `raiders ${r.word}`];
   if (g > 0) parts.push(`${base.grounds && base.grounds.known === false ? "?" : g} on the grounds`);

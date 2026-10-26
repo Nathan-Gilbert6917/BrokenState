@@ -21,10 +21,13 @@ const check = (ok, what) => { if (ok) pass++; else fail++; console.log(`  ${ok ?
 registerCombatHandler("ilt", () => {});
 const D = Math.PI / 180;
 
-// A raid on a farm (a farmhouse and a barn) at this hour, into this building ("street": the street map).
-function raidAt(building, hour, types = ["farm", "ranch"]) {
-  for (let i = 0; i < 60; i++) {
+// A raid on a farm (a farmhouse and a barn) at this hour, into this building ("street": the street map). An older save's
+// farm (farmLegacy): since issue #62 a new save's farm or ranch is one map of the whole place (farmstead.js), with no pick
+// of its buildings; an older save's keeps the pick, each building its own raid. building null: a new save's whole farm.
+function raidAt(building, hour, types = ["farm", "ranch"], from = 0) {
+  for (let i = from; i < from + 60; i++) {
     const st = createWorld({ seed: seed + i, factionCount: 6 });
+    if (building) st.farmLegacy = true;
     st.cards.length = 0;
     const h = hub(st);
     const tile = st.tiles.find((t) => t.loc && types.includes(t.loc.type) && t.id !== h.tile);
@@ -35,9 +38,9 @@ function raidAt(building, hour, types = ["farm", "ranch"]) {
     const p = res.party;
     p.path = [tile.id]; p.idx = 0; p.phase = "engaged";
     st.hour = 24 * 3 + hour;
-    const setup = { mode: "raid", tile: tile.id, partyId: p.id, canRetreat: true, ambush: null, handler: "ilt", enemy: { kind: "mixed", count: 0, power: 3, groups: [{ kind: "raiders", count: 1, power: 3 }] }, raid: { heat0: 0, building }, context: {} };
+    const setup = { mode: "raid", tile: tile.id, partyId: p.id, canRetreat: true, ambush: null, handler: "ilt", enemy: { kind: "mixed", count: 0, power: 3, groups: [{ kind: "raiders", count: 1, power: 3 }] }, raid: { heat0: 0, ...(building ? { building } : {}) }, context: {} };
     st.combat = createBattle(st, setup);
-    return { st, b: st.combat, tile };
+    return { st, b: st.combat, tile, i };
   }
   return null;
 }
@@ -97,6 +100,22 @@ console.log("A barn by day: dark inside, no switch");
     place(u, cx, cy, 0);
     check(canSeeAt(b, e, cx, cy) && !canSeeAt(b, e, cx + 5, cy), "a guard in the dark sees the dark ahead, not behind it");
   }
+}
+
+console.log("A new save's farm (issue #62: the whole place one map): its barns dark, no switch in any of their rooms");
+{
+  let r = null;
+  for (let from = 0; from < 300 && !r; ) {
+    const t = raidAt(null, 12, ["farm", "ranch"], from);
+    if (!t) break;
+    if (t.b.raid.areas.some((a) => a.bldg === "barn" && a.role === "barnfloor")) r = t; else from = t.i + 1;
+  }
+  check(!!r && r.b.raid.interior && ["farm", "ranch"].includes(r.b.raid.interior.key) && !r.b.night, `a raid on a new save's farm with a barn at noon (${r && r.b.raid.interior && r.b.raid.interior.key}, seed ${r && seed + r.i})`);
+  const rooms = r.b.raid.areas.filter((a) => !a.outdoor && a.role);
+  const barn = rooms.filter((a) => a.bldg === "barn"), house = rooms.filter((a) => a.bldg === "farmhouse");
+  check(barn.filter((a) => a.role === "barnfloor").every((a) => a.dark && !a.on && lightAt(r.b, a.x0 + 1, a.y0 + 1) === DARK), "its barn floors are dark by day");
+  check(barn.length && barn.every((a) => !a.sw), `no room of its barns has a switch (${barn.length} rooms: ${[...new Set(barn.map((a) => a.role))].join(", ")})`);
+  check(house.length && house.filter((a) => a.sw).length >= house.length - 1, `its farmhouse's rooms have switches (${house.filter((a) => a.sw).length} of ${house.length})`);
 }
 
 console.log("A farmhouse by day: lit, switches by the doors");

@@ -9,6 +9,9 @@
 //   ui.landAsk  { via ("xp" | "tc" | "ctxhunt": the action it runs again), d (that action's data), type, tile,
 //                startHour, hours, qty (null: as much as fits) }
 // The action runs again with d.hours, d.qty and d.asked = "1" (main.js: "xp-order", "tc-do", ctxhunt).
+// Hunt the dead (sim/deadhunt.js, issue #68) asks in the same box (huntBox): its hours (2 to 24, whole), its stance
+// (ui.landAsk.stance: Stealthy, Normal, Lure; d.stance when it runs again), the groups expected and the kills, for the
+// hours and stance, and the same for the other lengths.
 // main.js: LAND_ACTIONS / LAND_CHANGE are registered like the carry box's; landHtml is drawn with the confirmation box;
 // landKey takes Enter / Esc while it is up. tools/landordertest.js.
 import { partyTile, tileLabel, partyMembers } from "../sim/parties.js";
@@ -16,6 +19,11 @@ import { collectInfo, COLLECT } from "../sim/carry.js";
 import { landEstimate, landEstimates, isLandJob, LAND_VERB, LAND_HOURS, clampHours, landHoursText } from "../sim/landest.js";
 import { subTeam, isSome } from "../sim/detach.js"; // some of the team picked to do it: their gear and skills
 import { whoRow, toggleWho, whoIds } from "./whopick.js"; // who does it, picked in this box (the user's request 2026-10-24)
+import { DEAD_HUNT, deadHuntEstimate, deadHuntHours, huntStance } from "../sim/deadhunt.js"; // Hunt the dead (issue #68)
+
+// The jobs this box asks for: the land jobs and Hunt the dead.
+export const asksHours = (type) => isLandJob(type) || type === "deadhunt";
+const hoursFor = (type, h) => (type === "deadhunt" ? deadHuntHours({ hours: h }) : clampHours(h));
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -25,12 +33,13 @@ const amountText = (e) => `~${n1(e.amount)} ${e.unit}`;
 // Opens the box for a land job not yet asked (d.asked) and not for the autopilot. Returns true when it did.
 // o: { via, type, tile, startHour, hours }.
 export function askLand(state, ui, d, o) {
-  if (!isLandJob(o.type) || (d && d.asked === "1") || state.autopilot) return false;
+  if (!asksHours(o.type) || (d && d.asked === "1") || state.autopilot) return false;
   const p = state.parties.find((x) => x.id === Number(d.id));
   if (!p || !partyMembers(state, p).length) return false;
   const data = {};
   for (const k of Object.keys(d || {})) if (k !== "asked" && k !== "qty") data[k] = d[k];
-  ui.landAsk = { via: o.via, d: data, type: o.type, tile: o.tile ?? partyTile(p), startHour: o.startHour ?? state.hour, hours: clampHours(o.hours ?? d.hours ?? LAND_HOURS.def), qty: null };
+  ui.landAsk = { via: o.via, d: data, type: o.type, tile: o.tile ?? partyTile(p), startHour: o.startHour ?? state.hour, hours: hoursFor(o.type, o.hours ?? d.hours ?? (o.type === "deadhunt" ? DEAD_HUNT.HOURS.def : LAND_HOURS.def)), qty: null };
+  if (o.type === "deadhunt") ui.landAsk.stance = huntStance(d);
   return true;
 }
 
@@ -42,6 +51,14 @@ export function landModel(state, ui) {
   const who = a.d.who ? String(a.d.who).split(",").map(Number) : null;
   const p = who && isSome(state, team, who) ? subTeam(state, team, who, a.type) : team; // only those picked, with what they take along
   const opts = { tile: a.tile, startHour: a.startHour };
+  if (a.type === "deadhunt") { // Hunt the dead: the groups and the kills (sim/deadhunt.js deadHuntEstimate)
+    const at = (hours) => deadHuntEstimate(state, p, { tile: a.tile, hours, stance: a.stance });
+    const hunt = at(a.hours);
+    const lengths = DEAD_HUNT.HOURS.presets.map((hours) => ({ hours, ...at(hours) }));
+    const all = [];
+    for (let h = DEAD_HUNT.HOURS.min; h <= DEAD_HUNT.HOURS.max; h += DEAD_HUNT.HOURS.step) all.push(huntText(at(h)));
+    return { p, team, a, hunt, est: { why: hunt.why }, lengths, all, info: null, qty: null };
+  }
   const info = COLLECT[a.type] ? collectInfo(state, p, a.type) : null;
   const qty = info && a.qty != null ? Math.max(0, Math.min(info.max, Math.floor(a.qty))) : null;
   const est = landEstimate(state, p, a.type, { ...opts, hours: a.hours, qty });
@@ -66,9 +83,38 @@ function qtyRow(m) {
     </div>${hands > 0 ? `<div class="small warn">About ${hands} of what it brings would be carried in the arms (no weapon in a fight until set down).</div>` : ""}`;
 }
 
+// "~3 groups, ~12 killed"
+const huntText = (e) => `~${n1(e.encounters)} group${Math.abs(e.encounters - 1) < 0.05 ? "" : "s"}, ~${n1(e.kills)} killed`;
+function huntBox(state, ui, m) {
+  const { a, hunt, p, team } = m;
+  const H = DEAD_HUNT.HOURS;
+  const wait = a.startHour - state.hour;
+  const when = a.tile === partyTile(p) && wait < 0.5 ? "here, starting now" : `${esc(tileLabel(state, a.tile))}, starting in about ${n1(wait)}h`;
+  const presets = m.lengths.map((x) => `<button class="mini${x.hours === a.hours ? " active" : ""}" data-action="land-sethours" data-h="${x.hours}"${tip(`Hunt the dead ${x.hours}h: ${huntText(x)}`)}>${x.hours}h · ~${n1(x.kills)}</button>`).join("");
+  const stances = Object.entries(DEAD_HUNT.STANCES).map(([k, S]) => `<button class="mini${a.stance === k ? " active" : ""}" data-action="land-stance" data-stance="${k}"${tip(S.desc)}>${esc(S.name)}</button>`).join("");
+  const n = partyMembers(state, p).length;
+  return `<div class="askwrap"><div class="askbox" role="dialog" style="max-width:34rem">
+    <div class="asktitle">Hunt the dead: how long, and how?</div>
+    <div class="asktext small muted">${n} ${n === 1 ? "person" : "people"}, ${when}.</div>
+    ${whoRow(state, team, a.d.who, "land-who")}
+    ${hunt.why ? `<div class="small danger">Cannot now: ${esc(hunt.why)}</div>` : ""}
+    <div class="row" style="gap:0.5rem;align-items:center;margin:0.5rem 0 0.2rem">
+      <input type="range" min="${H.min}" max="${H.max}" step="${H.step}" value="${a.hours}" data-action="land-hours" data-est="${esc(JSON.stringify(m.all))}" style="flex:1" oninput="this.nextElementSibling.value=this.value;const t=JSON.parse(this.dataset.est),e=document.getElementById('landest');if(e)e.textContent=t[Math.round((this.value-${H.min})/${H.step})]">
+      <input type="number" min="${H.min}" max="${H.max}" step="${H.step}" value="${a.hours}" data-action="land-hours" style="width:4rem"> hours
+    </div>
+    <div class="row" style="gap:0.3rem;flex-wrap:wrap">${presets}</div>
+    <div class="row" style="gap:0.3rem;flex-wrap:wrap;margin-top:0.4rem"><span class="small muted">Stance:</span>${stances}</div>
+    <div class="card" style="margin-top:0.5rem"><div${tip("An average from the dead on the tile's open ground, the stance and the team's Scouting, every group attacked: a hunt can meet more or fewer")}>Expected in ${a.hours}h: <b id="landest">${esc(huntText(hunt))}</b> <span class="muted">(groups of about ${n1(hunt.size)}; about ${Math.round(hunt.win * 100)}% to win each by the numbers)</span></div>
+      ${hunt.notes.map((t) => `<div class="small muted">${esc(t)}</div>`).join("")}
+    </div>
+    <div class="askbtns"><button class="primary" data-action="land-go" data-tip="Enter"${hunt.why ? " disabled" : ""}>Hunt the dead ${a.hours}h</button><button data-action="land-close" data-tip="Esc">Cancel</button></div>
+  </div></div>`;
+}
+
 function landBox(state, ui) {
   const m = landModel(state, ui);
   if (!m) { ui.landAsk = null; return ""; }
+  if (m.hunt) return huntBox(state, ui, m);
   const { a, est, p, team } = m;
   const verb = LAND_VERB[a.type];
   const wait = a.startHour - state.hour;
@@ -107,7 +153,8 @@ export function landKey(state, ui, e, actions) {
 // The action the box was opened for, again, with the hours and the quantity.
 const VIA = { xp: "xp-order", tc: "tc-do", ctxhunt: "ctxhunt" };
 export const LAND_ACTIONS = {
-  "land-sethours": (state, ui, d) => { if (ui.landAsk) ui.landAsk.hours = clampHours(d.h); },
+  "land-sethours": (state, ui, d) => { if (ui.landAsk) ui.landAsk.hours = hoursFor(ui.landAsk.type, d.h); },
+  "land-stance": (state, ui, d) => { if (ui.landAsk) ui.landAsk.stance = huntStance(d); }, // Hunt the dead: Stealthy, Normal, Lure
   "land-who": (state, ui, d) => { // who does it: the estimate is theirs (whoRow's chips)
     const a = ui.landAsk;
     const team = a && state.parties.find((x) => x.id === Number(a.d.id));
@@ -125,11 +172,11 @@ export const LAND_ACTIONS = {
     ui.landAsk = null;
     const qty = m && m.info && a.qty != null && a.qty < m.info.max ? String(Math.max(0, Math.floor(a.qty))) : "";
     const fn = actions && actions[VIA[a.via]];
-    if (fn) fn({ ...a.d, hours: String(a.hours), qty, asked: "1", whoAsked: "1" });
+    if (fn) fn({ ...a.d, hours: String(a.hours), qty, ...(a.type === "deadhunt" ? { stance: a.stance } : {}), asked: "1", whoAsked: "1" });
   },
   "land-close": (state, ui) => { ui.landAsk = null; },
 };
 export const LAND_CHANGE = {
-  "land-hours": (state, ui, el) => { if (ui.landAsk) ui.landAsk.hours = clampHours(el.value); },
+  "land-hours": (state, ui, el) => { if (ui.landAsk) ui.landAsk.hours = hoursFor(ui.landAsk.type, el.value); },
   "land-qty": (state, ui, el) => { if (ui.landAsk) ui.landAsk.qty = Math.max(0, Math.floor(Number(el.value) || 0)); },
 };
