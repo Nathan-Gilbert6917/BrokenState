@@ -206,9 +206,25 @@ export function deserializeState(save) {
   // The farms renovated (farmstead.js, farmplans.js, issue #62): a save from before keeps its farms' and ranches' pick of
   // buildings and its sheds' and farm stands' old buildings (worldcfg.js legacyFarms).
   if (!state.farmV) { state.farmLegacy = true; state.farmV = 1; }
+  // Civic and medical buildings at real scale (issue #49): a save from before keeps their plans at their drawn sizes
+  // and none of the new plans or sites (worldcfg.js legacyCivic), so its places and their containers stay as they were.
+  if (!state.civicV) { state.civicLegacy = true; state.civicV = 1; }
   // Radio towers (radiotower.js, issue #54): a save from before keeps its radio tower sites' transmitter huts (their
   // maps and containers as they were) and has no tower to claim or power (worldcfg.js legacyTowers).
   if (!state.towerV) { state.towerLegacy = true; state.towerV = 1; }
+  // Six more shops (data-newshops.js, issue #55: the furniture store, the laundromat, the thrift store, the bakery, the
+  // butcher, the deli): a save from before gets none of them on its tiles or its crawls' blocks (shops.js, placement.js
+  // placeExtraKind), so its points of interest regenerate as they were.
+  if (!state.shopsR2V) { state.shopsR2Legacy = true; state.shopsR2V = 1; }
+  // Data centres (datacenter.js, issue #51): a save from before gets none on its tiles (placement.js placeExtraKind,
+  // worldcfg.js legacyDc), so its points of interest regenerate as they were.
+  if (!state.dcV) { state.dcLegacy = true; state.dcV = 1; }
+  // Sawmills (sawmilllayout.js, issue #53): a save from before gets none on its tiles (placement.js placeExtraKind,
+  // worldcfg.js legacySaw), so its points of interest regenerate as they were.
+  if (!state.sawV) { state.sawLegacy = true; state.sawV = 1; }
+  // Mines and quarries (minelayout.js, issue #52): a save from before keeps its quarry sites' workshop and its mine
+  // shacks' cabin (their maps and containers as they were) and gets no new mines or quarries (worldcfg.js legacyMines).
+  if (!state.minesV) { state.minesLegacy = true; state.minesV = 1; }
   if (!state.woodcutting) {
     for (const b of state.bases || []) if (b.stock && !Number.isFinite(b.stock.wood)) b.stock.wood = 0;
     for (const r of (state.work && state.work.roles) || []) if (r.pri && r.pri.wood == null && r.pri.forage > 0) r.pri.wood = r.pri.forage;

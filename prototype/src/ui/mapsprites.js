@@ -1085,6 +1085,20 @@ function paintMall() {
   return p;
 }
 
+// An amusement park (sim/amusement.js, issue #60): a Ferris wheel's ring and spokes, a roller coaster's hill of track,
+// a striped tent and the gate's booth.
+function paintAmusement() {
+  const p = painter(26, 22), white = "#e8e4d8", steel = "#9aa1a8";
+  for (let a = 0; a < 24; a++) { const t = (a / 24) * Math.PI * 2; p.set(Math.round(8 + Math.cos(t) * 6), Math.round(8 + Math.sin(t) * 6), white); }
+  for (let a = 0; a < 6; a++) { const t = (a / 6) * Math.PI * 2; for (let r = 1; r < 6; r++) p.set(Math.round(8 + Math.cos(t) * r), Math.round(8 + Math.sin(t) * r), steel); p.rect(Math.round(8 + Math.cos(t) * 6) - 1, Math.round(8 + Math.sin(t) * 6), Math.round(8 + Math.cos(t) * 6), Math.round(8 + Math.sin(t) * 6) + 1, a % 2 ? RED : GOLD); }
+  for (let y = 9; y <= 19; y++) { p.set(6 - Math.floor((y - 9) / 4), y, steel); p.set(10 + Math.floor((y - 9) / 4), y, steel); }
+  for (let x = 13; x <= 25; x++) { const y = Math.round(16 - Math.sin(((x - 13) / 12) * Math.PI) * 9); p.set(x, y, RED); for (let yy = y + 1; yy <= 19; yy += 3) p.set(x, yy, shade(steel, -0.2)); }
+  for (let r = 0; r < 4; r++) p.rect(16 - r, 13 + r, 20 + r, 13 + r, r % 2 ? white : RED);
+  p.rect(14, 17, 22, 19, shade(white, -0.15)); p.rect(17, 17, 19, 19, DARK_WIN);
+  p.rect(0, 20, 25, 21, ASPHALT); for (let x = 1; x <= 24; x += 4) p.set(x, 21, "#d8d4c8");
+  return p;
+}
+
 function paintUniversity() {
   const p = painter(22, 20);
   const stone = "#cbc2aa";
@@ -1885,6 +1899,21 @@ function paintShed() {
   return p;
 }
 
+function paintSawmill() {
+  const p = painter(18, 15);
+  // Sawmill (issue #53): a long open-sided saw shed under a tin roof, the log deck beside it, stacked lumber in front
+  // and the rusty cone of a wigwam burner smoking behind; a pine at the yard's edge.
+  pine(p, 16, 9, 7, "#4a7a3a");
+  p.rect(13, 1, 14, 1, "#5a3424"); p.rect(12, 2, 15, 3, "#8a4a2c"); p.rect(11, 4, 16, 6, "#7a4026"); p.set(13, 0, "#9a9a9a"); // the burner
+  p.rect(1, 4, 11, 4, shade(METAL, 0.3)); p.rect(0, 5, 12, 5, METAL); p.rect(0, 6, 12, 6, shade(METAL, -0.3)); // the shed's roof
+  for (const x of [1, 6, 11]) p.rect(x, 7, x, 11, WOOD);                          // its posts
+  p.rect(2, 9, 9, 10, "#4a5a6a"); p.set(5, 8, "#c9ced3"); p.set(5, 9, "#c9ced3");   // the headsaw and its carriage
+  for (const [x, y] of [[13, 9], [15, 9], [14, 8], [13, 11], [15, 11], [14, 10]]) { p.set(x, y, "#5a4030"); p.set(x + 1, y, "#c9a46a"); } // the log deck
+  p.rect(1, 12, 5, 13, "#c9a46a"); p.rect(1, 12, 5, 12, "#a07a48"); p.rect(7, 12, 10, 13, "#c9a46a"); p.rect(7, 12, 10, 12, "#a07a48"); // lumber stacks
+  p.rect(0, 14, 17, 14, shade(DIRT, 0.15));
+  return p;
+}
+
 function paintBlind() {
   const p = painter(18, 15);
   // Hunting blind: a camouflaged box stand on stilts with a ladder, among the pines, its shooting slot dark.
@@ -1940,6 +1969,22 @@ function paintMineshack() {
   return p;
 }
 
+function paintMine() {
+  const p = painter(18, 15);
+  // Mine (issue #52): a steel headframe over the shaft on the hillside, its sheave wheel at the top, the hoist house's
+  // tin roof beside it, a waste dump of grey rock and an ore car on its rails.
+  for (let y = 4; y <= 13; y++) p.rect(0, y, Math.min(17, 2 + y), y, y % 3 ? "#6e6a60" : "#7a766c"); // the hillside
+  p.rect(9, 1, 9, 10, OUTLINE); p.rect(13, 1, 13, 10, OUTLINE); p.rect(9, 1, 13, 1, OUTLINE); // the headframe's legs and top
+  for (let y = 3; y <= 9; y += 3) p.rect(10, y, 12, y, shade(METAL, -0.2));        // its braces
+  p.set(10, 0, METAL); p.set(11, 0, shade(METAL, 0.3)); p.set(12, 0, METAL);         // the sheave wheel
+  p.rect(10, 10, 12, 12, "#111214");                                                 // the shaft's collar
+  p.rect(13, 8, 17, 8, shade(METAL, 0.3)); p.rect(13, 9, 17, 12, METAL); p.set(15, 10, LIT_WIN); // the hoist house
+  for (const [x, y] of [[1, 11], [2, 10], [3, 11], [2, 12], [4, 12], [3, 12]]) p.set(x, y, "#8e887c"); // the waste dump
+  p.rect(5, 12, 7, 13, "#4a4a4e"); p.set(6, 11, "#7a6a4a"); p.set(5, 14, TIRE); p.set(7, 14, TIRE); // the ore car
+  p.rect(0, 14, 17, 14, shade(DIRT, 0.1)); for (let x = 0; x <= 17; x += 2) p.set(x, 14, shade(METAL, -0.3));
+  return p;
+}
+
 // ---- bunkers (sim/bunkerlayout.js, issue #26) ----
 // A bunker's portal cut into the hillside: the rock, a concrete face with the blast door (hazard bands round it), a vent
 // stack on the rock above; the military's with a wire fence and a guard hut, the government's with a flag on a pole.
@@ -1971,6 +2016,20 @@ function paintPrepper() {
   p.rect(1, 4, 11, 4, shade(WOOD, -0.35)); p.rect(3, 2, 8, 3, "#2a3a5a"); p.set(4, 2, "#5a7ab0"); p.set(7, 3, "#5a7ab0"); // the roof, the panel
   p.rect(5, 9, 7, 12, shade(WOOD, -0.45));
   p.rect(12, 10, 16, 12, "#4d5258"); p.rect(13, 11, 15, 11, "#6f757c"); p.set(14, 10, "#c9ced3"); // the hatch
+  return p;
+}
+
+function paintDatacenter() {
+  const p = painter(20, 15);
+  // A data centre (issue #51, sim/datacenter.js): a long windowless grey box, louvres down its side, the cooling units on
+  // its roof, a generator in its yard with the exhaust stack, the fence.
+  p.rect(0, 12, 19, 14, "#5d7a3e");
+  p.rect(1, 4, 14, 12, OUTLINE); p.rect(2, 5, 13, 12, "#8a9096"); p.rect(2, 5, 13, 5, "#a6acb2"); // the hall
+  for (let x = 3; x <= 12; x += 2) p.rect(x, 7, x, 10, "#6a7076"); // the louvres
+  p.rect(3, 2, 5, 4, "#c9c7bd"); p.rect(8, 2, 10, 4, "#c9c7bd"); p.set(4, 3, "#4b4b50"); p.set(9, 3, "#4b4b50"); // the roof units
+  p.rect(7, 10, 8, 12, "#1c1c1e"); p.set(12, 6, "#5ad06a"); // the door, a status light
+  p.rect(15, 8, 18, 12, OUTLINE); p.rect(16, 9, 18, 12, "#c9c7bd"); p.rect(17, 6, 17, 8, "#26272a"); // the generator, its stack
+  for (let x = 0; x <= 19; x += 3) p.set(x, 13, "#9aa1a8"); // the fence posts
   return p;
 }
 
@@ -2201,6 +2260,29 @@ function paintLibrary(arg) {
   return p;
 }
 
+// Museum (sim/museumlayout.js, issue #58): a wide stone front under a green copper dome, a colonnade over broad steps,
+// the exhibition banners hanging between the columns (red, blue, gold), "MUSEUM" read as a gold band on the frieze,
+// tall dark windows in the wings and a sculpture on its plinth on the lawn.
+function paintMuseum() {
+  const p = painter(26, 18), wall = "#cfc6b0", trim = "#e6dfcc", col = "#f0ead8";
+  block(p, 1, 7, 24, 15, wall);
+  for (const [y, x0, x1] of [[1, 11, 14], [2, 10, 15], [3, 9, 16], [4, 9, 16]]) p.rect(x0, y, x1, y, y === 1 ? shade(COPPER, 0.35) : y === 4 ? shade(COPPER, -0.25) : COPPER); // the dome
+  p.set(12, 0, GOLD); p.set(13, 0, GOLD);                                                       // its lantern
+  for (const [y, x0, x1] of [[5, 7, 18], [6, 6, 19]]) p.rect(x0, y, x1, y, y === 5 ? shade(trim, 0.2) : trim); // the pediment
+  p.rect(7, 7, 18, 7, GOLD);                                                                   // the frieze's gold band
+  p.rect(7, 8, 18, 14, shade(wall, -0.35));                                                    // the colonnade's shade
+  const banners = ["#a8241c", "#2d5a8a", "#d9a520"];
+  [8, 10, 15, 17].forEach((x, i) => { p.rect(x, 8, x, 14, col); p.set(x, 8, shade(col, 0.2)); });
+  [9, 16].forEach((x, i) => { p.rect(x, 9, x, 12, banners[i % 3]); p.set(x, 12, shade(banners[i % 3], -0.3)); });
+  p.rect(12, 10, 13, 14, "#5a3a22"); p.rect(12, 9, 13, 9, GLASS_LIT);                           // the doors and their fanlight
+  for (const x0 of [2, 20]) for (const x of [x0, x0 + 2]) { p.rect(x, 9, x, 13, DARK_WIN); p.set(x, 9, shade(DARK_WIN, 0.4)); }
+  p.rect(1, 15, 24, 15, shade(wall, -0.3));                                                    // the base course
+  p.rect(6, 15, 19, 15, shade(STONE, 0.15)); p.rect(5, 16, 20, 16, STONE); p.rect(4, 17, 21, 17, shade(STONE, -0.15)); // the steps
+  p.rect(0, 17, 3, 17, GRASS); p.rect(22, 17, 25, 17, GRASS); p.rect(0, 16, 4, 16, GRASS); p.rect(21, 16, 25, 16, GRASS);
+  p.rect(23, 14, 24, 15, STONE); p.rect(23, 12, 24, 13, shade(COPPER, -0.1)); p.set(24, 11, shade(COPPER, 0.2)); // the sculpture on its plinth
+  return p;
+}
+
 function paintPetStore(arg) {
   const L = lookOf(arg) || firstLook("petstore"), p = painter(20, 17);
   // Pet store: the chain's front, a paw print on the glass, a fish tank in the window (fish, weed and bubbles), a
@@ -2214,6 +2296,72 @@ function paintPetStore(arg) {
   if (g.s === 1 || g.s === 2) { const [ix, iy] = signIcon(p, L, g, 5, 3); pawIcon(p, ix, iy, L.text); }
   p.rect(18, 12, 19, 15, "#a84a3a"); p.set(18, 11, shade("#a84a3a", 0.3)); p.set(19, 11, shade("#a84a3a", 0.3)); p.set(19, 10, shade("#a84a3a", 0.3)); // the dog house
   p.rect(18, 14, 18, 15, OUTLINE);
+  p.rect(0, 16, 19, 16, ASPHALT);
+  return p;
+}
+
+// Issue #55's six shops (sim/data-newshops.js), each in its chain's look: the shop front (shopFront) and what is in its
+// window.
+function paintFurnStore(arg) {
+  const L = lookOf(arg) || firstLook("furnstore"), p = painter(20, 17);
+  // Furniture store: a sofa and a floor lamp in the window, a wardrobe beside the door outside, waiting to go out.
+  const g = shopFront(p, L, 1, 17, 15), put = clipTo(p, g.win), [wx0, , , wy1] = g.win;
+  for (let x = wx0; x <= wx0 + 5; x++) { put(x, wy1, L.accent); put(x, wy1 - 1, shade(L.accent, 0.2)); }
+  put(wx0, wy1 - 2, L.accent); put(wx0 + 5, wy1 - 2, L.accent);                       // the sofa's arms
+  put(wx0 + 7, wy1, OUTLINE); put(wx0 + 7, wy1 - 1, OUTLINE); put(wx0 + 7, wy1 - 2, OUTLINE); put(wx0 + 6, wy1 - 3, GOLD); put(wx0 + 7, wy1 - 3, GOLD); // the lamp
+  p.rect(18, 9, 19, 15, "#7a5232"); p.rect(18, 9, 19, 9, shade("#7a5232", 0.3)); p.set(18, 12, GOLD);
+  p.rect(0, 16, 19, 16, ASPHALT);
+  return p;
+}
+function paintLaundromat(arg) {
+  const L = lookOf(arg) || firstLook("laundromat"), p = painter(20, 17);
+  // Laundromat: a row of round washer doors behind the glass, a basket of laundry by the door.
+  const g = shopFront(p, L, 1, 17, 15), put = clipTo(p, g.win), [wx0, , wx1, wy1] = g.win;
+  for (let x = wx0; x + 2 <= wx1; x += 3) { put(x, wy1 - 1, WHITE); put(x + 1, wy1 - 1, WHITE); put(x, wy1, WHITE); put(x + 1, wy1, WHITE); put(x + 1, wy1, DARK_WIN); }
+  p.rect(18, 13, 19, 15, "#c9ced3"); p.set(18, 12, "#7fc6e6"); p.set(19, 12, WHITE);
+  p.rect(0, 16, 19, 16, ASPHALT);
+  return p;
+}
+function paintThrift(arg) {
+  const L = lookOf(arg) || firstLook("thrift"), p = painter(20, 17);
+  // Thrift store: a rail of coats in many colours in the window, a donation bin by the door.
+  const g = shopFront(p, L, 1, 17, 15), put = clipTo(p, g.win), [wx0, wy0, wx1, wy1] = g.win;
+  const cols = [RED, GOLD, WATER_BLUE, CROP, ORANGE, "#8a3a8a"];
+  for (let x = wx0; x <= wx1; x++) put(x, wy0, STEEL);
+  for (let x = wx0, i = 0; x <= wx1; x++, i++) for (let y = wy0 + 1; y <= Math.min(wy1, wy0 + 3); y++) put(x, y, cols[i % cols.length]);
+  p.rect(18, 11, 19, 15, "#3f6b3a"); p.rect(18, 11, 19, 11, shade("#3f6b3a", 0.3)); p.set(18, 13, WHITE);
+  p.rect(0, 16, 19, 16, ASPHALT);
+  return p;
+}
+function paintBakery(arg) {
+  const L = lookOf(arg) || firstLook("bakery"), p = painter(20, 17);
+  // Bakery: loaves and a long baguette on the shelf in the window, a chalkboard by the door.
+  const g = shopFront(p, L, 1, 17, 15), put = clipTo(p, g.win), [wx0, , wx1, wy1] = g.win;
+  for (let x = wx0; x <= wx1; x++) put(x, wy1, "#8a5a30");
+  for (let x = wx0; x + 1 <= wx1; x += 3) { put(x, wy1 - 1, "#d49a5a"); put(x + 1, wy1 - 1, "#c0803a"); }
+  for (let x = wx0 + 1; x <= wx1 - 1; x++) put(x, wy1 - 3, "#e0b070");
+  p.rect(18, 11, 19, 15, "#26272a"); p.set(18, 12, WHITE); p.set(19, 13, WHITE);
+  p.rect(0, 16, 19, 16, ASPHALT);
+  return p;
+}
+function paintButcher(arg) {
+  const L = lookOf(arg) || firstLook("butcher"), p = painter(20, 17);
+  // Butcher: hams and sausages hanging in the window from their hooks, a striped awning by the chain's style.
+  const g = shopFront(p, L, 1, 17, 15), put = clipTo(p, g.win), [wx0, wy0, wx1] = g.win;
+  for (let x = wx0; x <= wx1; x++) put(x, wy0, STEEL);
+  for (let x = wx0 + 1; x <= wx1; x += 3) { put(x, wy0 + 1, "#b8402a"); put(x, wy0 + 2, "#b8402a"); put(x, wy0 + 3, shade("#b8402a", -0.2)); }
+  p.rect(18, 13, 19, 15, "#c9ced3"); p.set(18, 13, RED);
+  p.rect(0, 16, 19, 16, ASPHALT);
+  return p;
+}
+function paintDeli(arg) {
+  const L = lookOf(arg) || firstLook("deli"), p = painter(20, 17);
+  // Deli: salamis hanging, a wedge of cheese on the counter in the window, a sandwich board by the door.
+  const g = shopFront(p, L, 1, 17, 15), put = clipTo(p, g.win), [wx0, wy0, wx1, wy1] = g.win;
+  for (let x = wx0 + 1; x <= wx1; x += 2) { put(x, wy0, "#7a2a20"); put(x, wy0 + 1, "#7a2a20"); }
+  put(wx1 - 2, wy1, GOLD); put(wx1 - 1, wy1, GOLD); put(wx1 - 1, wy1 - 1, GOLD);
+  for (let x = wx0; x <= wx1; x++) put(x, wy1, x >= wx1 - 2 ? GOLD : "#e8e4d8");
+  p.rect(18, 11, 19, 15, L.accent); p.set(18, 12, OUTLINE);
   p.rect(0, 16, 19, 16, ASPHALT);
   return p;
 }
@@ -2569,14 +2717,18 @@ const POI_PAINT = {
   military_hive: paintInfestedBase, bunker_mil: () => paintMilitarySite(true), // sim/crashstart.js: Crashlanding's overrun Guard base (loc.look "hivebase", ui/render.js siteLook) and the unit's mountain bunker
   // Points of interest (sim/pois.js): the small places a tile holds besides its site.
   house: paintHouse, neighbourhood: paintNeighbourhood, garage: paintGarage, corner: paintCorner, pizza: paintPizza,
-  farmstand: paintFarmstand, shed: paintShed, blind: paintBlind, campsite: paintCampsite, hikercamp: paintHikercamp, mineshack: paintMineshack, bunker: () => paintBunkerPortal(false), govbunker: () => paintBunkerPortal(true), shelter: paintFalloutShelter, prepper: paintPrepper, // bunkers (issue #26)
+  farmstand: paintFarmstand, shed: paintShed, blind: paintBlind, campsite: paintCampsite, hikercamp: paintHikercamp, mineshack: paintMineshack, mine: paintMine, sawmill: paintSawmill, bunker: () => paintBunkerPortal(false), govbunker: () => paintBunkerPortal(true), shelter: paintFalloutShelter, prepper: paintPrepper, // bunkers (issue #26)
+  datacenter: paintDatacenter, // data centres (issue #51)
   pawnshop: paintPawnShop, // sim/shops.js
   stripmall: paintMall, outlet: paintMall, // sim/mall.js (issue #30): the mall's own sprite for now
+  amusement: paintAmusement, // sim/amusement.js (issue #60): a park, a fairground, a water park
   jail: paintPolice, // sim/pois.js jailExtra: a county jail, a station's look
   // The shops and services (sim/data-shops.js NEW_KINDS), each painted in its franchise's look.
   sportshop: paintSportShop, electronics: paintElectronics, radioshop: paintRadioShop, bookstore: paintBookstore, library: paintLibrary,
   petstore: paintPetStore, garden: paintGarden, clothing: paintClothing, vet: paintVet, dealer: paintDealer, restaurant: paintRestaurant,
   bank: paintBank, bar: paintBar, liquor: paintLiquor,
+  museum: paintMuseum, // sim/museumlayout.js (issue #58)
+  furnstore: paintFurnStore, laundromat: paintLaundromat, thrift: paintThrift, bakery: paintBakery, butcher: paintButcher, deli: paintDeli, // issue #55
   hotel: paintHotel, // issue #29: by its kind
   // The office buildings (sim/data-offices.js, issue #27); the office tower's firms: paintOffice's look.
   storefront: paintStorefront, bizpark: paintBizpark, cityhall: paintCityHall, courthouse: paintCourthouse, callcenter: paintCallCenter,

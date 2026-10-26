@@ -27,7 +27,7 @@
 // its map, ui/citycrawl.js).
 import { crashSiphon } from "./crashstart.js"; // Crashlanding (2026-10-24): limited fuel can be siphoned
 import { legacyRooms } from "./worldcfg.js"; // an older save: the checkpoint as it always was (issue #25)
-import { placeMult, crawlClass } from "./placement.js"; // a new world's blocks weighted by the placement table (issue #42)
+import { placeMult, crawlClass, placing } from "./placement.js"; // a new world's blocks weighted by the placement table (issue #42)
 import { typeFind } from "./foods.js"; // a crawl's food finds as items
 import { keyWord } from "./water.js"; // supplies as words: "9mm FMJ", "rounds"
 import { Rng } from "./rng.js";
@@ -40,6 +40,7 @@ import {
 import { registerCombatHandler, createBattle, startCombat, autoResolveCombat, finishCombat, byNumbersOdds, AREAS, floodReach, say, setFloor, makeLosCache, boxFinds, boxLoot, FLOOR_RICH } from "./combat.js";
 import { BUILDINGS, buildingHint, buildingSpec, buildingMap, rewardMult, buildingPlan } from "./buildingmaps.js";
 import { raidLootShare, raidBig } from "./battlesize.js"; // the quick search's containers hold what the laid-out map's do (issue #21)
+import { campusLootShare } from "./campus.js"; // a civic site's container by its own building (issue #49)
 import * as Weather from "./weather.js"; // the season: a chest freezer's food kept in winter (combat.js boxLoot)
 import { newItem } from "./inventory.js";
 import { breakBoarded, breakPiece } from "./barricade.js"; // a place picked over: a scene's barricade broken through (pickedOver)
@@ -83,6 +84,7 @@ export const CRAWL = {
   MAX_BLOCK: 8,                 // the heart of the city: no block beyond this one
   PLACES: [2, 4],               // places on a block (2–3 at the edge; a fourth more likely deeper)
   STRIPMALL: { city: 0.04, town: 0.12 }, // a block with a strip mall among its places (issue #30)
+  MUSEUM: { centre: 0.07, city: 0.03, suburb: 0.01, town: 0.03 }, // a block with a museum among its places, by its class (issue #58: a new world only; the big ones by the heart)
   EVENTS: { none: 0.3, two: 0.25, perBlock: 0.04 }, // a block's street events: none, one or two (two likelier deeper)
   BLOCKED: 0.12,                // a place shut this visit (fire, a collapse, the doors chained), by the visit's dice
   MOVE_HOURS: 1,                // walking to the next block (on the way out too)
@@ -510,6 +512,12 @@ export function genBlock(state, c, cell = c.cell) {
   // A strip mall now and then (issue #30, mall.js: its whole row of shops one place; never a regional mall, too big for a
   // block), on its own dice after everything above.
   if (places.length < CRAWL.PLACES[1] && hash01(state.seed, "crawlmall", c.tile, cell) < CRAWL.STRIPMALL[setting] && placeMult(state, "stripmall", cls) > 0) addPlace(new Rng(seedOf(state.seed, "crawlmall", c.tile, cell)), "stripmall", { dead: 1.2, rich: 1.1, w: 0, deep: 0, from: 1 }, places.length);
+  // A museum now and then (issue #58, museumlayout.js), a new world only, on its own dice after everything above; its
+  // variant by the block's class (mcls: the heart's natural history or art museum, a town's local history museum).
+  if (BUILDINGS.museum && placing(state) && places.length < CRAWL.PLACES[1] && hash01(state.seed, "crawlmuseum", c.tile, cell) < (CRAWL.MUSEUM[cls] || 0) && placeMult(state, "museum", cls) > 0) {
+    addPlace(new Rng(seedOf(state.seed, "crawlmuseum", c.tile, cell)), "museum", { dead: 1.1, rich: 1.1, w: 0, deep: 0, from: 1, rare: true }, places.length);
+    places[places.length - 1].mcls = cls;
+  }
   // This visit: a place may be shut.
   if (places.length > 2 && vr.chance(CRAWL.BLOCKED)) {
     const pl = vr.pick(places);
@@ -607,7 +615,7 @@ export const placeOption = (c, place, n = c.block) => {
   const snap = c.buildings && c.buildings[place.id];
   const variant = (snap ? snap.v : place.v) || null;
   const scenes = { dead: place.dead ?? 1, raiders: !!place.raiders, looted: place.looted || 0, rich: place.rich ?? 1, survivors: !!(place.folk && place.folk.survivors) };
-  return { id: `cc${n}-${place.slot}`, key: place.key, name: place.name, storeyBonus: storeyBonus(n), ...(variant ? { variant } : {}), ...(place.hv && variant === place.v ? { plan: place.hv } : {}), scenes }; // plan: a hotel's variant (issue #38)
+  return { id: `cc${n}-${place.slot}`, key: place.key, name: place.name, storeyBonus: storeyBonus(n), ...(variant ? { variant } : {}), ...(place.hv && variant === place.v ? { plan: place.hv } : {}), ...(place.mcls ? { mcls: place.mcls } : {}), scenes }; // plan: a hotel's variant (issue #38); mcls: a museum's block class (issue #58: buildingmaps.js makeSpec, its tile class)
 };
 // How many storeys a place has (the block card): the archetype's dice for this place, without building its map.
 export function placeStoreys(state, c, place, n = c.block) {
@@ -1218,8 +1226,12 @@ export function placeProfile(state, c, place, n = c.block) {
   if (place.profile && place.profile.v === 1) return place.profile;
   const t = state.tiles[c.tile];
   const map = buildingMap(state, c.tile, placeOption(c, place, n), false);
-  const boxes = (map.containers || []).filter((x) => x.kind !== "body" && x.kind !== "ground" && map.rooms[x.area] && AREAS[map.rooms[x.area].type]).map((x) => [x.area, x.kind, x.f || 0]);
-  const reward = rewardMult(t) * (raidBig(state, map.w, map.h) ? (map.natMap ? raidLootShare(map.natMap[0], map.natMap[1]) : raidLootShare(map.w, map.h)) : 1); // a building at real size: by its plan's map (combat.js searchBox)
+  const big = raidBig(state, map.w, map.h), share = big ? (map.natMap ? raidLootShare(map.natMap[0], map.natMap[1]) : raidLootShare(map.w, map.h)) : 1;
+  // A civic site's container (civicsite.js, issue #49) holds what searchBox gives it: its own building's share (campus.js
+  // campusLootShare), against the place's; and a civic plan's at real scale its worth (lootK).
+  const own = (x) => (big && map.civicSite ? campusLootShare({ raid: { plan: map.plan }, w: map.w, h: map.h }, x) / share : 1);
+  const boxes = (map.containers || []).filter((x) => x.kind !== "body" && x.kind !== "ground" && map.rooms[x.area] && AREAS[map.rooms[x.area].type]).map((x) => [x.area, x.kind, x.f || 0, (x.lootK || 1) * own(x)]);
+  const reward = rewardMult(t) * share; // a building at real size: by its plan's map (combat.js searchBox)
   let best = null, worth = 0;
   for (const F of map.floors && map.floors.length ? map.floors : [{ cells: map.cells }]) for (const cell of F.cells) {
     const d = cell && liftDef(cell.k);
@@ -1234,7 +1246,7 @@ export function quickLoot(state, p, c, place, rng = state.rng, n = c.block) {
   const Q = CRAWL.QUICK;
   const prof = placeProfile(state, c, place, n);
   const snap = c.buildings && c.buildings[place.id];
-  const left = snap ? snap.containers.filter((x) => x.kind !== "body" && x.kind !== "ground" && !x.contents && !x.searched && prof.rooms[x.area]).map((x) => [x.area, x.kind, x.f || 0]) : prof.boxes.slice();
+  const left = snap ? snap.containers.filter((x) => x.kind !== "body" && x.kind !== "ground" && !x.contents && !x.searched && prof.rooms[x.area]).map((x) => [x.area, x.kind, x.f || 0, x.lootK || 1]) : prof.boxes.slice();
   const rolls = Math.max(1, Math.round((Q.rolls + (Q.rollsPerBlock || 0) * (n - 1)) * (1 - CRAWL.LOOTED.strip * (place.looted || 0))));
   const scav = bestSkill(state, p, "scavenging");
   const rich = placeRichness(state, c, place, n);
@@ -1244,9 +1256,9 @@ export function quickLoot(state, p, c, place, rng = state.rng, n = c.block) {
   const sup = {}, gear = [];
   let opened = 0;
   for (let i = 0; i < rolls && left.length; i++) {
-    const [area, kind, f] = left.splice(rng.int(0, left.length - 1), 1)[0];
+    const [area, kind, f, lk = 1] = left.splice(rng.int(0, left.length - 1), 1)[0];
     const type = prof.rooms[area];
-    const got = boxFinds(state, rng, { def: boxLoot(type, kind, winter), type, rich: rich * Math.min(FLOOR_RICH.cap, Math.pow(FLOOR_RICH.perFloor, f)), scav, reward: prof.reward, site, gunSite: place.key, deep: n, tileId: c.tile, bid: `q${place.id}-${i}` });
+    const got = boxFinds(state, rng, { def: boxLoot(type, kind, winter), type, rich: rich * Math.min(FLOOR_RICH.cap, Math.pow(FLOOR_RICH.perFloor, f)) * lk, scav, reward: prof.reward, site, gunSite: place.key, deep: n, tileId: c.tile, bid: `q${place.id}-${i}` });
     addSup(sup, got.sup); gear.push(...got.gear);
     opened++;
   }

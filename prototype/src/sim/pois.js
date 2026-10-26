@@ -60,7 +60,7 @@ import { shopExtras, franchiseFor, franchisesOf, franchiseName, settingOf, noFir
 import { hotelVariantName } from "./data-hotels.js"; // a hotel's variant's name (issue #38)
 import { hotelExtra } from "./hotels.js"; // call-time only: a hotel a tile may hold (issue #29)
 import { layoutFor, layoutName, poiLayoutKey, settingOfTile } from "./buildvariants.js"; // a POI's building layout (issue #32): its name and its plan
-import { legacyRooms, legacyPrisons, legacyFarms } from "./worldcfg.js"; // an older save: no layouts, no county jails
+import { legacyRooms, legacyPrisons, legacyMines, legacyFarms } from "./worldcfg.js"; // an older save: no layouts, no county jails
 import { placing, placeMult, standsOn, tileClass, placeExtraKind, PLACE_KNOWN } from "./placement.js"; // call-time only: a new world's kinds by the placement table (issue #42)
 
 export const POI = {
@@ -143,9 +143,14 @@ function makePoi(state, t, kind, site, slot, before = []) {
   }
   // A kind with no franchise takes one of its building's layouts (buildvariants.js, issue #32): its plan and its name
   // ("Ranch house", "Dairy barn"); not in an older save (its buildings keep their plans: worldcfg.js legacyRooms).
-  const lay = v || legacyRooms(state) || (FARM_POI_KINDS.has(kind) && legacyFarms(state)) ? null : layoutFor(poiLayoutKey(kind), settingOfTile(t), hash01(state.seed, "poilay", t.id, slot));
-  return { kind, hidden: false, pool: pool == null ? null : Math.min(1, pool), visits: 0, lastDay: null, cont: null, threatStamp: null, stripped: false, ...(site ? { site: true } : {}), ...(v ? { v } : {}), ...(lay ? { lay } : {}) };
+  // A quarry or a mine shack in a new world opens issue #52's types (m: buildingmaps.js MINE_SITES, poiraid.js poiPlace),
+  // named by their own plans (no cabin or workshop layout); an older save's (worldcfg.js legacyMines) keeps the workshop
+  // and the cabin.
+  const mine = MINE_KINDS.has(kind) && !legacyMines(state);
+  const lay = v || legacyRooms(state) || mine || (FARM_POI_KINDS.has(kind) && legacyFarms(state)) ? null : layoutFor(poiLayoutKey(kind), settingOfTile(t), hash01(state.seed, "poilay", t.id, slot));
+  return { kind, hidden: false, pool: pool == null ? null : Math.min(1, pool), visits: 0, lastDay: null, cont: null, threatStamp: null, stripped: false, ...(site ? { site: true } : {}), ...(v ? { v } : {}), ...(lay ? { lay } : {}), ...(mine ? { m: 1 } : {}) };
 }
+const MINE_KINDS = new Set(["quarry", "mineshack"]);
 // The tile's list from the world seed and the tile (no state.rng: the same for a world made before POIs existed).
 /** @param {State} state @param {Tile} t */
 export function generatePois(state, t) {
