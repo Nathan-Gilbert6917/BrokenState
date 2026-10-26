@@ -8047,7 +8047,7 @@ function endRaid(state, b) {
     knockedOut: captives.length, prisoners: captiveRecords(state, b, captives), // prisoners.js
     outcome, enemiesKilled: killed, enemiesLeft: original.length - killed - captives.length,
     survivorsHurt: hurtIds, survivorsDead: deadIds, ammoUsed: b.ammoUsed, arrowsUsed: b.arrowsUsed || 0, arrowsBack: arrowsBackN,
-    loot: { supplies: { ...R.found }, gear: [...R.foundGear, ...pieces.items] },
+    loot: { supplies: { ...R.found }, gear: [...R.foundGear, ...pieces.items, ...(vehicleKept ? R.stowed || [] : [])] }, // furnicarry.js stowAct: the pieces loaded into the vehicle during the raid go home in it (issue #48)
     turns: b.turn, medsUsed: b.medsUsed, extraKilled: enemies.filter((u) => u.reinforcement && u.dead).length,
     tactical: true, worn: true,
     third: thirdResult(b), // thirdside.js: the survivors or soldiers who were there (null: none)

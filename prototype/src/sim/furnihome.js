@@ -24,9 +24,9 @@
 //     One of a pair out and the other not (down, left behind): the piece is set down where they parted (tetherRound,
 //     then placeNear at the one still there), kept in the ledger as above.
 //   A city crawl's place (setup.handler "crawl"): the team is still in the city, so a piece carried out of a building
-//     stays in the arms (marked it.crawl); its weight slows the walk from block to block (crawlMoveHours: the hour ÷ the
-//     slowest carrier's load band pace) and the crawl card lists it (crawlPieces). Leaving the city (citycrawl.js
-//     finishCrawl) the same rule by the team's vehicle (piecesOut): into its cargo, else dropped from exhaustion and lost
+//     stays in the arms (marked it.crawl); its weight slows the walk from block to block (crawlMoveHours, by
+//     citycrawl.js carryPace: the slowest carrier's band, a pair at half the weight each) and the crawl card lists it
+//     (crawlPieces). Leaving the city (citycrawl.js finishCrawl) the same rule by the team's vehicle (piecesOut): into its cargo, else dropped from exhaustion and lost
 //     (the rim is no building). A piece set down inside a place stays in its snapshot (citycrawl.js snapshotBuilding).
 //   The warning before leaving (extractNote): the Extract button's tooltip (ui/combat.js) and the extract order's own
 //     line say what will happen to the piece; the raid bot sets a piece down before it extracts without a vehicle
@@ -40,25 +40,26 @@ import { survivorById, log } from "./world.js";
 import { itemLoad } from "./inventory.js";
 import { addGearToCargo, cargoRoom, partyMembers, teamName } from "./parties.js";
 import { isBike, isCar, partyVehicle, VEHICLE_TYPES } from "./vehicles.js";
-import { personLoad, wornLoad } from "./load.js";
-import { carriedPiece, endCarry, placeNear, tetherRound, isPieceItem, pieceKindOf, liftDef } from "./furnicarry.js"; // call-time only
+import { carriedPiece, endCarry, placeNear, tetherRound, isPieceItem, pieceKindOf, liftDef, pluralName, agree } from "./furnicarry.js"; // call-time only
 import { trunkVehicle, trunkSpace, raidParty } from "./raidloot.js"; // call-time only
 import { carRoom } from "./carriers.js"; // call-time only
-import { say } from "./combat.js"; // call-time only
+import { say, CELL } from "./combat.js"; // call-time only
+import { carryPace, CRAWL } from "./citycrawl.js"; // call-time only
 
 const first = (u) => String((u && u.name) || "").split(" ")[0];
 const cap1 = (t) => t.charAt(0).toUpperCase() + t.slice(1);
 const NUM = ["no", "a", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
 const plural = (w) => (/(s|sh|ch|x)$/.test(w) ? `${w}es` : `${w}s`);
-// "a refrigerator, two chairs" (the names in the order they first come).
+// "a refrigerator, two chairs, some shelves" (the names in the order they first come; a plural name, "shelves": "some
+// shelves", "two lots of shelves").
 export function piecesText(names) {
   const n = new Map();
   for (const w of names) n.set(w, (n.get(w) || 0) + 1);
-  return [...n].map(([w, k]) => (k === 1 ? `${/^[aeiou]/.test(w) ? "an" : "a"} ${w}` : `${NUM[k] || k} ${plural(w)}`)).join(", ");
+  return [...n].map(([w, k]) => (pluralName(w) ? (k === 1 ? `some ${w}` : `${NUM[k] || k} lots of ${w}`) : k === 1 ? `${/^[aeiou]/.test(w) ? "an" : "a"} ${w}` : `${NUM[k] || k} ${plural(w)}`)).join(", ");
 }
 // The message (the user's: "dropped due to exhaustion"). ledger: it stands at a POI's door, kept for the next visit.
 export function exhaustText(names, ledger) {
-  const one = names.length === 1;
+  const one = names.length === 1 && !pluralName(names[0]);
   return `Exhausted, the team dropped what it was carrying: ${piecesText(names)}. ${ledger ? `${one ? "It stands" : "They stand"} by the door: come back with a vehicle to take ${one ? "it" : "them"}.` : `Nobody can come back for ${one ? "it" : "them"}: ${one ? "it is" : "they are"} lost.`}`;
 }
 const vehWord = (v) => (isBike(v) ? `the bicycle rack${(v.count || 1) > 1 ? "s" : ""}` : `the ${String(v.name || "vehicle").toLowerCase()}`);
@@ -119,7 +120,7 @@ export function piecesAtExtraction(state, b, kept) {
   }
   if (res.full.length) {
     const many = res.full.length > 1;
-    res.fullText = `${cap1(veh.name)} ${isBike(veh.v) ? "are" : "is"} full: ${many ? piecesText(res.full) : `the ${res.full[0]}`} ${res.ledger ? `stay${many ? "" : "s"} by the door` : `${many ? "are" : "is"} left by the door and lost`}.`;
+    res.fullText = `${cap1(veh.name)} ${isBike(veh.v) ? "are" : "is"} full: ${many ? piecesText(res.full) : `the ${res.full[0]}`} ${res.ledger ? `stay${many || pluralName(res.full[0]) ? "" : "s"} by the door` : `${many || pluralName(res.full[0]) ? "are" : "is"} left by the door and lost`}.`;
     res.lines.push(res.fullText);
   }
   if (res.dropped.length) { res.text = exhaustText(res.dropped, res.ledger); res.lines.push(res.text); }
@@ -133,13 +134,13 @@ export function extractNote(state, b, u) {
   const P = b && u ? carriedPiece(b, u) : null;
   if (!P) return "";
   const name = P.def.name.toLowerCase();
-  if (b.setup && b.setup.handler === "crawl") return `The ${name} comes out of the building with them: it slows the walk from block to block, and only a vehicle takes it home from the city.`;
+  if (b.setup && b.setup.handler === "crawl") return `The ${name} ${agree(name, "comes", "come")} out of the building with them: ${agree(name, "it slows", "they slow")} the walk from block to block, and only a vehicle takes it home from the city.`;
   const veh = homeRoom(state, b);
-  if (!veh) return `No vehicle: the ${name} will be dropped at the door (too exhausted to carry it home).`;
+  if (!veh) return `No vehicle: the ${name} will be dropped at the door (too exhausted to carry ${agree(name, "it", "them")} home).`;
   const kg = itemLoad(P.item);
-  if (isBike(veh.v) && (kg > VEHICLE_TYPES.bike.rack || kg > veh.room + 1e-6)) return `No vehicle for it: the ${name} does not go on ${veh.name} and will be dropped at the door (too exhausted to carry it home).`;
-  if (kg > veh.room + 1e-6) return `No room for the ${name} in ${veh.name}: it will be set down at the door.`;
-  return `The ${name} goes into ${veh.name} (if the vehicle goes home with the team).`;
+  if (isBike(veh.v) && (kg > VEHICLE_TYPES.bike.rack || kg > veh.room + 1e-6)) return `No vehicle for ${agree(name, "it", "them")}: the ${name} ${agree(name, "does", "do")} not go on ${veh.name} and will be dropped at the door (too exhausted to carry ${agree(name, "it", "them")} home).`;
+  if (kg > veh.room + 1e-6) return `No room for the ${name} in ${veh.name}: ${agree(name, "it", "they")} will be set down at the door.`;
+  return `The ${name} ${agree(name, "goes", "go")} into ${veh.name} (if the vehicle goes home with the team).`;
 }
 // The raid bot (combat.js autoRaidTurn): never out with a piece and no vehicle to take it.
 export const pieceGoesHome = (state, b, u) => { const P = carriedPiece(b, u); const veh = P ? homeRoom(state, b) : null; return !P || (!!veh && itemLoad(P.item) <= veh.room + 1e-6 && (!isBike(veh.v) || itemLoad(P.item) <= VEHICLE_TYPES.bike.rack)); };
@@ -154,13 +155,13 @@ export function crawlPieces(state, p) {
   }
   return out;
 }
-// The hours a block's walk takes (citycrawl.js nextBlock): the hour ÷ the slowest piece carrier's pace (their load
-// band, load.js personLoad: an overloaded carrier 0.55, so 2 hours).
+// The hours a block's walk of `hours` takes with the pieces in the arms. The one rule is citycrawl.js carryPace (issue #21: the slowest carrier's band, a pair at half the weight each, which
+// citycrawl.nextBlock walks by); this scales its hours to a walk of `hours` (issue #48: this used to weigh each carrier
+// with the whole piece, so a pair's walk read slower here than the crawl walked it).
 export function crawlMoveHours(state, p, hours) {
-  const L = crawlPieces(state, p);
-  if (!L.length) return hours;
-  const pace = Math.min(...L.map(({ s }) => personLoad(s, wornLoad(s)).speed));
-  return Math.max(hours, Math.ceil(hours / Math.max(0.1, pace) - 1e-9));
+  if (!crawlPieces(state, p).length) return hours;
+  const pace = carryPace(state, p);
+  return Math.max(hours, Math.ceil((hours * pace.hours) / CRAWL.MOVE_HOURS - 1e-9));
 }
 // Out of the city (citycrawl.js finishCrawl): each piece into the team's vehicle (a car or truck; bikes: one within a
 // rack's room), else dropped from exhaustion, lost. Logs the lines; returns { loaded, dropped, text }.
@@ -212,5 +213,32 @@ export function applyPieceLedger(b, list) {
     n++;
   }
   if (n) { if (b.losCache) b.losCache.fill(0); if (b.floors) for (const F of b.floors) if (F.losCache) F.losCache.fill(0); }
+  if (n) offPieces(b);
   return n;
+}
+// The ledger is put back after the units are placed (combat.js createBattle → poicont.js poiRaidStart), so a piece left
+// by the door can stand where someone was put down (issue #48: the playthrough's team arrived standing on the sofa it
+// had left in the entry zone). Whoever stands on a cell nobody can stand on steps to the nearest free one (ring by
+// ring out to 6, straight on first in each ring).
+function offPieces(b) {
+  const walk = (c) => !!c && !!CELL[c.k] && CELL[c.k].walk;
+  for (const u of b.units || []) {
+    if (u.dead || u.left || u.off || u.aboard || u.x == null) continue;
+    const f = u.f || 0, cells = cellsOn(b, f);
+    if (!cells || walk(cells[u.y * b.w + u.x])) continue;
+    let to = null;
+    for (let r = 1; r <= 6 && !to; r++) {
+      const ring = [];
+      for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) if (Math.max(Math.abs(dx), Math.abs(dy)) === r) ring.push([dx, dy]);
+      ring.sort((p, q) => Math.abs(p[0]) + Math.abs(p[1]) - (Math.abs(q[0]) + Math.abs(q[1])));
+      for (const [dx, dy] of ring) {
+        const x = u.x + dx, y = u.y + dy;
+        if (x < 0 || y < 0 || x >= b.w || y >= b.h || !walk(cells[y * b.w + x]) || cells[y * b.w + x].k === "vehicle") continue;
+        if (b.units.some((o) => o !== u && !o.dead && !o.left && (o.f || 0) === f && o.x === x && o.y === y)) continue;
+        to = [x, y];
+        break;
+      }
+    }
+    if (to) { u.x = to[0]; u.y = to[1]; }
+  }
 }
