@@ -2003,6 +2003,20 @@ function paintPrepper() {
   return p;
 }
 
+function paintDatacenter() {
+  const p = painter(20, 15);
+  // A data centre (issue #51, sim/datacenter.js): a long windowless grey box, louvres down its side, the cooling units on
+  // its roof, a generator in its yard with the exhaust stack, the fence.
+  p.rect(0, 12, 19, 14, "#5d7a3e");
+  p.rect(1, 4, 14, 12, OUTLINE); p.rect(2, 5, 13, 12, "#8a9096"); p.rect(2, 5, 13, 5, "#a6acb2"); // the hall
+  for (let x = 3; x <= 12; x += 2) p.rect(x, 7, x, 10, "#6a7076"); // the louvres
+  p.rect(3, 2, 5, 4, "#c9c7bd"); p.rect(8, 2, 10, 4, "#c9c7bd"); p.set(4, 3, "#4b4b50"); p.set(9, 3, "#4b4b50"); // the roof units
+  p.rect(7, 10, 8, 12, "#1c1c1e"); p.set(12, 6, "#5ad06a"); // the door, a status light
+  p.rect(15, 8, 18, 12, OUTLINE); p.rect(16, 9, 18, 12, "#c9c7bd"); p.rect(17, 6, 17, 8, "#26272a"); // the generator, its stack
+  for (let x = 0; x <= 19; x += 3) p.set(x, 13, "#9aa1a8"); // the fence posts
+  return p;
+}
+
 // ---- shops and services by franchise (sim/data-shops.js FRANCHISES) ----
 // A kind with franchises is painted in its franchise's look (poiSpriteCanvas: the place's own by its variant, else the
 // kind's first): { wall, trim, sign, text, accent, style }. The wall; the trim (the footing, the sills, the mullions);
@@ -2266,6 +2280,72 @@ function paintPetStore(arg) {
   if (g.s === 1 || g.s === 2) { const [ix, iy] = signIcon(p, L, g, 5, 3); pawIcon(p, ix, iy, L.text); }
   p.rect(18, 12, 19, 15, "#a84a3a"); p.set(18, 11, shade("#a84a3a", 0.3)); p.set(19, 11, shade("#a84a3a", 0.3)); p.set(19, 10, shade("#a84a3a", 0.3)); // the dog house
   p.rect(18, 14, 18, 15, OUTLINE);
+  p.rect(0, 16, 19, 16, ASPHALT);
+  return p;
+}
+
+// Issue #55's six shops (sim/data-newshops.js), each in its chain's look: the shop front (shopFront) and what is in its
+// window.
+function paintFurnStore(arg) {
+  const L = lookOf(arg) || firstLook("furnstore"), p = painter(20, 17);
+  // Furniture store: a sofa and a floor lamp in the window, a wardrobe beside the door outside, waiting to go out.
+  const g = shopFront(p, L, 1, 17, 15), put = clipTo(p, g.win), [wx0, , , wy1] = g.win;
+  for (let x = wx0; x <= wx0 + 5; x++) { put(x, wy1, L.accent); put(x, wy1 - 1, shade(L.accent, 0.2)); }
+  put(wx0, wy1 - 2, L.accent); put(wx0 + 5, wy1 - 2, L.accent);                       // the sofa's arms
+  put(wx0 + 7, wy1, OUTLINE); put(wx0 + 7, wy1 - 1, OUTLINE); put(wx0 + 7, wy1 - 2, OUTLINE); put(wx0 + 6, wy1 - 3, GOLD); put(wx0 + 7, wy1 - 3, GOLD); // the lamp
+  p.rect(18, 9, 19, 15, "#7a5232"); p.rect(18, 9, 19, 9, shade("#7a5232", 0.3)); p.set(18, 12, GOLD);
+  p.rect(0, 16, 19, 16, ASPHALT);
+  return p;
+}
+function paintLaundromat(arg) {
+  const L = lookOf(arg) || firstLook("laundromat"), p = painter(20, 17);
+  // Laundromat: a row of round washer doors behind the glass, a basket of laundry by the door.
+  const g = shopFront(p, L, 1, 17, 15), put = clipTo(p, g.win), [wx0, , wx1, wy1] = g.win;
+  for (let x = wx0; x + 2 <= wx1; x += 3) { put(x, wy1 - 1, WHITE); put(x + 1, wy1 - 1, WHITE); put(x, wy1, WHITE); put(x + 1, wy1, WHITE); put(x + 1, wy1, DARK_WIN); }
+  p.rect(18, 13, 19, 15, "#c9ced3"); p.set(18, 12, "#7fc6e6"); p.set(19, 12, WHITE);
+  p.rect(0, 16, 19, 16, ASPHALT);
+  return p;
+}
+function paintThrift(arg) {
+  const L = lookOf(arg) || firstLook("thrift"), p = painter(20, 17);
+  // Thrift store: a rail of coats in many colours in the window, a donation bin by the door.
+  const g = shopFront(p, L, 1, 17, 15), put = clipTo(p, g.win), [wx0, wy0, wx1, wy1] = g.win;
+  const cols = [RED, GOLD, WATER_BLUE, CROP, ORANGE, "#8a3a8a"];
+  for (let x = wx0; x <= wx1; x++) put(x, wy0, STEEL);
+  for (let x = wx0, i = 0; x <= wx1; x++, i++) for (let y = wy0 + 1; y <= Math.min(wy1, wy0 + 3); y++) put(x, y, cols[i % cols.length]);
+  p.rect(18, 11, 19, 15, "#3f6b3a"); p.rect(18, 11, 19, 11, shade("#3f6b3a", 0.3)); p.set(18, 13, WHITE);
+  p.rect(0, 16, 19, 16, ASPHALT);
+  return p;
+}
+function paintBakery(arg) {
+  const L = lookOf(arg) || firstLook("bakery"), p = painter(20, 17);
+  // Bakery: loaves and a long baguette on the shelf in the window, a chalkboard by the door.
+  const g = shopFront(p, L, 1, 17, 15), put = clipTo(p, g.win), [wx0, , wx1, wy1] = g.win;
+  for (let x = wx0; x <= wx1; x++) put(x, wy1, "#8a5a30");
+  for (let x = wx0; x + 1 <= wx1; x += 3) { put(x, wy1 - 1, "#d49a5a"); put(x + 1, wy1 - 1, "#c0803a"); }
+  for (let x = wx0 + 1; x <= wx1 - 1; x++) put(x, wy1 - 3, "#e0b070");
+  p.rect(18, 11, 19, 15, "#26272a"); p.set(18, 12, WHITE); p.set(19, 13, WHITE);
+  p.rect(0, 16, 19, 16, ASPHALT);
+  return p;
+}
+function paintButcher(arg) {
+  const L = lookOf(arg) || firstLook("butcher"), p = painter(20, 17);
+  // Butcher: hams and sausages hanging in the window from their hooks, a striped awning by the chain's style.
+  const g = shopFront(p, L, 1, 17, 15), put = clipTo(p, g.win), [wx0, wy0, wx1] = g.win;
+  for (let x = wx0; x <= wx1; x++) put(x, wy0, STEEL);
+  for (let x = wx0 + 1; x <= wx1; x += 3) { put(x, wy0 + 1, "#b8402a"); put(x, wy0 + 2, "#b8402a"); put(x, wy0 + 3, shade("#b8402a", -0.2)); }
+  p.rect(18, 13, 19, 15, "#c9ced3"); p.set(18, 13, RED);
+  p.rect(0, 16, 19, 16, ASPHALT);
+  return p;
+}
+function paintDeli(arg) {
+  const L = lookOf(arg) || firstLook("deli"), p = painter(20, 17);
+  // Deli: salamis hanging, a wedge of cheese on the counter in the window, a sandwich board by the door.
+  const g = shopFront(p, L, 1, 17, 15), put = clipTo(p, g.win), [wx0, wy0, wx1, wy1] = g.win;
+  for (let x = wx0 + 1; x <= wx1; x += 2) { put(x, wy0, "#7a2a20"); put(x, wy0 + 1, "#7a2a20"); }
+  put(wx1 - 2, wy1, GOLD); put(wx1 - 1, wy1, GOLD); put(wx1 - 1, wy1 - 1, GOLD);
+  for (let x = wx0; x <= wx1; x++) put(x, wy1, x >= wx1 - 2 ? GOLD : "#e8e4d8");
+  p.rect(18, 11, 19, 15, L.accent); p.set(18, 12, OUTLINE);
   p.rect(0, 16, 19, 16, ASPHALT);
   return p;
 }
@@ -2622,6 +2702,7 @@ const POI_PAINT = {
   // Points of interest (sim/pois.js): the small places a tile holds besides its site.
   house: paintHouse, neighbourhood: paintNeighbourhood, garage: paintGarage, corner: paintCorner, pizza: paintPizza,
   farmstand: paintFarmstand, shed: paintShed, blind: paintBlind, campsite: paintCampsite, hikercamp: paintHikercamp, mineshack: paintMineshack, sawmill: paintSawmill, bunker: () => paintBunkerPortal(false), govbunker: () => paintBunkerPortal(true), shelter: paintFalloutShelter, prepper: paintPrepper, // bunkers (issue #26)
+  datacenter: paintDatacenter, // data centres (issue #51)
   pawnshop: paintPawnShop, // sim/shops.js
   stripmall: paintMall, outlet: paintMall, // sim/mall.js (issue #30): the mall's own sprite for now
   amusement: paintAmusement, // sim/amusement.js (issue #60): a park, a fairground, a water park
@@ -2631,6 +2712,7 @@ const POI_PAINT = {
   petstore: paintPetStore, garden: paintGarden, clothing: paintClothing, vet: paintVet, dealer: paintDealer, restaurant: paintRestaurant,
   bank: paintBank, bar: paintBar, liquor: paintLiquor,
   museum: paintMuseum, // sim/museumlayout.js (issue #58)
+  furnstore: paintFurnStore, laundromat: paintLaundromat, thrift: paintThrift, bakery: paintBakery, butcher: paintButcher, deli: paintDeli, // issue #55
   hotel: paintHotel, // issue #29: by its kind
   // The office buildings (sim/data-offices.js, issue #27); the office tower's firms: paintOffice's look.
   storefront: paintStorefront, bizpark: paintBizpark, cityhall: paintCityHall, courthouse: paintCourthouse, callcenter: paintCallCenter,

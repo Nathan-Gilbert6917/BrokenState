@@ -19,6 +19,7 @@
 //   - an older save's building: no plan (the factory's classic one).
 // Usage: node tools/sawmilltest.js [seeds, default 6; BS_QUICK=1: 3] [worlds, default 12; BS_QUICK=1: 6]
 import { createWorld } from "../src/sim/world.js";
+import { serializeState, deserializeState } from "../src/sim/save.js";
 import { BUILDINGS, SITES, buildingMap, buildingSpec, STOREYS_BY_TYPE } from "../src/sim/buildingmaps.js";
 import { SAWMILL_PLANS, SAWMILL_IDS, SAWMILL, SAWMILL_SCENES } from "../src/sim/sawmilllayout.js";
 import { variantsOf, pickVariant } from "../src/sim/variantpick.js";
@@ -181,6 +182,19 @@ console.log("Placement (placement.js PLACE_EXTRA, data-placement.js)");
   check(n >= WORLDS && scenic / n >= 0.4, `${n} sawmills in ${WORLDS} worlds, ${((scenic / n) * 100).toFixed(0)}% on scenic tiles (${Object.entries(by).map(([c, k]) => `${c} ${k}`).join(", ")})`);
   check(town > 0 && !(by.city || by.centre), `some in towns (${town}), none in a city`);
   check(old === 0, `an older world (placeLegacy) holds none (${old})`);
+  // A save from before the sawmills (no sawV: save.js sawLegacy) gets none, and every other place it holds stays as it was.
+  const st = createWorld({ seed: 7000, factionCount: 3, size: "small" });
+  check(st.sawV === 1 && !st.sawLegacy, "a new world carries sawV");
+  for (const t of st.tiles) delete t.pois;
+  ensurePois(st);
+  const pre = { ...st }; delete pre.sawV;
+  const back = deserializeState(serializeState(pre));
+  for (const t of back.tiles) delete t.pois;
+  ensurePois(back);
+  const others = (s) => s.tiles.map((t) => (t.pois || []).filter((p) => p.kind !== "sawmill").map((p) => p.kind).join(",")).join(";");
+  const saws = (s) => s.tiles.reduce((k, t) => k + (t.pois || []).filter((p) => p.kind === "sawmill").length, 0);
+  check(!!back.sawLegacy && saws(back) === 0, `a save from before the sawmills loads as one (sawLegacy): none on its tiles (new world: ${saws(st)})`);
+  check(others(back) === others(st), "its other places are the new world's, sawmills aside (sawmills are last in PLACE_EXTRA)");
 }
 
 // ---------- 8. the scenes ----------
