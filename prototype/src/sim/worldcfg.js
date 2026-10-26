@@ -171,6 +171,9 @@ export const legacyDc = (state) => !!(state && state.dcLegacy);
 // A save from before the sawmills (issue #53, save.js sawLegacy: no state.sawV): its tiles get none (placement.js
 // placeExtraKind), so its points of interest stay as they were.
 export const legacySaw = (state) => !!(state && state.sawLegacy);
+// A save from before the mines and quarries (issue #52, save.js minesLegacy: no state.minesV): its quarry sites keep the
+// workshop and its mine shacks the cabin (buildingmaps.js SITES), and it gets no new mine or quarry POIs (placement.js).
+export const legacyMines = (state) => !!(state && (state.minesLegacy || state.roomsLegacy));
 // A save from before the gyms and bowling alleys (save.js recLegacy, issue #56): none on its tiles or its crawls' blocks
 // (placement.js placeExtraKind, crawlExtraKind).
 export const legacyRec = (state) => !!(state && state.recLegacy);

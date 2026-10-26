@@ -1969,6 +1969,22 @@ function paintMineshack() {
   return p;
 }
 
+function paintMine() {
+  const p = painter(18, 15);
+  // Mine (issue #52): a steel headframe over the shaft on the hillside, its sheave wheel at the top, the hoist house's
+  // tin roof beside it, a waste dump of grey rock and an ore car on its rails.
+  for (let y = 4; y <= 13; y++) p.rect(0, y, Math.min(17, 2 + y), y, y % 3 ? "#6e6a60" : "#7a766c"); // the hillside
+  p.rect(9, 1, 9, 10, OUTLINE); p.rect(13, 1, 13, 10, OUTLINE); p.rect(9, 1, 13, 1, OUTLINE); // the headframe's legs and top
+  for (let y = 3; y <= 9; y += 3) p.rect(10, y, 12, y, shade(METAL, -0.2));        // its braces
+  p.set(10, 0, METAL); p.set(11, 0, shade(METAL, 0.3)); p.set(12, 0, METAL);         // the sheave wheel
+  p.rect(10, 10, 12, 12, "#111214");                                                 // the shaft's collar
+  p.rect(13, 8, 17, 8, shade(METAL, 0.3)); p.rect(13, 9, 17, 12, METAL); p.set(15, 10, LIT_WIN); // the hoist house
+  for (const [x, y] of [[1, 11], [2, 10], [3, 11], [2, 12], [4, 12], [3, 12]]) p.set(x, y, "#8e887c"); // the waste dump
+  p.rect(5, 12, 7, 13, "#4a4a4e"); p.set(6, 11, "#7a6a4a"); p.set(5, 14, TIRE); p.set(7, 14, TIRE); // the ore car
+  p.rect(0, 14, 17, 14, shade(DIRT, 0.1)); for (let x = 0; x <= 17; x += 2) p.set(x, 14, shade(METAL, -0.3));
+  return p;
+}
+
 // ---- bunkers (sim/bunkerlayout.js, issue #26) ----
 // A bunker's portal cut into the hillside: the rock, a concrete face with the blast door (hazard bands round it), a vent
 // stack on the rock above; the military's with a wire fence and a guard hut, the government's with a flag on a pole.
@@ -2701,7 +2717,7 @@ const POI_PAINT = {
   military_hive: paintInfestedBase, bunker_mil: () => paintMilitarySite(true), // sim/crashstart.js: Crashlanding's overrun Guard base (loc.look "hivebase", ui/render.js siteLook) and the unit's mountain bunker
   // Points of interest (sim/pois.js): the small places a tile holds besides its site.
   house: paintHouse, neighbourhood: paintNeighbourhood, garage: paintGarage, corner: paintCorner, pizza: paintPizza,
-  farmstand: paintFarmstand, shed: paintShed, blind: paintBlind, campsite: paintCampsite, hikercamp: paintHikercamp, mineshack: paintMineshack, sawmill: paintSawmill, bunker: () => paintBunkerPortal(false), govbunker: () => paintBunkerPortal(true), shelter: paintFalloutShelter, prepper: paintPrepper, // bunkers (issue #26)
+  farmstand: paintFarmstand, shed: paintShed, blind: paintBlind, campsite: paintCampsite, hikercamp: paintHikercamp, mineshack: paintMineshack, mine: paintMine, sawmill: paintSawmill, bunker: () => paintBunkerPortal(false), govbunker: () => paintBunkerPortal(true), shelter: paintFalloutShelter, prepper: paintPrepper, // bunkers (issue #26)
   datacenter: paintDatacenter, // data centres (issue #51)
   pawnshop: paintPawnShop, // sim/shops.js
   stripmall: paintMall, outlet: paintMall, // sim/mall.js (issue #30): the mall's own sprite for now
