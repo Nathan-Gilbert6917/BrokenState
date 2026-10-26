@@ -41,6 +41,11 @@
 // dice (the plan's first roll). A kind without franchises names its variants itself.
 //
 // For a strip mall (#30): shopPlan(kind, { size, setting, layout, variant }) returns the spec of a kind's plan for a slot.
+//
+// Issue #55's six shops (data-newshops.js NEWSHOP_TYPES, merged here: the furniture store, the laundromat, the thrift
+// store, the bakery, the butcher, the deli): the same rows, each variant drawn at its own data-buildingsize.js REAL_SIZE
+// sizes row (its footprint and storeys: realVariant), and picked within #42's size class where it stands (placement.js
+// sizeFor on o.tileClass, a new world's: the registry's sizeClass, S small, M medium, L and XL large).
 import { registerVariants, pickVariant as pickRegistered } from "./variantpick.js"; // the shared picker (issue #41)
 import { planName } from "./planname.js"; // a plan's name, one field (issue #40)
 import { FRANCHISES } from "./data-shops.js";
@@ -48,6 +53,8 @@ import { Rng } from "./rng.js";
 import { ROLES } from "./buildingmaps.js"; // the rooms' usual containers (read when a plan is made: no cycle at load)
 import { eateryVariant } from "./eaterylayout.js"; // a truck stop's diner is one of #33's diners (issue #33's table)
 import { REAL_SIZE, CELL_M } from "./data-buildingsize.js"; // #24's real-world sizes: the classes below are its rows' quarters
+import { NEWSHOP_TYPES } from "./data-newshops.js"; // issue #55's six shops: their plans (pure data in this module's format)
+import { sizeFor } from "./placement.js"; // call-time only: #42's size class of a kind on a tile class (issue #55's shops)
 
 export const SETTINGS = ["rural", "town", "city", "highway", "strip"];
 const W = (rural, town, city, highway, strip) => [rural, town, city, highway, strip];
@@ -73,6 +80,25 @@ function realSizes(key) {
 const SIZED = ["pharmacy", "gunstore", "pawnshop", "sportshop", "electronics", "radioshop", "bookstore", "petstore", "garden", "clothing", "liquor", "hardware", "feedstore", "gasstation", "truckstop", "dealer", "bank", "autoshop", "garage", "workshop"];
 /** @type {Record<string, Record<string, number[]>>} */
 export const SIZES = { ...Object.fromEntries(SIZED.map((k) => [k, realSizes(k)])), ...TIER_SIZES };
+// Issue #55's six shops: each variant drawn at its own REAL_SIZE sizes row (realVariant); a class's footprint here is the
+// span of its variants' rows (a strip mall's slot by size class: shopPlan).
+/** @param {string} key */
+function classSizes(key) {
+  const R = REAL_SIZE[key], /** @type {Record<string, number[]>} */ out = {};
+  for (const v of NEWSHOP_TYPES[key].variants) {
+    const r = R.sizes[v.id], c = [Math.round(r.w[0] / CELL_M), Math.round(r.w[1] / CELL_M), Math.round(r.d[0] / CELL_M), Math.round(r.d[1] / CELL_M)];
+    const o = out[v.size];
+    out[v.size] = o ? [Math.min(o[0], c[0]), Math.max(o[1], c[1]), Math.min(o[2], c[2]), Math.max(o[3], c[3])] : c;
+  }
+  return out;
+}
+for (const k of Object.keys(NEWSHOP_TYPES)) SIZES[k] = classSizes(k);
+/** A variant's own REAL_SIZE row (issue #55's shops), or null. @param {string} key @param {any} v */
+const realVariant = (key, v) => (NEWSHOP_TYPES[key] && REAL_SIZE[key] && REAL_SIZE[key].sizes && REAL_SIZE[key].sizes[v.id]) || null;
+/** A REAL_SIZE row's middle footprint (metres) and its least storeys: the registry's foot. @param {any} r */
+const footOf2 = (r) => [(r.w[0] + r.w[1]) / 2, (r.d[0] + r.d[1]) / 2, r.storeys[0]];
+// The size class a variant's letter is for the picker (#42's placement table: data-placement.js rows).
+const CLASS_OF = { S: "small", M: "medium", L: "large", XL: "large" };
 
 // ---------- rooms shared by every type ----------
 const COMMON = {
@@ -472,6 +498,7 @@ export const VARIANT_TYPES = {
 };
 
 VARIANT_TYPES.supermarket = { base: { name: "Sales floor", type: "store" }, rooms: {} }; // its plan is superSpec's
+Object.assign(VARIANT_TYPES, NEWSHOP_TYPES); // issue #55: the furniture store, laundromat, thrift store, bakery, butcher, deli (data-newshops.js)
 // ---------- the variants of the types that are not SHOP12's ----------
 const V = VARIANT_TYPES;
 V.pharmacy.variants = [
@@ -636,7 +663,8 @@ V.supermarket.variants = [
  */
 // The registry's views (variantpick.js, issue #41): each type's variants, their weights by SETTINGS (the row's array as
 // an object).
-for (const key of Object.keys(VARIANT_TYPES)) registerVariants(`shop:${key}`, VARIANT_TYPES[key].variants.map((v) => ({ id: v.id, name: v.name, w: Object.fromEntries(SETTINGS.map((k, i) => [k, v.w[i]])), src: v })));
+// Issue #55's shops also carry their size class and their footprint (REAL_SIZE's row): the picker narrows by #42's size.
+for (const key of Object.keys(VARIANT_TYPES)) registerVariants(`shop:${key}`, VARIANT_TYPES[key].variants.map((v) => { const rv = realVariant(key, v); return { id: v.id, name: v.name, w: Object.fromEntries(SETTINGS.map((k, i) => [k, v.w[i]])), src: v, ...(rv ? { sizeClass: CLASS_OF[v.size], foot: footOf2(rv) } : {}) }; }));
 export const variantSetting = (tile) => (!tile ? null : tile.terrain === "city" ? "city" : tile.terrain === "suburb" ? "town" : tile.road ? "highway" : "rural");
 /** The variants of a type ([] for a type with none). @param {string} key */
 export const variantsOf = (key) => (VARIANT_TYPES[key] && VARIANT_TYPES[key].variants) || [];
@@ -658,7 +686,8 @@ export function shopVariant(key, rng, o = {}) {
   const ids = fr && fr.plan && fr.plan.variants ? fr.plan.variants : null;
   const set = o.vset || o.setting; // vset: buildingmaps.js variantSetting (o.setting: #36's siteWhere, or a caller's own)
   const pin = o.plan || o.layout;
-  const e = pickRegistered(`shop:${key}`, rng, { plan: typeof pin === "string" ? pin : null, ids, setting: SETTINGS.includes(set) ? set : null, r });
+  const size = NEWSHOP_TYPES[key] && o.tileClass ? sizeFor(key, o.tileClass) : null; // issue #55's shops: #42's size class where it stands (a new world's tile class)
+  const e = pickRegistered(`shop:${key}`, rng, { plan: typeof pin === "string" ? pin : null, ids, setting: SETTINGS.includes(set) ? set : null, r, ...(size ? { size } : {}) });
   return /** @type {any} */ (e).src;
 }
 
@@ -697,7 +726,8 @@ const footOf = (bw, bh) => { const a = bw * bh; return a >= 700 && bw >= 30 ? "x
 export function shopVariantSpec(key, rng, o = {}, withPlan = (l) => l, plan = {}) {
   const T = VARIANT_TYPES[key], v = shopVariant(key, rng, o);
   if (key === "supermarket") return superSpec(rng, v, o);
-  const size = (o.size && SIZES[key][o.size]) || SIZES[key][v.size] || SIZES[key].M;
+  const rv = o.size ? null : realVariant(key, v); // issue #55's shops: the variant's own REAL_SIZE row
+  const size = rv ? [rv.w[0], rv.w[1], rv.d[0], rv.d[1]].map((m) => Math.round(m / CELL_M)) : (o.size && SIZES[key][o.size]) || SIZES[key][v.size] || SIZES[key].M;
   const wide = plan.wide && !TIERS.has(key) ? 2 : 0;
   const bw = rng.int(size[0], size[1]) + wide, bh = Math.max(rng.int(size[2], size[3]), v.lay === "deep" && !TIERS.has(key) ? DEEP_MIN : 0); // a deep plan's three bands: at least DEEP_MIN deep
   const ih = bh - 2;
@@ -751,8 +781,9 @@ export function shopVariantSpec(key, rng, o = {}, withPlan = (l) => l, plan = {}
     else if (t === "bayback3") exits.push({ ...exitOf("bayback", s), width: 3 });
     else exits.push(exitOf(t, s));
   }
-  let n = Array.isArray(v.st) ? rng.int(v.st[0], v.st[1]) : v.st || 1, upName = v.up || "stock";
-  if (n === 1 && !v.st && plan.flat && rng.chance(plan.flat)) { n = 2; upName = "flat"; } // a franchise's flat above (data-shops.js plan.flat: a bodega, a used bookshop)
+  const st = rv ? rv.storeys : v.st; // issue #55's shops: the storeys their REAL_SIZE row gives
+  let n = Array.isArray(st) ? rng.int(st[0], st[1]) : st || 1, upName = v.up || "stock";
+  if (n === 1 && !(v.st || (rv && rv.storeys[1] > 1)) && plan.flat && rng.chance(plan.flat)) { n = 2; upName = "flat"; } // a franchise's flat above (data-shops.js plan.flat: a bodega, a used bookshop)
   const up = n > 1 ? UPPER[upName] : null;
   const type = T.base.type;
   const bk = Math.max(1, (bw * bh) / midArea(key)) * (T.boxes ?? 1);

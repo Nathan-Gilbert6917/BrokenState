@@ -175,6 +175,7 @@ import { furnitureCells } from "./data-furniture.js"; // the furniture and appli
 import { MUSEUM_BOX } from "./data-museums.js"; // a museum's exhibit vehicles (issue #58)
 import { NEW_KINDS, AREA_DEFS } from "./data-shops.js"; // the shops and services new as places: their raid rooms
 import { OFFICE_BOX } from "./data-offices.js"; // the office buildings' new pieces: their own tables (issue #27)
+import { NEWSHOP_BOX } from "./data-newshops.js"; // issue #55: a showroom's furniture for sale, the change machine
 
 // Result handlers by key. Other modules register theirs while they load (conflicts.js, scavenge.js), which can be
 // before this module's own body has run (the imports are circular), so the map is made on first use: a `var`
@@ -2484,6 +2485,7 @@ function genMap(rng, tile, opts = {}) {
     case "apartments": case "office": case "supermarket": case "school": case "warehouse": case "hardware": building(7, 5); scatter("car", 3); scatter("crate", 3); break;
     case "pharmacy": case "gunstore": case "pawnshop": case "grocery": case "diner": case "motel": case "church": case "clinic": case "feedstore":
     case "sportshop": case "electronics": case "radioshop": case "bookstore": case "petstore": case "clothing": case "vet": case "restaurant": case "bar": case "liquor": case "bank": case "library": case "garden": // data-shops.js
+    case "furnstore": case "laundromat": case "thrift": case "bakery": case "butcher": case "deli": // data-newshops.js (issue #55)
       building(5, 4); building(4, 3); scatter("car", 2); fenceLine(rx(), rng.int(1, H - 2), X(4), true); break;
     case "autoshop": case "firestation": case "truckstop": case "dealer": building(5, 4); scatter("truck", 2); scatter("car", 3); scatter("crate", 2); break;
     case "ranch": case "barn": building(6, 4); fenceLine(rx(X(3), X(6)), rng.int(1, Y(3)), X(8), true); fenceLine(rx(X(3), X(6)), rng.int(Y(9), Y(11)), X(8), true); scatter("hay", 5); break;
@@ -8374,3 +8376,4 @@ MED.setMedicHooks({ take, spendRounds, medsOf, spendMed, alertAll, foesOf, heal,
 for (const [k, d] of Object.entries(AREA_DEFS)) if (!AREAS[k]) AREAS[k] = d.def;
 for (const [k, d] of Object.entries(NEW_KINDS)) if (!AREA_SETS[k]) AREA_SETS[k] = d.areas;
 for (const [k, d] of Object.entries(OFFICE_BOX)) if (!BOX_LOOT[k]) BOX_LOOT[k] = d;
+for (const [k, d] of Object.entries(NEWSHOP_BOX)) if (!BOX_LOOT[k]) BOX_LOOT[k] = d;
