@@ -28,14 +28,14 @@
 // failure). The browser version, by hand and outside the gate: node tools/carryplaysmoke.cjs <outdir>.
 import { createWorld, hub, atBase, survivorById } from "../src/sim/world.js";
 import { launchExpedition, cargoRoom, startReturn, partyMembers } from "../src/sim/parties.js";
-import { createBattle, combatAct, finishCombat, endPlayerTurn, runEnemyPhase, CELL, reachable, pathTo, moveMob, dashRange, setFloor } from "../src/sim/combat.js";
+import { createBattle, combatAct, finishCombat, endPlayerTurn, runEnemyPhase, CELL, reachable, pathTo, moveMob, dashRange, setFloor, enemyUnit, vaultable } from "../src/sim/combat.js";
 import { stairTop } from "../src/sim/buildingmaps.js";
 import { newItem, ensureInv, EQUIP_SLOTS } from "../src/sim/inventory.js";
 import { poisOf, poiAt, poiPool, isSitePoi } from "../src/sim/pois.js";
 import { poiRaidSetup } from "../src/sim/poiraid.js";
 import { supWeight } from "../src/sim/data.js";
 import { MAX_LOAD } from "../src/sim/load.js";
-import { isFrame } from "../src/sim/barricade.js";
+import { isFrame, CRAWL } from "../src/sim/barricade.js";
 import { atVehicle } from "../src/sim/raidloot.js";
 import * as F from "../src/sim/furnicarry.js";
 import * as H from "../src/sim/furnihome.js";
@@ -567,12 +567,24 @@ function sceneB(st) {
     const dc = cellAt(b, door.x, door.y);
     T(`${first(u)} sets the shelves in the front doorway (${door.x},${door.y})${e2 ? `: "${e2}"` : ": a barricade"}.`);
     check(e2 === "" && dc.k === "shelf" && !!dc.frame && isFrame(dc.frame), `a piece in the doorway is a barricade, the door frame kept under it (${dc.k}, frame ${dc.frame ? dc.frame.k : "none"})`);
-    const zd = b.walker;
+    const zd = b.walker || Object.assign(enemyUnit(b, b.rng, "zombies", 3, 1), { name: "A walker" }); // one of the dead the script brings to the door
     if (zd && door.outside) {
       zd.x = door.outside.x; zd.y = door.outside.y; zd.f = 0; zd.dead = false; zd.aware = true;
       b.units.push(zd);
-      const r = reachable(b, zd, 6);
-      check(!isFinite(r.dist[door.y * b.w + door.x]) && !isFinite(r.dist[inside.y * b.w + inside.x]), `the dead cannot walk through it (a walker at ${zd.x},${zd.y}: no way in through the door)`);
+      const ui = b.units.indexOf(u);
+      b.units.splice(ui, 1); // the survivor off the cell inside for the measure (a cell someone stands on is never reached)
+      const r = reachable(b, zd, 200), ji = inside.y * b.w + inside.x, jd = door.y * b.w + door.x;
+      const keep = { ...dc };
+      for (const k of Object.keys(dc)) delete dc[k];
+      Object.assign(dc, keep.frame);
+      const r0 = reachable(b, zd, 200);
+      for (const k of Object.keys(dc)) delete dc[k];
+      Object.assign(dc, keep);
+      b.units.splice(ui, 0, u);
+      const via = (q) => (isFinite(q) ? `${q} tiles` : "no way");
+      say(`(a walker at ${zd.x},${zd.y} outside the door: to the cell inside it is ${via(r0.dist[ji])} with the doorway clear, ${via(r.dist[ji])} with the shelves in it)`);
+      const half = vaultable(b, dc); // barricade.js: half cover the dead crawl over (CRAWL.COST over the step: a walker's whole turn), full cover they batter or go round
+      check(!isFinite(r.dist[jd]) && r.dist[ji] >= r0.dist[ji] + (half ? CRAWL.COST : 3), `the dead cannot walk through it: nobody stands in the doorway, and the way in is ${half ? `a crawl over the shelves (+${CRAWL.COST} tiles, half cover)` : "round by another door, or none"} (${via(r0.dist[ji])} → ${via(r.dist[ji])})`);
       b.units.splice(b.units.indexOf(zd), 1);
     } else say("(no walker to try the door)");
     nextTurn(st, b);
@@ -690,7 +702,9 @@ function sceneD(st, t, i) {
     nextTurn(st, b);
     if (!F.setTargets(b, u2).length) { const os = openSpot(b, u2); if (os) { pairTo(st, b, u2, os.x, os.y, "the oven out onto open ground"); if (u2.ap < 1 || o2.ap < 1) nextTurn(st, b); } }
     const sides = F.setTargets(b, u2);
-    check(sides.length > 0 && combatAct(st, { type: "setPiece", unit: o2.id, side: sides[sides.length - 1].side }) === "", `and set down again (to the ${sides.length ? sides[sides.length - 1].side : "-"}, by ${first(o2)})`);
+    const e5 = sides.length ? combatAct(st, { type: "setPiece", unit: o2.id, side: sides[sides.length - 1].side }) : "no side";
+    T(`${first(o2)} and ${first(u2)} set the oven down again to the ${sides.length ? sides[sides.length - 1].side : "-"}${e5 ? `: "${e5}"` : ""}.`);
+    check(e5 === "", `and set down again (to the ${sides.length ? sides[sides.length - 1].side : "-"}, by ${first(o2)})`);
   }
   extractAll(st, b, false);
   return home(st, p);
