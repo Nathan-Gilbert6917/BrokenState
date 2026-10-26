@@ -28,6 +28,7 @@ const CORE = [
   ["scaletest", true], ["varianttest", true], ["itemarttest", false], ["furnituretest", false],
   ["citycrawltest", false], ["scenestest", true], ["basefurnituretest", false], ["malltest", true],
   ["neighbourhoodtest", false], ["shopvarianttest", false],
+  ["carryplaytest", true], // #48: the carry playthrough (raid, crawl, base; one and two survivors, with and without a vehicle); quick: seeds 42 and 5
 ];
 
 const args = process.argv.slice(2);
