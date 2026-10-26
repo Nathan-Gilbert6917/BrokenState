@@ -657,7 +657,9 @@ export const MEDICAL_STYLES = {
     // a container of its own (BOX_LOOT.ambulance).
     if (Math.min(c.w, c.h) >= 3 && Math.max(c.w, c.h) >= 5) {
       const ax = c.w >= c.h ? "x" : "y";
-      for (const [x, y] of c.innerSpots().slice(0, 12)) { if (L.lane(x, y)) continue; if (c.vehicle(x, y, { ax, len: 4, kind: "truck", body: "ambulance", box: "ambulance" })) break; }
+      // Every spot in turn (#14 tried the first twelve, in this order: a bay it filled is as it was; a small bay of a named
+      // plan, issue #36, finds its spot further on).
+      for (const [x, y] of c.innerSpots()) { if (L.lane(x, y)) continue; if (c.vehicle(x, y, { ax, len: 4, kind: "truck", body: "ambulance", box: "ambulance" })) break; }
     }
     L.wall("gurney", { size: [2, 1] });
     L.fill(["shelf"]);

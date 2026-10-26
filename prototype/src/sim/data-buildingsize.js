@@ -122,7 +122,7 @@ export const REAL_SIZE = {
   // size by its own plan (civicvariants.js SIZE reads these; realScale leaves a named plan as it is, its floors past
   // the tall rule's not built). Each kind's "general" plan, #14's or #15's, is the kind's own row above, through realScale.
   // hospital
-  "hospital.critical": { w: [21, 22], d: [15, 16], storeys: [1, 2], set: "rural", planned: true }, // Critical-access hospital
+  "hospital.critical": { w: [23, 24], d: [16, 17], storeys: [1, 2], set: "rural", planned: true }, // Critical-access hospital
   "hospital.tower": { w: [22, 22], d: [16, 16], storeys: [5, 7], set: "city", planned: true }, // Regional medical tower
   "hospital.children": { w: [26, 29], d: [16, 18], storeys: [2, 4], set: "city", planned: true }, // Children's hospital
   "hospital.psych": { w: [26, 29], d: [15, 17], storeys: [2, 3], set: "town", planned: true }, // Psychiatric hospital
@@ -132,7 +132,7 @@ export const REAL_SIZE = {
   "hospital.teaching": { w: [28, 31], d: [18, 19], storeys: [4, 5], set: "city", planned: true }, // University teaching hospital
   "hospital.cottage": { w: [20, 22], d: [13, 15], storeys: [1, 1], set: "town", planned: true }, // Cottage hospital
   "hospital.surgical": { w: [21, 22], d: [15, 16], storeys: [2, 3], set: "town", planned: true }, // Surgical hospital
-  "hospital.nursing": { w: [32, 35], d: [16, 17], storeys: [2, 2], set: "town", planned: true }, // Community hospital and nursing home
+  "hospital.nursing": { w: [32, 35], d: [17, 18], storeys: [2, 2], set: "town", planned: true }, // Community hospital and nursing home
   // infirmary
   "infirmary.prison": { w: [20, 22], d: [14, 15], storeys: [1, 1], set: "rural", planned: true }, // Prison infirmary
   "infirmary.prisonhosp": { w: [27, 30], d: [16, 18], storeys: [2, 3], set: "city", planned: true }, // Prison hospital wing
@@ -140,7 +140,7 @@ export const REAL_SIZE = {
   "infirmary.camp": { w: [14, 15], d: [11, 12], storeys: [1, 1], set: "rural", planned: true }, // Camp infirmary
   "infirmary.campus": { w: [20, 23], d: [13, 15], storeys: [2, 2], set: "town", planned: true }, // College health centre
   "infirmary.field": { w: [24, 28], d: [14, 16], storeys: [1, 1], set: "rural", planned: true }, // Field hospital
-  "infirmary.aid": { w: [17, 19], d: [14, 15], storeys: [1, 1], set: "rural", planned: true }, // Base aid station
+  "infirmary.aid": { w: [19, 21], d: [15, 16], storeys: [1, 1], set: "rural", planned: true }, // Base aid station
   "infirmary.company": { w: [17, 19], d: [12, 14], storeys: [1, 2], set: "town", planned: true }, // Works infirmary
   "infirmary.boarding": { w: [16, 18], d: [12, 14], storeys: [2, 2], set: "town", planned: true }, // Boarding-school sanatorium
   "infirmary.quarantine": { w: [21, 23], d: [14, 15], storeys: [1, 2], set: "rural", planned: true }, // Quarantine station

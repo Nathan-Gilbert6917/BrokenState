@@ -132,9 +132,9 @@ export const VARIANTS = {
     { id: "critical", name: "Critical-access hospital", w: W(0, 0.2, 0.8, 1), make: (rng) => {
       const { bw, bh, storeys: n } = sized(rng, "hospital.critical");
       return {
-        bw, bh, front: { width: 2 }, ground: "rural", storeys: n, foot: "medium", stairs: ENDS,
+        bw, bh, front: { width: 2 }, ground: "rural", storeys: n, foot: "large", stairs: ENDS,
         program: cor([["*", er()], [5, waiting()], [4, pharm()]],
-          n > 1 ? [["*", ward()], [6, { role: "ambbay" }], [4, "kitchen"], [3, { role: "morgue", lock: ["door", 0.3] }]] : [["*", ward()], [6, { role: "ambbay" }], [4, "kitchen"], ["*", ward()]], 5, 2),
+          n > 1 ? [["*", ward()], [7, { role: "ambbay" }], [4, "kitchen"], [3, { role: "morgue", lock: ["door", 0.3] }]] : [["*", ward()], [7, { role: "ambbay" }], [4, "kitchen"], ["*", ward()]], 5, 2),
         upper: n > 1 ? () => cor([["*", ward()], [4, "nursestation"], [5, { role: "theatre", lock: ["door", 0.3] }]], [["*", ward()], [4, docs()], [2, "restroom"]], 5, 2) : null,
         exits: [{ side: "back", roles: ["ambbay"], chance: 1, lock: 0.2, roller: true, width: 2, name: "Ambulance bay" }, ...fire(0.3, 0.5)],
       };
@@ -243,7 +243,7 @@ export const VARIANTS = {
       return {
         bw, bh, front: { width: 2 }, ground: "town", storeys: 2, foot: "wide", stairs: ENDS,
         program: cor([[9, er()], [6, waiting({ name: "Reception" })], [4, pharm()], ["*", { role: "dayroom", name: "Residents' lounge", civic: "fdayroom", hub: false }]],
-          [["*", ward()], [6, { role: "ambbay" }], [4, "kitchen"], [7, { role: "cafeteria", name: "Residents' dining room" }], ["*", ltc()], [3, "restroom"]], 5, 2),
+          [["*", ward()], [7, { role: "ambbay" }], [4, "kitchen"], [7, { role: "cafeteria", name: "Residents' dining room" }], ["*", ltc()], [3, "restroom"]], 5, 2),
         upper: () => cor([["*", ltc()], [5, "nursestation"], ["*", ltc({ name: "Memory care", lock: ["door", 0.3] })], [4, "staffroom"]], [["*", ltc()], ["*", ward()], [4, docs()], [4, "laundry"], [3, "restroom"]], 5, 2),
         exits: [{ side: "back", roles: ["ambbay"], chance: 1, lock: 0.3, roller: true, width: 2, name: "Ambulance bay" }, ...fire(0.3, 0.7)],
       };
@@ -310,7 +310,7 @@ export const VARIANTS = {
       const { bw, bh } = sized(rng, "infirmary.aid");
       return {
         bw, bh, front: { width: 2 }, ground: "base", storeys: 1, foot: "medium",
-        program: cor([["*", er({ name: "Aid station", entry: true, boxTarget: 2 })], [4, { role: "bath", name: "Decontamination", type: null, civic: "washroom" }], [4, exam()]], [["*", ward()], [4, cupboard({ name: "Medical supply" })], [5, { role: "ambbay", name: "Field ambulance bay" }]], 5),
+        program: cor([["*", er({ name: "Aid station", entry: true, boxTarget: 2 })], [4, { role: "bath", name: "Decontamination", type: null, civic: "washroom" }], [4, exam()]], [["*", ward()], [4, cupboard({ name: "Medical supply" })], [7, { role: "ambbay", name: "Field ambulance bay" }]], 5),
         exits: [{ side: "back", roles: ["ambbay"], chance: 1, lock: 0.2, roller: true, width: 2, name: "Ambulance bay" }, { side: "left", roles: ["corridor"], chance: 0.5, lock: 0.3 }],
       };
     } },
