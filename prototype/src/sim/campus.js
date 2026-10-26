@@ -527,7 +527,7 @@ export function campusFolk(state, b) {
 // searched in (a container opened there) or stand in now, and a raid map's worth of ground round them; not the map's.
 export function campusHeatDims(b) {
   const R = b.raid, P = R && R.plan;
-  if (!P || !P.campus) return [b.w, b.h];
+  if (!P || !(P.campus || P.zoo)) return [b.w, b.h]; // a zoo's too (zoo.js, issue #59): by the buildings searched
   const ks = new Set();
   for (const c of R.containers) if (c.searched && c.house != null) ks.add(c.house);
   for (const u of b.units) if (u.side === "player" && !u.dead) { const h = P.houses.find((q) => u.x >= q.x0 && u.x < q.x0 + q.w && u.y >= q.y0 && u.y < q.y0 + q.h); if (h) ks.add(h.k); }

@@ -174,6 +174,9 @@ export const legacySaw = (state) => !!(state && state.sawLegacy);
 // A save from before the mines and quarries (issue #52, save.js minesLegacy: no state.minesV): its quarry sites keep the
 // workshop and its mine shacks the cabin (buildingmaps.js SITES), and it gets no new mine or quarry POIs (placement.js).
 export const legacyMines = (state) => !!(state && (state.minesLegacy || state.roomsLegacy));
+// A save from before the zoos (issue #59, save.js zooLegacy: no state.zooV): its tiles get none (placement.js
+// placeExtraKind), so its points of interest stay as they were.
+export const legacyZoo = (state) => !!(state && state.zooLegacy);
 // The run's raid map dials as [smallest, largest]: each clamped to its range, the two in order whatever was stored
 // (a hand-edited or older settings object can hold them the wrong way round: the range never runs backwards).
 /** @param {any} state */
