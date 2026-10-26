@@ -151,7 +151,7 @@ function sciencehallOriginal(rng, o = {}) {
     exits: [{ side: "back", roles: ["lab", "storage"], chance: 0.6, lock: 0.4 }, ...fireExits(0.3)],
   };
 }
-function univlibrary(rng, o = {}) {
+function univlibraryOriginal(rng, o = {}) {
   const { bw, bh } = footOf(rng, "univlibrary", o), n = storeysOf(rng, "univlibrary", o);
   const stacks = () => room("stock", "Stacks", "stacks", { type: "office", maxBoxes: 6, fl: "carpet" });
   const archive = (name) => room("storage", name, "archive", { type: "office", lock: ["door", 0.5], boxLock: ["safe", 0.15], maxBoxes: 3, windows: false });
@@ -267,7 +267,7 @@ const variantMaker = (key, original) => (rng, o = {}) => {
 const dorm = variantMaker("dorm", dormOriginal), lecturehall = variantMaker("lecturehall", lecturehallOriginal), sciencehall = variantMaker("sciencehall", sciencehallOriginal);
 const studentunion = variantMaker("studentunion", studentunionOriginal), athletics = variantMaker("athletics", athleticsOriginal), admin = variantMaker("admin", adminOriginal);
 const security = variantMaker("security", securityOriginal), maintenance = variantMaker("maintenance", maintenanceOriginal), theatre = variantMaker("theatre", theatreOriginal);
-const parkgarage = variantMaker("parkgarage", parkgarageOriginal);
+const parkgarage = variantMaker("parkgarage", parkgarageOriginal), univlibrary = variantMaker("univlibrary", univlibraryOriginal);
 export { CAMPUS_VARIANTS };
 // key → plan maker; buildingmaps.js BUILDINGS makes each through it (chapel and healthcentre are the church's and the clinic's).
 export const CAMPUS_PLANS = { dorm, lecturehall, sciencehall, univlibrary, studentunion, dininghall, athletics, admin, security, maintenance, theatre, parkgarage };

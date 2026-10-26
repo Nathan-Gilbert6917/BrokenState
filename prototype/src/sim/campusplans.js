@@ -19,6 +19,8 @@
 // A row: [size, key, overrides?] (the key a room of the type's vocabulary below, size a width or "*" for the rest), or
 // ["rep", unit, key] for as many such rooms unit wide as the row has room for (a dorm's rooms, offices, labs).
 import { CAMPUS_SIZE } from "./campuslayout.js";
+import { libraryPlan } from "./librarylayout.js"; // #34's library plans: the university library's
+import { industryPlan } from "./industrylayout.js"; // #37's lab plans: more science buildings
 
 const L = (role, name, campus, x = {}) => ({ role, name, campus, ...x });
 const C = (role, name, civic, x = {}) => ({ role, name, civic, ...x });
@@ -298,6 +300,7 @@ const SIDE = (side, roles, chance = 0.7, lock = 0.3, x = {}) => ({ side, roles, 
 
 /** A variant's spec (buildingmaps.js assemble). @param {any} rng @param {string} key @param {any} V @param {any} o */
 export function planFrom(rng, key, V, o = {}) {
+  if (V.ext) return V.ext(rng, o); // another ticket's plan (#34's libraries, #37's labs)
   const S = CAMPUS_SIZE[key];
   const bw = o.bw || range(rng, V.w || S.w), bh = o.bh || range(rng, V.h || S.h);
   const n = Math.max(1, Math.min(o.maxStoreys || 8, o.storeys || range(rng, V.storeys || S.storeys)));
@@ -323,8 +326,21 @@ const deck = (f, name) => L("bays", name || `Level ${f + 1}`, "deck", { type: "w
 const stairCol = (f, below = "stores", n2 = "Utility room") => ({ split: "y", parts: [[8, { role: "stairwell", name: "Stairs" }], ["*", L("storage", f === 0 && below === "booth" ? "Pay booth" : n2, "stores", { type: "garage", maxBoxes: 1 })]] });
 const GSTAIRS = { roles: ["stairwell", "bays"], n: 2, len: 2 };
 
+// Another ticket's plan as a campus variant: #34's library (libraryPlan: a variant and its plan, at its own size; a
+// campus's storeys kept) and #37's lab (industryPlan "lab" with the plan's id; its rooms by their ind mark).
+const LIB = (variant, plan, name) => ({ id: `${variant}-${plan}`, name, ext: (rng, o) => libraryPlan(rng, { variant, plan, ...(o.storeys ? { storeys: o.storeys } : {}) }) });
+const LAB = (plan, name) => ({ id: `lab-${plan}`, name, ext: (rng, o) => industryPlan("lab", rng, { plan, site: "univ" }, () => null) });
 /** @type {Record<string, any[]>} */
 export const CAMPUS_VARIANTS = {
+  univlibrary: [
+    ORIGINAL("research", "Research library"),
+    LIB("university", "commons", "Learning commons library"), LIB("university", "tower", "Library tower"),
+    LIB("central", "centre", "Main library, central hall"), LIB("central", "side", "Main library, side hall"),
+    LIB("historic", "centre", "Old library, domed reading room"), LIB("historic", "side", "Old library, side reading room"),
+    LIB("law", "reading", "Law library, reading room"), LIB("law", "stacks", "Law library, stacks"),
+    LIB("archive", "vault", "Special collections vault"), LIB("archive", "house", "Rare books house"),
+    LIB("county", "hall", "Branch library"),
+  ],
   dorm: [
     ORIGINAL("corridor", "Double-loaded corridor hall"),
     { id: "suites", name: "Suite-style hall", h: [17, 19],
@@ -463,7 +479,10 @@ export const CAMPUS_VARIANTS = {
       g: { form: "wings", cx: 8, entry: "lobby", hall: "atrium", left: { front: [["*", "teach"], [4, "prep"]], back: [["*", "research"], [5, "chem"]] }, right: { front: [["*", "cafe"], [3, "rest"]], back: [["*", "teach"]] } },
       u: { form: "wings", cx: 8, entry: "dept", hall: "atrium", left: { front: [["rep", 7, "research"]], back: [["*", "research"]] }, right: { front: [["rep", 4, "faculty"]], back: [["*", "complab"], [3, "rest"]] } },
       stairs: { roles: ["lobby", "corridor"], n: 2, len: 2 }, exits: [BACK(["lobby", "lab"], 0.7, 0.4), ...FIRE()] },
+    LAB("teaching", "University teaching lab"), LAB("rnd", "Corporate R&D lab"), LAB("biohazard", "Biohazard lab"),
+    LAB("pharma", "Pharmaceutical lab"), LAB("cleanfab", "Clean-room fab"), LAB("agri", "Agricultural research station"),
   ],
+  // (the science building ends with #37's lab plans, after its own twelve)
   studentunion: [
     ORIGINAL("union", "Union with food court and ballroom"),
     { id: "atrium", name: "Atrium union", w: [42, 46],

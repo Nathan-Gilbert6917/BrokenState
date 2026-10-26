@@ -286,7 +286,7 @@ section("The campus buildings alone (setup.raid.place)");
     const z = m.zones[0], g0 = flood(m.cells, m.w, m.h, [[z.x0 + 1, z.y0 + 1]]);
     let walk = 0, got = 0;
     m.cells.forEach((c, j) => { if (walkable(c)) { walk++; if (g0[j]) got++; } });
-    const styled = m.rooms.filter((a) => !a.outdoor && (a.campus || a.civic || a.shop || a.office)).length;
+    const styled = m.rooms.filter((a) => !a.outdoor && (a.campus || a.civic || a.shop || a.office || a.lib || a.ind)).length;
     check(walk === got && m.containers.length > 0 && (key === "healthcentre" || styled >= Math.ceil(m.rooms.filter((a) => !a.outdoor).length * 0.6)), `${BUILDINGS[key].name}: ${m.rooms.filter((a) => !a.outdoor).length} rooms (${styled} laid out for their kind), ${m.containers.length} containers, ${m.storeys || 1} storeys, all reachable`);
   }
   const used = new Set();
@@ -310,7 +310,7 @@ section("The named plans: a dozen a building type");
         m.cells.forEach((c, j) => { if (walkable(c)) { walk++; if (g0[j]) got++; } });
         (m.floors || []).slice(1).forEach((F) => { const seen = flood(F.cells, m.w, m.h, m.stairs.filter(([x, y]) => pass(F.cells[y * m.w + x]))); F.cells.forEach((c, j) => { if (walkable(c)) { uw++; if (seen[j]) ug++; } }); });
         const rooms = m.rooms.filter((a) => !a.outdoor), nf = m.storeys || 1;
-        const styled = rooms.filter((a) => a.campus || a.civic || a.shop || a.office).length;
+        const styled = rooms.filter((a) => a.campus || a.civic || a.shop || a.office || a.lib || a.ind).length;
         const lounges = key !== "dorm" || Array.from({ length: nf }, (_, f) => rooms.some((a) => (a.f || 0) === f && a.campus === "lounge")).every(Boolean);
         if (walk !== got || uw !== ug || !m.containers.length || !lounges || styled < Math.ceil(rooms.length * 0.6) || m.plan.variant !== V.name) bad.push(`${V.id} (seed ${s}: ${got}/${walk}, ${ug}/${uw} upstairs, ${m.containers.length} boxes, ${styled}/${rooms.length} styled${lounges ? "" : ", a floor with no lounge"})`);
         if (s === 0) feats.push({ id: V.id, list: [...new Set(rooms.map((a) => base(a.name)))].sort().join("|"), order: rooms.filter((a) => !a.f).sort((a, b) => a.y0 - b.y0 || a.x0 - b.x0).map((a) => base(a.name)).join(">"),
