@@ -226,7 +226,10 @@ export function poiPlace(t, i) {
   const entry = SITES[poi.kind];
   const list = entry ? (Array.isArray(entry) ? entry : entry.list) : null;
   if (!list || !list.length) return null;
-  const [key, name] = Array.isArray(list[0]) ? list[0] : [list[0], null];
+  const [key0, name] = Array.isArray(list[0]) ? list[0] : [list[0], null];
+  // A new save's shed or farm stand (issue #62, farmplans.js): its own type when its layout is one of that type's (an
+  // older save's POI has no layout of them: the machine shed's or the corner shop's building, as it was).
+  const key = (poi.kind === "shed" || poi.kind === "farmstand") && poi.lay && layoutName(poi.kind, poi.lay) ? poi.kind : key0;
   // shops.js: a franchise's name and layout (variant; a POI saved before franchises keeps its old building)
   // buildvariants.js: a POI's layout (poi.lay, issue #32: its plan and its name)
   return { id: `poi${i}:${key}`, key, name: poi.v ? franchiseName(poi.kind, poi.v) : poi.lay && layoutName(key, poi.lay) ? layoutName(key, poi.lay) : name || (BUILDINGS[key] ? BUILDINGS[key].name : LOCATIONS[poi.kind].name), ...(poi.v ? { variant: poi.v, kind: poi.kind } : {}), ...(poi.lay ? { layout: poi.lay } : {}), ...(poi.hv ? { plan: poi.hv } : {}) }; // hv: a hotel's variant (issue #38)

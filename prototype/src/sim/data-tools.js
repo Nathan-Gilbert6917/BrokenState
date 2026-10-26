@@ -216,6 +216,8 @@ export const AREA_TOOLS = {
   garage: { p: 0.08, items: { toolkit: 3, shovel: 1.5, handsaw: 1, welder: 0.5, handdrill: 0.5 } },
   barn: { p: 0.1, items: { axe: 2, shovel: 3, handsaw: 1.5, bowsaw: 1, toolkit: 1, welder: 0.3 } },
   farmhouse: { p: 0.06, items: { axe: 1.5, shovel: 1.5, handsaw: 1, sewingkit: 1.5, toolkit: 1 } },
+  toolshed: { p: 0.16, items: { shovel: 3, axe: 2, handsaw: 2, bowsaw: 1.5, toolkit: 1.5, handdrill: 1, welder: 0.3 } }, // a farm's tool shed (issue #62, combat.js AREAS.toolshed)
+  feedroom: { p: 0.05, items: { shovel: 2, sewingkit: 0.5 } }, // a feed room's scoop shovel and sack needles
   warehouse: { p: 0.04, items: { toolkit: 2, handsaw: 1, shovel: 1 } },
   motorpool: { p: 0.05, items: { toolkit: 3, shovel: 1, welder: 0.4 } },
   enginebay: { p: 0.08, items: { axe: 2, toolkit: 2, shovel: 1.5, handsaw: 1 } }, // a fire station's engine bay (issue #15)

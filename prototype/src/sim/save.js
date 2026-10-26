@@ -203,6 +203,9 @@ export function deserializeState(save) {
   // The placement table (data-placement.js, issue #42): a save from before keeps its POI lists, its crawls' blocks and
   // its buildings as its seed made them (placement.js placing off).
   if (!state.placeV) { state.placeLegacy = true; state.placeV = 1; }
+  // The farms renovated (farmstead.js, farmplans.js, issue #62): a save from before keeps its farms' and ranches' pick of
+  // buildings and its sheds' and farm stands' old buildings (worldcfg.js legacyFarms).
+  if (!state.farmV) { state.farmLegacy = true; state.farmV = 1; }
   if (!state.woodcutting) {
     for (const b of state.bases || []) if (b.stock && !Number.isFinite(b.stock.wood)) b.stock.wood = 0;
     for (const r of (state.work && state.work.roles) || []) if (r.pri && r.pri.wood == null && r.pri.forage > 0) r.pri.wood = r.pri.forage;

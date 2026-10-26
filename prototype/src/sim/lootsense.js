@@ -97,6 +97,13 @@ export const LOOT_SENSE = {
   motel:          S({ food: 0.9, drink: 0.9, drugs: 0.6 }, ARMY),
   barn:           S({ food: 0.9, build: 0.8, longgun: 0.5, vetmeds: 0.3 }, ARMY),
   machineshed:    S({ tools: 0.7, parts: 0.9, fuel: 0.6 }, ARMY, { note: "a farm's shed: a hunting rifle in the barn rooms" }),
+  // The farm's own (issue #62, farmplans.js, farmstead.js): a shed and a farm stand as POIs, a farm building on a farm;
+  // a farm or a ranch is its whole place (the farmhouse's guns, the barns', the sheds', the yard's cars).
+  shed:           S({ tools: 0.35, food: 0.25 }, NO_GUNS, { site: "shed", note: "a shed holds no guns: the tools, the feed, the cellar's jars" }),
+  farmstand:      S({ food: 0.9 }, NO_GUNS, { site: "farmstand" }),
+  farmbldg:       S({ food: 0.6 }, ARMY, { site: "farm" }),
+  farm:           S({ food: 0.95, longgun: 0.6, tools: 0.6, fuel: 0.5, vetmeds: 0.3 }, ARMY, { site: "farm" }),
+  ranch:          S({ food: 0.95, longgun: 0.6, tools: 0.5, vetmeds: 0.2 }, ARMY, { site: "ranch" }),
   shelter:        S({ food: 0.9, tools: 0.8, parts: 0.6 }, ["explosive"]),
   prepper:        S({ food: 0.9, longgun: 0.6, ammo: 0.7, camp: 0.3 }, [], { note: "a prepper's pipe bombs" }),
   // Food and drink.

@@ -257,6 +257,23 @@ export const REAL_SIZE = {
   workshop:    { w: [12, 20], d: [10, 14], storeys: [1, 1], set: "rural", planned: true },
   machineshed: { w: [12, 20], d: [8, 14], storeys: [1, 1], set: "rural" },
   barn:        { w: [15, 30], d: [10, 20], storeys: [1, 1], set: "rural" }, // plus its hayloft (a raised room on one grid)
+  // The farm's own buildings (issue #62, farmplans.js FARM_PLANS): each plan drawn at its row's size, one storey (a
+  // metre a cell; a shed's rooms are small, but a person and a shelf fit in each).
+  shed: { w: [6, 10], d: [5, 7], storeys: [1, 1], set: "rural", planned: true, sizes: {
+    tool: { w: [7, 9], d: [5, 6] }, potting: { w: [8, 10], d: [6, 7] }, pump: { w: [7, 8], d: [5, 6] }, smoke: { w: [6, 7], d: [7, 8] }, rootcellar: { w: [7, 9], d: [8, 9] },
+    spring: { w: [7, 9], d: [6, 7] }, coop: { w: [9, 11], d: [6, 7] }, wood: { w: [7, 9], d: [5, 6] }, crib: { w: [9, 11], d: [6, 7] }, outhouse: { w: [8, 9], d: [6, 7] },
+    well: { w: [7, 8], d: [6, 6] }, gen: { w: [7, 9], d: [6, 7] }, ice: { w: [8, 9], d: [6, 7] },
+  } },
+  farmstand: { w: [8, 26], d: [6, 14], storeys: [1, 1], set: "rural", planned: true, sizes: {
+    shack: { w: [8, 10], d: [7, 8] }, producebarn: { w: [16, 20], d: [12, 14] }, pyo: { w: [10, 12], d: [7, 8] }, honey: { w: [10, 12], d: [7, 8] }, pumpkin: { w: [14, 18], d: [10, 12] },
+    xmas: { w: [10, 12], d: [6, 7] }, market: { w: [20, 26], d: [9, 11] }, egg: { w: [8, 10], d: [6, 7] }, cider: { w: [12, 14], d: [9, 10] }, berry: { w: [9, 11], d: [8, 9] },
+    flower: { w: [12, 14], d: [8, 9] }, maple: { w: [11, 13], d: [8, 9] }, creamery: { w: [12, 15], d: [10, 11] },
+  } },
+  farmbldg: { w: [9, 44], d: [7, 24], storeys: [1, 1], set: "rural", planned: true, sizes: {
+    milkhouse: { w: [9, 11], d: [7, 8] }, greenhouse: { w: [22, 30], d: [9, 11] }, packshed: { w: [22, 28], d: [14, 17] }, coldstore: { w: [18, 22], d: [13, 15] }, winery: { w: [22, 28], d: [16, 19] },
+    bunkhouse: { w: [15, 18], d: [9, 11] }, arena: { w: [36, 44], d: [20, 24] }, stable: { w: [24, 30], d: [13, 15] }, sugarhouse: { w: [10, 12], d: [8, 9] }, processing: { w: [14, 16], d: [10, 12] },
+    cookhouse: { w: [15, 18], d: [10, 12] }, feedmill: { w: [14, 16], d: [12, 14] }, scalehouse: { w: [10, 12], d: [7, 8] },
+  } },
   // #28's college campus buildings: planned at their own real size (campuslayout.js CAMPUS_SIZE and campusplans.js's
   // named plans, a metre a cell; these rows their range over the plans); on a campus each is laid out as it is
   // (campus.js), raided alone through realScale like #25's. The chapel and the health centre are the church's and the

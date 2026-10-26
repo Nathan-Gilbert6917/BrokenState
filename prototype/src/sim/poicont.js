@@ -54,6 +54,7 @@ import { poiAt, poiLedger, poiPool, poiTake, poiFull, poiBand, isSitePoi, addTil
 import { siteBuildings, SITES, BUILDINGS, streetHouses } from "./buildingmaps.js";
 import { mallUnits } from "./mall.js"; // a mall's buildings (issue #30)
 import { campusBuildings } from "./campus.js"; // a college campus's buildings (issue #28)
+import { farmBuildingCount } from "./farmstead.js"; // a farm's or a ranch's buildings, each apart in the ledger (issue #62)
 import { hash01 } from "./skills.js";
 import { Rng } from "./rng.js";
 import { localId } from "./world.js"; // dice keyed by a group's world-local id (two worlds in one process roll the same)
@@ -93,7 +94,7 @@ export function poiHouses(state, tile, i) {
   if (!poi) return 1;
   // A shopping mall (mall.js) or a campus (campus.js): the site's one map of many buildings, each apart in the ledger;
   // a strip mall's or an outlet's POI likewise (below): the search goes through them a building at a time.
-  if (isSitePoi(t, i)) { const sb = siteBuildings(t); const o = sb && sb.single ? sb.options[0] : null; return o && BUILDINGS[o.key] && BUILDINGS[o.key].compound ? mallHouses(state, t.id, o) : o && BUILDINGS[o.key] && BUILDINGS[o.key].campus ? campusBuildings(state, t, o) : 1; }
+  if (isSitePoi(t, i)) { const sb = siteBuildings(t); const o = sb && sb.single ? sb.options[0] : null; return o && BUILDINGS[o.key] && BUILDINGS[o.key].compound ? mallHouses(state, t.id, o) : o && BUILDINGS[o.key] && BUILDINGS[o.key].campus ? campusBuildings(state, t, o) : o && BUILDINGS[o.key] && BUILDINGS[o.key].farmstead ? farmBuildingCount(state, t, o) : 1; } // farmstead.js: a farm's or a ranch's buildings (issue #62)
   const entry = SITES[poi.kind], first = entry ? (Array.isArray(entry) ? entry : entry.list)[0] : null;
   const key = Array.isArray(first) ? first[0] : first;
   if (key && BUILDINGS[key] && BUILDINGS[key].compound) return mallHouses(state, t.id, { id: `poi${i}:${key}`, key, name: BUILDINGS[key].name });

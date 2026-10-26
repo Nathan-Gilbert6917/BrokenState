@@ -158,7 +158,8 @@ export const PLACEMENT_ROWS = {
   workshop: "suburb 0.6 S, town 0.8 S, highway 0.4 S, rural 0.4 S",
   machineshed: "farm",
   barn: "farm",
-  farm: "farm",
+  farm: "highway 0.6 M, coast 0.6 M, scenic 0.5 M, rural 2 M", // a farm site in the country only (issue #62: its layout by its terrain, farmstead.js)
+  farmbldg: "of farm", // a farm's or a ranch's working buildings (issue #62, farmplans.js)
   ranch: "highway 0.4 L, scenic 0.6 L, rural 1.4 L",
   quarry: "scenic 1.6 L, rural 0.4 L",
   radiotower: "scenic 1.4 S, rural 0.3 S",
