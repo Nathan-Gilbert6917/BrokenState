@@ -29,11 +29,12 @@
 // variantNames(kind): [{ id, name }] for the docs and the tests.
 
 import { registerVariants, pickVariant as pickRegistered } from "./variantpick.js"; // the shared picker (issue #41)
-import { REAL_SIZE } from "./data-buildingsize.js"; // the plans' sizes (#24's table: its "<kind>.<plan id>" rows)
+import { REAL_SIZE } from "./data-buildingsize.js"; // the plans' sizes (#24's table: its "<kind>.<plan id>" rows; #49's sizes rows, CIVIC_REAL)
+import { PLACEMENT } from "./data-placement.js"; // #42's placement table: the size class a kind's plan takes on a tile class (issue #49)
 
 /** @typedef {{ city?: number, suburb?: number, town?: number, rural?: number, [site: string]: number | undefined }} Weights */
 /** @typedef {{ w: [number, number], h: [number, number], storeys: [number, number] }} Size */
-/** @typedef {{ id: string, name: string, w: Weights, fr?: string[], make: (rng: any, o: any, K: any) => any }} Variant */
+/** @typedef {{ id: string, name: string, w: Weights, fr?: string[], fresh?: boolean, make: (rng: any, o: any, K: any) => any }} Variant */
 
 // ---------- the plan trees ----------
 /** @param {any[]} list */
@@ -119,8 +120,27 @@ const BELFRY = { roles: ["storage"], chance: 1, ladder: true };
 // tools/storeytest.js: small ≤ 190 cells, medium 90–360, large ≥ 290, wide ≥ 280 and 20 wide, a tower ≤ 330 and 22 wide).
 /** @type {Record<string, Size>} */
 export const SIZE = Object.fromEntries(Object.entries(REAL_SIZE).filter(([k]) => /^[a-z]+\./.test(k)).map(([k, R]) => [k, { w: R.w, h: R.d, storeys: R.storeys }])); // #24's table holds them (data-buildingsize.js REAL_SIZE "<kind>.<plan id>" rows, metres at CELL_M 1 m)
+// A world made since issue #49 (o.civicReal, worldcfg.js legacyCivic): the plan being made (variantSpec sets it, the
+// plan's make reads it through sized) draws its storeys from its kind's sizes row (data-buildingsize.js CIVIC_REAL: a
+// city's where it has them), so its floors' plans are its own; buildingmaps.js realScale lays it out at that row's
+// footprint (spec.realSize, spec.vscale). Null otherwise: the drawn row's storeys, as before.
+/** @type {{ setting: string } | null} */
+let REAL = null;
 /** @param {any} rng @param {string} key */
-const sized = (rng, key) => dims(rng, SIZE[key]);
+const sized = (rng, key) => {
+  const S = SIZE[key];
+  if (!REAL) return dims(rng, S);
+  const [kind, id] = key.split("."), R = REAL_SIZE[kind] && REAL_SIZE[kind].sizes ? REAL_SIZE[kind].sizes[id] : null;
+  const st = R ? (REAL.setting === "city" && R.city ? R.city : R.storeys) : null;
+  return dims(rng, st ? { ...S, storeys: st } : S);
+};
+// A shape's parts (buildingmaps.js shapeOf, issue #23: its own copy, this module is buildingmaps.js's import).
+/** @param {string} kind @param {any[]} parts */
+const shapeOf = (kind, parts) => {
+  const x0 = Math.min(...parts.map((p) => p.x)), y0 = Math.min(...parts.map((p) => p.y));
+  for (const p of parts) { p.x -= x0; p.y -= y0; }
+  return { bw: Math.max(...parts.map((p) => p.x + p.w)), bh: Math.max(...parts.map((p) => p.y + p.h)), shape: { kind, parts } };
+};
 
 // ======================================================================================
 // The plans
@@ -247,6 +267,63 @@ export const VARIANTS = {
           [["*", ward()], [7, { role: "ambbay" }], [4, "kitchen"], [7, { role: "cafeteria", name: "Residents' dining room" }], ["*", ltc()], [3, "restroom"]], 5, 2),
         upper: () => cor([["*", ltc()], [5, "nursestation"], ["*", ltc({ name: "Memory care", lock: ["door", 0.3] })], [4, "staffroom"]], [["*", ltc()], ["*", ward()], [4, docs()], [4, "laundry"], [3, "restroom"]], 5, 2),
         exits: [{ side: "back", roles: ["ambbay"], chance: 1, lock: 0.3, roller: true, width: 2, name: "Ambulance bay" }, ...fire(0.3, 0.7)],
+      };
+    } },
+    // ---------- issue #49 (new worlds only: fresh): the big hospitals at real scale ----------
+    { id: "regional", name: "Regional medical centre", w: W(1, 0.2, 0, 0), fresh: true, make: (rng) => {
+      // A U round a courtyard (#23's shapes): the bed tower along the front (the main lobby, the pharmacy, admissions,
+      // radiology, the cafeteria, the kitchen and the morgue on the ground floor; theatres, ICUs and the ward floors
+      // above), the emergency wing down one side (one storey: the ambulance bay at its far end, the ER, decontamination,
+      // triage and the blood bank along its corridor) and the outpatients' wing down the other (clinics, then wards).
+      // Laid out at its sizes row (data-buildingsize.js CIVIC_REAL: 130–160 × 84–100 m, 5–8 storeys, a city's 6–10).
+      const { bw, bh, storeys: n } = sized(rng, "hospital.regional");
+      const th = rng.int(18, 20), ew = rng.int(22, 24), ow = rng.int(20, 22), wh = bh - th + 1, erLeft = rng.chance(0.5);
+      const tower = cor([[6, waiting({ name: "Main lobby" })], [5, pharm()], ["*", { role: "office", name: "Admissions", type: "office" }], [5, { role: "office", name: "Radiology", type: "clinic" }], [3, "restroom"]],
+        [["*", "cafeteria"], [5, "kitchen"], [5, { role: "morgue", lock: ["door", 0.3] }], [5, supply(0.3)], [3, "restroom"]], 6, 2);
+      const upper = (f, r, ctx) => (f === 1 ? cor([["*", ward()], [5, "nursestation"], [6, { role: "theatre", lock: ["door", 0.3] }], [6, { role: "theatre", name: "Operating theatre 2", lock: ["door", 0.3] }]], [["*", { role: "icu", name: "Surgical ICU" }], ["*", "icu"], [5, docs()], [3, "restroom"]], 6, 2)
+        : ctx && ctx.top ? cor([["*", ward({ name: "Maternity ward", cots: true })], [5, "nursestation"], ["*", ward({ name: "Neonatal unit", cots: true })]], [["*", ward()], [5, "staffroom"], [5, "laundry"], [3, "restroom"]], 6, 2)
+          : cor([["*", ward({ name: "Cardiac ward" })], [5, "nursestation"], ["*", ward({ name: "Oncology ward" })]], [["*", ward()], ["*", ward()], [5, docs()], [3, "restroom"]], 6, 2));
+      const erWing = X(["*", Y([7, { role: "ambbay" }], ["*", er({ name: "Emergency department" })], [6, { role: "lobby", name: "Emergency waiting", type: "clinic" }])], [2, { role: "corridor", name: "Emergency corridor" }],
+        [9, Y([6, { role: "bath", name: "Decontamination", type: null, civic: "washroom" }], ["*", { role: "office", name: "Triage", type: "clinic" }], [5, { role: "storage", name: "Blood bank", type: "clinic", lock: ["door", 0.4] }])]);
+      const opd = (g) => X(["*", Y(...(g ? [["*", ward()], ["*", ward()]] : [["*", exam({ name: "Clinic room" })], ["*", exam({ name: "Clinic room" })], ["*", { role: "office", name: "Outpatients", type: "office" }]]))], [2, { role: "corridor", name: "Wing corridor" }],
+        ["*", Y(...(g ? [["*", ward()], [5, "nursestation"]] : [["*", { role: "gym", name: "Physiotherapy", civic: "fgym" }], ["*", exam({ name: "Consulting room" })], [5, cupboard()]]))]);
+      return {
+        ...shapeOf("U", [
+          { x: 0, y: wh - 1, w: bw, h: th, name: "Bed tower", main: true, program: tower, upper },
+          { x: erLeft ? 0 : bw - ew, y: 0, w: ew, h: wh, storeys: 1, name: "Emergency wing", program: erWing },
+          { x: erLeft ? bw - ow : 0, y: 0, w: ow, h: wh, storeys: Math.min(n, 3), name: "Outpatients' wing", wing: true, program: opd(0), upper: (g) => opd(g) },
+        ]),
+        front: { width: 2 }, ground: "city", storeys: n, foot: "large", program: null, upper: null, stairs: ENDS,
+        exits: [{ side: "back", roles: ["ambbay"], chance: 1, lock: 0.2, roller: true, width: 2, name: "Ambulance bay" }, ...fire(0.3, 0.85), { side: "back", roles: ["corridor"], chance: 0.6, lock: 0.4 }],
+      };
+    } },
+    { id: "county", name: "County hospital", w: W(0.2, 0.4, 0.9, 0.3), fresh: true, make: (rng) => {
+      // A town's hospital: the ER at one end of the front, the reception, the pharmacy and the outpatients' clinic; the
+      // ambulance bay, a ward, the kitchen and the morgue behind; the theatre, the ICU and the wards above, the
+      // maternity ward on the floors past the first.
+      const { bw, bh, storeys: n } = sized(rng, "hospital.county");
+      return {
+        bw, bh, front: { width: 2 }, ground: "town", storeys: n, foot: "large", stairs: ENDS,
+        program: cor([["*", er()], [6, waiting({ name: "Reception" })], [4, pharm()], ["*", exam({ name: "Outpatients' clinic" })]], [[7, { role: "ambbay" }], ["*", ward()], [4, "kitchen"], [4, { role: "morgue", lock: ["door", 0.3] }], [3, "restroom"]], 5, 2),
+        upper: (f) => (f === 1 ? cor([["*", ward()], [4, "nursestation"], [6, { role: "theatre", lock: ["door", 0.3] }], [4, supply(0.3)]], [["*", "icu"], ["*", ward()], [4, docs()], [2, "restroom"]], 5, 2)
+          : cor([["*", ward({ name: "Maternity ward", cots: true })], [4, "nursestation"], ["*", ward()]], [["*", ward()], [4, "staffroom"], [4, "laundry"], [2, "restroom"]], 5, 2)),
+        exits: [{ side: "back", roles: ["ambbay"], chance: 1, lock: 0.25, roller: true, width: 2, name: "Ambulance bay" }, ...fire(0.3, 0.7)],
+      };
+    } },
+    { id: "medcampus", name: "City medical centre", w: W(0.8, 0, 0, 0), fresh: true, make: (rng) => {
+      // A downtown medical centre's campus (civicsite.js lays it out round this, its bed tower): a second tower, the
+      // emergency department with its ambulances and the helipad, the parking garage and the clinic building. The bed
+      // tower: the pharmacy, the main lobby, the urgent-care desk, the gift shop and the chapel low, the cafeteria and
+      // imaging behind; the theatres and ICUs, the ward floors and the top floor's wards above.
+      const { bw, bh, storeys: n } = sized(rng, "hospital.medcampus");
+      return {
+        bw, bh, front: { width: 2 }, ground: "city", storeys: n, foot: "large", stairs: { ...ENDS, n: 2 }, civicSite: "medcampus",
+        program: cor([[4, pharm()], ["*", waiting({ name: "Main lobby" })], [6, er({ name: "Urgent care" })], [5, { role: "office", name: "Gift shop", type: "store" }], [5, { role: "nave", name: "Hospital chapel", civic: "nave", maxBoxes: 1 }]],
+          [["*", "cafeteria"], [5, "kitchen"], [5, { role: "office", name: "Imaging", type: "clinic" }], [4, "staffroom"], [3, "restroom"]], 6, 2),
+        upper: (f, r, ctx) => (f === 1 ? cor([[6, { role: "theatre", lock: ["door", 0.3] }], [5, "nursestation"], ["*", { role: "icu", name: "Cardiac ICU" }], [6, { role: "theatre", name: "Operating theatre 2", lock: ["door", 0.3] }]], [["*", "icu"], [5, supply(0.3)], ["*", ward({ name: "Recovery" })], [3, "restroom"]], 6, 2)
+          : ctx && ctx.top ? cor([["*", ward({ name: "Private ward" })], [5, "nursestation"], ["*", ward()]], [["*", ward()], [5, docs()], [5, "laundry"], [3, "restroom"]], 6, 2)
+            : cor([["*", ward()], [5, "nursestation"], ["*", ward()]], [["*", ward({ name: "Step-down unit" })], ["*", ward()], [5, docs()], [3, "restroom"]], 6, 2)),
+        exits: [...fire(0.3, 0.85), { side: "back", roles: ["kitchen", "cafeteria"], chance: 0.8, lock: 0.4 }],
       };
     } },
   ],
@@ -677,6 +754,18 @@ export const VARIANTS = {
         exits: [{ side: "right", roles: ["nave"], chance: 0.8, lock: 0.3 }, { side: "back", roles: ["vestry", "nave"], chance: 0.5, lock: 0.4 }],
       };
     } },
+    // ---------- issue #49 (new worlds only: fresh): the parish church in its churchyard (civicsite.js) ----------
+    { id: "churchyard", name: "Parish church and churchyard", w: W(0, 0.2, 0.8, 1), fr: ["holytrinity", "gracemethodist", "stmarys"], fresh: true, make: (rng) => {
+      // An old stone parish church: the narthex under its bell tower at the front, the nave, the vestry and the
+      // sacristy behind the altar. It stands in its churchyard, the graves in rows round it, the parish hall a building
+      // of its own across the path (civicsite.js).
+      const { bw, bh } = sized(rng, "church.churchyard");
+      return {
+        bw, bh, front: { width: 1 }, ground: "rural", storeys: 1, foot: "medium", loft: BELFRY, civicSite: "churchyard",
+        program: Y([3, X(["*", narthex()], [4, tower()])], ["*", nave()], [4, X(["*", vestry()], ["*", vestry({ name: "Sacristy" })])]),
+        exits: [{ side: "back", roles: ["vestry"], chance: 0.8, lock: 0.3, name: "Priest's door" }, { side: "left", roles: ["nave"], chance: 0.6, lock: 0.4 }],
+      };
+    } },
   ],
 
   // ---------- police stations: front desk, squad room, chief, armory, evidence, cells, a police car ----------
@@ -805,6 +894,22 @@ export const VARIANTS = {
         exits: [sallyExit("back"), ...fire(0.5, 0.6)],
       };
     } },
+    // ---------- issue #49 (new worlds only: fresh): the police headquarters with its impound lot (civicsite.js) ----------
+    { id: "hqsite", name: "Police headquarters and impound lot", w: W(0.8, 0.2, 0, 0), fr: ["precinct"], fresh: true, make: (rng) => {
+      // A city's headquarters: records, the lobby's front desk, dispatch and the desk sergeant along the front; the
+      // holding cells, the evidence room, the armory and the sally port behind; the squads, interview rooms, the
+      // forensics lab and narcotics above, the chief and the command centre on top. Its impound lot and the staff lot
+      // beside it (civicsite.js).
+      const { bw, bh, storeys: n } = sized(rng, "police.hqsite");
+      return {
+        bw, bh, front: { width: 2 }, ground: "city", storeys: n, foot: "large", stairs: ENDS2, civicSite: "policehq",
+        program: cor([[4, records()], ["*", desk({ name: "Headquarters lobby" })], [4, dispatch()], [4, chief({ name: "Desk sergeant" })]], [["*", cells({ name: "Holding cells" })], [4, evidence()], [3, armory()], [6, sally()]], 5, 2),
+        upper: (f, r, ctx) => (ctx && ctx.top ? cor([["*", chief({ name: "Chief of police" })], ["*", briefing({ name: "Command centre" })]], [["*", records({ name: "Archives" })], [4, pbreak()], [2, wash()]], 5, 2)
+          : f === 1 ? cor([["*", squad()], interview(6), [4, plockers()]], [["*", squad({ name: "Patrol squad room" })], [4, pbreak()], [2, wash()]], 5, 2)
+            : cor([["*", squad({ name: "Detectives' squad" })], ["*", { role: "lab", name: "Forensics lab", civic: "sciencelab" }]], [["*", squad({ name: "Narcotics unit" })], [4, evidence({ name: "Evidence store" })], [2, wash()]], 5, 2)),
+        exits: [sallyExit("back"), ...fire(0.5, 0.6)],
+      };
+    } },
   ],
 
   // ---------- fire stations: the engine bay behind its bay door, the dorm and the kitchen in every plan ----------
@@ -926,7 +1031,51 @@ export const VARIANTS = {
         exits: [bayDoor(left ? "left" : "right"), { side: "front", roles: ["bays"], chance: 0.5, roller: true, width: 3, lock: 0.2, name: "Front bay door" }, { side: "back", roles: ["dorm", "workshop"], chance: 0.6, lock: 0.3 }],
       };
     } },
+    // ---------- issue #49 (new worlds only: fresh): the fire headquarters on its training ground (civicsite.js) ----------
+    { id: "hqsite", name: "Fire headquarters and training ground", w: W(0.8, 0.2, 0, 0), fr: ["engine7", "countyfire"], fresh: true, make: (rng) => {
+      // The city's headquarters station: the engine bay and the ladder bay side by side along the front, each behind its
+      // own roller door and through to a rear door, the lobby, the watch office, the day room and the kitchen beside
+      // them; the dorm and the gym over the bays, the fire prevention bureau, dispatch and the chief's office on top. Its
+      // training ground round it (civicsite.js): the drill tower, the drill yard, the staff lot.
+      const { bw, bh } = sized(rng, "firestation.hqsite");
+      return {
+        bw, bh, front: { width: 1 }, ground: "city", storeys: 3, foot: "large", stairs: { roles: ["lobby", "dayroom"], n: 1 }, civicSite: "firehq",
+        program: X([0.28, bay()], [0.28, bay({ name: "Ladder bay" })], ["*", Y([5, X(["*", { role: "lobby", entry: true, name: "Headquarters lobby", type: "office", civic: "frontdesk" }], [4, watch()])], ["*", fday()], [5, X(["*", fkitchen()], [4, medstore()])])]),
+        upper: (f) => (f === 1 ? X([0.56, fdorm()], ["*", Y(["*", fgym()], [4, X(["*", fbath()], ["*", fshop()])])])
+          : X([0.3, { role: "office", name: "Fire prevention bureau", civic: "chief" }], [0.26, { role: "office", name: "Dispatch centre", civic: "dispatch" }], ["*", Y(["*", { role: "office", name: "Chief's office", civic: "chief" }], [4, fbath()])])),
+        exits: [bayDoor(), bayDoor("front", { name: "Ladder bay door" }), { side: "back", roles: ["bays"], chance: 0.8, roller: true, width: 3, lock: 0.3, name: "Rear bay door" }, { side: "back", roles: ["kitchen"], chance: 0.6, lock: 0.3 }],
+      };
+    } },
   ],
+};
+// The buildings of #49's multi-building sites (civicsite.js) besides the main one and the other kinds' own plans: each
+// a spec as the plans above (drawn in metres, a cell 1 m), built and placed by civicsite.js. ER: a medical centre's
+// emergency department (one storey: the ambulance entrance and bay at the back, its ambulances on the apron outside);
+// hall: a churchyard's parish hall; impound: a police impound lot's office; drilltower: a fire training ground's drill
+// tower (five storeys of bare drill floors up its stair: the tall rule builds four).
+export const SITE_PLANS = {
+  er: (rng) => ({
+    bw: rng.int(30, 36), bh: rng.int(20, 23), front: { width: 2 }, ground: "city", storeys: 1, foot: "large",
+    program: cor([[7, waiting({ name: "Emergency entrance" })], ["*", er({ name: "Emergency department" })], [6, { role: "office", name: "Triage", type: "clinic" }], [4, cupboard({ name: "Crash cart store" })]],
+      [[8, { role: "ambbay" }], [6, { role: "bath", name: "Decontamination", type: null, civic: "washroom" }], ["*", er({ name: "Resuscitation bays" })], [5, supply(0.3)], [3, "restroom"]], 6, 2),
+    exits: [{ side: "back", roles: ["ambbay"], chance: 1, lock: 0.2, roller: true, width: 2, name: "Ambulance bay" }, ...fire(0.3, 0.6)],
+  }),
+  hall: (rng) => ({
+    bw: rng.int(16, 20), bh: rng.int(13, 15), front: { width: 1 }, ground: "rural", storeys: 1, foot: "medium",
+    program: Y([3, X(["*", { role: "foyer", name: "Hall porch", entry: true, type: "chapel", civic: "narthex" }], [4, wash()])], ["*", hall()], [4, X(["*", cpantry()], ["*", sunday()])]),
+    exits: [{ side: "back", roles: ["pantry", "classroom"], chance: 0.6, lock: 0.3 }],
+  }),
+  impound: (rng) => ({
+    bw: rng.int(10, 12), bh: rng.int(8, 9), front: { width: 1 }, ground: "city", storeys: 1, foot: "small",
+    program: Y(["*", X(["*", { role: "lobby", entry: true, name: "Impound office", type: "office", civic: "frontdesk" }], [4, records({ name: "Release desk" })])], [3, X(["*", evidence({ name: "Property cage" })], [3, wash()])]),
+    exits: [{ side: "back", roles: ["evidence", "restroom"], chance: 0.5, lock: 0.4 }],
+  }),
+  drilltower: (rng) => ({
+    bw: rng.int(9, 10), bh: rng.int(9, 10), front: { width: 1 }, ground: "city", storeys: 5, foot: "small", stairs: { roles: ["lobby", "storage"], n: 1 },
+    program: Y(["*", { role: "lobby", entry: true, name: "Tower base", type: "enginebay", civic: "fdayroom" }], [3, { role: "storage", name: "Hose store", type: "enginebay" }]),
+    upper: () => Y(["*", { role: "storage", name: "Drill floor", type: "enginebay" }]),
+    exits: [{ side: "back", roles: ["storage", "lobby"], chance: 0.7, lock: 0.2 }],
+  }),
 };
 export const VARIANT_KINDS = Object.keys(VARIANTS);
 /** The kind's plans: [{ id, name }]. @param {string} kind */
@@ -943,12 +1092,40 @@ export const variantNames = (kind) => (VARIANTS[kind] || []).map((v) => ({ id: v
  */
 export function pickVariant(kind, rng, o = {}) {
   // variantpick.js (issue #41): "civic:<kind>", the dice drawn first (r: one rng.next(), pinned or not), a franchise's
-  // plans at least 0.05.
-  const e = pickRegistered(`civic:${kind}`, rng, { plan: typeof o.plan === "string" ? o.plan : null, franchise: o.variant || null, site: o.site || null, setting: o.setting || "town", r: rng.next() });
+  // plans at least 0.05. A world made since issue #49 (o.civicReal): every plan, the new ones too (fresh), narrowed to
+  // the size class #42's placement table gives the kind on the building's tile class (sizeOn: a city centre's huge
+  // medical centre, a town's large county hospital, a country clinic's small one); a site some plans name (a prison's
+  // infirmary, an airport's crash station) keeps its own plans, whatever their size. An older save's (or a building
+  // made outside a world: the tests', a campus's): only the plans before #49 (FRESH out of the pool: the same weights
+  // and walk, so the same picks).
+  const real = !!o.civicReal, site = o.site || null;
+  const named = !!site && (VARIANTS[kind] || []).some((v) => v.w && v.w[site] != null);
+  const size = real && !named ? sizeOn(kind, o.tileClass) : null;
+  const e = pickRegistered(`civic:${kind}`, rng, { plan: typeof o.plan === "string" ? o.plan : null, franchise: o.variant || null, site, setting: o.setting || "town", r: rng.next(), ...(real ? {} : { only: OLD }), ...(size ? { size } : {}) });
   return e ? /** @type {any} */ (e).src : null;
 }
-// The registry's views (variantpick.js): each kind's plans, their weights by setting and site, their franchises.
-for (const kind of Object.keys(VARIANTS)) registerVariants(`civic:${kind}`, VARIANTS[kind].map((v) => ({ id: v.id, name: v.name, w: { ...(v.w || {}) }, ...(v.fr ? { fr: v.fr } : {}), src: v })), { frMin: 0.05 });
+/** @param {any} e */
+const OLD = (e) => !e.src.fresh;
+// The size class a kind's plan takes on a tile class (data-placement.js PLACEMENT: its row's letter there), null for a
+// kind that stands only as part of a site (an infirmary: "of prison") or a tile class its row does not name.
+/** @param {string} kind @param {string | null | undefined} cls @returns {string | null} */
+export const sizeOn = (kind, cls) => { const P = PLACEMENT[kind]; return P && !P.of && cls ? P.size[cls] || null : null; };
+// Each plan's size class (#42's small, medium, large, huge: placement.js SIZE_CLASSES; the picker's ctx.size), by its
+// real size (data-buildingsize.js CIVIC_REAL, floor area) and where it belongs: a downtown medical centre huge, a
+// town's county hospital large, a country clinic small. S small, M medium, L large, H huge.
+const SZ = {
+  hospital: { general: "H", critical: "M", tower: "L", children: "L", psych: "L", va: "H", trauma: "H", pavilion: "L", teaching: "H", cottage: "M", surgical: "L", nursing: "L", regional: "H", county: "L", medcampus: "H" },
+  infirmary: { general: "M", prison: "M", prisonhosp: "M", jail: "S", camp: "S", campus: "M", field: "M", aid: "M", company: "S", boarding: "S", quarantine: "M", shelter: "M" },
+  clinic: { general: "M", urgent: "M", family: "S", dialysis: "M", dental: "S", stripmall: "M", occhealth: "M", free: "M", multi: "M", paediatric: "S", rural: "S", surgery: "M" },
+  vet: { general: "S", country: "M", farm: "M", emergency: "M", shelter: "M", boarding: "S", equine: "M", storefront: "S", specialty: "M", exotic: "S", cat: "S", teaching: "M" },
+  church: { general: "M", chapel: "S", brick: "M", mega: "L", cathedral: "L", storefront: "M", rectory: "M", country: "S", cruciform: "L", mission: "M", school: "M", meeting: "S", churchyard: "S" },
+  police: { general: "M", substation: "S", smalltown: "S", precinct: "M", patrol: "S", hq: "L", jail: "M", community: "M", barracks: "S", townhall: "S", k9: "M", courthouse: "S", hqsite: "L" },
+  firestation: { general: "M", volunteer: "S", twobay: "S", tower: "M", airport: "M", hq: "L", brush: "S", firehouse: "M", drive: "M", rescue: "M", academy: "M", county: "S", hqsite: "L" },
+};
+const SIZE_OF = { S: "small", M: "medium", L: "large", H: "huge" };
+// The registry's views (variantpick.js): each kind's plans, their weights by setting and site, their franchises, their
+// size classes (#49) and whether they are new (fresh: a world made since #49 only).
+for (const kind of Object.keys(VARIANTS)) registerVariants(`civic:${kind}`, VARIANTS[kind].map((v) => ({ id: v.id, name: v.name, w: { ...(v.w || {}) }, ...(v.fr ? { fr: v.fr } : {}), sizeClass: SIZE_OF[SZ[kind][v.id]], ...(v.fresh ? { fresh: true } : {}), src: v })), { frMin: 0.05 });
 /**
  * The spec of a new save's building of a kind with plans here: the plan pickVariant gives, built; K.classic() the
  * kind's plan before this ticket (#14's or #15's, buildingmaps.js). The spec carries vid and vname.
@@ -957,6 +1134,12 @@ for (const kind of Object.keys(VARIANTS)) registerVariants(`civic:${kind}`, VARI
 export function variantSpec(kind, rng, o, K) {
   const v = pickVariant(kind, rng, o);
   if (!v) return K.classic();
-  const spec = v.make(rng, o, K);
-  return { ...spec, vid: v.id, vname: v.name };
+  // A world made since issue #49: a named plan drawn with its sizes row's storeys (REAL, sized) and laid out at its
+  // footprint by realScale (realSize: the row; vscale: its storeys its own); the general plan as before, through its
+  // kind's row (its sizes row is the kind's own).
+  const scaled = !!o.civicReal && v.id !== "general";
+  REAL = scaled ? { setting: o.setting || "town" } : null;
+  let spec;
+  try { spec = v.make(rng, o, K); } finally { REAL = null; }
+  return { ...spec, vid: v.id, vname: v.name, ...(o.civicReal ? { realSize: v.id } : {}), ...(scaled ? { vscale: true } : {}) };
 }

@@ -1315,6 +1315,11 @@ const FURN_DRAW = {
     const bronze = (f, s, t, X, Y) => mul(hex("#4f6a52"), (f === "top" ? 1.2 : 0.9) + n2(X, Y, 125 + v) * 0.15);
     return [fbox(0.18, 0.82, 0.18, 0.82, 0, 12, (f, s, t, X, Y) => mul(PAL.stone, (f === "top" ? 1.2 : 1) + n2(X, Y, 126) * 0.08)), fbox(0.4, 0.6, 0.4, 0.6, 12, 26, bronze), fbox(0.32, 0.68, 0.44, 0.56, 22, 30, bronze), { cyl: [0.5, 0.5, 0.09], z0: 30, z1: 36, m: bronze }, fbox(0.58, 0.64, 0.46, 0.54, 26, 40, bronze)];
   } },
+  // A churchyard's headstone (issue #49, sim/civicsite.js): a grey slab with a rounded top on its plinth.
+  headstone: { top: 16, p: (o, v) => {
+    const stone = (f, s, t, X, Y) => mul(PAL.stone, (f === "top" ? 1.15 : 0.92) + n2(X, Y, 129 + v) * 0.1);
+    return [fbox(0.24, 0.76, 0.36, 0.64, 0, 2, stone), fbox(0.3, 0.7, 0.44, 0.56, 2, 13, stone), { cyl: [0.5, 0.5, 0.2], z0: 13, z1: 16, m: stone }];
+  } },
   fountain: { top: 12, p: (o) => {
     const stone = (f, s, t, X, Y) => mul(PAL.stone, (f === "top" ? 1.25 : 1) + n2(X, Y, 127) * 0.08), water = (f, s, t, X, Y) => mul(FURNC.water, 1.1 + n2(X, Y, 128) * 0.2);
     return [fbox(0.04, 0.96, 0.04, 0.96, 0, 4, water), fbox(0, 1, 0, 0.1, 0, 6, stone), fbox(0, 1, 0.9, 1, 0, 6, stone), fbox(0, 0.1, 0.1, 0.9, 0, 6, stone), fbox(0.9, 1, 0.1, 0.9, 0, 6, stone), ...(o.v & 1 ? [{ cyl: [0.5, 0.5, 0.12], z0: 0, z1: 12, m: stone }] : [])];

@@ -261,6 +261,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
     scaleV: 1, // buildings at real size (data-buildingsize.js; save.js: an older save keeps its buildings' old footprints and storeys)
     placeV: 1, // where buildings stand by the placement table (data-placement.js, issue #42; save.js: an older save keeps its places)
     officesV: 1, // the office buildings of every kind and their firms (data-offices.js; save.js: an older save gets none)
+    civicV: 1, // civic and medical buildings at real scale, their big plans and sites (civicvariants.js, civicsite.js, issue #49; save.js: an older save keeps its plans)
     groupJails: 1, // jailhouse: the AI groups keep prisoners in jails they build, work them and trade them (groupjails.js); older saves: no limit
     grid: map.grid, tiles: map.tiles, cityId: map.cityId, originId: map.originId,
     cityIds: map.cityIds, militaryIds: map.militaryIds,

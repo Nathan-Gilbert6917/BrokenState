@@ -155,6 +155,10 @@ export const legacyOffices = (state) => !!(state && state.officesLegacy);
 // A save from before the placement table (issue #42, save.js placeLegacy: no state.placeV): its points of interest, its
 // crawls' blocks and its buildings stay as they were (placement.js placing is off).
 export const legacyPlace = (state) => !!(state && state.placeLegacy);
+// A save from before civic and medical buildings at real scale (issue #49, save.js civicLegacy: no state.civicV), or
+// before buildings at real size at all: its hospitals, clinics, vets, churches, police and fire stations, city halls and
+// courthouses keep their plans at their drawn sizes and none of the new plans or multi-building sites.
+export const legacyCivic = (state) => !!(state && (state.civicLegacy || legacyScale(state)));
 // The run's raid map dials as [smallest, largest]: each clamped to its range, the two in order whatever was stored
 // (a hand-edited or older settings object can hold them the wrong way round: the range never runs backwards).
 /** @param {any} state */

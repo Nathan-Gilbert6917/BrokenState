@@ -346,7 +346,13 @@ export function fitMargins(bw, bh, margins, [tw, th], cap = null) {
 // (the run's raid map dials and the building's own size decide). A hotel's 200 × 200 (issue #29, the user's request
 // 2026-10-25: "add hotel 200x200 max"): the hotel and its grounds (parking, the drive, the pool, the gardens) within it
 // (hotellayout.js sizes its grounds to fit).
-export const MAP_CAP = { hotel: 200, prison: 400, jail: 130, cinema: 80, parkgarage: 80, regionalmall: 500, stripmall: 500, outlet: 500 }; // a prison's complex up to the user's 400 × 400, a county jail's 130 (issue #31, prison.js); a mall's cinema and parking garage at their real size, a mall's whole map (issue #30, mall.js MALL.CAP)
+// The civic and medical kinds (issue #49, the user's request 2026-10-26: "updating the map size of civic and medical
+// buildings to be max size of 350x350"): a hospital's and a church's map up to 350 × 350 (a regional medical centre at
+// real scale, a city medical centre's campus, a cathedral, a churchyard: civicsite.js sizes a site's map within it), the
+// police, fire stations, city halls and courthouses 300 (a headquarters on its site), the clinics, infirmaries and vets
+// the default (the dials, at most 300). The run's raid map dial goes to 300, so a cap of 300 or more never changes an older
+// save's map.
+export const MAP_CAP = { hotel: 200, prison: 400, jail: 130, cinema: 80, parkgarage: 80, regionalmall: 500, stripmall: 500, outlet: 500, hospital: 350, church: 350, police: 300, firestation: 300, cityhall: 300, courthouse: 300 }; // a prison's complex up to the user's 400 × 400, a county jail's 130 (issue #31, prison.js); a mall's cinema and parking garage at their real size, a mall's whole map (issue #30, mall.js MALL.CAP)
 export const mapCap = (key) => MAP_CAP[key] || null;
 export function buildingTarget(tile, single, state = null) {
   if (legacyRaids(state)) return single ? raidDims(tile, state) : dimsAt(S); // an older save: the old targets
