@@ -455,7 +455,7 @@ const HOME_PLANS = {
   cabin: {
     // One room (the great room, its kitchenette in a corner) and a lean-to behind it (the guns and the gear: a gun room).
     hunting(rng) {
-      const bw = rng.int(6, 7), bh = rng.int(6, 7);
+      const bw = rng.int(6, 7), bh = rng.int(8, 9); // deep enough for the lean-to behind the room (a 3-deep room, the wall, 2)
       return {
         bw, bh, front: { width: 1 }, openDoors: 0.4, storeys: 1, foot: "small", ground: "woods",
         program: { split: "y", parts: leaves([["*", Rm("greatroom", { entry: true })], [2, Rm("gunroom", { name: "Lean-to", maxBoxes: 1 })]]) },
