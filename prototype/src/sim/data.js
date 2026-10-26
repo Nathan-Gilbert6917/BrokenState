@@ -13,6 +13,7 @@ import { CART_GEAR } from "./data-carts.js"; // a wheelbarrow and a hand cart, p
 import { TENT_GEAR } from "./data-tents.js"; // tent bags: one-, two- and four-person tents (tents.js)
 import { HELMET_GEAR } from "./data-helmets.js"; // helmets, visors, helmet mounts, ear protection (helmets.js, hearing.js)
 import { BLADE_GEAR } from "./data-blades.js"; // knives and swords (blades.js: where they turn up)
+import { ZOO_GEAR } from "./data-zoo.js"; // a zoo vet's tranquilliser darts (issue #59)
 import { NL_GEAR } from "./data-nonlethal.js"; // tasers, cartridges, pepper spray, the stun baton (nonlethal.js)
 import { TOOL_ITEMS } from "./data-tools.js"; // tools for building and crafting: a tool kit, saws, a felling axe, a shovel, a drill, a welder, a sewing kit, the makeshift ones (toolreqs.js)
 import { SURV_ITEMS } from "./data-survival.js"; // survival gear: tools, armour against teeth, lights, a rig, a jump bag, a rangefinder (survival.js: where they turn up)
@@ -531,6 +532,10 @@ export const LOCATIONS = {
   univ:     { name: "University",     glyph: "U",  cat: "urban",   danger: 2, loot: { parts: 3, meds: 1, scrap: 2 }, gear: ["surgkit", "bandagekit", "bat", "fireaxe", "slingbag", "telescope"], richness: 0.8, known: "public" },
   // A town's college (issue #28: mapgen.js, a campus map: campus.js): a community or a liberal arts college.
   college:  { name: "College",        glyph: "Co", cat: "town",    danger: 1, loot: { parts: 2, meds: 1, scrap: 2, food: 1 }, gear: ["bandagekit", "bat", "fireaxe", "slingbag", "backpack"], richness: 0.7, known: "public" },
+  // A zoo (issue #59, zoo.js): a point of interest by the placement table (placement.js PLACE_EXTRA: a city's big zoo
+  // and its aquarium by the centre, a town's zoo, a petting zoo, a roadside zoo or a big-cat sanctuary out in the
+  // country), one raid map of the whole site: animal houses, enclosures, the vet hospital, the café and the gift shop.
+  zoo:      { name: "Zoo",            glyph: "Z",  cat: "town",    danger: 2, loot: { food: 3, meds: 1, scrap: 2, water: 1, fuel: 0.3 }, gear: ["machete", "bandagekit", "binoculars", "dewormer", "handradio", "flashlight", "prybar", "tranqdarts"], richness: 0.7, known: "public" },
   dam:      { name: "Dam and power plant", glyph: "D", cat: "special", danger: 1, loot: { parts: 4, scrap: 3, fuel: 0.3 }, gear: ["sandbags", "prybar", "sledge", "flashlight"], richness: 0.7, known: "public" },
   airport:  { name: "Regional airport", glyph: "A", cat: "special", danger: 2, loot: { fuel: 4, parts: 2, scrap: 2 }, gear: ["pistol", "slingbag", "hikingpack", "backpack", "duffle"], richness: 0.8, known: "public" },
   factory:  { name: "Factory",        glyph: "I",  cat: "special", danger: 1, loot: { scrap: 5, parts: 2, fuel: 0.4 }, gear: ["crowbar", "prybar", "sledge", "barbedwire", "pickaxe", "hammer"], richness: 0.8, known: "public" },
@@ -792,6 +797,7 @@ Object.assign(GEAR, {
 Object.assign(GEAR, GUN_GEAR, LATER_GEAR, AMMO_GEAR, RELOAD_GEAR, MOD_GEAR, KIT_GEAR, BULK_GEAR); // LATER_GEAR: the launchers and the M2 (wave 2, launchers.js)
 for (const [k, p] of Object.entries(GEAR_PATCH)) if (GEAR[k]) Object.assign(GEAR[k], p); // data-guns.js: changed descriptions
 Object.assign(GEAR, NL_GEAR); // non-lethal weapons (data-nonlethal.js)
+Object.assign(GEAR, ZOO_GEAR); // a zoo vet's tranquilliser darts (data-zoo.js, issue #59)
 Object.assign(GEAR, HELMET_GEAR); // helmets, visors, helmet mounts, ear protection (data-helmets.js)
 Object.assign(GEAR, BLADE_GEAR); // knives and swords (data-blades.js)
 Object.assign(GEAR, SURV_ITEMS); // survival gear (data-survival.js)

@@ -222,6 +222,9 @@ export function deserializeState(save) {
   // Mines and quarries (minelayout.js, issue #52): a save from before keeps its quarry sites' workshop and its mine
   // shacks' cabin (their maps and containers as they were) and gets no new mines or quarries (worldcfg.js legacyMines).
   if (!state.minesV) { state.minesLegacy = true; state.minesV = 1; }
+  // Zoos (zoo.js, issue #59): a save from before gets none on its tiles (placement.js placeExtraKind, worldcfg.js
+  // legacyZoo), so its points of interest regenerate as they were.
+  if (!state.zooV) { state.zooLegacy = true; state.zooV = 1; }
   // Gyms and bowling alleys (reclayout.js, issue #56): a save from before gets none on its tiles or its crawls' blocks
   // (placement.js placeExtraKind, crawlExtraKind), so its points of interest and blocks regenerate as they were.
   if (!state.recV) { state.recLegacy = true; state.recV = 1; }

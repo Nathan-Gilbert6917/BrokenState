@@ -140,6 +140,18 @@ export const REAL_SIZE = {
     lights: { w: [220, 280], d: [200, 260], storeys: [1, 1] }, trampoline: { w: [120, 140], d: [110, 130], storeys: [1, 2] },
     western: { w: [260, 320], d: [240, 300], storeys: [1, 2] },
   } },
+  // #59's zoos: a site of many buildings on one map (zoo.js zooMap lays it out from its variant's grid, zoolayout.js
+  // ZOO_SIZE its buildings): a sizes row per variant, the site's width and depth in metres (the whole map, a metre a
+  // cell) and its buildings' storeys (zoo.js caps every building's at the row's most: a city zoo's keepers' block of
+  // two, a city aquarium's three levels, a university zoo's research building of three, the rest one).
+  zoo: { set: "city", own: true, storeys: [1, 3], sizes: { // measured over 40 sites a plan (tools/zootest.js holds every map to its row)
+    cityzoo: { w: [360, 464], d: [294, 390], storeys: [1, 2] }, cityaquarium: { w: [321, 349], d: [194, 218], storeys: [1, 3] },
+    safari: { w: [298, 458], d: [301, 352], storeys: [1, 1] }, researchzoo: { w: [163, 239], d: [136, 199], storeys: [1, 3] },
+    primate: { w: [167, 195], d: [175, 208], storeys: [1, 1] }, townzoo: { w: [142, 169], d: [125, 147], storeys: [1, 1] },
+    birdpark: { w: [147, 175], d: [160, 189], storeys: [1, 1] }, petting: { w: [91, 112], d: [112, 133], storeys: [1, 1] },
+    reptile: { w: [95, 116], d: [89, 139], storeys: [1, 1] }, rescue: { w: [91, 143], d: [112, 133], storeys: [1, 1] },
+    bigcat: { w: [104, 165], d: [124, 145], storeys: [1, 1] }, roadside: { w: [87, 104], d: [83, 130], storeys: [1, 1] },
+  } },
   // Institutions
   clinic:      { w: [15, 25], d: [12, 20], storeys: [1, 2], set: "town" },
   infirmary:   { w: [15, 25], d: [12, 20], storeys: [1, 2], set: "rural" },

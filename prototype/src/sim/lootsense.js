@@ -218,4 +218,7 @@ export const LOOT_SENSE = {
   vacantunit:     S({ food: 0.1 }, NO_GUNS),
   // Data centres (issue #51).
   datacenter:     S({ parts: 0.95, gadgets: 0.8, tools: 0.9, fuel: 0.8 }, NO_GUNS, { note: "electronics, batteries, cable and fuel; a break room's lunch and no more" }),
+  // Zoos (issue #59, zoo.js): the food prep's meat and produce (spoiled but in winter), the vet hospital's drugs and
+  // its dart cabinet's tranquilliser darts (medical kit), the keepers' radios and torches, the café's food and drink.
+  zoo:            S({ food: 0.95, drink: 0.95, drugs: 0.95, medgear: 0.6, tools: 0.5 }, ARMY),
 };

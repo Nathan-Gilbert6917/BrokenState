@@ -1981,6 +1981,12 @@ const FURN_DRAW = {
     const ax = along(o), face = (f, s, t, X, Y, sw) => { if (f === "top") return PAL.woodLt; const w = sw || 12; if (t > 7 && t < 17 && s > 1 && s < w - 1) return Math.floor(X) % 2 && t < 13 ? fgoods(X, 0, 132) : mul(FURNC.glassDk, 1.2); return mul(PAL.woodDk, 0.95 + n2(X, Y, 133) * 0.08); };
     return [run(ax, 0.3, 0.7, 0, 18, face, 0.16, 0.84)];
   } },
+  // A zoo vet's dart cabinet (issue #59, sim/data-zoo.js): a grey steel wall cabinet, its glass door showing a rack of
+  // orange-flighted darts, a yellow hazard stripe along its foot.
+  dartcab: { top: 20, p: (o) => {
+    const ax = along(o), face = (f, s, t, X, Y, sw) => { if (f === "top") return mul(FURNC.steel, 1.1); const w = sw || 8; if (t < 2) return Math.floor(X + Y) % 2 ? FURNC.led : FURNC.black; if (t > 5 && t < 17 && s > 1 && s < w - 1) return Math.floor(X) % 2 && t > 9 && t < 14 ? mul(FURNC.red, 1.3) : mul(FURNC.glassDk, 1.15); return mul(FURNC.steel, 0.92 + n2(X, Y, 135) * 0.06); };
+    return [run(ax, 0.3, 0.7, 0, 20, face, 0.18, 0.82)];
+  } },
   phonebooth: { top: 28, p: (o) => {
     const ax = along(o), glass = (f, s, t, X, Y, sw) => { const w = sw || 16; if (f === "top" || t > 26 || t < 1 || s < 1 || s > w - 1) return mul(FURNC.steel, 0.85); return mul(FURNC.water, 1.25 + n2(X, Y, 134) * 0.08); };
     return [run(ax, 0.16, 0.84, 0, 28, glass, 0.12, 0.88), run(ax, 0.2, 0.4, 9, 10, flatM(PAL.woodLt), 0.2, 0.8)];
