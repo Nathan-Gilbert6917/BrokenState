@@ -146,6 +146,8 @@ export const LOOT_SENSE = {
   bakery:         S({ food: 0.95, drink: 0.75, treats: 0.3 }, NO_GUNS),
   butcher:        S({ food: 0.95, drink: 0.55 }, NO_GUNS),
   deli:           S({ food: 0.9, drink: 0.9, treats: 0.45 }, NO_GUNS),
+  gym:            S({ drink: 0.9, food: 0.8, medgear: 0.3, clothing: 0.4 }, NO_GUNS, { note: "issue #56: water, protein and bars at the desk and the smoothie bar, first aid, gym bags in the lockers" }),
+  bowling:        S({ drink: 0.9, food: 0.9, liquor: 0.3, tools: 0.6, parts: 0.8 }, [...ARMY, "armour"], { note: "issue #56: the bar's beer and liquor (a small-town alley's lunch counter has none), the snack counter, the pinsetter room's tools and parts" }),
   // Medical.
   vet:            S({ drugs: 0.9, vetmeds: 0.6, medgear: 0.7, surgical: 0.25 }, NO_GUNS),
   clinic:         S({ drugs: 0.9, medgear: 0.9, surgical: 0.4 }, NO_GUNS),

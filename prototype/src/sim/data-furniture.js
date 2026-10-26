@@ -164,6 +164,28 @@ export const FURNITURE_KINDS = {
   loungechair: P("Lounge chair",      HALF, 15, 25, "one", S1, false, ["living", "office"], "comfort:0.5"),
   lounger:     P("Pool lounger",      HALF, 8, 12, "one", S1, false, ["yard"], "comfort:0.3"),
   tennisnet:   P("Tennis net",        POLE, 5, 15, "fixed", S1, false, ["yard"], "none"),
+  // ---------- gyms and bowling alleys (issue #56: reclayout.js lays them) ----------
+  // A gym's machines: a treadmill (1 × 2), an exercise bike, a rowing machine (1 × 2), a squat rack's steel cage, a
+  // dumbbell rack (2 × 1, against a wall), a heavy bag on its stand, a boxing ring's corner post, a climbing wall's holds
+  // on a wall panel, a spa's hot tub (2 × 2), a bin of rolled yoga mats. A bowling alley's lane-end pins on their deck,
+  // the ball return between two lanes, the pinsetter machine behind each lane, a rack of house balls (2 × 1), the shoe
+  // counter's cubbies, the scoring console at the settee. None holds loot: the rooms' cabinets, lockers and counters do.
+  treadmill:   P("Treadmill",          HALF, 30, 90, "two", S12, false, ["gym"], "none"),
+  exbike:      P("Exercise bike",      HALF, 20, 40, "two", S1, false, ["gym"], "comfort:0.2"),
+  rower:       P("Rowing machine",     HALF, 15, 28, "one", S12, false, ["gym"], "comfort:0.2"),
+  squatrack:   P("Squat rack",         C(false, 1, false), 70, 140, "two", S1, false, ["gym"], "comfort:0.2"),
+  dumbbells:   P("Dumbbell rack",      HALF, 50, 220, "two", S21, false, ["gym"], "comfort:0.2", true),
+  punchbag:    P("Heavy bag",          C(false, 1, false), 25, 45, "two", S1, false, ["gym"], "comfort:0.2"),
+  ringpost:    P("Ring post",          POLE, 30, 60, "fixed", S1, false, ["gym"], "none"),
+  climbwall:   P("Climbing wall",      FULL, 80, 300, "fixed", S1, false, ["gym"], "none", true),
+  hottub:      P("Hot tub",            HALF, 60, 400, "fixed", S22, false, ["gym", "bath"], "none"),
+  yogamats:    P("Yoga mats",          HALF, 8, 12, "one", S1, false, ["gym"], "comfort:0.1"),
+  pins:        P("Bowling pins",       HALF, 10, 15, "fixed", S1, false, ["bowling"], "none"),
+  ballreturn:  P("Ball return",        HALF, 40, 150, "fixed", S1, false, ["bowling"], "none"),
+  pinsetter:   P("Pinsetter",          FULL, 90, 1000, "fixed", S1, false, ["bowling", "bay"], "none", true),
+  ballrack:    P("Ball rack",          HALF, 35, 160, "two", S21, false, ["bowling", "shop"], "none", true),
+  shoecubby:   P("Shoe cubbies",       FULL, 25, 40, "two", S1, false, ["bowling", "shop"], "storage:30", true),
+  scorer:      P("Scoring console",    HALF, 15, 25, "one", S1, false, ["bowling"], "none"),
   // ---------- grocery stores by size (issue #22: shoplayout.js cornerstore, grocerfloor, superstore, the back of house) ----------
   // The freezer case (an upright glass-door freezer), the island freezer and the butcher's case are appliances at a base
   // (data-appliances.js freezer_case, island_freezer, meat_case: #19's rules through their use); each holds its own table

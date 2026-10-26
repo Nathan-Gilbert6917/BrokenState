@@ -180,6 +180,9 @@ export const legacyMines = (state) => !!(state && (state.minesLegacy || state.ro
 // A save from before the zoos (issue #59, save.js zooLegacy: no state.zooV): its tiles get none (placement.js
 // placeExtraKind), so its points of interest stay as they were.
 export const legacyZoo = (state) => !!(state && state.zooLegacy);
+// A save from before the gyms and bowling alleys (save.js recLegacy, issue #56): none on its tiles or its crawls' blocks
+// (placement.js placeExtraKind, crawlExtraKind).
+export const legacyRec = (state) => !!(state && state.recLegacy);
 // A save from before the golf courses, campgrounds and RV parks (issue #61, save.js outdoorsLegacy: no state.outdoorsV):
 // its points of interest get none of them (placement.js PLACE_EXTRA), and its campgrounds keep their street map
 // (buildingmaps.js OUTDOOR_SITES), so its places stay as they were.

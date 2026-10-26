@@ -38,7 +38,6 @@ export const WOODWORK = {
   kinds: ["tree", "log"], // what it fells for wood (120 and 40 wood: basescatter.js CLEAR)
 };
 const TEMP_ID = -7; // siteFor's stand-in job (never a real id: newId starts at 1)
-const aheadSeen = new WeakMap(); // clearAhead: the queue and next build it last looked at, by base (not saved: looked at again after a load)
 
 // ---------- chop jobs ----------
 /** A clearing job that gives wood. @param {any} c */
@@ -157,10 +156,12 @@ export function siteFor(state, base, type) {
  */
 export function clearAhead(state, base, nextType = null) {
   // Looked at again only when the queue or the next build changed (the auto layout is dear; the felling beyond the
-  // walls moves nothing in the yard).
+  // walls moves nothing in the yard). The last look is kept on the base (base.aheadSig), so it is saved: kept by
+  // module (a WeakMap, before issue #72), a loaded world looked again on its first hours, queued a clearing the
+  // original never did, and played on differently (savetest's seed 42).
   const sig = `${base.construction.filter((c) => c.type !== "clear").map((c) => c.id).join(",")}|${nextType || ""}|${base.buildings.length}`;
-  if (aheadSeen.get(base) === sig) return [];
-  aheadSeen.set(base, sig);
+  if (base.aheadSig === sig) return [];
+  base.aheadSig = sig;
   if (!landFor(state, base)) return [];
   const before = new Set(base.construction.map((c) => c.id));
   for (const job of [...base.construction]) if (job.type !== "clear") siteWaits(state, base, job);
