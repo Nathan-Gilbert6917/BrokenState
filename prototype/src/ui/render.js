@@ -2017,8 +2017,10 @@ function blocRing(x, y, color, s) {
 }
 // A construction bar under a sprite, centered at x with its top at y: the work done (amber, green once full) and,
 // lighter, as far as the materials allow (cap). Returns the y of its bottom edge.
-// How far a team's camp setup is (its pitching task: the hours worked of the hours it takes).
-const pitchPct = (p) => Math.max(0, Math.min(1, ((p.task.done || 0) - (p.task.owed || 0)) / Math.max(1e-9, p.task.hours || 1)));
+// How far a team's camp setup is (its pitching task: the hours worked of the hours it takes, the minutes of this hour
+// gone on the clock counted too: the tick credits whole hours, so a setup under an hour sat at 0% until it was done,
+// the user's report 2026-10-26).
+const pitchPct = (p) => Math.max(0, Math.min(1, ((p.task.done || 0) - (p.task.owed || 0) + hourFrac()) / Math.max(1e-9, p.task.hours || 1)));
 function buildBarOnMap(x, y, s, f, cap = f) {
   const bw = 30 * s, bh = 4 * s, bx = x - bw / 2;
   ctx.fillStyle = "rgba(13,15,18,0.85)";
