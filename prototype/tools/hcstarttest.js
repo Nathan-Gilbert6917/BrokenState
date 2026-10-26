@@ -221,6 +221,11 @@ section("Who they were: three backgrounds, no two alike; one car between them wi
     check(!p.burden || p.burden.band <= 2, `seed ${st.seed}: the car is not overloaded (load band ${p.burden && p.burden.band})`);
   }
   console.log(`  backgrounds over ${many.length} starts: ${JSON.stringify(seen)}; cars: ${JSON.stringify(carKinds)}; owners: ${JSON.stringify(owners)}`);
+  // Let go of the 36 worlds (about 40 MB each since the maps of 2026-10-24): this module's top-level blocks keep their
+  // locals alive to its end (they sit in the module function's registers), and the run ran out of its 2 GB heap.
+  // `worlds` is not read after this section.
+  many.length = 0;
+  worlds.length = 0;
   check(Object.keys(A).every((k) => seen[k] > 0), "every background turns up");
   check(Object.keys(carKinds).length >= 4 && (carKinds.truck || 0) > (carKinds.sedan || 0) * 0.3, `several kinds of car (${Object.keys(carKinds).join(", ")})`);
   // A background bumps the skills it says, on a fresh survivor.

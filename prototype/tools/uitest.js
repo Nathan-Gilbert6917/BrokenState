@@ -646,7 +646,12 @@ section("New-run screen: world size and AI groups (sim/worldsize.js)");
     const w = createWorld({ seed: seed + 9, factionCount: 9, size: "custom", customW: 120, customH: 80 });
     const html = newRunScreen(w, { worldSize: "custom", customW: 120, customH: 80, factionCount: 9, hiveCount: null, nrMsg: "" });
     htmlOk(html, "new-run screen (Custom)");
-    check(/value="custom" selected/.test(html) && /data-action="customw"[^>]*value="120"/.test(html) && /data-action="customh"[^>]*value="80"/.test(html) && html.includes("Experimental") && html.includes("× Huge"), "Custom: width, height and the warning (bigger than Huge)");
+    check(/value="custom" selected/.test(html) && /data-action="customw"[^>]*value="120"/.test(html) && /data-action="customh"[^>]*value="80"/.test(html) && html.includes("Experimental") && /class="small muted">⚠ Experimental/.test(html) && !html.includes("× Huge"), "Custom: width, height and the warning (120 × 80 is not bigger than Huge: muted, no × Huge)");
+    // Bigger than Huge: since 2026-10-24 Huge (500 × 300) is the custom maximum (worldsize.js CUSTOM), so only a grid
+    // of its own reaches it (a save's, read as custom); the same world with its grid's sides raised stands in for one.
+    const big = Object.assign(Object.create(Object.getPrototypeOf(w)), w, { grid: Object.assign(Object.create(w.grid), { width: 600, height: 400 }) });
+    const bigHtml = newRunScreen(big, { worldSize: "custom", customW: 600, customH: 400, factionCount: 9, hiveCount: null, nrMsg: "" });
+    check(/class="small danger">⚠ Experimental/.test(bigHtml) && bigHtml.includes("This one is 1.6× Huge."), "Custom: the warning bigger than Huge (600 × 400: in red, 1.6× Huge)");
   }
   // Starting people (sim/hardcore.js peopleRange): Normal 1–8 (six by default), Hardcore 1–4.
   {
@@ -1059,7 +1064,7 @@ section("Map terrain detail: decals and rippled water (ui/terraindeco.js, render
   const Db = T.placeDecor(createWorld({ seed: 77, factionCount: 6 }), R.HEX);
   check(rowsKey(Db) === ka, `the same seed places the same decals, whatever order the tiles are placed in (${T.decorRows(Da).length} decals)`);
   check(rowsKey(T.placeDecor(createWorld({ seed: 78, factionCount: 6 }), R.HEX)) !== ka, "another seed places them differently");
-  const far = Math.max(...T.decorRows(Da).map((r) => Math.max(-r[2], r[2] + r[4], -r[3], r[3] + r[5])));
+  const far = T.decorRows(Da).reduce((m, r) => Math.max(m, -r[2], r[2] + r[4], -r[3], r[3] + r[5]), -Infinity); // a reduce: a map's rows overflow Math.max(...rows)'s arguments
   check(far <= Da.reach && Da.reach <= 35, `decals stay within 35 px of their tile's center (render.js DECO_REACH; ${far.toFixed(1)})`);
   const perTerrain = {};
   for (let id = 0; id < a.tiles.length; id++) { const k = a.tiles[id].terrain; perTerrain[k] = perTerrain[k] || [0, 0]; perTerrain[k][0]++; perTerrain[k][1] += Da.len[id]; }

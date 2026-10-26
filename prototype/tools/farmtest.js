@@ -700,7 +700,11 @@ has(Weather.growthFactor, "growthFactor"); has(Weather.cropDamage, "cropDamage")
   check(military.every((t) => share(t) > Math.max(...others.map(share)) && share(t) <= share("military")), `an Army convoy is between (${military.map((t) => share(t).toFixed(2)).join(", ")})`);
   check(others.every((t) => share(t) <= 0.15), `fuel is a small share elsewhere (auto shops the most) (max ${Math.max(...others.map(share)).toFixed(2)})`);
   const st = W();
-  check(hub(st).stock.fuel <= 12, `the hub starts with little fuel (${hub(st).stock.fuel})`);
+  // Since 2026-10-25 the starting vehicles' backs are rolled by whose they are and unloaded into the hub's stores
+  // (hardcore-start.js rollHubFleet: the user's request): a trucker's or a mechanic's can or two of fuel on top.
+  const backFuel = st.fleet.map((f) => (f.diceTrunk && !f.load ? f.diceTrunk.supplies.fuel || 0 : 0));
+  const ownFuel = hub(st).stock.fuel - backFuel.reduce((a, q) => a + q, 0);
+  check(ownFuel <= 12 && backFuel.every((q) => q <= 10), `the hub starts with little fuel (${ownFuel} of its own, ${backFuel.filter((q) => q).join(" + ") || "none"} from the vehicles' backs)`);
   check(st.factions.every((f) => f.stock.fuel <= f.pop * 1.01 + 1e-9), "other groups start with little fuel");
 }
 
