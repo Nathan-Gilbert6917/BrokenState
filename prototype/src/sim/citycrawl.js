@@ -70,9 +70,9 @@ import { crawlGuns } from "./gunfinds.js";
 import { deepShift, cacheChance, isFine, valuePerKg, wantOf, DEEP } from "./deeploot.js"; // deeper blocks hold what is dear by the kilo; a full team swaps
 import { itemValue } from "./valuation.js";
 import { atBase } from "./world.js";
-import { shopPlaces, civicPlaces, crawlFranchise, franchiseName } from "./shops.js"; // the shops and services on a block besides its own (their own dice), a place's franchise
+import { shopPlaces, civicPlaces, crawlFranchise, franchiseName, SHOP } from "./shops.js"; // the shops and services on a block besides its own (their own dice), a place's franchise
 import { PLACE_W } from "./data-shops.js"; // a shop's crawl place stats (rich, dead, rare)
-import { hotelPlace, HOTELS } from "./hotels.js"; // a hotel on a block now and then (issue #29), its place stats
+import { hotelPlace, hotelVariantOf, HOTELS } from "./hotels.js"; // a hotel on a block now and then (issue #29), its place stats
 import { OFFICE_CIVIC } from "./data-offices.js"; // city hall's and the courthouse's (issue #27)
 import { piecesOut, piecesText, crawlPieces as homePieces } from "./furnihome.js"; // furniture carried out of a building: the vehicle or exhaustion at the rim (issue #18; the walk's pace: carryPace, by pairs)
 import { gridOf, inGrid, isEdge, levelOf, ringOf, maxLevel, entryOf, headingToward, turn, rimOf, pathToRim, dirTo, keyOf, xyOf, DIRS, DIR_NAMES, cellsOf } from "./citygrid.js"; // the round grid of blocks (2026-10-13)
@@ -480,6 +480,7 @@ export function genBlock(state, c, cell = c.cell) {
     const v = crawlFranchise(state, c.tile, cell, j, key, setting, n); // shops.js: its franchise (its name, its layout; none for a kind without)
     const place = {
       id, slot: j, key, name: `${v ? franchiseName(key, v) : BUILDINGS[key].name} on ${street}`, kind: BUILDINGS[key].name, rare: !!P.rare, ...(v ? { v } : {}),
+      ...(key === "hotel" && v ? { hv: hotelVariantOf(v, setting === "town" ? "town" : n <= SHOP.OUTER ? "suburb" : "city", hash01(state.seed, "crawlhotelvar", c.tile, cell)) } : {}), // a hotel's variant (issue #38), on dice of its own
       dead: P.dead * (0.85 + rng.next() * 0.3), rich: P.rich, raiders,
       looted: mem.looted[id] || 0, // picked over by an earlier crawl
       blocked: null, quick: false,
@@ -600,7 +601,7 @@ export const placeOption = (c, place, n = c.block) => {
   const snap = c.buildings && c.buildings[place.id];
   const variant = (snap ? snap.v : place.v) || null;
   const scenes = { dead: place.dead ?? 1, raiders: !!place.raiders, looted: place.looted || 0, rich: place.rich ?? 1, survivors: !!(place.folk && place.folk.survivors) };
-  return { id: `cc${n}-${place.slot}`, key: place.key, name: place.name, storeyBonus: storeyBonus(n), ...(variant ? { variant } : {}), scenes };
+  return { id: `cc${n}-${place.slot}`, key: place.key, name: place.name, storeyBonus: storeyBonus(n), ...(variant ? { variant } : {}), ...(place.hv && variant === place.v ? { plan: place.hv } : {}), scenes }; // plan: a hotel's variant (issue #38)
 };
 // How many storeys a place has (the block card): the archetype's dice for this place, without building its map.
 export function placeStoreys(state, c, place, n = c.block) {
