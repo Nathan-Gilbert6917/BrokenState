@@ -220,6 +220,9 @@ export function deserializeState(save) {
   // Data centres (datacenter.js, issue #51): a save from before gets none on its tiles (placement.js placeExtraKind,
   // worldcfg.js legacyDc), so its points of interest regenerate as they were.
   if (!state.dcV) { state.dcLegacy = true; state.dcV = 1; }
+  // Sports stadiums and arenas (stadium.js, issue #57): a save from before gets none on its tiles (placement.js
+  // placeExtraKind, worldcfg.js legacyStadium), so its points of interest regenerate as they were.
+  if (!state.stadV) { state.stadLegacy = true; state.stadV = 1; }
   // Sawmills (sawmilllayout.js, issue #53): a save from before gets none on its tiles (placement.js placeExtraKind,
   // worldcfg.js legacySaw), so its points of interest regenerate as they were.
   if (!state.sawV) { state.sawLegacy = true; state.sawV = 1; }

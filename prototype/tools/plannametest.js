@@ -4,7 +4,7 @@
 //     (buildingmaps.js, planname.js) read exactly them; one id has one name within its type;
 //   - the assembled map carries them as map.vid / map.vname and map.plan.vid / map.plan.vname (a compound's too: a
 //     mall's variant, a prison's or a campus's site layout), and buildingPlan (what the readers ask without building
-//     the map) gives the map's plan, or null for a mall, a prison, a jail, a campus, a farm or a ranch (only their map knows it);
+//     the map) gives the map's plan, or null for a mall, a prison, a jail, a campus, a farm, a ranch or a stadium (only their map knows it);
 //   - buildingOptions shows a site's buildings by their plan's name (option.vname, option.vid; its name says it);
 //   - a POI with its plan pinned (poi.lay: #32's layouts; poi.hv: #38's hotels) is named by it and its building is it;
 //   - an older save (roomsLegacy) is unchanged: its buildings' cells and rooms hash as they did before #40 (GOLDEN,
@@ -89,7 +89,8 @@ const GOLDEN = {
   museum: "ke8s5b.pz59ra", furnstore: "wssqkg.nxwpsq", laundromat: "mo1wwg.wq8gck", thrift: "ywi6w1.1rwe60", bakery: "20n5w4.8fd645",
   butcher: "3n9nu1.949674", deli: "ucjk23.45xld2", radiotower: "28y5ut.mslivu", datacenter: "3g8k4u.50550s", amusement: "7qyzj9.ru5nqy",
   sawmill: "we63nu.voe1ga", mine: "8o2xr6.1zgwnf", quarry: "f0d0fs.n05gci", zoo: "7usmeq.iqdnyh",
-  shed: "1k3a9.gzr8t8", farmstand: "nxejvs.k902he", farmbldg: "v4t9tu.8hd4q", farm: "wofdf1.qkaa4n", ranch: "i3oa7h.j50fwa"
+  shed: "1k3a9.gzr8t8", farmstand: "nxejvs.k902he", farmbldg: "v4t9tu.8hd4q", farm: "wofdf1.qkaa4n", ranch: "i3oa7h.j50fwa",
+  stadium: "6xdfuq.no2qt1", // issue #57, taken on its branch with --golden (2026-10-26)
 };
 
 // ---------- every type ----------
@@ -115,7 +116,7 @@ for (const key of Object.keys(BUILDINGS)) {
     let m;
     try { m = buildingMap(state, tileId, opt, null); } catch (e) { bad(`map: ${e.message}`); continue; }
     maps++;
-    const B = BUILDINGS[key], whole = B.compound || B.complex || B.campus || B.farmstead, P = buildingPlan(state, tileId, opt);
+    const B = BUILDINGS[key], whole = B.compound || B.complex || B.campus || B.farmstead || B.venue, P = buildingPlan(state, tileId, opt); // venue: a stadium (issue #57), its venue drawn among its map's dice as a mall's
     if (whole && P) bad(`buildingPlan names a ${key}'s plan (${P.vid}) without its map`);
     if (m.plan.vid != null && (m.vid !== m.plan.vid || m.vname !== m.plan.vname || !m.vname)) bad(`map carries ${m.vid}/${m.vname}, plan ${m.plan.vid}/${m.plan.vname}`);
     if (!whole && ((P && P.vid) || null) !== (m.vid || null)) bad(`buildingPlan says ${P && P.vid}, the map is ${m.vid}`);

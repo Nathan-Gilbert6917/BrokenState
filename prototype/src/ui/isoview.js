@@ -1967,6 +1967,27 @@ const FURN_DRAW = {
     const ax = along(o);
     return [run(ax, 0.38, 0.62, 0, 12, fappl(FURNC.steel, [11]), 0.3, 0.7), run(ax, 0.47, 0.53, 9, 10, flatM(FURNC.chrome), 0, 1), run(ax, 0.36, 0.64, 12, 14, flatM(FURNC.black), 0.28, 0.72)];
   } },
+  // ---------- sports stadiums and arenas (issue #57, sim/stadiumlayout.js) ----------
+  stadseat: { top: 10, p: (o) => {
+    const ax = along(o), shell = (f) => (f === "top" ? mul(FURNC.water, 1.05) : mul(FURNC.water, 0.8));
+    return [run(ax, 0.32, 0.66, 0, 4, flatM(FURNC.steel), 0.12, 0.88), run(ax, 0.3, 0.7, 4, 5, shell, 0.08, 0.92), run(ax, 0.64, 0.74, 4, 10, shell, 0.08, 0.92)];
+  } },
+  goalpost: { top: 40, p: (o) => {
+    const ax = along(o), y = flatM(FURNC.gold);
+    return [fcyl(ax, 0.5, 0.5, 0.06, 0, 14, y), run(ax, 0.47, 0.53, 14, 16, y, 0, 1), fcyl(ax, 0.5, 0.04, 0.04, 16, 40, y), fcyl(ax, 0.5, 0.96, 0.04, 16, 40, y)];
+  } },
+  soccergoal: { top: 16, p: (o) => {
+    const ax = along(o), net = (f, s, t, X) => (f === "top" ? FURNC.cloth : (Math.floor(X) + Math.floor(t)) % 2 ? FURNC.cloth : mul(FURNC.cloth, 0.7));
+    return [fcyl(ax, 0.3, 0.04, 0.04, 0, 16, flatM(FURNC.white)), fcyl(ax, 0.3, 0.96, 0.04, 0, 16, flatM(FURNC.white)), run(ax, 0.27, 0.33, 15, 16, flatM(FURNC.white), 0, 1), run(ax, 0.33, 0.8, 1, 14, net, 0.04, 0.96)];
+  } },
+  hoop: { top: 34, p: (o) => {
+    const ax = along(o);
+    return [run(ax, 0.2, 0.8, 0, 3, flatM(FURNC.black), 0.2, 0.8), fcyl(ax, 0.5, 0.5, 0.06, 3, 26, flatM(FURNC.steel)), run(ax, 0.45, 0.55, 24, 34, flatM(FURNC.white), 0.1, 0.9), run(ax, 0.55, 0.85, 25, 26, flatM(FURNC.amber), 0.35, 0.65)];
+  } },
+  scoreboard: { top: 34, p: (o) => {
+    const ax = along(o), face = (f, s, t, X) => (f === "top" ? FURNC.black : t < 14 ? flatM(FURNC.steel)(f) : n2(Math.floor(X), Math.floor(t), 571) > 0.8 ? FURNC.amber : FURNC.black);
+    return [run(ax, 0.4, 0.6, 0, 34, face, 0.05, 0.95)];
+  } },
   liftdoor: { top: 28, p: (o) => {
     const ax = along(o), face = (f, s, t, X, Y, sw) => { const w = sw || 16; if (f === "top" || t > 25 || s < 1 || s > w - 1) return t > 26 && Math.abs(s - w / 2) < 1 ? FURNC.amber : mul(FURNC.steel, 0.7); if (Math.abs(s - w / 2) < 0.35) return FURNC.black; return mul(FURNC.chrome, 0.88 + n2(Math.floor(X), Math.floor(t / 3), 121) * 0.08); };
     return [run(ax, 0.42, 0.5, 0, 28, face, 0.04, 0.96)];
