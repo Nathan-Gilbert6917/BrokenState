@@ -396,6 +396,14 @@ function jailMain(rng, o = {}) {
   });
 }
 
+// A cell block standing on its own (BUILDINGS cellblock in a new save: buildingmaps.js buildingMap, then openTiers):
+// a housing unit of its 12 plans (o.plan pins one) at #25's cell block's size, its front door into the officers'
+// station, the exercise yard behind it (#25's prisonyard ground) and a yard door.
+export function cellblockSpec(rng, o = {}) {
+  const sp = housingUnit(rng, { len: foot(rng, "cellblock")[0], picket: "left", unitId: 1, plan: o.plan, name: "Cell block", yard: true });
+  const { margins, ground, ...rest } = sp; void margins; void ground;
+  return { ...rest, ground: "prisonyard", margins: { back: 10, left: 5, right: 5 } };
+}
 // Each type's builder (the tests pin each plan by o.plan): (rng, o) => its spec.
 export const PRISON_BUILDERS = {
   housing: (rng, o) => housingUnit(rng, { len: foot(rng, "pblock")[0], picket: "left", unitId: 1, ...o }),

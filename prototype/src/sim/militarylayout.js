@@ -833,11 +833,14 @@ function helipadEvac(ctx) {
 }
 function cellsOpen(ctx) {
   const { rng } = ctx;
-  for (const r of milRooms(ctx, "pdayroom")) {
+  // A day room and its cells: #25's cell block (civic pdayroom, pcells), or a housing unit of #31's (prison.js cellblockSpec:
+  // prison "dayroom", its tiers of cells).
+  const dayrooms = ctx.rng.shuffle(ctx.rooms.filter((r) => (r.civic === "pdayroom" || r.prison === "dayroom") && !r.scene && !r.locked));
+  for (const r of dayrooms) {
     const f = r.f || 0, free = ctx.freeIn(r);
     if (free.length < 5) continue;
     let opened = 0;
-    for (const q of ctx.rooms.filter((q) => q.civic === "pcells" && (q.f || 0) === f)) {
+    for (const q of ctx.rooms.filter((q) => (q.civic === "pcells" || q.prison === "tier") && (q.f || 0) === f)) {
       for (const [x, y] of ctx.inner(q)) { const c = ctx.at(f, x, y); if (c && c.cellDoor && c.k === "idoor") { c.k = "odoor"; opened++; } }
     }
     if (!opened) continue;
@@ -875,7 +878,7 @@ registerScene("gatestand", { w: 3, place: gateStand, kinds: ["barracks", "gateho
 registerScene("barracksoverrun", { w: 3, place: barracksOverrun, kinds: ["barracks"], when: styled });
 registerScene("armorybarricade", { w: 2, place: armoryBarricade, kinds: ["armorybldg"], when: styled });
 registerScene("helipadevac", { w: 3, place: helipadEvac, kinds: ["hq"], when: styled });
-registerScene("cellsopen", { w: 3, place: cellsOpen, kinds: ["cellblock"], when: styled });
+registerScene("cellsopen", { w: 3, place: cellsOpen, kinds: ["cellblock"], when: (ctx) => styled(ctx) || ctx.rooms.some((r) => r.prison === "dayroom") });
 registerScene("terminalshelter", { w: 3, place: terminalShelter, kinds: ["terminal"], when: styled });
 
 // ======================================================================================

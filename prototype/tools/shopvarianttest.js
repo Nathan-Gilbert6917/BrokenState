@@ -13,6 +13,7 @@
 //     the truck stop's shop and diner, #22's corner store, grocery and supermarket rooms) and everything connected (every
 //     room and every container reached from the front, upstairs from the stairs), with #23's footprint shapes too;
 //   - the variant's name on the map (plan.variant) and in the raid's opening lines; an older save keeps the old plan;
+//   - #22's tiers keep their fronts' pieces in every variant (shopstest.js's #22 rules);
 //   - loot per kind within ±10% per area (a 100 cells) of today's (dev's before the variants; BS_QUICK: 60 seeds, else 200).
 // Usage: node tools/shopvarianttest.js
 import { createWorld } from "../src/sim/world.js";
@@ -195,6 +196,32 @@ section("Every variant keeps its kind's signature, everything connected");
   check(interiorIntro({ raid: { interior: true, plan: m.plan, storeys: m.storeys, runs: m.runs, stairs: m.stairs, areas: m.rooms } }).startsWith("Chain drugstore with a drive-through."), "the raid's opening lines name the layout");
   // An older save keeps the old plan: no layout, the old footprint's rooms.
   check(KEYS.every((k) => !make(k, 77, { legacy: true }).spec.layout), "an older save's plan is the old one (no variant)");
+}
+
+// ---------- 4b. #22's tiers: their fronts in every variant ----------
+// The supermarket's front end (6+ checkout lanes, a self-checkout block, 10+ aisles, the dairy wall, the frozen section,
+// produce), the grocery's (2–3 checkouts, 5+ aisles, the dairy wall, freezer cases and a chest freezer, produce, the
+// deli's case), the corner store's (the till, the drinks fridges, the chest freezer): tools/shopstest.js's #22 rules,
+// over every variant pinned and #23's shapes on and off.
+section("#22's tiers: the fronts' pieces in every variant");
+{
+  const grid = (m, f) => (m.floors ? m.floors[f].cells : m.cells);
+  const inside = (m, a) => { const out = []; for (let y = a.y0 + 1; y < a.y0 + a.h - 1; y++) for (let x = a.x0 + 1; x < a.x0 + a.w - 1; x++) out.push(grid(m, a.f || 0)[y * m.w + x]); return out; };
+  const count = (m, a, k) => inside(m, a).filter((c) => c.k === k).length;
+  const aisles = (m, a) => { const by = {}; for (let y = a.y0 + 1; y < a.y0 + a.h - 1; y++) for (let x = a.x0 + 1; x < a.x0 + a.w - 1; x++) if (["rack", "shelf", "aislesign"].includes(grid(m, 0)[y * m.w + x].k)) by[x] = (by[x] || 0) + 1; return Object.values(by).filter((n) => n >= 3).length; };
+  const RULE = {
+    supermarket: [/^Sales floor$/, (m, a) => count(m, a, "selfcheckout") >= 3 && count(m, a, "checkout") >= 6 && aisles(m, a) >= 10 && count(m, a, "coldcase") >= 10 && count(m, a, "freezercase") >= 6 && count(m, a, "producebin") >= 6],
+    grocery: [/^Sales floor$/, (m, a) => { const n = count(m, a, "checkout"); return n >= 2 && n <= 3 && aisles(m, a) >= 5 && count(m, a, "coldcase") >= 4 && count(m, a, "freezercase") >= 3 && count(m, a, "freezer") > 0 && count(m, a, "producebin") > 0 && count(m, a, "meatcase") > 0; }],
+    corner: [/^Store$/, (m, a) => count(m, a, "checkout") > 0 && count(m, a, "coldcase") >= 2 && count(m, a, "freezer") > 0],
+  };
+  const bad = [];
+  let n = 0;
+  for (const [k, [re, ok]] of Object.entries(RULE)) for (const v of variantsOf(k)) for (let s = 0; s < (QUICK ? 6 : 20); s++) {
+    const { m } = make(k, 77 + s * 7919, { plan: v.id, shapes: s % 2 === 1 }), a = m.rooms.find((r) => !r.outdoor && (r.f || 0) === 0 && re.test(r.name));
+    n++;
+    if (!a || !ok(m, a)) bad.push(`${k} ${v.id} ${s}`);
+  }
+  check(!bad.length, `#22's fronts in every grocery tier's variant (${n} buildings)${bad.length ? `: ${bad.length} bad, e.g. ${bad.slice(0, 4).join("; ")}` : ""}`);
 }
 
 // ---------- 5. loot per area ----------

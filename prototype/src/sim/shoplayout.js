@@ -196,11 +196,11 @@ function frontEnd(L, x0, x1, y, n) {
       lanes++; last = x;
     }
   };
-  const block = (from, to, d) => {
-    for (let x = from; !kiosks && (d > 0 ? x + 2 * d <= to : x + 2 * d >= to); x += d) {
+  const block = (from, to, d, yb = y) => {
+    for (let x = from; kiosks < 3 && (d > 0 ? x + 2 * d <= to : x + 2 * d >= to); x += d) {
       const xs = [x, x + d, x + 2 * d];
-      if (!xs.every((q) => L.ok(q, y) && L.ok(q, y - 1) && L.ok(q, y - 2))) continue;
-      for (const q of xs) for (const [yy, f] of [[y, "n"], [y - 2, "s"]]) if (L.place("selfcheckout", [[q, yy]], P(L, { face: f }))) kiosks++;
+      if (!xs.every((q) => L.ok(q, yb) && L.ok(q, yb - 1) && L.ok(q, yb - 2))) continue;
+      for (const q of xs) for (const [yy, f] of [[yb, "n"], [yb - 2, "s"]]) if (L.place("selfcheckout", [[q, yy]], P(L, { face: f }))) kiosks++;
     }
   };
   laneScan(x0, x1, dir);
@@ -211,6 +211,9 @@ function frontEnd(L, x0, x1, y, n) {
   if (!kiosks) block(x1, x0, -dir);
   if (!kiosks) block(dir > 0 ? L.c.x1 - 1 : L.c.x0 + 1, dir > 0 ? L.c.x0 + 1 : L.c.x1 - 1, -dir); // anywhere along the front row
   if (!kiosks) block(dir > 0 ? L.c.x0 + 1 : L.c.x1 - 1, dir > 0 ? L.c.x1 - 1 : L.c.x0 + 1, dir);
+  // Lanes and doors left no three cells free on that row (issue #35's variants found it, the old plan's too, a seed in
+  // ten): the rows behind it and in front of it, anywhere along the front.
+  for (const yb of [y - 3, y + 1, y - 4, y + 2]) if (kiosks < 3 && yb - 2 > L.c.y0 && yb <= L.c.y1) block(L.c.x0 + 1, L.c.x1 - 1, 1, yb);
   return { lanes, kiosks };
 }
 /** The cells of row y between x0 and x1 that take a piece (off the lanes). @param {Lay} L */

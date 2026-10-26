@@ -17,7 +17,7 @@
 // Usage: node tools/scaletest.js [seeds=200] [--quick]
 import { createWorld } from "../src/sim/world.js";
 import { BUILDINGS, assemble, realScale, MAX_STOREYS, OPEN_STOREYS, openStoreys, buildingMap, buildingSpec, settingOf, BMAP } from "../src/sim/buildingmaps.js";
-import { REAL_SIZE, CELL_M, storeyRange } from "../src/sim/data-buildingsize.js";
+import { REAL_SIZE, CELL_M, storeyRange, realFoot, sizeOf } from "../src/sim/data-buildingsize.js";
 import { CELL, RAID_W, RAID_H } from "../src/sim/combat.js";
 import { cleanCfg } from "../src/sim/worldcfg.js";
 import { fitMargins, buildingDeadScale, BIG } from "../src/sim/battlesize.js";
@@ -83,12 +83,15 @@ const dens = [];
       wMin = Math.min(wMin, wm); wMax = Math.max(wMax, wm); dMin = Math.min(dMin, dm); dMax = Math.max(dMax, dm);
       const scaled = spec.natW != null; // laid out by realScale (else a plan drawn at its own size: a planned row's, #37's named plans)
       if (scaled) scaledN++;
-      if (R.w && !R.own && scaled) {
+      const redrawn = !!nat.restorey && !!R.city; // #27's firm-less tower: its named plan drawn again at the setting's height (realScale restorey), at that plan's own size (officeplans.js: the officetower row)
+      const T = REAL_SIZE.officetower;
+      if (redrawn) { if (!T || wm < T.w[0] || wm > Math.max(T.w[1], 32) || dm < T.d[0] || dm > T.d[1]) { badFoot++; console.log(`    ${key}: a redrawn tower ${wm} × ${dm} m outside the officetower row (a wide plan's 28–32 across: officeplans.js)`); } }
+      else if (R.w && !R.own && scaled) {
         const okW = (wm >= R.w[0] && wm <= R.w[1]) || (R.small && wm >= R.small[1][0] && wm <= R.small[1][1]);
         const okD = (dm >= R.d[0] && dm <= R.d[1]) || (R.small && dm >= R.small[2][0] && dm <= R.small[2][1]);
         if (!okW || !okD) { badFoot++; if (badFoot <= 5) console.log(`    ${key}: ${wm} × ${dm} m outside ${R.w.join("–")} × ${R.d.join("–")}`); }
       } else if (spec.bw !== nat.bw || spec.bh !== nat.bh) { badFoot++; console.log(`    ${key}: another ticket's size changed (${nat.bw}×${nat.bh} → ${spec.bw}×${spec.bh})`); }
-      if (!scaled && !R.own && (spec.bw !== nat.bw || spec.bh !== nat.bh || spec.height !== (nat.storeys || 1))) { badFoot++; console.log(`    ${key}: a planned building laid out again (${nat.bw}×${nat.bh} → ${spec.bw}×${spec.bh}, ${nat.storeys} → ${spec.height} storeys)`); }
+      if (!scaled && !R.own && !redrawn && (spec.bw !== nat.bw || spec.bh !== nat.bh || spec.height !== (nat.storeys || 1))) { badFoot++; console.log(`    ${key}: a planned building laid out again (${nat.bw}×${nat.bh} → ${spec.bw}×${spec.bh}, ${nat.storeys} → ${spec.height} storeys)`); }
       const range = storeyRange(key, setting);
       const bonus = s % 5 === 4 ? 1 : 0;
       if (range && R.city && (spec.height < range[0] || spec.height > Math.min(MAX_STOREYS, range[1] + bonus))) { badStorey++; console.log(`    ${key} (${setting}): ${spec.height} storeys outside ${range.join("–")}`); }
@@ -163,7 +166,7 @@ console.log("\nAn older save keeps its buildings exactly; a new world's city tow
   const tile = st.tiles.find((t) => t.loc && t.loc.type === "city");
   const opt = { id: "offices", key: "offices", name: "Office building" };
   const fresh = buildingSpec(st, tile.id, opt);
-  check(settingOf(tile) === "city" && fresh.height >= 6 && fresh.storeys <= OPEN_STOREYS + 1 && fresh.natW != null, `a new world's city office: ${fresh.bw} × ${fresh.bh} m, ${fresh.height} storeys, ${fresh.storeys} built`);
+  check(settingOf(tile) === "city" && fresh.height >= 6 && fresh.storeys <= OPEN_STOREYS + 1 && (fresh.natW != null || !!fresh.variant), `a new world's city office: ${fresh.bw} × ${fresh.bh} m, ${fresh.height} storeys, ${fresh.storeys} built`);
   st.scaleLegacy = true;
   const old = buildingSpec(st, tile.id, opt);
   const r = new Rng(0); void r;
@@ -174,6 +177,19 @@ console.log("\nAn older save keeps its buildings exactly; a new world's city tow
   delete st.scaleLegacy;
   const big = buildingMap(st, tile.id, { id: "hospital", key: "hospital", name: "Hospital", plan: "general" }, false); // the general hospital (issue #36: a named plan has its own row)
   check(big.w <= 300 && big.h <= 300 && big.w >= 290 && big.building.w >= 60, `a city hospital at the largest raid map dial: map ${big.w} × ${big.h}, the building ${big.building.w} × ${big.building.h}`);
+}
+
+console.log("\nSizes by variant (REAL_SIZE sizes, spec.realSize: #35, #36, #37's variants)");
+{
+  const keep = REAL_SIZE.hospital.sizes;
+  REAL_SIZE.hospital.sizes = { rural: { w: [20, 30], d: [16, 22], storeys: [1, 1], city: [1, 1] } };
+  try {
+    const feet = [], kind = [];
+    for (let s = 0; s < 40; s++) { feet.push(realFoot(new Rng(s), "hospital", "rural")); kind.push(realFoot(new Rng(s), "hospital")); }
+    check(feet.every((f) => f.bw >= 20 && f.bw <= 30 && f.bh >= 16 && f.bh <= 22) && kind.every((f) => f.bw >= 60) && sizeOf("hospital", "nope") === REAL_SIZE.hospital, "a variant's size is its own (a rural hospital 20–30 × 16–22 m), the kind's for no variant or an unknown one");
+    const base = BUILDINGS.hospital.make(new Rng(5), {}), sp = realScale(new Rng(5), { ...base, realSize: "rural" }, "hospital", { setting: "city" });
+    check(sp.bw >= 20 && sp.bw <= 30 && sp.height === 1 && sp.storeys === 1, `realScale reads spec.realSize: a rural hospital in a city ${sp.bw} × ${sp.bh}, ${sp.height} storey`);
+  } finally { if (keep) REAL_SIZE.hospital.sizes = keep; else delete REAL_SIZE.hospital.sizes; }
 }
 
 console.log(`\n${pass} passed, ${fail} failed (${((Date.now() - t0) / 1000).toFixed(1)} s)`);
