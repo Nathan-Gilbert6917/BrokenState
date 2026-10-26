@@ -193,6 +193,7 @@ Detail: [combat.md](../features/combat.md).
 - **Restaurants by food, format and size**: 86 variants (12+ a kind), cuisine kitchens and loot, drive-throughs to dance halls [data-eateries, eaterylayout] `tools/restauranttest.js`. [details](../features/combat.md#raids-into-building-interiors)
 - **Office buildings by kind**: storefronts, parks, towers, city hall, courts, call centers, stations, firms [officeplans, officelayout, data-offices] `tools/officestest.js`. [details](../features/travel.md#shops-and-services-as-places-as-franchises)
 - **A dozen layouts per shop and service**: 12 named plans for each of 23 types, by dice, franchise and setting [shopvariants, buildingmaps, data-shops] `tools/shopvarianttest.js`. [details](../features/travel.md#a-dozen-layout-variants-per-type)
+- **One plan id and name**: named plans as spec.vid / spec.vname, map.vid / map.vname; one setting vocabulary [planname, settings, buildingmaps] `tools/plannametest.js`. [details](../features/combat.md#plan-ids-names-and-settings)
 - **Stealth**: takedowns, facing and view cones, sneaking, lights and darkness, indoor light switches [stealth, vision, indoorlight, ailights].
 - **Loot that makes sense**: every building type's signature finds and what is never there, checked over 100 buildings a kind, loot ±10% [lootsense, combat, loot] `tools/lootsensetest.js`. [details](../features/combat.md#loot-that-makes-sense)
 - **Vaulting half cover**: over waist-high cells at extra cost, landing winded [combat]. [details](../features/combat.md#vaulting-half-cover)

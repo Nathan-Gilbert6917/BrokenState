@@ -108,6 +108,13 @@ export const LIBRARY = {
   SHELTER_COTS: [4, 9],
 };
 
+// Each variant's name, the plan's name the game shows (spec.vname; spec.vid "<variant>/<plan>", the pin o.variant takes:
+// planname.js, issue #40).
+export const LIBRARY_NAMES = {
+  rural: "Rural reading room", carnegie: "Carnegie library", modern: "Modern branch library", county: "County library", central: "Central library",
+  historic: "Historic library", bookmobile: "Bookmobile depot", strip: "Strip-mall library", house: "Library in a converted house", children: "Children's library",
+  law: "Law library", university: "University research library", archive: "Historical archive",
+};
 const X = (...parts) => ({ split: "x", parts });
 const Y = (...parts) => ({ split: "y", parts });
 // A room: its role (buildingmaps.js ROLES), its style's lib mark, its overrides (name, type, maxBoxes, entry, hub...).
@@ -525,7 +532,7 @@ export function libraryPlan(rng, o = {}) {
   return {
     bw, bh, front: { width: variant === "rural" || variant === "strip" ? 1 : 2 }, ground: variant === "rural" ? "rural" : variant === "central" ? "city" : "town",
     storeys: n, upper: n > 1 ? p.upper || null : null, foot: footOf(bw, bh), program: p.program, exits: p.exits || [], openDoors: variant === "modern" || variant === "strip" ? 0.3 : 0.1,
-    ...(p.stairs ? { stairs: p.stairs } : {}), lib: { variant, plan }, real: true, // real: drawn at its real size (buildingmaps.js realScale leaves it, every floor built: #24)
+    ...(p.stairs ? { stairs: p.stairs } : {}), lib: { variant, plan }, vid: `${variant}/${plan}`, vname: LIBRARY_NAMES[variant] || "Library", real: true, // vid, vname: the plan's id and name (planname.js, issue #40) // real: drawn at its real size (buildingmaps.js realScale leaves it, every floor built: #24)
   };
 }
 
