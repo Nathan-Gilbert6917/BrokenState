@@ -283,6 +283,9 @@ export const FURNITURE_KINDS = {
   campusbench: P("Bench",            HALF, 20, 40, "two", S21, false, ["yard"], "comfort:0.3"),
   statue:      P("Statue",           STEEL, 120, 900, "fixed", S1, false, ["yard"], "none"),
   fountain:    P("Fountain",         HALF, 80, 1500, "fixed", S22, false, ["yard", "mall"], "none"), // a campus's quad and a mall's centre court (#28, #30)
+  // ---------- churchyards (issue #49: civicsite.js lays them) ----------
+  // A headstone in a churchyard's rows: a low slab of stone, half cover, never lifted.
+  headstone:   P("Headstone",        HALF, 60, 300, "fixed", S1, false, ["yard"], "none"),
   // ---------- bunkers (issue #26: bunkerlayout.js lays them) ----------
   // The fixed fittings: the steel frame round a blast door, the air filtration plant, the water and fuel tanks, a
   // decontamination shower, the escape shaft's ladder and the vent stack up on the hillside. The hazmat suit rack and the

@@ -35,7 +35,7 @@
 // density per area).
 export const CELL_M = 1;
 
-/** @typedef {{ w?: [number, number], d?: [number, number], small?: [number, [number, number], [number, number]], storeys?: [number, number], city?: [number, number], set: string, own?: boolean, planned?: boolean, wings?: string, sizes?: Record<string, { w?: [number, number], d?: [number, number], storeys?: [number, number], city?: [number, number] }> }} RealSize */
+/** @typedef {{ w?: [number, number], d?: [number, number], small?: [number, [number, number], [number, number]], storeys?: [number, number], city?: [number, number], set: string, own?: boolean, planned?: boolean, wings?: string, sizes?: Record<string, { w?: [number, number], d?: [number, number], storeys?: [number, number], city?: [number, number], planned?: boolean }> }} RealSize */
 /** @type {Record<string, RealSize>} */
 export const REAL_SIZE = {
   // Homes
@@ -273,6 +273,16 @@ export const REAL_SIZE = {
   "firestation.rescue": { w: [28, 31], d: [15, 17], storeys: [2, 2], set: "town", planned: true }, // Fire and rescue station
   "firestation.academy": { w: [33, 36], d: [17, 19], storeys: [1, 1], set: "town", planned: true }, // Fire training academy
   "firestation.county": { w: [24, 27], d: [17, 19], storeys: [1, 1], set: "town", planned: true }, // County fire and rescue
+  // #49's new plans (civicvariants.js, new worlds only), drawn at these sizes and laid out at their kind's sizes row
+  // below (CIVIC_REAL) by realScale: a regional medical centre's tower and wings (a shape), a county hospital, a city
+  // medical centre's bed tower (the campus round it: civicsite.js), a parish church with its churchyard, a police
+  // headquarters with its impound lot, a fire headquarters with its training tower.
+  "hospital.regional": { w: [66, 72], d: [44, 48], storeys: [5, 8], set: "city", planned: true }, // Regional medical centre (a U: the bed tower, the ER wing, the clinics' wing)
+  "hospital.county": { w: [32, 36], d: [20, 22], storeys: [2, 4], set: "town", planned: true }, // County hospital
+  "hospital.medcampus": { w: [30, 34], d: [20, 22], storeys: [6, 10], set: "city", planned: true }, // City medical centre (its bed tower)
+  "church.churchyard": { w: [13, 15], d: [20, 23], storeys: [1, 1], set: "rural", planned: true }, // Parish church and churchyard
+  "police.hqsite": { w: [30, 34], d: [20, 22], storeys: [4, 6], set: "city", planned: true }, // Police headquarters and impound lot
+  "firestation.hqsite": { w: [32, 36], d: [18, 20], storeys: [3, 3], set: "city", planned: true }, // Fire headquarters and training tower
   // #33's restaurants by size (data-eateries.js EAT_SIZE reads these; a pizza place's, a diner's and a bar's too):
   // planned at these sizes by its plans (eaterylayout.js eateryPlan)
   eattiny:     { w: [8, 10], d: [9, 10], set: "town", planned: true },
@@ -331,6 +341,51 @@ export const REAL_SIZE = {
   chapel:       { w: [14, 24], d: [22, 36], storeys: [1, 2], set: "town", wings: "back" },
   healthcentre: { w: [15, 25], d: [12, 20], storeys: [1, 3], set: "town" },
 };
+
+// Civic and medical buildings at real scale (issue #49 of the round-2 epic #39, the user's request 2026-10-26: "updating
+// the map size of civic and medical buildings to be max size of 350x350"): a sizes row for every plan of the hospital,
+// the infirmary, the clinic, the vet, the church, the police station, the fire station (civicvariants.js VARIANTS: #36's
+// twelve and #49's new ones), city hall and the courthouse (officeplans.js: #27's twelve each, by the plan's id). A row is
+// [w0, w1, d0, d1, storeys0, storeys1, city0, city1] in metres: the footprint the plan is laid out over (buildingmaps.js
+// realScale: wings of the plan, its rooms split, its containers to the square metre as at its own size) and its storeys
+// (a city's when the last two are given). A "general" plan's row is {}: its kind's own row (#14's and #15's plans scaled
+// as before). New worlds only (worldcfg.js legacyCivic): an older save's plans stay at their drawn sizes ("<kind>.<id>").
+// The maps round them are at most battlesize.js MAP_CAP's 350 (a hospital, a church) or 300.
+/** @type {Record<string, Record<string, number[] | null>>} */
+export const CIVIC_REAL = {
+  hospital: { general: null, critical: [30, 40, 22, 28, 1, 2], tower: [40, 50, 30, 36, 5, 7, 7, 10], children: [60, 80, 36, 46, 2, 4, 3, 5], psych: [50, 64, 28, 36, 2, 3],
+    va: [60, 80, 36, 46, 3, 4, 4, 6], trauma: [70, 90, 40, 50, 3, 4, 4, 6], pavilion: [70, 90, 26, 32, 1, 2], teaching: [80, 110, 46, 60, 4, 5, 6, 9], cottage: [24, 30, 16, 20, 1, 1],
+    surgical: [32, 40, 22, 26, 2, 3], nursing: [50, 64, 26, 32, 2, 2], regional: [130, 160, 84, 100, 5, 8, 6, 10], county: [44, 56, 30, 38, 2, 4], medcampus: [62, 70, 40, 46, 6, 8, 8, 10] },
+  infirmary: { general: null, prison: [22, 26, 15, 18, 1, 1], prisonhosp: [30, 36, 18, 22, 2, 3], jail: [19, 22, 14, 16, 1, 1], camp: [14, 16, 11, 13, 1, 1], campus: [22, 26, 14, 17, 2, 2],
+    field: [26, 32, 15, 18, 1, 1], aid: [20, 24, 16, 18, 1, 1], company: [18, 22, 13, 16, 1, 2], boarding: [17, 20, 13, 15, 2, 2], quarantine: [22, 26, 15, 17, 1, 2], shelter: [20, 24, 14, 16, 1, 1] },
+  clinic: { general: null, urgent: [24, 30, 16, 20, 1, 2], family: [18, 22, 13, 16, 1, 1], dialysis: [26, 32, 15, 18, 1, 1], dental: [18, 22, 12, 15, 1, 1], stripmall: [12, 14, 20, 26, 1, 1],
+    occhealth: [22, 26, 15, 18, 1, 2], free: [18, 22, 13, 16, 1, 1], multi: [30, 36, 18, 22, 2, 3, 3, 4], paediatric: [22, 26, 14, 18, 1, 1], rural: [12, 16, 10, 12, 1, 1], surgery: [26, 32, 16, 20, 1, 2] },
+  vet: { general: null, country: [26, 30, 14, 16, 1, 1], farm: [30, 36, 15, 18, 1, 1], emergency: [28, 32, 16, 18, 1, 2], shelter: [28, 34, 15, 18, 1, 1], boarding: [22, 26, 14, 16, 1, 1],
+    equine: [32, 38, 16, 20, 1, 1], storefront: [11, 13, 20, 24, 1, 1], specialty: [24, 28, 16, 18, 2, 2], exotic: [17, 20, 12, 15, 1, 1], cat: [15, 17, 12, 14, 1, 1], teaching: [34, 40, 17, 20, 2, 2] },
+  church: { general: null, chapel: [12, 14, 16, 20, 1, 1], brick: [26, 30, 22, 26, 1, 1], mega: [44, 60, 30, 40, 2, 2], cathedral: [40, 50, 70, 90, 1, 1], storefront: [11, 13, 16, 20, 1, 1],
+    rectory: [24, 28, 20, 24, 1, 1], country: [14, 16, 22, 26, 1, 1], cruciform: [34, 40, 40, 50, 1, 1], mission: [24, 28, 20, 24, 1, 1], school: [30, 36, 22, 26, 1, 2], meeting: [16, 18, 16, 18, 2, 2],
+    churchyard: [15, 18, 24, 30, 1, 1] },
+  police: { general: null, substation: [22, 26, 15, 18, 1, 1], smalltown: [24, 28, 16, 20, 1, 2], precinct: [34, 42, 22, 28, 3, 3, 3, 4], patrol: [28, 34, 15, 18, 1, 1], hq: [40, 54, 28, 36, 4, 5, 6, 10],
+    jail: [40, 50, 26, 32, 2, 2], community: [18, 22, 22, 26, 1, 2], barracks: [28, 32, 17, 20, 2, 2], townhall: [32, 38, 22, 26, 2, 2], k9: [30, 36, 18, 20, 1, 2], courthouse: [28, 34, 20, 24, 2, 3],
+    hqsite: [40, 50, 28, 34, 4, 6, 5, 8] },
+  firestation: { general: null, volunteer: [26, 30, 15, 17, 1, 1], twobay: [26, 30, 16, 18, 2, 2], tower: [36, 42, 18, 22, 1, 1], airport: [32, 38, 18, 22, 2, 2], hq: [36, 44, 22, 28, 3, 3, 3, 4],
+    brush: [17, 20, 14, 16, 1, 1], firehouse: [14, 17, 22, 26, 2, 3], drive: [24, 28, 20, 24, 1, 2], rescue: [32, 36, 17, 20, 2, 2], academy: [38, 44, 20, 24, 1, 1], county: [28, 32, 20, 22, 1, 1],
+    hqsite: [36, 44, 22, 28, 3, 3] },
+  // #27's plans by their ids (planname.js planSlug); their storeys their plan's (realScale keeps a scaled plan's own).
+  cityhall: { "city-hall": [36, 48, 28, 36, 2, 3], "domed-capitol": [48, 64, 36, 46, 2, 3], "town-hall-with-fire-bay": [30, 36, 22, 28, 2, 2], "town-hall-with-police-office": [30, 36, 22, 28, 2, 2],
+    "municipal-annex": [36, 44, 24, 30, 3, 3], "city-hall-and-library": [36, 44, 26, 32, 2, 2], "hall-with-municipal-court": [36, 44, 26, 32, 2, 3], "modern-civic-center": [44, 56, 30, 40, 2, 3],
+    "town-hall-with-auditorium": [34, 40, 26, 32, 2, 2], "public-works-hall": [32, 40, 22, 28, 1, 2], "city-hall-with-records-vault": [36, 44, 26, 32, 2, 3], "village-hall": [20, 24, 16, 20, 1, 1] },
+  courthouse: { "county-courthouse": [40, 52, 30, 38, 2, 3], "courthouse-and-jail": [44, 54, 30, 38, 2, 3], "twin-courtroom-courthouse": [40, 50, 28, 34, 2, 3], "family-court": [34, 42, 24, 30, 2, 2],
+    "federal-courthouse": [50, 64, 36, 44, 3, 3], "traffic-court": [32, 38, 20, 24, 1, 1], "old-courthouse": [36, 44, 26, 32, 2, 2], "justice-center": [50, 62, 34, 42, 2, 3],
+    "courthouse-with-law-library": [40, 50, 28, 34, 2, 3], "probate-court": [32, 40, 22, 28, 2, 2], "courthouse-with-sally-port": [40, 50, 28, 34, 2, 3], "magistrate-s-court": [26, 32, 20, 24, 1, 2] },
+};
+for (const [kind, rows] of Object.entries(CIVIC_REAL)) {
+  const R = REAL_SIZE[kind], planned = !!R.planned;
+  R.sizes = Object.fromEntries(Object.entries(rows).map(([id, r]) => [id, !r ? {} : {
+    w: /** @type {[number, number]} */ ([r[0], r[1]]), d: /** @type {[number, number]} */ ([r[2], r[3]]), storeys: /** @type {[number, number]} */ ([r[4], r[5]]),
+    city: /** @type {[number, number]} */ ([r[6] ?? r[4], r[7] ?? r[5]]), ...(planned ? { planned: false } : {}), // #27's planned rows: laid out at this size instead (realScale)
+  }]));
+}
 
 const pick = (rng, [lo, hi]) => rng.int(Math.round(lo / CELL_M), Math.round(hi / CELL_M));
 /**

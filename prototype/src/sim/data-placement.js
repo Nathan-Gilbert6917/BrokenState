@@ -110,7 +110,7 @@ export const PLACEMENT_ROWS = {
   garden: "bigLot",
   clothing: "downtown",
   liquor: "mainstreet",
-  vet: "city 0.4 S, suburb 1.2 M, town 1.4 S, highway 0.3 S, rural 0.3 S",
+  vet: "city 0.4 S, suburb 1.2 M, town 1.4 S, highway 0.3 S, rural 0.3 M", // the country's farm and equine vets (issue #49: the size letters only, the weights as #42 set them)
   dealer: "bigLot",
   bank: "downtown",
   gasstation: "roadside",
@@ -139,9 +139,9 @@ export const PLACEMENT_ROWS = {
   hospital: "centre 3 H, city 2 H, suburb 0.8 L, town 0.15 L", // a city centre's medical centre, the suburbs' community hospital, a county hospital in a town
   infirmary: "of prison",
   police: "centre 2 L, city 1.6 M, suburb 1 M, town 1 S",
-  firestation: "centre 1 M, city 1.2 M, suburb 1 M, town 1 S, rural 0.1 S",
+  firestation: "centre 1 L, city 1.2 M, suburb 1 M, town 1 S, rural 0.1 S", // downtown, the fire headquarters (issue #49)
   school: "centre 0.6 L, city 1 L, suburb 1.4 L, town 1 L, rural 0.1 S", // a town's regional high school: large; a one-room schoolhouse in the country
-  church: "centre 0.6 M, city 0.8 M, suburb 1 M, town 1.4 S, highway 0.3 S, rural 0.6 S", // a chapel in the country
+  church: "centre 0.6 L, city 0.8 M, suburb 1 M, town 1.4 S, highway 0.3 S, rural 0.6 S", // a chapel in the country; downtown, a cathedral (issue #49)
   chapel: "of univ",
   cityhall: "centre 2 L, city 0.5 L, town 1 M",
   courthouse: "centre 2 L, city 0.5 L, town 1 M",
