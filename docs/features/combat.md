@@ -36,6 +36,7 @@ The dead's way to the team (combat.js `distField`) is kept up to date after a do
   - The per-cell sums read each of a cell's fields once, with a per-kind table (its `CELL` row, its soft cover's cost): the same values as `hAt`, `groundH`, `breakable`, `wetCost`, `groundCost`, `iceCost` and `softCost`.
   - `fieldCache` copies a change into its snapshot where it finds it, instead of a new copy of the whole floor.
   - Not changed: what empties the cache (a cell's kind, hit points, height or bar), the field's key, or anything the dead decide.
+  - Memory: a kept field is 32 bytes a cell (its sums and its numbers): about 4 MB for a campus floor of 124 000 cells, 8 MB for a 500 × 500 one, at most 3 a floor, never saved (`b._fields`).
 - **Checked**: `tools/fieldpatchtest.js` does two things. By hand, on a walled yard: a door battered and broken, a wall knocked through and a window opened are patched; a door mended and a wall put back are searched in full; each field is the full search's, cell for cell. Then whole battles are played twice in their own processes, with the patch on and off (`DIST_FIELD.PATCH`): a community college, a city hospital raid and a hub's defence (a state university too, in full mode). Every turn's units, hit points, log and cells hash the same both ways. A campus raid's six turns hash the same as on origin/dev, on two seeds.
 - **The budget** (`tools/perfbudgettest.js`, the 4-core test container, 4 turns each, the dead all aware, the raid bot playing; mean turn in ms, before → after):
 
@@ -46,7 +47,7 @@ The dead's way to the team (combat.js `distField`) is kept up to date after a do
   | 500 cap: a state university | 487 × 254 | 6 | **1999 → 971** | 1409 → 1086 |
   | 500 cap: the mega mall | 448 × 167 | 3 | 1379 → 819 | 1624 → 1055 |
 
-  The budget is `BUDGET_MS` (1500) a hundred of the dead: 1.5 s for 100 and 3 s for 200. Each run is a child process. What is left of the campus's enemy phase is mostly the cache check (one read of the floor a call) and the per-cell sums on each change (about 15 ms a floor).
+  The budget is `BUDGET_MS` (1500) a hundred of the dead: 1.5 s for 100 and 3 s for 200. Each run is a child process. The biggest campus is 500 across but at most 330 deep (#28), so the 500 cap's maps are 487 × 254 and 448 × 167 on this seed; wave 2's 500 × 500 sites will be the first square ones (the per-cell work grows with the cells: about twice a floor). What is left of the campus's enemy phase is mostly the cache check (one read of the floor a call) and the per-cell sums on each change (about 15 ms a floor).
 - **For wave 2** (#49–#62): `node tools/perfbudgettest.js --sites none --key stadium,zoo --side 500` times any building with a raid map of its own. Its side is its `battlesize.js MAP_CAP` row unless `--side` gives one. `--dead 100,200`, `--turns`, `--seed`, `--storeys` and `--budget` set the rest. It takes about 70 s for the default 8 runs, so it is not in the gate. It times the turn, so run it on an idle machine.
 - Modules: [combat distField, fieldPatch, fieldCache, DIST_FIELD]. Tests `tools/fieldpatchtest.js`, `tools/perfbudgettest.js`; `tools/campusbench.js` and `tools/mallbench.js` time one site by hand.
 
