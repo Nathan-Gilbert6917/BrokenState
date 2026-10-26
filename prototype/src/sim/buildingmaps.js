@@ -453,12 +453,12 @@ const HOME_PLANS = {
     },
   },
   cabin: {
-    // One room (the great room, its kitchenette in a corner) and a lean-to store behind it.
+    // One room (the great room, its kitchenette in a corner) and a lean-to behind it (the guns and the gear: a gun room).
     hunting(rng) {
       const bw = rng.int(6, 7), bh = rng.int(6, 7);
       return {
         bw, bh, front: { width: 1 }, openDoors: 0.4, storeys: 1, foot: "small", ground: "woods",
-        program: { split: "y", parts: leaves([["*", Rm("greatroom", { entry: true })], [2, Rm("storage", { name: "Lean-to", type: "cabin", maxBoxes: 1 })]]) },
+        program: { split: "y", parts: leaves([["*", Rm("greatroom", { entry: true })], [2, Rm("gunroom", { name: "Lean-to", maxBoxes: 1 })]]) },
         exits: [{ side: "back", roles: ["storage"], chance: 0.4, lock: 0.2 }],
       };
     },
@@ -533,6 +533,351 @@ const HOME_PLANS = {
     },
   },
 };
+
+// The homes' layouts beyond the first few (issue #32: a dozen a type). X and Y: a split across (left to right) and
+// down (front to back) of [size, leaf or node] parts; home(): a dwelling's spec with the usual doors.
+const X = (...parts) => ({ split: "x", parts: leaves(parts) });
+const Y = (...parts) => ({ split: "y", parts: leaves(parts) });
+const home = (bw, bh, program, o = {}) => ({ bw, bh, program, front: { width: 1 }, openDoors: 0.4, extraDoors: 0.2, storeys: 1, ...o });
+const backDoor = (roles, chance = 0.8) => ({ side: "back", roles, chance, lock: 0.15 });
+const sideDoor = (rng, roles, chance = 0.3) => ({ side: sideRoom(rng), roles, chance, lock: 0.25 });
+const H = (o = {}) => ({ type: "house", ...o }), F = (o = {}) => ({ type: "farmhouse", ...o });
+const MORE_HOMES = {
+  house: {
+    // A townhouse: narrow and three storeys, the living room and the kitchen below, the bedrooms over them, a den and
+    // the laundry closet at the top.
+    townhouse(rng) {
+      const bw = rng.int(7, 8), bh = rng.int(12, 13);
+      return home(bw, bh, Y(["*", Rm("living", H({ entry: true }))], ["*", "kitchen"]), {
+        storeys: 3, foot: "small", ground: "town", extraDoors: 0.1, stairs: { roles: ["living", "bedroom", "office"], near: "front" },
+        upper: (f) => (f === 1 ? Y(["*", "bedroom"], [2, "bath"], ["*", "bedroom"]) : Y(["*", Rm("office", H({ name: "Den" }))], [3, Rm("storage", H({ name: "Laundry closet", maxBoxes: 1 }))])),
+        exits: [backDoor(["kitchen"])],
+      });
+    },
+    // A bungalow: one storey, no hall; the living room, the dining room and a den across the front, the kitchen, the
+    // bathroom and the bedroom behind.
+    bungalow(rng) {
+      const bw = rng.int(15, 16), bh = rng.int(10, 11);
+      return home(bw, bh, Y(["*", X(["*", Rm("living", H({ entry: true }))], [4, "dining"], [3, Rm("office", H({ name: "Den" }))])], ["*", X([4, "kitchen"], [2, "bath"], ["*", "bedroom"])]), {
+        foot: "small", ground: "town", exits: [backDoor(["kitchen"]), sideDoor(rng, ["living", "bedroom"])],
+      });
+    },
+    // A Victorian: two storeys about an entry hall, the parlour one side and the dining room the other, the kitchen,
+    // the pantry and the library behind; upstairs the bedrooms off the landing and a sewing room.
+    victorian(rng) {
+      const bw = rng.int(15, 16), bh = rng.int(12, 13);
+      return home(bw, bh, Y(["*", X(["*", Rm("living", H({ name: "Parlour" }))], [4, Rm("foyer", H({ name: "Entry hall", entry: true }))], ["*", "dining"])], ["*", X(["*", "kitchen"], [3, "pantry"], [3, Rm("office", H({ name: "Library" }))])]), {
+        storeys: 2, foot: "medium", ground: "town", extraDoors: 0.25, stairs: { roles: ["foyer"], near: "front" },
+        upper: () => upHall([["*", "bedroom"], [2, "bath"], ["*", "bedroom"]], [["*", "bedroom"], [4, Rm("storage", H({ name: "Sewing room" }))]]),
+        exits: [backDoor(["kitchen", "pantry"]), sideDoor(rng, ["dining", "living"])],
+      });
+    },
+    // A split-level: the rec room, the garage and the laundry on the lower level (the front door into the rec room);
+    // the living room and the kitchen up the stair, the bedrooms behind a hall.
+    splitlevel(rng) {
+      const bw = rng.int(14, 15), bh = rng.int(11, 12);
+      return home(bw, bh, Y(["*", X(["*", Rm("dayroom", H({ name: "Rec room", entry: true }))], [5, Rm("hgarage")])], [3, X(["*", "laundry"], [3, "bath"])]), {
+        storeys: 2, foot: "medium", ground: "town", stairs: { roles: ["dayroom"], near: "front" },
+        upper: () => upHall([["*", "living"], ["*", "kitchen"]], [["*", "bedroom"], [2, "bath"], ["*", "bedroom"]]),
+        exits: [{ side: "front", roles: ["hgarage"], chance: 1, roller: true, width: 2, lock: 0.2 }, backDoor(["laundry", "dayroom"], 0.6)],
+      });
+    },
+    // A shotgun house: one room wide, the rooms one behind the other (each door through the next), a door at each end.
+    shotgun(rng) {
+      const bw = 7, bh = rng.int(22, 23);
+      return home(bw, bh, Y(["*", Rm("living", H({ entry: true }))], ["*", "bedroom"], [3, "dining"], [4, "kitchen"], [2, "bath"]), {
+        foot: "small", ground: "town", extraDoors: 0, exits: [{ side: "back", roles: ["bath", "kitchen"], chance: 0.9, lock: 0.2 }],
+      });
+    },
+    // A cottage: the living room, the kitchen, the pantry and the bathroom below, the attic bedroom and a sewing room
+    // under the eaves.
+    cottage(rng) {
+      const bw = 11, bh = rng.int(9, 10);
+      return home(bw, bh, Y(["*", Rm("living", H({ entry: true }))], [3, X(["*", "kitchen"], [2, "pantry"], [2, "bath"])]), {
+        storeys: 2, foot: "small", ground: "town", stairs: { roles: ["living"] },
+        upper: () => Y(["*", Rm("bedroom", { name: "Attic bedroom" })], [3, Rm("office", H({ name: "Sewing room" }))]),
+        exits: [backDoor(["kitchen", "pantry"], 0.6)],
+      });
+    },
+    // A manor house: a grand hall between the drawing room and the dining room, the kitchen, the pantry, the library,
+    // a bathroom and the garage behind a hall; upstairs four bedrooms, two bathrooms and a home gym.
+    mansion(rng) {
+      const bw = rng.int(22, 24), bh = rng.int(14, 15);
+      return home(bw, bh, Y(["*", X(["*", Rm("living", H({ name: "Drawing room" }))], [5, Rm("foyer", H({ name: "Grand hall", entry: true, fl: "marble" }))], ["*", "dining"])], [1, Rm("hall")], ["*", X(["*", "kitchen"], [3, "pantry"], [4, Rm("office", H({ name: "Library" }))], [2, "bath"], [5, Rm("hgarage")])]), {
+        storeys: 2, foot: "large", ground: "town", front: { width: 2 }, stairs: { roles: ["foyer", "hall"], near: "front" },
+        upper: () => upHall([["*", "bedroom"], [2, "bath"], ["*", "bedroom"], [5, Rm("gym", { name: "Home gym", maxBoxes: 1 })]], [["*", "bedroom"], [2, "bath"], ["*", "bedroom"]]),
+        exits: [{ side: "back", roles: ["hgarage"], chance: 1, roller: true, width: 2, lock: 0.3 }, backDoor(["kitchen", "hall"]), sideDoor(rng, ["dining", "living"])],
+      });
+    },
+  },
+  farmhouse: {
+    // An American foursquare: square, four rooms a floor (the farm office among them), no hall.
+    foursquare(rng) {
+      const bw = rng.int(13, 14), bh = rng.int(12, 13);
+      return home(bw, bh, Y(["*", X(["*", Rm("living", F({ entry: true }))], ["*", Rm("dining", F())])], ["*", X(["*", "kitchen"], ["*", Rm("office", { name: "Farm office" })])]), {
+        storeys: 2, foot: "medium", ground: "farm", stairs: { roles: ["living", "dining"], near: "front" },
+        upper: () => Y(["*", X(["*", Rm("bedroom", F())], ["*", Rm("bedroom", F())])], ["*", X(["*", Rm("bedroom", F())], [2, "bath"], ["*", Rm("bedroom", F())])]),
+        exits: [backDoor(["kitchen", "office"], 0.9), sideDoor(rng, ["living", "dining"])],
+      });
+    },
+    // An I-house: two storeys, one room deep, a centre hall between the parlour and the dining room, the kitchen at one
+    // end with the cellar behind its own door.
+    ihouse(rng) {
+      const bw = rng.int(18, 19), bh = rng.int(9, 10);
+      return home(bw, bh, X(["*", Rm("living", F({ name: "Parlour" }))], [3, Rm("hall", { name: "Centre hall", entry: true })], ["*", Rm("dining", F())], [5, Y(["*", "kitchen"], [2, Rm("pantry", { name: "Cellar", ownDoor: "back", fl: "dirt" })])]), {
+        storeys: 2, foot: "medium", ground: "farm", stairs: { roles: ["hall"] },
+        upper: () => X(["*", Rm("bedroom", F())], [3, Rm("hall", { name: "Landing" })], ["*", Rm("bedroom", F())], [5, Y(["*", Rm("bedroom", F())], [2, "bath"])]),
+        exits: [backDoor(["hall", "kitchen"], 0.8)],
+      });
+    },
+    // A homestead: one great room, the bedroom and the larder behind.
+    homestead(rng) {
+      const bw = rng.int(9, 10), bh = rng.int(8, 9);
+      return home(bw, bh, Y(["*", Rm("greatroom", F({ entry: true }))], [3, X(["*", Rm("bedroom", F())], [3, Rm("pantry", { name: "Larder" })])]), {
+        foot: "small", ground: "farm", exits: [backDoor(["greatroom", "pantry"], 0.5)],
+      });
+    },
+    // A dogtrot house: two pens under one roof, an open breezeway between them, a door at each end of it.
+    dogtrot(rng) {
+      const bw = rng.int(17, 19), bh = rng.int(9, 10);
+      return home(bw, bh, X(["*", Y(["*", Rm("living", F())], ["*", "kitchen"])], [3, Rm("hall", { name: "Breezeway", entry: true, fl: "plank" })], ["*", Y(["*", Rm("bedroom", F())], ["*", Rm("bedroom", F())])]), {
+        foot: "medium", ground: "farm", extraDoors: 0.1, exits: [{ side: "back", roles: ["hall"], chance: 1, lock: 0.1, name: "Breezeway (back)" }],
+      });
+    },
+    // A stone farmhouse: the front door into the farm kitchen, the dairy beside it, the living room and the apple
+    // store behind; the bedrooms upstairs.
+    stonehouse(rng) {
+      const bw = rng.int(14, 15), bh = rng.int(11, 12);
+      return home(bw, bh, Y(["*", X(["*", Rm("kitchen", { name: "Farm kitchen", entry: true })], [4, Rm("pantry", { name: "Dairy", cold: true })])], ["*", X(["*", Rm("living", F())], [4, Rm("storage", { name: "Apple store", type: "kitchen", windows: false, maxBoxes: 2 })])]), {
+        storeys: 2, foot: "medium", ground: "farm", stairs: { roles: ["kitchen", "living"] },
+        upper: () => Y(["*", X(["*", Rm("bedroom", F())], ["*", Rm("bedroom", F())])], ["*", X(["*", Rm("bedroom", F())], [2, "bath"])]),
+        exits: [backDoor(["living", "storage"], 0.7), sideDoor(rng, ["kitchen"], 0.4)],
+      });
+    },
+    // A tenant house: one storey, small; the living room and the kitchen, the bedroom, the bathroom and the wash house.
+    tenant(rng) {
+      const bw = 12, bh = rng.int(9, 10);
+      return home(bw, bh, Y(["*", X(["*", Rm("living", F({ entry: true }))], [4, "kitchen"])], ["*", X(["*", Rm("bedroom", F())], [2, "bath"], [3, Rm("storage", H({ name: "Wash house" }))])]), {
+        foot: "small", ground: "farm", exits: [backDoor(["storage", "kitchen"], 0.8)],
+      });
+    },
+    // The big farmhouse: the living room, the dining room and the sunroom across the front, a hall, the kitchen, the
+    // pantry, the farm office, the mudroom and laundry and a bathroom behind; four bedrooms upstairs.
+    bigfarm(rng) {
+      const bw = rng.int(21, 22), bh = rng.int(14, 15);
+      return home(bw, bh, Y(["*", X([0.35, Rm("living", F({ entry: true }))], ["*", Rm("dining", F())], [5, Rm("dayroom", { name: "Sunroom" })])], [1, Rm("hall")], ["*", X(["*", "kitchen"], [3, "pantry"], [4, Rm("office", { name: "Farm office" })], [3, Rm("laundry", { name: "Mudroom and laundry" })], [2, "bath"])]), {
+        storeys: 2, foot: "large", ground: "farm", stairs: { roles: ["hall", "living"], near: "front" },
+        upper: () => upHall([["*", Rm("bedroom", F())], [2, "bath"], ["*", Rm("bedroom", F())]], [["*", Rm("bedroom", F())], ["*", Rm("bedroom", F())]]),
+        exits: [backDoor(["laundry", "kitchen", "hall"], 0.95), sideDoor(rng, ["dayroom", "living"], 0.5)],
+      });
+    },
+    // A modern farmhouse: one storey, open plan; the great room and the kitchen across the front, the bedrooms, the
+    // farm office and the mudroom behind.
+    modern(rng) {
+      const bw = rng.int(22, 23), bh = rng.int(10, 11);
+      return home(bw, bh, Y(["*", X(["*", Rm("greatroom", F({ entry: true }))], [5, "kitchen"])], ["*", X(["*", Rm("bedroom", F())], [2, "bath"], ["*", Rm("bedroom", F())], [4, Rm("office", { name: "Farm office" })], [3, Rm("laundry", { name: "Mudroom" })])]), {
+        foot: "medium", ground: "farm", exits: [backDoor(["laundry", "kitchen"], 0.9), sideDoor(rng, ["greatroom", "office"])],
+      });
+    },
+  },
+  cabin: {
+    // A trapper's cabin: the one room and the skinning room.
+    trapper(rng) {
+      const bw = rng.int(9, 10), bh = 7;
+      return home(bw, bh, X(["*", Rm("greatroom", { entry: true })], [3, Rm("workshop", { name: "Skinning room", type: "cabin" })]), { foot: "small", ground: "woods", exits: [backDoor(["workshop"], 0.5)] });
+    },
+    // A lake cabin: the great room, the kitchen and the bathroom, the boathouse at one end behind its roller door.
+    lake(rng) {
+      const bw = rng.int(15, 16), bh = rng.int(8, 9);
+      return home(bw, bh, X(["*", Y(["*", Rm("greatroom", { entry: true })], [3, X(["*", "kitchen"], [2, "bath"])])], [5, Rm("hgarage", { name: "Boathouse", type: "garage" })]), {
+        foot: "small", ground: "woods", exits: [{ side: "front", roles: ["hgarage"], chance: 1, roller: true, width: 2, lock: 0.3 }, backDoor(["kitchen", "greatroom"], 0.5)],
+      });
+    },
+    // A log cabin of two storeys: the great room, the kitchen and the pantry below, a bedroom and a bunk room above.
+    log(rng) {
+      const bw = rng.int(10, 11), bh = rng.int(8, 9);
+      return home(bw, bh, Y(["*", Rm("greatroom", { entry: true })], [3, X(["*", "kitchen"], [3, "pantry"])]), {
+        storeys: 2, foot: "small", ground: "woods", stairs: { roles: ["greatroom"] },
+        upper: () => X(["*", "bedroom"], ["*", "bunk"]), exits: [backDoor(["kitchen"], 0.5)],
+      });
+    },
+    // A prospector's cabin: the great room, the assay bench and the powder store behind its locked door.
+    prospector(rng) {
+      const bw = rng.int(9, 10), bh = 8;
+      return home(bw, bh, Y(["*", Rm("greatroom", { entry: true })], [3, X(["*", Rm("workshop", { name: "Assay bench", type: "cabin" })], [3, Rm("storage", { name: "Powder store", type: "cabin", lock: ["door", 0.5], windows: false })])]), { foot: "small", ground: "woods", exits: [] });
+    },
+    // A saddlebag cabin: two pens either side of the chimney, each with its own front door, the pantry between.
+    saddlebag(rng) {
+      const bw = 14, bh = 7;
+      return home(bw, bh, X(["*", Rm("greatroom", { entry: true })], [3, "pantry"], ["*", Rm("bedroom", { ownDoor: true })]), { foot: "small", ground: "woods", extraDoors: 0, exits: [] });
+    },
+    // A bunkhouse cabin: the cookroom at the door, two bunk rooms and a bathroom.
+    bunkhouse(rng) {
+      const bw = rng.int(12, 13), bh = 9;
+      return home(bw, bh, Y(["*", X(["*", Rm("kitchen", { name: "Cookroom", entry: true })], ["*", "bunk"])], [3, X(["*", "bunk"], [2, "bath"])]), { foot: "small", ground: "woods", exits: [backDoor(["bunk", "kitchen"], 0.5)] });
+    },
+    // An off-grid cabin: the great room and the kitchen, the bedroom, the battery room and the water tank room behind.
+    offgrid(rng) {
+      const bw = 13, bh = rng.int(9, 10);
+      return home(bw, bh, Y(["*", X(["*", Rm("greatroom", { entry: true })], [4, "kitchen"])], [3, X(["*", "bedroom"], [3, Rm("genroom", { name: "Battery room" })], [3, Rm("waterstore", { name: "Water tank room" })])]), { foot: "small", ground: "woods", exits: [backDoor(["genroom", "waterstore"], 0.6)] });
+    },
+    // A cabin with a sleeping porch: the screened porch across the front (the door through it), the great room, the
+    // kitchen and the bathroom behind.
+    porch(rng) {
+      const bw = 13, bh = rng.int(9, 10);
+      return home(bw, bh, Y([3, Rm("bunk", { name: "Sleeping porch", entry: true })], ["*", X(["*", "greatroom"], [4, "kitchen"], [2, "bath"])]), { foot: "small", ground: "woods", exits: [backDoor(["kitchen", "greatroom"], 0.5)] });
+    },
+  },
+  lodge: {
+    // A ski lodge: the fireside lounge and the rental shop at the front, the boot room, the cafeteria and its kitchen
+    // behind; bunk rooms upstairs.
+    ski(rng) {
+      const bw = rng.int(18, 19), bh = rng.int(12, 13);
+      return home(bw, bh, Y(["*", X(["*", Rm("greatroom", { name: "Fireside lounge", entry: true })], [5, Rm("sales", { name: "Rental shop", type: "sportshop", hub: false, lay: "aislefront", maxBoxes: 3 })])], ["*", X([4, Rm("lockerroom", { name: "Boot room" })], ["*", Rm("cafeteria", { hub: false })], [4, "kitchen"])]), {
+        storeys: 2, foot: "medium", ground: "woods", front: { width: 2 }, stairs: { roles: ["greatroom"], near: "front" },
+        upper: () => upHall([["*", "bunk"], ["*", "bunk"]], [["*", "bunk"], [2, "bath"], ["*", "bunk"]]),
+        exits: [backDoor(["kitchen", "lockerroom"], 0.8), sideDoor(rng, ["lockerroom", "greatroom"], 0.6)],
+      });
+    },
+    // A guest ranch lodge: the front desk and the dining room, the kitchen, the tack room and the ranch office behind;
+    // guest rooms upstairs.
+    guest(rng) {
+      const bw = rng.int(17, 19), bh = rng.int(12, 13);
+      const G = (k) => Rm("motelroom", { name: `Guest room ${k}` });
+      return home(bw, bh, Y(["*", X([5, Rm("reception", { entry: true })], ["*", Rm("dining", H())])], ["*", X(["*", "kitchen"], [4, "tack"], [4, Rm("office", { name: "Ranch office" })])]), {
+        storeys: 2, foot: "medium", ground: "woods", stairs: { roles: ["reception"], near: "front" },
+        upper: () => upHall([["*", G(1)], ["*", G(2)]], [["*", G(3)], [2, "bath"], ["*", G(4)]]),
+        exits: [backDoor(["kitchen", "tack"], 0.85), sideDoor(rng, ["dining"], 0.4)],
+      });
+    },
+    // A duck-hunting lodge: one storey; the great room and the kitchen, the bunk room, the decoy room, the gun room and
+    // the boat shed behind (its own door).
+    duck(rng) {
+      const bw = 19, bh = rng.int(10, 11);
+      return home(bw, bh, Y(["*", X(["*", Rm("greatroom", { entry: true })], [4, "kitchen"])], ["*", X(["*", "bunk"], [4, Rm("storage", { name: "Decoy room", type: "cabin" })], [4, Rm("gunroom", { lock: ["door", 0.5], boxLock: ["locker", 0.4] })], [3, Rm("hgarage", { name: "Boat shed", type: "garage", ownDoor: "back" })])]), {
+        foot: "medium", ground: "woods", exits: [sideDoor(rng, ["greatroom", "kitchen"], 0.5)],
+      });
+    },
+    // A lake lodge: the great room and the boathouse at the front, the kitchen, the dining room and a bathroom behind;
+    // bedrooms upstairs.
+    lake(rng) {
+      const bw = rng.int(17, 18), bh = rng.int(11, 12);
+      return home(bw, bh, Y(["*", X(["*", Rm("greatroom", { entry: true })], [5, Rm("hgarage", { name: "Boathouse", type: "garage" })])], ["*", X(["*", "kitchen"], ["*", Rm("dining", H())], [2, "bath"])]), {
+        storeys: 2, foot: "medium", ground: "woods", stairs: { roles: ["greatroom"], near: "front" },
+        upper: () => upHall([["*", "bedroom"], ["*", "bedroom"]], [["*", "bedroom"], [2, "bath"]]),
+        exits: [{ side: "front", roles: ["hgarage"], chance: 1, roller: true, width: 2, lock: 0.3 }, backDoor(["kitchen", "dining"], 0.7)],
+      });
+    },
+    // A scout lodge: the meeting hall and the craft room, the kitchen, the restrooms and the camp store behind.
+    scout(rng) {
+      const bw = rng.int(17, 19), bh = rng.int(11, 12);
+      return home(bw, bh, Y(["*", X(["*", Rm("mess", { name: "Meeting hall", entry: true, type: "cabin" })], [5, Rm("classroom", { name: "Craft room" })])], [4, X(["*", "kitchen"], [3, "restroom"], [4, Rm("storage", { name: "Camp store", type: "cabin" })])]), {
+        foot: "medium", ground: "woods", front: { width: 2 }, exits: [backDoor(["kitchen", "storage"], 0.8), sideDoor(rng, ["mess"], 0.6)],
+      });
+    },
+    // A retreat lodge: two storeys off a corridor; the lounge, the dining room and the kitchen at the front of the
+    // ground floor, guest rooms with their bathrooms behind and upstairs.
+    retreat(rng) {
+      const bw = rng.int(22, 23), fd = 6, bh = 2 + fd + 1 + 1 + 1 + fd;
+      let no = 0;
+      const U = (front) => [4, motelUnit(`Guest room ${++no}`, front)];
+      return home(bw, bh, corridorPlan([["*", Rm("greatroom", { name: "Lounge", entry: true })], [6, Rm("dining", H())], [5, "kitchen"]], [U(false), U(false), U(false), ["*", Rm("storage", H({ name: "Linen room" }))]], fd), {
+        storeys: 2, foot: "large", ground: "woods", front: { width: 2 }, extraDoors: 0, stairs: { ...ENDS, len: 2 },
+        upper: () => corridorPlan([U(true), U(true), U(true), ["*", Rm("storage", H({ name: "Linen room" }))]], [U(false), U(false), U(false), ["*", Rm("dayroom", { name: "Reading room" })]], fd),
+        exits: [backDoor(["kitchen", "storage"], 0.6), { side: "left", roles: ["corridor"], chance: 0.5, lock: 0.3 }],
+      });
+    },
+    // A trading-post lodge: the trading post's counter and shelves and the lodge room at the front, the storeroom, the
+    // kitchen and a bunk room behind.
+    trading(rng) {
+      const bw = rng.int(17, 18), bh = rng.int(11, 12);
+      return home(bw, bh, Y(["*", X(["*", Rm("sales", { name: "Trading post", type: "store", entry: true, lay: "aislefront", maxBoxes: 4 })], [6, Rm("greatroom", { name: "Lodge room" })])], [4, X(["*", Rm("stock", { name: "Storeroom" })], [4, "kitchen"], ["*", "bunk"])]), {
+        foot: "medium", ground: "woods", front: { width: 2 }, exits: [backDoor(["stock", "kitchen"], 0.85)],
+      });
+    },
+    // An outfitter's lodge: the outfitter's office and the great room, the gun room, the gear room, the kitchen and a
+    // bunk room behind.
+    outfitter(rng) {
+      const bw = 20, bh = rng.int(11, 12);
+      return home(bw, bh, Y(["*", X([5, Rm("office", { name: "Outfitter's office", entry: true, hub: true })], ["*", "greatroom"])], [4, X([4, Rm("gunroom", { lock: ["door", 0.5], boxLock: ["locker", 0.4] })], ["*", Rm("storage", { name: "Gear room", type: "sportshop" })], [4, "kitchen"], ["*", "bunk"])]), {
+        foot: "medium", ground: "woods", exits: [backDoor(["storage", "kitchen", "bunk"], 0.8)],
+      });
+    },
+    // A logging-camp lodge: the cookhouse, its kitchen and pantry, the bunkhouse and the saw-filing room.
+    logging(rng) {
+      const bw = rng.int(18, 20), bh = rng.int(12, 13);
+      return home(bw, bh, X(["*", Y(["*", Rm("mess", { name: "Cookhouse", entry: true, type: "cabin" })], [4, X(["*", "kitchen"], [3, "pantry"])])], [7, Y(["*", Rm("dorm", { name: "Bunkhouse", type: "cabin" })], [4, Rm("workshop", { name: "Saw-filing room" })])]), {
+        foot: "medium", ground: "woods", front: { width: 2 }, exits: [backDoor(["kitchen", "workshop"], 0.8), sideDoor(rng, ["dorm"], 0.6)],
+      });
+    },
+  },
+  ranger: {
+    // A fire crew station: the engine bay behind its roller door, the duty office and the kitchen, the crew quarters
+    // and the fire cache.
+    fire(rng) {
+      const bw = rng.int(17, 18), bh = rng.int(11, 12);
+      return home(bw, bh, X([7, Rm("bays", { name: "Engine bay", type: "garage", maxBoxes: 3 })], ["*", Y(["*", X(["*", Rm("office", { name: "Duty office", entry: true })], ["*", "kitchen"])], ["*", X(["*", Rm("dorm", { name: "Crew quarters", type: "cabin" })], [3, Rm("storage", { name: "Fire cache", type: "workshop" })])])]), {
+        foot: "medium", ground: "woods", exits: [{ side: "front", roles: ["bays"], chance: 1, roller: true, width: 3, lock: 0.2, name: "Bay door" }, backDoor(["kitchen", "storage"], 0.6)],
+      });
+    },
+    // An entrance station: the fee booth, its supply closet and a restroom.
+    entrance(rng) {
+      const bw = rng.int(8, 9), bh = 8;
+      return home(bw, bh, X(["*", Rm("office", { name: "Fee booth", entry: true, hub: true })], [3, Y(["*", Rm("storage", { name: "Supply closet", type: "cabin" })], [2, "restroom"])]), { foot: "small", ground: "woods", exits: [sideDoor(rng, ["office"], 0.8)] });
+    },
+    // A backcountry patrol cabin: the one room, a bunk room and the tool shed.
+    backcountry(rng) {
+      const bw = rng.int(9, 10), bh = 8;
+      return home(bw, bh, Y(["*", Rm("greatroom", { name: "Patrol cabin", entry: true })], [3, X(["*", "bunk"], [3, Rm("storage", { name: "Tool shed", type: "cabin" })])]), { foot: "small", ground: "woods", exits: [backDoor(["storage"], 0.4)] });
+    },
+    // Park headquarters: two storeys of offices off a corridor, the lobby, the records room, a break room and the
+    // restrooms.
+    hq(rng) {
+      const bw = rng.int(17, 18), fd = 5, bh = 2 + fd + 1 + 1 + 1 + fd;
+      return home(bw, bh, corridorPlan([[5, Rm("lobby", { entry: true, type: "cabin" })], ["*", "office"], ["*", "office"]], [["*", "office"], [4, Rm("storage", { name: "Records", type: "office" })], [4, "breakroom"], [3, "restroom"]], fd), {
+        storeys: 2, foot: "medium", ground: "woods", front: { width: 2 }, extraDoors: 0, stairs: { ...ENDS, len: 2 },
+        upper: () => corridorPlan([["*", Rm("office", { name: "Superintendent's office" })], ["*", "office"], ["*", "office"]], [["*", "office"], [5, Rm("office", { name: "Map room" })], [3, "restroom"]], fd),
+        exits: [backDoor(["corridor", "breakroom"], 0.7)],
+      });
+    },
+    // A field research station: the field lab and the office, a bunk room, the kitchen and the sample store.
+    research(rng) {
+      const bw = rng.int(16, 17), bh = rng.int(10, 11);
+      return home(bw, bh, Y(["*", X(["*", Rm("lab", { name: "Field lab", entry: true })], [5, "office"])], ["*", X(["*", "bunk"], [4, "kitchen"], [4, Rm("storage", { name: "Sample store", type: "lab" })])]), {
+        foot: "medium", ground: "woods", exits: [backDoor(["kitchen", "storage"], 0.7)],
+      });
+    },
+    // A maintenance yard's shop: the equipment bay behind its roller door, the shop at the front door and the parts room.
+    maintenance(rng) {
+      const bw = rng.int(16, 18), bh = rng.int(11, 12);
+      return home(bw, bh, X(["*", Rm("bays", { name: "Equipment bay", type: "garage" })], [6, Y(["*", Rm("workshop", { name: "Shop", entry: true })], ["*", Rm("parts", { name: "Parts room" })])]), {
+        foot: "medium", ground: "woods", exits: [{ side: "front", roles: ["bays"], chance: 1, roller: true, width: 3, lock: 0.2, name: "Bay door" }, backDoor(["bays", "parts"], 0.6)],
+      });
+    },
+    // A campground office: the office and the camp store, the coin laundry, the showers (their own door) and the
+    // firewood store.
+    campground(rng) {
+      const bw = rng.int(16, 17), bh = rng.int(10, 11);
+      return home(bw, bh, Y(["*", X(["*", Rm("reception", { name: "Campground office", entry: true })], [6, Rm("sales", { name: "Camp store", type: "store", hub: false, lay: "aislefront", maxBoxes: 3 })])], [4, X([4, Rm("laundry", { name: "Coin laundry" })], ["*", Rm("restroom", { name: "Showers" })], [4, Rm("storage", { name: "Firewood store", type: "cabin" })])]), {
+        foot: "medium", ground: "woods", exits: [{ side: "back", roles: ["restroom", "laundry"], chance: 0.9, lock: 0.2 }],
+      });
+    },
+    // A game warden's station: the warden's office and the seized-game store, the gun locker, a holding cell and a
+    // restroom.
+    warden(rng) {
+      const bw = rng.int(15, 16), bh = rng.int(10, 11);
+      return home(bw, bh, Y(["*", X(["*", Rm("office", { name: "Warden's office", entry: true, hub: true })], [5, Rm("evidence", { name: "Seized-game store" })])], [4, X([4, Rm("armory", { name: "Gun locker", lock: ["door", 0.5] })], ["*", Rm("cells", { name: "Holding cell" })], [3, "restroom"])]), {
+        foot: "medium", ground: "woods", exits: [backDoor(["cells", "restroom"], 0.5)],
+      });
+    },
+    // A radio relay station: the radio room and the kitchen, a bunk room and the generator shed.
+    radio(rng) {
+      const bw = rng.int(11, 12), bh = rng.int(9, 10);
+      return home(bw, bh, Y(["*", X(["*", Rm("control", { name: "Radio room", entry: true })], [4, "kitchen"])], [3, X(["*", "bunk"], [4, Rm("genroom", { name: "Generator shed" })])]), { foot: "small", ground: "woods", exits: [backDoor(["genroom"], 0.6)] });
+    },
+  },
+};
+for (const [k, plans] of Object.entries(MORE_HOMES)) Object.assign(HOME_PLANS[k], plans);
 
 // Shops: a sales floor at the front, a back strip of stockroom, office and the rest; a back door, a side fire exit.
 // Grocery stores by size (issue #22, a new save's plan only: o.legacy keeps the old 14–18 × 11–14 of both): a corner
@@ -1107,6 +1452,96 @@ const OPEN_PLANS = {
   },
 };
 
+// The barn's and the machine shed's layouts beyond the first few (issue #32: a dozen a type). shed(): an open
+// building's spec on a farm.
+const shed = (bw, bh, program, exits, o = {}) => ({ bw, bh, program, exits, front: { width: 2 }, ground: "farm", storeys: 1, foot: "medium", openDoors: 0.4, ...o });
+const bayDoor = (roles, side = "front", width = 3) => ({ side, roles, chance: 1, roller: true, width, lock: 0.15, name: side === "front" ? "Bay door" : "Roller door (back)" });
+Object.assign(OPEN_PLANS.barn, {
+  // A tobacco barn: the tall curing floor, the stripping room and the packing room behind.
+  tobacco(rng) {
+    return shed(rng.int(14, 16), rng.int(12, 13), Y(["*", { role: "barnfloor", name: "Curing floor", entry: true }], [4, X(["*", { role: "workshop", name: "Stripping room", type: "barn" }], [4, { role: "storage", name: "Packing room", type: "barn" }])]),
+      [{ side: sideRoom(rng), roles: ["barnfloor"], chance: 0.7, width: 2, lock: 0.2 }]);
+  },
+  // A hog barn: the barn office at one end, pens either side of an aisle that runs to a door at the other end, the
+  // feed room.
+  hog(rng) {
+    const pen = () => ["*", { role: "hayloft", name: "Pen", fl: "conc", maxBoxes: 1 }];
+    return shed(rng.int(19, 20), rng.int(12, 13), X([5, { role: "office", name: "Barn office", entry: true, type: "barn" }], ["*", Y(["*", X(pen(), pen(), pen())], [2, { role: "corridor", name: "Aisle" }], ["*", X(pen(), pen(), [4, { role: "storage", name: "Feed room", type: "barn" }])])]),
+      [{ side: "right", roles: ["corridor"], chance: 1, width: 2, lock: 0.2, name: "Aisle door" }], { front: { width: 1 } });
+  },
+  // A poultry house: the long laying house, the egg room and the feed room at one end.
+  poultry(rng) {
+    return shed(rng.int(22, 24), rng.int(9, 10), X(["*", { role: "warefloor", name: "Laying house", type: "barn", entry: true, maxBoxes: 4 }], [5, Y(["*", { role: "pantry", name: "Egg room", type: "kitchen", cold: true }], [3, { role: "storage", name: "Feed room", type: "barn" }])]),
+      [{ side: "back", roles: ["storage", "warefloor"], chance: 0.7, lock: 0.2 }], { front: { width: 1 } });
+  },
+  // A sheep barn: the lambing pens and the shearing floor, the wool store and the tack room behind.
+  sheep(rng) {
+    return shed(rng.int(16, 18), rng.int(12, 13), Y(["*", X(["*", { role: "barnfloor", name: "Lambing pens", entry: true }], [6, { role: "workshop", name: "Shearing floor", type: "barn" }])], [4, X(["*", { role: "storage", name: "Wool store", type: "barn" }], [4, "tack"])]),
+      [{ side: "back", roles: ["storage", "tack"], chance: 0.7, lock: 0.2 }]);
+  },
+  // A corn crib and granary: a drive bay through the middle (a door at each end), the corn crib one side, the granary
+  // the other.
+  crib(rng) {
+    return shed(rng.int(16, 18), rng.int(10, 11), X([5, { role: "storage", name: "Corn crib", type: "barn" }], ["*", { role: "barnfloor", name: "Drive bay", entry: true }], [5, { role: "storage", name: "Granary", type: "barn" }]),
+      [{ side: "back", roles: ["barnfloor"], chance: 1, width: 2, lock: 0.2, name: "Drive bay (back)" }]);
+  },
+  // A cattle barn: the loafing barn, the calving pen, the vet room and the feed room behind.
+  cattle(rng) {
+    return shed(rng.int(18, 20), rng.int(12, 13), Y(["*", { role: "barnfloor", name: "Loafing barn", entry: true }], [4, X([4, { role: "hayloft", name: "Calving pen", fl: "dirt" }], [5, { role: "office", name: "Vet room", type: "clinic" }], ["*", { role: "storage", name: "Feed room", type: "barn" }])]),
+      [{ side: sideRoom(rng), roles: ["barnfloor"], chance: 0.8, width: 2, lock: 0.2 }, { side: "back", roles: ["storage"], chance: 0.5, lock: 0.2 }]);
+  },
+  // A hay barn: the open floor and the tack room below, the hay mow over the whole of it.
+  hay(rng) {
+    return shed(rng.int(14, 16), rng.int(11, 12), X(["*", { role: "warefloor", name: "Hay barn", type: "barn", entry: true, maxBoxes: 3 }], [4, "tack"]),
+      [bayDoor(["warefloor"], "back")], { storeys: 2, upper: () => ({ role: "hayloft", name: "Hay mow" }), stairs: { roles: ["warefloor"], n: 1 } });
+  },
+});
+Object.assign(OPEN_PLANS.machineshed, {
+  // A Quonset hut: one deep bay under the arch, the parts bench across the back.
+  quonset(rng) {
+    return shed(rng.int(12, 13), rng.int(15, 16), Y(["*", { role: "bays", name: "Quonset hut", type: "garage", entry: true, maxBoxes: 3 }], [3, { role: "parts", name: "Parts bench" }]), [], { front: { width: 3 } });
+  },
+  // A grain dryer shed: the dryer floor, the dryer's control room and the seed store.
+  grain(rng) {
+    return shed(rng.int(15, 17), rng.int(10, 11), X(["*", { role: "warefloor", name: "Dryer floor", type: "barn", entry: true, maxBoxes: 3 }], [5, Y(["*", { role: "control", name: "Dryer controls", type: "workshop" }], [3, { role: "storage", name: "Seed store", type: "barn" }])]),
+      [bayDoor(["warefloor"], "back", 2)]);
+  },
+  // A fuel shed: the fuel bay behind its roller door, the fuel office at the front door and the oil and grease store.
+  fuel(rng) {
+    return shed(rng.int(14, 16), rng.int(10, 11), X(["*", { role: "bays", name: "Fuel bay", type: "garage", maxBoxes: 3 }], [5, Y(["*", { role: "office", name: "Fuel office", entry: true }], ["*", { role: "storage", name: "Oil and grease store", type: "garage" }])]),
+      [bayDoor(["bays"])], { front: { width: 1 } });
+  },
+  // A welding shop: the shop floor, the steel rack and the gas bottle store.
+  welding(rng) {
+    return shed(rng.int(14, 16), rng.int(10, 11), X(["*", { role: "workshop", name: "Welding shop", entry: true, hub: true, maxBoxes: 4 }], [5, Y(["*", { role: "parts", name: "Steel rack" }], ["*", { role: "storage", name: "Gas bottle store", type: "workshop", lock: ["door", 0.3] }])]),
+      [bayDoor(["workshop"], "front", 2)]);
+  },
+  // A tractor garage: the garage behind its roller door, the shop and a washroom.
+  tractor(rng) {
+    return shed(rng.int(14, 16), rng.int(10, 11), X(["*", { role: "hgarage", name: "Tractor garage", type: "garage", maxBoxes: 3 }], [5, Y(["*", { role: "workshop", name: "Shop", entry: true }], [3, { role: "restroom", name: "Washroom" }])]),
+      [bayDoor(["hgarage"])], { front: { width: 1 } });
+  },
+  // A chemical store: the sprayer bay, the chemical store behind its locked door and the wash-down room.
+  chemical(rng) {
+    return shed(rng.int(14, 16), rng.int(10, 11), X(["*", { role: "bays", name: "Sprayer bay", type: "garage", entry: true, maxBoxes: 3 }], [5, Y(["*", { role: "storage", name: "Chemical store", type: "garden", lock: ["door", 0.4] }], [3, { role: "restroom", name: "Wash-down room" }])]),
+      [{ side: "back", roles: ["restroom", "bays"], chance: 0.6, lock: 0.3 }]);
+  },
+  // A pump house: the pump room, the tank room and a tool bench.
+  pump(rng) {
+    return shed(rng.int(9, 10), rng.int(8, 9), X(["*", { role: "genroom", name: "Pump room", entry: true }], [4, Y(["*", { role: "waterstore", name: "Tank room" }], [3, { role: "workshop", name: "Tool bench" }])]), [], { front: { width: 1 }, foot: "small" });
+  },
+  // A farm office shed: the equipment bay, the farm office and the crew room.
+  office(rng) {
+    return shed(rng.int(15, 17), rng.int(10, 11), X(["*", { role: "bays", name: "Equipment bay", type: "garage", maxBoxes: 3 }], [6, Y(["*", { role: "office", name: "Farm office", entry: true }], ["*", { role: "breakroom", name: "Crew room" }])]),
+      [bayDoor(["bays"])], { front: { width: 1 } });
+  },
+  // A truck shed: the truck bay behind its roller door, the parts room at the front door and the dispatch office.
+  truck(rng) {
+    return shed(rng.int(16, 18), rng.int(11, 12), X(["*", { role: "motor", name: "Truck bay" }], [5, Y(["*", { role: "parts", name: "Parts room", entry: true }], ["*", { role: "office", name: "Dispatch office" }])]),
+      [bayDoor(["motor"]), bayDoor(["motor"], "back")], { front: { width: 1 } });
+  },
+});
+
 function church(rng, o = {}) {
   if (!o.legacy) return churchPlan(rng);
   const bw = rng.int(13, 16), bh = rng.int(16, 19);
@@ -1349,7 +1784,7 @@ function milPlanOf(rng, v, o = {}) {
 
 
 // A motel: a row of rooms, each with its own door onto the parking lot, and the office at one end. Since #32 (new saves)
-// one of five layouts (buildvariants.js LAYOUTS.motel, by the dice and the setting; the franchise gives the look):
+// one of twelve layouts (the first five below, the rest after MOTEL_PLANS) (buildvariants.js LAYOUTS.motel, by the dice and the setting; the franchise gives the look):
 //   court     the motor court (the plan below): two storeys, the outside stair at the office's end up to the walkway
 //             along the back, the office and the manager's flat, an ice and vending nook with its own door, the laundry
 //             upstairs, an empty pool behind a fence (spec.pool) on the ground behind;
@@ -1454,6 +1889,130 @@ function motorCabin(rng) {
     bw, bh, front: { width: 1 }, ground: "woods", openDoors: 0.2, storeys: 1, foot: "small",
     program: { split: "y", parts: [["*", { role: "motelroom", name: "Room", entry: true, lay: "motelstudio", maxBoxes: 3 }], [2, { role: "bath", name: "Bathroom", type: null, windows: false }]] },
     exits: [{ side: "back", roles: ["motelroom"], chance: 0.2, lock: 0.5 }],
+  };
+}
+
+// The motel's layouts beyond the first five (issue #32: a dozen, the motel's too):
+//   neon      a 1950s neon motor inn: one storey, the office under its neon sign and a coffee shop with its grill
+//             kitchen at one end, the rooms in a row;
+//   diner     a motel with a restaurant: the motor court's two storeys and outdoor stair, a restaurant (its own door,
+//             the kitchen and the restrooms behind) at one end;
+//   poolside  a two-storey motel round its pool: the ground floor's rooms open at the back onto the pool, the lobby and
+//             the fitness room at one end, the walkway upstairs;
+//   fishcamp  a fishing-camp motel: the bait and tackle shop with the office, the rooms, the fish-cleaning room (its own
+//             door) and the freezer room;
+//   cottages  a tourist court: the office and a row of tiny cottages round a gravel drive (several buildings);
+//   weekly    a run-down weekly-rate motel: two storeys of studios with kitchenettes, the office, a coin laundry, the
+//             maintenance shed;
+//   ski       a ski motel: two storeys off an inside corridor, the front desk, the fireside lounge, the boot room and
+//             the ski store.
+// A motel room and its bathroom side by side in a row (the strip's and the motor court's), its door to the front.
+const rowUnits = (n, uw, no0, studio = false) => Array.from({ length: n }, (_, i) => [uw, Y(["*", { role: "motelroom", name: `Room ${no0 + i}`, ...(studio ? { lay: "motelstudio", maxBoxes: 3 } : {}) }], [2, { role: "bath", name: `Bath ${no0 + i}` }])]);
+// The upper floor of a two-storey row motel: the rooms over the ground floor's (their bathrooms on the far side from
+// the walkway), over the ends what `ends` gives, the walkway along the back.
+const rowUpper = (n, uw, no0, left, end, studio = false) => {
+  const units = Array.from({ length: n }, (_, i) => [uw, Y([2, { role: "bath", name: `Bath ${no0 + i}`, type: null }], ["*", { role: "motelroom", name: `Room ${no0 + i}`, ...(studio ? { lay: "motelstudio", maxBoxes: 3 } : {}) }])]);
+  return { split: "y", parts: [["*", { split: "x", parts: left ? [end, ...units] : [...units, end] }], [1, { role: "corridor", name: "Walkway" }]] };
+};
+const MANAGER = { role: "office", name: "Manager's room", type: "house", lock: ["door", 0.4], boxLock: ["lockbox", 0.4] };
+Object.assign(MOTEL_PLANS, {
+  neon(rng) {
+    const n = 4, uw = 4, left = rng.chance(0.5);
+    const office = [4, Y(["*", { role: "reception", entry: true, neon: true }], [3, MANAGER])];
+    const coffee = [6, Y(["*", { role: "dining", name: "Coffee shop", type: "store", hub: true, maxBoxes: 2, ownDoor: true }], [3, { role: "kitchen", name: "Grill kitchen", fry: true }])];
+    const units = rowUnits(n, uw, 1), bw = 2 + 4 + 1 + 6 + 1 + n * uw + (n - 1);
+    return {
+      bw, bh: 9, front: { width: 1 }, ground: "lot", unitDoors: "motelroom", openDoors: 0.25, extraDoors: 0, storeys: 1, foot: "medium",
+      program: { split: "x", parts: left ? [coffee, office, ...units] : [...units, office, coffee] },
+      exits: [{ side: "back", roles: ["kitchen"], chance: 0.8, lock: 0.3 }],
+    };
+  },
+  diner(rng) {
+    const n = 4, uw = 4, left = rng.chance(0.5);
+    const office = [4, Y(["*", { role: "reception", entry: true }], ["*", MANAGER])];
+    const rest = [7, Y(["*", { role: "dining", name: "Restaurant", type: "store", hub: true, maxBoxes: 2, ownDoor: true }], [3, X(["*", { role: "kitchen", fry: true }], [2, "pantry"], [2, "restroom"])])];
+    const bw = 2 + 7 + 1 + 4 + 1 + n * uw + (n - 1);
+    const end = [12, { role: "storage", name: "Laundry", type: "house" }];
+    return {
+      bw, bh: 10, front: { width: 1 }, ground: "lot", unitDoors: "motelroom", openDoors: 0.25, extraDoors: 0, storeys: 2, foot: "medium",
+      stairs: { out: left ? "left" : "right", n: 1 },
+      program: { split: "x", parts: left ? [rest, office, ...rowUnits(n, uw, 1)] : [...rowUnits(n, uw, 1), office, rest] },
+      upper: () => rowUpper(n, uw, n + 1, left, end),
+      exits: [{ side: "back", roles: ["kitchen", "pantry"], chance: 0.85, lock: 0.3 }],
+    };
+  },
+  poolside(rng) {
+    const n = 4, uw = 4, left = rng.chance(0.5);
+    const lobby = [5, Y(["*", { role: "lobby", name: "Lobby", entry: true, type: "office", lay: "motelfront" }], ["*", { role: "gym", name: "Fitness room", type: "lockers", civic: "fgym", maxBoxes: 1 }])];
+    const units = Array.from({ length: n }, (_, i) => [uw, Y([2, { role: "bath", name: `Bath ${i + 1}` }], ["*", { role: "motelroom", name: `Room ${i + 1}`, ownDoor: "back" }])]);
+    const bw = 2 + 5 + 1 + n * uw + (n - 1);
+    const end = [5, { role: "storage", name: "Linen room", type: "house" }];
+    return {
+      bw, bh: 10, front: { width: 1 }, ground: "lot", openDoors: 0.25, extraDoors: 0, storeys: 2, foot: "medium",
+      stairs: { out: left ? "left" : "right", n: 1 },
+      program: { split: "x", parts: left ? [lobby, ...units] : [...units, lobby] },
+      upper: () => rowUpper(n, uw, n + 1, left, end),
+      exits: [], pool: { w: rng.int(5, 7), h: 3 }, margins: { back: 9 },
+    };
+  },
+  fishcamp(rng) {
+    const n = 4, uw = 4, left = rng.chance(0.5);
+    const shop = [5, Y(["*", { role: "sales", name: "Bait and tackle", type: "sportshop", entry: true, lay: "aislefront", maxBoxes: 3 }], [3, { role: "reception", name: "Office", hub: false }])];
+    const fish = [4, Y(["*", { role: "workshop", name: "Fish-cleaning room", type: "kitchen", ownDoor: true }], [3, { role: "pantry", name: "Freezer room", cold: true, dk: "coldroom", fl: "steel", lay: "walkin", maxBoxes: 2 }])];
+    const bw = 2 + 5 + 1 + n * uw + (n - 1) + 1 + 4;
+    return {
+      bw, bh: 9, front: { width: 1 }, ground: "woods", unitDoors: "motelroom", openDoors: 0.25, extraDoors: 0, storeys: 1, foot: "medium",
+      program: { split: "x", parts: left ? [shop, ...rowUnits(n, uw, 1), fish] : [fish, ...rowUnits(n, uw, 1), shop] },
+      exits: [{ side: "back", roles: ["pantry", "sales"], chance: 0.6, lock: 0.3 }],
+    };
+  },
+  cottages(rng) {
+    const count = rng.int(6, 7);
+    return { ...courtOffice(rng), compound: { count, word: "cottages", make: (k, r) => (k === 0 ? courtOffice(r) : courtCottage(r)), name: (k) => (k === 0 ? "Office" : `Cottage ${k}`), road: "gravel", yard: "grass", BW: [7, 11], BH: 9, GAP: 2, CARS: [1, 3], TREES: [3, 6], fences: false } };
+  },
+  weekly(rng) {
+    const n = 4, uw = 5, left = rng.chance(0.5);
+    const office = [4, Y(["*", { role: "reception", name: "Office", entry: true }], [3, { role: "laundry", name: "Coin laundry" }])];
+    const shed = [4, { role: "hgarage", name: "Maintenance", type: "garage", ownDoor: true, windows: false }];
+    const bw = 2 + 4 + 1 + n * uw + (n - 1) + 1 + 4;
+    const end = [9, { role: "storage", name: "Storeroom", type: "house" }];
+    return {
+      bw, bh: 10, front: { width: 1 }, ground: "lot", unitDoors: "motelroom", openDoors: 0.35, extraDoors: 0, storeys: 2, foot: "medium",
+      stairs: { out: left ? "left" : "right", n: 1 },
+      program: { split: "x", parts: left ? [office, ...rowUnits(n, uw, 1, true), shed] : [shed, ...rowUnits(n, uw, 1, true), office] },
+      upper: () => { const u = rowUpper(n, uw, n + 1, left, end, true); return u; },
+      exits: [{ side: "back", roles: ["reception", "laundry"], chance: 0.5, lock: 0.3 }],
+    };
+  },
+  ski(rng) {
+    const k = 2, uw = 4, fd = 6, bw = 2 + 5 + 1 + 6 + 1 + k * (uw + 1), bh = 2 + fd + 1 + 2 + 1 + fd;
+    let no = 100;
+    const U = (front) => [uw, motelUnit(`Room ${++no}`, front)];
+    const row = (m, front) => Array.from({ length: m }, () => U(front));
+    return {
+      bw, bh, front: { width: 2 }, ground: "woods", openDoors: 0.2, extraDoors: 0, storeys: 2, foot: "large", stairs: { ...ENDS, len: 2 },
+      program: corridorPlan([[5, { role: "reception", name: "Front desk", entry: true }], [6, { role: "greatroom", name: "Fireside lounge", hub: false }], ...row(k, true)], [[5, { role: "lockerroom", name: "Boot room" }], [6, { role: "storage", name: "Ski store", type: "sportshop" }], ...row(k, false)], fd, 2),
+      upper: (f) => { no = (f + 1) * 100; return corridorPlan([[5, { role: "storage", name: "Linen room", type: "house", lay: "laundry" }], [6, U(true)[1]], ...row(k, true)], [[5, { role: "storage", name: "Ice and vending", type: "store", lay: "vendnook", maxBoxes: 1 }], [6, U(false)[1]], ...row(k, false)], fd, 2); },
+      exits: [{ side: "back", roles: ["lockerroom", "storage"], chance: 0.8, lock: 0.3 }, { side: "left", roles: ["corridor"], chance: 0.6, lock: 0.4 }, { side: "right", roles: ["corridor"], chance: 0.6, lock: 0.4 }],
+    };
+  },
+});
+// The tourist court's office (the front desk under its neon sign, the linen room, the manager's room) and a cottage
+// (one room and its bathroom: no kitchenette, unlike the motor lodge's cabins).
+function courtOffice(rng) {
+  const bw = rng.int(10, 11), bh = 9;
+  return {
+    bw, bh, front: { width: 1 }, ground: "woods", openDoors: 0.3, storeys: 1, foot: "small",
+    program: Y(["*", X(["*", { role: "reception", entry: true, neon: true }], [4, { role: "storage", name: "Linen room", type: "house" }])], [3, MANAGER]),
+    exits: [{ side: "back", roles: ["office"], chance: 0.6, lock: 0.3 }],
+  };
+}
+function courtCottage(rng) {
+  const bw = 7, bh = rng.int(8, 9);
+  return {
+    bw, bh, front: { width: 1 }, ground: "woods", openDoors: 0.2, storeys: 1, foot: "small",
+    program: Y(["*", { role: "motelroom", name: "Room", entry: true }], [2, { role: "bath", name: "Bathroom", type: null, windows: false }]),
+    exits: [],
   };
 }
 
@@ -1628,6 +2187,109 @@ function gardenBlock(rng) {
     exits: [{ side: "back", roles: ["lobby"], chance: 0.6, lock: 0.4 }],
   };
 }
+// The apartment blocks' layouts beyond the first four (issue #32: a dozen):
+//   tower      an apartment tower: 4–6 storeys of small flats off a corridor, the stairwell by the lobby, the mail room;
+//   shops      flats over shops: two shops (each its own door, a stockroom behind) either side of the stair hall's
+//              street door, two flats a floor over them; 3 storeys;
+//   rooming    a rooming house: rooms to let either side of a stair hall, a shared kitchen, a parlour and shared
+//              bathrooms; 3 storeys;
+//   senior     senior apartments: the lobby, the common room, the manager's office and the laundry, flats off a corridor;
+//   student    student housing: suites off a corridor, the study rooms, the bike store and the laundry;
+//   projects   a housing project: a long slab of 4–5 storeys, flats off a corridor, the boiler room and a laundry;
+//   converted  a converted house: one flat a floor up the old stair hall; 3 storeys;
+//   condos     luxury condos: a marble lobby, the concierge, a gym and the parking garage, big flats upstairs.
+// A run of flats side by side: [w, flat] parts (w: the width each will get, near enough).
+const flats = (f, ks, w, word = "Apartment") => ks.map((k) => ["*", flatOf(f, k, w, false, word)]);
+Object.assign(APT_PLANS, {
+  tower(rng, o) {
+    const bw = rng.int(19, 20), bh = 15, n = clampN(rng.int(4, 5) + (o.storeyBonus || 0), 4, 6), fw = Math.floor((bw - 2 - 2 - 4 - 3) / 2);
+    const floor = (f) => corridorPlan([["*", flatOf(f, "A", fw)], [2, { role: "stairwell" }], [4, f ? { role: "hall", name: "Landing" } : { role: "lobby", entry: true, type: "house" }], ["*", flatOf(f, "B", fw)]],
+      [...flats(f, ["C", "D", "E"], Math.floor((bw - 2 - 4 - 3) / 3)), [4, f ? { role: "storage", name: "Trash room", type: "house", maxBoxes: 1 } : { role: "office", name: "Mail room", type: "office" }]], 5);
+    return {
+      bw, bh, front: { width: 2 }, ground: "city", storeys: n, foot: "tower", extraDoors: 0, stairs: { roles: ["stairwell"], n: 1, len: 3 },
+      program: floor(0), upper: (f) => floor(f),
+      exits: [{ side: "back", roles: ["office", "storage"], chance: 0.6, lock: 0.3 }, { side: "left", roles: ["corridor"], chance: 0.4, lock: 0.4 }],
+    };
+  },
+  shops(rng) {
+    const bw = rng.int(19, 20), bh = rng.int(11, 12), fw = Math.floor((bw - 2 - 3 - 2) / 2);
+    const shop = (door) => ["*", Y(["*", { role: "sales", name: "Shop", type: "store", maxBoxes: 4, ...(door ? { ownDoor: true } : { entry: true }) }], [3, { role: "stock" }])];
+    return {
+      bw, bh, front: { width: 1 }, ground: "city", storeys: 3, foot: "medium", extraDoors: 0, stairs: { roles: ["hall"], n: 1, len: 3 },
+      program: X(shop(false), [3, { role: "hall", name: "Stair hall", ownDoor: true }], shop(true)),
+      upper: (f) => X(["*", flatOf(f, "A", fw)], [3, { role: "hall", name: "Landing" }], ["*", flatOf(f, "B", fw)]),
+      exits: [{ side: "back", roles: ["stock"], chance: 0.8, lock: 0.3 }, { side: "back", roles: ["hall"], chance: 0.5, lock: 0.4 }],
+    };
+  },
+  rooming(rng) {
+    const bw = rng.int(15, 16), bh = rng.int(12, 13);
+    let no = 0;
+    const R = () => ({ role: "bedroom", name: `Room ${++no}`, type: "house" });
+    const side = () => Y(["*", R()], [2, { role: "bath", name: "Shared bathroom" }], ["*", R()]);
+    return {
+      bw, bh, front: { width: 1 }, ground: "town", storeys: 3, foot: "medium", extraDoors: 0, stairs: { roles: ["hall"], n: 1, len: 3 },
+      program: X(["*", Y(["*", { role: "living", name: "Parlour", type: "house" }], ["*", { role: "kitchen", name: "Shared kitchen" }])], [3, { role: "hall", name: "Stair hall", entry: true }], ["*", side()]),
+      upper: () => X(["*", Y(["*", R()], ["*", R()])], [3, { role: "hall", name: "Landing" }], ["*", side()]),
+      exits: [{ side: "back", roles: ["kitchen", "hall"], chance: 0.8, lock: 0.3 }],
+    };
+  },
+  senior(rng) {
+    const bw = 24, bh = 16, n = 3;
+    const floor = (f) => (f
+      ? corridorPlan([...flats(f, ["A", "B"], 8), [3, { role: "storage", name: "Linen room", type: "house" }]], [...flats(f, ["C", "D"], 8), [3, { role: "laundry" }]], 5, 2)
+      : corridorPlan([[5, { role: "lobby", entry: true, type: "house" }], [5, { role: "dayroom", name: "Common room" }], ...flats(0, ["A"], 10)], [[4, { role: "office", name: "Manager's office" }], [3, { role: "laundry" }], ...flats(0, ["C", "D"], 6)], 5, 2));
+    return {
+      bw, bh, front: { width: 2 }, ground: "town", storeys: n, foot: "large", extraDoors: 0, stairs: { ...ENDS, len: 3 },
+      program: floor(0), upper: (f) => floor(f),
+      exits: [{ side: "back", roles: ["office", "laundry"], chance: 0.6, lock: 0.3 }],
+    };
+  },
+  student(rng) {
+    const bw = 24, bh = 16, n = 3;
+    const floor = (f) => (f
+      ? corridorPlan([...flats(f, ["A", "B"], 8, "Suite"), [3, { role: "classroom", name: "Study room" }]], [...flats(f, ["C", "D"], 8, "Suite"), [3, { role: "laundry" }]], 5, 2)
+      : corridorPlan([[5, { role: "lobby", entry: true, type: "house" }], [5, { role: "classroom", name: "Study room" }], ...flats(0, ["A"], 10, "Suite")], [[3, { role: "laundry" }], [4, { role: "storage", name: "Bike store", type: "house" }], ...flats(0, ["C", "D"], 6, "Suite")], 5, 2));
+    return {
+      bw, bh, front: { width: 2 }, ground: "town", storeys: n, foot: "large", extraDoors: 0, stairs: { ...ENDS, len: 3 },
+      program: floor(0), upper: (f) => floor(f),
+      exits: [{ side: "back", roles: ["storage", "laundry"], chance: 0.6, lock: 0.3 }],
+    };
+  },
+  projects(rng, o) {
+    const bw = rng.int(25, 26), bh = 15, n = clampN(rng.int(4, 5) + (o.storeyBonus || 0), 4, 6), fw = Math.floor((bw - 2 - 2 - 4 - 3) / 2), bk = Math.floor((bw - 2 - 4 - 2) / 2);
+    const floor = (f) => corridorPlan([["*", flatOf(f, "A", fw)], [2, { role: "stairwell" }], [4, f ? { role: "hall", name: "Landing" } : { role: "lobby", entry: true, type: "house" }], ["*", flatOf(f, "B", fw)]],
+      [["*", flatOf(f, "C", bk)], [4, f ? { role: "laundry" } : { role: "genroom", name: "Boiler room" }], ["*", flatOf(f, "D", bk)]], 5);
+    return {
+      bw, bh, front: { width: 2 }, ground: "city", storeys: n, foot: "large", extraDoors: 0, stairs: { roles: ["stairwell"], n: 1, len: 3 },
+      program: floor(0), upper: (f) => floor(f),
+      exits: [{ side: "back", roles: ["genroom"], chance: 0.7, lock: 0.4 }, { side: "left", roles: ["corridor"], chance: 0.5, lock: 0.4 }, { side: "right", roles: ["corridor"], chance: 0.5, lock: 0.4 }],
+    };
+  },
+  converted(rng) {
+    const bw = rng.int(11, 12), bh = rng.int(12, 13);
+    const floor = (f) => {
+      const name = `Flat ${f + 1}`, unit = `${f}`;
+      return X([3, f ? { role: "hall", name: "Landing" } : { role: "hall", name: "Stair hall", entry: true }], ["*", Y(["*", { role: "apt", name, unit, maxBoxes: 2 }], [3, X(["*", { role: "bedroom", name: `${name}: bedroom`, unit, maxBoxes: 1 }], [2, { role: "bath", name: `${name}: bathroom`, unit }])])]);
+    };
+    return {
+      bw, bh, front: { width: 1 }, ground: "town", storeys: 3, foot: "small", extraDoors: 0, stairs: { roles: ["hall"], n: 1, len: 3 },
+      program: floor(0), upper: (f) => floor(f),
+      exits: [{ side: "back", roles: ["hall"], chance: 0.6, lock: 0.4 }],
+    };
+  },
+  condos(rng, o) {
+    const bw = rng.int(22, 23), bh = 18, n = clampN(rng.int(3, 4) + (o.storeyBonus || 0), 3, 6), fw = Math.floor((bw - 3) / 2);
+    const floor = (f) => (f
+      ? corridorPlan(flats(f, ["A", "B"], fw, "Condo"), flats(f, ["C", "D"], fw, "Condo"), 6, 2)
+      : corridorPlan([[6, { role: "lobby", entry: true, type: "office", fl: "marble" }], [4, { role: "office", name: "Concierge" }], ["*", { role: "gym", name: "Residents' gym", type: "lockers", civic: "fgym", maxBoxes: 1 }]], [["*", { role: "hgarage", name: "Parking garage", type: "garage", maxBoxes: 2 }], [5, { role: "storage", name: "Storage lockers", type: "house" }]], 6, 2));
+    return {
+      bw, bh, front: { width: 2 }, ground: "city", storeys: n, foot: "large", extraDoors: 0, stairs: { ...ENDS, len: 3 },
+      program: floor(0), upper: (f) => floor(f),
+      exits: [{ side: "back", roles: ["hgarage"], chance: 1, roller: true, width: 2, lock: 0.3, name: "Garage door" }],
+    };
+  },
+});
+
 function apartmentsClassic(rng, o = {}) {
   const bw = rng.int(18, 22), bh = rng.int(14, 16);
   // 3–6 floors of flats (deeper city blocks taller: o.storeyBonus), a lobby and the maintenance room on the ground floor.
@@ -1952,14 +2614,14 @@ export const BUILDINGS = {
 // The storeys a type can have, [min, max] (the city crawl's bonus can add to offices and apartments, up to MAX_STOREYS).
 export const STOREYS_BY_TYPE = {
   // Since #32 a type's range covers all its layouts (buildvariants.js): a ranch house of one storey, a lookout tower of three.
-  house: [1, 2], farmhouse: [1, 2], cabin: [1, 2], lodge: [1, 2], ranger: [1, 3],
+  house: [1, 3], farmhouse: [1, 2], cabin: [1, 2], lodge: [1, 2], ranger: [1, 3],
   grocery: [1, 2], corner: [1, 2], pharmacy: [1, 1], gunstore: [1, 1], pawnshop: [1, 1], hardware: [1, 1], feedstore: [1, 1], diner: [1, 1], gasstation: [1, 1], truckstop: [1, 1],
   supermarket: [1, 2], deptstore: [1, 2],
   clinic: [1, 3], infirmary: [1, 3], hospital: [3, 5], police: [2, 3], school: [2, 3], offices: [3, MAX_STOREYS], lab: [1, 3], barracks: [1, 3], armorybldg: [1, 1],
   cellblock: [1, 2], messhall: [1, 2], control: [1, 4], radio: [1, 1], terminal: [1, 3], firestation: [2, 2], // issue #25: a new save's cell block two tiers, its mess hall one storey
   hq: [1, 3], aidstation: [1, 1], gatehouse: [1, 1], tower: [2, 6], flightops: [1, 2], // issue #25's dozen plans a type (milplans.js): a company orderly room of one storey, a staff college of three, towers of 2–6
   warehouse: [1, 3], factory: [1, 3], hangar: [1, 1], motorpool: [1, 1], autoshop: [1, 1], garage: [1, 1], workshop: [1, 1], machineshed: [1, 1], barn: [1, 2],
-  church: [1, 1], motel: [1, 3], apartments: [2, 6], neighbourhood: [1, 2], hotel: [2, 10], // a hotel: an inn 2–3, a resort 2–4, a business hotel 4–6, a tower 8–10 (within MAX_STOREYS)
+  church: [1, 1], motel: [1, 3], apartments: [2, 6], neighbourhood: [1, 3], hotel: [2, 10], // a hotel: an inn 2–3, a resort 2–4, a business hotel 4–6, a tower 8–10 (within MAX_STOREYS)
   // the shops and services of data-shops.js (a franchise's plan can add a flat above or more floors)
   sportshop: [1, 2], electronics: [1, 2], radioshop: [1, 2], bookstore: [1, 2], petstore: [1, 2], garden: [1, 2], clothing: [1, 2], liquor: [1, 2],
   restaurant: [1, 2], bar: [1, 2], dealer: [1, 2], bank: [1, 3], library: [1, 8], vet: [1, 2], pizza: [1, 1],
@@ -2171,7 +2833,33 @@ const NEIGHBOURHOODS = {
   rural: { road: "dirt", walk: "dirt", yard: "field", GAP: 8, SIDE: 5, CARS: [0, 1], TREES: [6, 10], BINS: [0, 1], allow: ["twostorey", "ranch", "mobile"],
     make: (k, r, n, o) => (k === n - 1 ? { ...BUILDINGS.garage.make(r, { ...o, layout: "garage" }), key: "garage" } : { ...BUILDINGS.house.make(r, { ...o, street: true, allow: ["twostorey", "ranch", "mobile"] }), key: "house" }),
     name: (k, n, no) => (k === n - 1 ? "Farm shed" : no) },
+  // a trailer park: mobile homes on their lots along a gravel loop, the park office and its coin laundry last
+  trailer: { road: "gravel", walk: "gravel", yard: "dirt", GAP: 3, fences: false, CARS: [2, 4], BINS: [2, 4],
+    make: (k, r, n, o) => (k === n - 1 ? { ...parkOffice(r), key: "house" } : { ...BUILDINGS.house.make(r, { ...o, street: true, layout: "mobile" }), key: "house" }),
+    name: (k, n) => (k === n - 1 ? "Park office" : `Lot ${k + 1}`) },
+  suburb: { allow: ["ranch", "splitlevel", "bungalow"] },                    // ranch houses, split-levels and bungalows behind their lawns
+  row: { allow: ["townhouse"], GAP: 1, fences: false, TREES: [1, 3] },      // townhouses wall to wall, three storeys each
+  duplexes: { allow: ["duplex"], count: 4, BW: [14, 20], REAL_BW: [14, 20] }, // two duplexes a side
+  oldtown: { allow: ["victorian", "cottage"], TREES: [5, 9] },              // old houses on an old street: Victorians and cottages
+  mill: { allow: ["bungalow"], road: "dirt", walk: "dirt", CARS: [0, 2] },  // a mill village: the company's bungalows, all alike
+  estate: { allow: ["mansion"], count: 2, BW: [18, 24], REAL_BW: [18, 24], GAP: 8, TREES: [8, 14], CARS: [1, 2] }, // two manor houses in their grounds
+  // a lake road: cabins among the trees (the cabin's layouts in turn)
+  lakeside: { road: "dirt", walk: "dirt", yard: "grass", GAP: 6, SIDE: 4, CARS: [0, 2], TREES: [10, 16], BINS: [0, 1], fences: false,
+    make: (k, r, n, o) => ({ ...BUILDINGS.cabin.make(r, { ...o, layout: LAKE_CABINS[k % LAKE_CABINS.length] }), key: "cabin" }) },
+  // a crossroads hamlet: farmhouses down a dirt road, a pole barn last
+  hamlet: { road: "dirt", walk: "dirt", yard: "field", GAP: 7, SIDE: 4, CARS: [0, 1], TREES: [3, 6], BINS: [0, 1], fences: false,
+    make: (k, r, n, o) => (k === n - 1 ? { ...BUILDINGS.barn.make(r, { ...o, layout: "pole" }), key: "barn" } : { ...BUILDINGS.farmhouse.make(r, { ...o, allow: ["farmhouse", "oldfarm", "foursquare", "tenant", "stonehouse"] }), key: "farmhouse" }),
+    name: (k, n, no) => (k === n - 1 ? "Barn" : no) },
 };
+const LAKE_CABINS = ["lake", "log", "porch", "tworoom", "loft"];
+// A trailer park's office: the office and the coin laundry, the maintenance store behind.
+function parkOffice(rng) {
+  return {
+    bw: rng.int(10, 11), bh: 8, front: { width: 1 }, ground: "town", openDoors: 0.3, storeys: 1, foot: "small",
+    program: Y(["*", { role: "reception", name: "Park office", entry: true }], [3, X(["*", { role: "laundry", name: "Coin laundry" }], [4, { role: "storage", name: "Maintenance", type: "garage" }])]),
+    exits: [{ side: "back", roles: ["storage", "laundry"], chance: 0.6, lock: 0.3 }],
+  };
+}
 // How many houses stand on a neighbourhood's street (option: the POI's place, poiraid.js poiPlace: id "poi<i>:neighbourhood").
 export function streetHouses(state, tileId, option) {
   const [lo, hi] = STREET.HOUSES;

@@ -26,8 +26,6 @@ import { GEAR, supValue } from "../src/sim/data.js";
 
 // The types another ticket owns until it lands (issue #32 "Ownership"): their plans come from their own tickets.
 export const PENDING_OWNER = {
-  // #32's own, on their way to 12 (3–5 named layouts each today)
-  motel: "#32", house: "#32", farmhouse: "#32", cabin: "#32", lodge: "#32", ranger: "#32", apartments: "#32", neighbourhood: "#32", barn: "#32", machineshed: "#32",
   school: "#23",
   barracks: "#25", armorybldg: "#25", motorpool: "#25", messhall: "#25", hangar: "#25", terminal: "#25", control: "#25", radio: "#25",
   hq: "#25", aidstation: "#25", gatehouse: "#25", tower: "#25", flightops: "#25", // #25 (closed): the integration pass
@@ -59,7 +57,7 @@ const tileId = Object.values(state.tiles).find((t) => t.terrain === "plains" && 
 
 const value = (def) => { let v = 0; for (const [k, [p, lo, hi]] of Object.entries(def.loot)) v += Math.min(0.95, p) * ((lo + hi) / 2) * supValue(k); for (const [k, p] of def.gear) v += p * ((GEAR[k] && GEAR[k].value) || 0); return v; };
 
-// ---------- the motel's five (the user's request: "add motel varients") ----------
+// ---------- the motel's first five as laid out (the user's request: "add motel varients"), every motel room ----------
 // Each motel layout as the issue lays it out: every room a bed, a TV stand, a chest of drawers and its bathroom (a
 // toilet); the motor court's outdoor stair, ice and vending nook, laundry, manager's flat and empty pool behind its
 // fence; the strip's one storey, neon sign and shed; the chain's breakfast area and rooms off a corridor on 2–3

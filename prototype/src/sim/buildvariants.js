@@ -1,6 +1,6 @@
 // @ts-check
 // Layout variants (the user's request 2026-10-25, issue #32 of the interiors epic #7: "add motel varients. every building
-// should have several varients"): the motel's five and the homes' and rural buildings' (the house, the farmhouse, the
+// should have several varients"): a dozen layouts each for the motel, the homes and the rural buildings (the house, the farmhouse, the
 // cabin, the lodge, the ranger station, the apartment block, the neighbourhood, the barn, the machine shed). The other
 // types' variants are their own tickets' (#33 restaurants, #34 the library, #35 shops and services, #36 civic and
 // medical, #37 industrial: industrylayout.js; tools/varianttest.js PENDING_OWNER lists them). A variant is a distinct
@@ -36,13 +36,20 @@ const V = (id, name, rural = 1, town = 1, city = 1) => ({ id, name, w: { rural, 
 // The first layout of each type is its plan as it stood before the variants (the classic), unless said otherwise.
 /** @type {Record<string, Layout[]>} */
 export const LAYOUTS = {
-  // ---------- motels (the user's request: five, each a distinct plan) ----------
+  // ---------- motels (the user's request: five, each a distinct plan; then a dozen a type) ----------
   motel: [
     V("court", "Motor court", 1, 2, 1),        // two storeys round the lot: the outdoor stair and walkway, the office and the manager's flat, ice and vending, a laundry, an empty pool behind a fence
     V("strip", "Roadside strip motel", 3, 1, 0.3), // one storey by the highway: rooms side by side, the office at one end under a neon sign, a gravel lot, a shed
     V("chain", "Chain motel", 0.5, 1.5, 2),    // 2–3 storeys: a lobby with a breakfast area, rooms off a central corridor, an inside stair
     V("cabins", "Motor lodge", 2.5, 0.8, 0),   // cottages round a drive (a small map of several buildings): the main lodge with the office and a diner, cabins with a kitchenette
     V("extended", "Extended-stay motel", 0.3, 1, 2), // 2–3 storeys: studios with kitchenettes, a guest laundry, a small gym
+    V("neon", "Neon motor inn", 2, 1, 0.3),     // 1950s: one storey, the office under its neon sign and a coffee shop with its grill
+    V("diner", "Motel and restaurant", 1.5, 1, 0.3), // the motor court's two storeys, a restaurant (its own door, its kitchen) at one end
+    V("poolside", "Poolside motel", 0.8, 1.5, 1), // two storeys round the pool: the ground floor's rooms open onto it, a fitness room
+    V("fishcamp", "Fishing-camp motel", 2, 0.3, 0), // the bait and tackle shop and office, a fish-cleaning room, a freezer room
+    V("cottages", "Tourist court", 2, 0.6, 0),  // a row of tiny cottages and the office round a gravel drive (several buildings)
+    V("weekly", "Weekly-rate motel", 0.6, 1, 1.5), // run down: two storeys of studios, a coin laundry, the maintenance shed
+    V("ski", "Ski motel", 1.2, 0.5, 0),          // two storeys off an inside corridor: the fireside lounge, the boot room, the ski store
   ],
   // ---------- homes ----------
   house: [
@@ -51,39 +58,97 @@ export const LAYOUTS = {
     V("colonial", "Colonial house", 0.6, 1.2, 1.2), // two storeys about a centre hall: the parlour one side, dining and kitchen the other
     V("mobile", "Mobile home", 2.5, 0.8, 0.2),  // a single-wide or a double-wide: rooms in a row, one storey
     V("duplex", "Duplex", 0.2, 1, 2),           // two homes sharing a wall: two front doors, a home each side
+    V("townhouse", "Townhouse", 0, 0.8, 2),     // narrow, three storeys: the living room and the kitchen, the bedrooms, a den
+    V("bungalow", "Bungalow", 0.8, 1.5, 0.8),   // one storey, no hall: a den at the front
+    V("victorian", "Victorian house", 0.4, 1, 1), // an entry hall between the parlour and the dining room, a pantry and a library
+    V("splitlevel", "Split-level", 0.3, 1.5, 0.5), // the rec room, the garage and the laundry below, the living floor up a stair
+    V("shotgun", "Shotgun house", 0.5, 0.8, 0.6), // one room wide, the rooms one behind the other
+    V("cottage", "Cottage", 1, 1, 0.4),          // the attic bedroom under the eaves
+    V("mansion", "Manor house", 0.4, 0.4, 0.3),  // a grand hall, a library, a home gym, four bedrooms
   ],
   farmhouse: [
     V("farmhouse", "Farmhouse"),
     V("oldfarm", "Old farmhouse", 1.2, 0.6, 0),  // a mudroom at the back door, a root cellar behind its own door
     V("ranchfarm", "Ranch farmhouse", 1, 0.8, 0), // one storey, long, a garage, a mudroom and laundry
     V("summer", "Farmhouse with a summer kitchen", 0.8, 0.4, 0), // a second kitchen across a breezeway, its own door
+    V("foursquare", "Foursquare farmhouse", 1, 0.8, 0), // square, four rooms a floor, the farm office among them
+    V("ihouse", "I-house", 0.8, 0.5, 0),          // one room deep about a centre hall, the cellar behind its own door
+    V("homestead", "Homestead", 0.8, 0.2, 0),     // one great room, the bedroom and the larder
+    V("dogtrot", "Dogtrot house", 0.6, 0.2, 0),   // two pens either side of an open breezeway
+    V("stonehouse", "Stone farmhouse", 0.6, 0.3, 0), // the front door into the farm kitchen, the dairy, the apple store
+    V("tenant", "Tenant house", 0.8, 0.4, 0),     // small: a wash house at the back
+    V("bigfarm", "Big farmhouse", 0.6, 0.4, 0),   // a sunroom, the farm office, the mudroom and laundry; four bedrooms
+    V("modern", "Modern farmhouse", 0.6, 0.6, 0), // one storey, open plan: the great room and the kitchen
   ],
   cabin: [
     V("tworoom", "Two-room cabin"),
     V("hunting", "Hunting cabin", 1.5),          // one room and a lean-to
     V("loft", "Cabin with a loft"),               // a sleeping loft up a ladder over the great room
     V("aframe", "A-frame"),                       // narrow and tall: the great room below, the bedroom loft a storey up
+    V("trapper", "Trapper's cabin", 1.2),         // the one room and the skinning room
+    V("lake", "Lake cabin"),                      // the boathouse at one end
+    V("log", "Log cabin"),                        // two storeys: a bedroom and a bunk room above
+    V("prospector", "Prospector's cabin", 1.2),   // the assay bench and the powder store
+    V("saddlebag", "Saddlebag cabin"),            // two pens, each its own front door
+    V("bunkhouse", "Bunkhouse cabin"),            // the cookroom and two bunk rooms
+    V("offgrid", "Off-grid cabin"),               // the battery room and the water tank room
+    V("porch", "Cabin with a sleeping porch"),    // the screened porch across the front
   ],
   lodge: [
     V("hunting", "Hunting lodge"),                // the great room and its trophy wall, bunks, the gun room
     V("fishing", "Fishing lodge"),                // bunk rooms, a mudroom and a boot room, the tackle room
     V("camp", "Camp lodge"),                      // a dining hall and its kitchen, a bunk wing; one storey
+    V("ski", "Ski lodge"),                        // the fireside lounge, the rental shop, the boot room, the cafeteria; bunks upstairs
+    V("guest", "Guest ranch lodge"),              // the front desk, the dining room, the tack room; guest rooms upstairs
+    V("duck", "Duck-hunting lodge"),              // the decoy room, the gun room, the boat shed
+    V("lake", "Lake lodge"),                      // the boathouse; bedrooms upstairs
+    V("scout", "Scout lodge"),                    // the meeting hall, the craft room, the camp store
+    V("retreat", "Retreat lodge"),                // two storeys of guest rooms off a corridor, the lounge, a reading room
+    V("trading", "Trading-post lodge"),           // the trading post's shelves, the storeroom
+    V("outfitter", "Outfitter's lodge"),          // the outfitter's office, the gun room, the gear room
+    V("logging", "Logging-camp lodge"),           // the cookhouse, the bunkhouse, the saw-filing room
   ],
   ranger: [
     V("field", "Ranger station"),                 // the field office (sometimes with its garage)
     V("visitor", "Visitor centre"),               // a lobby of exhibits, restrooms, the shop, the office
     V("lookout", "Lookout tower", 1.5),           // a small tower: stores below, the lookout's cab on top
+    V("fire", "Fire crew station"),               // the engine bay, the crew quarters, the fire cache
+    V("entrance", "Entrance station"),            // the fee booth
+    V("backcountry", "Backcountry patrol cabin"), // one room, a bunk room, the tool shed
+    V("hq", "Park headquarters"),                 // two storeys of offices off a corridor
+    V("research", "Field research station"),      // the field lab, the sample store
+    V("maintenance", "Park maintenance shop"),    // the equipment bay, the shop, the parts room
+    V("campground", "Campground office"),         // the camp store, the coin laundry, the showers
+    V("warden", "Game warden's station"),         // the gun locker, the seized-game store, a holding cell
+    V("radio", "Radio relay station"),            // the radio room, the generator shed
   ],
   apartments: [
     V("corridor", "Apartment block", 0.3, 1, 2),  // flats off a long corridor
     V("walkup", "Walk-up", 0.5, 1.5, 1.5),        // a central stair, four flats a floor, no corridor
     V("garden", "Garden apartments", 1, 1.5, 0.5), // several low buildings round a parking lot (a small map of several buildings)
     V("lofts", "Loft conversion", 0, 0.6, 1.5),    // an old mill: big open-plan lofts, a freight stair
+    V("tower", "Apartment tower", 0, 0.4, 2),     // 4–6 storeys of small flats, the mail room
+    V("shops", "Flats over shops", 0.3, 1.5, 1.5), // two shops below, two flats a floor over them
+    V("rooming", "Rooming house", 0.3, 1, 1),     // rooms to let, a shared kitchen and bathrooms
+    V("senior", "Senior apartments", 0.3, 1, 0.8), // the common room, the manager's office, the laundry
+    V("student", "Student housing", 0, 0.8, 1),   // suites, the study rooms, the bike store
+    V("projects", "Housing project", 0, 0.5, 1.5), // a long slab of 4–5 storeys, the boiler room
+    V("converted", "Converted house", 0.5, 1.2, 0.8), // one flat a floor up the old stair hall
+    V("condos", "Luxury condos", 0, 0.4, 1.2),    // a marble lobby, the concierge, a gym, the parking garage
   ],
   neighbourhood: [
     V("grid", "Street", 0.5, 1.5, 1.5),           // two rows of houses facing a straight road
     V("culdesac", "Cul-de-sac", 0.3, 1.5, 1),     // the road ends in a turning circle: one way out by road
     V("rural", "Country road", 2, 0.5, 0),        // a dirt road, fewer houses far apart, fields between
+    V("trailer", "Trailer park", 2, 0.8, 0.3),    // mobile homes on a gravel loop, the park office
+    V("suburb", "Suburban street", 0.3, 1.5, 0.8), // ranch houses, split-levels, bungalows
+    V("row", "Row houses", 0, 0.6, 1.5),          // townhouses wall to wall
+    V("duplexes", "Duplex street", 0.2, 1, 1),    // two duplexes a side
+    V("oldtown", "Old town street", 0.3, 1, 0.6), // Victorians and cottages
+    V("mill", "Mill village", 0.6, 0.6, 0),       // the company's bungalows, all alike, on a dirt road
+    V("estate", "Estate lane", 0.3, 0.4, 0.2),    // two manor houses in their grounds
+    V("lakeside", "Lake road", 1.2, 0.3, 0),      // cabins among the trees
+    V("hamlet", "Crossroads hamlet", 1.5, 0.2, 0), // farmhouses down a dirt road, a pole barn
   ],
   // ---------- farm and work buildings ----------
   barn: [
@@ -92,11 +157,27 @@ export const LAYOUTS = {
     V("pole", "Pole barn"),                       // one open span, a roller door each end
     V("dairy", "Dairy barn"),                     // stalls down an aisle, the milk room, the silo
     V("horse", "Horse barn"),                     // stalls down an aisle, the tack room, the arena
+    V("tobacco", "Tobacco barn"),                 // the curing floor, the stripping room, the packing room
+    V("hog", "Hog barn"),                         // pens either side of an aisle, the barn office
+    V("poultry", "Poultry house"),                // the long laying house, the egg room
+    V("sheep", "Sheep barn"),                     // the lambing pens, the shearing floor, the wool store
+    V("crib", "Corn crib and granary"),           // a drive bay through the middle
+    V("cattle", "Cattle barn"),                   // the loafing barn, the calving pen, the vet room
+    V("hay", "Hay barn"),                         // the hay mow over the open floor
   ],
   machineshed: [
     V("shed", "Machine shed"),
     V("pole", "Pole shed"),                       // open bays along the front, no rooms
     V("shop", "Equipment shed with a shop"),     // the bays, a farm shop, the fuel and chemical store
+    V("quonset", "Quonset hut"),                  // one deep bay under the arch
+    V("grain", "Grain dryer shed"),               // the dryer floor, its controls, the seed store
+    V("fuel", "Fuel shed"),                       // the fuel bay, the office, the oil and grease store
+    V("welding", "Welding shop"),                 // the shop floor, the steel rack, the gas bottles
+    V("tractor", "Tractor garage"),               // the garage, the shop, a washroom
+    V("chemical", "Chemical store"),              // the sprayer bay, the locked chemical store
+    V("pump", "Pump house"),                      // the pump room, the tank room
+    V("office", "Farm office shed"),              // the equipment bay, the office, the crew room
+    V("truck", "Truck shed"),                     // the truck bay, the parts room, dispatch
   ],
 };
 
