@@ -722,7 +722,8 @@ export function shopVariantSpec(key, rng, o = {}, withPlan = (l) => l, plan = {}
   const midD = v.lay === "deep" ? sz(v.midD ?? 3, rng) : 0;
   const sd = T.depthBack ? Math.max(4, ih - T.depthBack - (v.lay === "corridor" ? 3 : 0) - (midD ? midD + 1 : 0)) : Math.max(4, Math.round(ih * depth)); // a grocery's: all but its back strip (#22)
   let program;
-  const back = v.back ? band(v.back) : null;
+  const backParts = v.back ? P(v.back) : v.side ? P(v.side) : [[1, R(S)]]; // the back row's rooms (#23's stepped back stands behind one: buildingmaps.js shopShape)
+  const back = v.back ? Xs(backParts) : null;
   switch (v.lay || "strip") {
     case "strip": program = Ys([[sd, front], ["*", back]]); break;
     case "corridor": program = Ys([[sd, front], [2, { role: "corridor", name: "Service corridor", type: T.base.type || "store", maxBoxes: 1 }], ["*", back]]); break; // shoplayout.js servicehall
@@ -759,7 +760,7 @@ export function shopVariantSpec(key, rng, o = {}, withPlan = (l) => l, plan = {}
     bw, bh, program, exits, front: { width: v.fw || T.fw || (bw >= 14 ? 2 : 1) }, openDoors: T.openDoors ?? 0.3,
     ground: v.ground || T.ground || "town", pumps: v.pumps ?? T.pumps ?? 0,
     storeys: n, upper: up ? (g, r, ctx) => scaleBoxes(up(g, r, { ...ctx, type }), bk) : null, foot: footOf(bw, bh),
-    stairs: { roles: BACK_STAIRS }, layout: { id: v.id, name: v.name }, vname: v.name, vid: v.id,
+    stairs: { roles: BACK_STAIRS }, layout: { id: v.id, name: v.name }, vname: v.name, vid: v.id, backParts,
   };
 }
 
@@ -786,6 +787,7 @@ function superSpec(rng, v, o) {
   ];
   const back = Xs(leaves(flip ? backRooms.slice().reverse() : backRooms));
   const n = Array.isArray(v.st) ? (rng.chance(0.4) ? 2 : 1) : v.st || 1;
+  const two = n > 1;
   const mezz = () => Ys([["*", { role: "warefloor", name: "Mezzanine stockroom", maxBoxes: 12 }], [7, Xs(leaves([["*", { role: "office", name: "Offices" }], ["*", { role: "breakroom", name: "Training room" }], [8, { role: "storage", name: "Records", type: "office" }], [4, "restroom"]]))]]);
   const food = () => Ys([["*", { role: "dining", name: "Food hall", type: "store", lay: "cafe", maxBoxes: 6 }], [7, Xs(leaves([["*", { role: "warefloor", name: "Overstock", maxBoxes: 8 }], ["*", { role: "office", name: "Offices" }], [4, "restroom"]]))]]);
   const docks = Array.isArray(v.docks) ? rng.int(v.docks[0], v.docks[1]) : v.docks;
@@ -800,6 +802,7 @@ function superSpec(rng, v, o) {
     bw, bh, front: { width: 2 }, openDoors: 0.3, ground: v.ground || "lot", storeys: n, upper: n > 1 ? (v.up === "food" ? food : mezz) : null, foot: "huge", stairs: { roles: BACK_STAIRS },
     margins: { back: 8 }, dockTruck: true, pumps: v.pumps || 0,
     program: Ys([["*", main], [backD, back]]), exits, layout: { id: v.id, name: v.name }, vname: v.name, vid: v.id,
+    parts: { cafeSide, pharmSide, floor, back, flip, backD, two, mezz: v.up === "food" ? food : mezz }, // #23's shape (buildingmaps.js superShape)
   };
 }
 

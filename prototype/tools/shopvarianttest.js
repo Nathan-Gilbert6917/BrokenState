@@ -11,7 +11,7 @@
 //   - every variant keeps its kind's signature (the pharmacy's dispensary, the gun store's locked gun cage, the pawn
 //     shop's gun case, the bank's vault behind its vault door and its ATM, the gas station's and the truck stop's pumps,
 //     the truck stop's shop and diner, #22's corner store, grocery and supermarket rooms) and everything connected (every
-//     room and every container reached from the front, upstairs from the stairs);
+//     room and every container reached from the front, upstairs from the stairs), with #23's footprint shapes too;
 //   - the variant's name on the map (plan.variant) and in the raid's opening lines; an older save keeps the old plan;
 //   - loot per kind within ±10% per area (a 100 cells) of today's (dev's before the variants; BS_QUICK: 60 seeds, else 200).
 // Usage: node tools/shopvarianttest.js
@@ -164,7 +164,7 @@ section("Every variant keeps its kind's signature, everything connected");
   const err = (k, msg) => { (errs[k] = errs[k] || []).push(msg); };
   let built = 0, cages = 0, locked = 0;
   for (const k of KEYS) for (const v of variantsOf(k)) for (let s = 0; s < (QUICK ? 2 : 4); s++) {
-    const { m } = make(k, 900 + s * 7919 + v.id.length, { layout: v.id }), tag = `${k} ${v.id} ${s}`;
+    const { m } = make(k, 900 + s * 7919 + v.id.length, { layout: v.id, shapes: s % 2 === 1 }), tag = `${k} ${v.id} ${s}${s % 2 ? " shaped" : ""}`; // every other one with #23's footprint shapes (a new save's)
     built++;
     if (m.plan.variant !== v.name || m.plan.vid !== v.id) err("name", tag);
     if (SIGN[k] && !SIGN[k](m)) err("signature", tag);

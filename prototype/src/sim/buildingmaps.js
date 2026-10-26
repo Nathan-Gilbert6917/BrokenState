@@ -47,7 +47,7 @@ import { noiseAt, detectRange, isBehind, throwablesOf, THROWABLES } from "./stea
 import { FRANCHISES } from "./data-shops.js"; // a franchise's layout (plan): the floor, the front room's depth and name, the width, a flat above
 import { applyZType, siteList } from "./zombietypes.js";
 import { fitMargins, buildingTarget, densifyOutside, densify, coverTarget, buildingDeadScale, streetDeadScale, raidMaxDims, raidDims, SIZE_CLASSES, mapCap } from "./battlesize.js";
-import { legacyRaids, legacyRooms, legacyScale, legacyOffices } from "./worldcfg.js"; // an older save: a neighbourhood's street laid out as it always was; its buildings furnished as they were
+import { legacyRaids, legacyRooms, legacyScale, legacyOffices, legacyShapes } from "./worldcfg.js"; // an older save: a neighbourhood's street laid out as it always was; its buildings furnished as they were
 import { roomLayout, homeStyle, medicalStyle, LAYOUT } from "./roomlayout.js"; // homes furnished room by room (the placement helpers); hospitals, clinics and vets too (#14)
 import { commercialStyle, styleName as shopStyleName } from "./shoplayout.js";
 import { OFFICE_PLANS } from "./officeplans.js"; // the office buildings of every kind, the corporate tower (issue #27)
@@ -305,8 +305,10 @@ export const openStoreys = (height, bonus = 0) => (height <= OPEN_STOREYS ? heig
 function house(rng, v, o = {}) {
   const roomy = !o.legacy;
   const big = v === "farmhouse" || v === "lodge";
-  const bw = v === "cabin" ? rng.int(8, 10) : v === "lodge" ? rng.int(15, 18) : v === "farmhouse" ? rng.int(12, 15) : v === "ranger" ? rng.int(12, 14) : rng.int(11, 14);
-  const bh = v === "cabin" ? rng.int(7, 8) : v === "lodge" ? rng.int(11, 13) : v === "farmhouse" ? rng.int(10, 12) : rng.int(9, 11);
+  const shaped = roomy && !!o.shapes; // a new save's footprint shape (issue #23: houseShape)
+  let bw = v === "cabin" ? rng.int(8, 10) : v === "lodge" ? rng.int(15, 18) : v === "farmhouse" ? rng.int(12, 15) : v === "ranger" ? rng.int(12, 14) : rng.int(11, 14);
+  let bh = v === "cabin" ? rng.int(7, 8) : v === "lodge" ? rng.int(11, 13) : v === "farmhouse" ? rng.int(10, 12) : rng.int(9, 11);
+  if (shaped && o.cap) { bw = clampN(bw, 10, o.cap.w); bh = Math.min(bh, o.cap.h); } // a street's house (streetMap): its plot, before the shape is cut to it
   const ih = bh - 2;
   let front, back;
   if (v === "cabin") {
@@ -327,17 +329,20 @@ function house(rng, v, o = {}) {
   const plan = () => (hall ? { split: "y", parts: [["*", front], [1, { role: "hall" }], ["*", back]] } : { split: "y", parts: [["*", front], ["*", back]] });
   let program = plan();
   const exits = [];
+  let garage = null; // a shape's garage: an annex on its side (houseShape), not a strip of the box
   if (v === "house" && bw >= 12 && rng.chance(0.4)) {
     const left = rng.chance(0.5);
     if (roomy) { front = { role: "living", entry: true, type: "house" }; back = { role: "kitchen" }; program = plan(); } // the bedrooms upstairs
     const g = [4, { role: "hgarage" }];
-    program = { split: "x", parts: left ? [g, ["*", program]] : [["*", program], g] };
+    if (shaped) garage = { left, leaf: g[1] };
+    else program = { split: "x", parts: left ? [g, ["*", program]] : [["*", program], g] };
     exits.push({ side: "front", roles: ["hgarage"], chance: 1, roller: true, width: 2, lock: 0.2 });
   }
   if (v === "ranger" && rng.chance(0.5)) {
     const left = rng.chance(0.5), g = [4, { role: "hgarage", type: "garage" }];
     if (roomy) { front = { split: "x", parts: leaves([[0.55, { role: "office", name: "Ranger office", entry: true, hub: true }], ["*", "bunk"]]) }; back = { role: "kitchen" }; program = plan(); }
-    program = { split: "x", parts: left ? [g, ["*", program]] : [["*", program], g] };
+    if (shaped) garage = { left, leaf: g[1] };
+    else program = { split: "x", parts: left ? [g, ["*", program]] : [["*", program], g] };
     exits.push({ side: "front", roles: ["hgarage"], chance: 1, roller: true, width: 2, lock: 0.3 });
   }
   exits.push({ side: "back", roles: ["kitchen", "hall", "greatroom", "bunk", "storage", "pantry"], chance: v === "cabin" ? 0.45 : 0.85, lock: 0.15 });
@@ -349,12 +354,55 @@ function house(rng, v, o = {}) {
     : hall
       ? { split: "y", parts: [["*", { split: "x", parts: leaves([["*", "bedroom"], [2, "bath"]]) }], [1, { role: "hall", name: "Landing" }], ["*", { split: "x", parts: leaves([["*", "bedroom"], ["*", "bedroom"]]) }]] }
       : { split: "y", parts: [["*", { split: "x", parts: leaves([["*", "bedroom"], [2, "bath"]]) }], ["*", { split: "x", parts: leaves([["*", "bedroom"], [3, { role: "storage", name: "Box room", type: "house" }]]) }]] });
-  return {
+  const spec = {
     bw, bh, program, exits, front: { width: 1 }, openDoors: 0.4, extraDoors: 0.2,
     storeys: two ? 2 : 1, upper: two ? upper : null, foot: big ? "medium" : "small",
     stairs: { roles: ["hall", "living", "greatroom", "dining"], near: "front" }, // up from the hall (else the front room) by the front door
     ground: v === "farmhouse" ? "farm" : v === "cabin" || v === "lodge" || v === "ranger" ? "woods" : "town",
   };
+  return shaped ? houseShape(rng, v, spec, { garage, hall, o, upper }) : spec;
+}
+// A home's shape (a new save's, issue #23), by its own dice after the plan's: a garage the house rolled is an annex on
+// its side, flush with the front and as deep or a little shallower (one storey: open air above); else an L (a wing out
+// the back on the kitchen's side: a sun room, the laundry or a bedroom, one storey), a porch (a front corner notched:
+// the living room and the kitchen in the full-depth part, a bedroom behind the porch) or the plain box. A street's
+// house (o.cap: its plot) takes the shapes that fit the plot. A cabin stays a box.
+function houseShape(rng, v, spec, { garage, hall, o, upper }) {
+  const { bw, bh } = spec, cap = o.cap || null;
+  const two = spec.storeys > 1;
+  if (garage) {
+    const hg = bh - rng.int(0, 2), left = garage.left;
+    return { ...spec, ...shapeOf("annex", [
+      { x: left ? 5 : 0, y: 0, w: bw - 5, h: bh, name: "House", main: true, program: spec.program, upper },
+      { x: left ? 0 : bw - 6, y: bh - hg, w: 6, h: hg, storeys: 1, name: "Garage", program: { ...garage.leaf, nextTo: ["kitchen", "hall", "living"] } },
+    ]), program: null, upper: null };
+  }
+  if (v === "cabin") return spec;
+  const r = hash01(rng.state, "shape", v); // the shape's dice read, not consumed: a house that stays a box rolls on as it did
+  const kitchenLeft = v === "house" || v === "farmhouse"; // the plan's back row starts with the kitchen
+  if (r < 0.45 && !(cap && bh + 5 > cap.h)) {
+    const wh = rng.int(5, 6), ww = rng.int(5, 7);
+    const wing = v === "lodge" ? { role: "storage", name: "Mud room", type: "cabin" } : v === "ranger" ? { role: "storage", name: "Woodshed", type: "cabin" }
+      : rng.pick([{ role: "dayroom", name: "Sun room", type: "house" }, { role: "storage", name: "Laundry", type: "house" }, { role: "bedroom" }]);
+    const left = v === "lodge" ? rng.chance(0.5) : kitchenLeft;
+    return { ...spec, ...shapeOf("L", [
+      { x: 0, y: wh - 1, w: bw, h: bh, name: "House", main: true, program: spec.program, upper },
+      { x: left ? 0 : bw - ww, y: 0, w: ww, h: wh, storeys: 1, name: "Back wing", program: { ...wing, nextTo: ["kitchen", "hall", "greatroom"] } },
+    ]), program: null, upper: null };
+  }
+  if (r < 0.75 && bw >= 12 && (v === "house" || v === "farmhouse")) {
+    // The porch: a corner of the front 4 wide and 2 deep left out; the box's rooms close up in the rest.
+    const nx = 4, left = rng.chance(0.5), farm = v === "farmhouse";
+    const living = { role: "living", entry: true, type: farm ? "farmhouse" : "house" };
+    const back = { split: "x", parts: leaves([["*", "kitchen"], [2, "bath"]]) };
+    const program = hall ? { split: "y", parts: [["*", living], [1, { role: "hall" }], ["*", back]] } : { split: "y", parts: [["*", living], ["*", back]] };
+    const [full, short] = notchParts(bw, bh, nx, 2, "front", left);
+    return { ...spec, ...shapeOf("notch", [
+      { ...full, name: "House", main: true, program, upper },
+      { ...short, name: "Porch side", program: { role: "bedroom", type: farm ? "farmhouse" : "house", nextTo: ["living", "hall"] }, ...(two ? { upper: () => ({ role: "bedroom" }) } : {}) },
+    ]), program: null, upper: null };
+  }
+  return spec;
 }
 
 // Shops: a sales floor at the front, a back strip of stockroom, office and the rest; a back door, a side fire exit.
@@ -370,7 +418,10 @@ function shop(rng, v, o = {}) {
     const kind = v === "diner" && o.kind === "pizza" ? "pizza" : v;
     return eateryPlan(rng, eateryOf(kind, o.variant, hash01(rng.state, "eatery")), planOf(v, o));
   }
-  if (!o.legacy && hasVariants(v)) return shopVariantSpec(v, rng, o, withPlan, planOf(v === "gasstation" ? "gas" : v, o)); // issue #35: the type's 12 named plans (shopvariants.js)
+  if (!o.legacy && hasVariants(v)) { // issue #35: the type's 12 named plans (shopvariants.js), #23's shape on a new save's
+    const sp = shopVariantSpec(v, rng, o, withPlan, planOf(v === "gasstation" ? "gas" : v, o));
+    return o.shapes ? shopShape(rng, sp, sp.backParts, null) : sp;
+  }
   const gas = v === "gasstation", truck = v === "truckstop";
   const plan = planOf(v === "gasstation" ? "gas" : v, o); // data-shops.js: the franchise's layout
   const tier = !o.legacy && (v === "corner" || v === "grocery") ? v : null; // issue #22: the corner store and the grocery by size
@@ -476,9 +527,12 @@ function shop(rng, v, o = {}) {
   if (!o.legacy) back = shopBack(v, back, plan, o);
   let program = { split: "y", parts: [[sd, withPlan(sales, plan)], ["*", { split: "x", parts: leaves(back) }]] };
   const exits = [];
+  const shaped = !o.legacy && !!o.shapes;
+  let bay = null; // a new save's service bay: an annex beside the shop (issue #23)
   if (gas || truck) {
-    const g = [rng.int(4, 5), { role: "bays", name: "Service bay", maxBoxes: 3 }];
-    program = { split: "x", parts: rng.chance(0.5) ? [["*", program], g] : [g, ["*", program]] };
+    const g = [rng.int(4, 5), { role: "bays", name: "Service bay", maxBoxes: 3 }], right = rng.chance(0.5);
+    if (shaped) bay = { right, w: g[0] + 2, leaf: { ...g[1], nextTo: ["sales", "stock"] } };
+    else program = { split: "x", parts: right ? [["*", program], g] : [g, ["*", program]] };
     exits.push({ side: "front", roles: ["bays"], chance: 1, roller: true, width: 2, lock: 0.2 });
   }
   exits.push({ side: "back", roles: ["stock", "kitchen", "pantry", "office", "bays"], chance: 0.9, lock: 0.3 });
@@ -487,11 +541,37 @@ function shop(rng, v, o = {}) {
   const flat = (v === "corner" && rng.chance(0.5)) || (!!plan.flat && rng.chance(plan.flat)); // a franchise's flat above (plan.flat: a pub, a bookshop)
   const F = (r) => ({ role: r, flat: true }); // the flat's rooms take the home styles (roomlayout.js)
   const upper = () => ({ split: "y", parts: [["*", { split: "x", parts: leaves([["*", { role: "living", name: "Flat: living room", flat: true }], ["*", { role: "kitchen", name: "Flat: kitchen", flat: true }]]) }], [1, { role: "hall", name: "Landing", flat: true }], ["*", { split: "x", parts: leaves(tier === "corner" ? [["*", F("bedroom")], [2, F("bath")]] : [["*", F("bedroom")], [2, F("bath")], ["*", F("bedroom")]]) }]] }); // a corner store's narrow flat: one bedroom (issue #22)
-  return {
+  const spec = {
     bw, bh, program, exits, front: { width: tier === "corner" ? 1 : 2 }, openDoors: 0.3, ground: v === "feedstore" ? "rural" : truck || gas ? "lot" : "town", pumps: gas || truck ? (truck ? 3 : 2) : 0,
     storeys: flat ? 2 : 1, upper: flat ? upper : null, foot: gas || tier === "corner" ? "small" : tier === "grocery" ? "large" : "medium",
     stairs: { roles: BACK_STAIRS }, // the flat's stair from the back room
   };
+  return shaped ? shopShape(rng, spec, back, bay) : spec;
+}
+// A shop's shape (a new save's, issue #23): a gas station's or a truck stop's service bay an annex beside it, flush
+// with the front, as deep or a little shallower (one storey); else, most of the time, a stepped back: a back store of
+// one storey stuck on behind one side (its door from the back rooms; a store of the shop's own stock, a container or
+// two), so the rear wall of a row of shops runs at different depths. The plan's rooms are as before.
+function shopShape(rng, spec, back, bay) {
+  const { bw, bh } = spec;
+  if (bay) {
+    const hg = bh - rng.int(0, 2);
+    return { ...spec, ...shapeOf("annex", [
+      { x: bay.right ? 0 : bay.w - 1, y: 0, w: bw - bay.w + 1, h: bh, name: "Shop", main: true, program: spec.program, upper: spec.upper }, // the box as wide as it was with the bay inside it
+      { x: bay.right ? bw - bay.w : 0, y: bh - hg, w: bay.w, h: hg, storeys: 1, name: "Service bay", program: bay.leaf },
+    ]), program: null, upper: null };
+  }
+  if (hash01(rng.state, "shape", "shop") >= 0.65) return spec; // read, not consumed: a shop that stays a box rolls on as it did
+  const leaf = (r) => (typeof r === "string" ? { role: r } : r);
+  const right = rng.chance(0.5), list = back.map(([, r]) => leaf(r)); // the back row, left to right
+  const by = right ? list[list.length - 1] : list[0]; // the back room the store stands behind
+  const stock = list.find((l) => ["stock", "storage", "pantry", "warefloor", "parts"].includes(l.role));
+  const type = (stock && (stock.type || (ROLES[stock.role] && ROLES[stock.role].type))) || "store";
+  const aw = rng.int(5, Math.min(8, bw - 4)), ah = rng.int(4, 6);
+  return { ...spec, ...shapeOf("stepped", [
+    { x: 0, y: ah - 1, w: bw, h: bh, name: "Shop", main: true, program: spec.program, upper: spec.upper },
+    { x: right ? bw - aw : 0, y: 0, w: aw, h: ah, storeys: 1, name: "Back store", program: { role: "storage", name: "Back store", type, maxBoxes: 1, windows: false, nextTo: [by.role, "stock", "kitchen", "office"] } },
+  ]), program: null, upper: null };
 }
 
 // A shop's back rooms laid out for their kind (shoplayout.js, issue #16; a new save's plan only: o.legacy keeps the
@@ -517,7 +597,7 @@ function shopBack(v, back, plan, o) {
 
 // Big stores: a wide sales floor of aisles, the deli or a sports section, a back room with racks and a loading dock.
 function bigstore(rng, v, o = {}) {
-  if (v === "supermarket" && !o.legacy) return shopVariantSpec("supermarket", rng, o); // issue #22: really big; issue #35: its 12 plans (shopvariants.js; an older save's and every department store's as below)
+  if (v === "supermarket" && !o.legacy) { const sp = shopVariantSpec("supermarket", rng, o); return o.shapes ? superShape(rng, sp) : sp; } // issue #22: really big; issue #35: its 12 plans (shopvariants.js), #23's shape on a new save (an older save's and every department store's as below)
   const bw = rng.int(26, 30), bh = rng.int(18, 21);
   const dept = v === "dept";
   const salesFloor = dept
@@ -555,7 +635,7 @@ function bigstore(rng, v, o = {}) {
 //     walk-in cooler and the walk-in freezer behind steel doors, the compactor and baler, the cash office and the
 //     manager's office (their safes), the break room and the staff restroom, a staff door.
 //   Upstairs (40%): the mezzanine over it all, an overstock floor with the offices along its back.
-function supermarket(rng) {
+function supermarket(rng, o = {}) {
   const bw = rng.int(54, 58), bh = rng.int(36, 40), backD = rng.int(11, 13), flip = rng.chance(0.5);
   const cafeSide = { split: "y", parts: leaves([[7, { role: "dining", name: "Café", type: "store", lay: "cafe", hub: false, maxBoxes: 3 }], [5, { split: "x", parts: leaves([["*", { role: "restroom", name: "Men's restroom" }], ["*", { role: "restroom", name: "Women's restroom" }]]) }], ["*", { role: "kitchen", name: "Bakery", type: "kitchen", lay: "bakery", maxBoxes: 4 }]]) };
   const pharmSide = { split: "y", parts: leaves([[8, { role: "dispensary", name: "Pharmacy", type: "pharmacy", lay: "dispensary", lock: ["door", 0.3], boxLock: ["drugs", 0.4], maxBoxes: 3 }], ["*", { role: "kitchen", name: "Deli and butcher", type: "kitchen", lay: "butcher", maxBoxes: 4 }]]) };
@@ -571,8 +651,9 @@ function supermarket(rng) {
   ];
   const back = { split: "x", parts: leaves(flip ? backRooms.slice().reverse() : backRooms) };
   const two = rng.chance(0.4);
-  const upper = () => ({ split: "y", parts: [["*", { role: "warefloor", name: "Mezzanine stockroom", maxBoxes: 12 }], [7, { split: "x", parts: leaves([["*", { role: "office", name: "Offices" }], ["*", { role: "breakroom", name: "Training room" }], [8, { role: "storage", name: "Records", type: "office" }], [4, "restroom"]]) }]] });
-  return {
+  const mezz = () => ({ split: "y", parts: [["*", { role: "warefloor", name: "Mezzanine stockroom", maxBoxes: 12 }], [7, { split: "x", parts: leaves([["*", { role: "office", name: "Offices" }], ["*", { role: "breakroom", name: "Training room" }], [8, { role: "storage", name: "Records", type: "office" }], [4, "restroom"]]) }]] });
+  const upper = mezz;
+  const spec = {
     bw, bh, front: { width: 2 }, openDoors: 0.3, ground: "lot", storeys: two ? 2 : 1, upper: two ? upper : null, foot: "huge", stairs: { roles: BACK_STAIRS }, // up to the mezzanine from the back of house
     margins: { back: 8 }, dockTruck: true, // the lot behind: room for the box truck at a dock door (assemble)
     program: { split: "y", parts: [["*", main], [backD, back]] },
@@ -585,6 +666,34 @@ function supermarket(rng) {
       { side: sideRoom(rng), roles: ["sales", "dining", "kitchen"], chance: 0.8, lock: 0.4, name: "Fire exit" },
     ],
   };
+  if (!o.shapes) return spec;
+  // A new save's (issue #23): the receiving dock an annex out the back behind the warehouse (one tall storey, its roller
+  // doors the docks' too), and the entrance's corner notched: the café, the restrooms and the bakery's side 3 cells
+  // short of the front, the sales floor's front stepping out past it. The rooms are the plan's.
+  const ny = 3, sw = 9, fh = bh - backD - 1, cafeLeft = !flip; // the café's column (8 and its wall) on the left unless flipped
+  const front = { split: "x", parts: flip ? [[8, pharmSide], ["*", floor]] : [["*", floor], [8, pharmSide]] };
+  const aw = rng.int(14, 18), ah = rng.int(6, 8), dockX = flip ? bw - aw - rng.int(2, 4) : rng.int(2, 4); // the warehouse's end
+  return { ...spec, ...shapeOf("notch", [
+    { x: 0, y: ah - 1, w: bw, h: backD + 2, name: "Back of house", program: back, upper: two ? () => mezz().parts[1][1] : null, storeys: two ? 2 : 1 },
+    { x: cafeLeft ? sw : 0, y: ah - 1 + backD + 1, w: bw - sw, h: fh, name: "Store", main: true, program: front, upper: two ? () => mezz().parts[0][1] : null, storeys: two ? 2 : 1 },
+    { x: cafeLeft ? 0 : bw - sw - 1, y: ah - 1 + backD + 1, w: sw + 1, h: fh - ny, storeys: 1, name: "Café side", program: cafeSide },
+    { x: dockX, y: 0, w: aw, h: ah, storeys: 1, tall: true, name: "Receiving dock", program: { role: "warefloor", name: "Receiving dock", type: "store", lay: "warehouse", hub: true, maxBoxes: 6, nextTo: ["warefloor"] } },
+  ]), program: null, upper: null };
+}
+
+// A supermarket variant's shape (issue #35's plans, shopvariants.js superSpec; a new save's, #23's as supermarket's
+// above): the receiving dock an annex out the back behind the warehouse, the café's side notched back from the front.
+function superShape(rng, sp) {
+  const { bw, bh } = sp, { cafeSide, pharmSide, floor, back, flip, backD, two, mezz } = sp.parts;
+  const ny = 3, sw = 9, fh = bh - backD - 1, cafeLeft = !flip;
+  const front = { split: "x", parts: flip ? [[8, pharmSide], ["*", floor]] : [["*", floor], [8, pharmSide]] };
+  const aw = rng.int(14, 18), ah = rng.int(6, 8), dockX = flip ? bw - aw - rng.int(2, 4) : rng.int(2, 4);
+  return { ...sp, parts: undefined, ...shapeOf("notch", [
+    { x: 0, y: ah - 1, w: bw, h: backD + 2, name: "Back of house", program: back, upper: two ? () => mezz().parts[1][1] : null, storeys: two ? 2 : 1 },
+    { x: cafeLeft ? sw : 0, y: ah - 1 + backD + 1, w: bw - sw, h: fh, name: "Store", main: true, program: front, upper: two ? () => mezz().parts[0][1] : null, storeys: two ? 2 : 1 },
+    { x: cafeLeft ? 0 : bw - sw - 1, y: ah - 1 + backD + 1, w: sw + 1, h: fh - ny, storeys: 1, name: "Café side", program: cafeSide },
+    { x: dockX, y: 0, w: aw, h: ah, storeys: 1, tall: true, name: "Receiving dock", program: { role: "warefloor", name: "Receiving dock", type: "store", lay: "warehouse", hub: true, maxBoxes: 6, nextTo: ["warefloor"] } },
+  ]), program: null, upper: null };
 }
 
 // Corridor buildings: a band of rooms at the front (with the lobby), a corridor along the building, a band behind it.
@@ -619,6 +728,7 @@ function institution(rng, v, o = {}) {
       if (!o.legacy && !o._classic) return variantSpec("hospital", rng, o, { classic: () => institution(rng, v, { ...o, _classic: true }) }); // civicvariants.js (issue #36)
       const bw = rng.int(26, 30), bh = rng.int(17, 19);
       const n = rng.int(3, 5); // reception and the pharmacy low, wards above
+      if (!o.legacy && o.shapes) return hospitalShaped(rng, bw, bh, n, fire); // a tower, an ER annex and a lower wing (issue #23)
       if (!o.legacy) return hospital(rng, bw, bh, n, fire); // room by room since #14 (an older save: the plan below, as it was)
       return {
         ...S(bw, bh), front: { width: 2 }, ground: "city", storeys: n, foot: "large", stairs: ENDS,
@@ -631,7 +741,7 @@ function institution(rng, v, o = {}) {
       };
     }
     case "police": {
-      if (!o.legacy) return variantSpec("police", rng, o, { classic: () => policeStation(rng) }); // laid out for its kind (civiclayout.js), one of a dozen plans (civicvariants.js, issue #36); an older save as below
+      if (!o.legacy) return variantSpec("police", rng, o, { classic: () => (o.shapes ? policeShaped(rng) : policeStation(rng)) }); // laid out for its kind (civiclayout.js), one of a dozen plans (civicvariants.js, issue #36); its classic plan an L with the sally port in a new save (issue #23); an older save as below
       const bw = rng.int(23, 26), bh = rng.int(14, 16);
       const main = corridorPlan([["*", { role: "office", name: "Detectives' office", boxLock: ["evidence", 0.25] }], [rng.int(5, 6), L({ name: "Front desk", type: "office" })], [4, { role: "lockerroom", type: "barracks" }], ["*", { role: "office", name: "Chief's office", gunSafe: ["gunsafe2", 0.3] }]], // locks.js: a gun safe, not a plain safe
         [[4, { role: "armory", lock: ["vault", 0.85], boxLock: ["cage", 0.5], gunSafe: ["gunsafe3", 0.3] }], [4, { role: "evidence", lock: ["door", 0.7], boxLock: ["evidence", 0.6] }], ["*", "cells"]], 5);
@@ -646,6 +756,7 @@ function institution(rng, v, o = {}) {
       };
     }
     case "school": {
+      if (!o.legacy && o.shapes) return schoolShaped(rng); // much larger and shaped (issue #23)
       if (!o.legacy) return schoolPlan(rng);
       const bw = rng.int(26, 30), bh = rng.int(16, 18);
       const n = rng.int(2, 3); // classrooms above
@@ -679,7 +790,7 @@ function institution(rng, v, o = {}) {
       // The stairwell: a room of its own beside the lobby, at the same place on every floor (the front band's fixed
       // widths are the same on every floor, so its flexible rooms are too).
       const SW = [2, { role: "stairwell" }], lw = rng.int(5, 6);
-      return {
+      const tower = {
         bw, bh, front: { width: 2 }, ground: "city", storeys: n, foot: "tower", stairs: { roles: ["stairwell"], n: 1, len: 3 },
         program: small
           ? corridorPlan([["*", L({ name: "Lobby" })], SW, ["*", { role: "sales", name: "Shop", type: "store", hub: false, maxBoxes: 3 }]], [["*", "office"], [4, records]], fd)
@@ -689,6 +800,11 @@ function institution(rng, v, o = {}) {
           : corridorPlan(small ? [["*", "office"], SW, ["*", "office"]] : [["*", "office"], SW, [lw, "office"], ["*", "office"]], small ? [["*", "office"], [3, { role: "storage", type: "office" }]] : [["*", "office"], [4, "breakroom"], [4, { role: "storage", name: "Records", type: "office" }], ["*", "office"]], fd)),
         exits: [{ side: "back", roles: ["breakroom", "storage", "office"], chance: 0.7, lock: 0.3 }, ...fire(0.4)],
       };
+      // A new save's (issue #23), half of them: a lower wing of offices on one side, its back stepped (an L).
+      if (o.legacy || !o.shapes || hash01(rng.state, "shape", "offices") >= 0.5) return tower; // read, not consumed: a tower that stays a box rolls on as it did
+      const wh = wingDepth(rng, fd, bh), wn = rng.int(1, Math.min(3, n - 1));
+      const wingPlan = (g) => corridorPlan([["*", { role: "office", name: g ? "Office" : "Meeting room" }]], [["*", "office"], [2, "restroom"]], fd);
+      return withSideWing(rng, tower, { w: rng.int(9, 12), h: wh, storeys: wn, name: "Low wing", mainName: "Tower", program: wingPlan(0), upper: (g) => wingPlan(g) });
     }
     case "lab": {
       const bw = rng.int(18, 22), bh = rng.int(12, 14);
@@ -771,7 +887,7 @@ function institution(rng, v, o = {}) {
     }
     default: // firestation
     {
-      if (!o.legacy) return variantSpec("firestation", rng, o, { classic: () => fireStation(rng) }); // one of a dozen plans (civicvariants.js, issue #36)
+      if (!o.legacy) return variantSpec("firestation", rng, o, { classic: () => (o.shapes ? fireShaped(rng) : fireStation(rng)) }); // one of a dozen plans (civicvariants.js, issue #36); the classic one's engine bay an offset annex in a new save (issue #23)
       const bw = rng.int(18, 22), bh = rng.int(12, 14);
       const living = { split: "y", parts: [["*", { role: "dayroom", entry: true }], ["*", { split: "x", parts: leaves([["*", { role: "dorm", type: "barracks" }], [4, { role: "storage", name: "Medical store", type: "nurse", lock: ["door", 0.3] }], [4, "kitchen"]]) }]] };
       const bays = [0.48, { role: "bays", name: "Engine bay", type: "motorpool", maxBoxes: 5 }];
@@ -853,7 +969,7 @@ function openfloor(rng, v, o = {}) { // o.legacy: an older save (its hangar, mot
 }
 
 function church(rng, o = {}) {
-  if (!o.legacy) return variantSpec("church", rng, o, { classic: () => churchPlan(rng) }); // one of a dozen plans (civicvariants.js, issue #36)
+  if (!o.legacy) return variantSpec("church", rng, o, { classic: () => (o.shapes ? churchShaped(rng) : churchPlan(rng)) }); // one of a dozen plans (civicvariants.js, issue #36); the classic one a nave with a side chapel or a transept and a bell tower in a new save (issue #23)
   const bw = rng.int(13, 16), bh = rng.int(16, 19);
   return {
     bw, bh, front: { width: 2 }, ground: "town", storeys: 1, foot: "medium",
@@ -917,6 +1033,229 @@ function schoolPlan(rng) {
     upper: (f, r) => corridorPlan([["*", C()], ["*", C()], [5, { role: "breakroom", name: "Staff room", type: "office", civic: "staffroom" }]],
       [["*", C()], [5, { role: "workshop", name: r.chance(0.5) ? "Shop class" : "Art room", type: "office", maxBoxes: 2, civic: "shopclass" }], [6, { role: "storage", name: "Library", type: "office", maxBoxes: 4, civic: "library" }]], 5, 2, hall),
     exits: [{ side: "back", roles: ["gym", "cafeteria"], chance: 0.8, lock: 0.3 }, { side: "left", roles: ["corridor"], chance: 0.9, lock: 0.3 }, { side: "right", roles: ["corridor"], chance: 0.9, lock: 0.3 }],
+  };
+}
+// ---------- footprint shapes (issue #23: "Schools should be larger and make buildings not just squares and asymetrical
+// like many buildings are irl.", the user's request 2026-10-25) ----------
+// A shape is a union of rectangles (assemble: spec.shape = { kind, parts }): a main block with wings and annexes, and
+// notches cut out of corners. Each part is { x, y, w, h } in the bounding box (x from its left, y from its back: the
+// front is the box's last row), walls included, where two parts meet they share one wall line (the doors through it
+// come from assemble's union of the rooms, so every part is reached), and has its own plan (program; upper(g, rng,
+// ctx) for its floors up), storeys (fewer than the building's: a lower roof, open air above) and name. Asymmetry is
+// the rule: wings of different lengths and depths, an entrance off the middle, an annex on one side only. The kinds
+// (shape.kind): L (a main block and a wing), T and U (two or three wings: round a courtyard or a yard), annex (a garage,
+// a gym, an engine bay stuck on one side), notch (a porch, a recessed entrance: a corner cut out), stepped (a back of
+// different depths), cross (a nave and its transept). Only a new save's buildings have them (o.shapes: worldcfg.js
+// legacyShapes; an older save's keep the rectangle its dice always gave).
+/** The spec of a shape: its bounding box from its parts (moved so the box starts at 0, 0). @param {string} kind @param {any[]} parts */
+function shapeOf(kind, parts) {
+  const x0 = Math.min(...parts.map((p) => p.x)), y0 = Math.min(...parts.map((p) => p.y));
+  for (const p of parts) { p.x -= x0; p.y -= y0; }
+  return { bw: Math.max(...parts.map((p) => p.x + p.w)), bh: Math.max(...parts.map((p) => p.y + p.h)), shape: { kind, parts } };
+}
+// Two parts in a row (a notched corner, an L, a stepped back): the box W × H with a corner of nx × ny cut out at the
+// front or the back (end "front" | "back"), on the left or the right. a: the full-depth part's plan, b: the other's.
+// Returns [full, short] parts (their rects; the caller adds program and the rest).
+function notchParts(W, H, nx, ny, end, left) {
+  const fullW = W - nx, short = { y: end === "front" ? 0 : ny, w: nx + 1, h: H - ny };
+  return left ? [{ x: nx, y: 0, w: fullW, h: H }, { x: 0, ...short }] : [{ x: 0, y: 0, w: fullW, h: H }, { x: fullW - 1, ...short }];
+}
+
+// A rectangle's spec with a wing on one side (left or right by the dice), flush with its front, its back short of the
+// main block's or past it (a stepped back: an L) and fewer storeys (a lower roof); a corridor plan with the main
+// block's front band depth keeps the two corridors in line through the shared wall.
+function withSideWing(rng, spec, wing) {
+  const left = rng.chance(0.5), { bw, bh } = spec, dy = Math.max(0, wing.h - bh);
+  return { ...spec, ...shapeOf("L", [
+    { x: left ? wing.w - 1 : 0, y: dy, w: bw, h: bh, name: wing.mainName || "Main block", main: true, program: spec.program, upper: spec.upper },
+    { x: left ? 0 : bw - 1, y: dy + bh - wing.h, w: wing.w, h: wing.h, storeys: wing.storeys, name: wing.name, wing: true, program: wing.program, upper: wing.upper },
+  ]), program: null, upper: null };
+}
+// A wing's depth for withSideWing: a corridor plan's least (its front band fd, the corridor, two cells behind) up to
+// a few past the main block's, never the main block's own.
+const wingDepth = (rng, fd, bh) => { const lo = fd + 7, d = rng.int(lo, bh + 4); return d === bh ? (d + 1 <= bh + 4 ? d + 1 : d - 1 >= lo ? d - 1 : d) : d; };
+
+// A school (a new save's since issue #23): much larger than #15's one block and shaped, 2–3 times its floor area. A
+// main block along the front (the lobby off the middle, the principal's office, the front office, the nurse, the
+// library and classrooms, a corridor of lockers behind them, one storey more than its wings at times), two wings back
+// from it round a yard (U: one at each end; F: the second off the middle; E: a spine off the middle and a wing at an
+// end), a classroom wing (a corridor of lockers between two rows of classrooms, on one or two storeys: 6–12 of them)
+// and a science and art wing (labs, the art room, the shop class, the music room), the gym an annex at the far end of
+// a wing (one tall storey: bleachers, two locker rooms), the cafeteria and its kitchen (a walk-in behind its cold room
+// door) at the end of the other. #15's room styles (civiclayout.js CIVIC_STYLES) furnish every room.
+function schoolShaped(rng) {
+  const n = rng.int(2, 3);
+  const C = (o = {}) => ({ role: "classroom", civic: "classroom", ...o });
+  const hall = { type: "schoolhall", civic: "schoolhall", boxTarget: 10 };
+  const corridor = (o = {}) => ({ role: "corridor", ...hall, ...o });
+  const fd = rng.int(7, 8), mainH = fd + 5; // the main block: its front band of rooms, a 2-wide corridor behind
+  const W = rng.int(52, 64);
+  // The main block's front band: the lobby off the middle (its door the front entrance), the offices round it, the
+  // library and classrooms out to the ends; upstairs classrooms, the staff room and a shop class or an art room.
+  const lw = rng.int(6, 7), atLeft = rng.chance(0.5);
+  const office = [[4, { role: "office", name: "Principal's office", lock: ["door", 0.3], boxLock: ["safe", 0.2], civic: "principal" }], [5, { role: "office", name: "Front office", civic: "staffroom", type: "office" }], [lw, { role: "lobby", entry: true, name: "Lobby", type: "office", civic: "slobby" }], [4, { role: "nurse", civic: "nurse" }]];
+  const lib = [rng.int(8, 10), { role: "storage", name: "Library", type: "office", maxBoxes: 5, civic: "library" }];
+  const band = atLeft ? [["*", C()], ...office, lib, ["*", C()], ["*", C()]] : [["*", C()], ["*", C()], lib, ...office, ["*", C()]];
+  const mainProgram = { split: "y", parts: [[fd, { split: "x", parts: leaves(band) }], [2, corridor()]] };
+  const mainUpper = (g, r) => ({ split: "y", parts: [[fd, { split: "x", parts: leaves([["*", C()], ["*", C()], [5, { role: "breakroom", name: "Staff room", type: "office", civic: "staffroom" }], ["*", C()], [6, { role: "workshop", name: r.chance(0.5) ? "Shop class" : "Art room", type: "office", maxBoxes: 2, civic: "shopclass" }], ["*", C()]]) }], [2, corridor()]] });
+  // A wing back from the main block: a corridor down its middle (joining the main corridor through the shared wall),
+  // a row of rooms each side, rooms(g) the rows' leaves on floor g.
+  const wingPlan = (rows) => ({ split: "x", parts: [["*", { split: "y", parts: leaves(rows[0]) }], [2, corridor({ name: "Wing corridor" })], ["*", { split: "y", parts: leaves(rows[1]) }]] });
+  const k = (len) => clampN(Math.floor((len - 1) / 7), 2, 4); // classrooms a row
+  const rowOf = (len, leaf) => Array.from({ length: k(len) }, () => ["*", leaf()]);
+  const gw = rng.int(20, 25), gh = rng.int(12, 14);
+  const classLen = rng.int(19, Math.min(25, 48 - mainH - gh)), sciLen = rng.int(14, 19); // the box at most 46 deep: the main block, the wing and the gym
+  const classN = Math.min(n, rng.chance(0.65) ? 2 : 1), sciN = Math.min(n, rng.chance(0.4) ? 2 : 1);
+  const classWing = {
+    w: 20, len: classLen, storeys: classN, name: "Classroom wing", wing: true,
+    program: wingPlan([rowOf(classLen, C), rowOf(classLen, C)]),
+    upper: () => wingPlan([rowOf(classLen, C), rowOf(classLen, C)]),
+  };
+  const sci = (o) => () => C(o);
+  const sciRows = (g) => (g ? [rowOf(sciLen, C), rowOf(sciLen, sci({ name: "Music room" }))] : [rowOf(sciLen, sci({ name: "Science lab", type: "lab", civic: "sciencelab" })), [["*", { role: "workshop", name: "Art room", type: "office", maxBoxes: 2, civic: "shopclass" }], ...rowOf(sciLen, sci({ name: "Science lab", type: "lab", civic: "sciencelab" })).slice(1)]]);
+  const sciWing = { w: 18, len: sciLen, storeys: sciN, name: "Science and art wing", wing: true, program: wingPlan(sciRows(0)), upper: (g) => wingPlan(sciRows(g)) };
+  // The annexes at a wing's far end: the gym (one tall storey) and the cafeteria with its kitchen.
+  const lockersLeft = rng.chance(0.5);
+  const lockers = [5, { split: "y", parts: leaves([["*", { role: "lockerroom", name: "Boys' locker room", civic: "plockers" }], ["*", { role: "lockerroom", name: "Girls' locker room", civic: "plockers" }]]) }];
+  const gym = { w: gw, h: gh, storeys: 1, tall: true, name: "Gym", gym: true, program: { split: "x", parts: lockersLeft ? [lockers, ["*", { role: "gym", civic: "gym" }]] : [["*", { role: "gym", civic: "gym" }], lockers] } };
+  const cw = rng.int(16, 19), ch = rng.int(10, 12);
+  const kitchen = [5, { split: "y", parts: leaves([["*", { role: "kitchen", name: "School kitchen", maxBoxes: 1, civic: "skitchen" }], [2, { role: "pantry", name: "Walk-in", type: "kitchen", dk: "coldroom", civic: "walkin" }]]) }];
+  const caf = { w: cw, h: ch, storeys: 1, name: "Cafeteria", wing: true, program: { split: "x", parts: rng.chance(0.5) ? [kitchen, ["*", { role: "cafeteria", civic: "cafeteria" }]] : [["*", { role: "cafeteria", civic: "cafeteria" }], kitchen] } };
+  // Where the wings stand on the main block's back wall (x of each wing's left wall), and which annex each carries.
+  const roomE = W >= cw + 20 + 18 + 7; // a spine and two end wings need the width
+  const kind = rng.weighted(roomE ? ["U", "F", "E"] : ["U", "F"], (q) => (q === "U" ? 2 : 1));
+  const flip = rng.chance(0.5); // the classroom wing on the left or the right
+  let wings;
+  if (kind === "U") wings = [{ ...classWing, x: 0, annex: gym }, { ...sciWing, x: W - sciWing.w, annex: caf }];
+  else if (kind === "F") wings = [{ ...classWing, x: 0, annex: gym }, { ...sciWing, x: rng.int(classWing.w + 8, W - sciWing.w - 6), annex: caf }];
+  else { // E: the classroom wing a spine off the middle with the gym at its end, the cafeteria a wing at one end, the science wing at the other
+    const sx = rng.int(cw + 3, W - 18 - 20 - 3);
+    wings = [{ ...caf, len: ch, x: 0, annex: null, own: true }, { ...classWing, x: sx, annex: gym }, { ...sciWing, x: W - sciWing.w, annex: null }];
+  }
+  if (flip) for (const w of wings) { w.x = W - w.x - w.w; } // mirrored: asymmetric the other way round
+  const parts = [{ x: 0, y: 0, w: W, h: mainH, storeys: n, name: "Main block", main: true, program: mainProgram, upper: mainUpper }];
+  for (const w of wings) {
+    const wy1 = 0, wy0 = wy1 - w.len + 1; // a wing shares the main block's back wall
+    parts.push({ x: w.x, y: wy0, w: w.w, h: w.len, storeys: w.storeys, name: w.name, wing: true, program: w.program, upper: w.upper, ...(w.tall ? { tall: true } : {}) });
+    if (w.annex) { // the annex at its far end, flush with the wing's outer side, wider or narrower than it
+      const a = w.annex, out = w.x + w.w / 2 < W / 2; // the wing's outer side: toward the box's nearer edge
+      const ax = out ? w.x : w.x + w.w - a.w;
+      parts.push({ x: ax, y: wy0 - a.h + 1, w: a.w, h: a.h, storeys: a.storeys, name: a.name, program: a.program, ...(a.tall ? { tall: true } : {}), ...(a.gym ? { gym: true } : {}), ...(a.wing ? { wing: true } : {}) });
+    }
+  }
+  return {
+    ...shapeOf(kind, parts), front: { width: 2 }, ground: "town", storeys: n, foot: "large", upper: null, stairs: ENDS, // at the ends of a corridor that rises every storey (the main block's)
+    exits: [{ side: "back", roles: ["gym", "cafeteria"], chance: 0.9, lock: 0.3 }, { side: "back", roles: ["corridor"], chance: 0.5, lock: 0.4, name: "Wing door" }, { side: "left", roles: ["corridor"], chance: 0.9, lock: 0.3 }, { side: "right", roles: ["corridor"], chance: 0.9, lock: 0.3 }, { side: sideRoom(rng), roles: ["gym"], chance: 0.6, lock: 0.3 }],
+  };
+}
+// A police station (a new save's, issue #23): the station block as #15 laid it out (the front desk, the squad room, the
+// lockers and the chief's office along the front, the corridor, the armory, the evidence room and the cell block
+// behind) and the sally port an annex beside it at the back, one storey, the cell block's end against it: an L.
+function policeShaped(rng) {
+  const bw = rng.int(21, 24), bh = rng.int(15, 17);
+  const lobby = (o) => ({ role: "lobby", entry: true, ...o });
+  const right = rng.chance(0.5);
+  const cellsRow = [[4, { role: "armory", lock: ["vault", 0.85], boxLock: ["cage", 0.5], gunSafe: ["gunsafe3", 0.3], civic: "armory", dk: "steel", boxTarget: 3 }], [3, { role: "evidence", lock: ["door", 0.7], boxLock: ["evidence", 0.6], civic: "evidence", dk: "cell" }], ["*", { role: "cells", civic: "cells" }]];
+  const main = corridorPlan([["*", { role: "office", name: "Detectives' office", boxLock: ["evidence", 0.25], civic: "squad" }], [rng.int(5, 6), lobby({ name: "Front desk", type: "office", civic: "frontdesk" })], [4, { role: "lockerroom", type: "barracks", civic: "plockers" }], ["*", { role: "office", name: "Chief's office", gunSafe: ["gunsafe2", 0.3], civic: "chief" }]],
+    right ? cellsRow : cellsRow.slice().reverse(), 5); // the cells at the sally port's end
+  const n = rng.int(2, 3);
+  const interview = [6, { split: "x", parts: leaves([["*", { role: "office", name: "Interview room", civic: "interview" }], [2, { role: "office", name: "Observation", civic: "observation" }]]) }];
+  const back = [["*", { role: "office", name: "Records", boxLock: ["evidence", 0.3], civic: "records" }], [4, { role: "breakroom", civic: "breakroom" }], [2, { role: "restroom", civic: "washroom" }]];
+  const pw = rng.int(7, 8), ph = rng.int(10, Math.min(12, bh - 3));
+  const port = { role: "bays", name: "Sally port", type: "garage", maxBoxes: 3, civic: "sallyport", nextTo: ["cells", "corridor"] };
+  return {
+    ...shapeOf("L", [
+      { x: right ? 0 : pw - 1, y: 0, w: bw, h: bh, name: "Station", main: true, program: main, upper: (f) => corridorPlan(f === 1 ? [["*", { role: "office", name: "Squad room", civic: "squad" }], interview, ["*", { role: "office", name: "Dispatch", civic: "dispatch" }]] : [["*", { role: "office", name: "Briefing room", civic: "briefing" }], interview, ["*", { role: "office", name: "Squad room", civic: "squad" }]], back, 5) },
+      { x: right ? bw - 1 : 0, y: 0, w: pw, h: ph, storeys: 1, tall: true, name: "Sally port", program: port },
+    ]),
+    front: { width: 2 }, ground: "city", storeys: n, foot: "large", program: null, upper: null, stairs: { roles: ["lobby", "dayroom"], n: 1 }, // up from the front desk
+    exits: [{ side: right ? "right" : "left", roles: ["bays"], chance: 1, roller: true, width: 2, lock: 0.3, name: "Sally port" }, { side: "back", roles: ["bays"], chance: 0.6, lock: 0.5 }, { side: right ? "left" : "right", roles: ["corridor"], chance: 0.5, lock: 0.5 }],
+  };
+}
+// A fire station (a new save's, issue #23): the living block of #15 (the day room, the kitchen, the medical store and
+// the workshop; upstairs the dorm, the gym, the watch office and a bathroom) and the engine bay an annex on one side,
+// one tall storey, its apron out past the living block's front and its back short of it: offset, not centred.
+function fireShaped(rng) {
+  const lw = rng.int(13, 15), lh = rng.int(12, 14);
+  const living = { split: "y", parts: [["*", { role: "dayroom", entry: true, civic: "fdayroom" }], ["*", { split: "x", parts: leaves([["*", { role: "kitchen", civic: "fkitchen" }], [4, { role: "storage", name: "Medical store", type: "nurse", lock: ["door", 0.3], civic: "medstore" }], [4, { role: "workshop", civic: "fworkshop" }]]) }]] };
+  const left = rng.chance(0.5), out = rng.int(1, 3), short = rng.int(0, 2), bw2 = rng.int(11, 13);
+  const bays = { role: "bays", name: "Engine bay", type: "enginebay", maxBoxes: 5, civic: "enginebay", nextTo: ["dayroom", "workshop", "kitchen"] };
+  return {
+    ...shapeOf("annex", [
+      { x: left ? bw2 - 1 : 0, y: 0, w: lw, h: lh, name: "Station", main: true, program: living, upper: () => ({ split: "y", parts: [["*", { role: "dorm", type: "barracks", civic: "fdorm" }], ["*", { split: "x", parts: leaves([["*", { role: "gym", civic: "fgym" }], [4, { role: "office", name: "Watch office", civic: "watch" }], [3, { role: "bath", civic: "washroom" }]]) }]] }) },
+      { x: left ? 0 : lw - 1, y: short, w: bw2, h: lh - short + out, storeys: 1, tall: true, name: "Engine bay", program: bays },
+    ]),
+    front: { width: 1 }, ground: "town", storeys: 2, foot: "medium", program: null, upper: null, stairs: { roles: ["dayroom", "lobby"], n: 1 }, // up from the day room
+    exits: [{ side: "front", roles: ["bays"], chance: 1, roller: true, width: 3, lock: 0.1, name: "Bay door" }, { side: "back", roles: ["bays"], chance: 0.6, roller: true, width: 2, lock: 0.3 }, { side: "back", roles: ["kitchen", "workshop"], chance: 0.6, lock: 0.3 }],
+  };
+}
+// A hospital (a new save's, issue #23): the tower (#14's floors: the waiting room, the pharmacy, the morgue, the
+// cafeteria and its kitchen on the ground floor, the wards, the theatre and the ICU above), the emergency room an annex
+// on one side at the front (one storey: the ER and the ambulance bay behind it, its roller door the back exit), and a
+// lower wing (two storeys: the clinics, then a ward) off the tower's back: off the middle (a T) or at its far end (an L).
+function hospitalShaped(rng, bw, bh, n, fire) {
+  const tw = bw - rng.int(4, 6), th = bh;
+  const ward = (o = {}) => ({ role: "ward", ...o });
+  const doc = [4, { role: "office", name: "Doctors' office", type: "office" }];
+  const supply = (lock) => [4, { role: "storage", name: "Supply room", type: "clinic", ...(lock ? { lock: ["door", 0.3] } : {}) }];
+  const erLeft = rng.chance(0.5);
+  const tower = corridorPlan([[rng.int(6, 7), { role: "lobby", entry: true, name: "Waiting room", type: "clinic" }], [rng.int(4, 5), { role: "pharmroom", lock: ["vault", 1], boxLock: ["drugs", 0.3] }], ["*", { role: "office", name: "Admissions", type: "office" }], [3, "restroom"]].map((x, i, a) => (erLeft ? x : a[a.length - 1 - i])),
+    [[5, { role: "morgue", lock: ["door", 0.3] }], ["*", "cafeteria"], [5, "kitchen"]], 5, 2);
+  const upper = (f, r, ctx) => (f === 1
+    ? corridorPlan([["*", ward()], [5, "nursestation"], [6, { role: "theatre", lock: ["door", 0.3] }], supply(true)], [["*", "icu"], ["*", ward()], doc, [3, "restroom"]], 5, 2)
+    : ctx && ctx.top
+      ? corridorPlan([["*", ward({ name: "Maternity ward", cots: true })], [5, "nursestation"], ["*", ward()]], [["*", ward()], [5, "staffroom"], [4, "laundry"], doc, [3, "restroom"]], 5, 2)
+      : corridorPlan([["*", ward()], [5, "nursestation"], ["*", ward()]], [["*", ward()], ["*", ward()], doc, supply(false), [3, "restroom"]], 5, 2));
+  const ew = rng.int(12, 14), eh = rng.int(11, 13);
+  const er = { split: "y", parts: [["*", { role: "er", nextTo: ["corridor", "lobby"] }], [6, { role: "ambbay" }]] };
+  const t = rng.chance(0.55), ww = rng.int(13, 16), wl = rng.int(9, 12), wn = Math.min(n - 1, 2);
+  const tx = erLeft ? ew - 1 : 0; // the tower's left wall
+  const wx = t ? tx + rng.int(3, Math.max(3, tw - ww - 3)) : erLeft ? tx + tw - ww : tx;
+  const clinic = (g) => ({ split: "x", parts: [["*", { split: "y", parts: leaves(g ? [["*", ward()], ["*", ward()]] : [["*", { role: "office", name: "Outpatients", type: "office" }], ["*", { role: "exam", name: "Clinic room" }]]) }], [2, { role: "corridor", name: "Wing corridor" }], ["*", { split: "y", parts: leaves(g ? [["*", ward()], ["*", { role: "office", name: "Consulting room", type: "office" }]] : [["*", { role: "office", name: "Physio", type: "office" }], [4, { role: "storage", name: "Records", type: "office" }]]) }]] });
+  return {
+    ...shapeOf(t ? "T" : "L", [
+      { x: tx, y: wl - 1, w: tw, h: th, name: "Tower", main: true, program: tower, upper },
+      { x: erLeft ? 0 : tw - 1, y: wl - 1 + th - eh, w: ew, h: eh, storeys: 1, name: "Emergency", program: er },
+      { x: wx, y: 0, w: ww, h: wl, storeys: wn, name: "Clinic wing", wing: true, program: clinic(0), upper: (g) => clinic(g) },
+    ]),
+    front: { width: 2 }, ground: "city", storeys: n, foot: "large", program: null, upper: null, stairs: ENDS, // one at each end of the tower's corridor
+    exits: [{ side: "back", roles: ["ambbay"], chance: 1, lock: 0.25, roller: true, width: 2, name: "Ambulance bay" }, ...fire(0.3).map((e) => ({ ...e, chance: 0.85 })), { side: "back", roles: ["corridor"], chance: 0.5, lock: 0.4 }],
+  };
+}
+// A church (a new save's, issue #23): the narthex and the nave (#15's pews either side of the aisle to the altar), the
+// vestry, the parish hall, its kitchen and the food bank's pantry behind; a side chapel stuck on one side (an L) or a
+// transept across the nave with arms of their own lengths (a cross), and the bell tower a part of its own at a front
+// corner beside the narthex (raised: a ladder up, the loft as before), its roof above the nave's.
+function churchShaped(rng) {
+  const nw = rng.int(12, 14), nh = rng.int(19, 22);
+  const narthex = { role: "foyer", name: "Narthex", entry: true, type: "chapel", civic: "narthex" };
+  const backRow = { split: "x", parts: leaves([[3, { role: "vestry", boxLock: ["lockbox", 0.4], civic: "vestry" }], ["*", { role: "kitchen", name: "Parish hall", civic: "parishhall" }], [2, { role: "pantry", name: "Food bank pantry", type: "kitchen", civic: "cpantry" }]]) };
+  const towerLeft = rng.chance(0.5), cross = rng.chance(0.45);
+  const tower = { w: 5, h: 5, storeys: 1, tall: true, name: "Bell tower", program: { role: "storage", name: "Bell tower", type: "chapel", civic: "belltower", nextTo: ["foyer"] } };
+  const chapel = (name) => ({ role: "nave", name, civic: "nave", maxBoxes: 1 });
+  let parts;
+  if (cross) {
+    // The nave, the transept (a crossing between two side chapels, the arms of different lengths), the hall behind.
+    const aL = rng.int(5, 7), aR = rng.int(4, 6), th = rng.int(7, 8), bh = 7, front = nh - rng.int(6, 8); // the nave shorter: the transept and the hall take the rest
+    const transept = { split: "x", parts: [[aL - 1, chapel("North chapel")], ["*", { role: "foyer", name: "Crossing", type: "chapel", hub: true, civic: "narthex" }], [aR - 1, chapel("South chapel")]] };
+    parts = [
+      { x: aL, y: th + bh - 2, w: nw, h: front, name: "Nave", main: true, program: { split: "y", parts: [[3, narthex], ["*", { role: "nave", civic: "nave" }]] } },
+      { x: 0, y: bh - 1, w: nw + aL + aR, h: th, name: "Transept", program: transept },
+      { x: aL, y: 0, w: nw, h: bh, name: "Parish hall", program: backRow },
+    ];
+  } else {
+    const cw = rng.int(6, 8), ch = rng.int(8, 10), cy = rng.int(5, Math.max(5, nh - ch - 4)), left = !towerLeft;
+    parts = [
+      { x: left ? cw - 1 : 0, y: 0, w: nw, h: nh, name: "Nave", main: true, program: { split: "y", parts: [[3, narthex], ["*", { role: "nave", civic: "nave" }], [5, backRow]] } },
+      { x: left ? 0 : nw - 1, y: cy, w: cw, h: ch, name: "Side chapel", program: { ...chapel("Side chapel"), nextTo: ["nave"] } },
+    ];
+  }
+  const nave = parts[0];
+  parts.push({ x: towerLeft ? nave.x - tower.w + 1 : nave.x + nave.w - 1, y: nave.y + nave.h - tower.h, ...tower }); // beside the narthex, flush with the front
+  return {
+    ...shapeOf(cross ? "cross" : "L", parts),
+    front: { width: 2 }, ground: "town", storeys: 1, foot: "medium", loft: { roles: ["storage"], chance: 1, ladder: true }, program: null, upper: null,
+    exits: [{ side: "back", roles: ["kitchen", "pantry"], chance: 0.7, lock: 0.3 }, { side: "left", roles: ["nave"], chance: 0.5, lock: 0.4 }, { side: "right", roles: ["nave"], chance: 0.5, lock: 0.4 }],
   };
 }
 function churchPlan(rng) {
@@ -1094,6 +1433,7 @@ function milPlanOf(rng, v, o = {}) {
 
 // A motel: a row of rooms, each with its own door onto the parking lot, and the office at one end.
 function motel(rng, o = {}) {
+  if (!o.legacy && o.shapes) return motelShaped(rng);
   const n = rng.int(4, 5), uw = 4;
   const bw = 2 + 5 + 1 + n * uw + (n - 1);
   const bh = rng.int(8, 9) + (o.legacy ? 0 : 1); // a new save's a cell deeper: the upper rooms' bathrooms fit behind the walkway (shoplayout.js)
@@ -1112,6 +1452,46 @@ function motel(rng, o = {}) {
     program: { split: "x", parts: left ? [office, ...units] : [...units, office] },
     upper: () => ({ split: "y", parts: [["*", { split: "x", parts: left ? [linen, ...upperUnits()] : [...upperUnits(), linen] }], [1, { role: "corridor", name: "Walkway" }]] }),
     exits: [{ side: "back", roles: ["office"], chance: 0.6, lock: 0.3 }],
+  };
+}
+
+// A motel (a new save's, issue #23): round its parking lot, an L or a U. The office a corner of its own (the front
+// desk with its door onto the lot, the manager's room; the laundry above), the row of rooms along the back on two
+// storeys (each room's own door onto the lot, its bathroom behind; upstairs the walkway along the back), and a wing of
+// one storey down the side from the office's corner, its rooms' doors facing the lot; a U's other wing down the far
+// side from a laundry corner, the two wings of different lengths.
+function motelShaped(rng) {
+  const n = rng.int(4, 5), uw = 4, bh = rng.int(9, 10);
+  const u = rng.chance(0.5), left = rng.chance(0.5);
+  let no = 0;
+  const unit = (bathFirst, ax = "y") => { no++; const room = ["*", { role: "motelroom", name: `Room ${no}` }], bath = [2, { role: "bath", name: `Bath ${no}` }]; return [uw, { split: ax, parts: leaves(bathFirst ? [bath, room] : [room, bath]) }]; };
+  // The back row: a room's front onto the lot, its bathroom behind (split y: the front first).
+  const rowUnits = Array.from({ length: n }, () => unit(false));
+  const rowW = 1 + n * (uw + 1);
+  const upperUnits = () => rowUnits.map(([w], i) => [w, { split: "y", parts: leaves([[2, { role: "bath", name: `Bath ${100 + i + 1}`, type: null }], ["*", { role: "motelroom", name: `Room ${100 + i + 1}` }]]) }]);
+  const ow = bh + 3;
+  // Laid out with the office's corner on the left, then mirrored when it stands on the right (mx).
+  const mx = (list) => (left ? list : list.slice().reverse());
+  const manager = [4, { role: "office", name: "Manager's room", type: "house", lock: ["door", 0.4], boxLock: ["lockbox", 0.4] }];
+  const office = { split: "x", parts: leaves(mx([manager, ["*", { role: "reception", entry: true }]])) }; // the manager's room over the wing, the front desk by the lot
+  const k1 = rng.int(2, 4), k2 = u ? clampN(k1 + rng.pick([-1, 1]), 2, 4) : 0;
+  // A wing's rooms down the side, top to bottom, their doors onto the lot (the bathroom on the outer side: split x).
+  const wing = (k, outerLeft) => ({ split: "y", parts: Array.from({ length: k }, () => unit(outerLeft, "x")) });
+  const inner = (side) => (left ? side : side === "right" ? "left" : "right");
+  const parts = [
+    { x: 0, y: 0, w: ow, h: bh, storeys: 2, name: "Office", program: office, upper: () => ({ role: "storage", name: "Laundry", type: "house" }) },
+    { x: ow - 1, y: 0, w: rowW, h: bh, storeys: 2, name: "Rooms", main: true, program: { split: "x", parts: rowUnits }, upper: () => ({ split: "y", parts: [["*", { split: "x", parts: upperUnits() }], [1, { role: "corridor", name: "Walkway" }]] }) },
+    { x: 0, y: bh - 1, w: bh, h: 1 + k1 * (uw + 1), storeys: 1, name: "Wing", wing: true, unitSide: inner("right"), program: wing(k1, left) },
+  ];
+  if (u) {
+    const cx = ow - 1 + rowW - 1, cw = bh + 3;
+    parts.push({ x: cx, y: 0, w: cw, h: bh, storeys: 1, name: "Laundry", program: { role: "storage", name: "Laundry", type: "house", ownDoor: "front" } });
+    parts.push({ x: cx + cw - bh, y: bh - 1, w: bh, h: 1 + k2 * (uw + 1), storeys: 1, name: "Far wing", wing: true, unitSide: inner("left"), program: wing(k2, !left) });
+  }
+  if (!left) { const W = Math.max(...parts.map((p) => p.x + p.w)); for (const p of parts) p.x = W - p.x - p.w; } // the office's corner on the right
+  return {
+    ...shapeOf(u ? "U" : "L", parts), ground: "lot", unitDoors: "motelroom", front: { width: 1 }, openDoors: 0.25, extraDoors: 0, storeys: 2, foot: "medium", program: null, upper: null, stairs: { roles: ["reception"], n: 1 }, // up from the front desk to the laundry and the walkway
+    exits: [{ side: "back", roles: ["office", "reception"], chance: 0.6, lock: 0.3 }],
   };
 }
 
@@ -1252,7 +1632,7 @@ function apartments(rng, o = {}) {
   // The stairwell (2 wide) is a room of its own beside the lobby, a landing over the lobby upstairs: the front band is
   // the same widths on every floor, so the stairwell is at the same place on every floor (assemble pickRuns).
   const fw = Math.floor((bw - 2 - lobby - 2 - 2 - 1) / 2), uw = fw, bk = Math.floor((bw - 2 - 4 - 2) / 2), ub = Math.floor((bw - 2 - 3 - 2) / 2);
-  return {
+  const block = {
     bw, bh, front: { width: 2 }, ground: "city", storeys: n, foot: "medium", extraDoors: 0,
     stairs: { roles: ["stairwell"], n: 1, len: 3 },
     program: corridorPlan([["*", flat(0, "A", fw)], [2, { role: "stairwell" }], [lobby, { role: "lobby", entry: true, type: "house" }], ["*", flat(0, "B", fw)]],
@@ -1260,6 +1640,11 @@ function apartments(rng, o = {}) {
     upper: (f) => corridorPlan([["*", flat(f, "A", uw)], [2, { role: "stairwell" }], [lobby, { role: "hall", name: "Landing" }], ["*", flat(f, "B", uw)]], [["*", flat(f, "C", ub)], ["*", flat(f, "D", ub)], [3, { role: "storage", name: f === 1 ? "Laundry" : "Utility room", type: "house" }]], 5),
     exits: [{ side: "back", roles: ["hgarage"], chance: 0.8, lock: 0.3 }, { side: "left", roles: ["corridor"], chance: 0.4, lock: 0.4 }, { side: "right", roles: ["corridor"], chance: 0.4, lock: 0.4 }],
   };
+  // A new save's (issue #23), half of them: a lower wing of two more flats a floor on one side, its back stepped (an L).
+  if (o.legacy || !o.shapes || hash01(rng.state, "shape", "apartments") >= 0.5) return block; // read, not consumed
+  const ww = rng.int(10, 12), wh = wingDepth(rng, 5, bh), wn = rng.int(2, n - 1);
+  const wingPlan = (g) => corridorPlan([["*", flat(g, "E", ww - 2)]], [["*", flat(g, "F", ww - 2)]], 5);
+  return withSideWing(rng, block, { w: ww, h: wh, storeys: wn, name: "Low wing", program: wingPlan(0), upper: (g) => wingPlan(g) });
 }
 
 // ---------- buildings at real size (issue #24) ----------
@@ -1308,6 +1693,60 @@ function twinOf(leaf) {
 }
 const OFFICE_ORDER = ["cubicles", "open", "meeting", "cubicles", "open", "canteen"];
 /** @param {any} rng @param {any} spec @param {string} key @param {{ setting?: string, storeyBonus?: number }} [o] */
+// A shape at real size (issue #23 under #24's realScale): its parts' corners scaled by the real footprint over the
+// plan's (never smaller; cap: a street's plot), so the walls two parts share stay shared and the notches and the
+// courtyard grow with them; each part's stretched rooms split in two (twinUp, as realScale's splitUp splits a plan's)
+// until it has about the rooms its own size would have here; boxK as for a plan (the containers to the square metre).
+function shapeAtScale(rng, spec, key, out, cap) {
+  const f = realFoot(rng, key);
+  if (!f) return;
+  let sx = Math.max(1, f.bw / spec.bw), sy = Math.max(1, f.bh / spec.bh);
+  if (cap) { sx = Math.min(sx, Math.max(1, cap.w / spec.bw)); sy = Math.min(sy, Math.max(1, cap.h / spec.bh)); }
+  if (sx <= 1 && sy <= 1) return;
+  const X = (v) => Math.round(v * sx), Y = (v) => Math.round(v * sy);
+  const parts = spec.shape.parts.map((p) => {
+    const x0 = X(p.x), y0 = Y(p.y), q = { ...p, x: x0, y: y0, w: X(p.x + p.w - 1) - x0 + 1, h: Y(p.y + p.h - 1) - y0 + 1 };
+    const tw = (prog) => twinUp(prog, p.w - 2, p.h - 2, q.w - 2, q.h - 2);
+    q.program = tw(p.program);
+    if (p.upper) q.upper = (g, r, ctx) => tw(p.upper(g, r, ctx));
+    return q;
+  });
+  out.shape = { ...spec.shape, parts }; out.bw = X(spec.bw - 1) + 1; out.bh = Y(spec.bh - 1) + 1;
+  const boxes = (list, k) => list.reduce((a, p) => a + planCount(p.program, p.w - 2, p.h - 2, k).boxes, 0);
+  const want = (boxes(spec.shape.parts, 1) * out.bw * out.bh) / (spec.bw * spec.bh);
+  let k = 1, got = boxes(parts, 1);
+  const dir = got < want ? 1 : -1;
+  for (let t = 1 + dir * 0.05; t <= SCALE.BOX_MAX + 1e-9 && t >= SCALE.BOX_MIN - 1e-9; t += dir * 0.05) {
+    const g = boxes(parts, t);
+    if (Math.abs(g - want) < Math.abs(got - want)) { k = t; got = g; }
+    if (dir > 0 ? g >= want : g <= want) break;
+  }
+  out.boxK = Math.round(k * 100) / 100;
+}
+// A part's plan (natIw × natIh inside) laid over iw × ih: its stretched rooms (realScale's rule: no hub, no corridor,
+// no entry, no room with a door of its own outside, unless it has a twin of its own kind) split in two in turn while
+// that brings its rooms nearer what its own size would have here.
+function twinUp(prog, natIw, natIh, iw, ih) {
+  if (!prog || prog.role) return prog;
+  const c = structuredClone(prog), cands = [];
+  const stretchy = ([sz, ch]) => !!ch && !!ch.role && (typeof sz !== "number" || sz < 1) && !ch.ownDoor && ch.role !== "motelroom" && (!!TWIN_OF[ch.role] || (!ch.hub && !ch.entry && !(ROLES[ch.role] && ROLES[ch.role].hub)));
+  const walk = (node) => { if (!node || node.role) return; const front = node.parts.some(([, ch]) => ch && ch.entry); for (const part of node.parts) { if (!front && stretchy(part)) cands.push([node, part]); walk(part[1]); } }; // never the entrance's row: its front desk and lobby keep their widths
+  walk(c);
+  const target = (planCount(prog, natIw, natIh).rooms * iw * ih) / Math.max(1, natIw * natIh);
+  let now = planCount(c, iw, ih).rooms;
+  for (let k = 0; now < target && cands.length && k < cands.length * SCALE.TWINS; k++) {
+    const [node, part] = cands[k % cands.length], at = node.parts.indexOf(part);
+    if (at < 0) continue;
+    const was = node.parts.slice();
+    node.parts[at] = ["*", part[1]];
+    node.parts.splice(at + 1, 0, ["*", twinOf(part[1])]);
+    const next = planCount(c, iw, ih).rooms;
+    if (next <= now || Math.abs(next - target) > Math.abs(now - target)) { node.parts.splice(0, node.parts.length, ...was); if (next <= now) continue; break; }
+    cands[k % cands.length] = [node, node.parts[at]];
+    now = next;
+  }
+  return c;
+}
 export function realScale(rng, spec, key, o = {}) {
   const R = REAL_SIZE[key];
   if (!R || !spec) return spec;
@@ -1334,6 +1773,7 @@ export function realScale(rng, spec, key, o = {}) {
   out.height = height; out.storeys = built;
   if (height >= SCALE.TWO_STAIRS) out.stairs = { ...(spec.stairs || {}), n: 2 };
   // The footprint, and the plan over it (realFoot; a kind with no size of its own here: the archetype's footprint and plan).
+  if (spec.shape && !R.own && R.wings !== "along") shapeAtScale(rng, spec, key, out, o.cap || null); // a shape's parts scaled (issue #23; a motel's rooms are its own size: its U is as long as its row)
   const foot = R.own || spec.shape ? null : realFoot(rng, key);
   const flips = Array.from({ length: 64 }, () => !R.wings && rng.chance(0.5)); // each wing turned left for right
   let lay = (prog) => prog, fill = (prog) => prog;
@@ -1704,8 +2144,8 @@ export function buildingHint(key) {
 const specSeed = (state, tileId, option) => Math.floor(hash01(state.seed, "bmap", tileId, option.id) * 4294967296);
 // scale: the real-size step (realScale: { setting }); null for an older save's buildings (worldcfg.js legacyScale: the
 // archetype's own footprint and storeys, as they were).
-const makeSpec = (rng, option, legacy = false, scale = null, officesOld = false, where = null, vset = null) => { // vset: a shop's or a service's variant by its setting (shopvariants.js variantSetting, issue #35; its plan by id: option.plan) // where: siteWhere's setting and site (civicvariants.js, issue #36) // officesOld: an older save's firm-less office tower as it was (worldcfg.js legacyOffices, #27) // variant, kind: the place's franchise and kind (data-shops.js plans); legacy: an older save's plan (worldcfg.js legacyRooms: an apartment's flats one room each)
-  const spec = BUILDINGS[option.key].make(rng, { storeyBonus: option.storeyBonus || 0, variant: option.variant || null, kind: option.kind || null, legacy: legacy && !NEW_KEYS.has(option.key), ...(where || {}), site: option.site || (where && where.site) || null, ...(officesOld ? { officesLegacy: true } : {}), ...(option.plan != null ? { plan: option.plan } : {}), vset: option.vset || vset }); // plan: one of the kind's named plans (bunkerlayout.js BUNKER_VARIANTS: a city hall's shelter, #27; industrylayout.js INDUSTRY_PLANS, #37)
+const makeSpec = (rng, option, legacy = false, scale = null, officesOld = false, where = null, shapes = false, vset = null) => { // vset: a shop's or a service's variant by its setting (shopvariants.js variantSetting, issue #35; its plan by id: option.plan) // shapes: footprint shapes (a save from since issue #23: worldcfg.js legacyShapes) // where: siteWhere's setting and site (civicvariants.js, issue #36) // officesOld: an older save's firm-less office tower as it was (worldcfg.js legacyOffices, #27) // variant, kind: the place's franchise and kind (data-shops.js plans); legacy: an older save's plan (worldcfg.js legacyRooms: an apartment's flats one room each)
+  const spec = BUILDINGS[option.key].make(rng, { storeyBonus: option.storeyBonus || 0, variant: option.variant || null, kind: option.kind || null, legacy: legacy && !NEW_KEYS.has(option.key), shapes, ...(where || {}), site: option.site || (where && where.site) || null, ...(officesOld ? { officesLegacy: true } : {}), ...(option.plan != null ? { plan: option.plan } : {}), vset: option.vset || vset }); // plan: one of the kind's named plans (bunkerlayout.js BUNKER_VARIANTS: a city hall's shelter, #27; industrylayout.js INDUSTRY_PLANS, #37)
   return scale ? realScale(rng, spec, option.key, { ...scale, storeyBonus: option.storeyBonus || 0 }) : spec;
 };
 // The archetypes issue #25 added (no older plan): laid out the new way in an older save too.
@@ -1729,13 +2169,13 @@ const scaleOf = (state, tileId) => (legacyScale(state) ? null : { setting: setti
 // The archetype's spec for a building at a site (its storeys and footprint) without building the map: the same dice
 // buildingMap rolls, so the block card can say how many storeys a place has.
 export function buildingSpec(state, tileId, option) {
-  return makeSpec(new Rng(specSeed(state, tileId, option)), option, legacyRooms(state), scaleOf(state, tileId), legacyOffices(state), siteWhere(state, tileId), variantSetting(state.tiles[tileId]));
+  return makeSpec(new Rng(specSeed(state, tileId, option)), option, legacyRooms(state), scaleOf(state, tileId), legacyOffices(state), siteWhere(state, tileId), !legacyShapes(state), variantSetting(state.tiles[tileId]));
 }
 export function buildingMap(state, tileId, option, withVehicle) {
   if (BUILDINGS[option.key] && BUILDINGS[option.key].campus) return campusMap(state, tileId, option, withVehicle); // a college campus (campus.js: its buildings' scenes rolled in each)
   if (BUILDINGS[option.key] && BUILDINGS[option.key].street) { const m = streetMap(state, tileId, option, withVehicle); rollScenes(m, sceneRng(state, tileId, option), option.key); return m; } // a street of houses (the neighbourhood); its scenes (interiorscenes.js) through the houses
   const rng = new Rng(specSeed(state, tileId, option));
-  const spec = makeSpec(rng, option, legacyRooms(state), scaleOf(state, tileId), legacyOffices(state), siteWhere(state, tileId), variantSetting(state.tiles[tileId]));
+  const spec = makeSpec(rng, option, legacyRooms(state), scaleOf(state, tileId), legacyOffices(state), siteWhere(state, tileId), !legacyShapes(state), variantSetting(state.tiles[tileId]));
   // battlesize.js: at least the site's raid map (more outside around a single-building site's plan, a city's or a
   // town's building the run's largest), the new ground topped up with cover. The floor plan itself is the archetype's.
   const tile = state.tiles[tileId], sb = siteBuildings(tile);
@@ -1806,10 +2246,10 @@ export function streetMap(state, tileId, option, withVehicle) {
     const id = `${option.id}#${k + 1}`;
     const hr = new Rng(specSeed(state, tileId, { id }));
     const real = !legacyScale(state); // a world made since buildings at real size (issue #24): its houses 10–16 m wide, up to 13 deep
-    const spec0 = BUILDINGS.house.make(hr, { legacy: legacyRooms(state) }), spec = real ? realScale(hr, spec0, "neighbourhood", { setting: "town" }) : spec0;
     const BW = real ? S.REAL_BW : S.BW, BH = real ? S.REAL_BH : S.BH;
-    spec.bw = Math.max(BW[0], Math.min(spec.bw, BW[1], Math.floor((MAXW - 2 * S.SIDE - (perRow[row] - 1) * S.GAP) / perRow[row])));
-    spec.bh = Math.min(spec.bh, BH);
+    const plotW = Math.max(BW[0], Math.min(BW[1], Math.floor((MAXW - 2 * S.SIDE - (perRow[row] - 1) * S.GAP) / perRow[row])));
+    const spec0 = BUILDINGS.house.make(hr, { legacy: legacyRooms(state), shapes: !legacyShapes(state), cap: { w: plotW, h: BH } }), spec = real ? realScale(hr, spec0, "neighbourhood", { setting: "town", cap: { w: plotW, h: BH } }) : spec0; // a new save's house shaped to fit its plot (houseShape; realScale grows a shape to its plot at most)
+    if (!spec.shape) { spec.bw = Math.max(BW[0], Math.min(spec.bw, plotW)); spec.bh = Math.min(spec.bh, BH); }
     spec.margins = { front: 1, back: 1, left: 1, right: 1 };
     spec.ground = "none";
     const m = assemble(hr, spec, { key: "house", id, name: BUILDINGS.house.name, legacy: legacyRooms(state) });
@@ -1847,7 +2287,7 @@ export function streetMap(state, tileId, option, withVehicle) {
     const tx = (x) => h.x0 + (x - B.x0);
     const ty = (y) => (h.flip ? h.y0 + (B.y0 + B.h - 1 - y) : h.y0 + (y - B.y0));
     const rectOf = (r) => ({ x0: tx(r.x0), y0: h.flip ? ty(r.y0 + r.h - 1) : ty(r.y0), w: r.w, h: r.h });
-    h.rect = { x0: h.x0, y0: h.y0, w: B.w, h: B.h };
+    h.rect = { x0: h.x0, y0: h.y0, w: B.w, h: B.h, ...(B.parts ? { shape: B.shape, parts: B.parts.map((p) => ({ ...p, ...rectOf(p) })) } : {}) }; // a shaped house's parts, turned with it
     (m.floors || [{ cells: m.cells }]).forEach((F, g) => {
       const dst = floors[g].cells, cars = new Map(); // a car in the garage: its cells take the id of their new top-left cell
       for (let y = B.y0; y < B.y0 + B.h; y++) for (let x = B.x0; x < B.x0 + B.w; x++) {
@@ -2106,6 +2546,12 @@ export function assemble(rng, spec, opts = {}) {
   const f = opts._floor || 0, upper = f > 0;
   const storeys = Math.max(1, typeof spec.storeys === "number" ? Math.min(MAX_STOREYS, Math.round(spec.storeys)) : 1);
   const height = Math.max(storeys, typeof spec.height === "number" ? Math.min(MAX_STOREYS, Math.round(spec.height)) : storeys); // the storeys it stands (the floors above `storeys` are not built)
+  // A footprint shape (issue #23, spec.shape): a union of rectangles (parts: { x, y, w, h } in the bounding box bw × bh,
+  // walls included; where two meet they share a wall line), each with its own plan (program, and upper(g, rng, ctx)
+  // for its floors up) and storeys (fewer than the building's: a lower roof, open air above it). None: the one
+  // rectangle, as always (every older save's, and every archetype that gives no shape).
+  const parts = spec.shape ? spec.shape.parts.map((p, k) => ({ ...p, k, x0: M.left + p.x, y0: M.back + p.y, x1: M.left + p.x + p.w - 1, y1: M.back + p.y + p.h - 1, n: Math.min(storeys, p.storeys || storeys) })) : null;
+  const here = parts ? parts.filter((p) => p.n > f) : null; // the parts on this floor
   const cells = Array.from({ length: W * H }, (_, i) => {
     if (upper) return { k: "void", f: "air" };
     const y = (i / W) | 0;
@@ -2119,7 +2565,18 @@ export function assemble(rng, spec, opts = {}) {
   const rooms = [];
   // A room's most containers (maxBoxes, 4 by default); a building at real size: × realScale's boxK.
   const boxCap = (room) => Math.round((room.maxBoxes ?? 4) * (spec.boxK || 1));
-  for (let y = by0; y <= by1; y++) for (let x = bx0; x <= bx1; x++) {
+  if (here) {
+    // Each part's walls and inside; a cell on any part's edge is wall (the shared wall where two parts meet). c.bp: the
+    // part a cell belongs to (the tallest holding it, then the first: the shared wall stands with the taller part), on
+    // every floor (ui/isoview.js: each part its own roof).
+    const bp = new Int16Array(W * H).fill(-1);
+    for (const p of here) for (let y = p.y0; y <= p.y1; y++) for (let x = p.x0; x <= p.x1; x++) {
+      const i = I(x, y), edge = x === p.x0 || x === p.x1 || y === p.y0 || y === p.y1;
+      if (edge || rid[i] !== -1) rid[i] = edge ? -1 : -3;
+      if (bp[i] < 0 || parts[bp[i]].n < p.n) bp[i] = p.k;
+    }
+    for (let i = 0; i < W * H; i++) if (bp[i] >= 0) { const c = cells[i]; c.f = "floor"; c.k = rid[i] === -1 ? "wall" : "open"; c.bp = bp[i]; if (!upper && parts[bp[i]].n < storeys) c.bs = parts[bp[i]].n; } // bs: a lower part's storeys (its roof seen from above: ui/isoview.js)
+  } else for (let y = by0; y <= by1; y++) for (let x = bx0; x <= bx1; x++) {
     const edge = x === bx0 || x === bx1 || y === by0 || y === by1;
     const c = cells[I(x, y)];
     c.f = "floor"; c.k = edge ? "wall" : "open";
@@ -2156,17 +2613,32 @@ export function assemble(rng, spec, opts = {}) {
   }
   function addRoom(node, r) {
     const { role: rk, ...over } = node;
-    const room = { ...ROLES[rk], ...over, role: rk, id: rooms.length, ix0: r.x0, iy0: r.y0, iw: r.w, ih: r.h, doors: [], up: false };
+    const room = { ...ROLES[rk], ...over, role: rk, id: rooms.length, ix0: r.x0, iy0: r.y0, iw: r.w, ih: r.h, doors: [], up: false, ...(carving ? { part: carving.k } : {}) };
     rooms.push(room);
     for (let y = r.y0; y < r.y0 + r.h; y++) for (let x = r.x0; x < r.x0 + r.w; x++) { rid[I(x, y)] = room.id; cells[I(x, y)].k = "open"; cells[I(x, y)].fl = room.fl || "wood"; }
   }
-  carve(upper ? opts._program : spec.program, { x0: bx0 + 1, y0: by0 + 1, w: bw - 2, h: bh - 2 });
+  let carving = null; // the part being carved (a shape's), its rooms marked with it (room.part)
+  if (here) for (const p of here) { carving = p; carve(upper ? opts._programs[p.k] : p.program, { x0: p.x0 + 1, y0: p.y0 + 1, w: p.w - 2, h: p.h - 2 }); }
+  else carve(upper ? opts._program : spec.program, { x0: bx0 + 1, y0: by0 + 1, w: bw - 2, h: bh - 2 });
+  carving = null;
   // The walls round the rock with no room beside them are rock too (bunkers: only the portal shows above).
   if (rooms.length && cells.some((c) => c.rock)) {
     const roomNear = (x, y) => { for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (inside(x + dx, y + dy) && rid[I(x + dx, y + dy)] >= 0) return true; return false; };
     for (let y = by0; y <= by1; y++) for (let x = bx0; x <= bx1; x++) if (cells[I(x, y)].k === "wall" && !roomNear(x, y)) cells[I(x, y)] = { k: "crag", f: G.yard, rock: true };
   }
-  const touches = (room, side) => (side === "front" ? room.iy0 + room.ih - 1 === by1 - 1 : side === "back" ? room.iy0 === by0 + 1 : side === "left" ? room.ix0 === bx0 + 1 : room.ix0 + room.iw - 1 === bx1 - 1);
+  // A room touches a side's outer wall: the bounding box's (the one rectangle), or, in a shape, a wall cell along that
+  // side of the room with the outside (or open air) beyond it.
+  const OUTD = { front: [0, 1], back: [0, -1], left: [-1, 0], right: [1, 0] };
+  const outAt = (x, y) => !inside(x, y) || rid[I(x, y)] === -2;
+  const touches = here ? (room, side) => {
+    const [dx, dy] = OUTD[side];
+    const along = dy ? room.iw : room.ih;
+    for (let t = 0; t < along; t++) {
+      const x = dy ? room.ix0 + t : dx > 0 ? room.ix0 + room.iw - 1 : room.ix0, y = dx ? room.iy0 + t : dy > 0 ? room.iy0 + room.ih - 1 : room.iy0;
+      if (rid[I(x + dx, y + dy)] === -1 && outAt(x + 2 * dx, y + 2 * dy)) return true;
+    }
+    return false;
+  } : (room, side) => (side === "front" ? room.iy0 + room.ih - 1 === by1 - 1 : side === "back" ? room.iy0 === by0 + 1 : side === "left" ? room.ix0 === bx0 + 1 : room.ix0 + room.iw - 1 === bx1 - 1);
   let entry = upper ? null : rooms.find((r) => r.entry && touches(r, "front")) || rooms.find((r) => r.hub && touches(r, "front")) || rooms.find((r) => touches(r, "front")) || rooms[0];
   // ---------- the stairwells (storeys) ----------
   // Stair runs (STAIR_DIRS above): the ground floor picks one or two (spec.stairs.n, else two from a footprint of
@@ -2182,7 +2654,7 @@ export function assemble(rng, spec, opts = {}) {
   const runs = upper ? opts._runs.map((r) => ({ ...r })) : storeys > 1 ? pickRuns() : [];
   for (const r of runs) { r.f0 = 0; r.f1 = storeys - 1; }
   function pickRuns() {
-    const want = SP.n || (bw * bh >= BMAP.STOREY.twoStairs ? 2 : 1);
+    const want = SP.n || ((here ? footArea() : bw * bh) >= BMAP.STOREY.twoStairs ? 2 : 1);
     if (SP.out) { // an outside stair along the side wall, its top landing by the back corner (the walkway upstairs)
       const sx = SP.out === "left" ? bx0 - 1 : bx1 + 1;
       for (let len = SP.len; len >= 2; len--) if (by0 + 2 + len <= by1 && sx >= 1 && sx < W - 1) return [{ x: sx, y: by0 + 1 + len, dx: 0, dy: -1, len, out: SP.out }];
@@ -2193,6 +2665,7 @@ export function assemble(rng, spec, opts = {}) {
     const cands = [];
     for (const room of rooms) {
       if (room.lock) continue; // never behind a door that may be locked
+      if (!allUp(room)) continue; // a shape's lower part has no floor up there
       for (let len = SP.len; len >= 2; len--) {
         const L = len + 2;
         // Along x against the back or front wall (the lane a row in), along y against the left or right wall.
@@ -2234,9 +2707,12 @@ export function assemble(rng, spec, opts = {}) {
     }
     // Too small for a run: the one-cell stairwell at the centre of a hub (else the entry), as before.
     const byArea = (a, b) => b.iw * b.ih - a.iw * a.ih;
-    const first = [...rooms.filter((r) => r.hub && r !== entry).sort(byArea), entry, ...rooms.filter((r) => !r.hub && r !== entry).sort(byArea)][0];
+    const first = [...rooms.filter((r) => r.hub && r !== entry).sort(byArea), entry, ...rooms.filter((r) => !r.hub && r !== entry).sort(byArea)].filter((r, i, all) => allUp(r) || !all.some(allUp))[0];
     return [{ x: first.ix0 + Math.floor(first.iw / 2), y: first.iy0 + Math.floor(first.ih / 2), dx: 0, dy: 0, len: 1, single: true }];
   }
+  // A shape's stair runs stand in a part with every storey (a lower part has no floor up there).
+  function allUp(r) { return !here || parts[r.part].n >= storeys; }
+  function footArea() { let n = 0; for (let i = 0; i < W * H; i++) if (rid[i] !== -2) n++; return n; }
   const stepAt = new Uint8Array(W * H); // a run's steps on this floor (no door opens onto one)
   for (const run of runs) {
     const steps = runSteps(run), lands = runLandings(run);
@@ -2289,6 +2765,13 @@ export function assemble(rng, spec, opts = {}) {
   // Outer wall cells by side, with the room inside each.
   const sideCells = (side) => {
     const out = [];
+    if (here) { // a shape: every wall cell with the outside beyond it on that side, row by row (the inner corners' runs too)
+      const [dx, dy] = OUTD[side];
+      const at = (x, y) => { if (rid[I(x, y)] === -1 && outAt(x + dx, y + dy) && !outAt(x - dx, y - dy) && rid[I(x - dx, y - dy)] !== -1) out.push({ x, y, ix: x - dx, iy: y - dy, ox: x + dx, oy: y + dy }); };
+      if (dy) { for (let y = by0; y <= by1; y++) for (let x = bx0 + 1; x < bx1; x++) at(x, y); }
+      else for (let x = bx0; x <= bx1; x++) for (let y = by0 + 1; y < by1; y++) at(x, y);
+      return out;
+    }
     if (side === "front" || side === "back") { const y = side === "front" ? by1 : by0, iy = side === "front" ? by1 - 1 : by0 + 1; for (let x = bx0 + 1; x < bx1; x++) out.push({ x, y, ix: x, iy, ox: x, oy: side === "front" ? by1 + 1 : by0 - 1 }); }
     else { const x = side === "left" ? bx0 : bx1, ix = side === "left" ? bx0 + 1 : bx1 - 1; for (let y = by0 + 1; y < by1; y++) out.push({ x, y, ix, iy: y, ox: side === "left" ? bx0 - 1 : bx1 + 1, oy: y }); }
     return out;
@@ -2302,6 +2785,7 @@ export function assemble(rng, spec, opts = {}) {
       const run = list.slice(i, i + width);
       const r0 = rid[I(run[0].ix, run[0].iy)];
       if (r0 < 0 || !run.every((s) => rid[I(s.ix, s.iy)] === r0) || !ok(rooms[r0])) continue;
+      if (run.some((s, j) => j && Math.abs(s.x - run[j - 1].x) + Math.abs(s.y - run[j - 1].y) !== 1)) continue; // a shape's side runs on past a corner: a door's cells side by side
       if (run.some((s) => doorAt.has(I(s.x, s.y)))) continue;
       const before = list[i - 1], after = list[i + width];
       if ((before && doorAt.has(I(before.x, before.y))) || (after && doorAt.has(I(after.x, after.y)))) continue;
@@ -2343,7 +2827,8 @@ export function assemble(rng, spec, opts = {}) {
   }
   const front = upper ? null : outerDoor("front", (r) => r === entry, (spec.front && spec.front.width) || 1, false) || outerDoor("front", (r) => r === entry, 1, false) ||
     outerDoor("front", (r) => !r.locked && !r.up, 1, false) || outerDoor("front", () => true, 1, false) || outerDoor("front", () => true, 1, false, true, true);
-  if (!upper && spec.unitDoors) for (const r of rooms) if (r.role === spec.unitDoors && touches(r, "front")) outerDoor("front", (q) => q === r, 1, false);
+  if (!upper && spec.unitDoors) for (const r of rooms) { const side = here ? parts[r.part].unitSide || "front" : "front"; if (r.role === spec.unitDoors && touches(r, side)) outerDoor(side, (q) => q === r, 1, false); } // a shape's wing: its rooms' doors on the side its part says (a motel's wing onto the lot)
+  if (!upper && here) for (const r of rooms) if (r.ownDoor && touches(r, r.ownDoor)) outerDoor(r.ownDoor, (q) => q === r, 1, false); // a shape's room with a door of its own to the outside (a motel's laundry)
   const exits = [];
   if (!upper) for (const e of spec.exits || []) {
     if (!rng.chance(e.chance)) continue;
@@ -2376,6 +2861,7 @@ export function assemble(rng, spec, opts = {}) {
     if (A.hub && B.hub) w -= 0.6; // hubs open onto each other
     if (A.locked || B.locked) w += 4;
     if (A.up !== B.up) w += (A.up ? B.hub : A.hub) ? 1 : 50;
+    if ((A.nextTo && A.nextTo.includes(B.role)) || (B.nextTo && B.nextTo.includes(A.role))) w -= 1.5; // a shape's annex opens onto the room it stands by (issue #23)
     if (A.role === "stairwell" || B.role === "stairwell") w += A.hub || B.hub ? 0 : 3; // a stairwell opens onto the lobby, the landing or the corridor
     const free = p.cells.filter(([x, y]) => !nearStep(x, y)); // a door never opens onto a step
     return { ...p, cells: free.length ? free : p.cells, blocked: !free.length, all: p.cells.length, w };
@@ -2441,7 +2927,10 @@ export function assemble(rng, spec, opts = {}) {
   }
   for (const ex of exits) if (ex.locked) for (const [x, y] of ex.cells) { cells[I(x, y)].k = "door"; delete cells[I(x, y)].roll; lockedDoors.push({ x, y, area: null, kind: "door", exit: true }); }
   for (const r of rooms) if (r.up) for (let y = r.iy0; y < r.iy0 + r.ih; y++) for (let x = r.ix0; x < r.ix0 + r.iw; x++) { const c = cells[I(x, y)]; if (c.k === "open") c.k = "loft"; c.h = 1; }
-  if (tall) for (let y = by0; y <= by1; y++) for (let x = bx0; x <= bx1; x++) { const c = cells[I(x, y)]; if (c.k === "wall" || c.k === "idoor" || c.k === "door") c.t = 2; }
+  // A shape: two-storey walls on the parts that rise past the ground floor (part.tall: a gym's one tall storey) or hold
+  // a raised room; a lower part's stay one storey high.
+  const tallPart = here ? parts.map((p) => !upper && (p.n > 1 || !!p.tall || rooms.some((r) => r.up && r.part === p.k))) : null;
+  if (tall || (tallPart && tallPart.some(Boolean))) for (let y = by0; y <= by1; y++) for (let x = bx0; x <= bx1; x++) { const c = cells[I(x, y)]; if ((c.k === "wall" || c.k === "idoor" || c.k === "door") && (!here || (c.bp != null && tallPart[c.bp]))) c.t = 2; }
 
   // ---------- windows ----------
   // Each gets its state (windows.js: unlocked, locked or fixed) from hash dice of the map's seed as it stands (rng.state
@@ -2449,9 +2938,11 @@ export function assemble(rng, spec, opts = {}) {
   // and offices mostly fixed).
   const winMix = winMixOf(opts.key), winSeed = rng.state;
   for (const side of ["front", "back", "left", "right"]) {
-    let n = rng.int(0, BMAP.WINDOW_GAP - 1);
+    let n = rng.int(0, BMAP.WINDOW_GAP - 1), last = null;
     for (const s of sideCells(side)) {
       const c = cells[I(s.x, s.y)], r = rid[I(s.ix, s.iy)];
+      if (last && Math.abs(s.x - last.x) + Math.abs(s.y - last.y) !== 1) n = 0; // a shape: the next run of outer wall
+      last = s;
       if (c.k !== "wall" || r < 0) { n = 0; continue; }
       const room = rooms[r];
       if (room.windows === false || spec.windows === false) continue;
@@ -2485,7 +2976,8 @@ export function assemble(rng, spec, opts = {}) {
   }
   const reserved = new Uint8Array(W * H);
   for (const z of zones) for (let y = z.y0 - 1; y <= z.y0 + z.h; y++) for (let x = z.x0 - 1; x <= z.x0 + z.w; x++) if (inside(x, y)) reserved[I(x, y)] = 1;
-  if (!upper) for (let y = by0 - 1; y <= by1 + 1; y++) for (let x = bx0 - 1; x <= bx1 + 1; x++) if (inside(x, y)) reserved[I(x, y)] = 1; // a clear ring around the building
+  if (!upper && here) { for (let y = by0 - 1; y <= by1 + 1; y++) for (let x = bx0 - 1; x <= bx1 + 1; x++) if (inside(x, y) && [-1, 0, 1].some((dy) => [-1, 0, 1].some((dx) => inside(x + dx, y + dy) && rid[I(x + dx, y + dy)] !== -2))) reserved[I(x, y)] = 1; } // a shape: the ring round its parts (a courtyard's middle is ground)
+  else if (!upper) for (let y = by0 - 1; y <= by1 + 1; y++) for (let x = bx0 - 1; x <= bx1 + 1; x++) if (inside(x, y)) reserved[I(x, y)] = 1; // a clear ring around the building
   let vehicle = null; // the team's car or truck in the entry zone, 2 × 3–4 cells (combat.js placeVehicle; a bike or no room: one cell)
   if (!upper && opts.withVehicle) {
     const z = zones[0]; z.vehicle = true;
@@ -2497,7 +2989,7 @@ export function assemble(rng, spec, opts = {}) {
   for (const d of doors) if (d.ext) {
     let x = d.ox, y = d.oy;
     const tx = d.side === "front" ? x : d.side === "back" ? x : d.side === "left" ? 0 : W - 1, ty = d.side === "front" ? H - 1 : d.side === "back" ? 0 : y;
-    for (let g = 0; g < W + H && inside(x, y); g++) { pathCells[I(x, y)] = 1; if (x === tx && y === ty) break; if (x !== tx) x += Math.sign(tx - x); else y += Math.sign(ty - y); }
+    for (let g = 0; g < W + H && inside(x, y); g++) { if (!here || rid[I(x, y)] === -2) pathCells[I(x, y)] = 1; if (x === tx && y === ty) break; if (x !== tx) x += Math.sign(tx - x); else y += Math.sign(ty - y); } // (a shape: past a wing in the way)
   }
 
   // ---------- connectivity (every walkable cell reachable from the front, locked doors counted as ways through) ----------
@@ -2569,7 +3061,7 @@ export function assemble(rng, spec, opts = {}) {
     passAt(i);
     if (!passable(c)) {
       total--;
-      if (!connected(i)) { c.k = was; passAt(i); total++; return false; }
+      if (!connected(i) || (here && room && !roomWhole(room))) { c.k = was; passAt(i); total++; return false; } // a shape's room stays whole (roomWhole)
     }
     if (room && room.up) c.h = 1;
     return true;
@@ -2639,6 +3131,18 @@ export function assemble(rng, spec, opts = {}) {
       placeDecorPieces(room, { seed: pseed, f }, (x, y) => ctx.free(x, y) && [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => rid[I(x + dx, y + dy)] === -1), (x, y, k) => block(x, y, k, room));
     }
   }
+  // A shape's room stays whole (issue #23): every door's and stair's step into it reached from the others inside it, not
+  // only round the outside (a garage annex can be the one way between a house's front rooms and its back; a car across
+  // it must not split the house through a locked back door). The one rectangle's rooms keep the map-wide test alone.
+  function roomWhole(room) {
+    const goal = [];
+    for (const [dx0, dy0] of room.doors) for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const x = dx0 + dx, y = dy0 + dy; if (inside(x, y) && rid[I(x, y)] === room.id && pass[I(x, y)]) goal.push(I(x, y)); }
+    for (let y = room.iy0; y < room.iy0 + room.ih; y++) for (let x = room.ix0; x < room.ix0 + room.iw; x++) if (cells[I(x, y)].k === "stairs") goal.push(I(x, y));
+    if (goal.length < 2) return true;
+    const seen = new Set([goal[0]]), q = [goal[0]];
+    while (q.length) { const i = q.pop(), x = i % W, y = (i / W) | 0; for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const j = I(x + dx, y + dy); if (!seen.has(j) && rid[j] === room.id && pass[j]) { seen.add(j); q.push(j); } } }
+    return goal.every((i) => seen.has(i));
+  }
   function furnishCtx(room) {
     const x0 = room.ix0, y0 = room.iy0, x1 = room.ix0 + room.iw - 1, y1 = room.iy0 + room.ih - 1;
     const free = (x, y) => x >= x0 && x <= x1 && y >= y0 && y <= y1 && FLOOR_KINDS.has(cells[I(x, y)].k) && !keep[I(x, y)];
@@ -2668,7 +3172,7 @@ export function assemble(rng, spec, opts = {}) {
         if (!rect) return false;
         passRect(rect);
         total -= rect.w * rect.h;
-        if (!connected()) { removeCar(cells, W, rect); passRect(rect); total += rect.w * rect.h; return false; }
+        if (!connected() || (here && !roomWhole(room))) { removeCar(cells, W, rect); passRect(rect); total += rect.w * rect.h; return false; }
         return rect;
       },
       // A vehicle of the room's (civiclayout.js: a fire engine, an ambulance, a police car): placeCar at (x, y) along o.ax,
@@ -2681,7 +3185,7 @@ export function assemble(rng, spec, opts = {}) {
         total -= rect.w * rect.h;
         const side = [];
         for (let yy = rect.y0 - 1; yy <= rect.y0 + rect.h; yy++) for (let xx = rect.x0 - 1; xx <= rect.x0 + rect.w; xx++) if ((xx < rect.x0 || xx >= rect.x0 + rect.w) !== (yy < rect.y0 || yy >= rect.y0 + rect.h) && inside(xx, yy) && rid[I(xx, yy)] === room.id && walkAt(xx, yy)) side.push([xx, yy]);
-        if (!side.length || !connected()) { removeCar(cells, W, rect); passRect(rect); total += rect.w * rect.h; return null; }
+        if (!side.length || !connected() || (here && !roomWhole(room))) { removeCar(cells, W, rect); passRect(rect); total += rect.w * rect.h; return null; }
         if (o.box && canBox) {
           keep[I(side[0][0], side[0][1])] = 1;
           containers.push({ id: cid++, x: rect.x0, y: rect.y0, w: rect.w, h: rect.h, f, area: room.id, kind: o.box, searched: false, label: `${room.name}: ${o.label || (o.box === "engine" ? "fire engine" : o.box === "policecar" ? "police car" : o.box === "humvee" ? "Humvee" : o.box)}` }); // o.label: an aircraft's, an Army vehicle's name (militarylayout.js)
@@ -2923,6 +3427,7 @@ export function assemble(rng, spec, opts = {}) {
   }));
   rooms.forEach((r, i) => { if (r.gunSafe) areas[i].gunSafe = r.gunSafe.slice(); }); // locks.js placeGunSafes: a gun safe may stand here
   rooms.forEach((r, i) => { if (r.kennel) areas[i].kennel = true; });
+  if (here) rooms.forEach((r, i) => { areas[i].part = r.part; }); // a shape's: the part the room is in
   rooms.forEach((r, i) => { if (r.bunker) areas[i].bunker = r.bunker; if (r.ind) areas[i].ind = r.ind; if (r.lib) areas[i].lib = r.lib; }); // lib: librarylayout.js's room (its scenes) // ind: industrylayout.js's room (its scenes) // bunkerlayout.js: a bunker's room (its scenes, its dark, who holds it) // deadbeasts.js shutInPets: a vet's locked kennels hold dead pets
   if (!opts.legacy) rooms.forEach((r, i) => { if (r.flat) areas[i].flat = true; if (r.unit) areas[i].unit = r.unit; if (r.civic) areas[i].civic = r.civic; if (r.office) areas[i].office = r.office; if (r.campus) areas[i].campus = r.campus; if (r.aisle != null) areas[i].aisle = r.aisle; const sn = shopStyleName(r, opts.key); if (sn) areas[i].shop = sn; }); // shoplayout.js: a room's style (its scenes' when); roomlayout.js: a shop's flat above, an apartment's rooms; civiclayout.js: a room's style, a nave's aisle
   rooms.forEach((r, i) => { if (r.mix) areas[i].mix = r.mix; if (r.eat) areas[i].eat = r.eat; }); // eaterylayout.js: a restaurant's rooms hold its cuisine's food (combat.js boxFinds)
@@ -2935,14 +3440,15 @@ export function assemble(rng, spec, opts = {}) {
   const floors = [{ cells, name: floorName(0) }];
   let base = areas.length, nextCid = cid;
   for (let g = 1; g < storeys; g++) {
-    const program = spec.upper ? spec.upper(g, rng, { top: g === storeys - 1 && height === storeys, storeys, bw, bh }) : spec.program; // top: the roof is over it (a taller building's top floor built is not its plant room)
-    const up = assemble(rng, spec, { ...opts, _floor: g, _program: program, _runs: runs, _idBase: base, _cid: nextCid, _piece: pieceNo });
+    const program = parts ? null : spec.upper ? spec.upper(g, rng, { top: g === storeys - 1 && height === storeys, storeys, bw, bh }) : spec.program; // top: the roof is over it (a taller building's top floor built is not its plant room)
+    const programs = parts ? parts.map((p) => (p.n > g ? (p.upper ? p.upper(g, rng, { top: g === p.n - 1 && (p.n < storeys || height === storeys), storeys: p.n, bw: p.w, bh: p.h, part: p }) : p.program) : null)) : null; // a shape: each part's floor g, while it has one
+    const up = assemble(rng, spec, { ...opts, _floor: g, _program: program, _programs: programs, _runs: runs, _idBase: base, _cid: nextCid, _piece: pieceNo });
     areas.push(...up.rooms); containers.push(...up.containers); lockedDoors.push(...up.lockedDoors);
     floors.push({ cells: up.cells, name: floorName(g) });
     base += up.rooms.length; nextCid = up.nextCid; pieceNo = up.nextPiece;
   }
   const plan = { // ground: what militarylayout.js put outside (issue #25: tools/interiortest.js)
-    key: opts.key, id: opts.id || opts.key, name: opts.name, w: W, h: H, building: { x0: bx0, y0: by0, w: bw, h: bh }, tall, storeys, height, ...(milGround ? { ground: milGround } : {}), stairs: stairCells.map((s) => s.slice()), runs: runs.map((r) => ({ ...r })),
+    key: opts.key, id: opts.id || opts.key, name: opts.name, w: W, h: H, building: { x0: bx0, y0: by0, w: bw, h: bh, ...(parts ? { shape: spec.shape.kind || null, parts: parts.map((p) => ({ x0: p.x0, y0: p.y0, w: p.w, h: p.h, storeys: p.n, ...(p.tall ? { tall: true } : {}), name: p.name || null })) } : {}) }, tall, storeys, height, ...(milGround ? { ground: milGround } : {}), stairs: stairCells.map((s) => s.slice()), runs: runs.map((r) => ({ ...r })),
     rooms: areas.filter((a) => !a.outdoor).map((a) => ({ id: a.id, f: a.f, name: a.name, role: a.role, type: a.type, x0: a.x0, y0: a.y0, w: a.w, h: a.h, locked: a.locked, up: a.up, hub: a.hub, entry: a.entry, ...(a.civic ? { civic: a.civic } : {}), ...(a.bunker ? { bunker: a.bunker } : {}), ...(a.campus ? { campus: a.campus } : {}), ...(a.lib ? { lib: a.lib } : {}) })), // civic, bunker: wanderers.js interiorOccupants' rooms by kind
     front: { x: front.x, y: front.y },
     ...(spec.variant ? { variant: spec.variant } : {}), // a plan's name among its kind's (bunkerlayout.js BUNKER_VARIANTS)

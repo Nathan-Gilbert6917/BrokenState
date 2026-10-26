@@ -435,8 +435,9 @@ section("Laid out for their kind (shoplayout.js, issue #16)");
     for (const c of m.containers) {
       const a = m.rooms.find((r) => r.id === c.area);
       if (!a || a.outdoor || c.kind === "car") continue;
-      const g = grid(m, c.f || 0);
-      if (g[c.y * m.w + c.x].k !== c.kind) err("onpiece", `${tag} ${c.label} on ${g[c.y * m.w + c.x].k}`);
+      const g = grid(m, c.f || 0), k = g[c.y * m.w + c.x].k;
+      // A vehicle parked inside (civiclayout.js vehicleIn: the library's bookmobile) is its own container: its box kind on a car or truck.
+      if (k !== c.kind && !(k === "car" || k === "truck")) err("onpiece", `${tag} ${c.label} on ${k}`);
     }
     for (const a of R) {
       if (!a.doors || !a.doors.length) continue;
