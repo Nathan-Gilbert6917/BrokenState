@@ -30,6 +30,7 @@ import { GEAR, supValue } from "../src/sim/data.js";
 
 const QUICK = !!process.env.BS_QUICK;
 const SEEDS = Math.max(2, Number(process.argv[2]) || (QUICK ? 3 : 6));
+const LOOT_SEEDS = 10; // a plan's loot to the square metre: its few containers need the seeds (quick or not)
 let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) { passes++; console.log(`  ok: ${msg}`); } else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
 const t0 = performance.now();
@@ -72,13 +73,19 @@ for (const kind of KINDS) {
       }
       const m = assemble(new Rng(77 + s), spec, { key: kind, name: kind, noDecor: true }), md = assemble(new Rng(77 + s), drawn, { key: kind, name: kind, noDecor: true });
       D.a += m.containers.length; D.ia += interior(m); D.b += md.containers.length; D.ib += interior(md);
-      const [va, fa] = worth(m, spec.lootK || 1), [vb, fb] = worth(md);
-      D.va += va; D.fa += fa; D.vb += vb; D.fb += fb;
+
       if (s === 0 && setting === "city") {
         const roles = new Set(m.rooms.filter((a) => !a.outdoor).map((a) => a.role));
         const want = SIGN[kind] || [];
         if (want.some((x) => !roles.has(x))) sig.push(`${id} (${want.filter((x) => !roles.has(x)).join(", ")})`);
       }
+    }
+    // The loot to the square metre on seeds of its own (LOOT_SEEDS: not civicvariants.js LOOT_K's calibration seeds).
+    for (let s = 0; s < LOOT_SEEDS; s++) for (const setting of ["city", "town"]) {
+      const r = new Rng(5300 + s * 41), drawn = BUILDINGS[kind].make(r, { plan: id, setting });
+      const r2 = new Rng(5300 + s * 41), spec = realScale(r2, BUILDINGS[kind].make(r2, { plan: id, civicReal: true, setting }), kind, { setting });
+      const [va, fa] = worth(assemble(new Rng(91 + s), spec, { key: kind, name: kind, noDecor: true }), spec.lootK || 1), [vb, fb] = worth(assemble(new Rng(91 + s), drawn, { key: kind, name: kind, noDecor: true }));
+      D.va += va; D.fa += fa; D.vb += vb; D.fb += fb;
     }
     const k = (D.a / D.ia) / Math.max(1e-9, D.b / D.ib); // over every seed and setting: a small plan's few containers are noisy alone
     if (id !== "general" && (k < 0.75 || k > 1.25)) dens.push(`${id} ×${k.toFixed(2)}`);

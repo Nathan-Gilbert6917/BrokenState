@@ -464,7 +464,7 @@ export const VARIANTS = {
     { id: "dental", name: "Dental practice", w: W(0.6, 1, 0.8, 0.2), fr: ["drhale", "familymed"], make: (rng) => {
       // Operatories off a hall behind the front desk (the chair: an exam bed); #27's dentist office is the offices' own.
       const { bw, bh } = sized(rng, "clinic.dental");
-      const op = () => exam({ name: "Operatory", boxTarget: 2 });
+      const op = () => exam({ name: "Operatory", boxTarget: REAL ? 3 : 2 }); // at real scale (issue #49) a cabinet more: a practice's own supplies
       return {
         bw, bh, front: { width: 1 }, ground: "town", storeys: 1, foot: "medium",
         program: cor([["*", waiting({ name: "Reception" })], [4, docs("Dentist's office")]], [["*", op()], ["*", op()], ["*", op()], [3, cupboard({ name: "Sterilisation room" })]], 4),
@@ -520,7 +520,7 @@ export const VARIANTS = {
       const { bw, bh } = sized(rng, "clinic.rural");
       return {
         bw, bh, front: { width: 1 }, ground: "rural", storeys: 1, foot: "small",
-        program: Y(["*", X(["*", waiting()], [3, cupboard()])], ["*", X(["*", exam()], [2, "restroom"])]),
+        program: Y(["*", X(["*", waiting()], [3, cupboard()])], ["*", X(["*", REAL ? ex3() : exam()], [2, "restroom"])]), // at real scale (issue #49, the country's clinic): its exam room a cabinet more, the country's one clinic for miles stocked as one
         exits: [{ side: "back", roles: ["exam"], chance: 0.5, lock: 0.4 }],
       };
     } },
