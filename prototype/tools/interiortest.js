@@ -141,7 +141,7 @@ console.log(`Every archetype (${Object.keys(BUILDINGS).length}), ${SEEDS} seeds 
       sizes[key].push(`${W}x${H}`);
       const errs = [];
       const cap = mapCap(key); // a hotel's map up to 200 × 200 (its grounds round it, issue #29)
-      const huge = spec.foot === "huge" || (m.building && m.building.w >= 50); // a bunker at real-world scale (bunkerlayout.js BUNKER.SIZE, issue #26); the supermarket since issue #22: past the largest size class, its map its footprint and margins
+      const huge = spec.foot === "huge" || spec.foot === "xl" || (m.building && m.building.w >= 50); // a bunker at real-world scale (bunkerlayout.js BUNKER.SIZE, issue #26); the supermarket since issue #22: past the largest size class, its map its footprint and margins
       if (W < 14 || H < 14 || (MIL_KEYS.has(key) ? W > 300 || H > 300 : W > (cap || (huge ? m.building.w + 12 : 44)) || H > (cap || (huge ? m.building.h + 16 : 34)))) errs.push(`size ${W}x${H}`); // issue #25: the military buildings at their real size (the maps up to 300 × 300, #24)
       const z0 = m.zones[0];
       const start = [z0.x0 + 1, z0.y0 + (s % 2 === 1 ? 0 : 1)];
@@ -1247,7 +1247,7 @@ console.log("\nMilitary bases, air bases, airports and prisons laid out like the
     const [k, siteArg] = key.split(":");
     const site = siteArg || SITE[k] || null;
     const rng = new Rng(61000 + s * 7919 + key.length * 17);
-    const spec = BUILDINGS[k].make(rng, { site });
+    const spec = BUILDINGS[k].make(rng, { site, plan: "standard" }); // today's plan of each (its dozen plans: tools/milvarianttest.js)
     const m = assemble(rng, spec, { key: k, name: k });
     const tag = `${key} ${s}`;
     const grids = m.floors || [{ cells: m.cells }];
@@ -1384,8 +1384,8 @@ console.log("\nMilitary bases, air bases, airports and prisons laid out like the
   // The sites: an air base offers its hangars, tower, flight ops, barracks
   // and mess; a base its HQ, mess hall, aid station and gatehouse besides its first four (their ids as they were).
   const sb = (type) => siteBuildings({ loc: { type }, pois: [] });
-  check(sb("airbase") && ["hangar", "tower", "flightops", "barracks", "messhall"].every((kk) => sb("airbase").options.some((o) => o.key === kk && o.site === "airbase")), `an air base's buildings (${sb("airbase").options.map((o) => o.name).join(", ")})`);
-  check(sb("military").options.slice(0, 4).map((o) => o.id).join() === "barracks,armorybldg,motorpool,warehouse" && ["hq", "messhall", "aidstation", "gatehouse"].every((kk) => sb("military").options.some((o) => o.key === kk)), "a base's buildings, its first four's ids as they were");
+  check(sb("airbase") && sb("airbase").options[0].key === "hangar" && sb("airbase").options.every((o) => o.site === "airbase" && BUILDINGS[o.key]), `an air base's buildings (${sb("airbase").options.map((o) => o.name).join(", ")}: by its layout, milplans.js MIL_SITES)`);
+  check(sb("military").options.slice(0, 4).map((o) => o.id).join() === "barracks,armorybldg,motorpool,warehouse" && sb("military").options.length >= 4, "a base's buildings, its first four's ids as they were (the rest by its layout)");
   // The air base on generated maps: one a six of the military sites (a Normal map: two), never the only one.
   const ab = [1, 2].map((seed) => { const w = createWorld({ seed, factionCount: 3 }); return [w.tiles.filter((t) => t.loc && t.loc.type === "airbase").length, w.militaryIds.length, w.tiles.filter((t) => t.loc && t.loc.type === "military").length]; });
   check(ab.every(([a, n, g]) => a >= 1 && g >= 1 && a + g === n && a <= Math.ceil(n / 4)), `air bases on generated maps at a sensible rate (${ab.map(([a, n]) => `${a} of ${n} military sites`).join(", ")})`);
