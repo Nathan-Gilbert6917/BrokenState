@@ -257,12 +257,12 @@ function parkgarageOriginal(rng, o = {}) {
   };
 }
 // A type's maker: one of its CAMPUS_VARIANTS by the building's dice (o.plan: a given one), the first its original plan
-// above; spec.variant names it (buildingmaps.js assemble copies it onto the plan).
+// above; spec.vid / spec.vname name it (planname.js, issue #40: buildingmaps.js assemble copies them onto the plan).
 const variantMaker = (key, original) => (rng, o = {}) => {
   const [, V] = campusVariantOf(rng, key, o);
   const spec = !V || V.original ? original(rng, o) : planFrom(rng, key, V, o);
   if (!(spec.foot === "wide" && spec.bw >= 20 && spec.bw * spec.bh >= 280)) spec.foot = footClass(spec.bw, spec.bh); // the footprint's class by its area
-  return V ? Object.assign(spec, { variant: V.name, variantId: V.id }) : spec;
+  return V ? Object.assign(spec, { vid: V.id, vname: V.name, variant: V.name, variantId: V.id }) : spec; // vid, vname: the plan's id and name (planname.js, issue #40); variant, variantId their older fields
 };
 const dorm = variantMaker("dorm", dormOriginal), lecturehall = variantMaker("lecturehall", lecturehallOriginal), sciencehall = variantMaker("sciencehall", sciencehallOriginal);
 const studentunion = variantMaker("studentunion", studentunionOriginal), athletics = variantMaker("athletics", athleticsOriginal), admin = variantMaker("admin", adminOriginal);

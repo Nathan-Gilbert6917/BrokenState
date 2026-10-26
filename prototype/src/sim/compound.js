@@ -385,7 +385,7 @@ export function parkingLot(C, G, r, rng, o = {}) {
 /**
  * The raid map from the compound, in streetMap's shape. meta: { key, id, name, zones, vehicle (the team's, placed by
  * the caller), kind (the compound's own kind: "stripmall"...), intro, extra (more plan fields) }.
- * @param {any} C @param {any} meta
+ * @param {any} C @param {any} meta @returns {any}
  */
 export function compoundResult(C, meta) {
   const { W, H } = C, zones = meta.zones;
@@ -399,8 +399,12 @@ export function compoundResult(C, meta) {
     rooms: C.areas.filter((a) => !a.outdoor).map((a) => ({ id: a.id, f: a.f, name: a.name, role: a.role, type: a.type, x0: a.x0, y0: a.y0, w: a.w, h: a.h, locked: a.locked, up: a.up, hub: a.hub, entry: a.entry, house: a.house, ...(a.civic ? { civic: a.civic } : {}), ...(a.shop ? { shop: a.shop } : {}) })),
     front: first && first.front ? { x: first.front.x, y: first.front.y } : null, exits: zoneExits(), ...(meta.extra || {}),
   };
+  // The complex's plan id and name (planname.js, issue #40): a mall's variant (extra.vid, vname), a prison's or a
+  // campus's site layout (extra.layout, layoutName: their older fields, kept).
+  const ex = meta.extra || {}, vid = ex.vid != null ? ex.vid : typeof ex.layout === "string" ? ex.layout : null, vname = ex.vname || (vid != null ? ex.layoutName || null : null);
+  if (vid != null && vname) { plan.vid = vid; plan.vname = vname; }
   return {
-    w: W, h: H, cells: C.cells, rooms: C.areas, containers: C.containers, zones, vehicle: meta.vehicle || null, exits: zoneExits(), front: plan.front,
+    w: W, h: H, ...(plan.vid != null ? { vid: plan.vid, vname: plan.vname } : {}), cells: C.cells, rooms: C.areas, containers: C.containers, zones, vehicle: meta.vehicle || null, exits: zoneExits(), front: plan.front,
     lockedDoors: C.lockedDoors, plan, building: plan.building, buildings: plan.buildings, floors: C.floors, stairs: C.stairs, runs: C.runs, storeys: C.storeys, compound: true,
   };
 }

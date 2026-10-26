@@ -315,7 +315,7 @@ export function planFrom(rng, key, V, o = {}) {
     bw, bh, front: { width: V.door || 2 }, ground: V.ground || "town", storeys: n, foot: footClass(bw, bh),
     stairs: V.stairs || ENDS, program: plan(V.g, 0, n === 1), upper: n > 1 ? upper : null,
     exits: V.exits || [BACK(["dayroom", "office", "classroom", "lab", "storage"]), ...FIRE()],
-    variant: V.name, variantId: V.id,
+    vid: V.id, vname: V.name, variant: V.name, variantId: V.id, // the plan's id and name (planname.js, issue #40); variant, variantId: their older fields
   };
 }
 

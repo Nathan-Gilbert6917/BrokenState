@@ -201,7 +201,7 @@ export function eateryPlan(rng, v, plan = {}) {
   const margins = { ...(outside.drive ? { [left ? "left" : "right"]: 6 } : {}), ...(outside.truck ? { [left ? "right" : "left"]: 5 } : {}), ...(outside.smokers ? { back: 5 } : {}) };
   return {
     bw, bh, front: { width: tiny || small ? 1 : 2 }, openDoors: 0.3, ground: ["fastfood", "buffet", "kiosk"].includes(v.format) ? "lot" : "town", storeys: 1, upper: null, foot: SIZE_FOOT[v.size] || "medium",
-    stairs: { roles: ["kitchen", "pantry", "office"] }, margins, eat: { ...outside, cuisine: v.cuisine, format: v.format, size: v.size, id: v.id },
+    stairs: { roles: ["kitchen", "pantry", "office"] }, margins, eat: { ...outside, cuisine: v.cuisine, format: v.format, size: v.size, id: v.id }, vid: v.id, vname: v.name, // vid, vname: the plan's id and name (planname.js, issue #40)
     program: { split: "y", parts: [[fd, front], ["*", { split: "x", parts: back }]] },
     exits: [
       { side: "back", roles: ["kitchen", "pantry", "storage", "office"], chance: 1, lock: 0.3, name: "Back door" },
