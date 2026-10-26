@@ -6,6 +6,8 @@ Contents: [Bosses on 2 × 2 cells](#bosses-on-2--2-cells) · [Hive crawl](#hive-
 
 The dead on the land (how many there are per tile and per POI, their caps, kills, reinforcements and the daily recalculation, issue #65): [travel.md](travel.md#the-dead-on-the-land-tile-and-poi-populations).
 
+Hunt the dead (a team order to sweep its tile's open ground, Attack on a small map or Retreat, every kill off the tile's count; the governor and the groups hunt their own land, issue #68): [travel.md](travel.md#hunt-the-dead).
+
 ## Bosses on 2 × 2 cells
 The two boss dead take 2 × 2 cells.
 - The Broodmother and the Hivemind stand on 2 × 2 cells (`defences.js` BOSSES size; `combat.js` unitSize / unitCells / nearCell / coversCell).

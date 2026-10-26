@@ -52,7 +52,7 @@
 /** @import { State, Tile } from "./types" */
 import { poiAt, poiLedger, poiPool, poiTake, poiFull, poiBand, isSitePoi, TILE_HEAT } from "./pois.js";
 import { noteNoise } from "./deadpop.js"; // the dead on the land (issue #65): the noise of a raid on the tile and the place
-import { siteBuildings, SITES, BUILDINGS, streetHouses, zooBuildings } from "./buildingmaps.js"; // zooBuildings: a zoo's (issue #59, zoo.js), through buildingmaps so the modules load in their order
+import { siteBuildings, SITES, BUILDINGS, streetHouses, zooBuildings, outdoorHouses, OUTDOOR_SITES } from "./buildingmaps.js"; // zooBuildings: a zoo's (issue #59, zoo.js), through buildingmaps so the modules load in their order; outdoorHouses, OUTDOOR_SITES: outdoors.js (issue #61)
 import { mallUnits } from "./mall.js"; // a mall's buildings (issue #30)
 import { campusBuildings } from "./campus.js"; // a college campus's buildings (issue #28)
 import { farmBuildingCount } from "./farmstead.js"; // a farm's or a ranch's buildings, each apart in the ledger (issue #62)
@@ -97,12 +97,16 @@ export function poiHouses(state, tile, i) {
   if (!poi) return 1;
   // A shopping mall (mall.js) or a campus (campus.js): the site's one map of many buildings, each apart in the ledger;
   // a strip mall's or an outlet's POI likewise (below): the search goes through them a building at a time.
+  // A new world's campground site (issue #61, buildingmaps.js OUTDOOR_SITES: farmsOld's null reads it as an older save's
+  // street map): its buildings and grounds (outdoors.js); an older save's keeps its street map (siteBuildings null: 1).
+  if (isSitePoi(t, i) && t.loc && OUTDOOR_SITES[t.loc.type]) { const sb = siteBuildings(t, state); const o = sb && sb.single ? sb.options[0] : null; return o && BUILDINGS[o.key] && BUILDINGS[o.key].outdoors ? outdoorHouses(state, t.id, o) : 1; }
   if (isSitePoi(t, i)) { const sb = siteBuildings(t, farmsOld(state)); const o = sb && sb.single ? sb.options[0] : null; return o && BUILDINGS[o.key] && BUILDINGS[o.key].compound ? mallHouses(state, t.id, o) : o && BUILDINGS[o.key] && BUILDINGS[o.key].campus ? campusBuildings(state, t, o) : o && BUILDINGS[o.key] && BUILDINGS[o.key].farmstead ? farmBuildingCount(state, t, o) : 1; } // farmstead.js: a farm's or a ranch's buildings (issue #62)
   const entry = SITES[poi.kind], first = entry ? (Array.isArray(entry) ? entry : entry.list)[0] : null;
   const key = Array.isArray(first) ? first[0] : first;
   if (key && BUILDINGS[key] && BUILDINGS[key].park) return parkHouses(state, t.id, { id: `poi${i}:${key}`, key, name: BUILDINGS[key].name });
   if (key && BUILDINGS[key] && BUILDINGS[key].compound) return mallHouses(state, t.id, { id: `poi${i}:${key}`, key, name: BUILDINGS[key].name });
   if (key && BUILDINGS[key] && BUILDINGS[key].zoo) return zooBuildings(state, t.id, { id: `poi${i}:${key}` }); // a zoo (zoo.js): its buildings
+  if (key && BUILDINGS[key] && BUILDINGS[key].outdoors) return outdoorHouses(state, t.id, { id: `poi${i}:${key}`, key, name: BUILDINGS[key].name }); // a golf course's or an RV park's POI (outdoors.js)
   return key && BUILDINGS[key] && BUILDINGS[key].street ? streetHouses(state, t.id, { id: `poi${i}:${key}`, key, ...(poi.lay ? { layout: poi.lay } : {}) }) : 1;
 }
 // An older save's farm or ranch (worldcfg.js legacyFarms, issue #62) is still its pick of buildings: siteBuildings is

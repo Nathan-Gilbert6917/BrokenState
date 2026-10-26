@@ -96,6 +96,7 @@ import { stirBodies, carrierRound, burst, swarmHit, swarmBite, crush, tapRefusal
 import { hasWorm, WORM } from "./worm.js"; // the worm in a living person (half the healing while it is in them)
 import { fieldDims, raidDims, densify, coverTarget, spawnRules, clearEnough, fledFarEnough, raidAreaTypes, raidDeadScale, roomBoxes, raidHeatRate, raidLootShare, raidBig, BIG as BIG_RAID, RAID as RAID_SIZE, CONTACT } from "./battlesize.js"; // map sizes by context, cover, spawns, the anti-slog ends
 import { campusHeatRate, campusLootShare } from "./campus.js"; // a college campus: Heat by the area searched, a container what its building's own map holds (issue #28)
+import { outdoorHeatRate, outdoorLootShare } from "./outdoorshare.js"; // a golf course, a campground, an RV park: the same by its buildings and grounds (issue #61)
 // The third side (neutral survivors, military squads: wanderers.js brings them, thirdside.js runs them). Every hook
 // below is marked "thirdside.js"; a battle without a third side takes exactly the old paths.
 import { volFought } from "./volunteers.js"; // volunteers: an allied group's people with your team, moved by their AI (volunteerTurn below)
@@ -7807,7 +7808,7 @@ function raidTurn(b) {
   const noise = b.noise;
   b.noise = 0;
   const K = RAID_HEAT;
-  R.heat = Math.min(100, R.heat + K.turn * (R.big ? (R.plan && (R.plan.campus || R.plan.zoo) ? campusHeatRate(b) : raidHeatRate(b.w, b.h)) : 1) + noise * K.noise + b.infection * K.infection); // a big map (battlesize.js raidBig): the clock runs slower
+  R.heat = Math.min(100, R.heat + K.turn * (R.big ? (R.plan && (R.plan.campus || R.plan.zoo) ? campusHeatRate(b) : R.plan && R.plan.outdoors ? outdoorHeatRate(b) : raidHeatRate(b.w, b.h)) : 1) + noise * K.noise + b.infection * K.infection); // a big map (battlesize.js raidBig): the clock runs slower
   const stage = Math.min(3, Math.floor(R.heat / K.stage));
   if (stage > R.stage) {
     R.stage = stage;
@@ -7975,7 +7976,7 @@ export function searchBox(state, b, u, box, open = false, quick = false) {
   const party = state.parties.find((x) => x.id === b.setup.partyId);
   if (u.xpT && !box.contents) u.xpT.boxes++; // skills.js: Scavenging XP for each container opened
   const rich = box.kind === "body" ? 1 : R.richness * Math.min(FLOOR_RICH.cap, Math.pow(FLOOR_RICH.perFloor, box.f || 0)) * (box.rich || 1) * (box.lootK || 1); // lootK: a civic plan at real scale holds its drawn plan's worth a square metre (civicvariants.js LOOT_K, issue #49); upper storeys are less picked over (buildingmaps.js); a nest's floor richer still (floorfolk.js)
-  const reward = box.kind === "body" ? 1 : (R.reward ?? 1) * (box.truck || !R.big ? 1 : R.plan && (R.plan.campus || R.plan.civicSite || R.plan.zoo) ? campusLootShare(b, box) : R.natMap ? raidLootShare(R.natMap[0], R.natMap[1]) : raidLootShare(b.w, b.h)); // a campus's a civic site's (civicsite.js, issue #49) or a zoo's (zoo.js, issue #59) container what its building's own map's would; a building at real size (R.natMap): its containers hold what its plan's map's did (as many to the square metre, each as full) // buildingmaps.js rewardMult: city sites pay more, the countryside less; a map past the old Large has more containers, each holds a little less (battlesize.js BIG)
+  const reward = box.kind === "body" ? 1 : (R.reward ?? 1) * (box.truck || !R.big ? 1 : R.plan && (R.plan.campus || R.plan.civicSite || R.plan.zoo) ? campusLootShare(b, box) : R.plan && R.plan.outdoors ? outdoorLootShare(b, box) : R.natMap ? raidLootShare(R.natMap[0], R.natMap[1]) : raidLootShare(b.w, b.h)); // a campus's a civic site's (civicsite.js, issue #49) or a zoo's (zoo.js, issue #59) container what its building's own map's would; a building at real size (R.natMap): its containers hold what its plan's map's did (as many to the square metre, each as full) // buildingmaps.js rewardMult: city sites pay more, the countryside less; a map past the old Large has more containers, each holds a little less (battlesize.js BIG)
   // Roll what is inside (once); anything that does not fit stays in the container.
   if (!box.contents) {
     const sup = {}, gear = [];

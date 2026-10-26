@@ -90,6 +90,7 @@ import { visitorsHour, visitorsDaily } from "./visitors.js";
 import { nomadsHour, nomadsDaily } from "./nomads.js"; // baseless bands that camp, raid the places round them and move on
 import { caravanRaidsHour } from "./caravanraids.js";
 import { noteFinds, discoveryHour, mergeLooked } from "./discovery.js";
+import { aiHuntsDaily } from "./deadhunt.js"; // Hunt the dead: the groups' own hunts (call-time only)
 import { deadPopDaily, deadPopSpread } from "./deadpop.js"; // the dead on the land: the midnight recalculation
 import { ensurePois, poiSnapshot, learnPois, mergePoiFinds } from "./pois.js"; // points of interest on the tiles: their lists, and what a report says of them
 import { hiveBirthHour } from "./hivebirth.js"; // hive birth you can see: rumours, the massing card, a hive risen
@@ -263,6 +264,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
     farmV: 1, // farms and ranches as whole sites, sheds and farm stands of their own (issue #62; save.js: an older save keeps its farms)
     towerV: 1, // radio towers: a radio tower site is the tower compound a base can power (radiotower.js, issue #54; save.js: an older save keeps its transmitter hut)
     placeV: 1, // where buildings stand by the placement table (data-placement.js, issue #42; save.js: an older save keeps its places)
+    outdoorsV: 1, // golf courses, campgrounds and RV parks as places (outdoors.js, issue #61; save.js: an older save gets none, its campgrounds' street map)
     officesV: 1, // the office buildings of every kind and their firms (data-offices.js; save.js: an older save gets none)
     civicV: 1, // civic and medical buildings at real scale, their big plans and sites (civicvariants.js, civicsite.js, issue #49; save.js: an older save keeps its plans)
     stadV: 1, // sports stadiums and arenas (stadium.js, issue #57; save.js: an older save's tiles get none)
@@ -1208,6 +1210,7 @@ function hourOfWorld(state) {
     wanderersDaily(state); // wanderers.js: the survivors you met and left live on (or not); no dice of the world's
     deadPopDaily(state); // deadpop.js (issue #65): the dead and the raiders on the tiles and in their POIs, by their bands and yesterday's noise
     deadPopSpread(state); // deadpop.js: the spread between tiles (the heat epic's #66)
+    aiHuntsDaily(state); // deadhunt.js (issue #68): the groups hunt the dead on their own land now and then
     recomputeOwnership(state);
     claimsDaily(state); // claims.js: claims under a new base, a hive or a hostile camp are lost
     fieldworksDaily(state); // fieldworks.js: relay masts' parts, raids on your field works, the groups' own, towers drawing the dead

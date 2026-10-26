@@ -24,7 +24,7 @@ import { LOCATIONS } from "./data.js";
 import { hash01 } from "./skills.js";
 import { useSizeClassOf } from "./variantpick.js"; // the shared picker (#41): its plans' size classes by sizeClassOf
 import { settingAt } from "./settings.js"; // the six settings (issue #40): this module adds coast and scenic land
-import { legacyPlace, legacyShopsR2, legacyDc, legacySaw, legacyMines, legacyZoo, legacyRec, legacyStadium } from "./worldcfg.js";
+import { legacyPlace, legacyShopsR2, legacyDc, legacySaw, legacyMines, legacyZoo, legacyRec, legacyStadium, legacyOutdoors } from "./worldcfg.js";
 import { maxLevel } from "./citygrid.js";
 
 export { TILE_CLASSES, SIZE_CLASSES, PLACE };
@@ -154,9 +154,15 @@ export const PLACE_EXTRA = [
   ["gym", { centre: 0.08, city: 0.08, suburb: 0.07, town: 0.05, highway: 0.003, rural: 0.003 }], // issue #56: a gym or a bowling alley on a tile now and then
   ["bowling", { centre: 0.006, city: 0.012, suburb: 0.02, town: 0.015, highway: 0.005, rural: 0.004 }],
   ["stadium", { centre: 0.04, city: 0.012, suburb: 0.003, town: 0.003, highway: 0.0015, scenic: 0.0003, rural: 0.0006 }], // issue #57 (after the gyms and bowling alleys, last: the kinds before keep their picks; none in a save from before them, legacyStadium): a pro stadium by the centre, a town's ballpark, a rodeo out in the country
+  // Issue #61 (outdoors.js), last so the kinds before keep their picks; a world made since (worldcfg.js legacyOutdoors): golf near the towns and the cities, RV
+  // parks by the highways, the lakes and in scenic land, a lake's or a river's campground.
+  ["golfcourse", { suburb: 0.02, town: 0.012, city: 0.004, highway: 0.002, coast: 0.003, scenic: 0.0015, rural: 0.0015 }],
+  ["rvpark", { highway: 0.012, coast: 0.006, scenic: 0.004, rural: 0.002, town: 0.002 }],
+  ["campground", { coast: 0.004, scenic: 0.002 }],
 ];
 const R2_EXTRA = new Set(["bakery", "butcher"]); // issue #55's: none in a save from before them
 const MINE_EXTRA = new Set(["mine", "quarry"]); // issue #52's: none in a save from before them
+const OUTDOOR_EXTRA = new Set(["golfcourse", "rvpark", "campground"]); // a save from before issue #61 draws none of them
 const REC_EXTRA = new Set(["gym", "bowling"]); // issue #56's: none in a save from before them (legacyRec)
 // The kinds a new world's crawl blocks may hold one of besides their places (citycrawl.js genBlock, on its own dice
 // after every other place): [kind, { class: chance a block }]. Gyms and bowling alleys (issue #56).
@@ -201,6 +207,7 @@ export function placeExtraKind(state, t, list, max) {
     if (MINE_EXTRA.has(/** @type {string} */ (kind)) && legacyMines(state)) continue;
     if (kind === "zoo" && legacyZoo(state)) continue; // issue #59: none in a save from before them
     if (REC_EXTRA.has(/** @type {string} */ (kind)) && legacyRec(state)) continue;
+    if (OUTDOOR_EXTRA.has(/** @type {string} */ (kind)) && legacyOutdoors(state)) continue;
     if (hash01(state.seed, "placepoi", t.id, kind) < p) return /** @type {string} */ (kind);
   }
   return null;
