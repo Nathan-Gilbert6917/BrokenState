@@ -73,6 +73,37 @@ export const REAL_SIZE = {
   dealer:      { w: [30, 50], d: [20, 35], storeys: [1, 2], set: "town", planned: true },
   library:     { w: [9, 56], d: [10, 44], storeys: [1, 8], set: "town", planned: true }, // #34: thirteen variants drawn at their real size (librarylayout.js LIBRARY.SIZE), a rural reading room to an 8-storey central library
   vet:         { w: [15, 20], d: [12, 18], storeys: [1, 2], set: "town" },
+  // #58: thirteen variants drawn at their real size (museumlayout.js reads these rows: a variant's footprint and storeys),
+  // a local history museum in an old house to a natural history museum of three storeys by a city's centre.
+  museum:      { w: [14, 72], d: [11, 54], storeys: [1, 4], set: "city", planned: true, sizes: {
+    art:          { w: [60, 68], d: [44, 50], storeys: [3, 4] }, // huge: galleries round an atrium or a sculpture court
+    natural:      { w: [64, 72], d: [48, 54], storeys: [3, 3] }, // huge: the dinosaur hall and its halls
+    science:      { w: [40, 48], d: [30, 36], storeys: [2, 2] },
+    military:     { w: [40, 48], d: [30, 36], storeys: [1, 2] },
+    localhist:    { w: [14, 17], d: [11, 13], storeys: [2, 2] }, // small: an old house
+    county:       { w: [16, 20], d: [14, 17], storeys: [1, 1] },
+    children:     { w: [26, 32], d: [20, 24], storeys: [1, 2] },
+    aviation:     { w: [50, 58], d: [38, 44], storeys: [1, 1] }, // a hangar's height, one floor
+    car:          { w: [32, 40], d: [24, 30], storeys: [1, 2] },
+    railway:      { w: [40, 48], d: [22, 28], storeys: [1, 1] },
+    maritime:     { w: [30, 36], d: [22, 26], storeys: [2, 2] },
+    presidential: { w: [44, 52], d: [34, 40], storeys: [2, 3] },
+    wax:          { w: [20, 26], d: [16, 20], storeys: [1, 2] },
+  } },
+  // Issue #55's six shops (data-newshops.js): planned at these sizes by shopvariants.js, a sizes row a variant (its id:
+  // w, d metres, storeys); realScale leaves them as drawn.
+  furnstore: { w: [10, 70], d: [14, 60], storeys: [1, 2], set: "town", planned: true, // a mattress store to a big-box showroom
+    sizes: { mattress: { w: [10, 13], d: [16, 20], storeys: [1, 1] }, bigbox: { w: [56, 68], d: [44, 56], storeys: [1, 2] }, antique: { w: [13, 16], d: [16, 22], storeys: [1, 2] }, appliance: { w: [22, 30], d: [22, 28], storeys: [1, 1] }, family: { w: [16, 22], d: [20, 26], storeys: [1, 1] }, outlet: { w: [32, 42], d: [26, 34], storeys: [1, 1] }, gallery: { w: [14, 18], d: [18, 22], storeys: [2, 2] }, barn: { w: [24, 32], d: [18, 24], storeys: [1, 1] }, unfinished: { w: [12, 16], d: [14, 18], storeys: [1, 1] }, homestore: { w: [30, 40], d: [24, 30], storeys: [1, 1] }, clearance: { w: [20, 26], d: [22, 28], storeys: [1, 1] }, twofloor: { w: [22, 28], d: [22, 28], storeys: [2, 2] } } },
+  laundromat: { w: [7, 24], d: [12, 26], storeys: [1, 2], set: "town", planned: true, // a coin laundry to a 24-hour superwash
+    sizes: { coin: { w: [7, 9], d: [14, 18], storeys: [1, 1] }, attended: { w: [10, 13], d: [16, 20], storeys: [1, 1] }, washfold: { w: [10, 13], d: [18, 22], storeys: [1, 1] }, drycleaner: { w: [14, 18], d: [20, 24], storeys: [1, 1] }, corner: { w: [13, 15], d: [12, 15], storeys: [1, 1] }, allnight: { w: [18, 24], d: [20, 26], storeys: [1, 1] }, flat: { w: [7, 9], d: [14, 17], storeys: [2, 2] }, cafe: { w: [14, 18], d: [16, 20], storeys: [1, 1] }, strip: { w: [9, 12], d: [16, 20], storeys: [1, 1] }, student: { w: [13, 15], d: [16, 20], storeys: [1, 1] }, roadside: { w: [13, 16], d: [14, 18], storeys: [1, 1] }, commercial: { w: [16, 22], d: [20, 26], storeys: [1, 1] } } },
+  thrift: { w: [9, 40], d: [14, 36], storeys: [1, 2], set: "town", planned: true, // a charity shop to a thrift superstore
+    sizes: { charity: { w: [9, 12], d: [14, 18], storeys: [1, 1] }, church: { w: [12, 16], d: [16, 20], storeys: [1, 1] }, superstore: { w: [30, 40], d: [28, 36], storeys: [1, 1] }, vintage: { w: [9, 11], d: [14, 18], storeys: [1, 2] }, hospice: { w: [14, 18], d: [18, 22], storeys: [1, 1] }, books: { w: [15, 18], d: [16, 20], storeys: [1, 1] }, barn: { w: [20, 28], d: [16, 22], storeys: [1, 1] }, consign: { w: [12, 16], d: [18, 22], storeys: [1, 1] }, dockside: { w: [22, 28], d: [22, 28], storeys: [1, 1] }, toys: { w: [14, 18], d: [16, 22], storeys: [1, 2] }, twofloor: { w: [18, 24], d: [20, 24], storeys: [2, 2] }, flea: { w: [30, 38], d: [24, 30], storeys: [1, 1] } } },
+  bakery: { w: [7, 26], d: [11, 26], storeys: [1, 2], set: "town", planned: true, // a village bakery to a wholesale bakehouse
+    sizes: { village: { w: [7, 9], d: [12, 15], storeys: [1, 2] }, patisserie: { w: [10, 13], d: [14, 18], storeys: [1, 1] }, donut: { w: [8, 10], d: [12, 15], storeys: [1, 1] }, wholesale: { w: [20, 26], d: [20, 26], storeys: [1, 1] }, cake: { w: [10, 13], d: [16, 20], storeys: [1, 1] }, bagel: { w: [13, 16], d: [12, 16], storeys: [1, 1] }, cafe: { w: [14, 18], d: [16, 20], storeys: [1, 1] }, corner: { w: [13, 15], d: [11, 14], storeys: [1, 1] }, artisan: { w: [13, 15], d: [14, 18], storeys: [1, 1] }, offices: { w: [10, 13], d: [14, 18], storeys: [2, 2] }, panaderia: { w: [14, 17], d: [15, 18], storeys: [1, 1] }, farm: { w: [12, 16], d: [12, 16], storeys: [1, 1] } } },
+  butcher: { w: [6, 30], d: [9, 30], storeys: [1, 2], set: "town", planned: true, // a market stall to a meat packer
+    sizes: { family: { w: [7, 9], d: [13, 16], storeys: [1, 1] }, smokehouse: { w: [10, 13], d: [15, 19], storeys: [1, 1] }, meatmarket: { w: [14, 18], d: [18, 22], storeys: [1, 1] }, game: { w: [16, 20], d: [14, 18], storeys: [1, 1] }, halal: { w: [13, 15], d: [12, 15], storeys: [1, 1] }, sausage: { w: [10, 13], d: [16, 20], storeys: [1, 1] }, packer: { w: [24, 30], d: [24, 30], storeys: [1, 1] }, delibutcher: { w: [11, 14], d: [15, 18], storeys: [1, 1] }, flat: { w: [7, 9], d: [13, 16], storeys: [2, 2] }, wrap: { w: [13, 15], d: [14, 18], storeys: [1, 1] }, ranch: { w: [14, 18], d: [16, 20], storeys: [1, 1] }, stall: { w: [6, 8], d: [9, 11], storeys: [1, 1] } } },
+  deli: { w: [6, 24], d: [10, 24], storeys: [1, 2], set: "town", planned: true, // a sandwich counter to a food hall deli
+    sizes: { classic: { w: [7, 9], d: [12, 15], storeys: [1, 1] }, nyc: { w: [14, 18], d: [18, 22], storeys: [1, 1] }, salumeria: { w: [10, 13], d: [16, 20], storeys: [1, 1] }, sandwich: { w: [6, 8], d: [10, 13], storeys: [1, 1] }, market: { w: [16, 20], d: [20, 24], storeys: [1, 1] }, caterer: { w: [11, 14], d: [15, 18], storeys: [1, 1] }, flat: { w: [13, 15], d: [12, 15], storeys: [2, 2] }, smokehouse: { w: [11, 14], d: [15, 18], storeys: [1, 1] }, foodhall: { w: [20, 24], d: [20, 24], storeys: [1, 1] }, wrap: { w: [13, 15], d: [14, 17], storeys: [1, 1] }, country: { w: [11, 14], d: [13, 16], storeys: [1, 2] }, lunch: { w: [11, 13], d: [14, 17], storeys: [2, 2] } } },
   motel:       { w: [40, 70], d: [10, 14], storeys: [2, 2], set: "rural", wings: "along" },
   church:      { w: [14, 24], d: [22, 36], storeys: [1, 1], set: "town", wings: "back" }, // a long nave (and a tower), a parish hall behind
   // #22's grocery tiers and #23's school: their own sizes
@@ -92,6 +123,17 @@ export const REAL_SIZE = {
   regionalmall: { set: "city", own: true }, stripmall: { set: "town", own: true }, outlet: { set: "town", own: true },
   cinema: { set: "city", own: true }, arcade: { set: "city", own: true }, mallservices: { set: "city", own: true },
   mallrestrooms: { set: "city", own: true }, vacantunit: { set: "city", own: true },
+  // #60's amusement parks (amusement.js): the whole park on one map, a row a variant: its grounds' width and depth in
+  // metres (the map's, within battlesize.js MAP_CAP.amusement) and the storeys of its tallest buildings
+  amusement: { set: "city", planned: true, w: [120, 500], d: [110, 500], storeys: [1, 2], sizes: {
+    themepark: { w: [440, 500], d: [420, 500], storeys: [2, 2] }, regional: { w: [300, 360], d: [280, 340], storeys: [1, 2] },
+    fairground: { w: [260, 320], d: [220, 280], storeys: [1, 1] }, pier: { w: [110, 130], d: [320, 400], storeys: [1, 2] },
+    waterpark: { w: [240, 300], d: [220, 280], storeys: [1, 2] }, carnival: { w: [150, 180], d: [130, 160], storeys: [1, 1] },
+    funcentre: { w: [150, 180], d: [140, 170], storeys: [1, 1] }, family: { w: [190, 230], d: [170, 210], storeys: [1, 1] },
+    abandoned: { w: [300, 360], d: [260, 320], storeys: [1, 2] }, funfair: { w: [220, 260], d: [180, 220], storeys: [1, 1] },
+    lights: { w: [220, 280], d: [200, 260], storeys: [1, 1] }, trampoline: { w: [120, 140], d: [110, 130], storeys: [1, 2] },
+    western: { w: [260, 320], d: [240, 300], storeys: [1, 2] },
+  } },
   // Institutions
   clinic:      { w: [15, 25], d: [12, 20], storeys: [1, 2], set: "town" },
   infirmary:   { w: [15, 25], d: [12, 20], storeys: [1, 2], set: "rural" },
@@ -134,11 +176,16 @@ export const REAL_SIZE = {
   station:     { w: [22, 26], d: [15, 17], storeys: [2, 2], set: "town", planned: true },
   // #29's hotels (hotellayout.js HOTEL.SIZE reads the kinds' rows): planned at these sizes, their storeys built by the
   // tall rule (a city tower hotel's 8–10 storeys: 4 floors built, the stairs above blocked); "hotel" the archetype's span
-  hotel:         { w: [21, 90], d: [19, 23], storeys: [2, 10], set: "town", planned: true },
+  hotel:         { w: [21, 92], d: [19, 56], storeys: [2, 10], set: "town", planned: true }, // d to 56: a shaped variant's (issue #50)
+  // sizes: a shaped variant's bounding box (issue #50: a new save's L, T, U, E, crescent, podium and courtyard
+  // footprints, hotellayout.js SHAPES; an older save's hotel the rectangle its row gives)
   hotelinn:      { w: [21, 25], d: [19, 19], storeys: [2, 3], set: "rural", planned: true },
-  hotelbusiness: { w: [40, 60], d: [21, 23], storeys: [4, 6], set: "town", planned: true },
-  hotelresort:   { w: [64, 90], d: [21, 23], storeys: [2, 4], set: "rural", planned: true },
-  hoteltower:    { w: [36, 44], d: [21, 23], storeys: [8, 10], set: "city", planned: true },
+  hotelbusiness: { w: [40, 60], d: [21, 23], storeys: [4, 6], set: "town", planned: true,
+    sizes: { "biz-highway": { w: [48, 54], d: [40, 46], storeys: [4, 5] }, "biz-conference": { w: [52, 60], d: [38, 44], storeys: [5, 6] } } },
+  hotelresort:   { w: [64, 90], d: [21, 23], storeys: [2, 4], set: "rural", planned: true,
+    sizes: { "res-family": { w: [76, 88], d: [44, 52], storeys: [3, 4] }, "res-golf": { w: [86, 90], d: [42, 48], storeys: [2, 4] }, "res-beach": { w: [86, 92], d: [26, 30], storeys: [3, 4] } } },
+  hoteltower:    { w: [36, 44], d: [21, 23], storeys: [8, 10], set: "city", planned: true,
+    sizes: { "tow-podium": { w: [50, 58], d: [35, 36] }, "tow-twin": { w: [60, 66], d: [36, 37] }, "tow-grand": { w: [54, 58], d: [54, 56], storeys: [8, 9] } } },
   // #36's named civic and medical plans (civicvariants.js VARIANTS), keyed "<kind>.<plan id>": each drawn at its row's
   // size by its own plan (civicvariants.js SIZE reads these; realScale leaves a named plan as it is, its floors past
   // the tall rule's not built). Each kind's "general" plan, #14's or #15's, is the kind's own row above, through realScale.

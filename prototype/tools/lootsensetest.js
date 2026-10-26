@@ -49,9 +49,15 @@ const BASELINE = {
   theatre: 73.7, parkgarage: 557.6, chapel: 152.2, healthcentre: 508.4, milbunker: 1415.1, mountainbunker: 1827.5,
   govbunker: 1037.7, shelter: 151.4, prepper: 273.0, regionalmall: 17794.1, stripmall: 2735.9, outlet: 3947.1,
   cinema: 52.7, arcade: 53.4, mallservices: 89.9, mallrestrooms: 18.5, vacantunit: 5.9,
+  museum: 404.8, // issue #58 (a new type: its own line, measured on its branch)
+  amusement: 1996.8, // issue #60 (a new type: its own line, taken on its branch)
+  // issue #55's six shops, new (--baseline, 2026-10-26)
+  furnstore: 150.9, laundromat: 35.8, thrift: 60.5, bakery: 42.8, butcher: 60.7, deli: 73.6,
 };
-// Kinds whose loot moved past ±10% because a row was clearly wrong: the reason.
+// Kinds whose loot moved past ±10% because a row was clearly wrong, or its plans grew (the same loot a floor cell over
+// more floor): the reason.
 const SHIFTED = {
+  hotel: "issue #50: eight of its 48 variants shaped in a new save (an L, a T, a U, an E, a crescent, a podium, twin towers, a courtyard block), bigger than their rectangles; their loot a floor cell within ×0.95–×1.06 of the rectangles' (tools/hotelshapetest.js)",
   bookstore: "its shelves (data-shops.js AREA_DEFS books) held no books of their own: novels, comics, magazines, a few skill books",
   library: "its stacks are the bookstore's \"books\" rooms (above)",
   univlibrary: "its stacks are the bookstore's \"books\" rooms (above)",

@@ -421,6 +421,10 @@ export const GEAR_ART = {
     text(p, 2, 1, "A", C.ink);
     stamp(p, 4, 5, ["..a..", ".aaa.", "aaaaa", "aaaaa", "..a..", ".aaa."], { a: C.ink });
   },
+  // A stuffed prize bear (issue #60, a park's games booth): round ears, a red bow, button eyes.
+  plush: (p) => {
+    stamp(p, 2, 1, ["aa......aa", "abaaaaaaba", ".aaaaaaaa.", ".acaaaaca.", ".aaaddaaa.", "..aaeeaa..", "...ffff...", "..aaaaaa..", ".aaaaaaaa.", "aaaabbaaaa", "aaabbbbaaa", ".aaaaaaaa.", ".aa....aa.", ".aa....aa."], { a: C.brownL, b: "#c9a27a", c: C.ink, d: C.brown, e: C.ink, f: C.red });
+  },
   // A blues harp: steel cover plates, the holes along the comb.
   harmonica: (p) => {
     box(p, 0, 3, 15, 6, C.silver, C.white, C.silverD); H(p, 3, 12, 5, C.whiteD); dots(p, 2, 13, 4, C.silverD, 3);
