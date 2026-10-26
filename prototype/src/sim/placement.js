@@ -124,7 +124,7 @@ export const standsOn = (state, key, tile) => placeMult(state, key, tileClass(st
 
 // The kinds placeExtra adds where the old pools had none: [kind, { class: chance a tile }]. A city centre's medical
 // centre (and the city blocks'), a town's county hospital, big-box store and high school, the country's clinic, chapel
-// and feed store, a farm stand by the road.
+// and feed store, a farm stand by the road; museums (#58), the big ones by a city's heart.
 export const PLACE_EXTRA = [
   ["hospital", { centre: 0.06, city: 0.03, town: 0.0015 }],
   ["supermarket", { town: 0.006 }],
@@ -134,6 +134,8 @@ export const PLACE_EXTRA = [
   ["feedstore", { rural: 0.004, highway: 0.006 }],
   ["farmstand", { highway: 0.01 }],
   ["radiotower", { centre: 0.008, city: 0.006, suburb: 0.003, town: 0.004, highway: 0.01, scenic: 0.004 }], // issue #54: a radio tower (radiotowerlayout.js), the hills' sites aside
+  ["museum", { centre: 0.05, city: 0.02, suburb: 0.006, town: 0.012, highway: 0.002, coast: 0.002 }], // issue #58: by and next to a city's heart most, a town's own
+  ["amusement", { centre: 0.06, city: 0.02, suburb: 0.006, town: 0.004, highway: 0.001, coast: 0.0012, scenic: 0.00012, rural: 0.0001 }], // issue #60: a theme park by a city's centre, a fairground in a town, a pier on the coast
   ["stadium", { centre: 0.05, city: 0.02, suburb: 0.006, town: 0.012, highway: 0.004, scenic: 0.001, rural: 0.002 }], // issue #57: a pro stadium by the centre, a town's ballpark, a rodeo out in the country
 ];
 export const PLACE_KNOWN = 0.7; // the share of them known from the start in the known zone (shops.js SHOP.KNOWN)

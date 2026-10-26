@@ -346,7 +346,7 @@ export function fitMargins(bw, bh, margins, [tw, th], cap = null) {
 // (the run's raid map dials and the building's own size decide). A hotel's 200 × 200 (issue #29, the user's request
 // 2026-10-25: "add hotel 200x200 max"): the hotel and its grounds (parking, the drive, the pool, the gardens) within it
 // (hotellayout.js sizes its grounds to fit).
-export const MAP_CAP = { hotel: 200, prison: 400, jail: 130, cinema: 80, parkgarage: 80, regionalmall: 500, stripmall: 500, outlet: 500, stadium: 500 }; // a prison's complex up to the user's 400 × 400, a county jail's 130 (issue #31, prison.js); a mall's cinema and parking garage at their real size, a mall's whole map (issue #30, mall.js MALL.CAP)
+export const MAP_CAP = { hotel: 200, prison: 400, jail: 130, cinema: 80, parkgarage: 80, regionalmall: 500, stripmall: 500, outlet: 500, amusement: 500, stadium: 500 }; // a prison's complex up to the user's 400 × 400, a county jail's 130 (issue #31, prison.js); a mall's cinema and parking garage at their real size, a mall's whole map (issue #30, mall.js MALL.CAP); an amusement park's whole map, a theme park's up to 500 × 500 (issue #60, amusement.js)
 export const mapCap = (key) => MAP_CAP[key] || null;
 export function buildingTarget(tile, single, state = null) {
   if (legacyRaids(state)) return single ? raidDims(tile, state) : dimsAt(S); // an older save: the old targets

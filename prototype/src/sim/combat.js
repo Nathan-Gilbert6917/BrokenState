@@ -172,6 +172,7 @@ import { concealHidden, concealAim, concealScore, softOn, softCost, markShot, te
 import { strikeAct, slashAct, settleTentsDown } from "./tentfight.js"; // tents taken down (and carried off) and slashed in a fight (the user's request 2026-10-20)
 import { campRaidMap, campRaidUnits, campSleeperTurn, tentBoxLoot, campAfter } from "./campsite.js"; // the campsite raid: its clearing, its tents and their loot, its campers (the user's request 2026-10-20)
 import { furnitureCells } from "./data-furniture.js"; // the furniture and appliance catalogue: its cells (merged into CELL below)
+import { MUSEUM_BOX } from "./data-museums.js"; // a museum's exhibit vehicles (issue #58)
 import { NEW_KINDS, AREA_DEFS } from "./data-shops.js"; // the shops and services new as places: their raid rooms
 import { OFFICE_BOX } from "./data-offices.js"; // the office buildings' new pieces: their own tables (issue #27)
 
@@ -7063,6 +7064,7 @@ export const BOX_LOOT = {
   // aid the lab kept in it; a few vials still good.
   labfreezer:   { rest: 0.4, loot: { meds: [0.35, 1, 2] }, gear: [["bandagekit", 0.03]] },
   drum:         { rest: 0.2, loot: { fuel: [0.6, 2, 6] }, gear: [] }, // a fuel depot's drum: what is left in it
+  gokart:       { rest: 0, loot: { fuel: [0.55, 1, 2], parts: [0.2, 1, 1] }, gear: [] }, // a go-kart off its track (issue #60, amusement.js): the fuel left in its tank
   rationshelf:  { rest: 0, loot: { preserved: [0.95, 3, 7], water: [0.55, 2, 5] }, gear: [["puritabs", 0.1]] },
   "rationshelf@cabin": { rest: 0, loot: { preserved: [1, 6, 12], food: [0.7, 3, 6], water: [0.8, 4, 9], meds: [0.3, 1, 2] }, gear: [["puritabs", 0.25]] },
   radioconsole: { rest: 0.3, loot: { electronics: [0.7, 1, 3], parts: [0.4, 1, 2] }, gear: [["milradio", 0.2], ["handradio", 0.15]] },
@@ -7148,6 +7150,7 @@ export const BOX_LOOT = {
   cargoplane:   { rest: 0, loot: { food: [0.5, 3, 8], water: [0.4, 2, 6], parts: [0.5, 1, 3], fuel: [0.5, 3, 8], ammo: [0.3, 10, 25] }, gear: [["assaultpack", 0.06], ["rucksack", 0.04], ["sandbags", 0.1], ["flare", 0.3]] },
   airliner:     { rest: 0, loot: { food: [0.5, 2, 6], water: [0.5, 2, 6], fuel: [0.4, 2, 6] }, gear: [["slingbag", 0.15], ["duffle", 0.1], ["phone", 0.15], ["watch", 0.08], ["cigarettes", 0.15], ["flare", 0.2]] },
   firetruck:    { rest: 0, loot: { fuel: [0.5, 2, 6], parts: [0.3, 1, 2] }, gear: [["fireaxe", 0.5], ["prybar", 0.3], ["bandagekit", 0.2], ["flashlight", 0.2]] },
+  ...MUSEUM_BOX, // a museum's exhibit cars, trucks and aircraft (issue #58, data-museums.js)
 };
 const boxDefs = new Map();
 // The table a container rolls: its room's (AREAS[type]), or its kind's (BOX_LOOT) with the room's rows at `rest` times
