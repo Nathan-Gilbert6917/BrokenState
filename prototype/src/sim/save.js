@@ -203,6 +203,9 @@ export function deserializeState(save) {
   // The placement table (data-placement.js, issue #42): a save from before keeps its POI lists, its crawls' blocks and
   // its buildings as its seed made them (placement.js placing off).
   if (!state.placeV) { state.placeLegacy = true; state.placeV = 1; }
+  // Radio towers (radiotower.js, issue #54): a save from before keeps its radio tower sites' transmitter huts (their
+  // maps and containers as they were) and has no tower to claim or power (worldcfg.js legacyTowers).
+  if (!state.towerV) { state.towerLegacy = true; state.towerV = 1; }
   // Six more shops (data-newshops.js, issue #55: the furniture store, the laundromat, the thrift store, the bakery, the
   // butcher, the deli): a save from before gets none of them on its tiles or its crawls' blocks (shops.js, placement.js
   // placeExtraKind), so its points of interest regenerate as they were.

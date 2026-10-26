@@ -15,6 +15,7 @@ The two boss dead take 2 × 2 cells.
 The raid down into a hive, chamber by chamber.
 - Chamber by chamber down to the Hivemind through a round grid of chambers, each open on 3 sides with 1 wall (a hallway with a room off the side).
 - Four mouths, one on each side, to pick from and walk back out by. The core deep in it, open on 1–2 sides; the beat through the walls, the warmth along the passages [hivecrawl, citygrid].
+- Listening at a passage (`hivecrawl.js listenAt`): the best listener's (Scouting + Stealth) / 2 + a d10 of the visit's own dice against `HCRAWL.LISTEN.dc` + `perLayer` × the chamber's layer; 3 over is exact, 0 over rough, −4 or under a fumble (Alert). The odds the window shows (`listenOdds`) count the d10's faces by the same comparisons (issue #63, 2026-10-26: they had counted one face short, 50% for an exact listen that is 60%). Test `tools/hiveplustest.js`.
 
 ## Hordes
 Hordes are the hives' armies on the State Map.

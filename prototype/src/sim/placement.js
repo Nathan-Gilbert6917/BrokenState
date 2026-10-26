@@ -133,6 +133,7 @@ export const PLACE_EXTRA = [
   ["church", { rural: 0.006, highway: 0.004 }],
   ["feedstore", { rural: 0.004, highway: 0.006 }],
   ["farmstand", { highway: 0.01 }],
+  ["radiotower", { centre: 0.008, city: 0.006, suburb: 0.003, town: 0.004, highway: 0.01, scenic: 0.004 }], // issue #54: a radio tower (radiotowerlayout.js), the hills' sites aside
   // Issue #55: a small bakery or butcher in the country (a new world from since them: legacyShopsR2 skips these).
   ["bakery", { rural: 0.0015, highway: 0.0015, coast: 0.0005 }],
   ["butcher", { rural: 0.0015, highway: 0.001 }],

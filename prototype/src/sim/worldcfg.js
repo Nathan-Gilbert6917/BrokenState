@@ -155,6 +155,9 @@ export const legacyOffices = (state) => !!(state && state.officesLegacy);
 // A save from before the placement table (issue #42, save.js placeLegacy: no state.placeV): its points of interest, its
 // crawls' blocks and its buildings stay as they were (placement.js placing is off).
 export const legacyPlace = (state) => !!(state && state.placeLegacy);
+// A save from before the radio towers (issue #54, save.js towerLegacy: no state.towerV): its radio tower sites keep the
+// transmitter hut (buildingmaps.js SITES.radiotower) and no base can claim or power a tower (radiotower.js).
+export const legacyTowers = (state) => !!(state && (state.towerLegacy || state.roomsLegacy));
 // A save from before issue #55's six shops (save.js shopsR2Legacy): its points of interest and its crawls' blocks get
 // none of them (shops.js, placement.js placeExtraKind), so its places stay as they were.
 export const legacyShopsR2 = (state) => !!(state && state.shopsR2Legacy);

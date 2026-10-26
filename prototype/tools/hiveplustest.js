@@ -154,11 +154,12 @@ console.log("Listening at a passage");
     HC.startHiveCrawl(st, p, hv);
     clearMouth(st, p);
     const c = p.hiveCrawl, den = HC.denOf(st, hv);
-    const out = { exact: 0, rough: 0, vague: 0, wrong: 0, fumble: 0, n: 0, right: 0 };
+    const out = { exact: 0, rough: 0, vague: 0, wrong: 0, fumble: 0, n: 0, right: 0, pExact: 0 };
     for (let v = 0; v < 40 && p.hiveCrawl; v++) {
       for (const x of HC.exitsOf(st, p).filter((e) => !e.visited)) {
         c.visit = 2000 + v; c.enc = null; c.alert = 10; delete c.heard[x.id]; if (c.warned) delete c.warned[x.id];
         const to = HC.roomById(den, x.id), truth = to.kind === "core" ? HC.coreForce(st, hv).count : HC.broodLeft(st, hv, to);
+        out.pExact += HC.listenOdds(st, p, c, to).exact;
         HC.listenAt(st, p, x.id);
         if (!p.hiveCrawl) break;
         const h = c.heard[x.id];
@@ -171,7 +172,13 @@ console.log("Listening at a passage");
     return out;
   };
   const good = stats(9, 8), poor = stats(1, 1);
-  check(good.n > 30 && good.exact / good.n > 0.6 && good.vague / good.n < 0.2, `a good listener (Scouting 9, Stealth 8): ${good.exact} exact, ${good.rough} rough, ${good.vague} vague of ${good.n}`);
+  // Exact: the rules' odds (listenOdds: Skill 8.5 + d10 against DC 9 + 0.4 a layer, 3 over) are at least 60%, and
+  // the share the dice gave is within 2.5 standard errors of them. It was a share over 60% measured, but the odds
+  // here are exactly 60% (d10 5 or more on layer 2), so that held or not by the hive's dice: since 1370d1c (the map
+  // sizes of 2026-10-24: another first hive on seed 9) 21 of 40, before 27.
+  const pEx = good.pExact / good.n, band = 2.5 * Math.sqrt((pEx * (1 - pEx)) / good.n);
+  check(good.n > 30 && pEx >= 0.6 && Math.abs(good.exact / good.n - pEx) <= band && good.vague / good.n < 0.2,
+    `a good listener (Scouting 9, Stealth 8): ${good.exact} exact, ${good.rough} rough, ${good.vague} vague of ${good.n} (exact odds ${Math.round(pEx * 100)}%, the dice within ±${Math.round(band * 100)} points)`);
   check(poor.vague / poor.n > 0.5 && poor.exact / poor.n < 0.15 && poor.wrong > 0 && poor.fumble > 0, `a poor one (1, 1): ${poor.exact} exact, ${poor.rough} rough, ${poor.vague} vague (${poor.wrong} the wrong kind), ${poor.fumble} fumbled`);
   check(good.right === good.exact + good.rough, `what a good listener makes out is right (${good.right} of ${good.exact + good.rough})`);
   // The same visit, the same listen (save and load); an hour; once a passage; the fumble warns them.
