@@ -19,7 +19,7 @@
 //            fields it gives over the kind's (realFoot / realStoreys / storeyRange with the variant's name; sizeOf). A
 //            rural critical-access hospital and a city medical centre are one kind at two sizes (#35, #36, #37: a dozen
 //            variants a type, the user's request 2026-10-25);
-//   own      the size belongs to another ticket (#22: the corner store, grocery, supermarket and department store;
+//   own      the size belongs to another ticket (#22: the corner store, grocery, supermarket and department store; #30: the mall's kinds;
 //            #23: the school; #26: the bunkers): its archetype's own dice are kept (only the storeys rule applies);
 //            (#35's shops and services are planned: shopvariants.js SIZES cuts these rows into its size classes)
 //   planned  the archetype's own plan is drawn at this size (#25's military buildings: militarylayout.js MIL_SIZE is these
@@ -44,7 +44,10 @@ export const REAL_SIZE = {
   cabin:       { w: [7, 9], d: [6, 8], storeys: [1, 1], set: "rural" },
   lodge:       { w: [18, 28], d: [12, 18], storeys: [2, 2], set: "rural" },
   ranger:      { w: [11, 15], d: [9, 12], storeys: [1, 1], set: "rural" },
-  apartments:  { w: [25, 50], d: [15, 25], storeys: [3, 6], city: [6, 10], set: "city" },
+  apartments:  { w: [25, 50], d: [15, 25], storeys: [3, 6], city: [6, 10], set: "city", // the corridor block (#32's classic layout): laid out at this size, a city's 6–10
+    // #32's other layouts are drawn at their own size (buildingmaps.js APT_PLANS: realScale leaves a spec.vid's), their
+    // storeys their plan's wherever they stand (the crawl's deeper blocks one more): a variant's row by its layout id.
+    sizes: Object.fromEntries(Object.entries({ walkup: [3, 4], garden: [2, 2], lofts: [3, 4], tower: [4, 5], shops: [3, 3], rooming: [3, 3], senior: [3, 3], student: [3, 3], projects: [4, 5], converted: [3, 3], condos: [3, 4] }).map(([k, r]) => [k, { storeys: /** @type {[number, number]} */ (r), city: /** @type {[number, number]} */ (r) }])) },
   neighbourhood: { w: [12, 16], d: [9, 13], small: [0.35, [10, 12], [9, 11]], storeys: [2, 2], set: "town" }, // one of its houses
   // Shops and services
   pharmacy:    { w: [12, 20], d: [14, 24], storeys: [1, 1], set: "town", planned: true },
@@ -84,6 +87,11 @@ export const REAL_SIZE = {
   govbunker:   { set: "town", own: true },
   shelter:     { set: "town", own: true },
   prepper:     { set: "rural", own: true },
+  // #30's mall (on hold): its sizes and plans its own (mall.js MALL; a mall is several buildings on one map, its shops
+  // the archetypes' own): only the storeys rule applies
+  regionalmall: { set: "city", own: true }, stripmall: { set: "town", own: true }, outlet: { set: "town", own: true },
+  cinema: { set: "city", own: true }, arcade: { set: "city", own: true }, mallservices: { set: "city", own: true },
+  mallrestrooms: { set: "city", own: true }, vacantunit: { set: "city", own: true },
   // Institutions
   clinic:      { w: [15, 25], d: [12, 20], storeys: [1, 2], set: "town" },
   infirmary:   { w: [15, 25], d: [12, 20], storeys: [1, 2], set: "rural" },

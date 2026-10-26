@@ -12,7 +12,7 @@ import { stripAll, newItem } from "../src/sim/inventory.js";
 import { fishSpot, gameAbundance } from "../src/sim/hunting.js";
 import { stoneAbundance } from "../src/sim/stone.js";
 import { woodAbundance } from "../src/sim/woodcutting.js";
-import { startOrder } from "../src/sim/orders.js";
+import { startOrder, taskHour, tasksDue, huntHours, describeOrder } from "../src/sim/orders.js";
 import { landEstimate, landEstimates, LAND_HOURS } from "../src/sim/landest.js";
 import { askLand, landHtml, landModel, LAND_ACTIONS, LAND_CHANGE } from "../src/ui/landorder.js";
 import { askQty } from "../src/ui/carry.js";
@@ -66,7 +66,7 @@ section("The estimate: hours, gear and skills");
   }
   const rows = landEstimates(state, p, "wood", LAND_HOURS.presets, { tile: forest });
   check(rows.length === LAND_HOURS.presets.length && rows.every((r, i) => !i || r.amount >= rows[i - 1].amount), `the lengths in order: ${rows.map((r) => `${r.hours}h ~${r.amount}`).join(", ")}`);
-  check(at("wood", 99).hours === LAND_HOURS.max && at("wood", 0).hours === LAND_HOURS.def && at("wood", 1).hours === LAND_HOURS.min, "hours kept to 2–24 (orders.js huntHours)");
+  check(at("wood", 99).hours === LAND_HOURS.max && at("wood", 0).hours === LAND_HOURS.def && at("wood", 0.2).hours === LAND_HOURS.min && LAND_HOURS.min === 0.5 && at("wood", 2.3).hours === 2.5, "hours kept to 30 minutes–24 hours, by the half hour (orders.js huntHours)");
   // Gear: an axe for wood, a pickaxe for stone.
   const wood0 = at("wood", 8).amount, stone0 = at("stone", 8).amount;
   check(/bare hands/.test(at("wood", 8).crew[0].gear), "no axe: bare hands");
@@ -182,6 +182,63 @@ section("The right-click menu: the item's hours, then the order");
   msg = runTeamAction(state, {}, { id: p.id, tile: far, key: "wood", mode: "replace", hours: "12", qty: "40", asked: "1" });
   const q = p.orders.find((o) => o.type === "wood");
   check(q && q.hours === 12 && q.qty === 40 && q.at === far, `Cut wood 12h, at most 40, queued for the tile (${msg})`);
+}
+
+section("Half hours: 30 minutes at least, the yield by the time worked");
+{
+  // The user's request 2026-10-26: "Allow for doing gathering missions by 30 minutes instead of by hours update yield
+  // based on this too ... Minimum is 30 min orders and scalp yield based on this".
+  const state = mk();
+  const h = hub(state);
+  const tile = find(state, h.tile, (t) => woodAbundance(state, t.id) >= 0.3 && stoneAbundance(state, t.id) >= 0.1, 2, 14);
+  const p = team(state, 2, tile);
+  const at = (type, hours) => landEstimate(state, p, type, { tile, hours });
+  for (const type of ["forage", "wood", "stone"]) {
+    const [a, b, c, d] = [at(type, 0.5), at(type, 1), at(type, 2), at(type, 2.5)];
+    check(a.hours === 0.5 && a.amount > 0 && Math.abs(a.amount - b.amount / 2) <= 0.1 + b.amount * 0.02, `${type}: 30 minutes bring half an hour's (${a.amount} against ${b.amount} in 1h)`);
+    check(d.amount > c.amount && d.amount < at(type, 3).amount, `${type}: 2h 30m between 2h and 3h (${c.amount} < ${d.amount} < ${at(type, 3).amount})`);
+  }
+  check(huntHours({ hours: 0.5 }) === 0.5 && huntHours({ hours: 0.1 }) === 0.5 && huntHours({ hours: 1.4 }) === 1.5 && describeOrder(state, { type: "stone", hours: 0.5 }) === "Gather stone 30m" && describeOrder(state, { type: "wood", hours: 2.5 }) === "Cut wood 2h 30m", "the order's hours by the half hour, 30 minutes at least");
+  // The box: 30 minutes from the slider's foot, in the words.
+  const ui = {};
+  askLand(state, ui, { id: String(p.id), type: "stone" }, { via: "xp", type: "stone", tile });
+  LAND_ACTIONS["land-sethours"](state, ui, { h: "0.5" });
+  let html = landHtml(state, ui);
+  check(ui.landAsk.hours === 0.5 && /Expected in 30m/.test(html) && /Gather stone 30m<\/button>/.test(html) && /step="0.5"/.test(html) && /min="0.5"/.test(html), "the box: 30 minutes picked, the slider by the half hour");
+  LAND_CHANGE["land-hours"](state, ui, { value: "2.5" });
+  html = landHtml(state, ui);
+  check(ui.landAsk.hours === 2.5 && /Expected in 2h 30m/.test(html) && landModel(state, ui).all.length === (LAND_HOURS.max - LAND_HOURS.min) / LAND_HOURS.step + 1, "2h 30m typed: the estimate follows (one an every half hour on the slider)");
+  ui.landAsk = null;
+  // The order: a 30-minute one works half an hour and ends at the tick (headless: everything on the hour).
+  const run = (type, hours, ticks, frac = null) => {
+    p.phase = "waiting"; p.task = null; p.orders = []; p.cargo.supplies = {};
+    startOrder(state, p, { type, hours });
+    const t = p.task;
+    for (let i = 0; i < ticks && p.task === t; i++) taskHour(state, p);
+    if (frac != null && p.task === t) tasksDue(state, frac);
+    return { t, done: p.task !== t };
+  };
+  for (const type of ["forage", "wood", "stone"]) {
+    const r = run(type, 0.5, 1);
+    check(r.done && r.t.worked === 0.5 && r.t.hours === 0.5, `${type} 30m: done in one tick, half an hour worked (${r.t.worked})`);
+  }
+  const r3 = run("stone", 2.5, 3);
+  check(r3.done && r3.t.worked === 2.5 && r3.t.done === 3, `Gather stone 2h 30m on the hour: three ticks, the last half an hour (${r3.t.worked} worked)`);
+  const r2 = run("stone", 2.5, 2, 0.5);
+  check(r2.done && r2.t.worked === 2.5 && r2.t.done === 2 && p.cargo.supplies.stone > 0, `with the clock's minutes: it ends at half past, its last half hour worked (${r2.t.worked} worked, ${p.cargo.supplies.stone} stone)`);
+  // Started at twenty past (owed): 30 minutes end at ten to, before the tick, with half an hour worked.
+  p.phase = "waiting"; p.task = null; p.orders = []; p.cargo.supplies = {};
+  startOrder(state, p, { type: "stone", hours: 0.5 });
+  const t = p.task;
+  t.owed = 1 / 3;
+  tasksDue(state, 0.6);
+  check(p.task === t && !t.worked, "started at twenty past: not done at 36 minutes past");
+  tasksDue(state, 0.84);
+  check(p.task !== t && Math.abs(t.worked - 0.5) < 1e-6, `…done at ten to, half an hour worked (${t.worked})`);
+  // Over many 30-minute orders the stone is about half what as many hours bring.
+  let half = 0, full = 0;
+  for (let i = 0; i < 60; i++) { run("stone", 0.5, 1); half += p.cargo.supplies.stone || 0; run("stone", 1, 1); full += p.cargo.supplies.stone || 0; }
+  check(half > full * 0.35 && half < full * 0.65, `the yield by the time: 60 half hours ${half} stone, 60 hours ${full}`);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

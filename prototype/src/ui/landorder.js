@@ -2,7 +2,8 @@
 // Gather Stones when you select provide a input dialogue to set how many hours and estimated amount of yield depending
 // on how many hours and the gear of the team/survivor(s) inventory and skills"). Picking Forage, Hunt, Fish, Cut wood or
 // Gather stone (the team panel's Land row, the map's right-click menu, the low-food list's Go) opens it: the hours
-// (2 to 24: a slider, a number and 4 / 8 / 12 / 24), what that many hours would bring (sim/landest.js: the team's
+// (30 minutes to 24 hours by the half hour since the user's request 2026-10-26: a slider, a number and 30m / 1h / 2h /
+// 4h / 8h / 12h / 24h), what that many hours would bring (sim/landest.js: the team's
 // people, their skills and the tool or weapon each would use, the land, the season and the clock), the same for the
 // other lengths, and how much to bring back at most (the old "how much?" box, ui/carry.js, for the kinds it carried).
 //   ui.landAsk  { via ("xp" | "tc" | "ctxhunt": the action it runs again), d (that action's data), type, tile,
@@ -12,7 +13,7 @@
 // landKey takes Enter / Esc while it is up. tools/landordertest.js.
 import { partyTile, tileLabel, partyMembers } from "../sim/parties.js";
 import { collectInfo, COLLECT } from "../sim/carry.js";
-import { landEstimate, landEstimates, isLandJob, LAND_VERB, LAND_HOURS, clampHours } from "../sim/landest.js";
+import { landEstimate, landEstimates, isLandJob, LAND_VERB, LAND_HOURS, clampHours, landHoursText } from "../sim/landest.js";
 import { subTeam, isSome } from "../sim/detach.js"; // some of the team picked to do it: their gear and skills
 import { whoRow, toggleWho, whoIds } from "./whopick.js"; // who does it, picked in this box (the user's request 2026-10-24)
 
@@ -47,7 +48,7 @@ export function landModel(state, ui) {
   const lengths = landEstimates(state, p, a.type, LAND_HOURS.presets, { ...opts, qty });
   // Every length the slider can take, for the headline as it is dragged (before the box is drawn again on release).
   const all = [];
-  for (let h = LAND_HOURS.min; h <= LAND_HOURS.max; h++) all.push(amountText(landEstimate(state, p, a.type, { ...opts, hours: h, qty })));
+  for (let h = LAND_HOURS.min; h <= LAND_HOURS.max + 1e-9; h += LAND_HOURS.step) all.push(amountText(landEstimate(state, p, a.type, { ...opts, hours: h, qty })));
   return { p, team, a, est, lengths, all, info, qty };
 }
 
@@ -72,7 +73,7 @@ function landBox(state, ui) {
   const verb = LAND_VERB[a.type];
   const wait = a.startHour - state.hour;
   const when = a.tile === partyTile(p) && wait < 0.5 ? "here, starting now" : `${esc(tileLabel(state, a.tile))}, starting in about ${n1(wait)}h`;
-  const presets = m.lengths.map((x) => `<button class="mini${x.hours === a.hours ? " active" : ""}" data-action="land-sethours" data-h="${x.hours}"${tip(`${verb} ${x.hours} hours: ~${n1(x.amount)} ${est.unit}`)}>${x.hours}h · ~${n1(x.amount)}</button>`).join("");
+  const presets = m.lengths.map((x) => `<button class="mini${x.hours === a.hours ? " active" : ""}" data-action="land-sethours" data-h="${x.hours}"${tip(`${verb} ${landHoursText(x.hours)}: ~${n1(x.amount)} ${est.unit}`)}>${landHoursText(x.hours)} · ~${n1(x.amount)}</button>`).join("");
   const crew = est.crew.map((c) => `<tr><td>${esc(c.name)}</td><td>${esc(c.gear)}</td><td>${c.mult > 0 ? `×${n1(c.mult)}` : "—"}</td><td class="muted">${esc(c.skills)}</td></tr>`).join("");
   const capped = est.capped ? `<div class="small warn">About ${n1(est.all)} ${esc(est.unit)} worked in all: the rest is left (no room to carry it${a.qty != null ? ", or past the most asked for" : ""}).</div>` : "";
   return `<div class="askwrap"><div class="askbox" role="dialog" style="max-width:34rem">
@@ -81,17 +82,17 @@ function landBox(state, ui) {
     ${whoRow(state, team, a.d.who, "land-who")}
     ${est.why ? `<div class="small danger">Cannot now: ${esc(est.why)}</div>` : ""}
     <div class="row" style="gap:0.5rem;align-items:center;margin:0.5rem 0 0.2rem">
-      <input type="range" min="${LAND_HOURS.min}" max="${LAND_HOURS.max}" step="1" value="${a.hours}" data-action="land-hours" data-est="${esc(JSON.stringify(m.all))}" style="flex:1" oninput="this.nextElementSibling.value=this.value;const t=JSON.parse(this.dataset.est),e=document.getElementById('landest');if(e)e.textContent=t[this.value-${LAND_HOURS.min}]">
-      <input type="number" min="${LAND_HOURS.min}" max="${LAND_HOURS.max}" step="1" value="${a.hours}" data-action="land-hours" style="width:4rem"> hours
+      <input type="range" min="${LAND_HOURS.min}" max="${LAND_HOURS.max}" step="${LAND_HOURS.step}" value="${a.hours}" data-action="land-hours" data-est="${esc(JSON.stringify(m.all))}" style="flex:1" oninput="this.nextElementSibling.value=this.value;const t=JSON.parse(this.dataset.est),e=document.getElementById('landest');if(e)e.textContent=t[Math.round((this.value-${LAND_HOURS.min})/${LAND_HOURS.step})]">
+      <input type="number" min="${LAND_HOURS.min}" max="${LAND_HOURS.max}" step="${LAND_HOURS.step}" value="${a.hours}" data-action="land-hours" style="width:4rem"> hours
     </div>
     <div class="row" style="gap:0.3rem;flex-wrap:wrap">${presets}</div>
-    <div class="card" style="margin-top:0.5rem"><div${tip("An average from the land, the season, the weather, the time of day and the team: a run can bring more or less")}>Expected in ${a.hours}h: <b id="landest">${esc(amountText(est))}</b> <span class="muted">(${n1(est.kg)} kg${est.perHour > 0 ? `, about ${n1(est.perHour)} an hour` : ""})</span></div>${capped}
+    <div class="card" style="margin-top:0.5rem"><div${tip("An average from the land, the season, the weather, the time of day and the team: a run can bring more or less")}>Expected in ${landHoursText(a.hours)}: <b id="landest">${esc(amountText(est))}</b> <span class="muted">(${n1(est.kg)} kg${est.perHour > 0 ? `, about ${n1(est.perHour)} an hour` : ""})</span></div>${capped}
       ${est.kit ? `<div class="small muted">Gear: ${esc(est.kit)}.</div>` : ""}
       <table class="small" style="width:100%;margin-top:0.3rem"><tr class="muted"><td>Who</td><td>Gear</td><td${tip("How much each one brings, from their skills, health and gear (1 = an average person with the usual gear); the best counts full, each one more a little less")}>Rate</td><td>Skills</td></tr>${crew}</table>
       ${est.notes.map((t) => `<div class="small muted">${esc(t)}</div>`).join("")}
     </div>
     ${qtyRow(m)}
-    <div class="askbtns"><button class="primary" data-action="land-go" data-tip="Enter"${est.why ? " disabled" : ""}>${esc(verb)} ${a.hours}h</button><button data-action="land-close" data-tip="Esc">Cancel</button></div>
+    <div class="askbtns"><button class="primary" data-action="land-go" data-tip="Enter"${est.why ? " disabled" : ""}>${esc(verb)} ${landHoursText(a.hours)}</button><button data-action="land-close" data-tip="Esc">Cancel</button></div>
   </div></div>`;
 }
 

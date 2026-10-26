@@ -96,7 +96,7 @@ import { gunMods, wearMuzzle, hasScope, isScope } from "./gunmods.js"; // a supp
 import { FACTORY_FIT } from "./data-guns.js"; // a gun that comes with its scope (the hunting rifle): its hunting numbers have it in
 import { GEAR, SUPPLIES } from "./data.js";
 import { log, skill, gearEffect, atBase, newId, baseById, hub, hurt } from "./world.js";
-import { partyMembers, partyTile, tileLabel, teamName, cargoRoom, carried, takeSupply } from "./parties.js";
+import { partyMembers, partyTile, tileLabel, teamName, cargoRoom, carried, takeSupply, clockText } from "./parties.js";
 import { packOf, allCarried } from "./inventory.js";
 import { wearHeld, CRAFTS, CRAFT_SKILL, craftSkill, canAttempt } from "./crafting.js"; // fishing tools wear by the day's fishing; arrows made before a bow hunt
 import { hasPerk, gainXp } from "./skills.js";
@@ -117,7 +117,7 @@ import { WINTER } from "./winter.js"; // winter's game and fish (call-time only)
 export const HUNT = {
   big: 0.065, small: 0.32, bigDeplete: 100, smallDeplete: 60, halfLife: 20,
   shotHeat: 6, missChance: 0.4, missSmall: 0.2, drawChance: 0.25, drawRange: 3,
-  minHours: 2, maxHours: 24, defHours: 8,
+  minHours: 0.5, maxHours: 24, defHours: 8, // the land orders' hours, in half hours (the user's request 2026-10-26: "Minimum is 30 min orders"; 2 before)
 };
 export const ANIMALS = {
   deer:  { name: "deer", plural: "deer", rations: 30, big: true, item: "f_venison" },
@@ -444,26 +444,28 @@ export function expectHunt(state, team, tile, hours, startHour = state.hour, lou
   const bm = tileGameMult(state, null, tile, owner); // a blind of yours on the tile
   let level = gameLevel(state, tile, startHour), rations = 0, big = 0, small = 0, shots = 0, arrows = 0, trapped = 0;
   const mix = team && team.mix;
-  const seq = mix ? methodSeq(mix.shares, hours) : null;
+  const seq = mix ? methodSeq(mix.shares, Math.ceil(hours - 1e-9)) : null;
   const hrs = { traps: 0, bows: 0, guns: 0 };
   // With a limit on what fits, the haul is lumpy (a deer is 30): the chances of each load carried are followed hour by
   // hour (what does not fit is left), so the expectation is that of what is really kept.
   const R = Number.isFinite(room) ? Math.max(0, Math.floor(room / MEAT_KG + 1e-9)) : null;
   let dist = R != null ? Object.assign(new Array(R + 1).fill(0), { 0: 1 }) : null;
-  for (let h = 1; h <= hours; h++) {
+  for (let h = 1; h - 1 < hours - 1e-9; h++) {
+    const w = Math.min(1, hours - h + 1); // a half hour at the end: half the chances
     const m = seq ? seq[h - 1] : "guns";
-    hrs[m]++;
+    hrs[m] += w;
     let nb, ns, deer = 0.7, bigs, smalls, dep;
     if (mix && m === "traps") {
       // Snares and deadfalls: one small game at most an hour, silent.
-      const p = Math.min(0.9, trapRate(state, tile, startHour + h, level, mix.methods.traps.n) * bm);
+      const p = Math.min(0.9, trapRate(state, tile, startHour + h, level, mix.methods.traps.n) * bm) * w;
       nb = 0; ns = p; trapped += p;
       bigs = [[0, 1]];
       smalls = [[0, 1 - p], [ANIMALS.small.rations, p]];
       dep = (ns * ANIMALS.small.rations) / SNARE.deplete;
     } else {
       const T = mix ? mix.methods[m].team : team;
-      const o = huntOdds(state, blindTeam(T, bm), tile, startHour + h, level);
+      const o = { ...huntOdds(state, blindTeam(T, bm), tile, startHour + h, level) };
+      o.big *= w; o.small *= w;
       nb = o.big; ns = o.small * (1 + o.small / 3); deer = o.deer;
       // Shots by who makes the kills (a kill goes to one of the best three by their power for that game: huntHour).
       const fired = (k) => nb * (1 + HUNT.missChance) * T[`${k}Big`] + ns * (1 + HUNT.missSmall) * T[`${k}Small`];
@@ -636,7 +638,8 @@ export function drawHordes(state, tile, quiet = 1) { // exported for tools/gunmo
   return n;
 }
 function bagged(got, key) { got[key] = (got[key] || 0) + 1; }
-export function huntHour(state, p) {
+// share: of the hour (a half hour: half the chances); slot: the hour of the order it is (the hunting mix's method).
+export function huntHour(state, p, share = 1, slot = Math.max(0, ((p.task && p.task.done) || 1) - 1)) {
   const t = p.task;
   const tile = partyTile(p);
   const got = t.got || (t.got = { rations: 0, left: 0, shots: 0, drawn: 0 });
@@ -645,14 +648,14 @@ export function huntHour(state, p) {
   if (h.why) { got.stopped = h.why; return false; }
   // The hour's method by the home base's mix (all guns: the best weapon every hour).
   const mix = h.team.mix;
-  const m = mix ? methodAt(mix.shares, Math.max(0, (t.done || 1) - 1)) : "guns";
+  const m = mix ? methodAt(mix.shares, slot) : "guns";
   const bm = tileGameMult(state, null, tile, p.owner); // a hunting blind of the team's owner there (sim/fieldworks.js)
   if (bm > 1) got.blind = bm;
   got.hrs = got.hrs || { traps: 0, bows: 0, guns: 0 };
-  got.hrs[m]++;
+  got.hrs[m] += share;
   if (m === "traps") {
     // Snares and deadfalls worked this hour: small game now and then, not a sound.
-    if (state.rng.chance(Math.min(0.9, trapRate(state, tile, state.hour, gameLevel(state, tile), members.length) * bm))) {
+    if (state.rng.chance(Math.min(0.9, trapRate(state, tile, state.hour, gameLevel(state, tile), members.length) * bm) * share)) {
       const wk = wormKill(state, tile, ANIMALS.small.rations);
       const kept = addMeat(state, p, wk.rations, wk.worm, "small");
       bagged(got, "small");
@@ -662,12 +665,13 @@ export function huntHour(state, p) {
       got.left += wk.rations - kept;
       takeGame(state, tile, ANIMALS.small.rations, SNARE.deplete);
     }
-    for (const x of members) gainXp(state, x, "scouting", 0.5);
+    for (const x of members) gainXp(state, x, "scouting", 0.5 * share);
     return true;
   }
   const team = m === "bows" ? mix.methods.bows.team : h.team;
   const hs = m === "bows" ? h.bowHs : h.hs;
-  const o = huntOdds(state, blindTeam(team, bm), tile, state.hour);
+  const o = { ...huntOdds(state, blindTeam(team, bm), tile, state.hour) };
+  o.big *= share; o.small *= share;
   const kills = [];
   if (state.rng.chance(o.big)) kills.push(state.rng.chance(o.deer) ? "deer" : "hog");
   if (state.rng.chance(o.small)) { kills.push("small"); if (state.rng.chance(o.small / 3)) kills.push("small"); }
@@ -701,7 +705,7 @@ export function huntHour(state, p) {
     takeGame(state, tile, a.rations, a.big ? HUNT.bigDeplete : HUNT.smallDeplete);
     gainXp(state, who.s, "shooting", a.big ? 6 : 2);
   }
-  for (const m of members) gainXp(state, m, "scouting", 0.5);
+  for (const m of members) gainXp(state, m, "scouting", 0.5 * share);
   return true;
 }
 // What the worm left in a haul (worm.js): infested animals, or game from infected land that needs cooking through.
@@ -717,7 +721,7 @@ export function huntSummary(state, p, t) {
   const heat = got.shots ? ` ${got.shots} shot${got.shots === 1 ? "" : "s"} fired (Heat ${Math.round(p.heat || 0)})${got.drawn ? `: the dead nearby heard it` : ""}.` : got.rations ? " Not a shot fired." : "";
   // The home base's hunting mix: how the hours went, the traps' catch and the arrows lost.
   const hrs = got.hrs || {};
-  const how = (hrs.traps || 0) + (hrs.bows || 0) > 0 ? ` By the hunting mix: ${HUNT_METHODS.filter((k) => hrs[k]).map((k) => `${METHOD_NAMES[k].toLowerCase()} ${hrs[k]}h`).join(", ")}${got.trapped ? ` (the traps took ${got.trapped} small game)` : ""}.` : "";
+  const how = (hrs.traps || 0) + (hrs.bows || 0) > 0 ? ` By the hunting mix: ${HUNT_METHODS.filter((k) => hrs[k]).map((k) => `${METHOD_NAMES[k].toLowerCase()} ${clockText(hrs[k])}`).join(", ")}${got.trapped ? ` (the traps took ${got.trapped} small game)` : ""}.` : "";
   const arrows = got.arrowShots ? ` ${got.arrowShots} arrow${got.arrowShots === 1 ? "" : "s"} loosed, ${got.arrows || 0} lost.` : "";
   const left = (got.left >= 1 ? ` No room to carry ${Math.floor(got.left)} more: left where it fell.` : "") + how + arrows;
   const stop = (got.stopped ? ` Stopped: ${got.stopped}` : "") + (got.blind ? " Hunted from your blind here (more game)." : "");
@@ -725,8 +729,8 @@ export function huntSummary(state, p, t) {
   p.lastHaul = { kind: "hunt", rations: got.rations, hour: state.hour }; // for the trip report (and tests)
   const worm = wormNote(state, partyTile(p), got.infested);
   const text = got.rations > 0
-    ? `Hunted ${t.done}h: ${what} (${Math.floor(got.rations)} days of food in raw meat, it spoils in days: eat it, cook it, or dry or smoke it at home).${worm}${heat}${left} Game left here: ${level}.${stop}`
-    : `Hunted ${t.done}h and found nothing worth a shot.${heat} Game left here: ${level}.${stop}`;
+    ? `Hunted ${clockText(t.worked ?? t.done)}: ${what} (${Math.floor(got.rations)} days of food in raw meat, it spoils in days: eat it, cook it, or dry or smoke it at home).${worm}${heat}${left} Game left here: ${level}.${stop}`
+    : `Hunted ${clockText(t.worked ?? t.done)} and found nothing worth a shot.${heat} Game left here: ${level}.${stop}`;
   if (got.rations > 0) log(state, `${teamName(state, p)} hunted near ${tileLabel(state, partyTile(p))}: ${what}, ${Math.floor(got.rations)} days of food in raw meat.`, "good");
   return text;
 }
@@ -786,8 +790,8 @@ export function fishRate(state, kit, tile, hour, level = fishLevel(state, tile, 
 }
 export function expectFish(state, kit, tile, hours, startHour = state.hour, room = Infinity) {
   let level = fishLevel(state, tile, startHour), rations = 0;
-  for (let h = 1; h <= hours; h++) {
-    const r = Math.min(3, fishRate(state, kit, tile, startHour + h, level));
+  for (let h = 1; h - 1 < hours - 1e-9; h++) { // a half hour at the end: half an hour's
+    const r = Math.min(3, fishRate(state, kit, tile, startHour + h, level)) * Math.min(1, hours - h + 1);
     rations += r;
     level = Math.max(0, level - r / FISH.deplete);
   }
@@ -803,7 +807,7 @@ export function fishProblem(state, p, tile = partyTile(p)) {
   if (frozenAt(state) && !kit.ice) return "the water is frozen: cutting a hole for ice fishing needs a crowbar, machete, hatchet or axe.";
   return "";
 }
-export function fishHour(state, p) {
+export function fishHour(state, p, share = 1) { // share: of the hour (a half hour)
   const t = p.task;
   const tile = partyTile(p);
   const got = t.got || (t.got = { rations: 0, left: 0, fish: 0 });
@@ -812,10 +816,11 @@ export function fishHour(state, p) {
   const kit = fishKit(members, cargo, { frozen: frozenAt(state) });
   const rate = Math.min(3, fishRate(state, kit, tile, state.hour));
   if (!(rate > 0)) { if (!kit.power) got.stopped = "no fishing gear left."; return false; }
-  got.hours = (got.hours || 0) + 1;
-  if (got.hours % FISH.wearHours === 0) wearFishTools(state, kit, members, [cargo]); // a day's fishing on the tools
+  const before = got.hours || 0;
+  got.hours = before + share;
+  if (Math.floor(got.hours / FISH.wearHours + 1e-9) > Math.floor(before / FISH.wearHours + 1e-9)) wearFishTools(state, kit, members, [cargo]); // a day's fishing on the tools
   let n = 0;
-  for (let i = 0; i < 3; i++) if (state.rng.chance(rate / 3)) n++;
+  for (let i = 0; i < 3; i++) if (state.rng.chance((rate * share) / 3)) n++;
   if (n) {
     const kept = addMeat(state, p, n, wormKill(state, tile, n, { fish: true }).worm, "fish"); // worm.js: fish from infected water carry eggs
     got.fish += n;
@@ -823,7 +828,7 @@ export function fishHour(state, p) {
     got.left += n - kept;
     lower(state, "fish", tile, n / FISH.deplete);
   }
-  for (const m of members.slice(0, Math.max(1, kit.used))) gainXp(state, m, "scouting", 0.6);
+  for (const m of members.slice(0, Math.max(1, kit.used))) gainXp(state, m, "scouting", 0.6 * share);
   return true;
 }
 export function fishSummary(state, p, t) {
@@ -838,10 +843,10 @@ export function fishSummary(state, p, t) {
   c.fish = Math.round((c.fish + Math.max(0, got.rations || 0)) * 100) / 100;
   c.fished++;
   if (got.rations > 0) log(state, `${teamName(state, p)} fished ${spot ? spot.name : "the water"} near ${tileLabel(state, partyTile(p))}${ice}: ${r1(got.rations)} days of food in raw fish.`, "good");
-  else log(state, `${teamName(state, p)} fished ${spot ? spot.name : "the water"} near ${tileLabel(state, partyTile(p))}${ice} for ${t.done}h and caught nothing.`, "info");
+  else log(state, `${teamName(state, p)} fished ${spot ? spot.name : "the water"} near ${tileLabel(state, partyTile(p))}${ice} for ${clockText(t.worked ?? t.done)} and caught nothing.`, "info");
   return got.rations > 0
-    ? `Fished ${t.done}h${ice}: ${Math.floor(got.rations)} days of food in raw fish (it spoils in a day or two).${wormNote(state, partyTile(p))}${left} Fish left here: ${word}.${got.stopped ? ` Stopped: ${got.stopped}` : ""}`
-    : `Fished ${t.done}h${ice} and caught nothing worth keeping. Fish left here: ${word}.${got.stopped ? ` Stopped: ${got.stopped}` : ""}`;
+    ? `Fished ${clockText(t.worked ?? t.done)}${ice}: ${Math.floor(got.rations)} days of food in raw fish (it spoils in a day or two).${wormNote(state, partyTile(p))}${left} Fish left here: ${word}.${got.stopped ? ` Stopped: ${got.stopped}` : ""}`
+    : `Fished ${clockText(t.worked ?? t.done)}${ice} and caught nothing worth keeping. Fish left here: ${word}.${got.stopped ? ` Stopped: ${got.stopped}` : ""}`;
 }
 
 // ---------- snares ----------
