@@ -141,7 +141,7 @@ export const REAL_SIZE = {
   // clinic's plans at their sizes.
   dorm:         { w: [24, 46], d: [10, 28], storeys: [2, 8], set: "town", planned: true },
   lecturehall:  { w: [30, 46], d: [12, 26], storeys: [1, 4], set: "town", planned: true },
-  sciencehall:  { w: [28, 46], d: [13, 26], storeys: [1, 6], set: "town", planned: true },
+  sciencehall:  { w: [20, 46], d: [12, 26], storeys: [1, 6], set: "town", planned: true }, // with #37's lab plans
   univlibrary:  { w: [14, 56], d: [13, 44], storeys: [1, 8], set: "town", planned: true }, // with #34's library plans (the law library to the central library)
   studentunion: { w: [32, 46], d: [16, 26], storeys: [1, 4], set: "town", planned: true },
   dininghall:   { w: [28, 34], d: [20, 24], storeys: [1, 2], set: "town", planned: true },
