@@ -21,6 +21,7 @@ import { FURN_GEAR } from "./data-basefurniture.js"; // furniture at the base (#
 import { FURNITURE_GEAR } from "./data-furniture.js"; // the furniture's item forms, f_<kind>: lifted off a raid's floor (furnicarry.js)
 import { POWER_GEAR } from "./data-power.js"; // the power grid: found generators, mounted spotlights, fridges (electric.js)
 import { BOX_GEAR, BOX_PATCH } from "./data-boxes.js"; // cash boxes, fire safes, toolboxes, equipment cases; the gun cases as boxes (boxes.js)
+import { PARK_GEAR } from "./data-parks.js"; // a park's prizes (issue #60)
 import { NEW_KINDS } from "./data-shops.js"; // the shops and services new as places (their LOCATIONS rows)
 
 // Travel time a tile, in hours (parties.js moveCost): on foot an hour a tile whatever the ground; a car half an hour
@@ -599,6 +600,9 @@ export const LOCATIONS = {
   bunker:      { name: "Military bunker",    glyph: "Bk", cat: "special", danger: 3, loot: { ammo: 4, meds: 1, parts: 2, fuel: 1, food: 1.5, electronics: 1 }, gear: ["ar", "carbine", "plate", "milhelmet", "milradio", "nvg", "assaultpack", "rucksack", "binoculars", "combatknife", "etool", "hazmat"], richness: 1.0, known: "secret" },
   govbunker:   { name: "Government bunker",  glyph: "Gb", cat: "special", danger: 2, loot: { electronics: 2, food: 2, water: 1.5, meds: 1, ammo: 1.5, scrap: 2 }, gear: ["pistol", "carbine", "milradio", "handradio", "flashlight", "binoculars", "hazmat", "traumakit"], richness: 0.9, known: "secret" },
   shelter:     { name: "Fallout shelter",    glyph: "Fs", cat: "town",  danger: 1, loot: { food: 3, water: 3, meds: 1.5 }, gear: ["flashlight", "lantern", "bandagekit", "hazmat", "puritabs", "handradio"], richness: 0.6, known: "road" },
+  // A museum (issue #58, museumlayout.js): a city centre's art or natural history museum, a town's local history museum
+  // (placement.js PLACE_EXTRA and the city crawl, new worlds only); its curiosities, an old sword or a telescope.
+  museum:      { name: "Museum",             glyph: "Mu", cat: "urban", danger: 1, loot: { scrap: 2, parts: 1, food: 1, water: 1 }, gear: ["sabre", "cutlass", "bayonet", "telescope", "binoculars", "camera"], richness: 0.7, known: "public" },
   prepper:     { name: "Prepper bunker",     glyph: "Pb", cat: "rural", danger: 1, loot: { food: 5, water: 3, ammo: 3, meds: 1.5, fuel: 1 }, gear: ["huntrifle", "ar", "shotgun", "rucksack", "puritabs", "binoculars", "lantern", "headlamp", "etool", "waterfilter"], richness: 0.85, known: "secret" },
 };
 // Where a placed site stands (tile.loc.zone): map icon color and the inspect panel.
@@ -794,6 +798,7 @@ Object.assign(GEAR, BED_GEAR); // beds as furniture (data-beds.js, beds.js)
 Object.assign(GEAR, FURN_GEAR); // furniture at the base (data-basefurniture.js, furniture.js): the found pieces' item forms (f_<kind>)
 Object.assign(GEAR, TENT_GEAR); // tent bags (data-tents.js, tents.js)
 Object.assign(GEAR, POWER_GEAR); // found generators, mounted spotlights, fridges (data-power.js, electric.js)
+Object.assign(GEAR, PARK_GEAR); // a park's prizes (data-parks.js, issue #60)
 // The furniture's item forms (data-furniture.js FURNITURE_GEAR, issue #12: what a piece lifted off a raid's floor is in the
 // arms, the cart or the cargo), where no other module's row stands (the appliances' own: data-appliances.js). piece:
 // never offered in a starting kit, a trunk or a background (startgear.js, custombg.js), so their dice stay as they were.

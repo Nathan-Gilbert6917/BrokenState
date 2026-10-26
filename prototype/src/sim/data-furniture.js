@@ -403,6 +403,24 @@ export const FURNITURE_KINDS = {
   screener:     P("Walk-through scanner", POLE, 30, 120, "fixed", S1, false, ["office"], "none"),
   liquorcab:    P("Liquor cabinet",       HALF, 25, 30, "one", S1, true, ["office", "living", "bar"], "storage:30", true),
   phonebooth:   P("Phone booth",          C(false, 1, false), 30, 200, "fixed", S1, false, ["office"], "none", true),
+  // ---------- museums (issue #58: museumlayout.js lays them) ----------
+  // The art worth carrying home (FURNITURE_VALUE, below): a sculpture on its plinth (two people), a framed gallery
+  // painting on its stand, a marble bust, an antique vase, a suit of armour, a ship model on its stand; a wax figure (not
+  // worth much). A rowing boat from a maritime museum's hall (two people; at a base it holds things). Fixed: a dinosaur
+  // skeleton on its mount, a field gun (deactivated, its breech welded), a railway handcar on its length of track.
+  // The display case, the queue posts (the rope barriers), the bench, the play structure, the statue and the kiosk are
+  // older rows (above).
+  sculpture:   P("Sculpture on a plinth", HALF, 30, 60, "two", S1, false, ["museum"], "comfort:1"),
+  artwork:     P("Framed painting",       POLE, 6, 10, "one", S1, false, ["museum", "living"], "comfort:0.6", true),
+  bust:        P("Marble bust",           HALF, 20, 28, "one", S1, false, ["museum", "office"], "comfort:0.4"),
+  vase:        P("Antique vase",          POLE, 4, 7, "one", S1, false, ["museum", "living"], "comfort:0.3"),
+  armourstand: P("Suit of armour",        HALF, 25, 28, "one", S1, false, ["museum"], "comfort:0.2"),
+  shipmodel:   P("Ship model",            HALF, 10, 9, "one", S1, false, ["museum", "office"], "comfort:0.4"),
+  waxfigure:   P("Wax figure",            POLE, 6, 18, "one", S1, false, ["museum"], "none"),
+  boat:        P("Rowing boat",           HALF, 30, 70, "two", S12, false, ["museum", "yard"], "storage:60"),
+  fossil:      P("Dinosaur skeleton",     C(false, 1, false), 60, 1200, "fixed", S22, false, ["museum"], "none"),
+  cannon:      P("Field gun",             STEEL, 90, 1100, "fixed", S21, false, ["museum"], "none"),
+  railcar:     P("Railway handcar",       HALF, 60, 400, "fixed", S21, false, ["museum"], "none"),
   // ---------- lootable decor (issue #13: decor.js places them; light comfort pieces for the base) ----------
   // The plant and the floor lamp stand on a room's floor cell; the painting and the wall clock hang on a wall (decor.js:
   // c.wart = { k, d, piece: true } on the wall cell, the wall's own kind unchanged) and stand on a cell only once set down.
@@ -410,6 +428,22 @@ export const FURNITURE_KINDS = {
   floorlamp: P("Floor lamp",   POLE, 5, 6, "one", S1, false, ["living", "bedroom", "office"], "comfort:0.1"),
   painting:  P("Painting",     POLE, 5, 4, "one", S1, false, ["living", "dining", "bedroom", "office", "church"], "comfort:0.2", true),
   wallclock: P("Wall clock",   POLE, 3, 2, "one", S1, false, ["living", "kitchen", "office", "school", "ward"], "comfort:0.05", true),
+  // ---------- amusement parks (issue #60, amusement.js) ----------
+  // The rides out on the grounds (fixed: bolted down, tonnes of steel): a roller coaster's track on its supports and a
+  // car of its train stalled on it, a Ferris wheel's base and its lowest gondola, a spinning teacup, a bumper car on its
+  // floor, a water slide's tower, a trampoline court's bed, the mini-golf windmill, a holiday light display, a ticket
+  // booth at the gate; and a go-kart off its track (two people lift it: its tank still has fuel in it).
+  coastertrack: P("Coaster track",   C(false, 1, false), 80, 400, "fixed", S1, false, ["park"], "none"),
+  coastercar:   P("Coaster car",     HALF, 60, 600, "fixed", S21, false, ["park"], "none"),
+  ferriswheel:  P("Ferris wheel",    FULL, 120, 6000, "fixed", S22, false, ["park"], "none"),
+  teacup:       P("Spinning teacup", HALF, 50, 400, "fixed", S22, false, ["park"], "none"),
+  bumpercar:    P("Bumper car",      HALF, 40, 180, "fixed", S1, false, ["park"], "none"),
+  waterslide:   P("Water slide",     FULL, 80, 3000, "fixed", S22, false, ["park"], "none"),
+  trampoline:   P("Trampoline",      C(false, 0, false), 30, 150, "fixed", S22, false, ["park"], "none"),
+  windmill:     P("Mini-golf windmill", HALF, 40, 300, "fixed", S22, false, ["park"], "none"),
+  lightdisplay: P("Light display",   POLE, 15, 60, "fixed", S1, false, ["park"], "none"),
+  ticketbooth:  P("Ticket booth",    FULL, 60, 500, "fixed", S1, false, ["park"], "none"),
+  gokart:       P("Go-kart",         HALF, 30, 90, "two", S21, true, ["park", "bay"], "storage:10"),
 };
 
 // The cells' rules for combat.js CELL (merged at load: Object.assign(CELL, furnitureCells())).
@@ -443,7 +477,9 @@ export const pieceDef = (k) => FURNITURE_KINDS[k] || null;
 // POWER_GEAR.fridge (key "fridge"), so it has no f_fridge; the cot is data-beds.js's BED_GEAR.cot (a base's camp bed),
 // so it has no f_cot; a bunker's generator is data-power.js's genset_military, so it has no f_genset. Merged into GEAR by data.js (marked piece: kept out of the starting kits and trunks, whose dice
 // would change). itemKey(k): the item key for a cell kind (null when fixed).
-export const FURNITURE_ITEM_KEY = { fridge: "fridge", cot: "cot", genset: "genset_military" }; // a bunker's generator is the found Military tactical generator (data-power.js GENSETS, issue #26)
+export const FURNITURE_ITEM_KEY = { fridge: "fridge", cot: "cot", genset: "genset_military" };
+// What a piece is worth as an item where its weight says too little (value: kg / 4 otherwise): a museum's art (issue #58).
+export const FURNITURE_VALUE = { sculpture: 70, artwork: 50, bust: 35, vase: 30, armourstand: 40, shipmodel: 25 }; // a bunker's generator is the found Military tactical generator (data-power.js GENSETS, issue #26)
 export const itemKey = (k) => (!FURNITURE_KINDS[k] || FURNITURE_KINDS[k].carry === "fixed" ? null : FURNITURE_ITEM_KEY[k] || `f_${k}`);
 /** @type {Record<string, { name: string, slot: string, skill: null, power: number, req: number, value: number, noise: number, weight: number, cat: string, bulky: boolean, twoHands: boolean, furniture: string, desc: string }>} */
 export const FURNITURE_GEAR = {};
@@ -451,7 +487,7 @@ for (const [k, d] of Object.entries(FURNITURE_KINDS)) {
   const key = itemKey(k);
   if (!key || key !== `f_${k}`) continue; // the fridge's and the cot's items are their own
   FURNITURE_GEAR[key] = {
-    name: d.name, slot: "pack", skill: null, power: 0, req: 0, value: Math.max(1, Math.round(d.kg / 4)), noise: 0, weight: d.kg, cat: "household", bulky: true, twoHands: true, furniture: k,
+    name: d.name, slot: "pack", skill: null, power: 0, req: 0, value: FURNITURE_VALUE[k] || Math.max(1, Math.round(d.kg / 4)), noise: 0, weight: d.kg, cat: "household", bulky: true, twoHands: true, furniture: k,
     desc: `${d.name}: ${d.kg} kg, ${d.carry === "two" ? "a two-person lift" : "one person can lift it, very slowly"}. Both arms, a cart or a vehicle.`,
   };
 }
