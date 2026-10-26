@@ -27,7 +27,7 @@ import { woodTime, woodcutterMult } from "./woodcutting.js";
 import { BUILDINGS, isShelter, countAll } from "./buildings.js"; // a camp's first stone builds (call-time only)
 
 export const STONE = {
-  RATE: 5,          // stone an hour for one average gatherer with bare hands on the best ground (a mountain's scree)
+  RATE: 10,         // stone an hour for one average gatherer with bare hands on the best ground (a mountain's scree; 5 until the user's request 2026-10-26: "Increase yield of stones when gathering")
   hours: 6,         // the base job's hours a day (daylight)
   keep: 30,         // the base job opens while the stores hold less than this (a cook fire's and a boiler's) or less than the queued buildings wait for
   keepPeople: 5,    // the keep only at a base of this many people or more (stoneWant)
