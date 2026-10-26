@@ -61,7 +61,7 @@ import { initCombatUI, drawCombat, renderCombatPanel, renderCombatBar, raidLayou
 import { defaultCustom, cleanCustom, clampCustomCount, isCustomRun, startsWithVehicle } from "./sim/custommode.js"; // Custom mode and Start with a vehicle (2026-10-24)
 import { defaultFleet, fleetText } from "./sim/startfleet.js"; // the starting vehicles: each its kind, point limit and back (2026-10-24)
 import { isCrashRun } from "./sim/crashmode.js"; // Crashlanding (2026-10-24): a normal-mode run with state.crash, the screen's fourth mode
-import { LOOK_ACTIONS, LOOK_CHANGE_ACTIONS, crewSnapshot, randomizeAllCrew, randomizeEverything, randomizeGear, randomizeOne, rerollCarried, randomBackground, rollRandomRun, ironmanCrew, crewCustomized, crewWithBackground, crewWithBackgrounds, blankCrew, backToSetup, stashModeSet, takeModeSet, crashSizeDef, generating } from "./ui/newgame.js"; // crashSizeDef: Crashlanding's map defaults (runOpts); generating: the "Generating map…" box over every world build (gen)
+import { LOOK_ACTIONS, LOOK_CHANGE_ACTIONS, crewSnapshot, randomizeAllCrew, randomizeEverything, randomizeGear, randomizeOne, rerollCarried, randomBackground, rollRandomRun, ironmanCrew, crewCustomized, crewWithBackground, crewWithBackgrounds, blankCrew, backToSetup, stashModeSet, takeModeSet, crashSizeDef, generating, generatingUp } from "./ui/newgame.js"; // crashSizeDef: Crashlanding's map defaults (runOpts); generating: the "Generating map…" box over every world build (gen)
 import { CUSTOM_POINTS, clampMax, overText } from "./sim/custompoints.js"; // Customize: everything costs points
 import { BG_ACTIONS, BG_CHANGE, BG_INPUT, customLibrary } from "./ui/backgrounds.js"; // custom backgrounds (sim/custombg.js), not in Ironman
 import { WC_ACTIONS, WC_CHANGE, uiCfg, wcChanged } from "./ui/worldcfg.js"; // World…: the run's dials (sim/worldcfg.js), into the world as it is built
@@ -84,7 +84,7 @@ import { callBack, detach, isSome, splittable } from "./sim/detach.js";
 import { isLandJob } from "./sim/landest.js"; // some of a team out on a job of their own: Call back // Forage, Hunt, Fish, Cut wood, Gather stone: how many hours, and what they would bring
 import { renameBase } from "./sim/basenames.js";
 import { BN_ACTIONS, BN_INPUT, bnKey, nameModalUp } from "./ui/basename.js"; // naming a base you found, renaming any base
-import { CS_ACTIONS, siteViewDue } from "./ui/campsite.js"; // the camp's spot on its tile's 500 × 500 map, in the isometric view
+import { CS_ACTIONS, siteViewDue, siteGenWhat } from "./ui/campsite.js"; // the camp's spot on its tile's 500 × 500 map, in the isometric view
 import { stackKey, stackInput, stackWheel, dropPoint } from "./ui/stackmove.js"; // the stack mover: Enter / Esc, the slider live, the wheel, the drop popover
 import { GB_ACTIONS, GB_CHANGE } from "./ui/gunbuilder.js"; // the gun builder
 import { FARM_ACTIONS, FARM_CHANGE } from "./ui/farming.js";
@@ -314,7 +314,7 @@ function blocked() {
   // On autopilot the governor answers cards, runs searches and trades itself (sim/autopilot.js), so they do not stop the clock.
   // cardUp (ui/pacing.js): a card that stops the clock by the pause rules, or one opened from the tray.
   const pending = !state.autopilot && (cardUp(state, ui) || !!state.engagement || !!state.trade || !!activeCrawl(state) || !!activeHiveCrawl(state)); // activeCrawl: a city crawl's block card (sim/citycrawl.js); a hive crawl's window (sim/hivecrawl.js)
-  return !ui.started || !!state.combat || state.gameOver || !!ui.cardResult || pending ||
+  return !ui.started || !!state.combat || generatingUp() || state.gameOver || !!ui.cardResult || pending ||
     !!ui.planner || !!ui.routeSetup || ui.radioWith != null || !!ui.caravanPlan || !!ui.survivor || !!ui.memorial || !!ui.baseView || !!ui.zombieLook || !!ui.wcOpen || !!ui.bgEditor || !!ui.inv || !!ui.meet || !!ui.gunb || !!ui.timelapse || !!ui.diary || !!ui.roster || !!ui.settings || !!ui.ledger || !!ui.ask || !!ui.codex || !!ui.carry || nameModalUp(state, ui) || unpackUp(state, ui);
 }
 
@@ -512,7 +512,9 @@ function tidyUi() {
     delete state.campOpen;
     if (!state.autopilot && !state.combat && !ui.baseView && baseById(state, id)) { ui.baseView = { id, tab: "camp" }; ui.baseMsg = ""; }
   }
-  siteViewDue(state, ui); // ui/campsite.js: a team waiting for its camp's spot: the tile's map opens in the isometric view
+  // ui/campsite.js: a team waiting for its camp's spot: the tile's map opens in the isometric view, built under the
+  // "Generating map…" box (the user's request 2026-10-26)
+  siteViewDue(state, ui, (fn) => generating(fn, { text: siteGenWhat(state), after: () => { dirtyNow = true; refresh(); } }));
   if (ui.baseView && !baseById(state, ui.baseView.id)) { ui.baseView = null; ui.baseMsg = ""; }
   if (ui.supplyForm && (!ui.baseView || !baseById(state, ui.supplyForm.originId))) { ui.supplyForm = null; ui.supplyError = ""; }
   if (ui.survivor != null && !survivorById(state, ui.survivor)) { ui.survivor = null; ui.lookEdit = null; }
