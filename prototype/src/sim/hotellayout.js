@@ -313,7 +313,8 @@ function towerPlan(C, ground, floors, o = {}) {
   return {
     ...bigOf(C), ground: "city", storeys: n,
     program: ground,
-    upper: (f, r, ctx) => (ctx && ctx.top ? (o.top ? o.top(f) : towerTop(C, f)) : floors[f] ? floors[f](f, ctx) : o.guest ? o.guest(f, ctx) : guestFloor("tower", f, C.bw, C.bh, C.fl)),
+    // The penthouse on the top floor built (#24's OPEN_STOREYS: a tower is built 4 floors high, the stairs above blocked).
+    upper: (f, r, ctx) => (ctx && (ctx.top || f === ctx.storeys - 1) ? (o.top ? o.top(f) : towerTop(C, f, ctx.top ? "Rooftop bar" : "Sky lounge")) : floors[f] ? floors[f](f, ctx) : o.guest ? o.guest(f, ctx) : guestFloor("tower", f, C.bw, C.bh, C.fl)),
     exits: o.exits || [{ side: "back", roles: ["bays"], chance: 1, roller: true, width: 2, lock: 0.25, name: "Garage ramp" }, { side: "back", roles: ["kitchen", "pantry"], chance: 0.6, lock: 0.4 }, ...fire(0.5)],
     ...(o.extra || {}),
   };
