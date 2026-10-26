@@ -88,6 +88,10 @@ export function pieceKindOf(it) {
 export const isPieceItem = (it) => !!pieceKindOf(it);
 const first = (u) => String((u && u.name) || "").split(" ")[0];
 const word = (def) => def.name.toLowerCase();
+// A piece whose catalogue name is a plural ("Shelves", "Lockers", "Crates"; not "Chest of drawers" or "Tortilla press"):
+// the words about it agree with it (issue #48: "The shelves goes into the work van" in the playthrough's transcript).
+export const pluralName = (name) => /[^s]s$/i.test(String(name || "")) && !/ of /i.test(String(name || ""));
+export const agree = (name, one, many) => (pluralName(name) ? many : one);
 const cheb = (ax, ay, bx, by) => Math.max(Math.abs(ax - bx), Math.abs(ay - by));
 const cellOf = (b, x, y) => (x < 0 || y < 0 || x >= b.w || y >= b.h ? null : b.cells[y * b.w + x]);
 const burning = (b, x, y) => !!(b.fires && b.fires.some((f) => f.x === x && f.y === y));
@@ -229,19 +233,19 @@ export function liftRefusal(b, u) {
 export function liftPlan(b, u, t, helperId = null) {
   if (!t) return { helper: null, why: "Lift which piece?" };
   const d = t.def;
-  if (d.carry === "fixed") return { helper: null, why: `The ${word(d)} is fixed in place: it cannot be lifted (shove it, or leave it).` };
+  if (d.carry === "fixed") return { helper: null, why: `The ${word(d)} ${agree(d.name, "is", "are")} fixed in place: ${agree(d.name, "it", "they")} cannot be lifted (shove ${agree(d.name, "it", "them")}, or leave ${agree(d.name, "it", "them")}).` };
   if (t.wall) return { helper: null, why: u.ap < LIFT.AP ? `Lifting takes both actions (${LIFT.AP}).` : "" }; // off the wall: one person
   if (t.cell) {
     if (unitAt(b, t.x, t.y)) return { helper: null, why: `Someone is on the ${word(d)}.` };
-    if (burning(b, t.x, t.y)) return { helper: null, why: `The ${word(d)} is on fire.` };
+    if (burning(b, t.x, t.y)) return { helper: null, why: `The ${word(d)} ${agree(d.name, "is", "are")} on fire.` };
     const box = boxOn(b, pieceCells(b, t.x, t.y, d), u.f || 0, t.cell.k);
-    if (box && box.lock && !box.lock.open) return { helper: null, why: `The ${word(d)} is locked: open it first (Force lock), its contents come out before it is lifted.` };
+    if (box && box.lock && !box.lock.open) return { helper: null, why: `The ${word(d)} ${agree(d.name, "is", "are")} locked: open ${agree(d.name, "it", "them")} first (Force lock), the contents come out before ${agree(d.name, "it is", "they are")} lifted.` };
   }
   const helpers = liftHelpers(b, u, t);
   const alone = helperId != null && Number(helperId) < 0;
   const helper = alone ? null : helperId != null ? helpers.find((o) => o.id === Number(helperId)) || null : d.carry === "two" ? helpers[0] || null : null;
   if (helperId != null && !alone && !helper) return { helper: null, why: "That teammate cannot take the other end (free hands, both actions, right next to the piece or to the lifter)." };
-  if (d.carry === "two" && !helper) return { helper: null, why: `The ${word(d)} (${d.kg} kg) takes two: a teammate with free hands and both actions right next to it or to ${first(u)} takes the other end (${LIFT.HELP_AP} actions each).` };
+  if (d.carry === "two" && !helper) return { helper: null, why: `The ${word(d)} (${d.kg} kg) ${agree(d.name, "takes", "take")} two: a teammate with free hands and both actions right next to ${agree(d.name, "it", "them")} or to ${first(u)} takes the other end (${LIFT.HELP_AP} actions each).` };
   if (u.ap < LIFT.AP) return { helper, why: `Lifting takes both actions (${LIFT.AP}).` };
   return { helper, why: "" };
 }
@@ -456,7 +460,7 @@ export function dropPiece(state, b, u, why = "") {
     settlePile(pile);
     endCarry(state, b, P);
   }
-  const line = `${why ? `${why} ` : ""}The ${name} ${cells ? `is set down ${at} of ${first(c)}` : `drops where ${first(c)} stands (lift it again from the ground: ${LIFT.AP} actions)`}${o ? "; the tether ends" : ""}.`;
+  const line = `${why ? `${why} ` : ""}The ${name} ${cells ? `${agree(name, "is", "are")} set down ${at} of ${first(c)}` : `${agree(name, "drops", "drop")} where ${first(c)} stands (lift ${agree(name, "it", "them")} again from the ground: ${LIFT.AP} actions)`}${o ? "; the tether ends" : ""}.`;
   say(b, line, "info");
   return line;
 }
@@ -623,6 +627,7 @@ export function stowAct(state, b, u) {
   const P = carriedPiece(b, u);
   const p = raidParty(state, b);
   if (!p || !addGearToCargo(state, p, P.item)) return `No room in the car for the ${word(P.def)}.`;
+  if (b.raid) (b.raid.stowed = b.raid.stowed || []).push(P.item); // combat.js endRaid: in the raid's loot when the vehicle goes home (issue #48: the summary said "Loot: nothing" with a fridge in the van)
   const L = lootLayer(b);
   const box = P.carrier.pieceBox != null && L ? L.containers.find((k) => k.id === P.carrier.pieceBox) : null;
   if (box) delete box.lifted; // its record stays where the piece stood, empty
