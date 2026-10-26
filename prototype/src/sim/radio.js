@@ -13,6 +13,9 @@
 //   6 tiles sit inside the station's 12), so none can be built where a station stands (buildings.js canBuild), and
 //   one already there (a station built after it) stands idle, using no parts, until the station is gone or broken.
 //   A relay at a hub without a station is like any other: it works once a station or linked relay reaches it.
+// - A radio tower a base holds and powers (radiotower.js, issue #54: a generator, 2 fuel a day) is one more node, kind
+//   "tower", at the tower's tile reaching TOWER.RANGE (30): the base's station on its mast. A group's tower (one it runs
+//   at a base: radiotower.js groupTowersDaily) makes its node there reach as far (groupNetwork).
 // - Your teams in coverage report live (world.js radioBasesInRange); groups whose base is within coverage plus
 //   GROUP_REACH (6) tiles (their own sets reach that far) can be called (canRadioGroup) when they have a set of their own
 //   (groupHasSet: a station, the military's army sets; envoys.js: otherwise word goes in person), and that is what "in radio
@@ -54,6 +57,7 @@ import { SUPPLIES, SUPPLY_KEYS, GEAR, supplyFew, supValue } from "./data.js";
 import { count } from "./buildings.js";
 import { fieldRelayNodes, groupRelayTiles } from "./fieldworks.js"; // relay masts out on the land
 import { radioBoost } from "./power.js";
+import { TOWER, towerOnAir, towerDaily, groupTowerOn } from "./radiotower.js"; // radio towers a base powers (issue #54)
 import { attitude, changeGoodwill, isAggressiveType, strength } from "./factions.js";
 import { planPath, spawnAiParty, partyTile, tileLabel } from "./parties.js";
 import { packOf } from "./inventory.js";
@@ -118,7 +122,7 @@ export function groupNetwork(state, f) {
   const mil = f.type === "military" || !!f.hcSplinter; // hardcore-groups.js: what was left of the Guard carries its sets
   const st = f.bases.filter((tile) => mil || (f.works && f.works[tile] && f.works[tile].radio > 0));
   const on = st.filter((tile) => !groupHides(state, f, tile));
-  const nodes = (on.length ? on : st).map((tile) => ({ tile, range: mil ? MIL_RADIO_RANGE : RADIO_RANGE }));
+  const nodes = (on.length ? on : st).map((tile) => ({ tile, range: Math.max(mil ? MIL_RADIO_RANGE : RADIO_RANGE, groupTowerOn(f, tile) ? TOWER.RANGE : 0) })); // radiotower.js: a tower they run at the base
   // Their relay masts, linked as yours are: within reach of a station or of a linked relay.
   const g = state.grid;
   let relays = groupRelayTiles(state, f);
@@ -200,6 +204,9 @@ export function radioNodes(state, plus = null) {
     if (hasStation(b)) nodes.push({ base: b, tile: b.tile, range: (hasMilRadio(b) ? MIL_RADIO_RANGE : RADIO_RANGE) + radioBoost(b), kind: "station", linked: true, offline: false, military: hasMilRadio(b) }); // +2 on generator power (power.js)
     else if (count(b, "relay") || b === plus) nodes.push({ base: b, tile: b.tile, range: RELAY_RANGE, kind: "relay", linked: false, offline: b === plus ? false : !!b.relayOffline });
   }
+  // radiotower.js (issue #54): a tower a base holds and powers, its station's set on the mast: a transmitter at the
+  // tower's tile reaching TOWER.RANGE (linked: it is the station's own).
+  for (const b of state.bases) if (b.tower && towerOnAir(state, b)) nodes.push({ base: b, tile: b.tower.tile, range: TOWER.RANGE, kind: "tower", linked: true, offline: false, tower: true });
   nodes.push(...fieldRelayNodes(state)); // fieldworks.js: relay masts on the land outside the bases (node.field: the mast's id)
   const g = state.grid;
   for (let grew = true; grew;) {
@@ -236,7 +243,7 @@ export function relayReach(state, base, groups = null, outOfReach = false) {
 // the Groups tab), so it is kept for the hour and the network as it stands (state.relaySpots, not saved).
 export function relaySpotFor(state, f) {
   if (!f || !f.alive || !f.bases.length) return null;
-  const key = `${state.hour}|${state.bases.map((b) => `${b.id}:${b.tile}${hasStation(b) ? "s" : ""}${count(b, "relay") ? (b.relayOffline ? "o" : "r") : ""}`).join(",")}`;
+  const key = `${state.hour}|${state.bases.map((b) => `${b.id}:${b.tile}${hasStation(b) ? "s" : ""}${count(b, "relay") ? (b.relayOffline ? "o" : "r") : ""}${b.tower && towerOnAir(state, b) ? `t${b.tower.tile}` : ""}`).join(",")}`;
   let c = state.relaySpots;
   if (!c || c.key !== key) {
     c = { key, by: new Map() };
@@ -258,7 +265,7 @@ function relaySpotNow(state, f) {
 
 // One line for the base screen.
 export function radioSummary(state, base) {
-  const n = radioNodes(state).find((x) => x.base === base && !x.field);
+  const n = radioNodes(state).find((x) => x.base === base && !x.field && !x.tower); // the tower's own line: radiotower.js towerLine
   const tuned = base.tuned != null ? networkById(state, base.tuned) : null; // radiolisten.js Listen in
   const ear = tuned ? `. Tuned to ${tuned.name}${netCovers(state, tuned, base.tile) ? "" : " (out of range)"}` : "";
   if (n && n.kind === "station") return `Radio station: ${n.range} tiles of coverage${n.military ? " (a Military encrypted radio in the armory)" : ""}${count(base, "relay") ? ". The relay here stands idle (the station covers more)" : ""}${ear}`;
@@ -505,6 +512,7 @@ export function radioPact(state, f, kind) {
 // ---------- daily: relays, groups' water and wares, grudges, and the groups' own calls ----------
 export function radioDaily(state) {
   relayUpkeep(state);
+  towerDaily(state); // radiotower.js: the towers' fuel, going dark, sabotage; the groups' towers
   const today = day(state);
   const rng = state.rng;
   for (const f of state.factions) {

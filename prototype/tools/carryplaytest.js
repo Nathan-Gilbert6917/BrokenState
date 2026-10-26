@@ -8,7 +8,7 @@
 //      tethered on adjacent cells at half its kg each, keep the tether through every move and out of the front door,
 //      and load it into the van; the stove the same; the sofa (2 cells) set down to the side the player picks, lifted
 //      again; one of the two downed: the piece set down, the tether ended; a piece upstairs (when the house has one)
-//      carried down the stairs (both actions each); the van filled up: the sofa stays by the door (furnihome.js), in the
+//      carried down the stairs (both actions each); the van filled up: the sofa stays behind (furnihome.js), in the
 //      house's ledger (poi.cont.pieces).
 //   B. One survivor and the van at a house: refused the fridge; lifts the microwave (2 actions), its weight on the
 //      pace (carrykit.js weighPlayer, CARRY_KG past 40 kg), loads it; the shelves (25 kg: slowed to 4 tiles) set into the
@@ -436,7 +436,7 @@ function sceneA(st) {
   // Upstairs: a piece carried down the stairs (both actions each), when this house has a second floor and a piece on it.
   if (b.floors && b.floors.length > 1) stairsDown(st, b, u, o, p, v);
   else say("(one floor here: no stairs to carry a piece down)");
-  // The van full: the sofa between the two at extraction stays by the door, in the ledger.
+  // The van full: the sofa between the two at extraction stays behind, in the ledger.
   nextTurn(st, b);
   const S2 = piecesOn(b, "sofa").find((q) => cellAt(b, q.x, q.y).moved) || piecesOn(b, "sofa")[0];
   pairLift(st, b, u, o, S2, "sofa");
@@ -448,9 +448,9 @@ function sceneA(st) {
   check(!p.cargo.gear.some((it) => it.key === "f_sofa"), "the sofa is not in the full van");
   const lootKeys = b.result.loot.gear.map((g) => g.key);
   check(lootKeys.includes("fridge") && lootKeys.includes("f_stove"), `the pieces loaded during the raid are in its loot (${lootKeys.filter((k) => F.isPieceItem({ key: k }) || k === "fridge").join(", ") || "none"}; the bug the playthrough found: "Loot: nothing" with a fridge in the van)`);
-  const full = summaryHas(b, /is full: the sofa stays by the door/);
+  const full = summaryHas(b, /is full: the sofa stays behind/);
   T(`The raid ends: "${full || (b.summary || []).join(" / ")}"`);
-  check(!!full, "the van too full: the sofa stays by the door (furnihome.js), said in the summary");
+  check(!!full, "the van too full: the sofa stays behind (furnihome.js), said in the summary");
   check(ledgerOf(t, i, "sofa").length >= 1, "and kept in the house's ledger (poi.cont.pieces)");
   const scr = p.cargo.supplies.scrap; p.cargo.supplies.scrap = 0; // the script's ballast out again before home
   say(`(the script takes its ${scr} scrap back out)`);

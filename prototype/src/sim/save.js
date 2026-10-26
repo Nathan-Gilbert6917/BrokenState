@@ -206,6 +206,9 @@ export function deserializeState(save) {
   // The farms renovated (farmstead.js, farmplans.js, issue #62): a save from before keeps its farms' and ranches' pick of
   // buildings and its sheds' and farm stands' old buildings (worldcfg.js legacyFarms).
   if (!state.farmV) { state.farmLegacy = true; state.farmV = 1; }
+  // Radio towers (radiotower.js, issue #54): a save from before keeps its radio tower sites' transmitter huts (their
+  // maps and containers as they were) and has no tower to claim or power (worldcfg.js legacyTowers).
+  if (!state.towerV) { state.towerLegacy = true; state.towerV = 1; }
   if (!state.woodcutting) {
     for (const b of state.bases || []) if (b.stock && !Number.isFinite(b.stock.wood)) b.stock.wood = 0;
     for (const r of (state.work && state.work.roles) || []) if (r.pri && r.pri.wood == null && r.pri.forage > 0) r.pri.wood = r.pri.forage;

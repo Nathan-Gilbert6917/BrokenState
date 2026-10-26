@@ -28,7 +28,7 @@ import { LOCATIONS } from "./data.js";
 import { hash01 } from "./skills.js"; // (call-time only) the building picked for a team that gets no card
 import { partyTile, tileLabel, awaitOrders, giveOrder, PICKED_OVER } from "./parties.js";
 import { crawlTile } from "./citycrawl.js";
-import { SITES, BUILDINGS, buildingOptions } from "./buildingmaps.js"; // the building a POI's kind opens; a site's choice of them
+import { SITES, TOWER_SITES, BUILDINGS, buildingOptions } from "./buildingmaps.js"; // the building a POI's kind opens; a site's choice of them
 import { ledgerSummary } from "./poicont.js"; // what the containers there hold for you (the dialogue's note)
 import { campText } from "./campsite.js"; // a campsite's state as last seen (abandoned, overrun, raiders)
 import {
@@ -223,7 +223,7 @@ export function poiRaidSetup(state, t, i, building = null) {
 export function poiPlace(t, i) {
   const poi = poiAt(t, i);
   if (!poi) return null;
-  const entry = SITES[poi.kind];
+  const entry = poi.extra === "place" && TOWER_SITES[poi.kind] ? TOWER_SITES[poi.kind] : SITES[poi.kind]; // a new world's radio tower (issue #54): the tower compound
   const list = entry ? (Array.isArray(entry) ? entry : entry.list) : null;
   if (!list || !list.length) return null;
   const [key0, name] = Array.isArray(list[0]) ? list[0] : [list[0], null];

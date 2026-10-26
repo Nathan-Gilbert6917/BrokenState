@@ -39,7 +39,7 @@ const BASELINE = {
   bar: 196.9, dealer: 382.0, bank: 169.4, library: 69.7, vet: 248.6, hardware: 713.5, feedstore: 292.0, diner: 191.9,
   gasstation: 210.9, truckstop: 706.1, supermarket: 1784.2, deptstore: 421.2, clinic: 336.7, infirmary: 511.4,
   hospital: 2093.3, police: 376.1, school: 244.6, offices: 419.3, lab: 396.5, barracks: 1540.5, armorybldg: 794.1,
-  cellblock: 164.2, messhall: 323.7, control: 238.9, radio: 218.4, terminal: 348.4, firestation: 512.7, hq: 752.7,
+  cellblock: 164.2, messhall: 323.7, control: 238.9, radio: 218.4, radiotower: 223.3, terminal: 348.4, firestation: 512.7, hq: 752.7,
   aidstation: 212.6, gatehouse: 371.0, tower: 459.6, flightops: 318.6, warehouse: 283.2, factory: 347.9,
   hangar: 444.5, motorpool: 503.0, autoshop: 205.2, garage: 108.8, workshop: 136.0, machineshed: 102.7, barn: 161.7,
   church: 112.6, motel: 328.2, apartments: 623.0, hotel: 811.0, storefront: 43.4, bizpark: 288.6, cityhall: 423.5,
@@ -51,8 +51,10 @@ const BASELINE = {
   cinema: 52.7, arcade: 53.4, mallservices: 89.9, mallrestrooms: 18.5, vacantunit: 5.9,
   shed: 23.9, farmstand: 35.8, farmbldg: 89.9, farm: 635.6, ranch: 628.4, // issue #62 (farmplans.js, farmstead.js): new types, measured with --baseline
 };
-// Kinds whose loot moved past ±10% because a row was clearly wrong: the reason.
+// Kinds whose loot moved past ±10% because a row was clearly wrong, or its plans grew (the same loot a floor cell over
+// more floor): the reason.
 const SHIFTED = {
+  hotel: "issue #50: eight of its 48 variants shaped in a new save (an L, a T, a U, an E, a crescent, a podium, twin towers, a courtyard block), bigger than their rectangles; their loot a floor cell within ×0.95–×1.06 of the rectangles' (tools/hotelshapetest.js)",
   bookstore: "its shelves (data-shops.js AREA_DEFS books) held no books of their own: novels, comics, magazines, a few skill books",
   library: "its stacks are the bookstore's \"books\" rooms (above)",
   univlibrary: "its stacks are the bookstore's \"books\" rooms (above)",

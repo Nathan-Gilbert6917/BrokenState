@@ -47,7 +47,7 @@ import { noiseAt, detectRange, isBehind, throwablesOf, THROWABLES } from "./stea
 import { FRANCHISES } from "./data-shops.js"; // a franchise's layout (plan): the floor, the front room's depth and name, the width, a flat above
 import { applyZType, siteList } from "./zombietypes.js";
 import { fitMargins, buildingTarget, densifyOutside, densify, coverTarget, buildingDeadScale, streetDeadScale, raidMaxDims, raidDims, SIZE_CLASSES, mapCap } from "./battlesize.js";
-import { legacyRaids, legacyRooms, legacyScale, legacyOffices, legacyShapes, legacyPrisons, legacyFarms } from "./worldcfg.js"; // an older save: a neighbourhood's street laid out as it always was; its buildings furnished as they were
+import { legacyRaids, legacyRooms, legacyScale, legacyOffices, legacyShapes, legacyPrisons, legacyFarms, legacyTowers } from "./worldcfg.js"; // an older save: a neighbourhood's street laid out as it always was; its buildings furnished as they were
 import { roomLayout, homeStyle, medicalStyle, LAYOUT } from "./roomlayout.js"; // homes furnished room by room (the placement helpers); hospitals, clinics and vets too (#14)
 import { commercialStyle, styleName as shopStyleName } from "./shoplayout.js";
 import { prisonStyle } from "./prisonlayout.js"; // prisons and jails laid out for their kind (issue #31)
@@ -71,6 +71,7 @@ import { DOOR_HP } from "./compound.js"; // the door kinds' hit points handed to
 import { realFoot, realStoreys, storeyRange, sizeOf, REAL_SIZE } from "./data-buildingsize.js"; // buildings at real size (issue #24)
 import { BUNKER_PLANS, bunkerStyle, levelName } from "./bunkerlayout.js"; // bunkers: the plans, their rooms, their levels below ground (issue #26)
 import { eateryPlan, eateryOf } from "./eaterylayout.js"; // restaurants by kind of food, format and size (issue #33)
+import { radioTowerPlan } from "./radiotowerlayout.js"; // radio tower compounds: a dozen plans (issue #54)
 import { industryPlan, industryStyle, INDUSTRY_ROLES, INDUSTRY_KEYS } from "./industrylayout.js"; // warehouses, factories and labs: a dozen plans each (issue #37)
 import { hasVariants, shopVariantSpec, variantSetting } from "./shopvariants.js"; // a dozen layout variants a shop and service type (issue #35; a new save's plan)
 import { pieceDef } from "./data-furniture.js"; // a yard piece that holds loot (spec.yardPieces)
@@ -3274,6 +3275,7 @@ export const BUILDINGS = {
   messhall:    { name: "Mess hall", make: (r, o) => institution(r, "messhall", o) },
   control:     { name: "Control building", make: (r, o) => institution(r, "control", o) },
   radio:       { name: "Transmitter hut", make: (r, o) => institution(r, "radio", o) },
+  radiotower:  { name: "Radio tower", make: (r, o) => radioTowerPlan(r, o) }, // issue #54: the tower compound, a dozen plans (radiotowerlayout.js)
   terminal:    { name: "Terminal", make: (r, o) => institution(r, "terminal", o) },
   firestation: { name: "Fire station", make: (r, o) => institution(r, "firestation", o) },
   // Military bases, air bases and airports (issue #25: militarylayout.js), new with it (no older plan).
@@ -3351,7 +3353,7 @@ export const STOREYS_BY_TYPE = {
   grocery: [1, 2], corner: [1, 2], pharmacy: [1, 2], gunstore: [1, 2], pawnshop: [1, 2], hardware: [1, 2], feedstore: [1, 2], diner: [1, 1], gasstation: [1, 2], truckstop: [1, 2], // issue #35: a variant's flat, offices or stockroom above (shopvariants.js)
   supermarket: [1, 2], deptstore: [1, 4], // deptstore: mall.js DEPT_VARIANTS (a flagship 3, an old downtown store 4)
   clinic: [1, 3], infirmary: [1, 3], hospital: [1, 7], police: [1, 5], school: [2, 3], offices: [3, MAX_STOREYS], lab: [1, 3], barracks: [1, 3], armorybldg: [1, 1],
-  cellblock: [1, 3], messhall: [1, 2], control: [1, 4], radio: [1, 1], terminal: [1, 3], firestation: [1, 3], // issue #25: a cell block two tiers (#31: a new save's plans, a three-tier block among them), its mess hall one storey
+  cellblock: [1, 3], messhall: [1, 2], control: [1, 4], radio: [1, 1], radiotower: [1, 4], terminal: [1, 3], firestation: [1, 3], // issue #25: a cell block two tiers (#31: a new save's plans, a three-tier block among them), its mess hall one storey
   hq: [1, 3], aidstation: [1, 1], gatehouse: [1, 1], tower: [2, 6], flightops: [1, 2], // issue #25's dozen plans a type (milplans.js): a company orderly room of one storey, a staff college of three, towers of 2–6
   warehouse: [1, 3], factory: [1, 3], hangar: [1, 1], motorpool: [1, 1], autoshop: [1, 2], garage: [1, 2], workshop: [1, 2], machineshed: [1, 1], barn: [1, 2],
   shed: [1, 1], farmstand: [1, 1], farmbldg: [1, 1], // the farm's own buildings (issue #62, farmplans.js): one storey each
@@ -3425,7 +3427,10 @@ export const COMPLEX_SITES = { prison: ["prison"], jail: ["jail"] };
 // A farm and a ranch in a new save (issue #62, farmstead.js): one map of the whole place; an older save (worldcfg.js
 // legacyFarms) keeps SITES' pick of its buildings.
 export const FARM_SITES = { farm: ["farm"], ranch: ["ranch"] };
-const siteEntry = (type, state) => (COMPLEX_SITES[type] && !legacyPrisons(state) ? COMPLEX_SITES[type] : FARM_SITES[type] && !legacyFarms(state) ? FARM_SITES[type] : SITES[type]);
+// A radio tower site or point of interest is the tower compound in a new save (issue #54, radiotowerlayout.js); an older
+// save (worldcfg.js legacyTowers) keeps SITES' transmitter hut.
+export const TOWER_SITES = { radiotower: ["radiotower"] };
+const siteEntry = (type, state) => (COMPLEX_SITES[type] && !legacyPrisons(state) ? COMPLEX_SITES[type] : FARM_SITES[type] && !legacyFarms(state) ? FARM_SITES[type] : TOWER_SITES[type] && !legacyTowers(state) ? TOWER_SITES[type] : SITES[type]);
 // A university or a college is a campus (issue #28: campus.js); one whose buildings an older save's raids already went
 // into (its site's ledger holds their maps: campus.js campusLegacy) keeps the choice of buildings it had.
 export const SITES_LEGACY = { univ: ["lab", "offices", ["messhall", "Cafeteria"]] };
@@ -4107,7 +4112,7 @@ export function assemble(rng, spec, opts = {}) {
   } : (room, side) => (side === "front" ? room.iy0 + room.ih - 1 === by1 - 1 : side === "back" ? room.iy0 === by0 + 1 : side === "left" ? room.ix0 === bx0 + 1 : room.ix0 + room.iw - 1 === bx1 - 1);
   let entry = upper ? null : rooms.find((r) => r.entry && touches(r, "front")) || rooms.find((r) => r.hub && touches(r, "front")) || rooms.find((r) => touches(r, "front")) || rooms[0];
   // ---------- the stairwells (storeys) ----------
-  // Stair runs (STAIR_DIRS above): the ground floor picks one or two (spec.stairs.n, else two from a footprint of
+  // Stair runs (STAIR_DIRS above): the ground floor picks one or two (spec.stairs.n, more for a shaped hotel's wings: issue #50; else two from a footprint of
   // BMAP.STOREY.twoStairs cells) against a wall of the rooms spec.stairs.roles names by the building's kind (a house's
   // hall or living room by the front, a shop's back room, a stairwell room of its own in flats and offices, each end
   // of a hospital's or a school's corridor), else the hubs, else the entry: a run of spec.stairs.len steps (2; 3 in the
@@ -4168,6 +4173,15 @@ export function assemble(rng, spec, opts = {}) {
         const apart = (c) => c.cells.every(([x, y]) => out[0].cells.every(([u, v]) => Math.max(Math.abs(x - u), Math.abs(y - v)) >= 2));
         const second = cands.filter((c) => far(c) >= 6 && apart(c)).sort((a, c) => a.s - far(a) * 0.5 - (c.s - far(c) * 0.5))[0];
         if (second) out.push(second);
+      }
+      // More than two (a shaped hotel's wing ends and junctions, issue #50): each next run the farthest from those
+      // picked, in a stairwell of its own.
+      for (let k = 2; k < want && out.length === k; k++) {
+        const near = (c) => Math.min(...out.map((o) => Math.hypot(c.mid[0] - o.mid[0], c.mid[1] - o.mid[1])));
+        const apart = (c) => out.every((o) => c.cells.every(([x, y]) => o.cells.every(([u, v]) => Math.max(Math.abs(x - u), Math.abs(y - v)) >= 2)));
+        const sc = (c) => c.s - near(c) * 0.5 + (out.some((o) => o.room === c.room) ? 50 : 0);
+        const next = cands.filter((c) => near(c) >= 6 && apart(c)).sort((a, c) => sc(a) - sc(c))[0];
+        if (next) out.push(next);
       }
       return out.map((c) => c.run);
     }

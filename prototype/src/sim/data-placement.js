@@ -162,7 +162,7 @@ export const PLACEMENT_ROWS = {
   farmbldg: "of farm", // a farm's or a ranch's working buildings (issue #62, farmplans.js)
   ranch: "highway 0.4 L, scenic 0.6 L, rural 1.4 L",
   quarry: "scenic 1.6 L, rural 0.4 L",
-  radiotower: "scenic 1.4 S, rural 0.3 S",
+  radiotower: "centre 0.4 M, city 0.6 M, suburb 0.4 S, town 0.6 S, highway 1.2 S, scenic 1.4 S, rural 0.4 S", // issue #54: masts on the hills, cell sites and relays by the highways, rooftop repeaters and broadcast studios in the cities (PLACE_EXTRA)
   radio: "of radiotower",
   dam: "coast 1 L, scenic 0.4 L",
   control: "of dam",

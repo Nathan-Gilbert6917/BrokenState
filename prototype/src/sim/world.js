@@ -260,6 +260,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
     shapesV: 1, // buildings that are not boxes (buildingmaps.js spec.shape, issue #23; save.js: an older save keeps its rectangles)
     scaleV: 1, // buildings at real size (data-buildingsize.js; save.js: an older save keeps its buildings' old footprints and storeys)
     farmV: 1, // farms and ranches as whole sites, sheds and farm stands of their own (issue #62; save.js: an older save keeps its farms)
+    towerV: 1, // radio towers: a radio tower site is the tower compound a base can power (radiotower.js, issue #54; save.js: an older save keeps its transmitter hut)
     placeV: 1, // where buildings stand by the placement table (data-placement.js, issue #42; save.js: an older save keeps its places)
     officesV: 1, // the office buildings of every kind and their firms (data-offices.js; save.js: an older save gets none)
     groupJails: 1, // jailhouse: the AI groups keep prisoners in jails they build, work them and trade them (groupjails.js); older saves: no limit
