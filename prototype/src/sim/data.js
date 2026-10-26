@@ -600,6 +600,10 @@ export const LOCATIONS = {
   bunker:      { name: "Military bunker",    glyph: "Bk", cat: "special", danger: 3, loot: { ammo: 4, meds: 1, parts: 2, fuel: 1, food: 1.5, electronics: 1 }, gear: ["ar", "carbine", "plate", "milhelmet", "milradio", "nvg", "assaultpack", "rucksack", "binoculars", "combatknife", "etool", "hazmat"], richness: 1.0, known: "secret" },
   govbunker:   { name: "Government bunker",  glyph: "Gb", cat: "special", danger: 2, loot: { electronics: 2, food: 2, water: 1.5, meds: 1, ammo: 1.5, scrap: 2 }, gear: ["pistol", "carbine", "milradio", "handradio", "flashlight", "binoculars", "hazmat", "traumakit"], richness: 0.9, known: "secret" },
   shelter:     { name: "Fallout shelter",    glyph: "Fs", cat: "town",  danger: 1, loot: { food: 3, water: 3, meds: 1.5 }, gear: ["flashlight", "lantern", "bandagekit", "hazmat", "puritabs", "handradio"], richness: 0.6, known: "road" },
+  // Data centres (issue #51, datacenter.js): a colocation hall downtown, an edge site in a town, a hyperscale campus or
+  // a cloud region out by the highway (placement.js PLACE_EXTRA, a new world's only). Electronics, parts, batteries, cable
+  // and fuel for the generators; next to no food.
+  datacenter:  { name: "Data centre",        glyph: "Dc", cat: "town",  danger: 1, loot: { electronics: 3, parts: 2, scrap: 2, fuel: 1 }, gear: ["flashlight", "headlamp", "laptop", "batteries", "handradio", "toolkit", "multitool", "powerdrill"], richness: 0.7, known: "road" },
   // A museum (issue #58, museumlayout.js): a city centre's art or natural history museum, a town's local history museum
   // (placement.js PLACE_EXTRA and the city crawl, new worlds only); its curiosities, an old sword or a telescope.
   museum:      { name: "Museum",             glyph: "Mu", cat: "urban", danger: 1, loot: { scrap: 2, parts: 1, food: 1, water: 1 }, gear: ["sabre", "cutlass", "bayonet", "telescope", "binoculars", "camera"], richness: 0.7, known: "public" },

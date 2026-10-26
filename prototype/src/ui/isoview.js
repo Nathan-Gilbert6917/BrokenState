@@ -1360,6 +1360,11 @@ const FURN_DRAW = {
     const bronze = (f, s, t, X, Y) => mul(hex("#4f6a52"), (f === "top" ? 1.2 : 0.9) + n2(X, Y, 125 + v) * 0.15);
     return [fbox(0.18, 0.82, 0.18, 0.82, 0, 12, (f, s, t, X, Y) => mul(PAL.stone, (f === "top" ? 1.2 : 1) + n2(X, Y, 126) * 0.08)), fbox(0.4, 0.6, 0.4, 0.6, 12, 26, bronze), fbox(0.32, 0.68, 0.44, 0.56, 22, 30, bronze), { cyl: [0.5, 0.5, 0.09], z0: 30, z1: 36, m: bronze }, fbox(0.58, 0.64, 0.46, 0.54, 26, 40, bronze)];
   } },
+  // A churchyard's headstone (issue #49, sim/civicsite.js): a grey slab with a rounded top on its plinth.
+  headstone: { top: 16, p: (o, v) => {
+    const stone = (f, s, t, X, Y) => mul(PAL.stone, (f === "top" ? 1.15 : 0.92) + n2(X, Y, 129 + v) * 0.1);
+    return [fbox(0.24, 0.76, 0.36, 0.64, 0, 2, stone), fbox(0.3, 0.7, 0.44, 0.56, 2, 13, stone), { cyl: [0.5, 0.5, 0.2], z0: 13, z1: 16, m: stone }];
+  } },
   fountain: { top: 12, p: (o) => {
     const stone = (f, s, t, X, Y) => mul(PAL.stone, (f === "top" ? 1.25 : 1) + n2(X, Y, 127) * 0.08), water = (f, s, t, X, Y) => mul(FURNC.water, 1.1 + n2(X, Y, 128) * 0.2);
     return [fbox(0.04, 0.96, 0.04, 0.96, 0, 4, water), fbox(0, 1, 0, 0.1, 0, 6, stone), fbox(0, 1, 0.9, 1, 0, 6, stone), fbox(0, 0.1, 0.1, 0.9, 0, 6, stone), fbox(0.9, 1, 0.1, 0.9, 0, 6, stone), ...(o.v & 1 ? [{ cyl: [0.5, 0.5, 0.12], z0: 0, z1: 12, m: stone }] : [])];
@@ -1416,6 +1421,42 @@ const FURN_DRAW = {
     return [run(ax, 0.24, 0.76, 0, 16, m, 0.06, 0.94)];
   } },
   genset: { top: 16, p: () => [fbox(0.04, 0.96, 0.04, 0.96, 0, 2, flatM(PAL.metalDk)), fbox(0.1, 0.9, 0.1, 0.9, 2, 16, (f, s, t, X, Y) => (f === "top" ? mul(hex("#4a5a30"), 1.15) : t > 10 && t < 12 ? FURNC.black : n2(X, Y, 97) > 0.95 ? FURNC.amber : hex("#4a5a30")))] },
+  // ---------- data centres (issue #51, sim/datacenter.js) ----------
+  // A CRAC unit: a tall cream cabinet with its grilles; a diesel generator's long steel enclosure on its skid with the
+  // exhaust stack; a cable tray riser's ladder of yellow cable; a transformer's grey tank with its cooling fins and the
+  // bushings on top; a cooling tower's ribbed shell and its fan cowl; a UPS cabinet, dark grey with a status panel; a
+  // battery string's rack of black jars; a wooden cable drum; a mining rig's open frame of cards; a standby set's hood.
+  crac: { top: 28, p: (o) => {
+    const ax = along(o), m = (f, s, t) => (f === "top" ? mul(FURNC.cream, 0.95) : t > 4 && t < 24 && Math.floor(t) % 3 < 1 ? mul(FURNC.cream, 0.7) : FURNC.cream);
+    return [run(ax, 0.18, 0.82, 0, 28, m, 0.04, 0.96)];
+  } },
+  dcgen: { top: 22, p: () => [fbox(0.02, 0.98, 0.06, 0.94, 0, 2, flatM(PAL.metalDk)), fbox(0.06, 0.94, 0.1, 0.9, 2, 18, (f, s, t, X) => (f === "top" ? mul(FURNC.steel, 1.05) : t > 6 && t < 14 && Math.floor(X) % 3 < 1 ? mul(FURNC.steel, 0.6) : FURNC.steel)), { cyl: [0.78, 0.3, 0.06], z0: 18, z1: 22, m: flatM(FURNC.black) }] },
+  cabletray: { top: 30, p: (o) => {
+    const ax = along(o), m = (f, s, t, X) => (Math.floor(t) % 5 < 1 ? FURNC.chrome : Math.floor(X) % 2 < 1 ? FURNC.amber : FURNC.black);
+    return [run(ax, 0.16, 0.24, 0, 30, m, 0.2, 0.8)];
+  } },
+  transformer: { top: 22, p: () => [fbox(0.12, 0.88, 0.12, 0.88, 0, 16, (f, s, t, X) => (f === "top" ? mul(FURNC.steel, 0.9) : Math.floor(X) % 2 < 1 ? mul(FURNC.steel, 0.7) : mul(FURNC.steel, 0.85))), { cyl: [0.32, 0.5, 0.05], z0: 16, z1: 22, m: flatM(FURNC.cream) }, { cyl: [0.5, 0.5, 0.05], z0: 16, z1: 22, m: flatM(FURNC.cream) }, { cyl: [0.68, 0.5, 0.05], z0: 16, z1: 22, m: flatM(FURNC.cream) }] },
+  coolingtower: { top: 30, p: () => [fbox(0.04, 0.96, 0.04, 0.96, 0, 24, (f, s, t) => (f === "top" ? mul(FURNC.steel, 0.6) : Math.floor(t) % 3 < 1 ? mul(FURNC.white, 0.75) : mul(FURNC.white, 0.92))), { cyl: [0.5, 0.5, 0.36], z0: 24, z1: 30, m: (f) => (f === "top" ? FURNC.black : mul(FURNC.steel, 0.8)) }] },
+  upscab: { top: 26, p: (o) => {
+    const ax = along(o), m = (f, s, t, X) => (f === "top" ? mul(FURNC.black, 1.4) : t > 18 && t < 22 && Math.floor(X) % 5 < 2 ? FURNC.led : mul(FURNC.black, 1.7));
+    return [run(ax, 0.22, 0.78, 0, 26, m, 0.08, 0.92)];
+  } },
+  batterystring: { top: 14, p: (o) => {
+    const ax = along(o), m = (f, s, t, X) => (f === "top" ? (Math.floor(X) % 3 < 1 ? FURNC.red : FURNC.black) : Math.floor(t) % 7 < 1 ? FURNC.steel : FURNC.black);
+    return [run(ax, 0.2, 0.8, 0, 14, m, 0.04, 0.96)];
+  } },
+  cablereel: { top: 14, p: (o) => {
+    const ax = along(o);
+    return [fcyl(ax, 0.5, 0.5, 0.4, 0, 2, flatM(PAL.wood)), fcyl(ax, 0.5, 0.5, 0.3, 2, 12, (f, s, t) => (Math.floor(t) % 2 < 1 ? FURNC.black : mul(FURNC.amber, 0.8))), fcyl(ax, 0.5, 0.5, 0.4, 12, 14, flatM(PAL.wood))];
+  } },
+  miningrig: { top: 16, p: (o) => {
+    const ax = along(o), cards = (f, s, t, X) => (f === "top" ? FURNC.black : Math.floor(X) % 2 < 1 ? mul(FURNC.black, 1.5) : n2(Math.floor(X), Math.floor(t), 98) > 0.9 ? FURNC.led : mul(FURNC.steel, 0.5));
+    return [...flegs(0.2, 0.8, 0.1, 0.9, 16, flatM(FURNC.chrome)), run(ax, 0.24, 0.76, 4, 14, cards, 0.1, 0.9)];
+  } },
+  standbyset: { top: 16, p: (o) => {
+    const ax = along(o), m = (f, s, t, X) => (f === "top" ? mul(FURNC.cream, 0.9) : t > 6 && t < 12 && Math.floor(X) % 2 < 1 ? mul(FURNC.cream, 0.65) : FURNC.cream);
+    return [run(ax, 0.2, 0.8, 0, 2, flatM(PAL.metalDk), 0.04, 0.96), run(ax, 0.22, 0.78, 2, 16, m, 0.06, 0.94)];
+  } },
   // ---------- libraries (issue #34, sim/librarylayout.js) ----------
   // Tall double-sided stacks of books on a steel frame (spines both faces); low modern shelving, waist-high and pale;
   // compact mobile shelving's grey carriages on their floor rails, a wheel on the end; the card catalogue's little
@@ -2705,7 +2746,7 @@ const FLOORC = {
   // The room-appropriate floors of 2026-10-25 (issue #13): kitchens' and wards' lino, a bathroom's checker, a home's
   // hardwood (narrow, warm) and a cabin's or a barn's planks (the old floorboards), a gym's rubber, the bays' steel plate.
   pool: hex("#4a7a94"), track: hex("#8a4a3a"), // a campus's drained pool and running track (issue #28)
-  lino: hex("#8a8a76"), checkA: hex("#8e8a80"), checkB: hex("#34322e"), hardwood: hex("#7a5636"), rubber: hex("#3a3c3e"), steel: hex("#6a6e72"),
+  lino: hex("#8a8a76"), checkA: hex("#8e8a80"), checkB: hex("#34322e"), hardwood: hex("#7a5636"), rubber: hex("#3a3c3e"), steel: hex("#6a6e72"), raised: hex("#9a9e9c"), // raised: a data hall's raised floor (sim/datacenter.js, issue #51)
   // A hotel's grounds (issue #29, sim/hotellayout.js): the pool deck's paving, the empty pool's pale tiles (leaves and
   // a dark puddle at its deep end), a tennis court's green with its white lines.
   paving: hex("#8a8478"), pool: hex("#7aa8b8"), court: hex("#3e6a4e"),
@@ -2812,6 +2853,7 @@ function floorColor(c, k, x, y, lx, ly, mud, R = null, lf = 0, pd = 0, pe = 0) {
       else if (c.fl === "checker") col = ((tx >> 2) + (ty >> 2)) % 2 ? mul(FLOORC.checkA, 0.92 + q * 0.08) : mul(FLOORC.checkB, 0.9 + q * 0.12); // 4 px checks
       else if (c.fl === "hardwood") { const row = ty >> 2, off = hash3(x, y * 4 + row, 8) * 16; col = ty % 4 === 0 ? mul(FLOORC.hardwood, 0.7) : (tx + off) % 16 < 1 ? mul(FLOORC.hardwood, 0.76) : mul(FLOORC.hardwood, 0.9 + hash3(x * 2 + Math.floor((tx + off) / 16), y * 4 + row, 3) * 0.18 + q * 0.04); } // narrow boards, joints staggered
       else if (c.fl === "marble") { const vein = Math.abs(((tx + ty * 0.6 + hash3(x, y, 11) * 9) % 7) - 3.5) < 0.35; col = tx % 16 === 0 || ty % 16 === 0 ? mul(FLOORC.marble, 0.78) : vein ? mul(FLOORC.marble, 0.8 + q * 0.06) : mul(FLOORC.marble, 1 + q * 0.05); } // slabs a cell each, a vein across
+      else if (c.fl === "raised") col = tx % 10 === 0 || ty % 10 === 0 ? mul(FLOORC.raised, 0.7) : ((x + y) % 3 === 0 && tx % 2 === 1 && ty % 2 === 1) ? mul(FLOORC.raised, 0.8) : mul(FLOORC.raised, 0.95 + q * 0.06); // a data hall's raised floor: grey panels on their pedestals, a perforated one now and then (sim/datacenter.js)
       else if (c.fl === "rubber") col = (tx % 4 === 1 && ty % 4 === 1) ? mul(FLOORC.rubber, 1.25) : mul(FLOORC.rubber, 0.92 + q * 0.08); // studded mats
       else if (c.fl === "pool") col = tx % 6 === 0 || ty % 6 === 0 ? mul(FLOORC.pool, 0.78) : mul(FLOORC.pool, 0.94 + q * 0.08); // a drained pool's blue tiles (sim/campuslayout.js)
       else if (c.fl === "steel") col = ((tx + ty) % 6 === 0 && (tx >> 1) % 2 === 0) || ((tx - ty + 16) % 6 === 3 && (tx >> 1) % 2 === 1) ? mul(FLOORC.steel, 1.22) : tx === 0 || ty === 0 ? mul(FLOORC.steel, 0.7) : mul(FLOORC.steel, 0.9 + q * 0.08); // diamond plate
