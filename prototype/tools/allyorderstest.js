@@ -225,7 +225,12 @@ section("Attack: the given target first, until it is down");
   const a = allies[0];
   for (const x of allies.slice(1)) x.off = true;
   const [z1, z2] = dead;
-  wake(z1); wake(z2);
+  // The nearer one lies still where it is put (u.dormant: a Sleeper, combat.js aiUnit). Since 1370d1c (the map sizes of
+  // 2026-10-24: another raid map for seed 731) it walked up to the ally in the first enemy phase while the target,
+  // slowed by the ground, did not, and the ally rightly fought the one next to them first (allyFoes: the target and
+  // whatever is next to them); on the old map both reached them and the target came first in the list. Lying still,
+  // it is a nearer one of the dead in sight that the order narrows away, as the check means.
+  wake(z1); wake(z2); z2.dormant = true;
   check(place(b, z2, a.x, a.y, 4, 5.5, me) && place(b, z1, a.x, a.y, 7, 9, me, (x, y) => Math.hypot(x - z2.x, y - z2.y) >= 4), "(test setup: two of the dead in sight, the given one farther)");
   z1.hp = z2.hp = 12; z1.ztype = z2.ztype = null;
   heed(1, () => order(state, me, a, { kind: "attack", target: z1.id }));

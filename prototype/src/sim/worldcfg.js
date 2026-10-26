@@ -159,6 +159,9 @@ export const legacyPlace = (state) => !!(state && state.placeLegacy);
 // before buildings at real size at all: its hospitals, clinics, vets, churches, police and fire stations, city halls and
 // courthouses keep their plans at their drawn sizes and none of the new plans or multi-building sites.
 export const legacyCivic = (state) => !!(state && (state.civicLegacy || legacyScale(state)));
+// A save from before the radio towers (issue #54, save.js towerLegacy: no state.towerV): its radio tower sites keep the
+// transmitter hut (buildingmaps.js SITES.radiotower) and no base can claim or power a tower (radiotower.js).
+export const legacyTowers = (state) => !!(state && (state.towerLegacy || state.roomsLegacy));
 // The run's raid map dials as [smallest, largest]: each clamped to its range, the two in order whatever was stored
 // (a hand-edited or older settings object can hold them the wrong way round: the range never runs backwards).
 /** @param {any} state */
