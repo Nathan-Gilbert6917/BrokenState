@@ -1083,6 +1083,48 @@ The user's requests (2026-10-25, issue #34 of the interiors epic #7): "add libra
 - **Scenes** (interiorscenes.js `registerScene`, `kinds: ["library"]`, `when`: a map whose rooms carry a lib mark, so an older save's library rolls as it did): `readers` (book carts and shelving shoved across the aisles at a stacks room's door, the readers behind it dead or, upstairs, alive), `libshelter` (cots in rows in a reading room, a soup kitchen of a stove, a water barrel and tins in the meeting room or the café), `archivesealed` (the closed stacks', the genealogy archive's or the rare-books room's door locked steel, the archivist inside), `lastnotice` (the librarian's last notice on the circulation desk, papers by it).
 - **Older saves** (worldcfg.js `legacyRooms`): the old plan, its dice as before (no lib marks; the containers' ids line up). The `library` key, `SITES.library` and the five old franchise ids keep working.
 - **For other buildings**: `libraryPlan(rng, { variant, plan, w, h, storeys })` returns a spec (and `spec.lib`); `"variant/plan"` picks a plan. #30's strip mall can place `strip` at its unit's size, #28's university and #27's courthouse a library of their size.
+## Loot that makes sense
+
+The user's request (2026-10-26, round-2 epic #39, issue #43): "Each building type here and and existing should have loot that makes sense".
+
+- **The table**: `prototype/src/sim/lootsense.js` `LOOT_SENSE`, one row per `BUILDINGS` key (103 on 2026-10-26). Each row names its **signature finds** (`sig`: a group and the share of buildings of the kind where it turns up at least once: a pharmacy's drugs in 90%, a gun store's guns in 95%, a vet's animal medicine in 60%, a bookstore's books in 90%, a cinema's candy in 30%) and what is **never there** (`never`: most shops and offices `NO_GUNS`, every civilian place `ARMY`, the Army's weapons). `note` says why a row allows what it allows (a liquor store's gun under the counter, a bar's shotgun, a sporting goods store's gun counter, campus police's patrol rifles stay).
+- **Groups** (`GROUPS`): food, drink, drugs, medical kit, surgical tools, animal medicine, ammunition, handguns, rifles and shotguns, military arms, any gun, bows, grenades and launchers (`explosive`), flashbangs and smoke, body armour, gun parts, tools, parts, building materials, fuel, liquor, treats, books, gadgets, valuables, sports gear, clothes and bags, camping gear: supply keys and item tests on `GEAR` `cat`.
+- **Personal rooms** (`PERSONAL`): a house's rooms, a flat over a shop, a guest room, a dorm room, the luggage room and the cars left outside. People kept their own things there (a pistol in a nightstand over a bakery is the baker's), so a row's `never` is checked on the kind's other rooms; a personal room only never holds `PERSONAL_NEVER` (military arms, grenades and launchers). Bodies, the scenes' stashes and what a lock adds (`locks.js` lock loot, gun safes) are someone's stash and not checked.
+- **What a container rolls** is the search's own path: `combat.js boxFinds` (its piece's or room's table, `boxLoot`, and a small find) and `areaExtras` (new, issue #43: the per-area finds on their own dice that `searchBox` adds after it: gun parts, reloading, grenades, launchers, the newer guns, wood, sheets, arrows, propane, a tent, a tool, a power piece). `searchBox` calls `areaExtras` in the order it rolled them before, so a search finds what it found.
+
+### What was fixed (issue #43)
+
+| Was | Now |
+|---|---|
+| Budget gun parts (optics, slings, lasers) on a grocery's shelves, a diner's dining room, a school's locker room, a tyre bay (`PART_FINDS.area` store, lockers, garage) | gone from those rows; a sporting goods store keeps its own (`data-shops.js ROWS.PART_AREA`) |
+| A bottle of scotch in a pupil's desk (a classroom is an `office` room, the office's small finds) | a piece names its own small finds (`BOX_LOOT find`): school and teacher desks the corridor lockers' (phones, candy, cards) |
+| An AT4, an M203 or 40 mm in a police armoury, a farm shed's pump room, a dam's generator room (`AREA_LAUNCHERS` by room only) | launchers and frag grenades only at the Army's sites (`loot.js ARMY_SITES`: military, airbase, the bunkers, a military crash, the convoy, an air drop; a crawl's Army checkpoint by its `gunSite`); frags moved from the armoury's and barracks' small finds into `AREA_LAUNCHERS` |
+| A server rack held the room's lunch (`BOX_LOOT serverrack` rest 0.2) | rest 0: parts, scrap and a radio |
+| A liquor store's pistol and revolver on every shelf (half the stores had one) | whiskey, vodka and wine on its shelves (a supermarket's beer and wine aisle is a liquor room too); the gun under the counter (`data-shops.js ROWS.ARSENAL_AREA`) stays, about one store in a dozen |
+| A bookstore's and a library's shelves held no books (`books` rooms: a bag and a lamp) | novels, comics, magazines, crosswords and a few skill books |
+| A cinema's concession had no candy | candy and chocolate |
+| Hunting rifles in a vet's large-animal stalls, a pet store's feed warehouse, a gas station's feed and seed corner, a science building's greenhouse (barn rooms) | the stalls a vet's room, the feed warehouse a pet store's, feed and seed and every industrial greenhouse a garden centre's |
+| A boarding school's common room a house (revolvers) | a dorm common room, as the campus's |
+| A dam's duty bunk room barracks (sniper rifles, LMGs) | a house's, as the radio station's bunk room |
+| An office's records or tape vault a bank vault (pistols in safe-deposit boxes) | an office room |
+| No animal medicine in a feed store | a barn's (so a feed store's) livestock dewormer |
+
+Kept on purpose (in the rows' notes): a farm-supply store's hunting rifles and shotguns (its barn rooms), a bar's shotgun behind the counter, an executive's or a mayor's pistol, a radio relay's guard post gun rack (#54 reworks radio towers), a country gas station's .22 rounds in its bait room, a prepper's pipe bombs.
+
+Older saves: a container already opened keeps what it rolled (`box.contents` is saved); a container not yet opened, and every new one, rolls the fixed rows. A building already laid out keeps its rooms' types (its map is saved), so the retyped rooms (the stalls, the greenhouse, the vaults, the bunk rooms) are a new layout's.
+
+### The test
+
+`prototype/tools/lootsensetest.js` (about 2 minutes; the same under `--quick`): 100 buildings of every kind (25 of a compound: a mall, a campus, a prison), laid out by `buildingMap` as a raid lays them out, every container rolled as above.
+
+- every building type has a row, every row is a building type, every group is a `GROUPS` entry, every row names its signature finds;
+- each row's signature groups turn up in at least its share of buildings;
+- none of a row's `never` groups in its own rooms, none of `PERSONAL_NEVER` in a personal room;
+- the economy: each kind's loot (its containers' tables valued as `tools/shopstest.js` values them) within ±10% of `BASELINE` (measured on dev at 016f555 before the fixes; the same plans, so per area too), unless `SHIFTED` says why. Shifted: the bookstore (+39%), the library (+37%) and the university library (+30%), whose shelves now hold books. Every other kind is within ±10%.
+- `--report` prints every kind's rate for every group, `--why <group>` where it came from (item, room, piece, the table or the extras), `--baseline` each kind's value.
+
+**Adding a building type** (wave 2 of #39: #51–#62): add its row to `LOOT_SENSE` (signature finds with rates it reaches, never-groups), run `node tools/lootsensetest.js <key> --report` to see its rates and anything out of place (`--why <group> <key>`), fix what does not fit, then `node tools/lootsensetest.js <key> --baseline` and add the line to `BASELINE`. A new group goes in `GROUPS`. A type with no baseline yet passes the economy check and is listed as new.
+
 ## Vaulting half cover
 People go over waist-high cells at extra cost and land winded; the dead crawl over instead.
 - A person (yours, a human enemy, the third side) goes over a waist-high cell nobody can stand on (a fence, crates, a car, sandbags, a table; not a window, cell bars, a railing or a well) at VAULT.COST tiles more than a step, never ending on it or cutting its corner.

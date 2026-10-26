@@ -193,6 +193,7 @@ Detail: [combat.md](../features/combat.md).
 - **Office buildings by kind**: storefronts, parks, towers, city hall, courts, call centers, stations, firms [officeplans, officelayout, data-offices] `tools/officestest.js`. [details](../features/travel.md#shops-and-services-as-places-as-franchises)
 - **A dozen layouts per shop and service**: 12 named plans for each of 23 types, by dice, franchise and setting [shopvariants, buildingmaps, data-shops] `tools/shopvarianttest.js`. [details](../features/travel.md#a-dozen-layout-variants-per-type)
 - **Stealth**: takedowns, facing and view cones, sneaking, lights and darkness, indoor light switches [stealth, vision, indoorlight, ailights].
+- **Loot that makes sense**: every building type's signature finds and what is never there, checked over 100 buildings a kind, loot ±10% [lootsense, combat, loot] `tools/lootsensetest.js`. [details](../features/combat.md#loot-that-makes-sense)
 - **Vaulting half cover**: over waist-high cells at extra cost, landing winded [combat]. [details](../features/combat.md#vaulting-half-cover)
 - **Windows and the kinds of door**: window states (open, locked, broken) and door kinds with their own hit points, sight and locks [windows, buildingmaps, locks]. [details](../features/combat.md#windows-and-the-kinds-of-door)
 - **Raiders and the dead fight each other in a raid**; unseen shots are heard and marked in the fog [crossfire] `tools/crossfiretest.js`. [details](../features/combat.md#raiders-and-the-dead-fight-each-other-in-a-raid)

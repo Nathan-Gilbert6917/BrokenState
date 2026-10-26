@@ -6880,7 +6880,7 @@ export const AREAS = {
   armory:    { name: "Armory",         boxes: ["locker", "locker", "crate"],   loot: { ammo: [0.85, 15, 40] }, gear: [["pistol", 0.12], ["shotgun", 0.1], ["vest", 0.1], ["ar", 0.04], ["carbine", 0.05], ["baton", 0.06], ["riotarms", 0.04], ["riotlegs", 0.04], ["revolver", 0.03], ["binoculars", 0.04], ["smg", 0.03], ["semishotgun", 0.04], ["pistol45", 0.04], ["combatknife", 0.02], ["sniper", 0.005]] },
   barracks:  { name: "Barracks",       boxes: ["locker", "locker", "cabinet"], loot: { ammo: [0.6, 10, 25], food: [0.4, 3, 6], meds: [0.15, 1, 2] }, gear: [["vest", 0.08], ["plate", 0.04], ["nvg", 0.03], ["milradio", 0.03], ["flashlight", 0.06], ["rucksack", 0.04], ["camonet", 0.03], ["stove", 0.03], ["binoculars", 0.05], ["spotscope", 0.02], ["thermal", 0.02], ["combatknife", 0.04], ["etool", 0.04], ["tomahawk", 0.01], ["smg", 0.03], ["dmr", 0.02], ["sniper", 0.01], ["lmg", 0.008], ["amr", 0.006]] },
   motorpool: { name: "Motor pool",     boxes: ["crate", "locker", "shelf"],    loot: { fuel: [0.75, 4, 10], parts: [0.55, 1, 3] }, gear: [["prybar", 0.04], ["sandbags", 0.04], ["barbedwire", 0.03], ["etool", 0.03]] },
-  barn:      { name: "Barn",           boxes: ["crate", "shelf"],              loot: { food: [0.7, 4, 10], fuel: [0.15, 1, 3], scrap: [0.3, 2, 4] }, gear: [["huntrifle", 0.05], ["sledge", 0.03], ["barbedwire", 0.03], ["beartrap", 0.03], ["prybar", 0.02], ["pickaxe", 0.03], ["dbshotgun", 0.02], ["hatchet", 0.02]] },
+  barn:      { name: "Barn",           boxes: ["crate", "shelf"],              loot: { food: [0.7, 4, 10], fuel: [0.15, 1, 3], scrap: [0.3, 2, 4] }, gear: [["huntrifle", 0.05], ["sledge", 0.03], ["barbedwire", 0.03], ["beartrap", 0.03], ["prybar", 0.02], ["pickaxe", 0.03], ["dbshotgun", 0.02], ["hatchet", 0.02], ["dewormer", 0.04]] }, // dewormer: the livestock paste (issue #43)
   lab:       { name: "Lab",            boxes: ["cabinet", "counter", "shelf"], loot: { meds: [0.3, 1, 2], parts: [0.4, 1, 2], scrap: [0.3, 1, 3] }, gear: [["surgkit", 0.05], ["bandagekit", 0.03], ["telescope", 0.03]] },
   cabin:     { name: "Hunting cabin",  boxes: ["locker", "shelf"],             loot: { food: [0.5, 2, 6], ammo: [0.5, 6, 18], meds: [0.07, 1, 1] }, gear: [["huntrifle", 0.08], ["machete", 0.06], ["leverrifle", 0.04], ["compbow", 0.02], ["beartrap", 0.03], ["stove", 0.03], ["ghillie", 0.02], ["fireaxe", 0.02], ["binoculars", 0.05], ["monocular", 0.03], ["spotscope", 0.02], ["rifle22", 0.05], ["hatchet", 0.05], ["dbshotgun", 0.02], ["spear", 0.01]] },
   hangar:    { name: "Hangar",         boxes: ["crate", "locker", "shelf"],    loot: { fuel: [0.6, 4, 10], parts: [0.5, 1, 3], scrap: [0.5, 3, 6] }, gear: [["prybar", 0.03], ["hikingpack", 0.02]] },
@@ -6985,10 +6985,12 @@ export const BOX_LOOT = {
   evlocker:     { rest: 0, loot: { meds: [0.22, 1, 2] }, gear: [["knife", 0.06], ["pistol", 0.01], ["compact9", 0.01], ["cuffs", 0.04], ["phone", 0.04], ["watch", 0.005]] },
   turnout:      { rest: 0.3, loot: {}, gear: [["leatherjacket", 0.15], ["bikehelmet", 0.1], ["kneeguards", 0.08], ["fireaxe", 0.03], ["flashlight", 0.04]] },
   sportcage:    { rest: 0.2, loot: {}, gear: [["bat", 0.25], ["hockeystick", 0.15], ["golfclub", 0.06], ["sportspads", 0.1], ["footballhelmet", 0.08]] },
-  schooldesk:   { rest: 0, loot: { food: [0.04, 1, 1] }, gear: [["phone", 0.005]] },
-  teacherdesk:  { rest: 0.5, loot: { meds: [0.04, 1, 1] }, gear: [["phone", 0.02]] },
+  // A pupil's and a teacher's desk take the corridor lockers' small finds (phones, candy, cards), not the office's (scotch,
+  // cigars: issue #43, a classroom is an office room).
+  schooldesk:   { rest: 0, loot: { food: [0.04, 1, 1] }, gear: [["phone", 0.005]], find: "schoolhall" },
+  teacherdesk:  { rest: 0.5, loot: { meds: [0.04, 1, 1] }, gear: [["phone", 0.02]], find: "schoolhall" },
   labbench:     { rest: 0.3, loot: { meds: [0.15, 1, 1], parts: [0.2, 1, 1] }, gear: [["bandagekit", 0.04]] },
-  serverrack:   { rest: 0.2, loot: { parts: [0.6, 1, 3], scrap: [0.5, 1, 3] }, gear: [["handradio", 0.06]] },
+  serverrack:   { rest: 0, loot: { parts: [0.6, 1, 3], scrap: [0.5, 1, 3] }, gear: [["handradio", 0.06]] }, // rest 0 since issue #43: a rack holds no lunch (the room's food and water)
   candles:      { rest: 0, loot: {}, gear: [["silverware", 0.35], ["candles", 0.5]] },
   engine:       { rest: 0, loot: { fuel: [0.5, 2, 6], parts: [0.3, 1, 2] }, gear: [["fireaxe", 0.5], ["prybar", 0.35], ["crowbar", 0.2], ["ladder", 0.3], ["sledge", 0.15], ["leatherjacket", 0.2], ["bikehelmet", 0.15], ["bandagekit", 0.2], ["flashlight", 0.2]] },
   ambulance:    { rest: 0, loot: { meds: [0.85, 2, 5], water: [0.4, 1, 3] }, gear: [["bandagekit", 0.25], ["surgkit", 0.08]] },
@@ -7092,7 +7094,8 @@ export const BOX_LOOT = {
 };
 const boxDefs = new Map();
 // The table a container rolls: its room's (AREAS[type]), or its kind's (BOX_LOOT) with the room's rows at `rest` times
-// their chances (cold: a freezer in winter, the kinds with cold rows). The same object for the same three every time.
+// their chances (cold: a freezer in winter, the kinds with cold rows); find: the piece's own small finds (loot.js AREA_FINDS
+// key) in place of the room's. The same object for the same three every time.
 export function boxLoot(type, kind, cold = false) {
   const A = AREAS[type], K = A && (BOX_LOOT[`${kind}@${type}`] || BOX_LOOT[kind]);
   if (!K) return A;
@@ -7102,7 +7105,7 @@ export function boxLoot(type, kind, cold = false) {
     if (K.rest > 0) for (const [k, [p, lo, hi]] of Object.entries(A.loot)) loot[k] = [p * K.rest, lo, hi];
     Object.assign(loot, (cold && K.cold) || K.loot);
     const gear = [...K.gear, ...(K.rest > 0 ? A.gear.map(([k, p]) => [k, p * K.rest]) : [])];
-    boxDefs.set(key, { ...A, loot, gear });
+    boxDefs.set(key, { ...A, loot, gear, ...(K.find ? { find: K.find } : {}) });
   }
   return boxDefs.get(key);
 }
@@ -7813,8 +7816,47 @@ export function boxFinds(state, drng, o) {
   splitParts(state, sup, o.type, `box${o.bid}`); // loot.js: parts by kind (a garage's are car parts; their own dice)
   if (o.deep) deepShift(sup, o.deep); // deeploot.js: a city crawl's deeper blocks hold what is dear by the kilo
   for (const [key, p] of def.gear) if (drng.chance(p * (0.5 + o.rich) * (1 + o.scav / 30) * o.reward * cfgOf(state, "lootGuns"))) gear.push(foundFill(lootItem(swapGun(areaSourceName(o.type, o.gunSite), key, drng), src, drng), o.tileId, o.bid, key)); // gundist.js: which gun, by the room's draws; gunrounds.js: a few rounds in a gun now and then (its own dice)
-  const small = rollAreaFind(drng, o.type, o.rich, o.scav, o.site); // loot.js: valuables, comforts, throwables
+  const small = rollAreaFind(drng, def.find || o.type, o.rich, o.scav, o.site); // loot.js: valuables, comforts, throwables (a piece's own: BOX_LOOT find, issue #43)
   if (small) gear.push(small);
+  return { sup, gear };
+}
+// The finds a building's container adds by its room's type, each on its own dice (salted by the container): gun
+// attachments, reloading, grenades, launchers, the newer guns, wood, metal sheets, arrows, propane, a tent, a tool, a
+// power piece. searchBox adds them after the room's table (boxFinds); tools/lootsensetest.js rolls the same. { sup, gear }.
+export function areaExtras(state, tileId, type, kind, site, gunSite, salt) {
+  const sup = {}, gear = [];
+  // A gun attachment in an armoury, a gun shop, barracks (loot.js AREA_GUNMODS; its own dice too).
+  const part = rollAreaGunmod(state, tileId, type, salt);
+  if (part) gear.push(part);
+  const rel = rollAreaReload(state, tileId, type, salt); // brass, powder, primers in a gun shop, an armoury (loot.js AREA_RELOAD; its own dice)
+  if (rel) gear.push(rel);
+  // A crate of flashbangs or smoke grenades in an armoury, a few in barracks lockers (loot.js AREA_GRENADES; its own dice too).
+  gear.push(...rollAreaGrenades(state, tileId, type, site, salt));
+  // A grenade launcher, a rocket tube, a crate of 40 mm in army stock (loot.js AREA_LAUNCHERS; its own dice too).
+  gear.push(...rollAreaLaunchers(state, tileId, type, gunSite, salt)); // gunSite: a crawl's Army checkpoint counts as the Army's (loot.js ARMY_SITES)
+  // One of the newer guns (gunfinds.js GUN_FINDS.area; its own dice too).
+  gear.push(...rollAreaGuns(state, tileId, type, gunSite, salt));
+  // Wood: a log basket, a shed's kindling, a broken chair (loot.js AREA_WOOD; its own dice too).
+  const wood = rollAreaWood(state, tileId, type, kind, salt);
+  if (wood > 0) sup.wood = wood;
+  // Metal sheets: a wrecked car's panels and roof, a stack in a garage or a barn (loot.js AREA_SHEETS; its own dice too).
+  const sheets = rollAreaSheets(state, tileId, type, kind, salt);
+  if (sheets > 0) sup.metalsheet = sheets;
+  // Arrows: a quiver in a cabin's locker, bolts on a shop shelf (loot.js AREA_ARROWS; its own dice too).
+  const arrows = rollAreaArrows(state, tileId, type, kind, salt);
+  if (arrows > 0) sup.arrows = arrows;
+  // Propane: a grill's bottle by a house, a hardware store's cage (appliances.js AREA_PROPANE; its own dice too).
+  const gas = rollAreaPropane(state, tileId, type, salt);
+  if (gas > 0) sup.propane = gas;
+  // A tent bag: a campsite's, a garage's shelf, barracks stores (tents.js AREA_TENTS; its own dice too).
+  const tent = rollAreaTent(state, tileId, type, site, salt);
+  if (tent) gear.push(tent);
+  // A tool: a workshop's bench, a barn's wall, a car's trunk (toolreqs.js AREA_TOOLS / CAR_TOOLS; its own dice too).
+  const tool = rollAreaTool(state, tileId, type, kind, salt);
+  if (tool) gear.push(tool);
+  // A generator, a spotlight, a fridge: a garage's, a hardware store's, the motor pool's (electric.js AREA_POWER; its own dice too).
+  const pw = rollAreaPower(state, tileId, type, site, salt);
+  if (pw) gear.push(pw);
   return { sup, gear };
 }
 export function searchBox(state, b, u, box, open = false, quick = false) {
@@ -7886,38 +7928,9 @@ export function searchBox(state, b, u, box, open = false, quick = false) {
       // A book on the shelves (skills.js; its own dice, so nothing else in the raid changes).
       const book = rollBook(state, b.tileId, 0.5 * (u.scavBonus ? 2 : 1), `box${bid}`, pd ? { hour: pd, loot: R.richness / 1.3, kind: poiKind } : undefined);
       if (book) gear.push(book);
-      // A gun attachment in an armoury, a gun shop, barracks (loot.js AREA_GUNMODS; its own dice too).
-      const part = rollAreaGunmod(state, b.tileId, R.areas[box.area].type, `box${bid}`);
-      if (part) gear.push(part);
-      const rel = rollAreaReload(state, b.tileId, R.areas[box.area].type, `box${bid}`); // brass, powder, primers in a gun shop, an armoury (loot.js AREA_RELOAD; its own dice)
-      if (rel) gear.push(rel);
-      // A crate of flashbangs or smoke grenades in an armoury, a few in barracks lockers (loot.js AREA_GRENADES; its own dice too).
-      gear.push(...rollAreaGrenades(state, b.tileId, R.areas[box.area].type, site, `box${bid}`));
-      // A grenade launcher, a rocket tube, a crate of 40 mm in army stock (loot.js AREA_LAUNCHERS; its own dice too).
-      gear.push(...rollAreaLaunchers(state, b.tileId, R.areas[box.area].type, site, `box${bid}`));
-      // One of the newer guns (gunfinds.js GUN_FINDS.area; its own dice too).
-      gear.push(...rollAreaGuns(state, b.tileId, R.areas[box.area].type, gunSite, `box${bid}`));
-      // Wood: a log basket, a shed's kindling, a broken chair (loot.js AREA_WOOD; its own dice too).
-      const wood = rollAreaWood(state, b.tileId, R.areas[box.area].type, box.kind, `box${bid}`);
-      if (wood > 0) sup.wood = (sup.wood || 0) + wood;
-      // Metal sheets: a wrecked car's panels and roof, a stack in a garage or a barn (loot.js AREA_SHEETS; its own dice too).
-      const sheets = rollAreaSheets(state, b.tileId, R.areas[box.area].type, box.kind, `box${bid}`);
-      if (sheets > 0) sup.metalsheet = (sup.metalsheet || 0) + sheets;
-      // Arrows: a quiver in a cabin's locker, bolts on a shop shelf (loot.js AREA_ARROWS; its own dice too).
-      const arrows = rollAreaArrows(state, b.tileId, R.areas[box.area].type, box.kind, `box${bid}`);
-      if (arrows > 0) sup.arrows = (sup.arrows || 0) + arrows;
-      // Propane: a grill's bottle by a house, a hardware store's cage (appliances.js AREA_PROPANE; its own dice too).
-      const gas = rollAreaPropane(state, b.tileId, R.areas[box.area].type, `box${bid}`);
-      if (gas > 0) sup.propane = (sup.propane || 0) + gas;
-      // A tent bag: a campsite's, a garage's shelf, barracks stores (tents.js AREA_TENTS; its own dice too).
-      const tent = rollAreaTent(state, b.tileId, R.areas[box.area].type, site, `box${bid}`);
-      if (tent) gear.push(tent);
-      // A tool: a workshop's bench, a barn's wall, a car's trunk (toolreqs.js AREA_TOOLS / CAR_TOOLS; its own dice too).
-      const tool = rollAreaTool(state, b.tileId, R.areas[box.area].type, box.kind, `box${bid}`);
-      if (tool) gear.push(tool);
-      // A generator, a spotlight, a fridge: a garage's, a hardware store's, the motor pool's (electric.js AREA_POWER; its own dice too).
-      const pw = rollAreaPower(state, b.tileId, R.areas[box.area].type, site, `box${bid}`);
-      if (pw) gear.push(pw);
+      const ex = areaExtras(state, b.tileId, R.areas[box.area].type, box.kind, site, gunSite, `box${bid}`); // the per-area finds on their own dice (below)
+      gear.push(...ex.gear);
+      for (const [k, n] of Object.entries(ex.sup)) sup[k] = (sup[k] || 0) + n;
       // A car alarm (caralarms.js): the same one draw as ever; on the car's own record only an armed one goes off (at
       // searchChance, so about as often over all cars), ringing and pulling the dead to it. A box with no car under it:
       // the old one-shot. quiet: Quiet Hands never sets one off.

@@ -104,7 +104,7 @@ export const INDUSTRY_ROLES = {
   kiln:       role("Kiln hall", "workshop", "machines", { fl: "conc", maxBoxes: 3 }),
   cleanroom:  role("Clean room", "lab", "lab", { fl: "rubber", windows: false, maxBoxes: 4 }),
   gowning:    role("Gowning room", "lab", "lockers", { fl: "tile", windows: false, maxBoxes: 1 }),
-  greenhouse: role("Greenhouse", "barn", "shelves", { fl: "dirt", maxBoxes: 3 }),
+  greenhouse: role("Greenhouse", "garden", "shelves", { fl: "dirt", maxBoxes: 3 }), // a garden centre's since issue #43 (a barn's were its hunting rifles)
 };
 
 // ---------- the plans ----------
