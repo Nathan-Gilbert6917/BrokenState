@@ -918,21 +918,21 @@ const MORE_HOMES = {
         foot: "medium", ground: "woods", exits: [{ side: "front", roles: ["bays"], chance: 1, roller: true, width: 3, lock: 0.2, name: "Bay door" }, backDoor(["kitchen", "storage"], 0.6)],
       });
     },
-    // An entrance station: the fee booth, its supply closet and a restroom.
+    // An entrance station: the fee booth, its kitchenette and a restroom.
     entrance(rng) {
-      const bw = rng.int(8, 9), bh = 8;
-      return home(bw, bh, X(["*", Rm("office", { name: "Fee booth", entry: true, hub: true })], [3, Y(["*", Rm("storage", { name: "Supply closet", type: "cabin" })], [2, "restroom"])]), { foot: "small", ground: "woods", exits: [sideDoor(rng, ["office"], 0.8)] });
+      const bw = rng.int(10, 11), bh = 9;
+      return home(bw, bh, X(["*", Rm("office", { name: "Fee booth", entry: true, hub: true })], [4, Y(["*", Rm("kitchen", { name: "Kitchenette" })], [2, "restroom"])]), { foot: "small", ground: "woods", exits: [sideDoor(rng, ["office"], 0.8)] });
     },
     // A backcountry patrol cabin: the one room, a bunk room and the tool shed.
     backcountry(rng) {
       const bw = rng.int(9, 10), bh = 8;
       return home(bw, bh, Y(["*", Rm("greatroom", { name: "Patrol cabin", entry: true })], [3, X(["*", "bunk"], [3, Rm("storage", { name: "Tool shed", type: "cabin" })])]), { foot: "small", ground: "woods", exits: [backDoor(["storage"], 0.4)] });
     },
-    // Park headquarters: two storeys of offices off a corridor, the lobby, the records room, a break room and the
-    // restrooms.
+    // Park headquarters: two storeys of offices off a corridor, the lobby, the records room, the staff kitchen and
+    // the restrooms.
     hq(rng) {
       const bw = rng.int(17, 18), fd = 5, bh = 2 + fd + 1 + 1 + 1 + fd;
-      return home(bw, bh, corridorPlan([[5, Rm("lobby", { entry: true, type: "cabin" })], ["*", "office"], ["*", "office"]], [["*", "office"], [4, Rm("storage", { name: "Records", type: "office" })], [4, "breakroom"], [3, "restroom"]], fd), {
+      return home(bw, bh, corridorPlan([[5, Rm("lobby", { entry: true, type: "cabin" })], ["*", "office"], ["*", "office"]], [["*", "office"], [4, Rm("storage", { name: "Records", type: "office" })], [4, Rm("kitchen", { name: "Staff kitchen" })], [3, "restroom"]], fd), {
         storeys: 2, foot: "medium", ground: "woods", front: { width: 2 }, extraDoors: 0, stairs: { ...ENDS, len: 2 },
         upper: () => corridorPlan([["*", Rm("office", { name: "Superintendent's office" })], ["*", "office"], ["*", "office"]], [["*", "office"], [5, Rm("office", { name: "Map room" })], [3, "restroom"]], fd),
         exits: [backDoor(["corridor", "breakroom"], 0.7)],
@@ -945,26 +945,27 @@ const MORE_HOMES = {
         foot: "medium", ground: "woods", exits: [backDoor(["kitchen", "storage"], 0.7)],
       });
     },
-    // A maintenance yard's shop: the equipment bay behind its roller door, the shop at the front door and the parts room.
+    // A maintenance yard's shop: the equipment bay behind its roller door, the shop at the front door, the parts room
+    // and the crew kitchen.
     maintenance(rng) {
-      const bw = rng.int(16, 18), bh = rng.int(11, 12);
-      return home(bw, bh, X(["*", Rm("bays", { name: "Equipment bay", type: "garage" })], [6, Y(["*", Rm("workshop", { name: "Shop", entry: true })], ["*", Rm("parts", { name: "Parts room" })])]), {
+      const bw = rng.int(20, 21), bh = rng.int(11, 12);
+      return home(bw, bh, X(["*", Rm("bays", { name: "Equipment bay", type: "garage" })], [6, Y(["*", Rm("workshop", { name: "Shop", entry: true })], ["*", Rm("parts", { name: "Parts room" })])], [4, Rm("kitchen", { name: "Crew kitchen" })]), {
         foot: "medium", ground: "woods", exits: [{ side: "front", roles: ["bays"], chance: 1, roller: true, width: 3, lock: 0.2, name: "Bay door" }, backDoor(["bays", "parts"], 0.6)],
       });
     },
-    // A campground office: the office and the camp store, the coin laundry, the showers (their own door) and the
+    // A campground office: the office, the camp store and the staff kitchen, the coin laundry, the showers (their own door) and the
     // woodshed.
     campground(rng) {
-      const bw = rng.int(16, 17), bh = rng.int(10, 11);
-      return home(bw, bh, Y(["*", X(["*", Rm("reception", { name: "Campground office", entry: true })], [6, Rm("sales", { name: "Camp store", type: "store", hub: false, lay: "aislefront", maxBoxes: 3 })])], [4, X([4, Rm("laundry", { name: "Coin laundry" })], ["*", Rm("restroom", { name: "Showers" })], [4, Rm("storage", { name: "Woodshed", type: "cabin" })])]), {
+      const bw = rng.int(21, 22), bh = rng.int(10, 11);
+      return home(bw, bh, Y(["*", X(["*", Rm("reception", { name: "Campground office", entry: true })], [6, Rm("sales", { name: "Camp store", type: "store", hub: false, lay: "aislefront", maxBoxes: 3 })], [5, Rm("kitchen", { name: "Staff kitchen" })])], [4, X([4, Rm("laundry", { name: "Coin laundry" })], ["*", Rm("restroom", { name: "Showers" })], [4, Rm("storage", { name: "Woodshed", type: "cabin" })])]), {
         foot: "medium", ground: "woods", exits: [{ side: "back", roles: ["restroom", "laundry"], chance: 0.9, lock: 0.2 }],
       });
     },
-    // A game warden's station: the warden's office and the seized-game store, the gun locker, a holding cell and a
-    // restroom.
+    // A game warden's station: the warden's office and the seized-game store, the gun locker, a holding cell, a
+    // restroom and the staff kitchen.
     warden(rng) {
-      const bw = rng.int(15, 16), bh = rng.int(10, 11);
-      return home(bw, bh, Y(["*", X(["*", Rm("office", { name: "Warden's office", entry: true, hub: true })], [5, Rm("evidence", { name: "Seized-game store" })])], [4, X([4, Rm("armory", { name: "Gun locker", lock: ["door", 0.5] })], ["*", Rm("cells", { name: "Holding cell" })], [3, "restroom"])]), {
+      const bw = rng.int(19, 20), bh = rng.int(10, 11);
+      return home(bw, bh, Y(["*", X(["*", Rm("office", { name: "Warden's office", entry: true, hub: true })], [5, Rm("evidence", { name: "Seized-game store" })])], [4, X([4, Rm("armory", { name: "Gun locker", lock: ["door", 0.5] })], ["*", Rm("cells", { name: "Holding cell" })], [3, "restroom"], [4, Rm("kitchen", { name: "Staff kitchen" })])]), {
         foot: "medium", ground: "woods", exits: [backDoor(["cells", "restroom"], 0.5)],
       });
     },
@@ -3591,7 +3592,7 @@ const NEIGHBOURHOODS = {
   duplexes: { allow: ["duplex"], count: 4, BW: [14, 20], REAL_BW: [14, 20] }, // two duplexes a side
   oldtown: { allow: ["victorian", "cottage"], TREES: [5, 9] },              // old houses on an old street: Victorians and cottages
   mill: { allow: ["bungalow"], road: "dirt", walk: "dirt", CARS: [0, 2] },  // a mill village: the company's bungalows, all alike
-  estate: { allow: ["mansion"], count: 2, BW: [18, 24], REAL_BW: [18, 24], GAP: 8, TREES: [8, 14], CARS: [1, 2] }, // two manor houses in their grounds
+  estate: { allow: ["mansion"], count: 3, BW: [16, 24], REAL_BW: [16, 24], GAP: 6, TREES: [8, 14], CARS: [1, 2] }, // three manor houses in their grounds (a street holds 3–5)
   // a lake road: cabins among the trees (the cabin's layouts in turn)
   lakeside: { road: "dirt", walk: "dirt", yard: "grass", GAP: 6, SIDE: 4, CARS: [0, 2], TREES: [10, 16], BINS: [0, 1], fences: false,
     make: (k, r, n, o) => ({ ...BUILDINGS.cabin.make(r, { ...o, layout: LAKE_CABINS[k % LAKE_CABINS.length] }), key: "cabin" }) },

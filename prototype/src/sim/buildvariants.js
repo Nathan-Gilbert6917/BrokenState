@@ -146,7 +146,7 @@ export const LAYOUTS = {
     V("duplexes", "Duplex street", 0.2, 1, 1),    // two duplexes a side
     V("oldtown", "Old town street", 0.3, 1, 0.6), // Victorians and cottages
     V("mill", "Mill village", 0.6, 0.6, 0),       // the company's bungalows, all alike, on a dirt road
-    V("estate", "Estate lane", 0.3, 0.4, 0.2),    // two manor houses in their grounds
+    V("estate", "Estate lane", 0.3, 0.4, 0.2),    // three manor houses in their grounds
     V("lakeside", "Lake road", 1.2, 0.3, 0),      // cabins among the trees
     V("hamlet", "Crossroads hamlet", 1.5, 0.2, 0), // farmhouses down a dirt road, a pole barn
   ],
