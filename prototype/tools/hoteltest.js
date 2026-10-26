@@ -1,6 +1,7 @@
 // Hotels (issue #29, src/sim/hotels.js, hotellayout.js): the data, where they stand and how often, and raids on them.
-//   - the data: a site type, its building, its map cap (200 × 200), 6–10 named chains, each a kind (an inn, a business
-//     hotel, a resort, a tower) and every kind some;
+//   - the data: a site type, its building, its map cap (200 × 200), 8–16 named chains, each a kind (an inn, a business
+//     hotel, a resort, a tower) and every kind some; a dozen variants a kind (issue #38), 12 names and 12 distinct room
+//     lists each (tools/hotelvarianttest.js checks their plans);
 //   - the rates over 300 seeds (hotelExtra on every tile of three worlds, the world seed changed 300 times): a tile of
 //     each setting holds a hotel at HOTELS.AT (within ±20% of it, or ±0.01), the kinds by the setting (a town's inns and
 //     business hotels, a city's towers and business hotels, scenic land's resorts), and the hotels the worlds made hold;
@@ -14,11 +15,13 @@ import { launchExpedition } from "../src/sim/parties.js";
 import { createBattle, autoPlayerTurn, runEnemyPhase, registerCombatHandler } from "../src/sim/combat.js";
 import { raidEnemies } from "../src/sim/scavenge.js";
 import { LOCATIONS } from "../src/sim/data.js";
-import { BUILDINGS, SITES, buildingMap } from "../src/sim/buildingmaps.js";
+import { BUILDINGS, SITES, buildingMap, assemble } from "../src/sim/buildingmaps.js";
 import { FRANCHISES } from "../src/sim/data-shops.js";
 import { MAP_CAP } from "../src/sim/battlesize.js";
 import { HOTELS, hotelExtra, hotelSetting, hotelPlace } from "../src/sim/hotels.js";
 import { HOTEL } from "../src/sim/hotellayout.js";
+import { hotelVariantsOf } from "../src/sim/data-hotels.js";
+import { Rng } from "../src/sim/rng.js";
 import { inKnownZone } from "../src/sim/pois.js";
 import { poiPlace } from "../src/sim/poiraid.js";
 import { crawlFranchise, franchiseById } from "../src/sim/shops.js";
@@ -37,8 +40,14 @@ console.log("The data");
   const L = LOCATIONS.hotel, F = FRANCHISES.hotel || [];
   check(!!L && L.richness > 0 && !!SITES.hotel && SITES.hotel[0] === "hotel" && !!BUILDINGS.hotel, "a site type (Hotel), its building and its site row");
   check(MAP_CAP.hotel === 200, "its map at most 200 × 200 (battlesize.js MAP_CAP)");
-  check(F.length >= 6 && F.length <= 10 && new Set(F.map((f) => f.name)).size === F.length, `${F.length} named chains: ${F.map((f) => f.name).join(", ")}`);
+  check(F.length >= 8 && F.length <= 16 && new Set(F.map((f) => f.name)).size === F.length, `${F.length} named chains: ${F.map((f) => f.name).join(", ")}`); // issue #38: a chain a kind more (12)
   check(HOTEL.KINDS.every((k) => F.some((f) => f.plan && f.plan.hotel === k)) && F.every((f) => HOTEL.KINDS.includes(f.plan.hotel)), `every kind has its chains (${HOTEL.KINDS.map((k) => `${k} ${F.filter((f) => f.plan.hotel === k).length}`).join(", ")})`);
+  // A dozen variants a kind (issue #38): 12 names, 12 distinct room lists (their rooms by name, numbers off).
+  for (const kind of HOTEL.KINDS) {
+    const vs = hotelVariantsOf(kind), lists = new Set();
+    for (const v of vs) { const rng = new Rng(4100 + v.id.length); const spec = BUILDINGS.hotel.make(rng, { plan: v.id }); const m = assemble(rng, spec, { key: "hotel", name: "Hotel" }); lists.add([...new Set(m.rooms.filter((a) => !a.outdoor).map((a) => a.name.replace(/:.*$/, "").replace(/ \d+[A-Z]?$/, "")))].sort().join("|")); }
+    check(new Set(vs.map((v) => v.name)).size >= 12 && lists.size >= 12, `${kind}: ${vs.length} variants by name, ${lists.size} distinct room lists`);
+  }
   const kinds = ["frontdesk", "suitcase", "minifridge", "luggagecart", "banquet", "liftdoor", "loungechair", "lounger", "tennisnet"];
   check(kinds.every((k) => FURNITURE_KINDS[k]), `the new catalogue kinds (${kinds.join(", ")})`);
 }

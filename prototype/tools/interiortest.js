@@ -63,7 +63,9 @@
 //     seeds: the lobby with its reception desk, key rack and locked safe; guest floors of rooms each with a bed and its
 //     en suite bathroom (a toilet, a sink, a tub or a shower); housekeeping on every guest floor; two stair runs at 6+
 //     floors (every big hotel has two); the laundry and the kitchen (and its walk-in) back of house; every walkable cell
-//     reachable on every floor; the map within 200 × 200; an inn's 10–20 rooms; the loot of each kind, reported.
+//     reachable on every floor; the map within 200 × 200; an inn's 10–20 rooms; the loot of each kind, reported. Each of
+//     the kind's dozen variants in turn (issue #38: data-hotels.js), the kind's own rooms checked on its classic plan (#29's);
+//     each variant's own in tools/hotelvarianttest.js.
 //   - warehouses, factories and labs (industrylayout.js, issue #37): every one of their plans pinned is reached from the
 //     front and up its stairs, nothing cut off, with its signature pieces (tools/industryvarianttest.js goes further).
 // Usage: node tools/interiortest.js [seeds per archetype] [raids]
@@ -95,6 +97,7 @@ import { Rng } from "../src/sim/rng.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
 import { mapCap } from "../src/sim/battlesize.js"; // a building's own map cap (a hotel's 200 × 200, issue #29)
 import { HOTEL } from "../src/sim/hotellayout.js";
+import { hotelVariantsOf, CLASSIC } from "../src/sim/data-hotels.js"; // a dozen variants a kind (issue #38)
 import { FRANCHISES } from "../src/sim/data-shops.js";
 
 const SEEDS = Number(process.argv[2] || 6);
@@ -1188,19 +1191,19 @@ console.log("\nFootprint shapes: buildings that are not boxes (issue #23)");
 // ======================================================================================
 console.log("\nHotels room by room (hotellayout.js): an inn, a business hotel, a resort, a city tower");
 {
-  const N = Math.max(SEEDS, 4);
+  const N = Math.max(SEEDS, 12); // a dozen variants a kind (issue #38), each in turn
   const value = (def) => { let v = 0; for (const [k, [p, lo, hi]] of Object.entries(def.loot)) v += Math.min(0.95, p) * ((lo + hi) / 2) * supValue(k); for (const [k, p] of def.gear) v += p * ((GEAR[k] && GEAR[k].value) || 0); return v; };
   const byKind = {};
   for (const kind of HOTEL.KINDS) {
     const ids = FRANCHISES.hotel.filter((f) => f.plan.hotel === kind).map((f) => f.id);
     const errs = [], rep = byKind[kind] = { maps: 0, w: [], h: [], storeys: [], rooms: [], boxes: [], loot: [], area: [] };
     for (let s = 0; s < N; s++) {
-      const v = ids[s % ids.length];
+      const v = ids[s % ids.length], vid = hotelVariantsOf(kind)[s % hotelVariantsOf(kind).length].id, classic = vid === CLASSIC[kind]; // issue #38: each variant (the kind's own rooms below: the classic plan's, #29's)
       const rng = new Rng(61000 + s * 7919 + kind.length * 17);
-      const spec = BUILDINGS.hotel.make(rng, { variant: v });
+      const spec = BUILDINGS.hotel.make(rng, { variant: v, plan: vid });
       let m;
       try { m = assemble(rng, spec, { key: "hotel", name: "Hotel", withVehicle: s % 2 === 1 }); } catch (e) { errs.push(`${v} ${s}: ${e.message}`); continue; }
-      const tag = `${v} ${s}`;
+      const tag = `${v} ${vid} ${s}`;
       if (spec.hotel !== kind) errs.push(`${tag}: a ${spec.hotel}`);
       rep.maps++; rep.w.push(m.w); rep.h.push(m.h); rep.storeys.push(m.storeys);
       const grids = m.floors || [{ cells: m.cells }];
@@ -1222,7 +1225,7 @@ console.log("\nHotels room by room (hotellayout.js): an inn, a business hotel, a
       if (!lobby || !inside(lobby).includes("frontdesk") || !inside(lobby).includes("keyrack")) errs.push(`${tag}: no reception desk and key rack in the lobby`);
       else if (!m.containers.some((c) => c.area === lobby.id && c.kind === "safe" && c.lockKind)) errs.push(`${tag}: no locked safe at the front desk`);
       // Guest floors: rooms of beds, each with its en suite bathroom (a toilet, a sink, a tub or a shower).
-      const guest = shop("guestroom");
+      const guest = rooms.filter((a) => a.shop === "guestroom" || a.shop === "studio"); // an extended-stay's studios (issue #38)
       if (guest.length < 1) errs.push(`${tag}: no guest rooms`);
       for (const r of guest) {
         if (!inside(r).includes("bed")) errs.push(`${tag}: ${r.name} has no bed`);
@@ -1246,9 +1249,9 @@ console.log("\nHotels room by room (hotellayout.js): an inn, a business hotel, a
       if (kind !== "inn" && !shop("walkin").length) errs.push(`${tag}: no walk-in cold room`);
       // The kind's own rooms.
       const need = { inn: ["parlour", "breakfast", "ownersflat"], business: ["hotelrestaurant", "conference", "bizcentre", "giftshop", "luggage", "liftlobby"], resort: ["ballroom", "spa", "hotelgym", "hotelrestaurant", "barroom", "liftlobby"], tower: ["penthouse", "barroom", "ballroom", "parking", "liftlobby", "hotelgym"] }[kind];
-      for (const k of need) if (!shop(k).length) errs.push(`${tag}: no ${k}`);
-      if (kind === "resort" && !["Pool deck", "Tennis court"].every((n) => m.rooms.some((a) => a.outdoor && a.name === n))) errs.push(`${tag}: no pool deck or tennis court in the grounds`);
-      if (kind === "resort" && !m.cells.some((c) => c.f === "pool")) errs.push(`${tag}: the pool deck has no pool`);
+      if (classic) for (const k of need) if (!shop(k).length) errs.push(`${tag}: no ${k}`); // a variant's own rooms: tools/hotelvarianttest.js
+      if (classic && kind === "resort" && !["Pool deck", "Tennis court"].every((n) => m.rooms.some((a) => a.outdoor && a.name === n))) errs.push(`${tag}: no pool deck or tennis court in the grounds`);
+      if (classic && kind === "resort" && !m.cells.some((c) => c.f === "pool")) errs.push(`${tag}: the pool deck has no pool`);
       if (kind === "tower" && !shop("penthouse").some((a) => (a.f || 0) === m.storeys - 1)) errs.push(`${tag}: the penthouse is not on the top floor`);
       if (kind === "inn" && (guest.length < 10 || guest.length > 20)) errs.push(`${tag}: ${guest.length} rooms`);
       if (shop("liftlobby").length && !shop("liftlobby").every((a) => inside(a).includes("liftdoor"))) errs.push(`${tag}: a lift lobby with no lift doors`);
