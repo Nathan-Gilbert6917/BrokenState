@@ -86,7 +86,8 @@ section("Where the trucks are (miltrucks.js trucksAt)");
       const d = milDistance(st, t.id);
       if (d <= 4) { near++; if (n) nearT++; } else if (d > 8) { far++; if (n) farT++; }
     }
-    for (const id of st.militaryIds) { bases++; const n = trucksAt(st, id).length; if (n >= MILTRUCK.BASE[0] && n <= MILTRUCK.BASE[1]) baseOk++; }
+    // The Guard bases (an air base, issue #25, is a military site with no motor pool).
+    for (const id of st.militaryIds.filter((i) => st.tiles[i].loc && st.tiles[i].loc.type === "military")) { bases++; const n = trucksAt(st, id).length; if (n >= MILTRUCK.BASE[0] && n <= MILTRUCK.BASE[1]) baseOk++; }
     // An army helicopter wreck (crashes.js crash_mil) on a few tiles: half of them have a Humvee.
     for (const t of st.tiles.filter((x) => !x.loc && x.terrain === "plains").slice(0, 40)) {
       t.loc = { type: "crash_mil", name: "test", zone: "special", crash: t.id };

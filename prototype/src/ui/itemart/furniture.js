@@ -371,6 +371,18 @@ function f_exambed(p) { // an exam bed: a padded teal top with a raised end, the
   line(p, 1, 3, 4, 6, "#4f7b88"); R(p, 4, 6, 15, 7, "#4f7b88"); H(p, 4, 15, 5, "#eef0f2"); box(p, 3, 8, 14, 15, "#c9b48a"); H(p, 4, 13, 11, "#957f58");
 }
 
+// ---------- the college campuses' pieces (#28, sim/campuslayout.js and sim/campus.js) ----------
+function f_dormdesk(p) { // a dorm desk: a pale top over a drawer stack, a hutch of shelves with books and a lamp
+  R(p, 0, 8, 15, 9, WOODL); box(p, 9, 10, 14, 15, WOOD); H(p, 10, 13, 12, WOODD); legs(p, 1, 8, 10, 15, WOODD);
+  box(p, 1, 0, 14, 7, WOOD); H(p, 2, 13, 4, WOODD); R(p, 3, 1, 6, 3, "#3a6fb0"); R(p, 8, 2, 9, 3, "#c8402f"); R(p, 11, 5, 12, 7, "#e6e04a");
+}
+function f_mailboxes(p) { // a mailbox wall: rows of little brass doors in a wooden frame, a keyhole on each
+  box(p, 0, 0, 15, 15, WOODD); for (let y = 1; y <= 13; y += 4) for (let x = 1; x <= 13; x += 4) { R(p, x, y, x + 2, y + 2, "#c9a446"); p.set(x + 2, y + 1, "#5a4a20"); }
+}
+function f_campusbench(p) { // a park bench: wooden slats on black iron ends, the back rest
+  for (const y of [2, 4]) H(p, 0, 15, y, WOODL); for (const y of [8, 10]) H(p, 0, 15, y, WOOD); H(p, 0, 15, 5, WOODD);
+  for (const x of [1, 14]) { V(p, x, 1, 15, "#26272a"); } line(p, 1, 11, 0, 15, "#26272a"); line(p, 14, 11, 15, 15, "#26272a");
+}
 // ---------- the hotels' pieces (#29, sim/hotellayout.js) ----------
 function f_frontdesk(p) { // a reception desk: a panelled wood front, a pale marble top, a little brass bell on it
   R(p, 0, 5, 15, 6, "#e2dcc8"); H(p, 0, 15, 5, "#f2ede0"); box(p, 1, 7, 14, 15, WOOD);
@@ -567,6 +579,75 @@ function f_batteries(p) { // a rack of black batteries on steel shelves, red and
   line(p, 3, 1, 11, 1, "#d9b13b");
 }
 
+// ---------- libraries (issue #34) ----------
+const SPINES = ["#7a3b32", "#2d4a3c", "#3a5f8e", "#c9873c", "#5b3a7a", "#8a7a4a", "#2a2a2e"];
+const spines = (p, x0, x1, y0, y1, k = 0) => { for (let x = x0; x <= x1; x++) V(p, x, y0 + ((x * 7 + k) % 3 === 0 ? 1 : 0), y1, SPINES[(x * 3 + k) % SPINES.length]); };
+function f_bookstack(p) { // a tall steel library stack: four shelves of spines
+  legs(p, 1, 14, 0, 15, STEELD); for (const y of [0, 4, 8, 12, 15]) H(p, 1, 14, y, STEEL);
+  for (const [y0, y1, k] of [[1, 3, 0], [5, 7, 2], [9, 11, 4], [13, 14, 1]]) spines(p, 2, 13, y0, y1, k);
+}
+function f_lowshelf(p) { // low pale-wood shelving: two shelves of books, waist high
+  box(p, 1, 6, 14, 15, "#c9b48a"); H(p, 1, 14, 10, "#957f58");
+  spines(p, 2, 13, 7, 9, 3); spines(p, 2, 13, 11, 14, 5);
+}
+function f_mobileshelf(p) { // compact mobile shelving: a pale steel carriage on its rails, the end panel's wheel
+  box(p, 1, 0, 14, 13, "#c9c7bd"); for (const x of [5, 10]) V(p, x, 1, 12, "#9aa0a6");
+  ring(p, 7, 6, 2, "#5e666d"); p.set(7, 6, "#5e666d"); H(p, 0, 15, 14, STEELD); H(p, 0, 15, 15, "#3a3d42");
+}
+function f_cardcat(p) { // a card catalogue: a grid of small oak drawers, each with a brass pull, on short legs
+  box(p, 1, 1, 14, 12, WOOD);
+  for (let y = 1; y <= 10; y += 3) for (let x = 1; x <= 12; x += 3) { R(p, x + 1, y + 1, x + 2, y + 2, WOODL); p.set(x + 1, y + 2, "#d9b13b"); }
+  legs(p, 2, 13, 13, 15, WOODD);
+}
+function f_mapcase(p) { // a map cabinet: wide shallow drawers, a map's edge curling out of one
+  box(p, 0, 4, 15, 15, "#7d8a7a"); for (const y of [6, 8, 10, 12, 14]) H(p, 1, 14, y, "#5a6658");
+  for (const y of [5, 7, 9, 11, 13]) H(p, 6, 9, y, "#c9ced3");
+  R(p, 2, 3, 9, 4, "#d9cfa8"); line(p, 9, 3, 12, 1, "#d9cfa8"); p.set(5, 3, "#8aa070");
+}
+function f_booktruck(p) { // a library book cart: two sloped shelves of books on castors
+  legs(p, 2, 13, 2, 13, STEELD); H(p, 2, 13, 7, STEEL); H(p, 2, 13, 12, STEEL);
+  spines(p, 3, 12, 3, 6, 1); spines(p, 3, 12, 8, 11, 4);
+  for (const x of [2, 13]) disc(p, x, 14, 1, "#26272a");
+}
+function f_bookreturn(p) { // a book return bin: a blue box with a slot and a chrome flap
+  box(p, 2, 2, 13, 15, "#2d5a8a"); R(p, 4, 5, 11, 6, "#1c2026"); H(p, 4, 11, 4, "#c9ced3");
+  H(p, 4, 11, 10, "#e8c04a"); H(p, 2, 13, 15, "#1f3d5e");
+}
+function f_computer(p) { // a computer desk: a monitor and its keyboard on a steel-legged desk
+  box(p, 4, 0, 11, 6, "#26272a"); R(p, 5, 1, 10, 5, "#1c2a30"); p.set(6, 2, "#5ad06a"); V(p, 7, 7, 8, "#26272a");
+  H(p, 0, 15, 9, "#c9b48a"); R(p, 4, 8, 11, 8, "#d8d4c8"); legs(p, 1, 14, 10, 15, STEELD);
+}
+function f_printer(p) { // an office printer: a beige box, its paper tray and the sheet coming out
+  box(p, 1, 5, 14, 13, "#c9bfa8"); R(p, 3, 3, 12, 4, "#f2efe6"); H(p, 2, 13, 9, "#8a8270");
+  R(p, 3, 11, 12, 12, "#26272a"); p.set(12, 7, "#5ad06a"); H(p, 1, 14, 14, "#6a6458");
+}
+function f_microfilm(p) { // a microfilm reader: a beige hood with its lit screen, the reels beneath
+  box(p, 3, 0, 12, 9, "#c9bfa8"); R(p, 4, 1, 11, 6, "#8ab0b8"); H(p, 5, 9, 3, "#5a7880");
+  disc(p, 5, 11, 1, "#26272a"); disc(p, 10, 11, 1, "#26272a"); R(p, 1, 12, 14, 13, "#94704a"); legs(p, 2, 13, 14, 15, STEELD);
+}
+function f_selfcheck(p) { // a self-check kiosk: a steel column, a tilted screen glowing green, a scanner pad
+  R(p, 6, 6, 9, 15, "#8a949c"); box(p, 3, 0, 12, 5, "#26272a"); R(p, 4, 1, 11, 4, "#3a6a4a"); p.set(5, 2, "#c9f0c9");
+  R(p, 4, 7, 11, 8, "#5e666d"); p.set(10, 7, "#c8402f"); H(p, 4, 11, 15, "#5e666d");
+}
+function f_readtable(p) { // a long reading table with two green banker's lamps
+  R(p, 0, 9, 15, 10, WOODD); legs(p, 1, 14, 11, 15, WOODD);
+  for (const x of [3, 11]) { V(p, x, 5, 8, "#d9b13b"); R(p, x - 2, 3, x + 2, 4, "#2f6a3a"); H(p, x - 2, x + 2, 5, "#d9b13b"); }
+}
+function f_carrel(p) { // a study carrel: a desk with a fabric screen round three sides
+  box(p, 0, 1, 15, 9, "#5a4a62"); R(p, 2, 3, 13, 8, "#463a4e"); H(p, 0, 15, 10, WOODL); legs(p, 1, 14, 11, 15, WOODD);
+}
+function f_globe(p) { // a globe on its brass meridian and a wooden stand
+  disc(p, 7, 6, 5, "#3a6f9a"); R(p, 5, 3, 8, 5, "#8aa070"); R(p, 8, 7, 10, 9, "#8aa070"); ring(p, 7, 6, 6, "#d9b13b");
+  V(p, 7, 12, 14, "#d9b13b"); H(p, 4, 10, 15, WOODD);
+}
+function f_lectern(p) { // a lectern: a slanted top on a wooden post and its foot
+  line(p, 3, 4, 12, 1, WOODL); R(p, 3, 4, 12, 5, WOOD); V(p, 7, 6, 13, WOODD); V(p, 8, 6, 13, WOOD); H(p, 3, 12, 14, WOODD); H(p, 4, 11, 15, WOODD);
+}
+function f_woodstove(p) { // a cast-iron wood stove: its glowing door, its legs and the pipe up
+  R(p, 7, 0, 8, 4, "#3a3d42"); box(p, 2, 5, 13, 13, "#26272a"); R(p, 4, 7, 11, 11, "#3a3d42"); R(p, 5, 8, 10, 10, "#e0a030");
+  p.set(7, 9, "#c8402f"); legs(p, 3, 12, 14, 15, "#26272a");
+}
+
 // ---------- labs (issue #37) ----------
 function f_labfreezer(p) { // an upright lab freezer: white enamel, a full-height door with its long handle, a green display
   box(p, 3, 0, 12, 15, "#dad8d0"); H(p, 3, 12, 3, "#b4b2aa"); V(p, 11, 5, 12, "#9aa1a8");
@@ -640,6 +721,8 @@ function f_liquorcab(p) { // a liquor cabinet: dark wood, glass doors with bottl
 }
 
 export const GEAR_ART = {
+  f_dormdesk, f_mailboxes, f_campusbench,
+  f_bookstack, f_lowshelf, f_mobileshelf, f_cardcat, f_mapcase, f_booktruck, f_bookreturn, f_computer, f_printer, f_microfilm, f_selfcheck, f_readtable, f_carrel, f_globe, f_lectern, f_woodstove,
   f_drum, f_labfreezer,
   f_frontdesk, f_suitcase, f_minifridge, f_luggagecart, f_banquet, f_loungechair, f_lounger,
   f_flattop, f_deckoven, f_conveyoroven, f_wokrange, f_smoker, f_chargrill, f_gyrospit, f_stockpot, f_steamtable, f_espresso, f_softserve, f_slicer, f_tortillapress,

@@ -15,6 +15,9 @@
 //   Cut wire (cutTargets, cutAct; combatAct "cutwire"): one of yours with a cutter clears a cell of wire right next to
 //   them (not diagonally) for WIRE.AP action, a little noise (WIRE.NOISE).
 //   The human enemy carries a cutter by its kit (WIRE.KIT: kitCutter, own dice) or with a cutting weapon in hand.
+//   A prison's perimeter fence (CELL "pfence", issue #31: chain-link topped with razor wire) is cut the same way, but it
+//   takes WIRE.FENCE_CUTS cuts (each WIRE.AP, the cell's c.cuts counts them, across turns) before it is a hole (open
+//   ground, c.hole): time and a tool, never a vault.
 import { survivorById } from "./world.js";
 import { allCarried } from "./inventory.js";
 import { GEAR } from "./data.js";
@@ -22,6 +25,7 @@ import { hash01 } from "./skills.js";
 
 export const WIRE = {
   AP: 1, NOISE: 0.5, RADIUS: 2,
+  FENCE_CUTS: 4,    // cuts through a prison's perimeter fence (two actions a turn: two turns' work)
   SNAG: [2, 5], RAZOR: [5, 9], RAZOR_DEAD: [6, 12],
   // The chance a human of this kit carries something that cuts wire (pliers, snips, a bolt cutter), besides a cutting weapon.
   KIT: { raiders: 0.3, zealots: 0.2, guards: 0.35, militia: 0.4, fighters: 0.35, escorts: 0.4, contractors: 0.5, survivalists: 0.5, preppers: 0.6, soldiers: 0.7, looters: 0.25 },
@@ -36,6 +40,7 @@ export const CUTTERS = {
 export const CUTTER_NAMES = Object.keys(CUTTERS).map((k) => (GEAR[k] ? GEAR[k].name.toLowerCase() : k));
 const usable = (it) => !!it && !!CUTTERS[it.key] && !(Number.isFinite(it.dur) && it.dur <= 0);
 export const isWire = (c) => !!c && c.k === "wire";
+const cuttable = (c) => isWire(c) || (!!c && c.k === "pfence");
 
 // The key of the first cutter a person carries, or 0 (combat.js playerUnit, refitUnit: u.cutter).
 export const cutterKeyOf = (s) => { const it = s ? allCarried(s).find(usable) : null; return it ? it.key : 0; };
@@ -90,7 +95,7 @@ export function cutTargets(b, u) {
     const x = u.x + dx, y = u.y + dy;
     if (x < 0 || y < 0 || x >= b.w || y >= b.h) continue;
     const c = b.cells[y * b.w + x];
-    if (isWire(c)) out.push({ x, y, c });
+    if (cuttable(c)) out.push({ x, y, c });
   }
   return out;
 }
@@ -108,9 +113,18 @@ export function cutAct(state, b, u, act, h) {
   if (why) return why;
   const t = cutTargets(b, u).find((p) => p.x === act.x && p.y === act.y) || (act.x == null ? cutTargets(b, u)[0] : null);
   if (!t) return "Pick the wire right next to them.";
-  const cut = cutterOf(state, u), what = t.c.razor ? "razor wire" : "barbed wire";
-  clearWire(t.c);
+  const cut = cutterOf(state, u), fence = t.c.k === "pfence", what = fence ? "perimeter fence" : t.c.razor ? "razor wire" : "barbed wire";
   u.ap -= WIRE.AP;
+  if (fence) { // link by link: a hole once FENCE_CUTS cuts are in
+    t.c.cuts = (t.c.cuts || 0) + 1;
+    if (b.raid) b.raid.noise = (b.raid.noise || 0) + WIRE.NOISE;
+    if (h.alertNear) h.alertNear(b, t.x, t.y, WIRE.RADIUS, "The snap of cut wire is heard.", u);
+    if (t.c.cuts < WIRE.FENCE_CUTS) { h.say(b, `${u.name} ${cut.how.replace(/\bit\b/, `the ${what}`)}: ${WIRE.FENCE_CUTS - t.c.cuts} more cut${WIRE.FENCE_CUTS - t.c.cuts === 1 ? "" : "s"} to a way through.`, "info"); return ""; }
+    t.c.k = "open"; t.c.hole = true; t.c.cutWire = true; delete t.c.cuts;
+    h.say(b, `${u.name} ${cut.how.replace(/\bit\b/, `the ${what}`)}: a hole big enough to crawl through.`, "info");
+    return "";
+  }
+  clearWire(t.c);
   if (b.raid) b.raid.noise = (b.raid.noise || 0) + WIRE.NOISE;
   if (h.alertNear) h.alertNear(b, t.x, t.y, WIRE.RADIUS, "The snap of cut wire is heard.", u);
   h.say(b, `${u.name} ${cut.how.replace(/\bit\b/, `the ${what}`)}: a way through.`, "info");
