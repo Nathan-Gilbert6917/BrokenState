@@ -47,7 +47,19 @@
 //      a total of 0 takes the pool's floor(r × n)th.
 // HELPERS. variantsOf(key) (the list, [] for none), variantFor(key, id) (an entry by id, or null), variantKeys() (the
 // registered keys): varianttest.js reads the registry through them, the gallery and #42's placement table too.
-import { hash01 } from "./skills.js";
+// No imports, so the data tables (data-hotels.js) and the plan makers can register without a cycle. hash01: skills.js's
+// deterministic roll, the same function (the same dice for the same parts).
+/** @param {...any} parts @returns {number} */
+function hash01(...parts) {
+  let h = 2166136261 >>> 0;
+  for (const part of parts) {
+    const str = String(part);
+    for (let i = 0; i < str.length; i++) h = Math.imul(h ^ str.charCodeAt(i), 16777619) >>> 0;
+    h = Math.imul(h ^ 0x9e3779b9, 16777619) >>> 0;
+  }
+  h ^= h >>> 15; h = Math.imul(h, 0x2c1b3c6d) >>> 0; h ^= h >>> 12; h = Math.imul(h, 0x297a2d39) >>> 0; h ^= h >>> 15;
+  return (h >>> 0) / 4294967296;
+}
 
 /** @typedef {{ id: string, name: string, w?: Record<string, number>, fr?: string[], size?: string, storeys?: number[] | number, tile?: string[], make?: Function, [k: string]: any }} VariantEntry */
 /** @typedef {{ missing?: number, frMin?: number, le?: boolean, index?: boolean, byName?: boolean, sizeClass?: (e: any) => string | null }} VariantOpts */
