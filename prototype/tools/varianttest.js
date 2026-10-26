@@ -33,7 +33,6 @@ export const PENDING_OWNER = {
   offices: "#27", storefront: "#27", bizpark: "#27", cityhall: "#27", courthouse: "#27", callcenter: "#27", techoffice: "#27", station: "#27", // #27 (closed)
   hotel: "#29", // #29 (closed)
   deptstore: "#30",
-  cellblock: "#31",
   // #35: shops and services
   pharmacy: "#35", gasstation: "#35", truckstop: "#35", gunstore: "#35", pawnshop: "#35", sportshop: "#35", electronics: "#35", radioshop: "#35",
   bookstore: "#35", petstore: "#35", garden: "#35", clothing: "#35", liquor: "#35", hardware: "#35", feedstore: "#35", dealer: "#35",
