@@ -203,6 +203,9 @@ export function deserializeState(save) {
   // The placement table (data-placement.js, issue #42): a save from before keeps its POI lists, its crawls' blocks and
   // its buildings as its seed made them (placement.js placing off).
   if (!state.placeV) { state.placeLegacy = true; state.placeV = 1; }
+  // The farms renovated (farmstead.js, farmplans.js, issue #62): a save from before keeps its farms' and ranches' pick of
+  // buildings and its sheds' and farm stands' old buildings (worldcfg.js legacyFarms).
+  if (!state.farmV) { state.farmLegacy = true; state.farmV = 1; }
   // Civic and medical buildings at real scale (issue #49): a save from before keeps their plans at their drawn sizes
   // and none of the new plans or sites (worldcfg.js legacyCivic), so its places and their containers stay as they were.
   if (!state.civicV) { state.civicLegacy = true; state.civicV = 1; }

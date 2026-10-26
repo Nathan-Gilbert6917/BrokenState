@@ -180,6 +180,52 @@ export const LAYOUTS = {
     V("office", "Farm office shed"),              // the equipment bay, the office, the crew room
     V("truck", "Truck shed"),                     // the truck bay, the parts room, dispatch
   ],
+  // ---------- the farm's own buildings (issue #62: farmplans.js FARM_PLANS; new saves only, worldcfg.js legacyFarms) ----------
+  shed: [
+    V("tool", "Tool shed", 1, 1.5, 1),            // the tool bench and a lean-to
+    V("potting", "Potting shed", 0.6, 1.5, 1),    // the potting benches and the seed store
+    V("pump", "Pump house", 1, 0.5, 0.2),         // the pump and its pressure tank
+    V("smoke", "Smokehouse", 1, 0.3, 0.1),        // the smoke room and the butchering bench
+    V("rootcellar", "Root cellar", 1, 0.3, 0.1),  // down the cellar steps: shelves of jars and bins of potatoes
+    V("spring", "Springhouse", 0.7, 0.1, 0),      // the spring trough and the cold shelf
+    V("coop", "Chicken coop", 1.2, 0.8, 0.3),     // the roost and its nest boxes, the feed bin
+    V("wood", "Woodshed", 1, 0.8, 0.3),           // open front and back, the cordwood stacked
+    V("crib", "Corn crib", 0.8, 0.1, 0),          // the crib beside a drive-through
+    V("outhouse", "Outhouse", 0.6, 0.2, 0.1),     // the two-holer and the lime bin
+    V("well", "Well house", 0.8, 0.3, 0.1),       // the well room and the pump bench
+    V("gen", "Generator shed", 0.8, 0.6, 0.4),    // the generator and the fuel cans
+    V("ice", "Icehouse", 0.4, 0.2, 0),            // the ice room behind its door, the sawdust bin
+  ],
+  farmstand: [
+    V("shack", "Roadside stand", 1.5, 1, 0.5),    // a shack with its counter and produce bins, a back room
+    V("producebarn", "Produce barn", 1, 0.8, 0.2), // the barn's sales floor, the cooler, the farm office
+    V("pyo", "Pick-your-own stand", 1, 0.4, 0),   // the weigh station and its basket store, a door to the fields
+    V("honey", "Honey stand", 1, 0.6, 0.2),       // the honey shelves and a hive on show, the extracting room
+    V("pumpkin", "Pumpkin patch stand", 1, 0.5, 0), // the stand and the hay barn, a door to the patch
+    V("xmas", "Christmas tree lot", 0.6, 1, 0.8), // the lot's trailer and the netting shed
+    V("market", "Farmers' market shed", 0.4, 1.5, 1), // one long open shed of stalls, open at both ends
+    V("egg", "Egg stand", 1.2, 0.5, 0.1),         // the stand and the egg cooler
+    V("cider", "Cider mill stand", 0.8, 0.5, 0.1), // the stand and the cider press
+    V("berry", "Berry stand", 1, 0.5, 0.1),       // the stand and the jam kitchen
+    V("flower", "Flower stand", 0.6, 1, 0.6),     // the flower house and the stand
+    V("maple", "Maple sugar store", 0.6, 0.4, 0), // the store and the evaporator room
+    V("creamery", "Farm creamery", 0.6, 0.6, 0.2), // the shop, the cheese room, the milk cooler
+  ],
+  farmbldg: [
+    V("milkhouse", "Milk house"),                 // the bulk tank room, the wash-up, a door to the parlour
+    V("greenhouse", "Greenhouse"),                // the glass house and its head house
+    V("packshed", "Packing shed"),                // the packing line, the cold storage and its dock, the office
+    V("coldstore", "Cold storage"),               // the dock and two cold rooms (apples, potatoes)
+    V("winery", "Winery"),                        // the crush pad and the tanks, the barrel cellar, the tasting room
+    V("bunkhouse", "Bunkhouse"),                  // the bunk room, the cook room, the wash room
+    V("arena", "Indoor riding arena"),            // the arena, the tack room, the viewing room
+    V("stable", "Show stable"),                   // stalls either side of the aisle, the wash stall, the stable office
+    V("sugarhouse", "Sugarhouse"),                // the evaporator and the wood room
+    V("processing", "Meat processing shed"),      // the cutting room and the hanging cooler
+    V("cookhouse", "Ranch cookhouse"),            // the mess hall and its kitchen
+    V("feedmill", "Feed mill"),                   // the mixer room and the bagged feed
+    V("scalehouse", "Scale house"),               // the farm office and the scale room
+  ],
 };
 
 // The building types whose franchises name their layout (data-shops.js plan.lay) use the same ids as LAYOUTS.

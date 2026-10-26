@@ -2,7 +2,7 @@
 import { PAL } from "./palette.js"; // good / bad colours (the colour-blind-safe set swaps them: ui/display.js)
 import { TERRAIN, LOCATIONS, SITE_ZONES, DANGER_NAMES, siteDanger } from "../sim/data.js";
 import { hub, day, factionById, RADIO_RANGE, isNight } from "../sim/world.js";
-import { setPoiReveal, poisOf, poiKnown, knownPois, poiLootBand, POI } from "../sim/pois.js"; // points of interest: a bare tile's top POI drawn once known, the known-count pip; the dev tools' Reveal map shows every one (resetView puts the fog back)
+import { setPoiReveal, poisOf, poiKnown, knownPois, poiLootBand, poiName, POI } from "../sim/pois.js"; // points of interest: a bare tile's top POI drawn once known, the known-count pip; the dev tools' Reveal map shows every one (resetView puts the fog back)
 import { poiHeading, poiTipLines } from "./poiview.js"; // the hover text's lines on a tile's POIs
 import { partyTile, plannedPos, outpostScrap, glideAt, partyMembers, clockText, reportsLive } from "../sim/parties.js";
 import { contactable, orderStatus } from "../sim/orders.js";
@@ -707,7 +707,7 @@ function siteDesc(state, id, code, fb) {
 function siteLocOf(t, code) {
   if (!(code & 64)) return t.loc;
   const top = poisOf(t)[0], def = top ? LOCATIONS[top.kind] : null;
-  return def ? { type: top.kind, name: def.name, zone: def.cat, poi: true, variant: top.v || "" } : t.loc; // variant: its franchise (sim/shops.js)
+  return def ? { type: top.kind, name: poiName(t, 0) || def.name, zone: def.cat, poi: true, variant: top.v || "" } : t.loc; // name: its franchise's or its layout's, as the panel heads it (issue #62: a farm stand's "Honey stand"); variant: its franchise (sim/shops.js)
 }
 
 function paintSite(d, px, py) {
@@ -1283,8 +1283,10 @@ export function render(state) {
     const hd = hasHives && !fb ? G.dist[id] : Infinity; // inside a known hive's land: at least 3 skulls, red on the ring
     const skulls = !fb && camera.zoom > SKULL_ZOOM ? Math.max(siteDanger(loc), hd <= HIVE.TERRITORY ? 3 : 0) : 0;
     if (named || skulls) {
-      // A bare tile's POI name gives way to a site's (pri 2.5 after the sites' 2) when the two would overlap.
-      labels.push({ text: named ? (loc.poi ? loc.name : tier === 2 ? siteLabel(state, t) : loc.name) : "", x: px, y: labelY, pri: named ? (loc.poi ? 2.5 : tier) : 3, screen: tier < 2, bold: tier === 0, size: tier === 0 ? 12 : tier === 1 ? 10 : 9, skulls, red: hd <= HIVE.RING, side: d.side });
+      // A bare tile's POI name gives way to a site's (pri 2.5 after the sites' 2) when the two would overlap; taken, it
+      // tries a line and two lines lower (issue #62: farm country's POIs side by side, named by their layouts).
+      const poiAlt = named && loc.poi ? { alt: [[px, labelY + 11], [px, labelY + 22]] } : null;
+      labels.push({ text: named ? (loc.poi ? loc.name : tier === 2 ? siteLabel(state, t) : loc.name) : "", x: px, y: labelY, pri: named ? (loc.poi ? 2.5 : tier) : 3, screen: tier < 2, bold: tier === 0, size: tier === 0 ? 12 : tier === 1 ? 10 : 9, skulls, red: hd <= HIVE.RING, side: d.side, ...poiAlt });
     }
   }
   // Ruins (drawn in the cached chunks): their names, "Ruins of Oak Hill Outpost", the same size as a town's.

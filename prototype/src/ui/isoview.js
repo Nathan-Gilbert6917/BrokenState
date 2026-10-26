@@ -1724,6 +1724,28 @@ const FURN_DRAW = {
   } },
   powderbox: { top: 11, p: () => [fbox(0.12, 0.88, 0.2, 0.8, 0, 11, (f, s, t) => (f === "top" ? mul(hex("#a03228"), 0.9) : t > 5 && t < 7 ? FURNC.amber : hex("#a03228")))] },
   drum: { top: 14, p: () => [{ cyl: [0.5, 0.5, 0.3], z0: 0, z1: 14, m: (f, s, t) => (f === "top" ? mul(FURNC.red, 0.8) : Math.floor(t) === 4 || Math.floor(t) === 9 ? mul(FURNC.red, 0.6) : FURNC.red) }] },
+  // Farms and ranches (issue #62, sim/data-furniture.js): a concrete stave silo with its domed cap, a round stock tank
+  // of galvanised steel with water in it, the squeeze chute's steel frame and head gate, a white calf hutch, a beehive's
+  // stacked supers on a stand, a vineyard's trellis (posts, wires and the vines on them), a coop's row of nest boxes.
+  silo: { top: 44, p: () => [{ cyl: [0.5, 0.5, 0.44], z0: 0, z1: 38, m: (f, s, t, X) => (f === "top" ? mul(FURNC.beige, 1.1) : Math.floor(t) % 5 < 1 ? mul(FURNC.beige, 0.72) : mul(FURNC.beige, 0.92 + n2(Math.floor(X), 0, 191) * 0.08)) }, { cyl: [0.5, 0.5, 0.36], z0: 38, z1: 41, m: flatM(mul(PAL.metal, 1.1)) }, { cyl: [0.5, 0.5, 0.22], z0: 41, z1: 43, m: flatM(mul(PAL.metal, 1.2)) }, { cyl: [0.5, 0.5, 0.08], z0: 43, z1: 44, m: flatM(PAL.metalDk) }] },
+  stocktank: { top: 8, p: () => [{ cyl: [0.5, 0.5, 0.44], z0: 0, z1: 7, m: (f, s, t) => (f === "top" ? FURNC.water : Math.floor(t) % 3 < 1 ? mul(FURNC.chrome, 0.75) : FURNC.chrome) }, { cyl: [0.5, 0.5, 0.38], z0: 7, z1: 8, m: flatM(mul(FURNC.water, 0.85)) }] },
+  chute: { top: 18, p: (o) => {
+    const ax = along(o), bar = (f, s, t) => (Math.floor(t) % 4 < 1 ? mul(FURNC.steel, 0.6) : FURNC.steel);
+    return [run(ax, 0.15, 0.22, 0, 16, bar, 0, 1), run(ax, 0.78, 0.85, 0, 16, bar, 0, 1), run(ax, 0.15, 0.85, 0, 2, flatM(PAL.metalDk), 0, 1), run(ax, 0.1, 0.9, 14, 18, flatM(mul(FURNC.gold, 0.8)), 0.4, 0.5)];
+  } },
+  calfhutch: { top: 14, p: (o) => {
+    const ax = along(o), shell = (f, s, t, X, Y) => (f === "top" ? mul(FURNC.white, 1.12) : mul(FURNC.white, 0.95 + n2(X, Y, 192) * 0.05));
+    return [run(ax, 0.15, 0.85, 0, 10, shell, 0.1, 0.9), run(ax, 0.25, 0.75, 10, 14, shell, 0.15, 0.85), run(ax, 0.35, 0.65, 0, 8, flatM(FURNC.black), 0.88, 0.92)];
+  } },
+  beehive: { top: 16, p: () => [...flegs(0.25, 0.7, 0.25, 0.7, 4, flatM(PAL.woodDk)), fbox(0.22, 0.78, 0.22, 0.78, 4, 14, (f, s, t) => (f === "top" ? mul(FURNC.white, 1.05) : Math.floor(t) % 5 < 1 ? mul(FURNC.cream, 0.7) : FURNC.cream)), fbox(0.18, 0.82, 0.18, 0.82, 14, 16, flatM(PAL.metal)), fbox(0.4, 0.6, 0.78, 0.8, 4, 5, flatM(FURNC.black))] },
+  trellis: { top: 16, p: (o) => {
+    const ax = along(o), vine = (f, s, t, X, Y) => mul(hex("#4a6a2e"), 0.8 + n2(X, Y, 193) * 0.5);
+    return [run(ax, 0.46, 0.54, 0, 16, flatM(PAL.wood), 0.45, 0.55), run(ax, 0.48, 0.52, 12, 13, flatM(FURNC.chrome), 0, 1), run(ax, 0.48, 0.52, 7, 8, flatM(FURNC.chrome), 0, 1), run(ax, 0.38, 0.62, 6, 14, vine, 0.05, 0.4), run(ax, 0.38, 0.62, 6, 14, vine, 0.6, 0.95)];
+  } },
+  nestbox: { top: 14, p: (o) => {
+    const ax = along(o), boxes = (f, s, t, X) => (f === "top" ? mul(PAL.wood, 1.1) : Math.floor(X) % 5 < 1 || Math.floor(t) === 6 ? PAL.woodDk : t > 2 && t < 6 && Math.floor(X) % 5 > 1 ? mul(FURNC.cream, 0.8) : PAL.wood);
+    return [run(ax, 0.55, 0.95, 0, 12, boxes, 0, 1), run(ax, 0.5, 0.95, 12, 14, flatM(PAL.woodDk), 0, 1)];
+  } },
   // ---------- sawmills and lumber yards (issue #53, sim/sawmilllayout.js) ----------
   // The headsaw: a band head rig on its steel bed, the wheel housing up the middle in mill blue, the blade bright down
   // its side; the edger a low yellow box with its feed rollers; a log pile three courses of bark-brown logs, their pale
