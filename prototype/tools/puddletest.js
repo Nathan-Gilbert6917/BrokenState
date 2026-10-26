@@ -181,8 +181,18 @@ console.log("The view");
   ISO.setIsoCanvas(cvs);
   WX.setWxCanvas(cvs);
   UI.initCombatUI({ clientWidth: 1600, clientHeight: 900, width: 0, height: 0, getContext: () => silent({}) });
+  // The ground pictures of a frame: since 99952d7 (issue #24, big raid maps) isoview.js flatGroundFor paints the ground
+  // in tiles of TILE_CELLS (32) cells a side, 16 px a cell, row by row, not one b.w × 16 picture; the edge skirt's tiles
+  // (battleedge.js) come before them. The run of pictures with exactly the tiles' sizes, in order.
+  const groundImgs = (b, all) => {
+    const want = [];
+    for (let y0 = 0; y0 < b.h; y0 += 32) for (let x0 = 0; x0 < b.w; x0 += 32) want.push(`${Math.min(32, b.w - x0) * 16}x${Math.min(32, b.h - y0) * 16}`);
+    const got = all.map((im) => `${im.width}x${im.height}`);
+    for (let i = 0; i + want.length <= got.length; i++) if (want.every((s, j) => got[i + j] === s)) return all.slice(i, i + want.length);
+    return [];
+  };
   let clock = 1e6;
-  // A frame: the ground pictures painted (the map's: b.w × 16 across) and its grey-blue water px.
+  // A frame: the ground pictures painted (its tiles: groundImgs) and its grey-blue water px.
   const frame = (b) => {
     st.combat = b;
     imgs = [];
@@ -190,8 +200,7 @@ console.log("The view");
     let err = "";
     try { clock += 50; UI.drawCombat(st, clock); } catch (e) { err = e.stack.split("\n").slice(0, 3).join(" "); }
     let water = 0, all = 0;
-    for (const im of imgs) {
-      if (im.width !== b.w * 16) continue;
+    for (const im of groundImgs(b, imgs)) {
       const a = im.data;
       for (let i = 0; i < a.length; i += 4) { all++; const r = a[i], g = a[i + 1], bl = a[i + 2]; if (bl > r + 8 && bl > g && bl > 50) water++; }
     }

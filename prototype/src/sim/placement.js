@@ -133,6 +133,7 @@ export const PLACE_EXTRA = [
   ["church", { rural: 0.006, highway: 0.004 }],
   ["feedstore", { rural: 0.004, highway: 0.006 }],
   ["farmstand", { highway: 0.01 }],
+  ["radiotower", { centre: 0.008, city: 0.006, suburb: 0.003, town: 0.004, highway: 0.01, scenic: 0.004 }], // issue #54: a radio tower (radiotowerlayout.js), the hills' sites aside
   ["sawmill", { scenic: 0.0025, rural: 0.0005, coast: 0.0015, highway: 0.0005, town: 0.006 }], // issue #53: forest and hills most, some by the water, the roads and in towns
 ];
 export const PLACE_KNOWN = 0.7; // the share of them known from the start in the known zone (shops.js SHOP.KNOWN)

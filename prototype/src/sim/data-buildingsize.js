@@ -106,6 +106,14 @@ export const REAL_SIZE = {
   messhall:    { w: [26, 32], d: [17, 20], storeys: [1, 1], set: "rural", planned: true },
   control:     { w: [15, 25], d: [12, 18], storeys: [1, 4], set: "rural" },
   radio:       { w: [8, 12], d: [6, 9], storeys: [1, 1], set: "rural" }, // a transmitter hut
+  // A radio tower compound (issue #54, radiotowerlayout.js): its transmitter building by plan (a row a plan); the yard,
+  // the fence and the mast outside it. planned: each plan drawn at its row's size.
+  radiotower:  { w: [7, 24], d: [4, 18], storeys: [1, 4], set: "rural", planned: true, sizes: {
+    am: { w: [14, 18], d: [10, 13], storeys: [1, 1] }, fmtv: { w: [20, 26], d: [12, 15], storeys: [1, 1] }, cell: { w: [12, 14], d: [5, 7], storeys: [1, 1] },
+    microwave: { w: [14, 17], d: [9, 11], storeys: [1, 1] }, firerep: { w: [10, 12], d: [8, 10], storeys: [1, 1] }, ham: { w: [14, 18], d: [11, 14], storeys: [1, 1] },
+    military: { w: [16, 20], d: [11, 14], storeys: [1, 1] }, ebs: { w: [16, 20], d: [12, 15], storeys: [2, 2] }, radar: { w: [12, 15], d: [10, 12], storeys: [1, 1] },
+    rooftop: { w: [16, 22], d: [14, 18], storeys: [3, 4] }, broadcast: { w: [18, 24], d: [13, 16], storeys: [2, 2] }, utility: { w: [10, 13], d: [9, 11], storeys: [1, 1] },
+  } },
   terminal:    { w: [80, 90], d: [40, 44], storeys: [1, 2], set: "rural", planned: true },
   // #25's military bases, air bases, airports and prisons (militarylayout.js): planned at these sizes by their own plans
   hq:          { w: [26, 32], d: [17, 20], storeys: [1, 3], set: "rural", planned: true },
@@ -126,11 +134,16 @@ export const REAL_SIZE = {
   station:     { w: [22, 26], d: [15, 17], storeys: [2, 2], set: "town", planned: true },
   // #29's hotels (hotellayout.js HOTEL.SIZE reads the kinds' rows): planned at these sizes, their storeys built by the
   // tall rule (a city tower hotel's 8–10 storeys: 4 floors built, the stairs above blocked); "hotel" the archetype's span
-  hotel:         { w: [21, 90], d: [19, 23], storeys: [2, 10], set: "town", planned: true },
+  hotel:         { w: [21, 92], d: [19, 56], storeys: [2, 10], set: "town", planned: true }, // d to 56: a shaped variant's (issue #50)
+  // sizes: a shaped variant's bounding box (issue #50: a new save's L, T, U, E, crescent, podium and courtyard
+  // footprints, hotellayout.js SHAPES; an older save's hotel the rectangle its row gives)
   hotelinn:      { w: [21, 25], d: [19, 19], storeys: [2, 3], set: "rural", planned: true },
-  hotelbusiness: { w: [40, 60], d: [21, 23], storeys: [4, 6], set: "town", planned: true },
-  hotelresort:   { w: [64, 90], d: [21, 23], storeys: [2, 4], set: "rural", planned: true },
-  hoteltower:    { w: [36, 44], d: [21, 23], storeys: [8, 10], set: "city", planned: true },
+  hotelbusiness: { w: [40, 60], d: [21, 23], storeys: [4, 6], set: "town", planned: true,
+    sizes: { "biz-highway": { w: [48, 54], d: [40, 46], storeys: [4, 5] }, "biz-conference": { w: [52, 60], d: [38, 44], storeys: [5, 6] } } },
+  hotelresort:   { w: [64, 90], d: [21, 23], storeys: [2, 4], set: "rural", planned: true,
+    sizes: { "res-family": { w: [76, 88], d: [44, 52], storeys: [3, 4] }, "res-golf": { w: [86, 90], d: [42, 48], storeys: [2, 4] }, "res-beach": { w: [86, 92], d: [26, 30], storeys: [3, 4] } } },
+  hoteltower:    { w: [36, 44], d: [21, 23], storeys: [8, 10], set: "city", planned: true,
+    sizes: { "tow-podium": { w: [50, 58], d: [35, 36] }, "tow-twin": { w: [60, 66], d: [36, 37] }, "tow-grand": { w: [54, 58], d: [54, 56], storeys: [8, 9] } } },
   // #36's named civic and medical plans (civicvariants.js VARIANTS), keyed "<kind>.<plan id>": each drawn at its row's
   // size by its own plan (civicvariants.js SIZE reads these; realScale leaves a named plan as it is, its floors past
   // the tall rule's not built). Each kind's "general" plan, #14's or #15's, is the kind's own row above, through realScale.
