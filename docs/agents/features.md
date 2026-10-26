@@ -166,6 +166,7 @@ Detail: [combat.md](../features/combat.md).
 - **Walking on the battle map**: moves animated cell by cell at each mover's pace [ui/moveanim, ui/combat, ui/figures] `tools/moveanimtest.js`. [details](../features/combat.md#walking-on-the-battle-map)
 - **Lost pictures drawn again**: every cached picture redrawn after a GPU context loss [ui/pictures]. [details](../features/combat.md#lost-pictures-drawn-again)
 - **Battle map sizes** by context (24×18 to 48×34; raids 32×24 to 56×42) with anti-slog endings [battlesize, worldcfg] `tools/raidshot.cjs`. [details](../features/combat.md#battle-map-sizes)
+- **Pathing on the biggest maps**: the dead's field patched after a door is hit; a 500 × 500 turn with 100 dead about 1 s [combat] `tools/fieldpatchtest.js` `tools/perfbudgettest.js`. [details](../features/combat.md#pathing-cost-on-the-biggest-maps)
 - **A raid without the side panel**: full-screen raid map with a top strip, cards and a log window [ui/combat, ui/logwindow] `tools/raidscreentest.js`. [details](../features/combat.md#a-raid-without-the-side-panel)
 - **Before you go in**: the raid plan window (scout, wait for night, kit, side to enter, leave) [raidplan, ui/raidplan]. [details](../features/combat.md#before-you-go-in-the-raid-plan)
 - **The building picked before the raid map**: a card picks the building before the map is made, the autopilot by dice [poiraid, parties, combat] `tools/buildingpicktest.js`. [details](../features/combat.md#the-building-picked-before-the-raid-map)
