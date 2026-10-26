@@ -28,6 +28,8 @@
 //   holding    a holding tank: a steel toilet and benches (pews bolted down) along the walls.
 //   visit      visitation: a row of booths across the room (glass, a phone each), chairs either side.
 //   laundry    washers and dryers along the walls, a table to fold on.
+//   showers    a housing unit's showers: stalls along the walls, a toilet and a sink.
+//   cubicles   a dormitory of cubicles: bunks two to a bay with lockers between (prison.js HOUSING cubicles).
 //   industries prison industries (the licence-plate shop, the print shop): workbenches, tool chests, a machine.
 //   parmory    the armory: gun racks, ammo cabinets, lockers of riot gear.
 //   ward       the infirmary's ward: hospital beds against the walls with a medicine cabinet.
@@ -179,6 +181,18 @@ export const PRISON_STYLES = {
       if (y + 1 <= c.y1) L.place("chair", [[x, y + 1]], { face: "n" });
     }
     if (!n) L.need("visitbooth");
+  },
+  showers(L) { // a block's showers: stalls along the walls, a toilet and a sink in a corner
+    for (let i = 0; i < 6; i++) if (!L.wall("shower", { prefer: "corner" })) break;
+    L.wall("steeltoilet", { prefer: "corner" });
+    L.wall("sink", { prefer: "corner" });
+  },
+  cubicles(L) { // a dormitory of cubicles: two bunks to a bay, lockers standing as the partitions
+    const c = L.c;
+    for (let y = c.y0; y + 1 <= c.y1; y += 4) for (let x = c.x0; x + 2 <= c.x1; x += 4) {
+      L.place("bunk", [[x, y], [x, y + 1]], { face: "s" }); L.place("bunk", [[x + 2, y], [x + 2, y + 1]], { face: "s" });
+      if (L.boxes().length < L.target()) L.place("locker", [[x + 1, y]], { face: "s" });
+    }
   },
   laundry(L) {
     const ws = L.walls();

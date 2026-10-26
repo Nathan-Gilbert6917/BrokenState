@@ -119,7 +119,7 @@ for (const kind of ["jail", "state", "max"]) {
     const reached = (seen, a) => !!a && roomCellsOf(a).some(([x, y]) => seen[I(m, x, y)]);
     const fromCtl = ctl ? flood(m, ctl.f || 0, roomCellsOf(ctl), indoor) : null;
     for (const u of P.units) {
-      const pk = m.rooms.find((a) => a.prison === (u.dorm ? "dorm" : "picket") && a.unitId === u.unitId && !(a.f > 0));
+      const pk = m.rooms.find((a) => a.prison === "picket" && a.unitId === u.unitId && !(a.f > 0)); // its officers' station (a dormitory's too)
       if (kind === "jail" && ctl && ctl.f > 0) { // a jail's control room is upstairs: its floor below joined instead (the main building's corridor)
         const main = m.rooms.find((a) => a.role === "corridor" && a.house === P.control && !(a.f > 0));
         const fromMain = main ? flood(m, 0, roomCellsOf(main), indoor) : null;
@@ -319,7 +319,7 @@ console.log("The turn at the biggest size: a maximum-security penitentiary with 
 console.log("Scenes, holders, an older save, the jail");
 {
   const seen = new Set();
-  for (let s = 0; s < (QUICK ? 10 : 24); s++) {
+  for (let s = 0; s < (QUICK ? 16 : 24); s++) {
     const w = world(900 + (s % 3));
     const t = w.tiles.find((q) => q.loc && q.loc.type === "prison");
     if (!t) continue;

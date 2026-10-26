@@ -47,7 +47,7 @@ import { Rng } from "./rng.js";
 import { realFoot } from "./data-buildingsize.js"; // the buildings' footprints (#24's REAL_SIZE rows, a metre a cell)
 import { hash01 } from "./skills.js";
 import { assemble, BMAP, DOOR_KINDS } from "./buildingmaps.js"; // call-time only (buildingmaps.js builds the complexes through here)
-import { placeCar, placeVehicle } from "./combat.js";
+import { placeCar, placeVehicle, CELL } from "./combat.js";
 import { mapCap } from "./battlesize.js"; // the per-site map cap (#24): a prison's 400, a jail's 130
 import { compoundGrid, placeBuilding, link, guard, parkingLot, compoundResult, compoundVehicle, orient } from "./compound.js"; // the multi-building map shared with #28 and #30
 
@@ -57,11 +57,10 @@ export const PRISON = {
   CAP: 400,
   KINDS: {
     jail:  { name: "County jail", map: [[110, 130], [95, 110]], beds: [50, 200], units: [2, 2] },
-    state: { name: "State prison", map: [[250, 350], null], beds: [500, 1500], units: [4, 6], tower: 60, gap: 4 },
-    max:   { name: "Maximum-security penitentiary", map: [[300, 400], null], beds: [500, 1500], units: [6, 8], tower: 40, gap: 4 },
+    state: { name: "State prison", map: [[250, 350], null], beds: [500, 2000], units: [4, 6], tower: 60, gap: 4 },
+    max:   { name: "Maximum-security penitentiary", map: [[300, 400], null], beds: [500, 2000], units: [6, 8], tower: 40, gap: 4 },
   },
   MAX_SHARE: 0.35,            // a prison site is a maximum-security penitentiary on these dice (else a state prison)
-  DORM: 0.3,                  // a state prison's housing unit is a dormitory of bunks on these dice (else cells)
   DOORS: { opened: 0.3, shut: 0.45, locked: 0.25 }, // a block's cell doors: open, shut, locked from central control
   HOLES: [0, 2],              // holes in a state prison's fence (where some got out): each through both lines
   DENSE: 4,                   // the housing units' rooms weigh this much more for the dead (placeInterior)
@@ -91,70 +90,317 @@ const spec = (bw, bh, program, o = {}) => ({ bw, bh, front: { width: 1 }, ground
 
 // A building's footprint from its REAL_SIZE row (data-buildingsize.js, #24): [bw, bh] in cells.
 const foot = (rng, key) => { const F = realFoot(rng, key); return F ? [F.bw, F.bh] : [20, 14]; };
-// A housing unit. o: { len, day, tiers, picket: "left" | "right", unitId, kind: "cells" | "dorm", single, dk, name, yard }
+// The named plans of each prison building (the user's request for a dozen variants of every building, issue #32's
+// rule; prisontest.js counts them): { id, name, ...its choices }. A building takes its plan by o.layout (pinned: the
+// option's layout) or its own dice (pickPlan), from the plans its use allows (o.only).
+export const PRISON_PLANS = {};
+/** @param {any} rng @param {string | any[]} type @param {any} o */
+export function pickPlan(rng, type, o = {}) {
+  const all = Array.isArray(type) ? type : PRISON_PLANS[type] || [];
+  const ok = all.filter((v) => !o.only || o.only(v));
+  return (o.layout && all.find((v) => v.id === o.layout)) || ok[Math.floor(rng.next() * ok.length)] || all[0];
+}
+// A housing unit's plans: tiers (2, or 3), where its officers' station stands (picket: at one end, at both, in the
+// middle between two half blocks), its core (cells both sides of the day room, cells one side, a dormitory of bunks,
+// a dormitory of cubicles), and a room of its own across the far end or by the station (extra: showers, a classroom,
+// intake, the unit's kitchen, a laundry); single: single cells (an honor block).
+PRISON_PLANS.housing = [
+  { id: "twotier", name: "Two-tier block" },
+  { id: "threetier", name: "Three-tier block (a gun gallery at the top tier's end)", tiers: 3, gallery: true },
+  { id: "splitpod", name: "Split pod (two half blocks either side of a pod control)", picket: "split" },
+  { id: "singleloaded", name: "Single-loaded block (one row of cells facing the day room)", core: "single", side: "restroom" },
+  { id: "doublepicket", name: "Block with a station at each end (a riot-gear closet at the far one)", picket: "both", side: "closet" },
+  { id: "showers", name: "Block with its showers across the end", extra: "showers" },
+  { id: "programs", name: "Programs block (a classroom at the end)", extra: "classroom" },
+  { id: "intake", name: "Intake block (receiving by the station)", extra: "intake", near: true },
+  { id: "dorm", name: "Open-bay dormitory", core: "dorm" },
+  { id: "cubicles", name: "Cubicle dormitory", core: "cubicles" },
+  { id: "honor", name: "Honor block (single cells, a unit kitchen)", single: true, extra: "kitchen" },
+  { id: "laundry", name: "Block with its own laundry", extra: "laundry" },
+];
+const cellsPlan = (v) => !v.core || v.core === "single"; // a plan with cells (death row, segregation and a jail's pods take only these)
+// A housing unit. o: { len, day, tiers, picket: "left" | "right" (the side of the station toward the corridor),
+// unitId, kind: "cells" | "dorm" (a wish: a dorm picks a dormitory plan), single, dk, name, yard, layout, only }.
 export function housingUnit(rng, o) {
-  const day = o.day ?? rng.int(7, 10), tiers = o.tiers ?? 2, unitId = o.unitId ?? 0;
+  const v = pickPlan(rng, "housing", { layout: o.layout, only: (q) => (o.kind === "dorm" ? !cellsPlan(q) : o.kind === "cells" || o.single ? cellsPlan(q) : true) && (!o.only || o.only(q)) });
+  const day = o.day ?? rng.int(7, 10), unitId = o.unitId ?? 0;
+  const tiers = o.tiers === 1 ? 1 : v.tiers || o.tiers || 2;
   const left = o.picket !== "right";
-  const tier = (face, f) => ({ role: "tier", prison: "tier", face, unitId, name: `${face === "n" ? "Back" : "Front"} ${f ? "upper" : "lower"} tier`, ...(o.dk ? { dk: o.dk } : {}), ...(o.single ? { single: true } : {}), dense: PRISON.DENSE });
-  const core = (f) => o.kind === "dorm"
-    ? { role: "pdorm", prison: "dorm", unitId, name: f ? "Upper dormitory" : "Dormitory", dense: PRISON.DENSE }
-    : { split: "y", parts: [[5, tier("s", f)], ["*", f ? { role: "well", prison: "dayroom", well: true, unitId } : { role: "pdayroom", prison: "dayroom", unitId, name: "Day room", dense: PRISON.DENSE }], [5, tier("n", f)]] };
-  const picket = (f) => [5, { role: "picket", prison: "picket", unitId, hub: true, ...(f ? { name: "Upper officers' station" } : { entry: true }) }];
-  const plan = (f) => ({ split: "x", parts: left ? [picket(f), ["*", core(f)]] : [["*", core(f)], picket(f)] });
-  const bh = o.kind === "dorm" ? rng.int(18, 22) : 2 + 5 + 1 + day + 1 + 5;
+  const single = !!(o.single || v.single);
+  const core = v.core || "double", dorm = core === "dorm" || core === "cubicles";
+  const tier = (face, f) => ({ role: "tier", prison: "tier", face, unitId, name: `${face === "n" ? "Back" : "Front"} ${["lower", "upper", "top"][f] || "upper"} tier`, ...(o.dk ? { dk: o.dk } : {}), ...(single ? { single: true } : {}), dense: PRISON.DENSE });
+  const day0 = (f) => (f ? { role: "well", prison: "dayroom", well: true, unitId } : { role: "pdayroom", prison: "dayroom", unitId, name: "Day room", dense: PRISON.DENSE });
+  const coreOf = (f) => dorm ? { role: core === "cubicles" ? "pcubicles" : "pdorm", prison: core === "cubicles" ? "cubicles" : "dorm", unitId, name: `${core === "cubicles" ? "Cubicles" : "Dormitory"}${f ? " (upstairs)" : ""}`, dense: PRISON.DENSE }
+    : core === "single" ? { split: "y", parts: [["*", day0(f)], [5, tier("n", f)]] }
+    : { split: "y", parts: [[5, tier("s", f)], ["*", day0(f)], [5, tier("n", f)]] };
+  // An officers' station (the prison mark "picket": openTiers gives the tiers their doors into it): the top tier's a gun
+  // gallery (three tiers), a split pod's middle one the pod control; on the ground a room off its end (side).
+  const picket = (f, n = "", o = {}) => {
+    const role = o.role || (v.gallery && f === tiers - 1 && f > 0 ? "pgallery" : "picket");
+    const leaf = { role, prison: "picket", unitId, hub: true, ...(o.name ? { name: o.name } : role === "pgallery" ? {} : f ? { name: `Upper officers' station${n}` } : n ? { name: `Officers' station${n}` } : { entry: true }) };
+    const side = !f && o.side ? { restroom: [3, { role: "restroom", name: "Officers' restroom" }], closet: [3, { role: "storage", name: "Riot-gear closet", type: "pcontrol", lock: ["door", 0.5] }] }[o.side] : null;
+    return [5, side ? { split: "y", parts: [side, ["*", leaf]] } : leaf];
+  };
+  const EXTRA = { showers: { role: "pshower", prison: "showers", name: "Showers" }, classroom: { role: "classroom", civic: "classroom", name: "Unit classroom" },
+    intake: { role: "booking", prison: "booking", name: "Receiving" }, kitchen: { role: "pkitchen", prison: "pkitchen", name: "Unit kitchen" }, laundry: { role: "plaundry", prison: "laundry", name: "Unit laundry" } };
+  // Upstairs over it: the unit's store (at the far end, its door at a tier's walkway), or by the station a second
+  // station (the tiers' way to the stairs).
+  const extra = (f) => (v.extra ? [6, !f ? { ...EXTRA[v.extra], unitId } : v.near ? { role: "picket", prison: "picket", unitId, hub: true, name: "Upper control room" } : { role: "storage", name: "Unit store", type: "pcontrol" }] : null);
+  const plan = (f) => {
+    const c = ["*", coreOf(f)], e = extra(f);
+    let parts;
+    const near = picket(f, "", { side: v.picket ? null : v.side });
+    if (v.picket === "both") parts = left ? [near, c, picket(f, " (far end)", { side: v.side })] : [picket(f, " (far end)", { side: v.side }), c, near];
+    else if (v.picket === "split") { const pod = picket(f, "", { role: "ppodctl", name: f ? "Upper pod control" : "Pod control" }); parts = left ? [near, c, pod, ["*", coreOf(f)]] : [["*", coreOf(f)], pod, c, near]; }
+    else parts = left ? [near, ...(e && v.near ? [e] : []), c] : [c, ...(e && v.near ? [e] : []), near];
+    if (e && !v.near) { if (left) parts.push(e); else parts.unshift(e); }
+    return { split: "x", parts };
+  };
+  const bh = dorm ? rng.int(18, 22) : core === "single" ? 2 + day + 3 + 1 + 5 : 2 + 5 + 1 + day + 1 + 5;
   return spec(o.len, bh, plan(0), {
     storeys: tiers, stairs: { roles: ["picket"], n: 1, len: 2 }, upper: tiers > 1 ? (f) => plan(f) : null,
-    exits: o.yard ? [{ side: left ? "right" : "left", roles: [o.kind === "dorm" ? "pdorm" : "pdayroom"], chance: 1, lock: 0.3, name: "Yard door" }] : [],
-    unit: { unitId, kind: o.kind || "cells", left, tiers, name: o.name },
+    exits: o.yard ? [{ side: left ? "right" : "left", roles: [dorm ? (core === "cubicles" ? "pcubicles" : "pdorm") : "pdayroom", "pshower", "classroom", "booking", "pkitchen", "plaundry", "picket"], chance: 1, lock: 0.3, name: "Yard door" }] : [],
+    unit: { unitId, kind: dorm ? "dorm" : "cells", left, tiers, name: o.name, dk: o.dk || null, plan: v.id },
+    vid: v.id, vname: v.name,
   });
 }
 // The main corridor (the telephone pole): one long hall, 3 wide.
 const spine = (len) => spec(5, len, { role: "mainhall", name: "Main corridor", entry: true });
-// Central control: the control room, its lobby, receiving and the inmates' property, the shift office.
-function centralControl(rng) {
-  const [bw, bh] = foot(rng, "pcontrol");
-  return spec(bw, bh, { split: "x", parts: leaves([["*", { role: "pcontrol", prison: "control", panels: 4, name: "Central control" }], [6, { role: "lobby", entry: true, name: "Control lobby" }], [7, { role: "property", prison: "property", name: "Receiving and property", lock: ["door", 0.4] }], ["*", { role: "office", prison: "office", name: "Shift office" }]]) });
+// The other buildings' plans: each a { id, name, plan(rng, bw, bh) } (its program; o: the spec's other fields), the
+// first today's. Each has its own rooms (#32's plan signature: the rooms' roles and the doors between them).
+const col = (list) => ({ split: "x", parts: leaves(list) }), band = (list) => ({ split: "y", parts: leaves(list) });
+const P_ = {
+  control: (name = "Central control", panels = 4) => ({ role: "pcontrol", prison: "control", panels, name }),
+  lobby: (name) => ({ role: "lobby", entry: true, name }),
+  property: (name = "Receiving and property") => ({ role: "property", prison: "property", name, lock: ["door", 0.4] }),
+  office: (name, o = {}) => ({ role: "office", prison: "office", name, ...o }),
+  store: (name, type, o = {}) => ({ role: "storage", name, type, ...o }),
+  lockers: (name = "Officers' lockers") => ({ role: "lockerroom", type: "lockers", name }),
+  booking: (name = "Booking") => ({ role: "booking", prison: "booking", name }),
+  holding: (name = "Holding tank") => ({ role: "holding", prison: "holding", name }),
+  visit: (name = "Visitation") => ({ role: "visitation", prison: "visit", name }),
+  ward: (name = "Infirmary ward") => ({ role: "pward", prison: "ward", name }),
+  kitchen: (name = "Prison kitchen") => ({ role: "pkitchen", prison: "pkitchen", name }),
+  stores: (name = "Food warehouse") => ({ role: "pstores", prison: "pstores", name, lock: ["door", 0.4] }),
+  shop: (name) => ({ role: "pshop", prison: "industries", name }),
+  laundry: (name = "Laundry") => ({ role: "plaundry", prison: "laundry", name }),
+  armory: (name = "Armory", o = {}) => ({ role: "parmory", prison: "parmory", name, ...o }),
+  classroom: (name = "Classroom") => ({ role: "classroom", civic: "classroom", name }),
+  library: (name = "Library") => ({ role: "plibrary", civic: "library", name }),
+  gate: (name, entry) => ({ role: "gatepost", prison: "gate", name, ...(entry ? { entry: true } : {}) }),
+};
+const R = (role, name, o = {}) => ({ role, ...(name ? { name } : {}), ...o });
+// Central control (a full-depth lobby column in every plan: the main corridor's secure corridor joins it from either end).
+PRISON_PLANS.control = [
+  { id: "standard", name: "Control, lobby, receiving and the shift office", plan: () => col([["*", P_.control()], [6, P_.lobby("Control lobby")], [7, P_.property()], ["*", P_.office("Shift office")]]) },
+  { id: "radio", name: "Control with a radio room and a key room", plan: () => col([["*", P_.control()], [6, P_.lobby("Control lobby")], ["*", band([["*", P_.office("Radio room")], [4, P_.store("Key room", "pcontrol", { lock: ["door", 0.6] })]])], [7, P_.property()]]) },
+  { id: "lockers", name: "Control with the officers' lockers", plan: () => col([["*", P_.control()], [6, P_.lobby("Control lobby")], ["*", P_.lockers()], ["*", P_.office("Shift office")]]) },
+  { id: "breakroom", name: "Control with a break room", plan: () => col([["*", P_.control()], [6, P_.lobby("Control lobby")], [7, P_.property()], ["*", band([["*", "breakroom"], [3, "restroom"]])]]) },
+  { id: "intake", name: "Control with booking and a holding cell", plan: () => col([["*", P_.control()], [6, P_.lobby("Control lobby")], ["*", P_.booking("Receiving")], [6, P_.holding("Holding cell")]]) },
+  { id: "visits", name: "Control with the visiting room", plan: () => col([["*", P_.control()], [6, P_.lobby("Control lobby")], ["*", P_.visit("Visiting room")], [6, P_.office("Visits officer")]]) },
+  { id: "compact", name: "Compact control (the room and its lobby)", plan: () => col([[6, P_.lobby("Control lobby")], ["*", P_.control()]]) },
+  { id: "equipment", name: "Control with an equipment room behind", plan: () => col([["*", band([["*", P_.control()], [4, P_.store("Equipment room", "pcontrol")]])], [6, P_.lobby("Control lobby")], [7, P_.property()]]) },
+  { id: "staff", name: "Control with lockers and a restroom", plan: () => col([["*", P_.control()], [6, P_.lobby("Control lobby")], ["*", P_.lockers()], [4, "restroom"]]) },
+  { id: "armory", name: "Control with its own armory", plan: () => col([["*", P_.control()], [6, P_.lobby("Control lobby")], ["*", P_.armory("Control armory", { lock: ["vault", 0.7] })]]) },
+  { id: "mail", name: "Control with the mail room and the property store", plan: () => col([["*", P_.control()], [6, P_.lobby("Control lobby")], ["*", P_.office("Mail room")], ["*", P_.store("Inmates' property store", "property")]]) },
+  { id: "records", name: "Control with the records office", plan: () => col([["*", P_.office("Records", { boxLock: ["evidence", 0.3] })], [6, P_.lobby("Control lobby")], ["*", P_.control()], [4, "restroom"]]) },
+];
+// The chow hall: a hall (or two) and the kitchen with its stores behind or beside it; the loading dock at the back.
+const chowBack = (list) => [8, col(list)];
+PRISON_PLANS.chow = [
+  { id: "standard", name: "Hall, kitchen, food warehouse and dry store", plan: () => band([["*", R("chow", undefined, { prison: "chow", entry: true })], chowBack([["*", P_.kitchen()], [10, P_.stores()], [5, P_.store("Dry store", "pstores")]])]) },
+  { id: "bakery", name: "Hall with a bakery", plan: () => band([["*", R("chow", undefined, { prison: "chow", entry: true })], chowBack([["*", P_.kitchen()], [8, P_.kitchen("Bakery")], [10, P_.stores()]])]) },
+  { id: "staffmess", name: "Hall and the officers' mess", plan: () => band([["*", col([["*", R("chow", undefined, { prison: "chow", entry: true })], [9, R("breakroom", "Officers' mess")]])], chowBack([["*", P_.kitchen()], [10, P_.stores()], [5, P_.store("Dry store", "pstores")]])]) },
+  { id: "twohalls", name: "Two halls round one kitchen", plan: () => band([["*", col([["*", R("chow", "North hall", { prison: "chow", entry: true })], ["*", R("chow", "South hall", { prison: "chow" })]])], chowBack([["*", P_.kitchen()], [10, P_.stores()], [5, P_.store("Dry store", "pstores")]])]) },
+  { id: "servery", name: "Hall with a serving line", plan: () => band([["*", R("chow", undefined, { prison: "chow", entry: true })], [3, R("corridor", "Serving line")], chowBack([["*", P_.kitchen()], [10, P_.stores()], [5, P_.store("Dry store", "pstores")]])]) },
+  { id: "washroom", name: "Hall with the inmates' washroom", plan: () => band([["*", col([["*", R("chow", undefined, { prison: "chow", entry: true })], [4, "restroom"]])], chowBack([["*", P_.kitchen()], [10, P_.stores()], [5, P_.store("Dry store", "pstores")]])]) },
+  { id: "office", name: "Hall with the food service office", plan: () => band([["*", R("chow", undefined, { prison: "chow", entry: true })], chowBack([["*", P_.kitchen()], [10, P_.stores()], [5, P_.store("Walk-in cooler", "pstores")], [5, P_.office("Food service office")]])]) },
+  { id: "sidekitchen", name: "Hall with the kitchen beside it", plan: () => col([["*", R("chow", undefined, { prison: "chow", entry: true })], [12, band([["*", P_.kitchen()], [6, P_.stores()], [5, P_.lockers("Kitchen workers' lockers")]])]]) },
+  { id: "commissary", name: "Hall with the commissary", plan: () => band([["*", R("chow", undefined, { prison: "chow", entry: true })], chowBack([["*", P_.kitchen()], [10, P_.stores()], [8, R("pcommissary", "Commissary", { prison: "pstores", lock: ["door", 0.5] })]])]) },
+  { id: "grill", name: "Hall, kitchen and a staff restroom", plan: () => band([["*", R("chow", undefined, { prison: "chow", entry: true })], chowBack([["*", P_.kitchen()], [10, P_.stores()], [4, "restroom"]])]) },
+  { id: "butcher", name: "Hall with a butcher's room", plan: () => band([["*", R("chow", undefined, { prison: "chow", entry: true })], chowBack([["*", P_.kitchen()], [6, P_.kitchen("Butcher's room")], [10, P_.stores()], [5, P_.store("Dry store", "pstores")]])]) },
+  { id: "small", name: "Small hall and kitchen", plan: () => band([["*", R("chow", undefined, { prison: "chow", entry: true })], chowBack([["*", P_.kitchen()], [8, P_.store("Dry store", "pstores")]])]) },
+];
+// The infirmary: front rooms off a corridor, back rooms behind it (the psych unit's cells in most).
+const psych = (name = "Psych unit", face = "n") => R("psych", name, { prison: "tier", face, single: true });
+const infirm = (front, back) => () => corridorPlan(front, back, 6, 2);
+const INF_FRONT = [["*", P_.ward()], [5, P_.lobby("Infirmary desk")], [5, "exam"], [5, R("pharmroom", undefined, { lock: ["door", 0.6], boxLock: ["drugs", 0.5] })]];
+const pharm = () => R("pharmroom", undefined, { lock: ["door", 0.6], boxLock: ["drugs", 0.5] });
+PRISON_PLANS.infirmary = [
+  { id: "standard", name: "Ward, desk, exam room and pharmacy; the psych unit behind", plan: infirm(INF_FRONT, [["*", psych()], [5, P_.office("Doctor's office")], [4, P_.store("Medical stores", "clinic")]]) },
+  { id: "dental", name: "Infirmary with a dental clinic", plan: infirm(INF_FRONT, [["*", psych()], [6, R("exam", "Dental clinic")], [4, P_.store("Medical stores", "clinic")]]) },
+  { id: "medical", name: "Medical ward (no psych unit)", plan: infirm(INF_FRONT, [["*", P_.ward("Long-term ward")], [5, P_.office("Doctor's office")], [4, P_.store("Medical stores", "clinic")]]) },
+  { id: "isolation", name: "Infirmary with isolation rooms", plan: infirm(INF_FRONT, [["*", psych()], ["*", P_.ward("Isolation rooms")], [4, P_.store("Medical stores", "clinic")]]) },
+  { id: "xray", name: "Infirmary with an X-ray room", plan: infirm([["*", P_.ward()], [5, P_.lobby("Infirmary desk")], [5, "exam"], [5, R("exam", "X-ray room")]], [["*", psych()], [5, pharm()], [5, P_.office("Doctor's office")]]) },
+  { id: "nursing", name: "Infirmary with the nurses' room", plan: infirm(INF_FRONT, [["*", psych()], [5, R("breakroom", "Nurses' room")], [4, "restroom"]]) },
+  { id: "hospice", name: "Hospice (two wards)", plan: infirm([["*", P_.ward()], [5, P_.lobby("Infirmary desk")], [5, pharm()]], [["*", P_.ward("Hospice")], [5, P_.office("Doctor's office")], [4, P_.store("Medical stores", "clinic")]]) },
+  { id: "waiting", name: "Infirmary with a waiting cell", plan: infirm([["*", P_.ward()], [5, P_.lobby("Infirmary desk")], [6, P_.holding("Waiting cell")], [5, "exam"]], [["*", psych()], [5, pharm()], [4, P_.store("Medical stores", "clinic")]]) },
+  { id: "observation", name: "Mental health unit (observation cells both sides, a sick bay)", plan: infirm([["*", psych("Observation cells", "s")], [5, P_.lobby("Infirmary desk")], [5, "exam"], [6, P_.ward("Sick bay")]], [["*", psych()], [5, P_.office("Psychologist's office")], [4, P_.store("Medical stores", "clinic")]]) },
+  { id: "lab", name: "Infirmary with a lab and a restroom", plan: infirm(INF_FRONT, [["*", psych()], [5, P_.office("Doctor's office")], [5, P_.store("Lab", "clinic")], [4, "restroom"]]) },
+  { id: "counselling", name: "Counselling at the front, the psych unit and a sick bay behind", plan: infirm([["*", P_.office("Counselling")], [5, P_.lobby("Infirmary desk")], [5, "exam"], [5, pharm()]], [["*", psych()], [6, P_.ward("Sick bay")], [4, "restroom"]]) },
+  { id: "trauma", name: "Infirmary with a trauma room and the staff lockers", plan: infirm([["*", P_.ward()], [5, P_.lobby("Infirmary desk")], ["*", R("exam", "Trauma room")], [5, pharm()]], [["*", psych()], [5, P_.office("Doctor's office")], [4, P_.store("Medical stores", "clinic")], [5, P_.lockers("Staff lockers")]]) },
+];
+// The chapel: the narthex, the nave, the rooms behind it.
+const narthex = [3, R("foyer", "Narthex", { entry: true, type: "chapel", civic: "narthex" })], nave = (name = "Chapel") => R("nave", name, { civic: "nave" });
+const vestry = () => R("vestry", undefined, { civic: "vestry" });
+PRISON_PLANS.chapel = [
+  { id: "standard", name: "Chapel with a vestry and the chaplain's store", plan: () => band([narthex, ["*", nave()], [4, col([[4, vestry()], ["*", P_.store("Chaplain's store", "chapel")]])]]) },
+  { id: "office", name: "Chapel with the chaplain's office", plan: () => band([narthex, ["*", nave()], [4, col([[4, vestry()], ["*", P_.office("Chaplain's office")]])]]) },
+  { id: "multifaith", name: "Chapel and a multi-faith room", plan: () => band([narthex, ["*", nave()], [6, nave("Multi-faith room")], [4, col([[4, vestry()], ["*", P_.store("Chaplain's store", "chapel")]])]]) },
+  { id: "study", name: "Chapel with a study room", plan: () => band([narthex, ["*", nave()], [5, P_.classroom("Study room")], [4, col([[4, vestry()], ["*", P_.store("Chaplain's store", "chapel")]])]]) },
+  { id: "plain", name: "Plain chapel (the nave alone)", plan: () => band([narthex, ["*", nave()]]) },
+  { id: "side", name: "Chapel with its vestry and restroom along the side", plan: () => col([["*", band([narthex, ["*", nave()]])], [5, band([["*", vestry()], [4, "restroom"]])]]) },
+  { id: "library", name: "Chapel with a religious library", plan: () => band([narthex, ["*", nave()], [5, P_.library("Religious library")]]) },
+  { id: "counsel", name: "Chapel with the chaplains' offices", plan: () => band([narthex, ["*", nave()], [4, col([["*", P_.office("Chaplain")], ["*", P_.office("Counsellor")]])]]) },
+  { id: "fellowship", name: "Chapel with a fellowship room", plan: () => band([narthex, ["*", nave()], [5, R("breakroom", "Fellowship room")]]) },
+  { id: "vestry", name: "Chapel with a vestry", plan: () => band([narthex, ["*", nave()], [4, vestry()]]) },
+  { id: "store", name: "Chapel with a store", plan: () => band([narthex, ["*", nave()], [4, P_.store("Chaplain's store", "chapel")]]) },
+  { id: "full", name: "Chapel with a vestry, an office and a restroom", plan: () => band([narthex, ["*", nave()], [4, col([[4, vestry()], ["*", P_.office("Chaplain's office")], [3, "restroom"]])]]) },
+];
+// Library and education: a corridor between the front rooms and the back.
+const edu = (front, back) => () => corridorPlan(front, back, 6, 2);
+const EDU_FRONT = [["*", P_.library()], [5, P_.lobby("Education lobby")], ["*", P_.classroom()]];
+PRISON_PLANS.education = [
+  { id: "standard", name: "Library, classrooms and the education office", plan: edu(EDU_FRONT, [["*", P_.classroom()], ["*", P_.office("Education office")], [3, "restroom"]]) },
+  { id: "computers", name: "Library and a computer lab", plan: edu(EDU_FRONT, [["*", P_.classroom()], ["*", P_.classroom("Computer lab")], [3, "restroom"]]) },
+  { id: "vocational", name: "Library, a classroom and a vocational shop", plan: edu(EDU_FRONT, [["*", P_.shop("Vocational shop")], ["*", P_.office("Education office")], [3, "restroom"]]) },
+  { id: "school", name: "School block (classrooms, no library)", plan: edu([["*", P_.classroom("Testing room")], [5, P_.lobby("Education lobby")], ["*", P_.classroom()]], [["*", P_.classroom()], ["*", P_.office("Education office")], [3, "restroom"]]) },
+  { id: "library", name: "Library block (the main and the law library)", plan: edu([["*", P_.library()], [5, P_.lobby("Education lobby")], ["*", P_.library("Law library")]], [["*", P_.store("Book store", "office")], ["*", P_.office("Librarian")], [3, "restroom"]]) },
+  { id: "classrooms", name: "Classrooms along both sides", plan: edu([["*", P_.classroom()], [5, P_.lobby("Education lobby")], ["*", P_.classroom()]], [["*", P_.classroom()], ["*", P_.classroom()], ["*", P_.classroom()]]) },
+  { id: "counselling", name: "Library, classrooms and the counsellors", plan: edu(EDU_FRONT, [["*", P_.classroom()], ["*", P_.office("Education office")], ["*", P_.office("Counsellor")]]) },
+  { id: "staff", name: "Library, classrooms and the teachers' room", plan: edu(EDU_FRONT, [["*", P_.classroom()], ["*", R("breakroom", "Teachers' room")], [3, "restroom"]]) },
+  { id: "supplies", name: "Library, classrooms and the supply room", plan: edu(EDU_FRONT, [["*", P_.classroom()], ["*", P_.store("School supplies", "office")], [3, "restroom"]]) },
+  { id: "hobby", name: "Library, a classroom and the hobby-craft room", plan: edu(EDU_FRONT, [["*", P_.classroom()], ["*", P_.shop("Hobby-craft room")]]) },
+  { id: "media", name: "Library, classrooms, the office and a media store", plan: edu(EDU_FRONT, [["*", P_.classroom()], ["*", P_.office("Education office")], [3, "restroom"], [5, P_.store("Media store", "office")]]) },
+  { id: "open", name: "Open-plan library and classroom (no corridor)", plan: () => col([["*", P_.library()], [5, P_.lobby("Education lobby")], ["*", P_.classroom()]]) },
+];
+// Prison industries: the shops in a row, a loading door at the back.
+const shopEntry = (name) => ({ ...P_.shop(name), entry: true });
+PRISON_PLANS.industries = [
+  { id: "standard", name: "Licence-plate shop, print shop and laundry", plan: () => col([["*", shopEntry("Licence-plate shop")], ["*", P_.shop("Print shop")], ["*", P_.laundry()]]) },
+  { id: "woodshop", name: "Woodshop, upholstery and the lumber store", plan: () => col([["*", shopEntry("Woodshop")], ["*", P_.shop("Upholstery shop")], [8, P_.store("Lumber store", "workshop")]]) },
+  { id: "garment", name: "Garment shop, laundry and the foreman's office", plan: () => col([["*", shopEntry("Garment shop")], ["*", P_.laundry()], [8, P_.office("Shop foreman")]]) },
+  { id: "metal", name: "Metal shop, sign shop, store and office", plan: () => col([["*", shopEntry("Metal shop")], ["*", P_.shop("Sign shop")], [8, P_.store("Steel store", "workshop")], [6, P_.office("Shop foreman")]]) },
+  { id: "laundry", name: "Central laundry and the linen store", plan: () => col([["*", { ...P_.laundry("Central laundry"), entry: true }], [8, P_.store("Linen store", "plaundry")]]) },
+  { id: "print", name: "Print shop and bindery, offices behind", plan: () => band([["*", col([["*", shopEntry("Print shop")], ["*", P_.shop("Bindery")]])], [5, col([["*", P_.office("Print office")], ["*", P_.store("Paper store", "workshop")], [3, "restroom"]])]]) },
+  { id: "furniture", name: "Furniture shop with a loading bay", plan: () => col([["*", shopEntry("Furniture shop")], ["*", R("bays", "Loading bay", { type: "garage", maxBoxes: 2 })], [8, P_.store("Timber store", "workshop")]]) },
+  { id: "cannery", name: "Cannery and the cold store", plan: () => col([["*", shopEntry("Cannery")], ["*", P_.stores("Cold store")], [8, P_.store("Can store", "pstores")]]) },
+  { id: "garage", name: "Vehicle shop and parts shop", plan: () => col([["*", R("bays", "Vehicle shop", { type: "garage", maxBoxes: 3, entry: true })], ["*", P_.shop("Parts shop")], [8, P_.office("Motor pool office")]]) },
+  { id: "sewing", name: "Laundry and the sewing room", plan: () => col([["*", { ...P_.laundry(), entry: true }], ["*", P_.shop("Sewing room")], [6, "restroom"]]) },
+  { id: "lockers", name: "Two shops and the workers' lockers", plan: () => col([["*", shopEntry("Licence-plate shop")], ["*", P_.shop("Print shop")], [8, P_.lockers("Workers' lockers")]]) },
+  { id: "complex", name: "Shops, laundry, office and break room", plan: () => col([["*", shopEntry("Licence-plate shop")], ["*", P_.shop("Print shop")], ["*", P_.laundry()], [8, P_.office("Industries office")], [6, "breakroom"]]) },
+];
+// Administration (outside the fence, two storeys): offices off a corridor on both floors.
+/** @type {(back?: any[], front?: any[]) => () => any} */
+const adminUp = (back = [["*", P_.office("Records store")], [5, "breakroom"], [3, "restroom"]], front = [["*", P_.office("Deputy warden")], [6, P_.office("Conference room")], ["*", P_.office("Accounts")]]) => () => corridorPlan(front, back, 5);
+const ADMIN_FRONT = [["*", P_.office("Warden's office", { boxLock: ["safe", 0.3], gunSafe: ["gunsafe2", 0.3] })], [6, P_.lobby("Administration lobby")], ["*", P_.office("Records", { boxLock: ["evidence", 0.3] })]];
+const ADMIN_BACK = [["*", P_.office("Personnel")], [5, "breakroom"], [3, "restroom"]];
+const adminPlan = (front, back, up) => ({ plan: () => corridorPlan(front, back, 5), upper: up || adminUp() });
+PRISON_PLANS.admin = [
+  { id: "standard", name: "Warden, records and personnel; offices upstairs", ...adminPlan(ADMIN_FRONT, ADMIN_BACK) },
+  { id: "training", name: "Administration with a training room", ...adminPlan(ADMIN_FRONT, [["*", P_.office("Personnel")], ["*", P_.classroom("Training room")], [3, "restroom"]]) },
+  { id: "visitors", name: "Administration with the visitors' centre", ...adminPlan([["*", P_.office("Warden's office", { boxLock: ["safe", 0.3] })], [6, P_.lobby("Administration lobby")], ["*", P_.visit("Visitors' centre")]], ADMIN_BACK) },
+  { id: "lockers", name: "Administration with the staff lockers", ...adminPlan(ADMIN_FRONT, [["*", P_.lockers("Staff lockers")], [5, "breakroom"], [3, "restroom"]]) },
+  { id: "archive", name: "Administration with an archive upstairs", ...adminPlan(ADMIN_FRONT, ADMIN_BACK, adminUp([["*", P_.store("Archive", "office", { boxLock: ["evidence", 0.3] })], [5, "breakroom"], [3, "restroom"]])) },
+  { id: "response", name: "Administration with the emergency response armory", ...adminPlan(ADMIN_FRONT, [["*", P_.armory("Emergency response armory", { lock: ["vault", 0.7] })], [5, "breakroom"], [3, "restroom"]]) },
+  { id: "academy", name: "Training room and lockers", ...adminPlan(ADMIN_FRONT, [["*", P_.lockers("Staff lockers")], ["*", P_.classroom("Training room")], [3, "restroom"]]) },
+  { id: "publicside", name: "Visitors' centre and an archive", ...adminPlan([["*", P_.office("Warden's office", { boxLock: ["safe", 0.3] })], [6, P_.lobby("Administration lobby")], ["*", P_.visit("Visitors' centre")]], ADMIN_BACK, adminUp([["*", P_.store("Archive", "office")], [5, "breakroom"], [3, "restroom"]])) },
+  { id: "conference", name: "A training room and an archive upstairs", ...adminPlan(ADMIN_FRONT, ADMIN_BACK, adminUp([["*", P_.store("Archive", "office")], [5, "breakroom"], [3, "restroom"]], [["*", P_.office("Deputy warden")], ["*", P_.classroom("Conference and training room")], ["*", P_.office("Accounts")]])) },
+  { id: "staffside", name: "Lockers and an archive", ...adminPlan(ADMIN_FRONT, [["*", P_.lockers("Staff lockers")], [5, "breakroom"], [3, "restroom"]], adminUp([["*", P_.store("Archive", "office")], [5, "breakroom"], [3, "restroom"]])) },
+  { id: "family", name: "Visitors' centre and a training room", ...adminPlan([["*", P_.office("Warden's office", { boxLock: ["safe", 0.3] })], [6, P_.lobby("Administration lobby")], ["*", P_.visit("Visitors' centre")]], [["*", P_.office("Personnel")], ["*", P_.classroom("Training room")], [3, "restroom"]]) },
+  { id: "canteen", name: "Administration with a staff canteen", ...adminPlan(ADMIN_FRONT, [["*", R("breakroom", "Staff canteen")], [7, P_.kitchen("Canteen kitchen")], [3, "restroom"]]) },
+];
+// The armory (outside the fence): the issue window and the stores behind.
+const issue = [3, R("foyer", "Issue window", { entry: true, type: "barracks" })];
+const vault = () => P_.armory("Armory", { lock: ["vault", 0.8], boxLock: ["cage", 0.4], gunSafe: ["gunsafe3", 0.3] });
+PRISON_PLANS.armory = [
+  { id: "standard", name: "Armory and the riot gear store", plan: () => band([issue, ["*", col([["*", vault()], ["*", P_.armory("Riot gear store", { lock: ["door", 0.5] })]])]]) },
+  { id: "armorer", name: "Armory and the armorer's office", plan: () => band([issue, ["*", col([["*", vault()], [5, P_.office("Armorer")]])]]) },
+  { id: "classroom", name: "Armory and a firearms classroom", plan: () => band([issue, ["*", col([["*", vault()], ["*", P_.classroom("Firearms classroom")]])]]) },
+  { id: "cleaning", name: "Armory and the cleaning room", plan: () => band([issue, ["*", col([["*", vault()], [5, P_.shop("Cleaning room")]])]]) },
+  { id: "ammo", name: "Armory and the ammunition store", plan: () => band([issue, ["*", col([["*", vault()], ["*", P_.store("Ammunition store", "parmory", { lock: ["door", 0.7] })]])]]) },
+  { id: "tactical", name: "Armory and the tactical team's lockers", plan: () => band([issue, ["*", col([["*", vault()], ["*", P_.lockers("Tactical team lockers")]])]]) },
+  { id: "keys", name: "Armory and key control", plan: () => band([issue, ["*", col([["*", vault()], [5, R("pcontrol", "Key control", { lock: ["door", 0.5] })]])]]) },
+  { id: "restroom", name: "Armory, riot gear and a restroom", plan: () => band([issue, ["*", col([["*", vault()], ["*", P_.armory("Riot gear store", { lock: ["door", 0.5] })], [3, "restroom"]])]]) },
+  { id: "vehicle", name: "Armory with a vehicle bay", plan: () => col([["*", band([issue, ["*", vault()]])], [7, R("bays", "Vehicle bay", { type: "garage", maxBoxes: 2 })]]) },
+  { id: "ready", name: "Armory and a ready room", plan: () => band([issue, ["*", col([["*", vault()], [5, R("breakroom", "Ready room")]])]]) },
+  { id: "storeoffice", name: "Armory, the armorer and a store", plan: () => band([issue, ["*", col([["*", vault()], [5, P_.office("Armorer")], [5, P_.store("Gas store", "parmory")]])]]) },
+  { id: "hall", name: "Armory and riot gear off a secure hall", plan: () => band([issue, [2, R("corridor", "Secure hall")], ["*", col([["*", vault()], ["*", P_.armory("Riot gear store", { lock: ["door", 0.5] })]])]]) },
+];
+// The gatehouse straddles the two fences (bh: the depth it must span, REAL_SIZE pgate: own): visitor processing at
+// the front, the officers' post at the back, a room off one or both.
+const gateBands = (a = [], b = []) => () => band([["*", col([["*", P_.gate("Visitor processing", true)], ...a])], ["*", col([["*", P_.gate("Officers' post")], ...b])]]);
+PRISON_PLANS.gate = [
+  { id: "standard", name: "Visitor processing and the officers' post", plan: gateBands() },
+  { id: "search", name: "Gatehouse with a search room", plan: gateBands([], [[4, P_.office("Search room")]]) },
+  { id: "lockers", name: "Gatehouse with the visitors' lockers", plan: gateBands([[4, P_.lockers("Visitors' lockers")]]) },
+  { id: "restroom", name: "Gatehouse with a restroom", plan: gateBands([], [[3, "restroom"]]) },
+  { id: "contraband", name: "Gatehouse with the contraband store", plan: gateBands([], [[4, P_.store("Contraband store", "property", { lock: ["door", 0.5] })]]) },
+  { id: "waiting", name: "Gatehouse with a waiting room", plan: gateBands([[4, P_.visit("Waiting room")]]) },
+  { id: "keys", name: "Gatehouse with the key and radio issue", plan: gateBands([], [[4, R("pcontrol", "Key and radio issue")]]) },
+  { id: "breakroom", name: "Gatehouse with a break room", plan: gateBands([], [[4, "breakroom"]]) },
+  { id: "armory", name: "Gatehouse with its own armory", plan: gateBands([], [[4, P_.armory("Gate armory", { lock: ["vault", 0.6] })]]) },
+  { id: "searchrest", name: "Search room and a restroom", plan: gateBands([[4, P_.office("Search room")]], [[3, "restroom"]]) },
+  { id: "lockerstore", name: "Visitors' lockers and the contraband store", plan: gateBands([[4, P_.lockers("Visitors' lockers")]], [[4, P_.store("Contraband store", "property")]]) },
+  { id: "waitrest", name: "Waiting room and a restroom", plan: gateBands([[4, P_.visit("Waiting room")]], [[3, "restroom"]]) },
+];
+// The county jail's building: the public band along the front (the sally port, booking, the lobby, visitation), the
+// secure band behind (holding, property, the kitchen, the medical room), a secure corridor along the back wall (the
+// pods' corridors join it); upstairs the control room and the offices. mirror: the sally port on the right.
+const JF = () => [[6, R("bays", "Sally port", { type: "garage", maxBoxes: 2, civic: "sallyport" })], ["*", P_.booking("Booking and intake")], [6, P_.lobby("Public lobby")], ["*", P_.visit()]];
+const JM = () => [["*", P_.holding()], ["*", P_.holding()], [6, P_.property("Property room")], ["*", P_.kitchen("Jail kitchen")], [6, P_.ward("Medical room")]];
+const JU1 = () => [["*", P_.control("Control room", 3)], ["*", P_.office("Jail administration")], [6, P_.office("Sheriff's office", { gunSafe: ["gunsafe2", 0.3] })]];
+const JU2 = () => [["*", P_.office("Records", { boxLock: ["evidence", 0.3] })], [6, "breakroom"], [4, "restroom"], ["*", P_.lockers()]];
+const jail = (o = {}) => ({ front: o.front || JF(), mid: o.mid || JM(), up1: o.up1 || JU1(), up2: o.up2 || JU2(), mirror: !!o.mirror });
+PRISON_PLANS.jailmain = [
+  { id: "standard", name: "Booking along the front, holding and the kitchen behind", ...jail() },
+  { id: "laundry", name: "Jail with its own laundry", ...jail({ mid: [["*", P_.holding()], [6, P_.property("Property room")], ["*", P_.kitchen("Jail kitchen")], [6, P_.ward("Medical room")], [6, P_.laundry("Jail laundry")]] }) },
+  { id: "foodstore", name: "Jail with a food warehouse", ...jail({ mid: [["*", P_.holding()], [6, P_.property("Property room")], ["*", P_.kitchen("Jail kitchen")], [5, P_.ward("Medical room")], [6, P_.stores("Food store")]] }) },
+  { id: "detox", name: "Jail with detox and sobering cells", ...jail({ mid: [["*", P_.holding()], ["*", P_.holding("Detox cell")], ["*", P_.holding("Sobering cell")], [6, P_.property("Property room")], ["*", P_.kitchen("Jail kitchen")], [5, P_.ward("Medical room")]] }) },
+  { id: "videocourt", name: "Jail with a video courtroom", ...jail({ front: [[6, R("bays", "Sally port", { type: "garage", maxBoxes: 2, civic: "sallyport" })], ["*", P_.booking("Booking and intake")], [6, P_.lobby("Public lobby")], ["*", P_.visit()], [6, P_.office("Video courtroom")]] }) },
+  { id: "programs", name: "Jail with a programs room", ...jail({ mid: [["*", P_.holding()], [6, P_.property("Property room")], ["*", P_.kitchen("Jail kitchen")], [6, P_.ward("Medical room")], [6, P_.classroom("Programs room")]] }) },
+  { id: "showers", name: "Jail with intake showers", ...jail({ mid: [["*", P_.holding()], [6, P_.property("Property room")], ["*", P_.kitchen("Jail kitchen")], [6, P_.ward("Medical room")], [5, R("pshower", "Intake showers", { prison: "showers" })]] }) },
+  { id: "sheriff", name: "Sheriff's annex (the sally port on the right, an armory upstairs)", ...jail({ mirror: true, up2: [["*", P_.office("Records", { boxLock: ["evidence", 0.3] })], [6, "breakroom"], [5, P_.armory("Sheriff's armory", { lock: ["vault", 0.7] })], ["*", P_.lockers()]] }) },
+  { id: "evidence", name: "Jail with the evidence room upstairs", ...jail({ up2: [["*", P_.store("Evidence room", "property", { boxLock: ["evidence", 0.4] })], [6, "breakroom"], [4, "restroom"], ["*", P_.lockers()]] }) },
+  { id: "dispatch", name: "Jail with dispatch and a training room upstairs", ...jail({ up1: [["*", P_.control("Control room", 3)], ["*", R("pcontrol", "Dispatch")], [6, P_.office("Sheriff's office", { gunSafe: ["gunsafe2", 0.3] })]], up2: [["*", P_.office("Records", { boxLock: ["evidence", 0.3] })], [6, "breakroom"], [4, "restroom"], ["*", P_.classroom("Training room")]] }) },
+  { id: "suicidewatch", name: "Jail with suicide-watch cells (the sally port on the right)", ...jail({ mirror: true, mid: [["*", P_.holding()], [6, P_.property("Property room")], ["*", P_.kitchen("Jail kitchen")], [5, P_.ward("Medical room")], [6, psych("Suicide-watch cells", "s")]] }) },
+  { id: "pharmacy", name: "Jail with a pharmacy by the medical room", ...jail({ mid: [["*", P_.holding()], ["*", P_.holding()], [6, P_.property("Property room")], ["*", P_.kitchen("Jail kitchen")], [6, P_.ward("Medical room")], [4, pharm()]] }) },
+];
+// The building's spec from its plan (pinned by o.layout or by its dice); bw, bh: its footprint.
+function planned(rng, type, bw, bh, o = {}, extra = {}) {
+  const v = pickPlan(rng, type, o);
+  return spec(bw, bh, v.plan(rng), { ...extra, ...(v.upper ? { upper: v.upper } : {}), vid: v.id, vname: v.name });
 }
-// The chow hall: the hall, the kitchen and the food warehouse behind.
-export function chowHall(rng) {
+function centralControl(rng, o = {}) { const [bw, bh] = foot(rng, "pcontrol"); return planned(rng, "control", bw, bh, o); }
+export function chowHall(rng, o = {}) {
   const [bw, bh] = foot(rng, "pchow");
-  return spec(bw, bh, { split: "y", parts: [["*", { role: "chow", prison: "chow", entry: true }], [8, { split: "x", parts: leaves([["*", { role: "pkitchen", prison: "pkitchen" }], [10, { role: "pstores", prison: "pstores", lock: ["door", 0.4] }], [5, { role: "storage", name: "Dry store", type: "pstores" }]]) }]] },
-    { exits: [{ side: "back", roles: ["pstores", "storage"], chance: 1, roller: true, width: 2, lock: 0.3, name: "Loading dock" }] });
+  return planned(rng, "chow", bw, bh, o, { exits: [{ side: "back", roles: ["pstores", "storage", "pcommissary", "pkitchen"], chance: 1, roller: true, width: 2, lock: 0.3, name: "Loading dock" }] });
 }
-// The infirmary: the ward, the desk, the exam room, the pharmacy along the front; the psych unit's cells behind.
-export function prisonInfirmary(rng) {
-  const [bw, bh] = foot(rng, "pinfirmary");
-  return spec(bw, bh, corridorPlan([["*", { role: "pward", prison: "ward" }], [5, { role: "lobby", entry: true, name: "Infirmary desk" }], [5, "exam"], [5, { role: "pharmroom", lock: ["door", 0.6], boxLock: ["drugs", 0.5] }]],
-    [["*", { role: "psych", prison: "tier", face: "n", single: true }], [5, { role: "office", prison: "office", name: "Doctor's office" }], [4, { role: "storage", type: "clinic", name: "Medical stores" }]], 6, 2));
-}
-const chapel = (rng) => spec(...foot(rng, "pchapel"), { split: "y", parts: [[3, { role: "foyer", name: "Narthex", entry: true, type: "chapel", civic: "narthex" }], ["*", { role: "nave", name: "Chapel", civic: "nave" }], [4, { split: "x", parts: leaves([[4, { role: "vestry", civic: "vestry" }], ["*", { role: "storage", type: "chapel", name: "Chaplain's store" }]]) }]] });
-const education = (rng) => spec(...foot(rng, "pschool"), corridorPlan([["*", { role: "plibrary", civic: "library", name: "Library" }], [5, { role: "lobby", entry: true, name: "Education lobby" }], ["*", { role: "classroom", civic: "classroom" }]],
-  [["*", { role: "classroom", civic: "classroom" }], ["*", { role: "office", prison: "office", name: "Education office" }], [3, "restroom"]], 6, 2));
-const industries = (rng) => spec(...foot(rng, "pworks"), { split: "x", parts: leaves([["*", { role: "pshop", prison: "industries", name: "Licence-plate shop", entry: true }], ["*", { role: "pshop", prison: "industries", name: "Print shop" }], ["*", { role: "plaundry", prison: "laundry" }]]) },
-  { exits: [{ side: "back", roles: ["pshop", "plaundry"], chance: 1, roller: true, width: 2, lock: 0.3, name: "Loading door" }] });
-const admin = (rng) => spec(...foot(rng, "padmin"), corridorPlan([["*", { role: "office", prison: "office", name: "Warden's office", boxLock: ["safe", 0.3], gunSafe: ["gunsafe2", 0.3] }], [6, { role: "lobby", entry: true, name: "Administration lobby" }], ["*", { role: "office", prison: "office", name: "Records", boxLock: ["evidence", 0.3] }]],
-  [["*", { role: "office", prison: "office", name: "Personnel" }], [5, "breakroom"], [3, "restroom"]], 5), { storeys: 2, upper: () => corridorPlan([["*", { role: "office", prison: "office", name: "Deputy warden" }], [6, { role: "office", prison: "office", name: "Conference room" }], ["*", { role: "office", prison: "office", name: "Accounts" }]], [["*", { role: "office", prison: "office", name: "Records store" }], [5, "breakroom"], [3, "restroom"]], 5) });
-const armory = (rng) => spec(...foot(rng, "parmory"), { split: "y", parts: [[3, { role: "foyer", name: "Issue window", entry: true, type: "barracks" }], ["*", { split: "x", parts: leaves([["*", { role: "parmory", prison: "parmory", name: "Armory", lock: ["vault", 0.8], boxLock: ["cage", 0.4], gunSafe: ["gunsafe3", 0.3] }], ["*", { role: "parmory", prison: "parmory", name: "Riot gear store", lock: ["door", 0.5] }]]) }]] });
-// The gatehouse straddles the two fences: its front door outside, its back door inside. bh: the depth it must span
-// (REAL_SIZE pgate: own, the complex's).
-const gatehouse = (rng, bh) => spec(rng.int(12, 14), bh, { split: "y", parts: [["*", { role: "gatepost", prison: "gate", entry: true, name: "Visitor processing" }], ["*", { role: "gatepost", prison: "gate", name: "Officers' post" }]] },
-  { exits: [{ side: "back", roles: ["gatepost"], chance: 1, lock: 0, name: "Into the prison" }] });
-// The county jail's building: the public side along the front (the sally port, booking, the lobby, visitation), the
-// holding tanks, the property room, the kitchen and the medical room behind, and a secure corridor along the back wall
-// (the pods' corridors join it); upstairs the control room and the offices.
-function jailMain(rng) {
+export function prisonInfirmary(rng, o = {}) { const [bw, bh] = foot(rng, "pinfirmary"); return planned(rng, "infirmary", bw, bh, o); }
+const chapel = (rng, o = {}) => planned(rng, "chapel", ...foot(rng, "pchapel"), o);
+const education = (rng, o = {}) => planned(rng, "education", ...foot(rng, "pschool"), o);
+const industries = (rng, o = {}) => planned(rng, "industries", ...foot(rng, "pworks"), o, { exits: [{ side: "back", roles: ["pshop", "plaundry", "bays", "storage"], chance: 1, roller: true, width: 2, lock: 0.3, name: "Loading door" }] });
+const admin = (rng, o = {}) => planned(rng, "admin", ...foot(rng, "padmin"), o, { storeys: 2 });
+const armory = (rng, o = {}) => planned(rng, "armory", ...foot(rng, "parmory"), o);
+const gatehouse = (rng, bh, o = {}) => planned(rng, "gate", rng.int(12, 14), bh, o, { exits: [{ side: "back", roles: ["gatepost"], chance: 1, lock: 0, name: "Into the prison" }] });
+function jailMain(rng, o = {}) {
   const [bw] = foot(rng, "jailmain");
-  const band = (list) => ({ split: "x", parts: leaves(list) });
-  const back = [2, { role: "corridor", name: "Secure corridor", hub: true }];
-  return spec(bw, 2 + 7 + 1 + 7 + 1 + 2, { split: "y", parts: [[7, band([[6, { role: "bays", name: "Sally port", type: "garage", maxBoxes: 2, civic: "sallyport" }], ["*", { role: "booking", prison: "booking", name: "Booking and intake" }], [6, { role: "lobby", entry: true, name: "Public lobby" }], ["*", { role: "visitation", prison: "visit" }]])],
-    [7, band([["*", { role: "holding", prison: "holding", name: "Holding tank" }], ["*", { role: "holding", prison: "holding", name: "Holding tank" }], [6, { role: "property", prison: "property", lock: ["door", 0.4] }], ["*", { role: "pkitchen", prison: "pkitchen", name: "Jail kitchen" }], [6, { role: "pward", prison: "ward", name: "Medical room" }]])], back] }, {
+  const v = pickPlan(rng, "jailmain", o);
+  const flip = (l) => (v.mirror ? l.slice().reverse() : l);
+  return spec(bw, 2 + 7 + 1 + 7 + 1 + 2, band([[7, col(flip(v.front))], [7, col(flip(v.mid))], [2, R("corridor", "Secure corridor", { hub: true })]]), {
     storeys: 2, stairs: { roles: ["corridor"], n: 1, len: 2 },
-    upper: () => ({ split: "y", parts: [[7, band([["*", { role: "pcontrol", prison: "control", panels: 3, name: "Control room" }], ["*", { role: "office", prison: "office", name: "Jail administration" }], [6, { role: "office", prison: "office", name: "Sheriff's office", gunSafe: ["gunsafe2", 0.3] }]])],
-      [7, band([["*", { role: "office", prison: "office", name: "Records", boxLock: ["evidence", 0.3] }], [6, "breakroom"], [4, "restroom"], ["*", { role: "lockerroom", type: "lockers", name: "Officers' lockers" }]])], [2, { role: "corridor", name: "Upper corridor", hub: true }]] }),
-    exits: [{ side: "left", roles: ["bays"], chance: 1, roller: true, width: 2, lock: 0.2, name: "Sally port" }],
+    upper: () => band([[7, col(flip(v.up1))], [7, col(flip(v.up2))], [2, R("corridor", "Upper corridor", { hub: true })]]),
+    exits: [{ side: v.mirror ? "right" : "left", roles: ["bays"], chance: 1, roller: true, width: 2, lock: 0.2, name: "Sally port" }],
+    vid: v.id, vname: v.name,
   });
 }
 
+// Each type's builder (the tests pin each plan by o.layout): (rng, o) => its spec.
+export const PRISON_BUILDERS = {
+  housing: (rng, o) => housingUnit(rng, { len: foot(rng, "pblock")[0], picket: "left", unitId: 1, ...o }),
+  control: centralControl, chow: chowHall, infirmary: prisonInfirmary, chapel, education, industries, admin, armory,
+  gate: (rng, o) => gatehouse(rng, 9, o), jailmain: jailMain,
+};
 // ---------- the two tiers (after assemble) ----------
 // Downstairs the wall between each tier and its day room comes down (the day room faces the cells); upstairs the well
 // over the day room is open air and its edge a railing; every tier gets a door into its officers' station on every
@@ -165,26 +411,51 @@ export function openTiers(m, sp) {
   const W = m.w, floors = m.floors || [{ cells: m.cells }];
   const at = (f, x, y) => floors[f].cells[y * W + x];
   const rooms = m.rooms.filter((a) => !a.outdoor);
+  const strip = (c) => { delete c.dk; delete c.hp; delete c.mhp; delete c.t; delete c.win; delete c.wart; };
+  const dropDoor = (f, x, y) => { for (const r of rooms) if (r.f === f && r.doors) r.doors = r.doors.filter(([dx, dy]) => dx !== x || dy !== y); m.lockedDoors = m.lockedDoors.filter((d) => d.x !== x || d.y !== y || (d.f || 0) !== f); };
+  const door = (f, x, y, dk, ...rs) => {
+    const c = at(f, x, y);
+    if (c.k !== "wall" && c.k !== "window") return false;
+    const K = DOOR_KINDS[dk] || DOOR_KINDS.steel;
+    Object.assign(c, { k: "idoor", dk, f: "floor", fl: "conc" }); c.hp = c.mhp = K.hp; delete c.win; delete c.t;
+    for (const r of rs) if (r) r.doors.push([x, y]);
+    // The cells either side clear (a shelf furnished against the wall before the door was cut).
+    for (const [nx, ny] of [[x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1]]) {
+      const n = floors[f].cells[ny * W + nx];
+      if (!n || !CELL[n.k] || CELL[n.k].walk || ["wall", "window", "bars", "rail", "void"].includes(n.k) || n.k.endsWith("door")) continue;
+      const fl = n.fl; for (const k of Object.keys(n)) delete n[k]; Object.assign(n, { k: "open", f: "floor", ...(fl ? { fl } : {}) });
+      m.containers = m.containers.filter((q) => q.x !== nx || q.y !== ny || (q.f || 0) !== f);
+    }
+    return true;
+  };
+  const overlapX = (a, b) => Math.min(a.x0 + a.w, b.x0 + b.w) - Math.max(a.x0, b.x0) > 2;
   for (let f = 0; f < floors.length; f++) {
-    const tiers = rooms.filter((a) => a.f === f && a.prison === "tier"), mid = rooms.find((a) => a.f === f && a.prison === "dayroom"), pk = rooms.find((a) => a.f === f && a.prison === "picket");
-    if (!mid) continue;
-    for (const t of tiers) {
-      const row = t.y0 === mid.y0 + mid.h - 1 ? t.y0 : t.y0 + t.h - 1; // the wall the tier shares with the day room
+    const here = rooms.filter((a) => a.f === f);
+    const mids = here.filter((a) => a.prison === "dayroom");
+    for (const t of here.filter((a) => a.prison === "tier")) {
+      // Its day room (or the well over it): the one it shares a long wall with.
+      const mid = mids.find((d) => overlapX(d, t) && (d.y0 + d.h - 1 === t.y0 || t.y0 + t.h - 1 === d.y0));
+      if (!mid) continue;
+      const below = t.y0 > mid.y0; // the front tier: its cells against the front wall, its walkway its top row
+      const row = below ? t.y0 : t.y0 + t.h - 1; // the wall it shares with the day room
       for (let x = Math.max(t.x0, mid.x0) + 1; x <= Math.min(t.x0 + t.w, mid.x0 + mid.w) - 2; x++) {
         const c = at(f, x, row);
-        if (f === 0) { Object.assign(c, { k: "open", f: "floor", fl: "conc" }); delete c.dk; delete c.hp; delete c.mhp; delete c.t; delete c.win; delete c.wart; }
-        else { Object.assign(c, { k: "rail", f: "floor" }); delete c.dk; delete c.hp; delete c.mhp; delete c.t; delete c.win; delete c.wart; }
+        strip(c);
+        if (f === 0) Object.assign(c, { k: "open", f: "floor", fl: "conc" }); else Object.assign(c, { k: "rail", f: "floor" });
       }
-      t.doors = (t.doors || []).filter(([x, y]) => y !== row);
-      const walk = t.y0 > mid.y0 ? t.y0 + 1 : t.y0 + t.h - 2; // the front tier's cells are against the front wall: its walkway is its top row
-      // The plan's other doors in the tier's walls (into the station beside a cell, not its walkway): bricked up.
+      t.doors = (t.doors || []).filter(([, y]) => y !== row);
+      const walk = below ? t.y0 + 1 : t.y0 + t.h - 2;
+      t.walk = walk;
+      // The plan's doors in the tier's walls beside a cell (not at its walkway): moved to the walkway's end of that wall
+      // (a room beyond keeps its way in), or bricked up in an outer wall.
       for (const [x, y] of t.doors.slice()) {
         if (y === walk) continue;
         const c = at(f, x, y);
         if (!["idoor", "odoor", "door"].includes(c.k)) continue;
-        Object.assign(c, { k: "wall", f: "floor" }); delete c.dk; delete c.hp; delete c.mhp;
-        for (const r of rooms) if (r.f === f && r.doors) r.doors = r.doors.filter(([dx, dy]) => dx !== x || dy !== y);
-        m.lockedDoors = m.lockedDoors.filter((d) => d.x !== x || d.y !== y || (d.f || 0) !== f);
+        const dk = c.dk || "steel";
+        Object.assign(c, { k: "wall", f: "floor" }); strip(c);
+        dropDoor(f, x, y);
+        if (x === t.x0 || x === t.x0 + t.w - 1) { const other = here.find((r) => r !== t && x >= r.x0 && x < r.x0 + r.w && walk > r.y0 && walk < r.y0 + r.h - 1); if (other) door(f, x, walk, dk, t, other); }
       }
       // A floor cell of the tier its walkway cannot reach (boxed in by the bars where the plan's door stood): bars too.
       {
@@ -195,22 +466,19 @@ export function openTiers(m, sp) {
         while (q.length) { const [x, y] = q.pop(); for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = x + dx, ny = y + dy, k = `${nx},${ny}`; if (!inT(nx, ny) || seen.has(k) || !walkable(at(f, nx, ny))) continue; seen.add(k); q.push([nx, ny]); } }
         for (let y = t.y0 + 1; y < t.y0 + t.h - 1; y++) for (let x = t.x0 + 1; x < t.x0 + t.w - 1; x++) { const c = at(f, x, y); if (c.k === "open" && !seen.has(`${x},${y}`)) c.k = "bars"; }
       }
-      if (pk) { // the tier's door into the officers' station, at its walkway
-        const wx = pk.x0 === t.x0 + t.w - 1 ? pk.x0 : pk.x0 + pk.w - 1;
-        const c = at(f, wx, walk);
-        if (c.k === "wall" || c.k === "window") {
-          const dk = sp.unit.dk || "steel";
-          Object.assign(c, { k: "idoor", dk, f: "floor", fl: "conc" });
-          c.hp = c.mhp = (DOOR_KINDS[dk] || DOOR_KINDS.steel).hp;
-          delete c.win; delete c.t;
-          t.doors.push([wx, walk]); pk.doors.push([wx, walk]);
-        }
-      }
+      // Its doors into the officers' stations beside it, at its walkway (one each side for a block with two).
+      for (const pk of here.filter((a) => a.prison === "picket" && (a.x0 === t.x0 + t.w - 1 || a.x0 + a.w - 1 === t.x0))) door(f, pk.x0 === t.x0 + t.w - 1 ? pk.x0 : pk.x0 + pk.w - 1, walk, U.dk || "steel", t, pk);
     }
-    if (f > 0) { // the well: open air
+    if (f > 0) for (const mid of mids) { // the well: open air
       for (let y = mid.y0 + 1; y < mid.y0 + mid.h - 1; y++) for (let x = mid.x0 + 1; x < mid.x0 + mid.w - 1; x++) { const c = at(f, x, y); for (const k of Object.keys(c)) delete c[k]; c.k = "void"; c.f = "air"; }
-      for (const [x, y] of mid.doors || []) { const c = at(f, x, y); if (c.k === "idoor" || c.k === "odoor") { Object.assign(c, { k: "rail" }); delete c.dk; delete c.hp; delete c.mhp; } }
+      const railed = new Set();
+      for (const [x, y] of mid.doors || []) { const c = at(f, x, y); if (c.k === "idoor" || c.k === "odoor") { Object.assign(c, { k: "rail" }); delete c.dk; delete c.hp; delete c.mhp; railed.add(`${x},${y}`); dropDoor(f, x, y); } }
       mid.doors = []; mid.type = null; mid.noLabel = true; mid.well = true;
+      // A room upstairs whose only door gave onto the well (a unit's store over its showers): a door at a tier's walkway.
+      for (const r of here) {
+        if (r === mid || r.prison === "tier" || r.prison === "dayroom" || !railed.size || (r.doors || []).length) continue;
+        for (const t of here.filter((a) => a.prison === "tier" && a.walk != null && (a.x0 + a.w - 1 === r.x0 || r.x0 + r.w - 1 === a.x0) && a.walk > r.y0 && a.walk < r.y0 + r.h - 1)) door(f, t.x0 + t.w - 1 === r.x0 ? r.x0 : r.x0 + r.w - 1, t.walk, "steel", t, r);
+      }
       m.containers = m.containers.filter((q) => q.area !== mid.id);
     }
   }
@@ -268,15 +536,35 @@ function build(seed, salt, sp, key, name, legacy) {
 
 /**
  * The map of a prison or a jail (buildingmaps.js buildingMap): see the header.
- * @param {any} state @param {number} tileId @param {{ key: string, id: string, name: string }} option @param {any} withVehicle @param {{ legacy?: boolean, cap?: number }} [o]
+ * @param {any} state @param {number} tileId @param {{ key: string, id: string, name: string, layout?: string }} option @param {any} withVehicle @param {{ legacy?: boolean, cap?: number, layout?: string }} [o]
  */
 export function prisonMap(state, tileId, option, withVehicle, o = {}) {
   const kind = prisonKind(state, tileId, option);
   const seed = hash01(state.seed, "prison", tileId, option.id);
   const rng = new Rng(Math.floor(seed * 4294967296) || 1);
+  if (option.layout && !o.layout) o = { ...o, layout: option.layout }; // a pinned layout (the option's)
   return kind === "jail" ? jailMap(rng, seed, option, withVehicle, o) : penMap(rng, seed, option, kind, withVehicle, o);
 }
 
+// A state prison's or a penitentiary's layouts (the user's dozen, issue #31): where the block of housing stands inside
+// the fence (x: against the west fence, the middle, the east; y: the north or the middle of the compound), which sides
+// of the main corridor its units stand on (sides: both, or a comb with all of them west or east of it), which end of
+// the corridor central control stands at (head: the north end, else the south), where the yard goes (beside the
+// housing, toward the gate, else anywhere free). A comb's units in one file: a comb holds as many as fit.
+export const PRISON_LAYOUTS = [
+  { id: "pole", name: "Telephone pole (units off a central corridor, control at its foot)" },
+  { id: "polewest", name: "Telephone pole along the west fence", x: "west" },
+  { id: "poleeast", name: "Telephone pole along the east fence", x: "east" },
+  { id: "polemid", name: "Telephone pole in the middle of the compound", y: "middle" },
+  { id: "head", name: "Control at the head of the pole", head: true },
+  { id: "headwest", name: "Control at the head, along the west fence", x: "west", head: true },
+  { id: "headeast", name: "Control at the head, along the east fence", x: "east", head: true },
+  { id: "combwest", name: "Comb along the west fence (every unit west of the corridor)", x: "west", sides: "left" },
+  { id: "combeast", name: "Comb along the east fence (every unit east of the corridor)", x: "east", sides: "right" },
+  { id: "combhead", name: "Comb with control at its head", sides: "left", head: true },
+  { id: "campus", name: "Campus (the housing in the middle, the yard beside it)", y: "middle", yard: "beside" },
+  { id: "yardfront", name: "Control at the head, the yard toward the gate", head: true, yard: "front" },
+];
 // A state prison or a penitentiary.
 function penMap(rng, seed, option, kind, withVehicle, o) {
   const K = PRISON.KINDS[kind], cap = o.cap || mapCap("prison") || PRISON.CAP;
@@ -289,46 +577,64 @@ function penMap(rng, seed, option, kind, withVehicle, o) {
   const inside = { x0: inner.x0 + 3, y0: inner.y0 + 3, w: inner.w - 6, h: inner.h - 6 }; // where the buildings stand
   const legacy = !!o.legacy;
   const B = []; // { m, sp, name, key, x0, y0, flip?, role }
+  // ---------- the layout; the gate's place (kept clear of the housing) ----------
+  let n = rng.int(K.units[0], K.units[1]);
+  const ROW = 34, fits = (L, k) => (L.sides && L.sides !== "both" ? k : Math.ceil(k / 2)) + (kind === "max" ? 1 : 0) <= Math.floor((inside.h - 20 - 4 - 5 - 16) / ROW);
+  const L = pickPlan(rng, PRISON_LAYOUTS, { layout: o.layout, only: (q) => fits(q, n) });
+  while (n > 2 && !fits(L, n)) n--; // a pinned comb: the units that fit
+  const one = L.sides && L.sides !== "both" ? L.sides : null;
+  const southOuter = outer.y0 + outer.h - 1, southInner = inner.y0 + inner.h - 1;
+  const gx = Math.floor(W / 2) + rng.int(-20, 20); // the sally port's lane (4 wide)
+  const gateKeep = { x0: gx - 6, y0: southInner - 18, w: 40, h: 18 };
   // ---------- the housing units off the main corridor ----------
-  const n = rng.int(K.units[0], K.units[1]);
-  const rows = Math.ceil(n / 2);
+  const rows = one ? n : Math.ceil(n / 2);
   const units = [];
   for (let i = 0; i < n; i++) {
-    const side = i % 2 ? "right" : "left"; // left of the corridor: its picket on its right (toward the corridor)
-    const dorm = kind === "state" && rng.chance(PRISON.DORM);
+    const side = one || (i % 2 ? "right" : "left"); // left of the corridor: its picket on its right (toward the corridor)
     const len = foot(rng, "pblock")[0]; // a real block 40–70 m long: about 16–20 cells a tier
-    const u = build(seed, `unit${i}`, (r) => housingUnit(r, { len, picket: side === "left" ? "right" : "left", unitId: i + 1, kind: dorm ? "dorm" : "cells", tiers: 2 }), "pblock", `Housing unit ${String.fromCharCode(65 + i)}`, legacy);
-    u.role = "housing"; u.unitId = i + 1; u.side = side; u.row = Math.floor(i / 2); u.dorm = dorm;
+    // A state prison's unit is any of the housing plans; a penitentiary's always cells (no dormitories).
+    const u = build(seed, `unit${i}`, (r) => housingUnit(r, { len, picket: side === "left" ? "right" : "left", unitId: i + 1, kind: kind === "max" ? "cells" : undefined, tiers: 2 }), "pblock", `Housing unit ${String.fromCharCode(65 + i)}`, legacy);
+    u.role = "housing"; u.unitId = i + 1; u.side = side; u.row = one ? i : Math.floor(i / 2); u.dorm = u.sp.unit.kind === "dorm";
     units.push(u);
   }
   // A penitentiary's death row at the far end, a cells block of single cells with a security door into each tier.
   if (kind === "max") {
-    const u = build(seed, "deathrow", (r) => housingUnit(r, { len: foot(r, "pdeathrow")[0], picket: "left", unitId: n + 1, kind: "cells", single: true, dk: "security", tiers: 2 }), "pblock", "Death row", legacy);
-    u.role = "deathrow"; u.unitId = n + 1; u.side = "right"; u.row = rows; units.push(u);
+    const side = one || "right";
+    const u = build(seed, "deathrow", (r) => housingUnit(r, { len: foot(r, "pdeathrow")[0], picket: side === "left" ? "right" : "left", unitId: n + 1, kind: "cells", single: true, dk: "security", tiers: 2 }), "pblock", "Death row", legacy);
+    u.role = "deathrow"; u.unitId = n + 1; u.side = side; u.row = rows; units.push(u);
   }
   const rowH = Math.max(...units.map((u) => u.m.building.h)) + 6;
   const spineLen = (rows + (kind === "max" ? 1 : 0)) * rowH + 4;
   const ctl = build(seed, "control", centralControl, "pcontrol", "Central control", legacy); ctl.role = "control";
   const sp = build(seed, "spine", spine(spineLen), "pcontrol", "Main corridor", legacy); sp.role = "spine";
   // Where the block of housing stands: against the north of the inside, the corridor down its middle.
-  const maxLeft = Math.max(...units.filter((u) => u.side === "left").map((u) => u.m.building.w));
+  const maxLeft = Math.max(0, ...units.filter((u) => u.side === "left").map((u) => u.m.building.w));
   const maxRight = Math.max(0, ...units.filter((u) => u.side === "right").map((u) => u.m.building.w));
-  const blockW = maxLeft + PRISON.UNIT_GAP * 2 + 5 + maxRight;
-  const bx = inside.x0 + Math.floor((inside.w - blockW) / 2) + rng.int(-8, 8);
-  const sx = bx + maxLeft + PRISON.UNIT_GAP, sy = inside.y0 + 2;
+  const GAP = PRISON.UNIT_GAP, wl = maxLeft ? maxLeft + GAP : 0, wr = maxRight ? GAP + maxRight : 0;
+  const blockW = wl + 5 + wr, ch = ctl.m.building.h, blockH = spineLen + 5 + ch;
+  // Central control at an end of the corridor, its lobby over or under it (the secure corridor joins them there).
+  const lob = ctl.m.rooms.find((a) => a.role === "lobby" && !(a.f > 0));
+  const lobX = lob ? lob.x0 + Math.floor(lob.w / 2) - ctl.m.building.x0 : Math.floor(ctl.m.building.w / 2);
+  // The block's x: the spine's, the units either side; control under it, so the block's outline takes control's too.
+  const lo = Math.min(-wl, 2 - lobX), hi = Math.max(5 + wr, 2 - lobX + ctl.m.building.w); // relative to the spine
+  const span = hi - lo;
+  let bx = L.x === "west" ? inside.x0 + 4 : L.x === "east" ? inside.x0 + inside.w - span - 4 : inside.x0 + Math.floor((inside.w - span) / 2) + rng.int(-8, 8);
+  bx = Math.max(inside.x0 + 2, Math.min(inside.x0 + inside.w - span - 2, bx));
+  const sx = bx - lo;
+  let top = L.y === "middle" ? inside.y0 + Math.floor((inside.h - blockH) / 2) : inside.y0 + 2;
+  top = Math.max(inside.y0 + 2, Math.min(top, gateKeep.y0 - 6 - blockH));
+  const sy = L.head ? top + ch + 5 : top;
   sp.x0 = sx; sp.y0 = sy;
   for (const u of units) {
     const bw = u.m.building.w;
-    u.x0 = u.side === "left" ? sx - PRISON.UNIT_GAP - bw : sx + 5 + PRISON.UNIT_GAP;
+    u.x0 = u.side === "left" ? sx - GAP - bw : sx + 5 + GAP;
     u.y0 = sy + 2 + u.row * rowH;
   }
-  // Central control below the corridor's end, its lobby under the corridor (the secure corridor joins them there).
-  const lob = ctl.m.rooms.find((a) => a.role === "lobby" && !(a.f > 0));
-  ctl.x0 = sx + 2 - (lob ? lob.x0 + Math.floor(lob.w / 2) - ctl.m.building.x0 : Math.floor(ctl.m.building.w / 2)); ctl.y0 = sy + spineLen + 5;
+  ctl.x0 = sx + 2 - lobX; ctl.y0 = L.head ? top : sy + spineLen + 5;
   B.push(sp, ctl, ...units);
-  const housing = { x0: bx - 3, y0: sy - 3, w: blockW + 6, h: ctl.y0 + ctl.m.building.h - sy + 6 };
+  const housing = { x0: bx - 3, y0: top - 3, w: span + 6, h: blockH + 6 };
   // ---------- the yard and the other buildings inside ----------
-  const taken = [housing];
+  const taken = [housing, gateKeep];
   const spot = (w, h, pref) => {
     for (let t = 0; t < 400; t++) {
       const x = pref && t < 200 ? pref.x0 + rng.int(0, Math.max(0, pref.w - w)) : inside.x0 + rng.int(0, Math.max(0, inside.w - w));
@@ -341,7 +647,9 @@ function penMap(rng, seed, option, kind, withVehicle, o) {
     }
     return null;
   };
-  const yard = spot(rng.int(52, 64), rng.int(38, 44));
+  const yardPref = L.yard === "beside" ? (housing.x0 - inside.x0 > inside.x0 + inside.w - housing.x0 - housing.w ? { x0: inside.x0, y0: housing.y0, w: housing.x0 - inside.x0, h: housing.h } : { x0: housing.x0 + housing.w, y0: housing.y0, w: inside.x0 + inside.w - housing.x0 - housing.w, h: housing.h })
+    : L.yard === "front" ? { x0: inside.x0, y0: housing.y0 + housing.h, w: inside.w, h: inside.y0 + inside.h - housing.y0 - housing.h } : null;
+  const yard = spot(rng.int(52, 64), rng.int(38, 44), yardPref);
   const others = [
     ["chow", chowHall, "pchow", "Chow hall"], ["infirmary", prisonInfirmary, "pinfirmary", "Infirmary"], ["chapel", chapel, "pchapel", "Chapel"],
     ["education", education, "pschool", "Library and education"], ["industries", industries, "pworks", "Prison industries"],
@@ -356,8 +664,6 @@ function penMap(rng, seed, option, kind, withVehicle, o) {
     B.push(b);
   }
   // ---------- outside the fence: the gatehouse, the sally port, the administration, the armory, the parking ----------
-  const southOuter = outer.y0 + outer.h - 1, southInner = inner.y0 + inner.h - 1;
-  const gx = Math.floor(W / 2) + rng.int(-20, 20); // the sally port's lane (4 wide)
   const gh = build(seed, "gate", (r) => gatehouse(r, southOuter - southInner + 5), "pgate", "Gatehouse", legacy); gh.role = "gate";
   gh.x0 = gx + 12; gh.y0 = southInner - 2;
   const ad = build(seed, "admin", admin, "padmin", "Administration", legacy); ad.role = "admin";
@@ -485,7 +791,7 @@ function penMap(rng, seed, option, kind, withVehicle, o) {
   const map = finish(G, option, {
     kind, zones, vehicle,
     extra: {
-      prisonKind: kind, kindName: K.name, perimeter: { outer, inner, wire: wireLine, wall: kind === "max" }, towers, holes, sallyport, gate: { x: gx, w: 4, y: southOuter, house: gh.rec.k }, yard: yardArea ? yardArea.id : null,
+      prisonKind: kind, kindName: K.name, layout: L.id, layoutName: L.name, plans: B.filter((b) => b.sp.vid).map((b) => ({ name: b.name, role: b.role, plan: b.sp.vid, planName: b.sp.vname })), perimeter: { outer, inner, wire: wireLine, wall: kind === "max" }, towers, holes, sallyport, gate: { x: gx, w: 4, y: southOuter, house: gh.rec.k }, yard: yardArea ? yardArea.id : null,
       units: units.map((u) => ({ unitId: u.unitId, name: u.name, house: u.rec.k, dorm: !!u.dorm, role: u.role })), control: ctl.rec.k, spine: sp.rec.k, armory: ar.rec.k, conns: conns.map((c) => c.id),
     },
   });
@@ -494,6 +800,12 @@ function penMap(rng, seed, option, kind, withVehicle, o) {
   map.deadScale = PRISON.DEAD[kind];
   return map;
 }
+// A county jail's layouts (the user's dozen, issue #31): where its two pods stand along the jail's back (pods: over its
+// middle, a T; at its west or east end, an L; at both ends, apart: a U) and which has the exercise pen (pen: pod A's,
+// pod B's, or one pen behind both, shared).
+export const JAIL_LAYOUTS = [];
+for (const [pods, pn] of [["centre", "T (the pods over the middle)"], ["west", "L (the pods at the west end)"], ["east", "L (the pods at the east end)"], ["apart", "U (a pod at each end)"]])
+  for (const [pen, nn] of [["a", "the pen off pod A"], ["b", "the pen off pod B"], ["shared", "one pen behind both pods"]]) JAIL_LAYOUTS.push({ id: `${pods}-${pen}`, name: `${pn}, ${nn}`, pods, pen });
 // A county jail: the jail building and two pods north of it, a fenced pen off a pod, the street in front.
 function jailMap(rng, seed, option, withVehicle, o) {
   const K = PRISON.KINDS.jail;
@@ -503,11 +815,13 @@ function jailMap(rng, seed, option, withVehicle, o) {
   const main = build(seed, "jail", jailMain, "jailmain", "County jail", legacy); main.role = "jail";
   const mw = main.m.building.w, mh = main.m.building.h;
   main.x0 = Math.floor((W - mw) / 2) + rng.int(-6, 6); main.y0 = H - 18 - mh;
+  const L = pickPlan(rng, JAIL_LAYOUTS, { layout: o.layout });
   const units = [];
-  const left = rng.chance(0.5);
+  const yardOf = (i) => L.pen === "shared" || i === (L.pen === "a" ? 0 : 1);
   for (let i = 0; i < 2; i++) {
     const len = foot(rng, "ppod")[0];
-    const u = build(seed, `pod${i}`, (r) => housingUnit(r, { len, picket: i === 0 ? "left" : "right", unitId: i + 1, kind: "cells", tiers: 2, yard: i === (left ? 0 : 1) }), "pblock", `Pod ${String.fromCharCode(65 + i)}`, legacy);
+    // A pod's plans: those with cells both sides of the day room and its station at the end the jail's corridor reaches.
+    const u = build(seed, `pod${i}`, (r) => housingUnit(r, { len, picket: i === 0 ? "left" : "right", unitId: i + 1, kind: "cells", tiers: 2, yard: yardOf(i), only: (q) => !q.core && q.picket !== "split" }), "pblock", `Pod ${String.fromCharCode(65 + i)}`, legacy);
     u.role = "housing"; u.unitId = i + 1; units.push(u);
   }
   // The pods side by side north of the jail, turned so their officers' stations face it (compound.js placeBuilding
@@ -516,8 +830,12 @@ function jailMap(rng, seed, option, withVehicle, o) {
   units[0].face = "e"; units[1].face = "w";
   const pw = units.map((u) => u.m.building.h), gapX = 6;
   const span = pw[0] + gapX + pw[1];
-  const startX = rng.chance(0.5) ? main.x0 + Math.floor((mw - span) / 2) : main.x0 + 2;
-  units[0].x0 = startX; units[1].x0 = startX + pw[0] + gapX;
+  if (L.pods === "apart") { units[0].x0 = main.x0 - Math.floor(pw[0] / 3); units[1].x0 = Math.max(units[0].x0 + pw[0] + gapX, main.x0 + mw - pw[1] + Math.floor(pw[1] / 3)); }
+  else {
+    const startX = L.pods === "west" ? main.x0 + 2 : L.pods === "east" ? main.x0 + mw - 2 - span : main.x0 + Math.floor((mw - span) / 2);
+    units[0].x0 = startX; units[1].x0 = startX + pw[0] + gapX;
+  }
+  for (const u of units) u.x0 = Math.max(2, Math.min(W - 2 - u.m.building.h, u.x0));
   for (const u of units) u.y0 = main.y0 - 7 - u.m.building.w;
   const B = [main, ...units];
   const storeys = Math.max(...B.map((b) => b.m.storeys || 1));
@@ -527,11 +845,26 @@ function jailMap(rng, seed, option, withVehicle, o) {
   const conns = [];
   for (const u of units) { const c = corridor(G, main.rec, u.rec, { width: 2, name: `Secure corridor to ${u.name.toLowerCase()}`, dk: "security", sally: true }); if (c) conns.push(c); }
   const I = (x, y) => y * W + x, cells = G.cells;
-  // The pen: a fenced yard off the pod with the yard door (its exit's side of the pod), the door its one way in.
+  // The pen: a fenced yard off the pod with the yard door (its exit's side of the pod), the door its one way in; a
+  // shared pen behind both pods, their yard doors its ways in.
   const yu = units.find((u) => u.sp.exits.length);
   let pen = null;
   const ex = yu ? yu.rec.exits.find((e) => e.cells.length) : null;
-  if (ex) {
+  const exs = units.map((u) => u.rec.exits.find((e) => e.cells.length)).filter(Boolean);
+  if (L.pen === "shared" && exs.length === 2 && exs.every((e) => e.side === "n")) {
+    const x0 = Math.min(...units.map((u) => u.rec.x0)), x1 = Math.max(...units.map((u) => u.rec.x0 + u.rec.w)), y1 = Math.min(...units.map((u) => u.rec.y0)), deep = 12;
+    pen = { x0, y0: Math.max(1, y1 - deep), w: x1 - x0, h: y1 - Math.max(1, y1 - deep) };
+    for (let y = pen.y0; y < pen.y0 + pen.h; y++) for (let x = pen.x0; x < pen.x0 + pen.w; x++) {
+      if (x < 0 || y < 0 || x >= W || y >= H || G.owner[I(x, y)] >= 0) continue;
+      const c = cells[I(x, y)];
+      if (y === pen.y0 || x === pen.x0 || x === pen.x0 + pen.w - 1) c.k = "pfence"; else c.f = "conc";
+      G.keep[I(x, y)] = 1;
+    }
+    // Between the pods the pen's south edge is a fence too (the gap down to the jail stays outside).
+    const gx0 = units[0].rec.x0 + units[0].rec.w, gx1 = units[1].rec.x0;
+    for (let x = gx0; x < gx1; x++) if (G.owner[I(x, y1)] < 0) { cells[I(x, y1)].k = "pfence"; G.keep[I(x, y1)] = 1; }
+    G.areas.push({ id: G.areas.length, type: null, role: "yard", name: "Exercise pen", outdoor: true, f: 0, ...pen, doors: exs.map((e) => e.cells[0].slice()) });
+  } else if (ex) {
     const B0 = yu.rec, [dx, dy] = { n: [0, -1], s: [0, 1], w: [-1, 0], e: [1, 0] }[ex.side], along = 16, deep = 12;
     const [cx, cy] = ex.cells[0];
     pen = dx ? { x0: dx > 0 ? B0.x0 + B0.w : B0.x0 - deep, y0: Math.max(B0.y0, Math.min(B0.y0 + B0.h - along, cy - (along >> 1))), w: deep, h: along }
@@ -567,7 +900,7 @@ function jailMap(rng, seed, option, withVehicle, o) {
   const gd = guard(G, zones[0].x0 + 1, zones[0].y0 + 1, { free: (x, y) => x >= 0 && y >= 0 && x < W && y < H && G.cells[y * W + x].k === "open" && !G.keep[y * W + x] && G.owner[y * W + x] < 0 });
   for (let i = 0; i < 10; i++) gd.block(rng.int(1, W - 2), rng.int(1, street.y0 - 3), "tree");
   const vehicle = compoundVehicle(G, zones[0], withVehicle);
-  const map = finish(G, option, { kind: "jail", zones, vehicle, extra: { prisonKind: "jail", kindName: K.name, units: units.map((u) => ({ unitId: u.unitId, name: u.name, house: u.rec.k, dorm: false, role: u.role })), control: main.rec.k, pen, conns: conns.map((c) => c.id), towers: [], holes: [] } });
+  const map = finish(G, option, { kind: "jail", zones, vehicle, extra: { prisonKind: "jail", kindName: K.name, layout: L.id, layoutName: L.name, plans: B.filter((b) => b.sp.vid).map((b) => ({ name: b.name, role: b.role, plan: b.sp.vid, planName: b.sp.vname })), units: units.map((u) => ({ unitId: u.unitId, name: u.name, house: u.rec.k, dorm: false, role: u.role })), control: main.rec.k, pen, conns: conns.map((c) => c.id), towers: [], holes: [] } });
   finishPrison(map, rng, units, B, "jail");
   map.deadScale = PRISON.DEAD.jail;
   return map;

@@ -249,6 +249,11 @@ export const ROLES = {
   plibrary:    role("Library", "office", "none", { hub: true, fl: "carpet", maxBoxes: 4 }),
   gatepost:    role("Gatehouse", "pcontrol", "none", { hub: true, fl: "lino", maxBoxes: 2 }),
   pyard:       role("Exercise yard", null, "none", { fl: "conc" }), // a jail's rooftop or walled yard
+  pshower:     role("Showers", null, "none", { fl: "tile", windows: false }), // a housing unit's showers (prisonlayout.js showers)
+  pcubicles:   role("Cubicle dormitory", "pcells", "none", { hub: true, fl: "conc", maxBoxes: 12 }),
+  pgallery:    role("Gun gallery", "pcontrol", "none", { hub: true, fl: "steel", maxBoxes: 1 }), // a three-tier block's top station (an officers' station by its prison mark)
+  ppodctl:     role("Pod control", "pcontrol", "none", { hub: true, fl: "lino", maxBoxes: 2 }), // a split pod's middle station
+  pcommissary: role("Commissary", "pstores", "none", { fl: "conc", maxBoxes: 8 }),
   // Bunkers (issue #26: bunkerlayout.js BUNKER_STYLES; no windows anywhere, concrete and steel). A plan's { role: "rock" }
   // leaf is no room: assemble fills it with the hillside's crag.
   portal:      role("Blast door hall", "barracks", "none", { fl: "steel", maxBoxes: 1 }),
