@@ -177,6 +177,7 @@ import { selectedTeam, teamOnTile } from "./ui/teamsel.js"; // the selected team
 import { teamTileMenu, teamCtxHtml, runTeamAction, landPick, splitPick, queueAhead } from "./ui/teamctx.js";
 import { WHO_ACTIONS, whoHtml, askWho, whoKey, whoIds } from "./ui/whopick.js"; // who does an order: some of the team, or all of it // its right-click menu: actions for the tile
 import { clickPick, syncPick, MAPSEL_ACTIONS } from "./ui/mapselect.js"; // selecting teams, parties and bands on the map like tiles
+import { breakOut } from "./sim/poirooms.js"; // a camp inside a POI cut off: Break out (issue #71)
 
 const HOURS_PER_SECOND = 1 / 20; // at 1× speed an hour takes 20 seconds and a day 8 minutes
 // MAX_SPEED (ui/pacing.js): the fastest normal speed (5×); anything above is a dev fast-forward
@@ -1041,6 +1042,8 @@ const actions = {
     if (d.base) { ui.baseMsg = setFire(state, baseOf(d), lit); return; }
     if (d.team) { ui.xpMsg = setFire(state, partyById(d.team), lit); return; }
   },
+  // Break out (sim/poirooms.js, issue #71): a camp inside a POI that is cut off fights a route open on its map.
+  breakout: (d) => { const b = baseOf(d); if (!b) return; const why = breakOut(state, b.id); ui.baseMsg = why || ""; if (!why && state.combat) ui.baseView = null; },
   // Strike camp (sim/staging.js strikeCamp): everyone there forms a team with what they can carry; the rest is a cache.
   strikecamp: (d) => {
     const b = baseOf(d);

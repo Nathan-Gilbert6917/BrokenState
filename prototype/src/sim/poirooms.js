@@ -216,6 +216,22 @@ export function roomsView(state, base) {
   const P = base.poiCamp;
   return zonesOf(P).list.map((z) => ({ id: z.id, f: z.f, kind: z.kind, name: z.name, state: roomState(P, z), dead: deadIn(P, z), seen: zoneSeen(P, z) }));
 }
+/**
+ * The camp's base map view (basemap.js viewBattle): the cells of Not cleared rooms and of the yard with the dead tinted
+ * as no-build ground (c.nb) with the reason (c.nc, the hover). @param {any} b the view @param {any} base
+ */
+export function markNotCleared(b, base) {
+  const P = base.poiCamp, F = b.deployPlan && b.deployPlan.fort;
+  if (!P || !F) return 0;
+  let n = 0;
+  for (let y = 0; y < b.h; y++) for (let x = 0; x < b.w; x++) {
+    const why = cellClearWhy(P, P.f || 0, x - F.ox + P.at[0], y - F.oy + P.at[1]);
+    if (!why) continue;
+    const c = b.cells[y * b.w + x];
+    c.nb = 1; c.nc = why; n++;
+  }
+  return n;
+}
 /** Is a cell where a build may go (a Cleared room, or seen, empty yard; a threshold when seen)? "" or why not. */
 export function cellClearWhy(P, f, x, y) {
   const z = zoneAt(P, f, x, y);
@@ -342,7 +358,7 @@ function exitAt(P, f, i) {
 }
 /**
  * Can people get through (f, i) on the way out: walkable, and a Cleared room, a seen threshold, or seen, empty yard (the
- * camp's own room is theirs: always).
+ * camp's own room is theirs: always; a yard block under the camp is yard like any other).
  */
 function clearCell(P, f, i, Z) {
   const x = i % P.w, y = (i - x) / P.w;
@@ -351,7 +367,7 @@ function clearCell(P, f, i, Z) {
   const seen = seenOn(P, f)[i] === 1;
   if (zi < 0) return seen;
   const z = Z.list[zi];
-  if (campZones(P).has(z.id)) return true;
+  if (z.kind === "room" && campZones(P).has(z.id)) return true;
   if (z.kind === "yard") return seen && !deadIn(P, z);
   return roomState(P, z) === "cleared";
 }
@@ -664,7 +680,7 @@ export function fightIn(state, p, base) {
   const tile = base.tile;
   log(state, `${teamName(state, p)} reach ${base.name}, but the way in is cut off: they fight their way in (${wayOut(state, base).through || "the place"}).`, "danger");
   if (!state.autoCombat && typeof window !== "undefined") {
-    p.poi = base.poi; p.dest = tile; p.phase = "engaged"; p.fightIn = base.id;
+    p.poi = base.poi; p.dest = tile; p.phase = "engaged";
     startScavenge(state, p); // the raid on the POI's map from the edge: the camp stands on it (poicamp.js poiCampRaidStart), Settle in once safe moves them in
     return true;
   }
@@ -700,6 +716,28 @@ export function govBreakOut(state) {
     if (homeAt(state, base.id).length >= 2 && !breakOutProblem(state, base)) { breakOut(state, base.id); return true; }
   }
   return false;
+}
+const liveCache = new WeakMap();
+/**
+ * The camp's record as the rooms stand during a raid on its map (build mode): the dead killed this raid off the rooms
+ * they were in, what your people have seen this raid on the camp's floor added. A copy (cached by the battle's turn and
+ * kills); the base's record is untouched. @param {any} b @param {any} P
+ */
+export function liveRecord(b, P) {
+  const R = b && b.poiCamp;
+  if (!R || !b.poiRooms) return P;
+  const dead = b.units.filter((u) => u.room && u.dead);
+  const seen = (R.seen && R.seen[P.f || 0]) || "";
+  const key = `${b.turn}:${dead.length}:${seen.length}:${P.seen.length}:${JSON.stringify(P.zd || {})}`;
+  const c = liveCache.get(b);
+  if (c && c.key === key && c.P === P) return c.rec;
+  const zd = { ...(P.zd || {}) };
+  for (const u of dead) if (zd[u.room] > 0) { zd[u.room]--; if (!zd[u.room]) delete zd[u.room]; }
+  const N = P.w * P.h, a = unseenRle(P.seen, N), s2 = unseenRle(seen, N);
+  for (let i = 0; i < N; i++) if (s2[i]) a[i] = 1;
+  const rec = { ...P, zd, seen: seenRle(a) };
+  liveCache.set(b, { key, P, rec });
+  return rec;
 }
 /** Seen cells of every floor of a raid into the record (poicamp.js poiCampAfterRaid). @param {any} P @param {any} R the raid's record @param {number} N */
 export function mergeSeenFloors(P, R, N) {

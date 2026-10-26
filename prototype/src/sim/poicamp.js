@@ -93,7 +93,7 @@ import { carriedSpots } from "./inventory.js"; // (call-time only)
 import { stockKeyOf } from "./supitems.js"; // (call-time only)
 import { amountOf } from "./itemstack.js"; // (call-time only)
 import { keyWord } from "./water.js"; // (call-time only)
-import { packFloor, syncRooms, deadFromMap, roomsOnRaid, roomsAfterRaid, refreshWay, mergeSeenFloors, cellClearWhy, POIROOMS } from "./poirooms.js"; // the rooms Cleared or Not cleared, the way out (issue #71; call-time only)
+import { packFloor, deadFromMap, roomsOnRaid, roomsAfterRaid, refreshWay, mergeSeenFloors, cellClearWhy, liveRecord, POIROOMS } from "./poirooms.js"; // the rooms Cleared or Not cleared, the way out (issue #71; call-time only)
 
 export const POICAMP = {
   SIZE: 5, HALF: 2,          // the camp's square (basescatter.js SITE.SIZE), the fire in its middle cell
@@ -623,7 +623,7 @@ export function buildPlaceProblem(state, b, type, x, y, r = 0) {
   const rect = rectOf(it, at), seen = seenOf(b, R.f);
   const occ = occupancy(state, base);
   for (const s of R.sites) markSite(occ, s);
-  const why = placeProblemAt(base, it, at[0], at[1], at[2], occ);
+  const why = withLiveRooms(b, base, () => placeProblemAt(base, it, at[0], at[1], at[2], occ)); // poirooms.js (#71): the rooms as they stand in this raid
   if (why) return why;
   const ghosts = Object.values(b.ghosts || {});
   for (let gy = rect.y0; gy < rect.y0 + rect.h; gy++) for (let gx = rect.x0; gx < rect.x0 + rect.w; gx++) {
@@ -692,10 +692,18 @@ export function buildWorkProblem(state, b, u, s) {
   if (!nextTo(siteCells(b, s), u) || (u.f || 0) !== b.poiCamp.f) return "Stand inside or next to the site.";
   const cells = siteCells(b, s);
   if (b.units.some((e) => (e.side === "enemy" || (e.side === "third" && e.hostile)) && activeAny(e) && (e.f || 0) === b.poiCamp.f && cells.some(([x, y]) => x === e.x && y === e.y))) return "Stopped: a hostile is in the site. Kill it or push it out (nothing is lost).";
-  const nc = siteRoomWhy(base, s); // poirooms.js (#71): a room that turned Not cleared stops the work (its progress kept)
+  const nc = withLiveRooms(b, base, () => siteRoomWhy(base, s)); // poirooms.js (#71): a room that turned Not cleared stops the work (its progress kept)
   if (nc) return `Stopped: ${nc.replace(/^Not cleared: /, "")} is not cleared (its progress is kept)`;
   if (!s.paid) { const short = Object.entries(siteMaterials(state, b, base, s, false)); if (short.length) return `Short: ${short.map(([k, n]) => `${n} ${keyWord(k)}`).join(", ")} (the camp's stores and your people on the map)`; }
   return "";
+}
+// The camp's record read with the rooms as they stand in this raid (poirooms.js liveRecord: the dead killed off their
+// rooms, what was seen now), for build mode's checks; the base's own record is put back after.
+function withLiveRooms(b, base, fn) {
+  const keep = base.poiCamp;
+  if (!keep) return fn();
+  base.poiCamp = liveRecord(b, keep);
+  try { return fn(); } finally { base.poiCamp = keep; }
 }
 /** Why a site (or a queued build with a spot) on a POI camp's map waits: its footprint in a Not cleared room ("" when not). @param {any} base @param {any} s */
 export function siteRoomWhy(base, s) {

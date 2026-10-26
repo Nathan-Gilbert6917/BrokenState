@@ -358,6 +358,8 @@ section("Going back in: the raid on the camp's POI map, with the rooms as they s
   const inRoom = b.units.filter((u) => u.side === "enemy" && u.room === z0.id && z0.cells.includes(u.y * P2.w + u.x));
   check(inRoom.length === n, `the POI's dead are on the map in their room, ${z0.name} (${inRoom.length}/${n})`);
   inRoom[0].dead = true; inRoom[0].hp = 0;
+  const live = PR.liveRecord(b, P2);
+  check(live !== P2 && (live.zd[z0.id] || 0) === n - 1 && P2.zd[z0.id] === n, `build mode reads the rooms as they stand in the raid: one fewer in ${z0.name} (${live.zd[z0.id] || 0}), the camp's record untouched until the raid ends`);
   for (const u of mine(b)) u.left = true;
   turn(st2);
   finishCombat(st2, b.setup, b.result || { outcome: "retreat", loot: { supplies: {}, gear: [] }, raid: { hours: 1, searched: 0, total: 0 } });

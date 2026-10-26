@@ -281,7 +281,7 @@ export function layoutHover(state, b, h, ghost) {
   if (picked) return `Click where ${esc(picked.label)} goes.`;
   if (L.pickType) return `Click where the ${esc(pickName(L.pickType).toLowerCase())} goes.`;
   const cell = b.cells[h.y * b.w + h.x];
-  if (cell && cell.nb) return `<span class="danger">${NB_TEXT}.</span>`;
+  if (cell && cell.nb) return `<span class="danger">${cell.nc ? `${esc(cell.nc)}: nothing is built there until it is Cleared (sim/poirooms.js)` : NB_TEXT}.</span>`;
   const F = b.deployPlan && b.deployPlan.fort;
   const o = F && F.outlines.find((q) => h.x >= q.x0 && h.x < q.x0 + q.w && h.y >= q.y0 && h.y < q.y0 + q.h);
   const e = layoutOf(state, base).find((q) => q.at && gx >= q.at[0] && gy >= q.at[1] && gx < q.at[0] + (q.at[2] & 1 ? q.it.h : q.it.w) && gy < q.at[1] + (q.at[2] & 1 ? q.it.w : q.it.h));
