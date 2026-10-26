@@ -394,6 +394,7 @@ export function modelOf(car) {
   if (AIR_PAINT[b]) return b; // an air base's or an airport's aircraft (sim/militarylayout.js)
   if (CIVIC_MODEL[b]) return CIVIC_MODEL[b]; // a fire station's engine and ambulance, a police car (sim/civiclayout.js)
   if (car.kind === "vehicle") return BY_TYPE[car.type] || (b === "truck" ? "pickup" : "sedan");
+  if (BY_TYPE[car.type]) return BY_TYPE[car.type]; // a team's vehicle parked at a base (sim/basemap.js: a "car" cell with its type): drawn as its type, not a box truck
   if (b === "truck" || car.kind === "truck") return "boxtruck";
   return car.L === 3 ? "sedan" : (car.v || 0) % 2 ? "van" : "pickup";
 }
