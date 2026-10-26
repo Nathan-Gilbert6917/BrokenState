@@ -1085,6 +1085,20 @@ function paintMall() {
   return p;
 }
 
+// An amusement park (sim/amusement.js, issue #60): a Ferris wheel's ring and spokes, a roller coaster's hill of track,
+// a striped tent and the gate's booth.
+function paintAmusement() {
+  const p = painter(26, 22), white = "#e8e4d8", steel = "#9aa1a8";
+  for (let a = 0; a < 24; a++) { const t = (a / 24) * Math.PI * 2; p.set(Math.round(8 + Math.cos(t) * 6), Math.round(8 + Math.sin(t) * 6), white); }
+  for (let a = 0; a < 6; a++) { const t = (a / 6) * Math.PI * 2; for (let r = 1; r < 6; r++) p.set(Math.round(8 + Math.cos(t) * r), Math.round(8 + Math.sin(t) * r), steel); p.rect(Math.round(8 + Math.cos(t) * 6) - 1, Math.round(8 + Math.sin(t) * 6), Math.round(8 + Math.cos(t) * 6), Math.round(8 + Math.sin(t) * 6) + 1, a % 2 ? RED : GOLD); }
+  for (let y = 9; y <= 19; y++) { p.set(6 - Math.floor((y - 9) / 4), y, steel); p.set(10 + Math.floor((y - 9) / 4), y, steel); }
+  for (let x = 13; x <= 25; x++) { const y = Math.round(16 - Math.sin(((x - 13) / 12) * Math.PI) * 9); p.set(x, y, RED); for (let yy = y + 1; yy <= 19; yy += 3) p.set(x, yy, shade(steel, -0.2)); }
+  for (let r = 0; r < 4; r++) p.rect(16 - r, 13 + r, 20 + r, 13 + r, r % 2 ? white : RED);
+  p.rect(14, 17, 22, 19, shade(white, -0.15)); p.rect(17, 17, 19, 19, DARK_WIN);
+  p.rect(0, 20, 25, 21, ASPHALT); for (let x = 1; x <= 24; x += 4) p.set(x, 21, "#d8d4c8");
+  return p;
+}
+
 function paintUniversity() {
   const p = painter(22, 20);
   const stone = "#cbc2aa";
@@ -2201,6 +2215,29 @@ function paintLibrary(arg) {
   return p;
 }
 
+// Museum (sim/museumlayout.js, issue #58): a wide stone front under a green copper dome, a colonnade over broad steps,
+// the exhibition banners hanging between the columns (red, blue, gold), "MUSEUM" read as a gold band on the frieze,
+// tall dark windows in the wings and a sculpture on its plinth on the lawn.
+function paintMuseum() {
+  const p = painter(26, 18), wall = "#cfc6b0", trim = "#e6dfcc", col = "#f0ead8";
+  block(p, 1, 7, 24, 15, wall);
+  for (const [y, x0, x1] of [[1, 11, 14], [2, 10, 15], [3, 9, 16], [4, 9, 16]]) p.rect(x0, y, x1, y, y === 1 ? shade(COPPER, 0.35) : y === 4 ? shade(COPPER, -0.25) : COPPER); // the dome
+  p.set(12, 0, GOLD); p.set(13, 0, GOLD);                                                       // its lantern
+  for (const [y, x0, x1] of [[5, 7, 18], [6, 6, 19]]) p.rect(x0, y, x1, y, y === 5 ? shade(trim, 0.2) : trim); // the pediment
+  p.rect(7, 7, 18, 7, GOLD);                                                                   // the frieze's gold band
+  p.rect(7, 8, 18, 14, shade(wall, -0.35));                                                    // the colonnade's shade
+  const banners = ["#a8241c", "#2d5a8a", "#d9a520"];
+  [8, 10, 15, 17].forEach((x, i) => { p.rect(x, 8, x, 14, col); p.set(x, 8, shade(col, 0.2)); });
+  [9, 16].forEach((x, i) => { p.rect(x, 9, x, 12, banners[i % 3]); p.set(x, 12, shade(banners[i % 3], -0.3)); });
+  p.rect(12, 10, 13, 14, "#5a3a22"); p.rect(12, 9, 13, 9, GLASS_LIT);                           // the doors and their fanlight
+  for (const x0 of [2, 20]) for (const x of [x0, x0 + 2]) { p.rect(x, 9, x, 13, DARK_WIN); p.set(x, 9, shade(DARK_WIN, 0.4)); }
+  p.rect(1, 15, 24, 15, shade(wall, -0.3));                                                    // the base course
+  p.rect(6, 15, 19, 15, shade(STONE, 0.15)); p.rect(5, 16, 20, 16, STONE); p.rect(4, 17, 21, 17, shade(STONE, -0.15)); // the steps
+  p.rect(0, 17, 3, 17, GRASS); p.rect(22, 17, 25, 17, GRASS); p.rect(0, 16, 4, 16, GRASS); p.rect(21, 16, 25, 16, GRASS);
+  p.rect(23, 14, 24, 15, STONE); p.rect(23, 12, 24, 13, shade(COPPER, -0.1)); p.set(24, 11, shade(COPPER, 0.2)); // the sculpture on its plinth
+  return p;
+}
+
 function paintPetStore(arg) {
   const L = lookOf(arg) || firstLook("petstore"), p = painter(20, 17);
   // Pet store: the chain's front, a paw print on the glass, a fish tank in the window (fish, weed and bubbles), a
@@ -2638,11 +2675,13 @@ const POI_PAINT = {
   farmstand: paintFarmstand, shed: paintShed, blind: paintBlind, campsite: paintCampsite, hikercamp: paintHikercamp, mineshack: paintMineshack, bunker: () => paintBunkerPortal(false), govbunker: () => paintBunkerPortal(true), shelter: paintFalloutShelter, prepper: paintPrepper, // bunkers (issue #26)
   pawnshop: paintPawnShop, // sim/shops.js
   stripmall: paintMall, outlet: paintMall, // sim/mall.js (issue #30): the mall's own sprite for now
+  amusement: paintAmusement, // sim/amusement.js (issue #60): a park, a fairground, a water park
   jail: paintPolice, // sim/pois.js jailExtra: a county jail, a station's look
   // The shops and services (sim/data-shops.js NEW_KINDS), each painted in its franchise's look.
   sportshop: paintSportShop, electronics: paintElectronics, radioshop: paintRadioShop, bookstore: paintBookstore, library: paintLibrary,
   petstore: paintPetStore, garden: paintGarden, clothing: paintClothing, vet: paintVet, dealer: paintDealer, restaurant: paintRestaurant,
   bank: paintBank, bar: paintBar, liquor: paintLiquor,
+  museum: paintMuseum, // sim/museumlayout.js (issue #58)
   furnstore: paintFurnStore, laundromat: paintLaundromat, thrift: paintThrift, bakery: paintBakery, butcher: paintButcher, deli: paintDeli, // issue #55
   hotel: paintHotel, // issue #29: by its kind
   // The office buildings (sim/data-offices.js, issue #27); the office tower's firms: paintOffice's look.

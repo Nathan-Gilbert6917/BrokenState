@@ -73,6 +73,23 @@ export const REAL_SIZE = {
   dealer:      { w: [30, 50], d: [20, 35], storeys: [1, 2], set: "town", planned: true },
   library:     { w: [9, 56], d: [10, 44], storeys: [1, 8], set: "town", planned: true }, // #34: thirteen variants drawn at their real size (librarylayout.js LIBRARY.SIZE), a rural reading room to an 8-storey central library
   vet:         { w: [15, 20], d: [12, 18], storeys: [1, 2], set: "town" },
+  // #58: thirteen variants drawn at their real size (museumlayout.js reads these rows: a variant's footprint and storeys),
+  // a local history museum in an old house to a natural history museum of three storeys by a city's centre.
+  museum:      { w: [14, 72], d: [11, 54], storeys: [1, 4], set: "city", planned: true, sizes: {
+    art:          { w: [60, 68], d: [44, 50], storeys: [3, 4] }, // huge: galleries round an atrium or a sculpture court
+    natural:      { w: [64, 72], d: [48, 54], storeys: [3, 3] }, // huge: the dinosaur hall and its halls
+    science:      { w: [40, 48], d: [30, 36], storeys: [2, 2] },
+    military:     { w: [40, 48], d: [30, 36], storeys: [1, 2] },
+    localhist:    { w: [14, 17], d: [11, 13], storeys: [2, 2] }, // small: an old house
+    county:       { w: [16, 20], d: [14, 17], storeys: [1, 1] },
+    children:     { w: [26, 32], d: [20, 24], storeys: [1, 2] },
+    aviation:     { w: [50, 58], d: [38, 44], storeys: [1, 1] }, // a hangar's height, one floor
+    car:          { w: [32, 40], d: [24, 30], storeys: [1, 2] },
+    railway:      { w: [40, 48], d: [22, 28], storeys: [1, 1] },
+    maritime:     { w: [30, 36], d: [22, 26], storeys: [2, 2] },
+    presidential: { w: [44, 52], d: [34, 40], storeys: [2, 3] },
+    wax:          { w: [20, 26], d: [16, 20], storeys: [1, 2] },
+  } },
   // Issue #55's six shops (data-newshops.js): planned at these sizes by shopvariants.js, a sizes row a variant (its id:
   // w, d metres, storeys); realScale leaves them as drawn.
   furnstore: { w: [10, 70], d: [14, 60], storeys: [1, 2], set: "town", planned: true, // a mattress store to a big-box showroom
@@ -106,6 +123,17 @@ export const REAL_SIZE = {
   regionalmall: { set: "city", own: true }, stripmall: { set: "town", own: true }, outlet: { set: "town", own: true },
   cinema: { set: "city", own: true }, arcade: { set: "city", own: true }, mallservices: { set: "city", own: true },
   mallrestrooms: { set: "city", own: true }, vacantunit: { set: "city", own: true },
+  // #60's amusement parks (amusement.js): the whole park on one map, a row a variant: its grounds' width and depth in
+  // metres (the map's, within battlesize.js MAP_CAP.amusement) and the storeys of its tallest buildings
+  amusement: { set: "city", planned: true, w: [120, 500], d: [110, 500], storeys: [1, 2], sizes: {
+    themepark: { w: [440, 500], d: [420, 500], storeys: [2, 2] }, regional: { w: [300, 360], d: [280, 340], storeys: [1, 2] },
+    fairground: { w: [260, 320], d: [220, 280], storeys: [1, 1] }, pier: { w: [110, 130], d: [320, 400], storeys: [1, 2] },
+    waterpark: { w: [240, 300], d: [220, 280], storeys: [1, 2] }, carnival: { w: [150, 180], d: [130, 160], storeys: [1, 1] },
+    funcentre: { w: [150, 180], d: [140, 170], storeys: [1, 1] }, family: { w: [190, 230], d: [170, 210], storeys: [1, 1] },
+    abandoned: { w: [300, 360], d: [260, 320], storeys: [1, 2] }, funfair: { w: [220, 260], d: [180, 220], storeys: [1, 1] },
+    lights: { w: [220, 280], d: [200, 260], storeys: [1, 1] }, trampoline: { w: [120, 140], d: [110, 130], storeys: [1, 2] },
+    western: { w: [260, 320], d: [240, 300], storeys: [1, 2] },
+  } },
   // Institutions
   clinic:      { w: [15, 25], d: [12, 20], storeys: [1, 2], set: "town" },
   infirmary:   { w: [15, 25], d: [12, 20], storeys: [1, 2], set: "rural" },
@@ -148,11 +176,16 @@ export const REAL_SIZE = {
   station:     { w: [22, 26], d: [15, 17], storeys: [2, 2], set: "town", planned: true },
   // #29's hotels (hotellayout.js HOTEL.SIZE reads the kinds' rows): planned at these sizes, their storeys built by the
   // tall rule (a city tower hotel's 8–10 storeys: 4 floors built, the stairs above blocked); "hotel" the archetype's span
-  hotel:         { w: [21, 90], d: [19, 23], storeys: [2, 10], set: "town", planned: true },
+  hotel:         { w: [21, 92], d: [19, 56], storeys: [2, 10], set: "town", planned: true }, // d to 56: a shaped variant's (issue #50)
+  // sizes: a shaped variant's bounding box (issue #50: a new save's L, T, U, E, crescent, podium and courtyard
+  // footprints, hotellayout.js SHAPES; an older save's hotel the rectangle its row gives)
   hotelinn:      { w: [21, 25], d: [19, 19], storeys: [2, 3], set: "rural", planned: true },
-  hotelbusiness: { w: [40, 60], d: [21, 23], storeys: [4, 6], set: "town", planned: true },
-  hotelresort:   { w: [64, 90], d: [21, 23], storeys: [2, 4], set: "rural", planned: true },
-  hoteltower:    { w: [36, 44], d: [21, 23], storeys: [8, 10], set: "city", planned: true },
+  hotelbusiness: { w: [40, 60], d: [21, 23], storeys: [4, 6], set: "town", planned: true,
+    sizes: { "biz-highway": { w: [48, 54], d: [40, 46], storeys: [4, 5] }, "biz-conference": { w: [52, 60], d: [38, 44], storeys: [5, 6] } } },
+  hotelresort:   { w: [64, 90], d: [21, 23], storeys: [2, 4], set: "rural", planned: true,
+    sizes: { "res-family": { w: [76, 88], d: [44, 52], storeys: [3, 4] }, "res-golf": { w: [86, 90], d: [42, 48], storeys: [2, 4] }, "res-beach": { w: [86, 92], d: [26, 30], storeys: [3, 4] } } },
+  hoteltower:    { w: [36, 44], d: [21, 23], storeys: [8, 10], set: "city", planned: true,
+    sizes: { "tow-podium": { w: [50, 58], d: [35, 36] }, "tow-twin": { w: [60, 66], d: [36, 37] }, "tow-grand": { w: [54, 58], d: [54, 56], storeys: [8, 9] } } },
   // #36's named civic and medical plans (civicvariants.js VARIANTS), keyed "<kind>.<plan id>": each drawn at its row's
   // size by its own plan (civicvariants.js SIZE reads these; realScale leaves a named plan as it is, its floors past
   // the tall rule's not built). Each kind's "general" plan, #14's or #15's, is the kind's own row above, through realScale.

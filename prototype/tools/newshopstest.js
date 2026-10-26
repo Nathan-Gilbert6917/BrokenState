@@ -4,7 +4,7 @@
 //     dozen plans, a placement row (#42), a loot-sense row (#43), a REAL_SIZE row with a sizes row a variant (#24), its
 //     plans registered with the shared picker (#41) with their size classes;
 //   - older saves: a world from before #55 (shopsR2Legacy; a save without shopsR2V loads as one) regenerates its POI
-//     lists and its crawl blocks exactly as dev before this ticket (3780b28);
+//     lists and its crawl blocks exactly as dev before this ticket (0e4a8b3);
 //   - a new world: every kind stands somewhere, a bakery or a butcher out in the country (placement.js PLACE_EXTRA), and
 //     its plan's size class the placement table's for its tile (a suburb's big-box furniture store, a town's small one);
 //   - inside: a furniture store's showroom full of pieces to lift (the carry system's), a laundromat's washers and dryers
@@ -67,8 +67,8 @@ console.log("The tables");
 console.log("Older saves");
 {
   // The hashes of two worlds' POI lists and their first city's and town's crawl blocks on dev before this ticket
-  // (3780b28, worlds made since #42 and #54's radio towers): a save from before #55 regenerates exactly these.
-  const BASE = { 4242: ["2f8b60ce41320811", "e44d75c94e688ac9"], 4243: ["d204938780a83880", "3f97f8daf3c304db"] };
+  // (0e4a8b3, worlds made since #42, #54, #58 and #60): a save from before #55 regenerates exactly these.
+  const BASE = { 4242: ["5226b79c7af26b02", "20bca0896464f29f"], 4243: ["8d084359037daebc", "3f97f8daf3c304db"] };
   const run = (seed, legacy) => {
     const st = createWorld({ seed, factionCount: 3, size: "small" });
     if (legacy) st.shopsR2Legacy = true;

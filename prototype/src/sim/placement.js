@@ -124,7 +124,7 @@ export const standsOn = (state, key, tile) => placeMult(state, key, tileClass(st
 
 // The kinds placeExtra adds where the old pools had none: [kind, { class: chance a tile }]. A city centre's medical
 // centre (and the city blocks'), a town's county hospital, big-box store and high school, the country's clinic, chapel
-// and feed store, a farm stand by the road; issue #55's country bakery and butcher.
+// and feed store, a farm stand by the road; museums (#58), the big ones by a city's heart; issue #55's country bakery and butcher.
 export const PLACE_EXTRA = [
   ["hospital", { centre: 0.06, city: 0.03, town: 0.0015 }],
   ["supermarket", { town: 0.006 }],
@@ -134,6 +134,8 @@ export const PLACE_EXTRA = [
   ["feedstore", { rural: 0.004, highway: 0.006 }],
   ["farmstand", { highway: 0.01 }],
   ["radiotower", { centre: 0.008, city: 0.006, suburb: 0.003, town: 0.004, highway: 0.01, scenic: 0.004 }], // issue #54: a radio tower (radiotowerlayout.js), the hills' sites aside
+  ["museum", { centre: 0.05, city: 0.02, suburb: 0.006, town: 0.012, highway: 0.002, coast: 0.002 }], // issue #58: by and next to a city's heart most, a town's own
+  ["amusement", { centre: 0.06, city: 0.02, suburb: 0.006, town: 0.004, highway: 0.001, coast: 0.0012, scenic: 0.00012, rural: 0.0001 }], // issue #60: a theme park by a city's centre, a fairground in a town, a pier on the coast
   // Issue #55: a small bakery or butcher in the country (a new world from since them: legacyShopsR2 skips these).
   ["bakery", { rural: 0.0015, highway: 0.0015, coast: 0.0005 }],
   ["butcher", { rural: 0.0015, highway: 0.001 }],
