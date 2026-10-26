@@ -14,14 +14,14 @@
 //     30 hours, the old GROUNDS.EVERY 18–42) at GROUNDS_FULL or more left, × left / GROUNDS_FULL below it (at least
 //     GROUNDS_LO).
 //   - THE TILE'S TRICKLE (per tile, shared): the open ground's dead not on any base's grounds (trickleFree: openDead −
-//     Σ the grounds that live in the open ground) wander in. Chance an hour TRICKLE_P × fill² (fill = trickleFree / the
-//     tile's cap, deadpop.js popCap): a high tile (fill 0.75) about every 35 hours, a medium one (0.45) every 4 days, a
-//     low one (0.2) every 3 weeks; at 0 never. One roll for the whole tile, at the loudest base's multiplier, and the
+//     Σ the grounds that live in the open ground) wander in. Chance an hour TRICKLE_P × fill³ (fill = trickleFree / the
+//     tile's cap, deadpop.js popCap; at the base's × 1): a high tile (fill 0.75) about every 28 hours, a medium one (0.45)
+//     every 5–6 days, the top of low (0.28) every 3 weeks, 0.15 every 5 months; at 0 never. One roll for the whole tile, at the loudest base's multiplier, and the
 //     wave goes to that base: several bases on one tile (one per POI and one normal base, #70) share it, never
 //     multiplied by the number of bases.
 //   - RAIDERS (per tile, shared): a band from the tile's raiders (deadpop.js poiRaiders of a POI camp's POI first, then
-//     the open ground's). Chance an hour RAID_P × fill² of the raiders against their cap (raiderCap): a medium raider
-//     level about every 6 weeks, a high one every week or two, a low one hardly ever. The hostile groups' raids
+//     the open ground's). Chance an hour RAID_P × fill³ of the raiders against their cap (raiderCap): at the cap about
+//     every 3 days, 0.7 every 10 days, a medium level (0.45) every 5 weeks, a low one hardly ever. The hostile groups' raids
 //     (factions.js launchRaid) and the hives' hordes (hordes.js) are not these and are unchanged.
 // THE MULTIPLIERS (mult): night NIGHT (the dead move in the dark; DAY by day: raiders the same both); the tile's noise
 // memory (deadpop.js noiseOf: shots, loud kills, other groups' raids, the last few days) × (1 + noise × NOISE_K), at most
@@ -68,8 +68,8 @@ import { GROUNDS, groundsWord, takeDead } from "./campscout.js"; // call-time on
 
 export const CAMP_ATTACK = {
   GROUNDS_P: 1 / 30, GROUNDS_FULL: 10, GROUNDS_LO: 0.4,     // the grounds' dead: an hour's chance, full from this many left
-  TRICKLE_P: 1 / 20,                                         // the tile's trickle: an hour's chance × fill²
-  RAID_P: 1 / 100,                                           // raiders: an hour's chance × their fill²
+  TRICKLE_P: 1 / 12,                                         // the tile's trickle: an hour's chance × fill³
+  RAID_P: 1 / 80,                                            // raiders: an hour's chance × their fill³
   NIGHT: 1.5, DAY: 0.8,                                      // the dead by night and by day
   NOISE_K: 1 / 25, NOISE_HI: 3,                              // × (1 + the tile's noise × NOISE_K), at most NOISE_HI
   LOUD_BASE: 0.75, LOUD_K: 0.025, LOUD_LO: 0.6, LOUD_HI: 2,  // the base's own Heat
@@ -94,14 +94,18 @@ const rollIn = (state, lohi, ...salt) => lohi[0] + Math.floor(die(state, ...salt
 function basesByTile(state) {
   const by = new Map();
   const add = (tile, x) => { if (tile == null) return; const l = by.get(tile); if (l) l.push(x); else by.set(tile, [x]); };
-  for (const b of state.bases || []) if (!b.group) add(b.tile, { base: b, key: `b${b.id}`, f: null });
+  for (const b of state.bases || []) if (!b.group) add(b.tile, { base: b, key: diceKey(b), f: null });
   for (const f of state.factions || []) {
     if (!f || !f.alive || !Array.isArray(f.bases) || !f.bases.length) continue;
     const H = homesOf(state, f);
-    for (const tile of f.bases) if (H[tile]) add(tile, { base: H[tile], key: `f${f.id}:${tile}`, f });
+    for (const tile of f.bases) if (H[tile]) add(tile, { base: H[tile], key: diceKey(H[tile], f), f });
   }
   return by;
 }
+// A base's dice: by its tile and POI (one base per POI and one normal base a tile, #70), never by its id (ids count up
+// across every world made in one process: two worlds of one seed must roll the same).
+/** @param {any} base @param {any} [f] */
+const diceKey = (base, f = null) => `${f ? `f${f.id}` : "b"}:${base.tile}:${base.poi != null ? base.poi : "-"}`;
 /** Your bases and the groups' homes on a tile. @param {any} state @param {number} tile */
 export const basesOn = (state, tile) => basesByTile(state).get(tile) || [];
 
@@ -147,9 +151,9 @@ export function attackMult(state, x, dead = true) {
 /** The grounds' chance an hour before the multipliers. @param {any} state @param {any} base */
 export const groundsRate = (state, base) => { const g = groundsLeft(state, base); return g > 0 ? C.GROUNDS_P * Math.max(C.GROUNDS_LO, Math.min(1, g / C.GROUNDS_FULL)) : 0; };
 /** The tile's trickle chance an hour before the multipliers. @param {any} state @param {number} tile @param {any[]} [list] */
-export const trickleRate = (state, tile, list = basesOn(state, tile)) => C.TRICKLE_P * trickleFill(state, tile, list) ** 2;
+export const trickleRate = (state, tile, list = basesOn(state, tile)) => C.TRICKLE_P * trickleFill(state, tile, list) ** 3;
 /** The tile's raider chance an hour before the multipliers. @param {any} state @param {number} tile */
-export const raidRate = (state, tile) => C.RAID_P * raiderFill(state, tile) ** 2;
+export const raidRate = (state, tile) => C.RAID_P * raiderFill(state, tile) ** 3;
 // The base on a tile that the trickle and the raiders go to: the loudest (the first of yours on a tie).
 const loudest = (state, list, dead) => {
   let best = null, bm = -1;
@@ -209,7 +213,7 @@ export function nearbyView(state, base) {
  * @param {any} state @param {any} base @param {{ grounds?: boolean, trickle?: boolean, raiders?: boolean }} hit @param {any[]} [list]
  */
 export function waveSource(state, base, hit, list = basesOn(state, base.tile)) {
-  const tile = base.tile, salt = [base.id, state.hour];
+  const tile = base.tile, salt = [diceKey(base, base.fid != null ? { id: base.fid } : null), state.hour];
   let g = 0, d = 0, r = 0, rp = 0;
   if (hit.grounds) {
     const left = groundsLeft(state, base);

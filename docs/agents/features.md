@@ -72,6 +72,7 @@ Base detail: [bases.md](../features/bases.md). Economy detail: [economy.md](../f
   - Step ups (Shelter shack, Outpost house, Main house) are buildings placed by hand from the Build list [ui/basemap] `tools/stepupplacetest.js`. [details](../features/bases.md#step-ups-are-buildings)
   - Clearing the spot of the dead first on towns, cities and infected tiles [siteclear] `tools/siteclearest.js`. [details](../features/bases.md#clearing-the-spot-of-the-dead)
   - "Open the build map" prompt for new bases (key U) [ui/buildmap] `tools/buildmapbtntest.js`. [details](../features/bases.md#open-the-build-map)
+- **Attacks on a camp by the dead nearby**: odds by grounds, tile trickle, raiders and noise; waves out of the pools [campattack, campscout, deadpop] `tools/campattacktest.js`. [details](../features/bases.md#attacks-on-a-camp-by-the-dead-nearby)
 - **Buildings and construction queue**: plots, demolition refunds, the storage ladder, general buildings and fittings [buildings]; field works outside the walls [fieldworks]. [details](../features/bases.md#buildings-and-construction-queue)
 - **Base storage limits**: kg of room by tier and buildings; what does not fit lies outside, weathers and is raided first [basestorage, ui/storage] `tools/basestoragetest.js`. [details](../features/bases.md#base-storage-limits)
 - **The base map**: every base's 500 × 500 grid and 150 × 150 view, its land to clear, placement rules and Move [basemap, basescatter, ui/basemap, ui/isoview] `tools/baseviewtest.js`. [details](../features/bases.md#the-base-map)
