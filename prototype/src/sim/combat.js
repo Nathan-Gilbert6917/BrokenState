@@ -2865,40 +2865,54 @@ export function distField(b, sources, walker = null) {
   const crawl = clamber && !!walker; // one of the dead (not the field of nobody in particular): over half cover at CRAWL.COST (barricade.js)
   const tl = walker && b.tunnels && usesTunnels(walker) ? tunnelLinks(b) : null; // tunnels.js: the dead crawl from one end to the other at DIG.CRAWL a cell
   const key = `${siege ? 1 : 0}${climber ? "c" : ""}${vaulter ? "v" : ""}${clamber ? "t" : ""}${crawl ? "w" : ""}${per}|${burning ? [...burning].join(".") : ""}|${tl ? tunnelSig(b) : ""}|${sources.map((s) => s[0] + s[1] * W).join(",")}`;
-  const cache = fieldCache(b);
+  const fc = fieldCache(b), cache = fc.map;
   const hit = cache.get(key);
   if (hit) return hit;
-  const d = new Float32Array(W * H).fill(Infinity);
   if (cache.size >= 8) cache.delete(cache.keys().next().value);
-  cache.set(key, d);
-  const over = (x, y) => climber && climbOver(walker, b.cells[idx(x, y)].k);
-  const vault = (x, y) => { const c = b.cells[idx(x, y)]; return vaulter ? vaultable(b, c) : clamber && (windowOpen(c) || (crawl && crawlable(b, c))); };
-  const pass = (x, y) => { const c = b.cells[idx(x, y)]; return (CELL[c.k].walk || (siege && breakable(c)) || over(x, y) || vault(x, y)) && !(burning && burning.has(idx(x, y))); };
+  const vault = (c) => (vaulter ? vaultable(b, c) : clamber && (windowOpen(c) || (crawl && crawlable(b, c))));
   const aw = walker ? acidWeights(b, walker) : null; // people go round a spitter's acid when they can (acid.js)
   const wallAt = (x, y) => inside(x, y) && b.cells[idx(x, y)].k === "palisade" && breakable(b.cells[idx(x, y)]);
   const hSiege = (bb, x, y) => (b.cells[idx(x, y)].k === "walkway" && DIRS4.some(([dx, dy]) => wallAt(x + dx, y + dy)) ? 0 : hAt(bb, x, y));
   // What each cell is for this walker, worked out once (the cells do not change while the field is made): passable,
   // walkable for the corner rule, its height (climbCost's h), a ladder or stairs, the cost of battering it. The same
   // sums as asking each cell again for each of its eight neighbours, which was most of a siege's enemy turn (sizetest).
-  const N = W * H, h = climber ? hAt : siege ? hSiege : hAt, soft = softOn(b);
+  // Each of the cell's own fields is read once (on the biggest maps this loop is most of a field's cost, issue #47):
+  // hAt, groundH, breakable, and wetCost, groundCost and iceCost (0 without c.wet, c.gnd or b.sfx) written out.
+  const N = W * H, soft = softOn(b), cells = b.cells, sfx = !!b.sfx, hSieged = siege && !climber;
   // groundA: the cell is the ground's own (groundH: level ground, a hill or a hollow), climbed a level a step any way
   // (climbCost: the user's word 2026-10-23, "Update AI pathing": the dead and every walker go round a tall hill when
   // that is cheaper than over it).
   const okA = new Uint8Array(N), sideA = new Uint8Array(N), climbA = new Uint8Array(N), groundA = new Uint8Array(N), hA = new Float64Array(N), overA = new Float64Array(N), bashA = new Float64Array(N);
+  const kinds = new Map(); // per kind of cell: its CELL row, and its soft cover's cost (softCost reads only the kind)
   for (let y = 0, i = 0; y < H; y++) for (let x = 0; x < W; x++, i++) {
-    const c = b.cells[i], ov = over(x, y), vl = !CELL[c.k].walk && vault(x, y);
-    okA[i] = pass(x, y) ? 1 : 0;
-    sideA[i] = cellAt(b, x, y).walk || ov ? 1 : 0; // a vaulted cell is no corner to cut either (as reachable)
-    climbA[i] = climbAt(b, x, y) ? 1 : 0;
-    groundA[i] = groundH(c) != null ? 1 : 0;
-    hA[i] = h(b, x, y);
-    overA[i] = (ov ? MIDDEAD.CLIMBER.COST : vl ? (vaulter ? vaultCost(b, c, walker) : windowOpen(c) ? VAULT.COST : CRAWL.COST) : soft ? softCost(c) : 0) + wetCost(c) + groundCost(c) + iceCost(b, c); // onto ice (seasonfx.js); spring's mud, winter's snow (seasonground.js); a Climber's wall, a person's vault (a window crashed through dearer), the dead through a window, the dead's crawl over half cover; into a bush or a tent (softcover.js); into water, mud or ice (ponds.js)
-    bashA[i] = !ov && !vl && siege && (breakable(c) && (!CELL[c.k].walk || (barredCell(c) && !doorOpens(b, walker, c)))) ? SIEGE.COST + c.hp * SIEGE.PER_HP : 0;
+    const c = cells[i], k = c.k;
+    let K = kinds.get(k);
+    if (!K) { const C = CELL[k]; K = { C, walk: C.walk, climb: C.climb ? 1 : 0, h: C.h, soft: soft ? softCost(c) : 0 }; kinds.set(k, K); }
+    const walk = K.walk, hp = c.hp, ch = c.h, wet = c.wet, gnd = c.gnd;
+    const ov = climber && climbOver(walker, k), vt = !walk && vault(c); // vt: a vault (or the dead's clamber, crawl) over a cell nobody walks on
+    okA[i] = (walk || (siege && hp > 0) || ov || vt) && !(burning && burning.has(i)) ? 1 : 0;
+    sideA[i] = walk || ov ? 1 : 0; // a vaulted cell is no corner to cut either (as reachable)
+    climbA[i] = K.climb;
+    groundA[i] = c.ter || (ch == null && K.h == null) ? 1 : 0;
+    hA[i] = hSieged && k === "walkway" ? hSiege(b, x, y) : ch ?? K.h ?? 0;
+    overA[i] = (ov ? MIDDEAD.CLIMBER.COST : vt ? (vaulter ? vaultCost(b, c, walker) : windowOpen(c) ? VAULT.COST : CRAWL.COST) : K.soft) + (wet ? wetCost(c) : 0) + (gnd ? groundCost(c) : 0) + (sfx ? iceCost(b, c) : 0); // onto ice (seasonfx.js); spring's mud, winter's snow (seasonground.js); a Climber's wall, a person's vault (a window crashed through dearer), the dead through a window, the dead's crawl over half cover; into a bush or a tent (softcover.js); into water, mud or ice (ponds.js)
+    bashA[i] = !ov && !vt && siege && hp > 0 && (!walk || (barredCell(c) && !doorOpens(b, walker, c))) ? SIEGE.COST + hp * SIEGE.PER_HP : 0;
   }
+  const A = { okA, sideA, climbA, groundA, hA, overA, bashA, aw, climbX: b.climbX, tl: !!tl };
   // A binary heap of (distance, cell), stale entries skipped: the same field as scanning for the nearest open cell,
-  // in a fraction of the time on the bigger maps (battlesize.js).
+  // in a fraction of the time on the bigger maps (battlesize.js). The field made before for the same sources, if every
+  // change to the map since only made a way cheaper (a door battered, broken, opened), is brought up to date from the
+  // cells round the changes alone (fieldPatch; issue #47): the same numbers as working it all out again.
   const heap = new MinHeap();
-  for (const [x, y] of sources) { d[idx(x, y)] = 0; heap.push(0, idx(x, y)); }
+  const base = DIST_FIELD.PATCH ? fc.bases.get(key) : null;
+  let d = base ? fieldPatch(base, A, heap) : null;
+  DIST_FIELD.made[d ? "patched" : base ? "full" : "fresh"]++;
+  if (!d) {
+    d = new Float32Array(N).fill(Infinity);
+    heap.k.length = heap.v.length = 0;
+    for (const [x, y] of sources) { d[idx(x, y)] = 0; heap.push(0, idx(x, y)); }
+  }
+  cache.set(key, d);
   while (heap.size) {
     const key = heap.topKey(), cur = heap.pop();
     if (key > d[cur]) continue;
@@ -2920,25 +2934,68 @@ export function distField(b, sources, walker = null) {
     const links = tl && tl.get(cur);
     if (links) for (const [j, len] of links) { if (!okA[j]) continue; const nd = d[cur] + 1 + len * DIG.CRAWL; if (nd < d[j]) { d[j] = nd; heap.push(d[j], j); } }
   }
+  // Kept for the next change to the map (DIST_FIELD.BASES of them a floor, the latest used last).
+  A.d = d;
+  fc.bases.delete(key);
+  fc.bases.set(key, A);
+  if (fc.bases.size > DIST_FIELD.BASES) fc.bases.delete(fc.bases.keys().next().value);
+  return d;
+}
+// distField's patching (issue #47): BASES, how many of its fields each floor keeps to patch after a change to the map
+// (fieldPatch; 32 bytes a cell each); PATCH false: always the full search (fieldpatchtest.js plays a battle both ways
+// and checks every move is the same); made: how many fields were patched, searched in full with a base the patch could
+// not take (the map got dearer somewhere), and searched fresh (no field for those sources yet), for the tests.
+export const DIST_FIELD = { BASES: 3, PATCH: true, made: { patched: 0, full: 0, fresh: 0 } };
+// distField's patch (issue #47): the field `base` (made on the map as it was, with its cells' sums okA..bashA) brought
+// to the map as it is now (A: the same sums worked out again). Every cell whose sums changed must have changed only
+// the cheaper way: passable where it was not, a corner opened, a vault, crawl or batter cost no higher; the heights,
+// ladders and the ground's own cells the same, and the acid, the weather's climb (b.climbX) and tunnels as they were.
+// Then the old numbers are all still a way there, and the cells round each change (every step that got cheaper starts
+// at one of them) go back on the heap at their old numbers: distField's search from there finds every cell a cheaper
+// way reaches, and stops where nothing got cheaper. A step costs at least 1 and the rounding to Float32 never falls,
+// so the numbers come out the same as distField's full search on the new map. Returns the new field (a copy: the
+// old one may still be in a caller's hands) with the heap loaded, or null for the full search.
+function fieldPatch(base, A, heap) {
+  if (base.climbX !== A.climbX || base.tl || A.tl || !!base.aw !== !!A.aw) return null;
+  const N = A.okA.length;
+  if (base.okA.length !== N) return null;
+  if (A.aw) for (let i = 0; i < N; i++) if (A.aw[i] !== base.aw[i]) return null;
+  const changed = [];
+  for (let i = 0; i < N; i++) {
+    if (A.okA[i] === base.okA[i] && A.sideA[i] === base.sideA[i] && A.overA[i] === base.overA[i] && A.bashA[i] === base.bashA[i] && A.hA[i] === base.hA[i] && A.climbA[i] === base.climbA[i] && A.groundA[i] === base.groundA[i]) continue;
+    // A cell nobody could step into before (okA 0): what a step into it costs now is a way that was not there at all.
+    if (A.okA[i] < base.okA[i] || A.sideA[i] < base.sideA[i] || (base.okA[i] && (!(A.overA[i] <= base.overA[i]) || !(A.bashA[i] <= base.bashA[i]))) || A.hA[i] !== base.hA[i] || A.climbA[i] !== base.climbA[i] || A.groundA[i] !== base.groundA[i]) return null;
+    changed.push(i);
+  }
+  const d = new Float32Array(base.d);
+  for (const i of changed) {
+    const x = i % W, y = (i / W) | 0;
+    for (let ny = Math.max(0, y - 1); ny <= Math.min(H - 1, y + 1); ny++) for (let nx = Math.max(0, x - 1); nx <= Math.min(W - 1, x + 1); nx++) {
+      const j = ny * W + nx;
+      if (d[j] !== Infinity) heap.push(d[j], j);
+    }
+  }
   return d;
 }
 // distField's cache for a battle: emptied whenever any cell's kind, hit points, height or bar changed (a door broken,
 // a wall breached, a lock opened, the map turned or swapped), checked against a copy of those on every call. One for each
-// floor's cells (a building with storeys: the AI moves from floor to floor and back each step, issue #24).
+// floor's cells (a building with storeys: the AI moves from floor to floor and back each step, issue #24). The fields
+// last made for each set of sources stay on (bases) for distField to patch after a change (fieldPatch).
 function fieldCache(b) {
   if (!b._fields) Object.defineProperty(b, "_fields", { value: new WeakMap(), writable: true, configurable: true, enumerable: false }); // not saved with the battle
   const cells = b.cells, n = cells.length;
   let fc = b._fields.get(cells);
-  let same = !!fc && fc.cells === cells && fc.k.length === n;
-  if (same) {
+  if (fc && fc.k.length === n) {
+    // The whole map read every time (a change found is copied in where it is): no new copy of the map for a door battered.
     const k = fc.k, hp = fc.hp, h = fc.h, bar = fc.bar;
-    for (let i = 0; i < n; i++) { const c = cells[i]; if (c.k !== k[i] || c.hp !== hp[i] || c.h !== h[i] || c.bar !== bar[i]) { same = false; break; } }
-  }
-  if (!same) {
-    fc = { cells, k: cells.map((c) => c.k), hp: cells.map((c) => c.hp), h: cells.map((c) => c.h), bar: cells.map((c) => c.bar), map: new Map() };
+    let same = true;
+    for (let i = 0; i < n; i++) { const c = cells[i]; if (c.k !== k[i] || c.hp !== hp[i] || c.h !== h[i] || c.bar !== bar[i]) { k[i] = c.k; hp[i] = c.hp; h[i] = c.h; bar[i] = c.bar; same = false; } }
+    if (!same) fc.map = new Map();
+  } else {
+    fc = { k: cells.map((c) => c.k), hp: cells.map((c) => c.hp), h: cells.map((c) => c.h), bar: cells.map((c) => c.bar), map: new Map(), bases: new Map() };
     b._fields.set(cells, fc);
   }
-  return fc.map;
+  return fc;
 }
 // A binary min-heap of numbers (keys) with an int payload each (distField).
 class MinHeap {
