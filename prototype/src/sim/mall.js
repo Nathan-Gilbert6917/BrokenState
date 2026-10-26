@@ -45,6 +45,7 @@
 // Older saves: a mall raided before keeps its old buildings (buildingmaps.js LEGACY_SITES). The same mall is the same
 // map every visit (its dice from the seed, the tile, the option; every unit's its own).
 import { Rng } from "./rng.js";
+import { registerVariants, pickVariant as pickRegistered } from "./variantpick.js"; // the shared picker (issue #41): the units', the department stores' and the malls' own variants
 import { hash01 } from "./skills.js";
 import { BUILDINGS, assemble, DOOR_KINDS, BMAP, libraryPlan } from "./buildingmaps.js"; // libraryPlan: #34's (librarylayout.js), through buildingmaps so the modules load in their order
 import { FRANCHISES } from "./data-shops.js";
@@ -188,10 +189,13 @@ export const UNIT_VARIANTS = {
     { id: "diner", name: "Gutted diner", min: 12, prog: (F) => ({ split: "y", parts: [["*", F], [5, { split: "x", parts: leaves([["*", VBACK("kitchen", "Stripped kitchen")], [3, { role: "restroom", name: "Restroom" }]]) }]] }) },
   ],
 };
-const unitVariant = (kind, rng, o) => {
-  const list = UNIT_VARIANTS[kind], fit = list.filter((v) => !o.w || o.w >= (v.min || 0));
-  return list.find((v) => v.id === o.variant) || rng.pick(fit.length ? fit : list);
-};
+// The registry's views of these tables (variantpick.js, issue #41): "mall:<unit kind>" (the plans that fit the slot's
+// width: ctx.only), "mall:dept", "mall:stripmall", "mall:regionalmall", "mall:outlet". Pinned by id (o.variant), else
+// one draw of the dice, uniform, as before (r: a function, so a pinned plan draws nothing).
+/** @param {any[]} list */
+const viewsOf = (list) => list.map((v) => ({ id: v.id, name: v.name, src: v }));
+for (const kind of Object.keys(UNIT_VARIANTS)) registerVariants(`mall:${kind}`, viewsOf(UNIT_VARIANTS[kind]));
+const unitVariant = (kind, rng, o) => /** @type {any} */ (pickRegistered(`mall:${kind}`, rng, { plan: o.variant || null, only: (e) => !o.w || o.w >= (e.src.min || 0), r: () => rng.next() })).src;
 export function mallArchetype(kind, rng, o = {}) {
   if (!UNIT_VARIANTS[kind]) throw new Error(`mallArchetype: ${kind}`);
   const back = { side: "back", roles: null, chance: 1, lock: MALL.BACK_LOCK, name: "Service door" };
@@ -244,9 +248,10 @@ export const DEPT_VARIANTS = [
   { id: "garden", name: "Store with a garden centre", w: [30, 34], h: [19, 22], storeys: [1, 1], front: () => [["*", S("Department floor", { entry: true })], [9, { role: "stock", name: "Garden centre", type: "garden", lay: "greenhouse", glass: true, hub: false }]], back: () => [["*", W_("Stockroom")], [7, { role: "warefloor", name: "Garden yard", type: "garden", hub: false, maxBoxes: 4 }], [4, "office"]] },
   { id: "electronics", name: "Electronics and appliances anchor", w: [26, 30], h: [19, 21], storeys: [1, 2], front: () => [["*", S("Department floor", { entry: true })], [8, S("Electronics", { type: "electronics", hub: false, maxBoxes: 4 })]], back: () => [["*", W_("Stockroom")], [5, { role: "workshop", name: "Repair bench", type: "electronics" }], [4, "office"]], up: () => [S("Appliance floor", { type: "store", maxBoxes: 7 })] },
 ];
+registerVariants("mall:dept", viewsOf(DEPT_VARIANTS));
 /** A department store's spec by a variant (o.variant: its id; else the dice's). */
 export function deptstorePlan(rng, o = {}) {
-  const V = DEPT_VARIANTS.find((v) => v.id === o.variant) || DEPT_VARIANTS[rng.int(0, DEPT_VARIANTS.length - 1)];
+  const V = /** @type {any} */ (pickRegistered("mall:dept", rng, { plan: o.variant || null, r: () => rng.next() })).src;
   const bw = rng.int(V.w[0], V.w[1]), bh = rng.int(V.h[0], V.h[1]);
   const storeys = rng.int(V.storeys[0], V.storeys[1]), backD = rng.int(...(V.backD || [5, 6]));
   const fr = V.front(), bk = V.back();
@@ -479,10 +484,12 @@ export const STRIP_VARIANTS = [
   { id: "food", name: "Restaurant row", shape: "row", anchors: [], pad: "restaurant", table: { restaurant: 8, bar: 2, liquor: 1, corner: 1 } },
   { id: "civic", name: "Civic strip", shape: "row", anchors: ["hardware"], pad: null, library: true, units: [5, 11], table: { corner: 2, pharmacy: 2, bookstore: 1, radioshop: 1, clothing: 2, liquor: 1 } },
 ];
-const pickVariant = (rng, list, want) => list.find((v) => v.id === want) || list[rng.int(0, list.length - 1)];
+registerVariants("mall:stripmall", viewsOf(STRIP_VARIANTS));
+/** A mall's own variant (variantpick.js: "mall:<kind>"), pinned by id, else the dice's. @param {any} rng @param {string} key @param {any} want */
+const pickVariant = (rng, key, want) => /** @type {any} */ (pickRegistered(key, rng, { plan: want || null, r: () => rng.next() })).src;
 function stripMall(ctx, withVehicle) {
   const { rng } = ctx, S = MALL.STRIP;
-  const V = (ctx.variant = pickVariant(rng, STRIP_VARIANTS, ctx.option.variant));
+  const V = (ctx.variant = pickVariant(rng, "mall:stripmall", ctx.option.variant));
   ctx.vacant = V.vacant ?? MALL.VACANT; ctx.table = V.table || MALL.INLINE; ctx.flats = !!V.flats;
   const U = V.units || S.UNITS, n = rng.int(U[0], U[1]), D = rng.int(S.D[0], S.D[1]);
   const legN = V.shape === "L" ? Math.floor(n / 3) : V.shape === "U" ? Math.floor(n / 4) : 0, legs = V.shape === "U" ? 2 : V.shape === "L" ? 1 : 0;
@@ -618,9 +625,10 @@ export const REGIONAL_VARIANTS = [
   { id: "community", name: "Community mall", anchors: 2, levels: [1, 2], stores: [40, 55] },
   { id: "mega", name: "Mega mall", anchors: 4, levels: [3, 3], stores: [92, 108], slot: [16, 22], garage: 1, garages: 2 },
 ];
+registerVariants("mall:regionalmall", viewsOf(REGIONAL_VARIANTS));
 function regionalMall(ctx, withVehicle) {
   const { rng } = ctx, R = MALL.REGIONAL, cap = MALL.CAP;
-  const V = (ctx.variant = pickVariant(rng, REGIONAL_VARIANTS, ctx.option.variant));
+  const V = (ctx.variant = pickVariant(rng, "mall:regionalmall", ctx.option.variant));
   ctx.vacant = V.vacant ?? MALL.VACANT; ctx.table = V.table || MALL.INLINE;
   const levels = cap >= 500 ? rng.int(V.levels[0], V.levels[1]) : Math.max(2, rng.int(V.levels[0], V.levels[1])); // a capped map holds its storefronts on 2+ levels
   const nA = V.anchors;
@@ -905,9 +913,10 @@ export const OUTLET_VARIANTS = [
   { id: "compact", name: "Compact outlets", units: [12, 14], pads: [0, 0], streets: 1 },
   { id: "premium", name: "Premium outlets", walkway: 0.7, vacant: 0, gap: [3, 3], table: { clothing: 30, sportshop: 4, electronics: 3, liquor: 1 } },
 ];
+registerVariants("mall:outlet", viewsOf(OUTLET_VARIANTS));
 function outletCentre(ctx, withVehicle) {
   const { rng } = ctx, O = MALL.OUTLET;
-  const V = (ctx.variant = pickVariant(rng, OUTLET_VARIANTS, ctx.option.variant));
+  const V = (ctx.variant = pickVariant(rng, "mall:outlet", ctx.option.variant));
   ctx.flats = !!V.flats;
   const n = rng.int(...(V.units || O.UNITS));
   const streets = V.streets || (n > 18 ? 2 : 1), sides = V.sides || 2;
