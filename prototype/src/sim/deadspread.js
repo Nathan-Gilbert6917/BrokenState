@@ -24,13 +24,22 @@
 //   - The inflow lands on the receiver's open ground (deadpop.js putBack, no POI); deadPopDaily's refill moves it into
 //     its POIs. Infection speeds the spread but never raises a cap, and t.infection is not read back from the counts.
 //   - Every rate uses the counts as they stood at the start of the pass, so the order tiles are visited in never matters.
+// THE DEEP COUNTRYSIDE (issue #76, the user's request 2026-10-26: "I want the deep countryside to be max 10-15% cap and
+// should hit that cap around year 5"): farmland, the coast and the wild (DEEP.CLASSES) at least DEEP.DIST hex steps from
+// the nearest source (deepDist: water counts as a step) and off a hive's land (hives.js zombieToughness 0). Its level
+// never goes past its ceiling (deepLimit): DEEP.CEIL of its cap × the year's ramp (deepShare: DEEP.START of it on day
+// 1, rising in a straight line to all of it at DEEP.YEARS years, then held). The spread treats that as the deep tile's
+// cap (it fills it to the ceiling and relays from there), its default (deadpop.js seedOf: the open ground's and its POIs',
+// the largest POI trimmed first) is held under it, a quiet or a
+// loud day's rise stops at it, and a count over it (a hive died, an older save) sheds DEEP.SHED of the excess a day.
+// The nearer rings, the towns, the cities and the hives' land keep the rules above.
 // Lakes and the sea (water without a river) stop it. The lands' caps (DEADPOP.CAP) are what make rural land always
 // hold fewer than a city: a farm beside a city fills to its own 36 and stops.
 // PERFORMANCE: the pass visits the sources, the relays and the tiles next to them only, with typed scratch arrays kept
 // per map (no allocation per tile); a hex's neighbours are worked out in place (hex.js's arithmetic).
 // AI PARITY (docs/adr/0001): the groups' kills (deadpop.js aiRaidKills, their fights through deadPopBattleEnd) go into
 // the same recent-kill memory, so their hunting slows the spread the same way.
-/** @import { State } from "./types" */
+/** @import { State, Tile } from "./types" */
 import { hash01 } from "./skills.js";
 import { tileClass } from "./placement.js";
 import { riverFrozen } from "./weather.js";
@@ -44,7 +53,70 @@ export const DEADSPREAD = {
   RIVER: 0.5,       // across a river that is not frozen or bridged
   KILL: 0.2,        // × 1 / (1 + KILL × recent kills): 5 kills lately halve it
   SOURCES: ["centre", "city", "suburb", "town"], // the land classes that spread (and the hives' tiles)
+  // The deep countryside's ceiling (the header, #76): these classes this many steps from a source; CEIL of the cap,
+  // START of that on day 1 rising to all of it by YEARS years; SHED of the excess over it lost a day (at least 1).
+  DEEP: { CLASSES: ["rural", "coast", "scenic"], DIST: 3, CEIL: 0.12, START: 0.4, YEARS: 5, SHED: 0.05 },
 };
+
+// ---------- the deep countryside (#76) ----------
+/**
+ * Hex steps from each tile to the nearest source (water a step; -1 none), cached on the state (not saved) until the
+ * hives change. @param {State} state @returns {Int32Array | null}
+ */
+export function deepDist(state) {
+  const g = state.grid, tiles = state.tiles;
+  if (!g || !tiles || !tiles.length) return null;
+  const hl = state.hives || [];
+  /** @type {any} */
+  let c = /** @type {any} */ (state).deepDistCache;
+  if (c && c.tiles === tiles && c.hives.length === hl.length) {
+    let same = true;
+    for (let i = 0; i < hl.length && same; i++) same = c.hives[i] === hl[i].tile;
+    if (same) return c.dist;
+  }
+  const hives = hl.map((h) => h.tile);
+  const W = g.width, H = g.height, n = tiles.length, dist = new Int32Array(n).fill(-1), q = new Int32Array(n);
+  const hs = new Set(hives);
+  let qn = 0;
+  for (let id = 0; id < n; id++) {
+    const t = tiles[id];
+    if (t.terrain !== "water" && (hs.has(id) || DEADSPREAD.SOURCES.includes(tileClass(state, t)))) { dist[id] = 0; q[qn++] = id; }
+  }
+  for (let qi = 0; qi < qn; qi++) {
+    const id = q[qi], x = id % W, y = (id - x) / W, dirs = y & 1 ? ODD : EVEN;
+    for (let k = 0; k < 12; k += 2) {
+      const nx = x + dirs[k], ny = y + dirs[k + 1];
+      if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+      const nid = ny * W + nx;
+      if (dist[nid] < 0) { dist[nid] = dist[id] + 1; q[qn++] = nid; }
+    }
+  }
+  c = { tiles, hives, dist };
+  Object.defineProperty(state, "deepDistCache", { value: c, writable: true, configurable: true, enumerable: false });
+  return dist;
+}
+/** The deep countryside (the header)? hz: the tile's hive land if known. @param {State} state @param {Tile} t @param {number} [hz] */
+export function isDeep(state, t, hz) {
+  if (!t || t.terrain === "water" || !DEADSPREAD.DEEP.CLASSES.includes(tileClass(state, t))) return false;
+  const dist = deepDist(state);
+  if (!dist) return false;
+  const d = dist[t.id];
+  if (d >= 0 && d < DEADSPREAD.DEEP.DIST) return false;
+  return !(hz != null ? hz : zombieToughness(state, t.id));
+}
+/** The deep countryside's ceiling as a share of the cap today: CEIL × the ramp (the header). @param {State} state */
+export function deepShare(state) {
+  const D = DEADSPREAD.DEEP, d = Math.floor((state.hour || 0) / 24);
+  return D.CEIL * Math.min(1, D.START + (1 - D.START) * d / (D.YEARS * 365));
+}
+/**
+ * The most dead a deep-countryside tile holds today (its cap × deepShare, its fraction rounded up on a hash die of the
+ * tile so the ramp climbs smoothly over the land and no tile goes past the next whole one), or null off the deep
+ * countryside. @param {State} state @param {Tile} t @param {number} cap its popCap @param {number} [hz]
+ */
+export function deepLimit(state, t, cap, hz) {
+  return isDeep(state, t, hz) ? Math.floor(cap * deepShare(state) + hash01(state.seed, "dpdeep", t.id)) : null;
+}
 
 // Odd-r hex neighbours (hex.js EVEN_DIRS / ODD_DIRS).
 const EVEN = [1, 0, 0, -1, -1, -1, -1, 0, -1, 1, 0, 1];
@@ -86,7 +158,8 @@ export function spreadDaily(state, opts = {}) {
     if (b.seen[id] !== pass) {
       b.seen[id] = pass;
       const t = tiles[id];
-      b.cap[id] = t.terrain === "water" ? 0 : popCap(state, t);
+      const cap = t.terrain === "water" ? 0 : popCap(state, t), deep = cap > 0 ? deepLimit(state, t, cap) : null;
+      b.cap[id] = deep == null ? cap : deep; // the deep countryside's ceiling is its cap for the spread (#76)
       b.dead[id] = b.cap[id] > 0 ? deadNow(state, t) : 0;
     }
   };
