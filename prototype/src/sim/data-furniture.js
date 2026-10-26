@@ -249,6 +249,17 @@ export const FURNITURE_KINDS = {
   compressor:  P("Air compressor",    HALF, 30, 45, "two", S1, false, ["bay"], "none", true),
   cot:         P("Cot",               HALF, 8, 7, "one", S12, false, ["school", "church", "ward"], "bed:cot"),
   candles:     P("Candlesticks",      POLE, 5, 6, "one", S1, true, ["church"], "comfort:0.1"),
+  // ---------- prisons and jails (issue #31: prisonlayout.js lays them) ----------
+  // A cell's steel bunk (a shelf over it) and its steel toilet-and-sink unit are bolted to the wall; a day room's steel
+  // table has its four stools fixed to it; a control room's panel of door switches and monitors (its switch opens a
+  // block's cell doors: prison.js cellSwitch); a visitation booth's glass partition and phone (seen through, half cover).
+  // The property room's lockers are #25's intake lockers, the metal detector #27's walk-through scanner and #25's X-ray
+  // scanner (rows below).
+  steelbunk:   P("Steel bunk",          HALF, 60, 70, "fixed", S12, false, ["cells"], "none", true),
+  steeltoilet: P("Steel toilet and sink", HALF, 50, 55, "fixed", S1, false, ["cells", "bath"], "none", true),
+  daytable:    P("Day-room table",      HALF, 60, 160, "fixed", S22, false, ["cells", "dining"], "none"),
+  ctrlpanel:   P("Control panel",       HALF, 50, 120, "fixed", S21, false, ["office", "control"], "none", true),
+  visitbooth:  P("Visitation booth",    HALF, 40, 90, "fixed", S1, false, ["office"], "none"),
   // ---------- college campuses (issue #28: campuslayout.js lays them; campus.js the grounds) ----------
   // A dorm room's desk with its hutch (its mini fridge is #29's minibar piece, `minifridge`), a lecture hall's bolted
   // row of seats (its lectern, a library's study carrel: #34's; a teaching lab's fume hood: #37's `fumehood`), a residence hall's

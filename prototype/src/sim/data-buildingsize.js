@@ -213,6 +213,28 @@ export const REAL_SIZE = {
   eatmedium:   { w: [16, 22], d: [13, 16], set: "town", planned: true },
   eatlarge:    { w: [26, 34], d: [18, 22], set: "town", planned: true },
   eathuge:     { w: [50, 54], d: [36, 40], set: "town", planned: true }, // a banquet hall, a buffet palace: the shared rule's huge footprint (≥ 50 wide, 1800 cells; storeytest), as the supermarket (#33)
+  // #31's prisons and county jails (prison.js, prisonlayout.js): planned at these sizes by their own plans. "prison" and
+  // "jail" are the complexes' sample building (the chow hall: buildingmaps.js BUILDINGS make; their maps of many
+  // buildings are prison.js PRISON.KINDS); a housing unit by where it stands (a state prison's or a penitentiary's
+  // block, death row, the segregation unit, a jail's pod); the main corridor's length and the gatehouse's depth are the
+  // complex's (own).
+  prison:      { w: [30, 38], d: [22, 26], storeys: [1, 1], set: "rural", planned: true },
+  jail:        { w: [30, 38], d: [22, 26], storeys: [1, 1], set: "town", planned: true },
+  pblock:      { w: [54, 66], d: [21, 24], storeys: [2, 2], set: "rural", planned: true }, // two tiers of cells round the day room
+  pdeathrow:   { w: [30, 36], d: [21, 24], storeys: [2, 2], set: "rural", planned: true },
+  pseg:        { w: [28, 34], d: [21, 24], storeys: [1, 1], set: "rural", planned: true },
+  ppod:        { w: [26, 32], d: [21, 24], storeys: [2, 2], set: "town", planned: true },
+  pcontrol:    { w: [24, 28], d: [11, 13], storeys: [1, 1], set: "rural", planned: true },
+  pchow:       { w: [30, 38], d: [22, 26], storeys: [1, 1], set: "rural", planned: true },
+  pinfirmary:  { w: [28, 34], d: [17, 17], storeys: [1, 1], set: "rural", planned: true },
+  pchapel:     { w: [14, 18], d: [22, 26], storeys: [1, 1], set: "rural", planned: true },
+  pschool:     { w: [30, 36], d: [16, 16], storeys: [1, 1], set: "rural", planned: true },
+  pworks:      { w: [40, 50], d: [16, 20], storeys: [1, 1], set: "rural", planned: true },
+  padmin:      { w: [26, 32], d: [14, 14], storeys: [2, 2], set: "rural", planned: true },
+  parmory:     { w: [16, 20], d: [12, 12], storeys: [1, 1], set: "rural", planned: true },
+  jailmain:    { w: [42, 48], d: [21, 21], storeys: [2, 2], set: "town", planned: true },
+  pspine:      { set: "rural", own: true },
+  pgate:       { set: "rural", own: true },
   // Open floors
   warehouse:   { w: [40, 80], d: [25, 50], storeys: [1, 1], set: "town" }, // one tall storey
   factory:     { w: [50, 100], d: [30, 60], storeys: [1, 1], set: "town" },
