@@ -50,7 +50,8 @@
 // extracted, retreated, walked out, wiped): at the start the ledger is put on the map; at the end every container
 // your side opened is saved as it is, unopened ones are left alone; things on the floor and on bodies are lost.
 /** @import { State, Tile } from "./types" */
-import { poiAt, poiLedger, poiPool, poiTake, poiFull, poiBand, isSitePoi, addTileHeat, TILE_HEAT } from "./pois.js";
+import { poiAt, poiLedger, poiPool, poiTake, poiFull, poiBand, isSitePoi, TILE_HEAT } from "./pois.js";
+import { noteNoise } from "./deadpop.js"; // the dead on the land (issue #65): the noise of a raid on the tile and the place
 import { siteBuildings, SITES, BUILDINGS, streetHouses, zooBuildings, outdoorHouses, OUTDOOR_SITES } from "./buildingmaps.js"; // zooBuildings: a zoo's (issue #59, zoo.js), through buildingmaps so the modules load in their order; outdoorHouses, OUTDOOR_SITES: outdoors.js (issue #61)
 import { mallUnits } from "./mall.js"; // a mall's buildings (issue #30)
 import { campusBuildings } from "./campus.js"; // a college campus's buildings (issue #28)
@@ -324,6 +325,6 @@ export function lootPoiAbstract(state, who, tile, i, need, opts = {}) {
   let marked = 0;
   for (const mapId of Object.keys(c.maps || {})) marked += syncLedger(state, t, i, mapId, by);
   const heat = opts.heat != null ? opts.heat : by === "player" ? 0 : TILE_HEAT.AI;
-  if (heat > 0 && (took > 0 || boxes)) addTileHeat(state, t, heat * Math.max(1, (opts.hours || 0) / 4));
+  if (heat > 0 && (took > 0 || boxes)) noteNoise(state, t, i, heat * Math.max(1, (opts.hours || 0) / 4)); // deadpop.js: the tile's noise memory (tile heat's) and the place's
   return { took, left, boxes, marked, pool: poiPool(t, i), stripped: !!poi.stripped };
 }

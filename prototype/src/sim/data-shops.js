@@ -32,6 +32,7 @@ import { OUTDOOR_KINDS, OUTDOOR_AREAS, OUTDOOR_ROWS } from "./data-outdoors.js";
 import { PARK_KINDS, PARK_AREA_DEFS } from "./data-parks.js"; // amusement parks, fairgrounds and water parks (issue #60): pure data too
 import { NEWSHOP_KINDS, NEWSHOP_AREAS, NEWSHOP_W, NEWSHOP_FRANCHISES, NEWSHOP_ROWS } from "./data-newshops.js"; // six more shops (issue #55): pure data too
 import { TOWER_AREAS } from "./data-radiotower.js"; // a radio tower compound's rooms (issue #54)
+import { STADIUM_KINDS, STADIUM_AREAS, STADIUM_ROWS } from "./data-stadiums.js"; // sports stadiums and arenas (issue #57)
 
 /** @typedef {{ wall: string, trim: string, sign: string, text: string, accent: string, roof?: string, style: number }} Look */
 /** @typedef {{ fl?: string, depth?: number, wide?: boolean, flat?: number, storeys?: [number, number], room?: string, back?: string, office?: string, media?: string, truck?: boolean, hotel?: string, libs?: Record<string, number>, variants?: string[] }} Plan */
@@ -174,6 +175,7 @@ export const NEW_KINDS = {
   ...OUTDOOR_KINDS, // golf courses and RV parks (data-outdoors.js, issue #61)
   ...PARK_KINDS, // the amusement parks (data-parks.js, issue #60)
   ...NEWSHOP_KINDS, // the furniture store, laundromat, thrift store, bakery, butcher and deli (data-newshops.js, issue #55)
+  ...STADIUM_KINDS, // the stadiums and arenas (data-stadiums.js, issue #57)
 };
 
 // ---------- their raid rooms (combat.js AREAS; tags: loot.js AREA_TAGS) ----------
@@ -279,6 +281,7 @@ export const AREA_DEFS = {
   ...MINE_AREAS, // a mine's workings below, its dry, its lamp room, an explosives magazine (issue #52, minelayout.js)
   ...MUSEUM_AREAS, // a museum's galleries, gift shop, café, labs, stores, dock and security (issue #58, museumlayout.js)
   ...ZOO_AREAS, // a zoo's own rooms (issue #59, data-zoo.js)
+  ...STADIUM_AREAS, // a venue's concessions, suites, team store, security, press box, groundskeeping (issue #57)
 };
 
 // ---------- where each stands (shops.js) ----------
@@ -701,6 +704,7 @@ for (const [t, rows] of Object.entries(OFFICE_ROWS)) ROWS[t] = { ...rows, ...(RO
 for (const [t, rows] of Object.entries(OUTDOOR_ROWS)) ROWS[t] = { ...rows, ...(ROWS[t] || {}) }; // data-outdoors.js (issue #61)
 // Issue #55's six shops' rows (data-newshops.js), the same way.
 for (const [t, rows] of Object.entries(NEWSHOP_ROWS)) ROWS[t] = { ...rows, ...(ROWS[t] || {}) };
+for (const [t, rows] of Object.entries(STADIUM_ROWS)) ROWS[t] = { ...rows, ...(ROWS[t] || {}) }; // the stadiums' (data-stadiums.js, issue #57)
 
 /** Merges rows into a table, never over a row it has (a module's own rows win). @param {Record<string, any>} into @param {Record<string, any>} [rows] */
 export function mergeRows(into, rows) {

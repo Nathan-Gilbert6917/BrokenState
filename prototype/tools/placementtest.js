@@ -8,7 +8,7 @@
 //     stands;
 //   - the crawl: a city crawl's heart holds more hospitals than its rim;
 //   - older worlds: their POI lists and crawl blocks hash exactly as before the table (placeLegacy), a save from before
-//     the data centres gets none (dcLegacy, issue #51), nor one from before the sawmills (sawLegacy, issue #53) or the zoos (zooLegacy, issue #59); a save from before
+//     the data centres gets none (dcLegacy, issue #51), nor one from before the sawmills (sawLegacy, issue #53) the zoos (zooLegacy, issue #59) or the stadiums (stadLegacy, issue #57); a save from before
 //     loads as one; a new world's are the table's.
 // Usage: node tools/placementtest.js [worlds]
 import { createHash } from "node:crypto";
@@ -194,6 +194,16 @@ console.log("\nOlder worlds");
   for (const t of zwBack.tiles) delete t.pois;
   ensurePois(zwBack);
   check(!!zwBack.zooLegacy && !zwBack.tiles.some((t) => (t.pois || []).some((p) => p.kind === "zoo")), "a save from before the zoos loads as one (zooLegacy): none on its tiles");
+  // Stadiums and arenas (issue #57): a new world carries stadV and has some; a save from before them loads with none
+  // on its tiles (stadLegacy).
+  const sd = createWorld({ seed: 4242, factionCount: 3, size: "small" });
+  check(sd.stadV === 1 && !sd.stadLegacy, "a new world carries stadV (issue #57)");
+  check(sd.tiles.some((t) => (t.pois || []).some((p) => p.kind === "stadium")), "a new world has stadiums (issue #57)");
+  delete sd.stadV;
+  const sdBack = deserializeState(serializeState(sd));
+  for (const t of sdBack.tiles) delete t.pois;
+  ensurePois(sdBack);
+  check(!!sdBack.stadLegacy && !sdBack.tiles.some((t) => (t.pois || []).some((p) => p.kind === "stadium")), "a save from before the stadiums loads as one (stadLegacy): none on its tiles");
   // Golf courses, campgrounds and RV parks (issue #61): a new world carries outdoorsV and has them; a save from before
   // them loads with none of them on its tiles (outdoorsLegacy) beyond its own campground sites (mapgen.js's, p.site).
   const OUT = ["golfcourse", "rvpark", "campground"];

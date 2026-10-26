@@ -10,7 +10,7 @@
 // Usage: node tools/perfbudgettest.js [--sites 300,400,campus,mall] [--key stadium,zoo] [--side 500] [--dead 100,200]
 //                                     [--turns 4] [--seed 42] [--budget 1500] [--storeys 3] [--plan regional,medcampus]
 //   --key <key>/<plan>: that plan of the kind pinned (datacenter/hyperscale: a data centre's campus, issue #51).
-//   --plan: with --key, each of these plans pinned (option.plan) instead of the dice's (issue #49).
+//   --plan: with --key, each of these plans pinned (option.plan) instead of the dice's (issue #49; a stadium's venue: speedway, profootball, issue #57).
 //   --budget: the mean turn allowed a hundred of the dead, in ms. --sites none with --key: only those buildings.
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -107,7 +107,7 @@ if (args[0] === "--one") {
   const rows = [];
   let fails = 0;
   for (const site of sites) for (const dead of deads) {
-    const out = spawnSync(process.execPath, [fileURLToPath(import.meta.url), "--one", site, String(dead), String(turns), String(seed)], { encoding: "utf8", maxBuffer: 1 << 26 });
+    const out = spawnSync(process.execPath, [fileURLToPath(import.meta.url), "--one", site, String(dead), String(turns), String(seed), ...(opt("plan") ? ["--plan", opt("plan")] : [])], { encoding: "utf8", maxBuffer: 1 << 26 });
     const line = String(out.stdout || "").trim().split("\n").pop();
     let res = null;
     try { res = JSON.parse(line); } catch { /* reported below */ }

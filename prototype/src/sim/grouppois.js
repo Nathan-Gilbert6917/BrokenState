@@ -34,6 +34,7 @@ import { LOCATIONS } from "./data.js";
 import { log, localId, day } from "./world.js";
 import { tileLabel } from "./parties.js";
 import { hash01 } from "./skills.js";
+import { aiRaidKills } from "./deadpop.js"; // the dead on the land: the groups' raids kill from the same pools
 import {
   poisOf, poiAt, isSitePoi, poiPool, poiName, permanentSite, poiEligible, inKnownZone, POI_KINDS, COUNTS, POI, poiBand, TILE_HEAT,
 } from "./pois.js";
@@ -267,7 +268,8 @@ const stats = (state) => { const st = /** @type {any} */ (state); return st.grou
  * A holder raids POI i of a tile without a map: `need` of its pool (pool units; a street of houses, a neighbourhood,
  * need / poicont.js poiHouses: they go through it a house at a time, as your crews do; less when less is left, never
  * below opts.floor, AISCAV.floor by default) through poicont.js lootPoiAbstract (the pool, the ledger, what the player left
- * in opened containers, the tile's heat: opts.heat, TILE_HEAT.AI by default, × max(1, opts.hours / 4)), and the haul
+ * in opened containers, the tile's heat: opts.heat, TILE_HEAT.AI by default, × max(1, opts.hours / 4)), the fight with
+ * the dead there (deadpop.js aiRaidKills: up to DEADPOP.AI_KILLS off the POI and the tile, loud), and the haul
  * as goods by the POI's kind (aiscav.js haulFor at opts.eff, AISCAV.eff by default; the site POI as its site, the
  * shop's food and all). Logs a POI stripped now and things of yours taken (seen, or on the radio near your bases;
  * opts.news false: quiet; "left": only things of yours taken, the caller tells of the rest). Returns null without
@@ -286,6 +288,7 @@ export function raidPoiAsGroup(state, who, tile, i, need, opts = {}) {
   const before = poiPool(t, i), was = !!p.stripped, band0 = poiBand(t, i);
   const r = lootPoiAbstract(state, who, t, i, need / poiHouses(state, t, i), { floor: opts.floor != null ? opts.floor : AISCAV.floor, heat: opts.heat != null ? opts.heat : TILE_HEAT.AI, hours: opts.hours, room: opts.room });
   if (!r) return null;
+  aiRaidKills(state, t, i, { hours: opts.hours }); // deadpop.js (issue #65, AI parity): their fight kills from the POI's dead and the tile's, loudly; raiders seen raiding here
   const goods = r.took > 0 && opts.haul !== false ? haulFor(t, r.took, before, opts.eff != null ? opts.eff : AISCAV.eff, state, isSitePoi(t, i) ? null : p.kind) : {};
   for (const [k, q] of Object.entries(r.left.sup)) goods[k] = (goods[k] || 0) + q;
   const gear = [...r.left.gear];

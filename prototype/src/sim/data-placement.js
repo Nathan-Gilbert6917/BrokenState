@@ -139,6 +139,8 @@ export const PLACEMENT_ROWS = {
   stripmall: "suburb 1 M, town 1.4 M, highway 0.3 M",
   outlet: "suburb 0.6 L, highway 1.6 L, rural 0.3 L",
   cinema: "of mall", arcade: "of mall", mallservices: "of mall", mallrestrooms: "of mall", vacantunit: "of mall",
+  // ---- sports (issue #57, stadium.js: its venues by the class, their size class) ----
+  stadium: "centre 1.2 H, city 0.8 H, suburb 0.8 L, town 1 L, highway 0.5 L, scenic 0.2 M, rural 0.5 M", // a pro stadium or an arena downtown, a town's high school stadium or ballpark, a rodeo in the country
   // ---- civic and medical ----
   clinic: "centre 0.8 M, city 1 M, suburb 1.2 M, town 1.4 S, highway 0.2 S, scenic 0.2 S, rural 0.5 S", // a rural clinic among the farms
   hospital: "centre 3 H, city 2 H, suburb 0.8 L, town 0.15 L", // a city centre's medical centre, the suburbs' community hospital, a county hospital in a town

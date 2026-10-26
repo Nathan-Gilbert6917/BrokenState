@@ -90,7 +90,8 @@ import { visitorsHour, visitorsDaily } from "./visitors.js";
 import { nomadsHour, nomadsDaily } from "./nomads.js"; // baseless bands that camp, raid the places round them and move on
 import { caravanRaidsHour } from "./caravanraids.js";
 import { noteFinds, discoveryHour, mergeLooked } from "./discovery.js";
-import { ensurePois, poiSnapshot, learnPois, mergePoiFinds, tileHeatDaily } from "./pois.js"; // points of interest on the tiles: their lists, and what a report says of them
+import { deadPopDaily, deadPopSpread } from "./deadpop.js"; // the dead on the land: the midnight recalculation
+import { ensurePois, poiSnapshot, learnPois, mergePoiFinds } from "./pois.js"; // points of interest on the tiles: their lists, and what a report says of them
 import { hiveBirthHour } from "./hivebirth.js"; // hive birth you can see: rumours, the massing card, a hive risen
 import { festivalHour } from "./festival.js"; // the yearly harvest festival at the hub
 import { baseOpticsSight } from "./optics.js";
@@ -265,6 +266,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
     outdoorsV: 1, // golf courses, campgrounds and RV parks as places (outdoors.js, issue #61; save.js: an older save gets none, its campgrounds' street map)
     officesV: 1, // the office buildings of every kind and their firms (data-offices.js; save.js: an older save gets none)
     civicV: 1, // civic and medical buildings at real scale, their big plans and sites (civicvariants.js, civicsite.js, issue #49; save.js: an older save keeps its plans)
+    stadV: 1, // sports stadiums and arenas (stadium.js, issue #57; save.js: an older save's tiles get none)
     dcV: 1, // data centres (datacenter.js, issue #51; save.js: an older save's tiles get none)
     sawV: 1, // sawmills (sawmilllayout.js, issue #53; save.js: an older save's tiles get none)
     minesV: 1, // mines and quarries (minelayout.js, issue #52): a quarry site and a mine shack are the new building types (save.js: an older save keeps its workshop and its cabin)
@@ -1205,7 +1207,8 @@ function hourOfWorld(state) {
     familyDaily(state); // family.js: couples, expecting, births, children eating, growing up and joining the work
     surveyDaily(state); // survey.js: rumours of hidden places (radio, travellers, merchants), found ones struck off
     wanderersDaily(state); // wanderers.js: the survivors you met and left live on (or not); no dice of the world's
-    tileHeatDaily(state); // pois.js: the heat raids left on the tiles falls 10% a day
+    deadPopDaily(state); // deadpop.js (issue #65): the dead and the raiders on the tiles and in their POIs, by their bands and yesterday's noise
+    deadPopSpread(state); // deadpop.js: the spread between tiles (the heat epic's #66)
     recomputeOwnership(state);
     claimsDaily(state); // claims.js: claims under a new base, a hive or a hostile camp are lost
     fieldworksDaily(state); // fieldworks.js: relay masts' parts, raids on your field works, the groups' own, towers drawing the dead

@@ -47,6 +47,7 @@ import { migrateTentList } from "./tents.js"; // the tentkit branch's base.tents
 import { migrateTools } from "./toolreqs.js"; // the tools: an older save's hub gets the tool shelf
 import { migrateCots } from "./beds.js"; // beds as furniture: the retired makeshift cots become Cots set at the base
 import { pondsOnMap } from "./mapgen.js"; // ponds on the land: a save from before them gets them from its seed
+import { ensureDeadPop } from "./deadpop.js"; // the dead on the land (issue #65): an older save's tile heat folded into the pools
 import { ensurePois, packPois } from "./pois.js"; // points of interest: saved as the changes from the seed's lists; a save from before gets its lists on load
 import { RAID_MAPS } from "./worldcfg.js"; // raid maps by the World… dials: an older save keeps the sizes it was made with
 import { tidyCarts } from "./carts.js"; // carts: grids sized, lots only real supplies (every load; nothing older needs changing)
@@ -219,6 +220,9 @@ export function deserializeState(save) {
   // Data centres (datacenter.js, issue #51): a save from before gets none on its tiles (placement.js placeExtraKind,
   // worldcfg.js legacyDc), so its points of interest regenerate as they were.
   if (!state.dcV) { state.dcLegacy = true; state.dcV = 1; }
+  // Sports stadiums and arenas (stadium.js, issue #57): a save from before gets none on its tiles (placement.js
+  // placeExtraKind, worldcfg.js legacyStadium), so its points of interest regenerate as they were.
+  if (!state.stadV) { state.stadLegacy = true; state.stadV = 1; }
   // Sawmills (sawmilllayout.js, issue #53): a save from before gets none on its tiles (placement.js placeExtraKind,
   // worldcfg.js legacySaw), so its points of interest regenerate as they were.
   if (!state.sawV) { state.sawLegacy = true; state.sawV = 1; }
@@ -349,6 +353,7 @@ export function deserializeState(save) {
   // dice, the same lists a new world on that seed makes), its tile.loot standing as the site POI's pool; a tile that
   // has its list keeps it.
   ensurePois(state);
+  ensureDeadPop(state); // deadpop.js: state.tileHeat (an older save's) folded into the pools, then gone
   // Ponds on the land (mapgen.js tile.pond, the user's words 2026-10-23): a save from before them gets them from its seed
   // (hash dice: the ponds a new world on that seed has), except on a tile one of your bases stands on, so the spring's
   // hollow (basescatter.js SPRING) never opens under what was built there. Once: state.worldPonds.

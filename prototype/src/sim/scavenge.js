@@ -8,10 +8,13 @@
 // or the street map with the kind's areas. Raiding a place on another group's base tile is hostile: their guards
 // join the roster (raidEnemies) and their goodwill drops.
 //
-// Tile heat (pois.js TILE_HEAT, persistent per tile): going into a POI adds TILE_HEAT.ENTER, coming out the
-// approach's heat (APPROACHES; a raid on its map by how hot it ran: raidApproach) and the shots fired (fieldheat.js
-// noteGunfire's record). It raises the roster (raidEnemies: more of the dead, and when hot a horde or a wandering band
-// drawn by the noise, by hash dice) and the fights of the hour-by-hour search. The containers persist (poicont.js):
+// The dead and raiders on the land (deadpop.js, issue #65): a raid on a POI meets what it holds (raidEnemies: its dead
+// and its raiders, a surge of the tile's open ground on a loud tile), and what is killed comes off the POI and the tile
+// (deadpop.js deadPopBattleEnd at the battle's end: setup.deadPop); the hour-by-hour search's fights scale with what
+// the place holds and their kills come off it too. Going into a POI adds TILE_HEAT.ENTER to the tile's noise memory
+// (pois.js addTileHeat), coming out the approach's (APPROACHES; a raid on its map by how hot it ran: raidApproach) and
+// the shots fired (fieldheat.js noteGunfire's record), on the tile and the place (deadpop.js noteNoise). The noise
+// raises the fights of the hour-by-hour search and, loud enough, draws a surge. The containers persist (poicont.js):
 // the raid on a map keeps what your side opened (afterRaid → poiRaidEnd), the hour-by-hour search takes through the
 // ledger (lootPoiAbstract: the pool, the containers, and what you left there, which the team carries off).
 // A neighbourhood (a street of 3-5 houses on one map: buildingmaps.js streetMap) is one POI with a larger pool: the
@@ -26,7 +29,8 @@ import {
   partyMembers, bestSkill, carryCapacity, partyCapacity, cargoLoad, cargoRoom, supplyLoad, unitsThatFit, awaitOrders, tileLabel, wipeParty,
   wipeIfEmpty, leaveVehicle, addGearToCargo, PICKED_OVER, teamName,
 } from "./parties.js";
-import { poiAt, poiPool, poiTake, poiName, knownPois, visitPoi, tileHeat, addTileHeat, exitHeat, shotsHere, noteTileHeat, TILE_HEAT } from "./pois.js"; // the place searched: its kind, its pool, its visits; the tile's heat
+import { poiAt, poiPool, poiTake, poiName, knownPois, visitPoi, addTileHeat, exitHeat, shotsHere, noteTileHeat, TILE_HEAT } from "./pois.js"; // the place searched: its kind, its pool, its visits; the tile's noise (tile heat's wrappers)
+import { DEADPOP, poiDead, poiRaiders, poiDefault, tileDead, openRaiders, earshot, noiseOf, surgeDraw, killDead, noteNoise, deadBand } from "./deadpop.js"; // the dead and raiders on the tile and in its POIs (issue #65)
 import { poiRaidEnd, lootPoiAbstract, poiHouses, CONT } from "./poicont.js"; // the containers a place keeps between visits; a street of houses
 import { folkAfterPlace } from "./floorfolk.js"; // a campus's survivors who agreed to join (issue #28)
 import { raidVehiclePick } from "./walkers.js"; // fewer people than vehicles after a raid: which go on
@@ -91,18 +95,22 @@ export const heatStage = (heat) => [...HEAT_STAGES].reverse().find((s) => heat >
 // military bases 3. Open ground counts as 0.
 const siteDanger = (t) => locDanger(t.loc);
 
-// Who is at a site: the dead (more where infection is high) and, depending on who holds the
-// land, guards, patrols or rival scavengers.
-export function raidEnemies(state, tileId) {
+// Who is at a site: the dead and, depending on who holds the land, guards, patrols or rival scavengers.
+// A point of interest (poi: its index on the tile; deadpop.js, issue #65): what the POI holds now, its dead (at most
+// DEADPOP.ROSTER_MAX on one map) and the raiders holed up there (DEADPOP.RAIDER_NAME), with a surge of the tile's open
+// ground drawn in by a loud tile's noise (deadpop.js surgeDraw: they move into the POI). A POI at 0 has none of its own.
+// No POI (a city's crawl places, a convoy's wreck, the tools): the old formula (more where infection is high, the site's
+// danger, a hive's land, ± the dice), never more than the tile holds (deadpop.js tileDead).
+// Each group of the pools carries dpool ("dead" | "raiders"): startScavenge sums them into setup.deadPop's roster, so
+// the kills at the end come off the POI and the tile (deadpop.js deadPopBattleEnd).
+export function raidEnemies(state, tileId, poi = null) {
   const rng = state.rng;
   const t = state.tiles[tileId];
   const groups = [];
   const inf = t.infection || 0;
   // A hive's land (hives.js): more of the dead and tougher (+1 power), and on the red-skull ring around a hive +3.
   const hz = zombieToughness(state, tileId);
-  const heat = tileHeat(state, tileId); // pois.js: a tile stirred up by raids draws more of the dead (no dice of state.rng)
-  const z0 = Math.round(1 + inf * 5 + (t.terrain === "city" ? 1 : 0) + siteDanger(t) + (hz ? 2 : 0) + rng.int(-1, 1)) + Math.floor(heat / TILE_HEAT.ROSTER);
-  const zm = cfgOf(state, "siteDead"), z = zm === 1 ? z0 : Math.round(z0 * zm); // worldcfg.js: the run's Dead at sites dial
+  const atPoi = poi != null && poi >= 0 && !!poiAt(t, poi);
   // mix: the armoured dead here (deadsoldiers.js: soldiers at a National Guard base or an army wreck, riot police at a
   // police station), placed among them by share (combat.js createRaid, buildingmaps.js placeInterior).
   // The bred kinds too (hivetech.js siteSpecials): more in towns and cities as the years go by, and on a hive's land.
@@ -110,7 +118,18 @@ export function raidEnemies(state, tileId) {
   // And the dead the years bring whatever the hives do (deadpool.js widenMix: soldiers out of the military sites, riot
   // police in the towns and cities, the countryside's dead beasts).
   const mix = maxMix(maxMix(maxMix(siteDeadMix(state, tileId), siteSpecials(state, tileId)), beastMix(state, tileId)), widenMix(state, tileId));
-  if (z > 0) groups.push({ kind: "zombies", count: Math.max(1, Math.min(14, z)), power: 2 + inf * 3 + hz, name: hz >= 3 ? "the hive's dead" : mix && mix.soldier >= 0.3 ? "the dead soldiers" : mix && BEAST_KINDS.some((k) => mix[k] >= 0.12) ? "the dead and the dead beasts" : "the dead", mix });
+  const deadName = hz >= 3 ? "the hive's dead" : mix && mix.soldier >= 0.3 ? "the dead soldiers" : mix && BEAST_KINDS.some((k) => mix[k] >= 0.12) ? "the dead and the dead beasts" : "the dead";
+  let surge = 0;
+  if (atPoi) {
+    surge = surgeDraw(state, tileId, poi); // deadpop.js: a loud tile's open ground drawn into the place (hash dice)
+    const z = Math.min(DEADPOP.ROSTER_MAX + surge, poiDead(state, t, poi));
+    if (z - surge > 0) groups.push({ kind: "zombies", count: z - surge, power: 2 + inf * 3 + hz, name: deadName, mix, dpool: "dead" });
+    if (surge > 0 && z >= surge) groups.push({ kind: "zombies", count: surge, power: 2 + inf * 3, name: "a horde drawn by the noise", surge: true, dpool: "dead" });
+  } else {
+    const z0 = Math.round(1 + inf * 5 + (t.terrain === "city" ? 1 : 0) + siteDanger(t) + (hz ? 2 : 0) + rng.int(-1, 1));
+    const zm = cfgOf(state, "siteDead"), z = Math.min(zm === 1 ? z0 : Math.round(z0 * zm), tileDead(state, t)); // worldcfg.js: the run's Dead at sites dial; deadpop.js: no more than the tile holds
+    if (z > 0) groups.push({ kind: "zombies", count: Math.max(1, Math.min(14, z)), power: 2 + inf * 3 + hz, name: deadName, mix, dpool: "dead" });
+  }
   const baseOwner = state.factions.find((f) => f.alive && f.bases.includes(tileId));
   const owner = typeof t.owner === "number" ? factionById(state, t.owner) : null;
   const kindOf = (f) => (f.type === "military" ? "soldiers" : f.type === "zealot" ? "zealots" : "raiders");
@@ -118,6 +137,9 @@ export function raidEnemies(state, tileId) {
     groups.push({ kind: kindOf(baseOwner), count: Math.max(3, Math.min(7, Math.round(baseOwner.pop / 6))), power: 4 + baseOwner.pop / 15, name: `${baseOwner.name} guards`, factionId: baseOwner.id, guard: true });
   } else if (owner && attitude(owner) === "Hostile" && rng.chance(0.4)) {
     groups.push({ kind: kindOf(owner), count: rng.int(2, 3), power: 4, name: `${owner.name} patrol`, factionId: owner.id, guard: true });
+  } else if (atPoi) {
+    const r = Math.min(DEADPOP.POI_RAIDERS.max, poiRaiders(state, t, poi)); // deadpop.js: the raiders holed up in the place
+    if (r > 0) groups.push({ kind: "raiders", count: r, power: 3.5, name: DEADPOP.RAIDER_NAME, guard: true, dpool: "raiders" });
   } else if (rng.chance(0.15)) {
     groups.push({ kind: "raiders", count: 2, power: 3.5, name: "rival scavengers", guard: true });
   }
@@ -126,21 +148,30 @@ export function raidEnemies(state, tileId) {
   groups.push(...siteWanderers(state, tileId));
   const party = siteParty(state, tileId); // parley.js: an AI group's people scavenging here too (friendly, neutral or hostile; hash dice)
   if (party) groups.push(party);
-  const surge = heatSurge(state, tileId);
-  if (surge) groups.push(surge);
+  if (!atPoi) { const hs = heatSurge(state, tileId); if (hs) groups.push(hs); }
   return groups;
 }
+/** The pools' share of a roster (deadpop.js): { roster (the dead), raiders } for setup.deadPop. @param {any[]} groups */
+export const rosterOf = (groups) => ({
+  roster: groups.filter((g) => g.dpool === "dead").reduce((a, g) => a + (g.count || 0), 0),
+  raiders: groups.filter((g) => g.dpool === "raiders").reduce((a, g) => a + (g.count || 0), 0),
+});
 
-// A hot tile (pois.js tileHeat at TILE_HEAT.SURGE or more): now and then the noise has drawn a horde or a wandering
-// band (hash dice of the seed, the tile and the hour, never state.rng): a group for the roster, or null.
+// A loud tile (deadpop.js surgeDraw: its noise memory at DEADPOP.SURGE_NOISE or more, the open ground medium or more):
+// now and then the noise has drawn a chunk of the tile's open ground (hash dice of the seed, the tile and the hour, never
+// state.rng): a group for the roster (dpool: the kills come off the tile), or null. A wandering band is the tile's own
+// raiders (no more of them than are about its open ground: deadpop.js openRaiders).
 export function heatSurge(state, tileId) {
-  const h = tileHeat(state, tileId);
-  if (h < TILE_HEAT.SURGE) return null;
-  const p = Math.min(TILE_HEAT.SURGE_P, ((h - TILE_HEAT.SURGE) / (TILE_HEAT.MAX - TILE_HEAT.SURGE)) * TILE_HEAT.SURGE_P);
-  if (hash01(state.seed, "heatsurge", tileId, state.hour) >= p) return null;
   const t = state.tiles[tileId], inf = t.infection || 0;
-  if (hash01(state.seed, "heatsurgekind", tileId, state.hour) < 0.7) return { kind: "zombies", count: 5 + Math.floor(h / TILE_HEAT.ROSTER), power: 2 + inf * 3, name: "a horde drawn by the noise", surge: true };
-  return { kind: "raiders", count: 2 + Math.floor(hash01(state.seed, "heatsurgen", tileId, state.hour) * 3), power: 3.5, name: "a wandering band drawn by the noise", guard: true, surge: true };
+  if (noiseOf(state, t) < DEADPOP.SURGE_NOISE) return null;
+  if (hash01(state.seed, "heatsurgekind", tileId, state.hour) < 0.7) {
+    const n = surgeDraw(state, tileId, null);
+    return n > 0 ? { kind: "zombies", count: n, power: 2 + inf * 3, name: "a horde drawn by the noise", surge: true, dpool: "dead" } : null;
+  }
+  const p = Math.min(DEADPOP.SURGE_P, ((noiseOf(state, t) - DEADPOP.SURGE_NOISE) / (DEADPOP.NOISE_MAX - DEADPOP.SURGE_NOISE)) * DEADPOP.SURGE_P);
+  if (hash01(state.seed, "heatsurge", tileId, state.hour) >= p) return null;
+  const n = Math.min(openRaiders(state, t), 2 + Math.floor(hash01(state.seed, "heatsurgen", tileId, state.hour) * 3));
+  return n > 0 ? { kind: "raiders", count: n, power: 3.5, name: "a wandering band drawn by the noise", guard: true, surge: true } : null;
 }
 
 // The special dead met searching hour by hour (hivetech.js siteSpecials): their extra weight, as the armoured dead's.
@@ -216,7 +247,7 @@ export function startScavenge(state, p) {
     // A city (citycrawl.js): block by block instead of one raid, while you drive the team (not the autopilot); the crawl
     // opens on the city's map for you to pick the block of its rim to go in at.
     if (crawlTile(t) && p.owner === "player" && poi == null) return startCrawl(state, p, { choose: true });
-    const groups = poi != null ? campRoster(state, t, poi, raidEnemies(state, p.dest)) : raidEnemies(state, p.dest); // campsite.js: a campsite's raiders or its dead
+    const groups = poi != null ? campRoster(state, t, poi, raidEnemies(state, p.dest, poi)) : raidEnemies(state, p.dest); // campsite.js: a campsite's raiders or its dead; deadpop.js: what the POI holds
     const foes = groups.filter((g) => !g.side); // a third side (wanderers.js) is not who you came to fight
     const total = foes.reduce((a, g) => a + g.count, 0);
     const names = foes.map((g) => g.name).join(" and ");
@@ -231,6 +262,7 @@ export function startScavenge(state, p) {
       raid: { heat0: isNight(state) ? 0 : 5, poi: rs.poi ?? null, kind: rs.kind || null, place: rs.place || null, building: rs.building || null }, // building: the one picked before the map (an option id of buildingmaps.js buildingOptions, or "street")
       plan: true, // raidplan.js: before going in, the side to come in from, a scout first, or wait for night
       context: { factionIds: foes.filter((g) => g.factionId && !g.parley).map((g) => g.factionId) }, // parley.js: a party on the site is not their land
+      deadPop: { tile: p.dest, poi, ...rosterOf(groups) }, // deadpop.js deadPopBattleEnd: the kills come off the POI and the tile
     });
     return true;
   }
@@ -261,7 +293,7 @@ export function afterRaid(state, result, setup, battle = null) {
   else if (poi != null) lootPoiAbstract(state, "player", t, poi, (0.07 * r.searched) / poiHouses(state, t, poi), { floor: CONT.FLOOR, left: false }); // a street of houses: a house's share a container
   else takePoi(t, poi, 0.07 * r.searched);
   if (poi != null) {
-    addTileHeat(state, t, exitHeat(APPROACHES[raidApproach(r.heat)].heat, shotsHere(state, setup.tile)));
+    noteNoise(state, t, poi, exitHeat(APPROACHES[raidApproach(r.heat)].heat, shotsHere(state, setup.tile))); // deadpop.js: the tile's noise memory (tile heat's) and the place's
     noteTileHeat(state, t);
   }
   // Guards who saw you, or died, hold it against you.
@@ -314,7 +346,7 @@ export function searchExitHeat(state, e, shots = true) {
   if (!e || e.poi == null || e.heatOut === e.poi) return;
   e.heatOut = e.poi;
   const ap = APPROACHES[e.approach] || APPROACHES.normal;
-  addTileHeat(state, e.tile, exitHeat(ap.heat, shots ? e.shots || 0 : 0));
+  noteNoise(state, e.tile, e.poi, exitHeat(ap.heat, shots ? e.shots || 0 : 0)); // deadpop.js: the tile's noise memory (tile heat's) and the place's
   if (shots) e.shots = 0;
   noteTileHeat(state, e.tile);
 }
@@ -456,7 +488,10 @@ export function searchHour(state) {
 
   // Heat.
   let heat = ap.heat * (0.6 + 0.6 * t.infection);
-  const tileHot = tileHeat(state, e.tile) / TILE_HEAT.MAX; // pois.js: a tile stirred up by raids has more trouble about
+  const tileHot = noiseOf(state, e.tile) / DEADPOP.NOISE_MAX; // deadpop.js: a tile stirred up by raids (its noise memory) has more trouble about
+  // deadpop.js: the dead the place holds (and the open ground's within earshot) against its default: a place cleared of
+  // them has no fights with the dead (the guards' stay), a crowded one more. No dice of its own: the chance's factor.
+  const pf = e.poi != null ? Math.max(DEADPOP.SEARCH_LO, Math.min(DEADPOP.SEARCH_HI, (poiDead(state, t, e.poi) + DEADPOP.SEARCH_OPEN * earshot(state, t)) / Math.max(1, poiDefault(state, t, e.poi)))) : 1;
   if (e.approach === "sneak") heat -= bestSkill(state, p, "stealth") * 0.3;
   if (isNight(state)) heat -= 2;
   const kit = searchHeatMult(state, p); // fieldheat.js: ghillie wrap, rag-wrapped boots, a scent mask, a hiking pack
@@ -466,16 +501,18 @@ export function searchHour(state) {
 
   // Encounters.
   let line = (finds.length ? `Found ${finds.join(", ")}.` : "Nothing useful this hour.") + leftLine + locked + next;
-  if (rng.chance((stage.fight + (e.guarded ? 0.15 : 0) + tileHot * 0.1) * (perk("sixthsense") ? 0.7 : 1))) { // Sixth Sense: 30% less trouble
+  if (rng.chance((stage.fight * pf + (e.guarded ? 0.15 : 0) + tileHot * 0.1 * pf) * (perk("sixthsense") ? 0.7 : 1))) { // Sixth Sense: 30% less trouble
     // The armoured dead (deadsoldiers.js) make a military site's fights harder, and their bodies pay for it.
     const mil = siteDeadMix(state, e.tile);
     const threat = HEAT_STAGES.indexOf(stage) * 3 + t.infection * 6 + (siteDanger(t) - 1) * 1.5 + (e.guarded ? 8 : 0) + (mil ? (mixWeight(mil) - 1) * MILDEAD.SEARCH_THREAT : 0) + specialThreat(state, e.tile) + beastThreat(state, e.tile) + convoyThreat(state, e.tile) + tileHot * 6; // miltrucks.js CONVOY_GUARD: the convoy's guard; the tile's heat
     // The shots: a bow's in arrows, everyone else's in ammo (world.js spendShots); short of either, those count 60%.
     const shot = spendShots(p.supplies, members, e.approach === "loud" ? 6 : 2);
-    if (shot.ammo > 0 && e.poi != null) { noteGunfire(state, e.tile, shot.ammo); e.shots = (e.shots || 0) + shot.ammo; } // fieldheat.js: the shots are heard; the tile's heat when the team comes out
+    if (shot.ammo > 0 && e.poi != null) { noteGunfire(state, e.tile, shot.ammo); e.shots = (e.shots || 0) + shot.ammo; } // fieldheat.js: the shots are heard; the tile's and the place's noise when the team comes out (searchExitHeat)
     const power = members.reduce((a, m) => a + combatPower(m), 0) * armedFactor(members, sumRecs(p.supplies, carriedRec(members)), p.supplies.arrows || 0, { need: () => 1 });
     if (power * rng.range(0.6, 1.4) > threat) {
       line += e.guarded ? " A guard patrol was taken down." : " The dead found you, and you put them down.";
+      // deadpop.js: the dead put down come off the place (then the tile's open ground), loud with the guns.
+      if (!e.guarded) killDead(state, t, e.poi, 1 + HEAT_STAGES.indexOf(stage), { loud: e.approach === "loud" || shot.ammo > 0 });
       const back = arrowsBack(shot.arrows); // won: about half the arrows are picked up again
       if (back) p.supplies.arrows = (p.supplies.arrows || 0) + back;
       const kind = !e.guarded && mil ? ["soldier", "riot"].find((k) => mil[k] > 0) : null;

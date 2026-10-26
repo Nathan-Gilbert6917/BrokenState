@@ -59,6 +59,7 @@ const BASELINE = {
   sawmill: 290.2, // issue #53, a new type (its thirteen plans' mean; 59–81 a 100 m² of rooms, a factory's 76)
   zoo: 2044.8, // issue #59 (zoo.js): a new type, taken with --baseline on its branch (2026-10-26)
   gym: 117.6, bowling: 125.2, // issue #56 (a campus athletics building 105.8)
+  stadium: 10788.5, // issue #57: a new type, measured when it landed (--baseline stadium)
   golfcourse: 549.7, campground: 371.9, rvpark: 1434.5, // issue #61 (outdoors.js): new types, measured on their own branch
 };
 // Kinds whose loot moved past ±10% because a row was clearly wrong, or its plans grew (the same loot a floor cell over
@@ -75,7 +76,7 @@ const SHIFTED = {
 // for them BASELINE holds their plans in an older save's world (civicLegacy, the same plans as when it was measured)
 // and the new world's loot to the square metre is held within ±10% of the older plans' (the economy's band per area).
 const REAL_SCALE = new Set(["clinic", "infirmary", "hospital", "vet", "church", "police", "firestation", "cityhall", "courthouse", "chapel", "healthcentre"]);
-const BIG = (key) => !!(BUILDINGS[key].compound || BUILDINGS[key].campus || BUILDINGS[key].complex || BUILDINGS[key].zoo || BUILDINGS[key].outdoors); // a zoo's site too (issue #59); outdoors: a golf course, a campground, an RV park (issue #61)
+const BIG = (key) => !!(BUILDINGS[key].compound || BUILDINGS[key].campus || BUILDINGS[key].complex || BUILDINGS[key].zoo || BUILDINGS[key].venue || BUILDINGS[key].outdoors); // a zoo's site too (issue #59); venue: a stadium (issue #57); outdoors: a golf course, a campground, an RV park (issue #61)
 const cat = (k) => (GEAR[k] && GEAR[k].cat) || "";
 const value = (def) => { let v = 0; for (const [k, [p, lo, hi]] of Object.entries(def.loot)) v += Math.min(0.95, p) * ((lo + hi) / 2) * supValue(k); for (const [k, p] of def.gear) v += p * ((GEAR[k] && GEAR[k].value) || 0); return v; };
 const listOf = (s) => (Array.isArray(SITES[s]) ? SITES[s] : SITES[s].list).map((e) => (Array.isArray(e) ? e[0] : e));

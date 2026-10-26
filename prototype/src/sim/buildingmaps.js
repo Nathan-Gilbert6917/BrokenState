@@ -79,6 +79,8 @@ import { BUNKER_PLANS, bunkerStyle, levelName } from "./bunkerlayout.js"; // bun
 import { eateryPlan, eateryOf } from "./eaterylayout.js"; // restaurants by kind of food, format and size (issue #33)
 import { dcPlan, dcStyle, dcVariant, dcCampusMap, DC_ROLES } from "./datacenter.js"; // data centres: thirteen plans, campuses to 400 × 400 (issue #51)
 import { radioTowerPlan } from "./radiotowerlayout.js"; // radio tower compounds: a dozen plans (issue #54)
+import { stadiumMap, stadiumIntro, venueFor, mainSpec } from "./stadium.js"; // sports stadiums and arenas (issue #57): the whole venue as one map (compound.js)
+import { stadiumStyle, STADIUM_ROLES } from "./stadiumlayout.js"; // their rooms laid out, their scenes
 import { industryPlan, industryStyle, INDUSTRY_ROLES, INDUSTRY_KEYS } from "./industrylayout.js"; // warehouses, factories and labs: a dozen plans each (issue #37)
 import { sawmillPlan, sawmillStyle, SAWMILL_ROLES, millYardMap } from "./sawmilllayout.js"; // sawmills and lumber yards: thirteen plans (issue #53)
 import { hasVariants, shopVariantSpec, variantSetting } from "./shopvariants.js"; // a dozen layout variants a shop and service type (issue #35; a new save's plan)
@@ -324,6 +326,9 @@ export const ROLES = {
   // Sawmills (issue #53: sawmilllayout.js SAWMILL_ROLES): the saw floor, the green chain, a dry kiln, the planer shed,
   // the filing room, the boiler house, a lumber shed.
   ...SAWMILL_ROLES,
+  // Sports stadiums and arenas (issue #57, stadiumlayout.js STADIUM_ROLES): a concourse, a section of the stands, the
+  // gates, a concession stand, a luxury suite.
+  ...STADIUM_ROLES,
 };
 
 // ---------- the outside ----------
@@ -3418,6 +3423,10 @@ export const BUILDINGS = {
   // A zoo (issue #59, zoo.js zooMap): its animal houses, enclosures, café, gift shop and back of house on one map;
   // make gives one of its animal houses (the hint, the archetype tests, the crawl's storey count).
   zoo: { name: "Zoo", make: (r, o) => zooArchetype(r, o), zoo: true },
+  // Sports stadiums and arenas (issue #57, stadium.js): buildingMap builds the whole venue on one map (stadiumMap:
+  // the stands round the field, the arena, the lots); make gives its main building (the main grandstand or the arena:
+  // the archetype tests, the hint), its venue by the shared picker (o.plan pins one).
+  stadium: { name: "Stadium", make: (r, o = {}) => mainSpec(r, venueFor(null, null, o, r), o), venue: true },
 };
 // The storeys a type can have, [min, max] (the city crawl's bonus can add to offices and apartments, up to MAX_STOREYS).
 export const STOREYS_BY_TYPE = {
@@ -3434,6 +3443,7 @@ export const STOREYS_BY_TYPE = {
   church: [1, 2], motel: [1, 3], apartments: [2, 6], neighbourhood: [1, 3], prison: [1, 2], jail: [1, 2], hotel: [2, 10], // a hotel: an inn 2–3, a resort 2–4, a business hotel 4–6, a tower 8–10 (within MAX_STOREYS)
   amusement: [1, 2], // issue #60: a park's buildings (an office or a pier's arcade of two storeys)
   regionalmall: [1, 3], stripmall: [1, 2], outlet: [1, 2], cinema: [1, 1], arcade: [1, 1], mallservices: [1, 1], mallrestrooms: [1, 1], vacantunit: [1, 1], // issue #30 (a mall's own levels: mall.js MALL)
+  stadium: [1, 4], // issue #57: a venue's stands (stadium.js; data-buildingsize.js REAL_SIZE.stadium.sizes)
   // the shops and services of data-shops.js (a franchise's plan can add a flat above or more floors)
   sportshop: [1, 2], electronics: [1, 2], radioshop: [1, 2], bookstore: [1, 2], petstore: [1, 2], garden: [1, 2], clothing: [1, 2], liquor: [1, 2],
   restaurant: [1, 2], bar: [1, 2], dealer: [1, 2], bank: [1, 3], library: [1, 8], museum: [1, 4], vet: [1, 2], pizza: [1, 1], gym: [1, 2], bowling: [1, 2], // gyms and bowling alleys (issue #56: reclayout.js)
@@ -3484,6 +3494,7 @@ export const SITES = {
   farmstand: [["corner", "Farm stand"]], shed: [["machineshed", "Shed"]], mineshack: [["cabin", "Mine shack"]],
   mine: ["mine"], // issue #52: a mine (a point of interest in the hills and mountains: placement.js PLACE_EXTRA)
   sawmill: ["sawmill"], // issue #53: a sawmill or a lumber yard (a point of interest: placement.js PLACE_EXTRA)
+  stadium: ["stadium"], // a sports stadium or arena (issue #57): the whole venue on one map (stadium.js)
   jail: ["jail"], // a county jail (issue #31, pois.js jailExtra): its complex (prison.js)
   zoo: ["zoo"], // a zoo (issue #59, placement.js PLACE_EXTRA): the whole site on one map (zoo.js)
   golfcourse: ["golfcourse"], rvpark: ["rvpark"], campground: ["campground"], // a golf course, an RV park, a lake's campground (issue #61, placement.js PLACE_EXTRA): the whole place on one map (outdoors.js); a campground site: OUTDOOR_SITES
@@ -3661,7 +3672,7 @@ export function buildingPlan(state, tileId, option) {
   if (B && B.outdoors) { const v = outdoorVariant(state, tileId, option); return { vid: v.id, vname: v.name }; } // a golf course, a campground, an RV park: its variant from the site's dice (outdoors.js), without the map
   if (B && B.park) { const V = parkVariant(state, tileId, option); return { vid: V.id, vname: V.name }; } // an amusement park: its variant by the tile and its own dice (amusement.js)
   if (B && B.zoo) { const V = zooVariant(state, tileId, option); return { vid: V.id, vname: V.name }; } // a zoo: its plan by the tile and its own dice (zoo.js zooVariant: the pick its map makes; issue #72)
-  if (!B || B.compound || B.complex || B.campus || B.farmstead) return null;
+  if (!B || B.compound || B.complex || B.campus || B.farmstead || B.venue) return null; // a venue's plan: its map's (stadium.js)
   if (B.street) {
     if (legacyRooms(state)) return null;
     const v = pickLayout("neighbourhood", specSeed(state, tileId, option), { layout: option.layout || null, setting: option.setting || settingOfTile(state.tiles[tileId]) });
@@ -3673,6 +3684,7 @@ export function buildingPlan(state, tileId, option) {
 }
 export function buildingMap(state, tileId, option, withVehicle) {
   if (BUILDINGS[option.key] && BUILDINGS[option.key].park) { const m = parkMap(state, tileId, option, withVehicle); rollScenes(m, sceneRng(state, tileId, option), option.key, option.scenes || null); return m; } // an amusement park (amusement.js): the whole park; its scenes over its rides and buildings
+  if (BUILDINGS[option.key] && BUILDINGS[option.key].venue) { const m = stadiumMap(state, tileId, option, withVehicle); rollScenes(m, sceneRng(state, tileId, option), option.key, option.scenes || null); return m; } // a stadium or an arena (stadium.js): the whole venue; its scenes over all its buildings and the field
   if (BUILDINGS[option.key] && BUILDINGS[option.key].compound) { const m = mallMap(state, tileId, option, withVehicle); rollScenes(m, sceneRng(state, tileId, option), option.key, option.scenes || null); return m; } // a shopping mall (mall.js): the whole complex; its scenes through its shops
   if (BUILDINGS[option.key] && BUILDINGS[option.key].complex) { const m = prisonMap(state, tileId, option, withVehicle, { legacy: legacyRooms(state) }); rollScenes(m, sceneRng(state, tileId, option), option.key, option.scenes || null); postBodies(m); return m; } // a prison's or a jail's complex (prison.js); its scenes (prisonlayout.js) over all its buildings
   if (BUILDINGS[option.key] && BUILDINGS[option.key].campus) return campusMap(state, tileId, option, withVehicle); // a college campus (campus.js: its buildings' scenes rolled in each)
@@ -4685,7 +4697,7 @@ export function assemble(rng, spec, opts = {}) {
   }
   // Homes room by room (roomlayout.js): which bedroom is the master, which a child's, a great room with no kitchen on
   // its floor, a flat with no bedroom (a studio). An older save (opts.legacy) furnishes every room as it did.
-  const styleOf = (room) => dcStyle(room) || parkStyle(room) || bunkerStyle(room) || libraryStyle(room) || museumStyle(room) || zooStyle(room) || recStyle(room) || (opts.legacy ? null : mineStyle(room) || prisonStyle(room) || officeStyle(room) || militaryStyle(room) || sawmillStyle(room) || industryStyle(room) || farmStyle(room) || mallStyle(room, opts.key) || commercialStyle(room, opts.key) || homeStyle(room, opts.key) || medicalStyle(room, opts.key) || campusStyle(room, opts.key) || civicStyle(room)); // campuslayout.js: a campus building's rooms (their leaf's campus mark, a health centre's by role: #28); shoplayout.js first (a motel's rooms, a shop's back rooms; a flat above stays a home), a hospital's, a clinic's, a vet's rooms (#14), civiclayout.js a civic building's rooms (their leaf's civic mark); bunkerlayout.js a bunker's (their leaf's bunker mark: new kinds, so an older save lays them out the same way) // officelayout.js: a leaf's office mark (issue #27: the office buildings, the corporate tower) // industrylayout.js: a leaf's ind mark (issue #37)
+  const styleOf = (room) => dcStyle(room) || parkStyle(room) || bunkerStyle(room) || libraryStyle(room) || museumStyle(room) || zooStyle(room) || recStyle(room) || (opts.legacy ? null : stadiumStyle(room) || mineStyle(room) || prisonStyle(room) || officeStyle(room) || militaryStyle(room) || sawmillStyle(room) || industryStyle(room) || farmStyle(room) || mallStyle(room, opts.key) || commercialStyle(room, opts.key) || homeStyle(room, opts.key) || medicalStyle(room, opts.key) || campusStyle(room, opts.key) || civicStyle(room)); // campuslayout.js: a campus building's rooms (their leaf's campus mark, a health centre's by role: #28); shoplayout.js first (a motel's rooms, a shop's back rooms; a flat above stays a home), a hospital's, a clinic's, a vet's rooms (#14), civiclayout.js a civic building's rooms (their leaf's civic mark); bunkerlayout.js a bunker's (their leaf's bunker mark: new kinds, so an older save lays them out the same way) // officelayout.js: a leaf's office mark (issue #27: the office buildings, the corporate tower) // industrylayout.js: a leaf's ind mark (issue #37)
   if (!opts.legacy) {
     for (const r of rooms) if (r.role === "bedroom" && styleOf(r) && r.iw * r.ih <= 4) Object.assign(r, { role: "storage", name: "Box room", furnish: "shelves" }); // too small for a bed and a wardrobe
     const beds = rooms.filter((r) => r.role === "bedroom" && styleOf(r)).sort((a, b) => b.iw * b.ih - a.iw * a.ih);
@@ -5064,7 +5076,7 @@ export function assemble(rng, spec, opts = {}) {
   rooms.forEach((r, i) => { if (r.kennel) areas[i].kennel = true; });
   if (here) rooms.forEach((r, i) => { areas[i].part = r.part; }); // a shape's: the part the room is in
   rooms.forEach((r, i) => { if (r.dc) areas[i].dc = r.dc; if (r.bunker) areas[i].bunker = r.bunker; if (r.ind) areas[i].ind = r.ind; if (r.farm) areas[i].farm = r.farm; if (r.lib) areas[i].lib = r.lib; if (r.mus) areas[i].mus = r.mus; if (r.mine) areas[i].mine = r.mine; if (r.under) areas[i].under = 1; if (r.rec) areas[i].rec = r.rec; }); // rec: reclayout.js's room (its scenes) // mine, under: minelayout.js's room (its scenes; underground: dark till the generator runs, indoorlight.js) // lib: librarylayout.js's room (its scenes) // ind: industrylayout.js's room (its scenes) // bunkerlayout.js: a bunker's room (its scenes, its dark, who holds it) // deadbeasts.js shutInPets: a vet's locked kennels hold dead pets
-  if (!opts.legacy) rooms.forEach((r, i) => { if (r.flat) areas[i].flat = true; if (r.unit) areas[i].unit = r.unit; if (r.civic) areas[i].civic = r.civic; if (r.prison) { areas[i].prison = r.prison; for (const k of ["unitId", "dense", "single", "face", "well", "panels"]) if (r[k] != null) areas[i][k] = r[k]; } /* prisonlayout.js: a prison's room (its unit, how dense the dead, a single cell) */ if (r.office) areas[i].office = r.office; if (r.campus) areas[i].campus = r.campus; if (r.zoo) { areas[i].zoo = r.zoo; if (r.den) areas[i].den = true; if (r.animal) areas[i].animal = r.animal; if (r.dark) areas[i].dark = true; } /* zoolayout.js: a zoo room's style, a den, its animals */ if (r.aisle != null) areas[i].aisle = r.aisle; const sn = shopStyleName(r, opts.key) || (MALL_KEYS.has(opts.key) ? r.lay : null); if (sn) areas[i].shop = sn; }); // shoplayout.js: a room's style (its scenes' when); roomlayout.js: a shop's flat above, an apartment's rooms; civiclayout.js: a room's style, a nave's aisle
+  if (!opts.legacy) rooms.forEach((r, i) => { for (const k of ["stad", "face", "seat", "glass", "tunnel", "sport"]) if (r[k] != null) areas[i][k] = r[k]; /* stadiumlayout.js: a venue's room (its style, the side its seats face, its glass, the tunnel) */ if (r.flat) areas[i].flat = true; if (r.unit) areas[i].unit = r.unit; if (r.civic) areas[i].civic = r.civic; if (r.prison) { areas[i].prison = r.prison; for (const k of ["unitId", "dense", "single", "face", "well", "panels"]) if (r[k] != null) areas[i][k] = r[k]; } /* prisonlayout.js: a prison's room (its unit, how dense the dead, a single cell) */ if (r.office) areas[i].office = r.office; if (r.campus) areas[i].campus = r.campus; if (r.zoo) { areas[i].zoo = r.zoo; if (r.den) areas[i].den = true; if (r.animal) areas[i].animal = r.animal; if (r.dark) areas[i].dark = true; } /* zoolayout.js: a zoo room's style, a den, its animals */ if (r.aisle != null) areas[i].aisle = r.aisle; const sn = shopStyleName(r, opts.key) || (MALL_KEYS.has(opts.key) ? r.lay : null); if (sn) areas[i].shop = sn; }); // shoplayout.js: a room's style (its scenes' when); roomlayout.js: a shop's flat above, an apartment's rooms; civiclayout.js: a room's style, a nave's aisle
   rooms.forEach((r, i) => { if (r.mix) areas[i].mix = r.mix; if (r.eat) areas[i].eat = r.eat; }); // eaterylayout.js: a restaurant's rooms hold its cuisine's food (combat.js boxFinds)
   for (const a of outdoor) areas.push({ ...a, id: idBase + a.id, f: 0 });
   for (const c of containers) c.area += idBase;
@@ -5656,6 +5668,7 @@ export function interiorIntro(b) {
   if (R.plan && R.plan.outdoors) return outdoorIntro(b); // a golf course, a campground, an RV park (outdoors.js)
   if (R.plan && R.plan.civicSite) return civicSiteIntro(b); // a civic site of several buildings (civicsite.js, issue #49)
   if (R.plan && R.plan.zoo) return zooIntro(b); // a zoo (zoo.js)
+  if (R.plan && R.plan.venue) return stadiumIntro(b); // a stadium or an arena (stadium.js)
   if (R.plan && R.plan.street) return streetIntro(b);
   if (R.plan && R.plan.park) return `${parkIntro(R.plan)} Ways out: ${(R.plan.exits || []).map((e) => e.name.toLowerCase()).join(", ")}.`; // an amusement park (amusement.js)
   if (R.plan && R.plan.mall) return `${mallIntro(R.plan)} Ways out: ${(R.plan.exits || []).map((e) => e.name.toLowerCase()).join(", ")}, and the lots all round.${R.storeys > 1 ? ` ${R.storeys} levels: the escalators, the lift and the service stairs go up.` : ""}`; // a shopping mall (mall.js)
