@@ -41,7 +41,7 @@ const reached = (m) => {
   for (const h of m.plan.houses) for (let y = h.y0; y < h.y0 + h.h; y++) for (let x = h.x0; x < h.x0 + h.w; x++) inB[y * W + x] = 1;
   let cut = 0;
   for (let i = 0; i < W * H; i++) if (!inB[i] && walk(cells[i]) && !seen[i] && cells[i].k !== "vehicle") cut++;
-  for (const h of m.plan.houses) if (h.front && !seen[h.front.y * W + h.front.x]) cut++;
+  for (const h of m.plan.houses) if (h.front && ![-1, 0, 1].some((d) => seen[h.front.y * W + h.front.x + d])) cut++; // the front (its door's first cell, or the one beside it on a wide front)
   return cut;
 };
 for (const [key, list] of [["farm", FARM_LAYOUTS], ["ranch", RANCH_LAYOUTS]]) {
