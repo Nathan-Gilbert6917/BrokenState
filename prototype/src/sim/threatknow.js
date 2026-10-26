@@ -47,7 +47,7 @@ export const THREATKNOW = {
   // The raid strip's earshot: rounded to this past ROUND_FROM (a rough number).
   ROUND: 5, ROUND_FROM: 10,
   // The State Map's overlay: a band's wash (none … overrun).
-  COLORS: ["rgba(120,190,120,0.18)", "rgba(220,200,120,0.22)", "rgba(230,150,70,0.3)", "rgba(220,80,60,0.36)", "rgba(170,30,40,0.48)"],
+  COLORS: ["rgba(120,200,120,0.26)", "rgba(235,215,110,0.34)", "rgba(235,145,60,0.4)", "rgba(225,70,50,0.44)", "rgba(160,20,35,0.55)"],
 };
 
 /** @param {State} state @param {Tile | number} t */
