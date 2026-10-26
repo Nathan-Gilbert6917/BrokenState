@@ -128,6 +128,7 @@ export const LOOT_SENSE = {
   deptstore:      S({ clothing: 0.6, gadgets: 0.3, food: 0.9 }, ARMY),
   bank:           S({ valuables: 0.8, gadgets: 0.5 }, ARMY, { note: "a revolver in a safe-deposit box (the vault)" }),
   library:        S({ books: 0.9 }, NO_GUNS),
+  museum:         S({ valuables: 0.75, food: 0.9, treats: 0.8, tools: 0.75, books: 0.65 }, [...ARMY, "ammo", "gunmods"], { note: "a military museum's arms vault holds a working antique now and then (its locked cases: locks.js relic); its galleries the odd helmet" }),
   // Medical.
   vet:            S({ drugs: 0.9, vetmeds: 0.6, medgear: 0.7, surgical: 0.25 }, NO_GUNS),
   clinic:         S({ drugs: 0.9, medgear: 0.9, surgical: 0.4 }, NO_GUNS),

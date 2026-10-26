@@ -73,6 +73,23 @@ export const REAL_SIZE = {
   dealer:      { w: [30, 50], d: [20, 35], storeys: [1, 2], set: "town", planned: true },
   library:     { w: [9, 56], d: [10, 44], storeys: [1, 8], set: "town", planned: true }, // #34: thirteen variants drawn at their real size (librarylayout.js LIBRARY.SIZE), a rural reading room to an 8-storey central library
   vet:         { w: [15, 20], d: [12, 18], storeys: [1, 2], set: "town" },
+  // #58: thirteen variants drawn at their real size (museumlayout.js reads these rows: a variant's footprint and storeys),
+  // a local history museum in an old house to a natural history museum of three storeys by a city's centre.
+  museum:      { w: [14, 72], d: [11, 54], storeys: [1, 4], set: "city", planned: true, sizes: {
+    art:          { w: [60, 68], d: [44, 50], storeys: [3, 4] }, // huge: galleries round an atrium or a sculpture court
+    natural:      { w: [64, 72], d: [48, 54], storeys: [3, 3] }, // huge: the dinosaur hall and its halls
+    science:      { w: [40, 48], d: [30, 36], storeys: [2, 2] },
+    military:     { w: [40, 48], d: [30, 36], storeys: [1, 2] },
+    localhist:    { w: [14, 17], d: [11, 13], storeys: [2, 2] }, // small: an old house
+    county:       { w: [16, 20], d: [14, 17], storeys: [1, 1] },
+    children:     { w: [26, 32], d: [20, 24], storeys: [1, 2] },
+    aviation:     { w: [50, 58], d: [38, 44], storeys: [1, 1] }, // a hangar's height, one floor
+    car:          { w: [32, 40], d: [24, 30], storeys: [1, 2] },
+    railway:      { w: [40, 48], d: [22, 28], storeys: [1, 1] },
+    maritime:     { w: [30, 36], d: [22, 26], storeys: [2, 2] },
+    presidential: { w: [44, 52], d: [34, 40], storeys: [2, 3] },
+    wax:          { w: [20, 26], d: [16, 20], storeys: [1, 2] },
+  } },
   motel:       { w: [40, 70], d: [10, 14], storeys: [2, 2], set: "rural", wings: "along" },
   church:      { w: [14, 24], d: [22, 36], storeys: [1, 1], set: "town", wings: "back" }, // a long nave (and a tower), a parish hall behind
   // #22's grocery tiers and #23's school: their own sizes

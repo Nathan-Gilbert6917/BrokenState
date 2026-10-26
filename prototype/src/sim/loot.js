@@ -846,6 +846,12 @@ addTags("handradio", "police", "prison"); // the guards' radios (a prison's armo
 // then"): a tag of its own, "desk", on the pistol and city hall alone. No gun use, part or calibre theme reads it, so
 // no other place's pools change (the guns' "office" or the hall's "home" would have put guns and parts in offices).
 addTags("pistol", "desk"); SITE_TAGS.cityhall = [...new Set([...(SITE_TAGS.cityhall || []), "desk"])];
+// Museums (issue #58, museumlayout.js; data-museums.js MUSEUM_AREAS): a theme of their own, "museum" (no gun, part or
+// ammunition pool reads it), on the site and its rooms, and on what a museum keeps: the curios in the galleries' cases,
+// the military museum's sabres, bayonets and kit, the gift shop's cards and bags, a conservation lab's first aid and
+// sewing kit, security's baton, cuffs and pepper spray, a play room's harmonica and bike helmet.
+SITE_TAGS.museum = ["museum", "shop", "office", "kitchen"];
+for (const k of ["coins", "silverware", "pearls", "goldchain", "watch", "stamps", "telescope", "vinyl", "photos", "camera", "binoculars", "sabre", "cutlass", "bayonet", "tomahawk", "milhelmet", "etool", "armymanual", "cards", "backpack", "sewingkit", "bandagekit", "lantern", "diybook", "baton", "cuffs", "pepper", "taser", "harmonica", "bikehelmet"]) addTags(k, "museum");
 addTags("bandagekit", "school"); addTags("waterfilter", "mall", "sport"); addTags("knife", "medical"); // a nurse's office; the outlet's camping aisle; a dentist's tray
 // Prisons and county jails (issue #31, prison.js): a jail's finds are a prison's, and the prison's own rooms (combat.js
 // AREAS pcells, pcontrol, parmory, pkitchen...) find what the rooms they stand for find (the cell block's, the armory's).
