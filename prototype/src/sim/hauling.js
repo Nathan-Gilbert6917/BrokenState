@@ -741,6 +741,7 @@ export function routeWork(state, base) {
   const transit = inTransit(state);
   const out = [];
   for (const X of haulPartners(state, base)) {
+    if (cutOffWhy(state, X, { heavy: true })) continue; // poirooms.js (#71): no haul into a cut-off camp inside a POI (a load cannot get in)
     const kg = wantKg(pairWants(state, base.id, X.id, transit)) + wantKg(pairWants(state, X.id, base.id, transit));
     if (kg >= HAUL.minKg && routePath(state, base.tile, X.tile, false)) out.push({ dest: X, kg: r1(kg) });
   }
