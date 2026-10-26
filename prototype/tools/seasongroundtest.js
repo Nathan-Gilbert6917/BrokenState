@@ -215,8 +215,18 @@ console.log("The view");
   globalThis.window = globalThis.window || { addEventListener() {}, devicePixelRatio: 1 };
   ISO.setIsoCanvas(cvs);
   UI.initCombatUI({ clientWidth: 1600, clientHeight: 900, width: 0, height: 0, getContext: () => silent({}) });
+  // The ground pictures of a frame: since 99952d7 (issue #24, big raid maps) isoview.js flatGroundFor paints the ground
+  // in tiles of TILE_CELLS (32) cells a side, 16 px a cell, row by row, not one b.w × 16 picture; the edge skirt's tiles
+  // (battleedge.js) come before them. The run of pictures with exactly the tiles' sizes, in order.
+  const groundImgs = (b, all) => {
+    const want = [];
+    for (let y0 = 0; y0 < b.h; y0 += 32) for (let x0 = 0; x0 < b.w; x0 += 32) want.push(`${Math.min(32, b.w - x0) * 16}x${Math.min(32, b.h - y0) * 16}`);
+    const got = all.map((im) => `${im.width}x${im.height}`);
+    for (let i = 0; i + want.length <= got.length; i++) if (want.every((s, j) => got[i + j] === s)) return all.slice(i, i + want.length);
+    return [];
+  };
   let clock = 1e6;
-  // A frame on that day: the ground pictures painted (the map's: b.w × 16 across) and their pixels by colour.
+  // A frame on that day: the ground pictures painted (its tiles: groundImgs) and their pixels by colour.
   const frame = (b, d) => {
     st.hour = d * 24 + 12; st.combat = b;
     imgs = [];
@@ -224,8 +234,7 @@ console.log("The view");
     let err = "";
     try { clock += 50; UI.drawCombat(st, clock); } catch (e) { err = e.stack.split("\n").slice(0, 3).join(" "); }
     const px = { snow: 0, mud: 0, leaf: 0, all: 0 };
-    for (const im of imgs) {
-      if (im.width !== b.w * 16) continue;
+    for (const im of groundImgs(b, imgs)) {
       const a = im.data;
       for (let i = 0; i < a.length; i += 4) {
         const r = a[i], g = a[i + 1], bl = a[i + 2];
@@ -249,8 +258,13 @@ console.log("The view");
   const aut = frame(fb, dayIn("autumn", 20)), aut2 = frame(fb, dayIn("autumn", 21));
   check(!aut.err && aut.ground === 1 && aut2.ground === 0, `autumn: the ground painted again once (${aut.ground}), the next day not (${aut2.ground})`);
   check(aut.px.leaf > sum.px.leaf + 2000 && aut.px.leaf > aut.px.all * 0.02, `autumn's leaves on the ground: ${aut.px.leaf} red and orange px (summer ${sum.px.leaf})`);
+  // Back in summer. Since 99952d7 (issue #24) flatGroundFor keeps a battle's last GROUNDS (6) pictures, so the same
+  // battle's summer picture comes back unpainted; the same fight made again (a new battle, its pictures dropped) is
+  // painted once, with no leaves.
   const back = frame(fb, dayIn("summer"));
-  check(back.ground === 1 && Math.abs(back.px.leaf - sum.px.leaf) < 50, "back in summer: painted once more, no leaves");
+  check(back.ground === 0, "back in summer: the same battle's summer picture is kept, not painted again");
+  const fb2 = fight(forest.id), back2 = frame(fb2, dayIn("summer"));
+  check(back2.ground === 1 && back2.px.all === sum.px.all && Math.abs(back2.px.leaf - sum.px.leaf) < 50, `back in summer on the same fight made again: painted once, no leaves (${back2.px.leaf} red and orange px, summer ${sum.px.leaf})`);
   // Winter's snow on a field fight made on a snowy day.
   st.hour = snowDay * 24 + 12;
   const wb = fight(h.tile);
