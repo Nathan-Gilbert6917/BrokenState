@@ -598,10 +598,10 @@ V.grocery.variants = [
   { id: "pharmacy", name: "Grocery with a pharmacy counter", w: W(0.4, 0.8, 1, 0.4, 0.8), size: "M", lay: "strip", back: [[4, "pharm"], ["*", "stock"], [3, "cooler"], [2, "wc"]], ex: ["back", "front2"] },
   { id: "coop", name: "Food co-op with offices upstairs", w: W(0.4, 1, 0.8, 0, 0.2), size: "S", lay: "strip", back: [["*", "stock"], [3, "cooler"], [4, "members"]], ex: ["back"], st: 2, up: "offices" },
   { id: "international", name: "International market", w: W(0, 0.6, 1, 0.2, 0.6), size: "M", lay: "strip", back: [["*", "stock"], [3, "cooler"], [4, "spice"], [2, "wc"]], ex: ["side"] },
-  { id: "annex", name: "Grocery with a beer and wine annex", w: W(0.4, 0.8, 0.6, 0.6, 0.6), size: "L", lay: "wrap", sideW: 5, side: [["*", "annex"]], back: [["*", "stock"], [3, "cooler"], [2, "wc"]], ex: ["back"] },
+  { id: "annex", name: "Grocery with a beer and wine annex", w: W(0.4, 0.8, 0.6, 0.6, 0.6), size: "L", lay: "wrap", sideW: 4, side: [["*", "annex"]], back: [["*", "stock"], [3, "cooler"], [2, "wc"]], ex: ["back"] },
   { id: "twostorey", name: "Two-storey grocery with a stockroom above", w: W(0.2, 0.8, 1, 0, 0.2), size: "L", lay: "strip", back: [["*", "stock"], [3, "cooler"], [2, "wc"]], ex: ["back", "fire"], st: 2, up: "stock" },
   { id: "corridor", name: "Grocery with a service corridor", w: W(0.2, 0.8, 0.8, 0.6, 0.8), size: "L", lay: "corridor", back: [["*", "stock"], [3, "cooler"], [3, "freezer"], [3, "office"], [3, "brk"], [2, "wc"]], ex: ["back", "dock"] },
-  { id: "florist", name: "Market with a florist", w: W(0.2, 1, 0.8, 0.2, 0.6), size: "S", lay: "strip", front: [["*", S], [4, "florist"]], back: [["*", "stock"], [3, "cooler"], [2, "wc"]], ex: ["front2", "back"] },
+  { id: "florist", name: "Market with a florist", w: W(0.2, 1, 0.8, 0.2, 0.6), size: "S", lay: "strip", back: [["*", "stock"], [3, "cooler"], [4, "florist"], [2, "wc"]], ex: ["front2", "back"] }, // the florist in the back row: the sales floor keeps #22's aisles
   { id: "country", name: "Country supermarket with a feed corner", w: W(1, 0.6, 0, 0.6, 0), size: "M", lay: "strip", back: [["*", "stock"], [3, "cooler"], [4, "feed"]], ex: ["side", "back"], ground: "rural" },
 ];
 
@@ -720,7 +720,7 @@ export function shopVariantSpec(key, rng, o = {}, withPlan = (l) => l, plan = {}
   const front = v.front ? band(v.front) : R(S);
   const depth = v.depth ?? T.depth ?? 0.62;
   const midD = v.lay === "deep" ? sz(v.midD ?? 3, rng) : 0;
-  const sd = T.depthBack ? Math.max(4, ih - T.depthBack - (v.lay === "corridor" ? 3 : 0) - (midD ? midD + 1 : 0)) : Math.max(4, Math.round(ih * depth)); // a grocery's: all but its back strip (#22)
+  const sd = T.depthBack ? Math.max(4, ih - T.depthBack - (v.lay === "corridor" ? 2 : 0) - (midD ? midD + 1 : 0)) : Math.max(4, Math.round(ih * depth)); // a grocery's: all but its back strip (#22)
   let program;
   const backParts = v.back ? P(v.back) : v.side ? P(v.side) : [[1, R(S)]]; // the back row's rooms (#23's stepped back stands behind one: buildingmaps.js shopShape)
   const back = v.back ? Xs(backParts) : null;
