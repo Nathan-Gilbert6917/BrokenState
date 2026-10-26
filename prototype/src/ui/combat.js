@@ -58,6 +58,7 @@ import { noiseGhosts } from "../sim/crossfire.js"; // shots and blasts heard out
 import { canPlace, LIT_ZONES } from "../sim/deploy.js";
 import { layoutPanel, layoutHover, storeHover, storesHtml } from "./basemap.js"; // the base map's layout mode, the stores on the map
 import { ghostAt, itemAtCell, storeAt, FOOT, keyOptions, keyTargets, KEY_AP, landPieceAt, gridOfCell, siteGhostAt, siteClickAt } from "../sim/basemap.js";
+import { poiCampButtons, poiCampCbAct, poiCampClick, poiCampGhost, poiCampChip, poiCampPanel, poiCampHover } from "./poicamp.js"; // a camp set up inside a POI mid-raid (sim/poicamp.js, issue #70)
 import { sitePanel, siteHoverText, siteKey, CS_ACTIONS } from "./campsite.js"; // the camp's spot picked on the tile's map (sim/basemap.js openSiteView) // keyOptions: the defenders' keys (Lock, Unlock)
 import { BUILDINGS, demolishRefund, TENTS, tentKind } from "../sim/buildings.js"; // layout mode's Demolish: the question names the building and the refund
 import { ask } from "./confirm.js"; // one confirmation style (the base map's Demolish asks as the Construction tab's does)
@@ -843,6 +844,7 @@ export function combatClick(state, px, py) {
       return void act(state, { type: "overwatch", unit: u.id, ...(ang != null ? { face: ang } : {}) });
     }
   }
+  if (b.raid && poiCampClick(state, b, u, c, cui, act)) return; // ui/poicamp.js: the camp's 5 × 5 picked, a build placed
   if (allyMode()) return void allyClick(state, b, u, c, who); // Ally orders (sim/allyorders.js): the ally, then what the order needs
   if (u && active(u) && groundClick(state, b, u, c, cui, act)) return; // ui/ground.js: the body picked to search
   // sim/carts.js Park cart: click the free cell next to the pusher to leave the cart on (a doorway to plug, cover).
@@ -1739,14 +1741,14 @@ export function unitOrders(state, b, u) {
   nlButtons(state, b, u, btn, cui);
   siegeButtons(b, u, btn);
   if (b.evacCols) btn("retreat", "Retreat", "This unit leaves the battle. Only from the green evac strip. A downed teammate lying on the strip is carried out with the last one to leave; anyone else who is down and left behind is lost. To pull everyone out at once, Sound the retreat (Shift+R).", ap > 0 && evacAt(b, u.x, u.y), "R", { why: noAp || "Only from the green evac strip." });
-  if (b.raid) { raidButtons(state, b, u, btn); callButton(state, b, u, btn); allyButton(state, b, u, btn); }
+  if (b.raid) { raidButtons(state, b, u, btn); callButton(state, b, u, btn); allyButton(state, b, u, btn); poiCampButtons(state, b, u, btn); } // ui/poicamp.js: Set up camp, work on it, Settle in, build mode
   else { doorButtons(b, u, btn, true); windowButtons(b, u, btn); } // a field map's houses (sim/combat.js genMap): with a door or a window next to them
   keyButtons(b, u, btn); // sim/basemap.js: the defenders' keys on their base's map
   barricadeButtons(state, b, u, btn); // sim/barricade.js: Shove, Board up, Tear down
   pieceButtons(state, b, u, btn); // sim/furnicarry.js: Lift, Set down, Load into vehicle
   tentButtons(state, b, u, btn); // sim/tentfight.js: Take down, Slash
   if (b.rescue) rescueButtons(state, b, u, btn);
-  out.extra = lockPanel(state, b, u) + carPanel(state, b, u) + reloadPicker(state, b, u) + handChooser(state, b, u) + shoveChooser(state, b, u) + pieceChooser(state, b, u) + nlAskHtml(b, cui); // Execute / Surrender: asked first (ui/nonlethal.js)
+  out.extra = lockPanel(state, b, u) + carPanel(state, b, u) + reloadPicker(state, b, u) + handChooser(state, b, u) + shoveChooser(state, b, u) + pieceChooser(state, b, u) + nlAskHtml(b, cui) + (b.raid ? poiCampPanel(state, b, cui) : ""); // Execute / Surrender: asked first (ui/nonlethal.js); build mode's Build list (ui/poicamp.js)
   return out;
 }
 
@@ -2065,6 +2067,7 @@ export function combatAction(state, key, d, ui = null) { // ui: main.js's screen
   if (key === "cb-plan") { cui.msg = planAction(state, d, ui) || ""; return; } // ui/raidplan.js: the window's buttons (map / back: the window put aside, or back)
   if (key !== "cb-act" || !u) return;
   const v = d.v;
+  if (b.raid && poiCampCbAct(state, b, u, v, d, cui, act)) return; // ui/poicamp.js: the camp's orders, build mode's list
   if (allyCbAct(state, b, u, v, d)) return; // Ally orders (sim/allyorders.js): open, the card's buttons
   if (typeof v === "string" && v.startsWith("rescue:")) return void act(state, { type: "rescue", unit: u.id, op: v.slice(7) }); // sim/rescueraid.js
   if (groundCbAct(state, b, u, v, cui, act)) return; // ui/ground.js: Search a body (a field battle), Ground
@@ -2543,6 +2546,7 @@ export function renderRaidTop(state) {
     ${b.night ? `<span class="warn" data-tip="${esc(`Night (${nightWord(b)}): everyone on foot sees down a cone the way they face, ${darkSight(b)} tiles ahead in the dark and only the cells right around them; a light is a beam the way its carrier faces, seen from far off. ${keyLabel("battle.light", 1) || "Light on / off"}, ${keyLabel("battle.nvg", 1) || "NVG on / off"}.`)}">Night, ${esc(nightWord(b))}: ${darkSight(b)} tiles</span>` : ""}
     ${conditions(b).map((c) => `<span class="${c.cls}" data-tip="${esc(c.tip)}">${esc(c.text)}</span>`).join("")}
     ${raidKeyLine(state, b, { inline: true })}
+    ${poiCampChip(state, b)}
     ${sel && sel.side === "player" && active(sel) && quickable(searchableNear(b, sel)).length ? `<span class="ct-sub" data-tip="${esc(`Shift+Q, no action (once a turn): heard ${quickRadius(b, sel)} tiles off, Heat +${SEARCH.quick.heat}. Only ${Math.round(SEARCH.quick.reveal[0] * 100)}–${Math.round(SEARCH.quick.reveal[1] * 100)}% of what is inside turns up; ${quickHurtPct(state, b, sel)} chance of cutting yourself (less likely with Scavenging or Stealth, more in the dark without a light).`)}">Quick search: loud, ${quickHurtPct(state, b, sel)} cut</span>` : ""}
     ${planOpen(b) && !b.over && planUI.map ? planChip(b) : ""}
   </div>`;
@@ -3643,6 +3647,7 @@ function previewText(b, state = null) {
   if (!h) return `<span class="muted">${say({ key: "Hover a tile or enemy for details.", touch: "Tap a tile or enemy for details.", pad: "Move the cursor onto a tile or enemy for details." })}</span>`;
   if (b.site && state) return siteHoverText(state, b, h); // the camp's spot (ui/campsite.js): how long the 5 × 5 there takes and what it gives
   if (b.layout && state) return layoutHover(state, b, h, ghostAt(state, b, h.x, h.y)); // the base map (ui/basemap.js)
+  if (b.raid && state && (cui.mode === "campSetup" || cui.mode === "campBuild")) return poiCampHover(state, b, cui, h); // ui/poicamp.js
   if (b.stores && !unitAt(b, h.x, h.y)) { const sc = storeAt(b, h.x, h.y); if (sc && (b.phase === "deploy" || !CDEF(b.cells[h.y * W + h.x]).walk)) return storeHover(sc); } // a store on the base map
   if (u && (cui.mode === "suppress" || cui.mode === "throwspear" || cui.mode === "launch")) return aimPreview(b, u, h); // the weapons overhaul's targeting
   if (u && cui.mode === "throw" && cui.throwKey) { const win = carThrowPreview(b, cui.throwKey, h.x, h.y); if (win) { const car = state ? carPreview(state, b, h.x, h.y) : ""; return car ? car.replace("<br>", `<br>${win}<br>`) : win; } } // a bottle at a car: through the window, its alarm (ui/carpanel.js)
@@ -4061,7 +4066,7 @@ function drawIsoView(state, b, now, cw, ch) {
     allyMarks: b.raid && !hold ? allyMarks(state, b, v) : null, // Ally orders (sim/allyorders.js): the markers you set, the allies in reach while picking
     cone: nlConeMask(b, v.u, cui), // the pepper spray's cone toward the hovered tile (ui/nonlethal.js)
     throwMarks: throwPreview(b, v.u), // throw mode: the range and the reach of the hovered spot (sim/throwables.js)
-    ghost: b.site ? siteGhostAt(state, b, cui.hover ? cui.hover.x : null, cui.hover ? cui.hover.y : null) : b.layout && cui.hover ? ghostAt(state, b, cui.hover.x, cui.hover.y) : null, // the base map: the pick's footprint under the mouse; the camp's spot: the 5 × 5 under it and the one picked (sim/basemap.js)
+    ghost: b.site ? siteGhostAt(state, b, cui.hover ? cui.hover.x : null, cui.hover ? cui.hover.y : null) : b.layout && cui.hover ? ghostAt(state, b, cui.hover.x, cui.hover.y) : b.raid && !hold ? poiCampGhost(state, b, cui) : null, // ui/poicamp.js: the camp's 5 × 5, its countdown, a build's ghost // the base map: the pick's footprint under the mouse; the camp's spot: the 5 × 5 under it and the one picked (sim/basemap.js)
   });
   if (!b.over && b.phase !== "deploy" && !hold) drawCones(b, v); // sim/vision.js: the view cones (the selected one's, the toggle's, the way being picked)
   if (b.raid && !b.over && !hold) drawAllyCones(b); // Ally orders: an ally's overwatch cone, the way being picked for one

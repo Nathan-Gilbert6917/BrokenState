@@ -38,6 +38,7 @@ import { poiTileRaid, poiPickFor, poiRaidSetup, raidBuildings, buildingPickFor }
 import { attitude, changeGoodwill } from "./factions.js";
 import { noteLooked } from "./discovery.js";
 import { startCombat, registerCombatHandler } from "./combat.js";
+import { poiCampAfterRaid } from "./poicamp.js"; // a camp inside a POI (issue #70; call-time only)
 import { zombieToughness } from "./hives.js";
 import { tickHour } from "./world.js";
 import { engLootMult } from "./raidplan.js"; // a scout sent first: the team knows where to look
@@ -292,6 +293,7 @@ export function afterRaid(state, result, setup, battle = null) {
   if (poi != null && battle && battle.raid && battle.raid.poiMap) poiRaidEnd(state, battle);
   else if (poi != null) lootPoiAbstract(state, "player", t, poi, (0.07 * r.searched) / poiHouses(state, t, poi), { floor: CONT.FLOOR, left: false }); // a street of houses: a house's share a container
   else takePoi(t, poi, 0.07 * r.searched);
+  if (battle && battle.poiCamp) poiCampAfterRaid(state, battle, p); // poicamp.js: a half-built camp kept in the ledger; your camp's fog, its build sites queued; those who settled in move in
   if (poi != null) {
     noteNoise(state, t, poi, exitHeat(APPROACHES[raidApproach(r.heat)].heat, shotsHere(state, setup.tile))); // deadpop.js: the tile's noise memory (tile heat's) and the place's
     noteTileHeat(state, t);

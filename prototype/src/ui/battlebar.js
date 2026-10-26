@@ -63,6 +63,7 @@ export const ICON = {
   surrender: "🙌", takeAlive: "🤝", ladder: "🪜", push: "✋", ram: "🐏", dropRam: "⬇️", loadRam: "🐏", unloadRam: "🐏", takeRam: "🐏", drop: "🪨",
   drawside: "🔫", drawmelee: "🔪", drawmain: "🎽", // sim/holsters.js
   inventory: "🎒", handover: "🤲", cones: "📐", more: "⋯", callout: "📣", allyorder: "🫡",
+  campSetup: "⛺", campWork: "🔥", settleIn: "🏕️", buildMode: "🔨", buildWork: "🧱", // sim/poicamp.js: a camp inside a POI
 };
 const iconOf = (v) => ICON[v] || (String(v).startsWith("rescue:") ? "🔓" : "•");
 
@@ -76,6 +77,7 @@ export const COST = {
   stowbody: 1, pickCarried: 1, close: 1, climb: BMAP.CLIMB.ap, checkwindow: 0, openwindow: WINDOW.OPEN_AP, closewindow: WINDOW.OPEN_AP, breakwindow: WINDOW.BREAK.ap, shove: SHOVE.AP, liftPiece: LIFT.AP, setPiece: LIFT.SET_AP, stowPiece: LIFT.STOW_AP, boardup: BOARD.AP, teardown: BOARD.TEAR.ap, cutwire: WIRE.AP, strike: TENT_TAKE.AP, slashtent: TENT_TAKE.SLASH_AP, lights: INDOOR.AP, search: SEARCH.ap, searchBody: SEARCH.ap, extract: 1, retreat: 1, board: 1, disembark: 1,
   turn: 1, gunner: 1, drive: 2, pullOut: MEDIC.PULL.AP, goup: 1, godown: 1, unjam: 1, plate: PLATE_AP, reloadTaser: 1, pepper: 1, execute: 1, glreload: 1, ladder: 1,
   drawside: 1, drawmelee: 1, drawmain: 1, // sim/holsters.js DRAW_AP
+  campSetup: 0, settleIn: 0, buildMode: 0, campWork: "all", buildWork: "all", // sim/poicamp.js: picking the 5 × 5 is free (the work spends the actions left)
   push: 1, shoveFoe: 1, loadRam: 1, unloadRam: 1, handover: 1, callout: 1, allyorder: 1, // handover: unitOrders' ap wins (a free Face toward the mate out of the cone)
 };
 const costOf = (o) => (o.ap != null ? o.ap : COST[o.v] != null ? COST[o.v] : String(o.v).startsWith("rescue:") ? 1 : null);
@@ -97,7 +99,7 @@ const GROUPS = [
   ["search", "searchBody", "quick", "ground", "handover", "dropCarried", "dropAllCarried", "pickCarried", "crush", "doubletap", "pickup", "stowbody"],
   ["peek", "close", "brace", "climb", "checkwindow", "openwindow", "closewindow", "breakwindow", "shove", "liftPiece", "setPiece", "stowPiece", "boardup", "teardown", "cutwire", "strike", "slashtent", "lights", "genset", "cellswitch", "light", "nvg", "visor"], // doors, windows (sim/windows.js), barricades (sim/barricade.js), wire (sim/wire.js) and lights
   ["vehicle", "board", "disembark", "drive", "turn", "gunner", "pullOut"],
-  ["callout", "allyorder"], // the rest: Call out (sim/parley.js), Ally orders (sim/allyorders.js), a rescue's ropes and locks, the siege kit, Surrender, Take them alive
+  ["callout", "allyorder", "campSetup", "campWork", "buildWork", "settleIn", "buildMode"], // the rest: Call out (sim/parley.js), Ally orders (sim/allyorders.js), a rescue's ropes and locks, the siege kit, Surrender, Take them alive
   ["inventory", "cones"],
 ];
 const MISC = 6, VIEW = 7;
@@ -106,7 +108,7 @@ const TRAY = [["Moving", "🗺️"], ["Fight", "⚔️"], ["Wounded", "🩺"], [
 // The orders that stand on the bar, not in their group's tray: the everyday ones, and those that only show up when
 // they matter (a jam, the way out, the shells in the pack, someone down, getting in or out of the car).
 export const PRIMARY = new Set(["move", "sneak", "evacStop", "retreat", "extract", "shoot", "overwatch", "reload", "unjam", "getshells", "drawside", "drawmelee", "drawmain", "melee", "throw", "launch", "hunker",
-  "meds", "heal", "revive", "selfStab", "search", "searchBody", "board", "disembark", "drive", "callout", "allyorder"]); // callout: on the bar while someone of another group is in sight, allyorder while an ally is in range (greyed: its tray)
+  "meds", "heal", "revive", "selfStab", "search", "searchBody", "board", "disembark", "drive", "callout", "allyorder", "campWork", "buildWork", "settleIn"]); // callout: on the bar while someone of another group is in sight, allyorder while an ally is in range (greyed: its tray)
 const TRAY_FROM = 9; // fewer orders than this (Inventory and Cones aside): all on the bar, no trays
 const GROUP_OF = new Map(GROUPS.flatMap((g, i) => g.map((v, j) => [v, [i, j]])));
 const rankOf = (v) => GROUP_OF.get(v) || [MISC, 99];
