@@ -42,6 +42,9 @@ const CORE = [
   ["basestoragetest", false], ["basestorageuitest", false], ["basestoragemaptest", false], ["ailockstest", false],
   ["floorfolktest", false], ["fieldtest", false], ["basebuildautotest", false], ["bridgetest", false],
   ["depletetest", true], ["exploretest", true], // quick: the loot curve 30 days on seed 1 (about 150 s); explore about 150-230 s
+  // #72: red tests made green, kept so (officestest 80 s, plannametest 65 s in the gate on 2026-10-26); savetest is left out,
+  // too long (quick: 8 minutes alone, 12 in the gate, where it pushed citycrawltest past the time limit; full: over 30)
+  ["officestest", false], ["plannametest", false],
 ];
 
 const args = process.argv.slice(2);

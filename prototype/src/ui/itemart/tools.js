@@ -306,10 +306,36 @@ export const GEAR_ART = {
     R(p, 6, 3, 9, 5, K.gun);
     R(p, 5, 12, 9, 15, C.red); H(p, 5, 9, 12, C.redL); H(p, 6, 8, 14, C.white);
   },
+  // The farm's finds (issue #62): a shoebox of seed packets, a woven sack of feed, a coil of farm rope.
+  seeds: (p) => {
+    box(p, 0, 7, 15, 15, C.card, shade(C.card, 0.2), C.cardD);
+    for (const [x, c, d] of [[1, C.greenL, C.leaf], [5, C.orange, C.yellow], [9, C.redL, C.leaf], [12, C.yellow, C.greenD]]) {
+      R(p, x, 1 + (x % 3), x + 2, 9, C.paperL); H(p, x, x + 2, 1 + (x % 3), C.paperD);
+      R(p, x, 4 + (x % 3), x + 2, 6 + (x % 3), c); p.set(x + 1, 3 + (x % 3), d);
+    }
+    H(p, 1, 14, 10, C.cardD); R(p, 5, 12, 10, 13, C.paperD);
+  },
+  feedsack: (p) => {
+    stamp(p, 2, 1, [".wwwwwwwwww.", "wwwwwwwwwwww", ".wwwwwwwwww.", "wbbbbbbbbbbw", "wbbbbbbbbbbw", "wbbggggggbbw", "wbbgyyyygbbw", "wbbggggggbbw", "wbbbbbbbbbbw", "wbbbbbbbbbbw", "wbbbbbbbbbbw", "wbbbbbbbbbbw", "wbbbbbbbbbbw", ".wwwwwwwwww."], { w: K.burlapD, b: C.paper, g: C.green, y: C.yellow });
+    for (let y = 5; y <= 13; y += 2) H(p, 4, 11, y, C.paperD);
+    line(p, 4, 1, 11, 1, C.rope); p.set(7, 0, C.ropeD); p.set(8, 0, C.ropeD);
+  },
+  rope: (p) => {
+    for (const [r, c] of [[7, C.ropeD], [6, C.rope], [5, C.ropeD], [4, C.rope], [3, C.ropeD]]) ring(p, 8, 8, r, c);
+    clearOval(p, 6, 6, 10, 10);
+    for (let a = 0; a < 6; a++) { const x = Math.round(8 + 6 * Math.cos(a)), y = Math.round(8 + 6 * Math.sin(a)); p.set(x, y, shade(C.rope, 0.25)); }
+    line(p, 13, 11, 15, 15, C.rope); p.set(15, 15, C.ropeD);
+  },
   dewormer: (p) => {
     box(p, 1, 1, 14, 14, C.silver, C.white, C.silverD);
     R(p, 2, 2, 13, 4, C.green); H(p, 3, 11, 3, C.greenL);
     for (const y of [6, 10]) for (const x of [3, 7, 11]) { R(p, x, y, x + 1, y + 2, C.white); p.set(x + 1, y + 2, C.whiteD); p.set(x, y, C.paperL); }
+  },
+  tranqdarts: (p) => { // a zoo vet's case of tranquilliser darts (issue #59): an open grey case, three darts in its foam, a vial
+    box(p, 0, 5, 15, 14, K.gun, "#454a52", shade(K.gun, -0.3)); R(p, 1, 6, 14, 13, "#2b2f35");
+    for (const y of [7, 9, 11]) { H(p, 2, 10, y, C.silver); R(p, 11, y, 12, y, C.orange); p.set(2, y, C.silverD); }
+    R(p, 13, 7, 14, 12, C.white); R(p, 13, 7, 14, 8, C.blue);
+    R(p, 1, 1, 14, 4, shade(K.gun, 0.15)); H(p, 1, 14, 4, shade(K.gun, -0.3));
   },
   puritabs: (p) => {
     R(p, 3, 1, 8, 3, C.blue); H(p, 3, 8, 1, C.blueL);

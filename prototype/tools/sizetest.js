@@ -78,6 +78,9 @@ function field(st, terrain, loc, enemy, extra = {}) {
 }
 function raid(st, loc, groups) {
   const h = hub(st);
+  // A farm here is the street map round its farmhouse and barn: an older save's farm (worldcfg.js legacyFarms). Since
+  // issue #62 a new save's farm is one map of the whole place (farmstead.js; tools/farmsteadtest.js holds it).
+  if (loc === "farm") st.farmLegacy = true;
   const tile = st.tiles.find((t) => t.loc && t.loc.type === loc && t.id !== h.tile) || st.tiles[fakeTile(st, "city", loc)];
   const crew = atBase(st, h.id).slice(0, 3);
   const p = launchExpedition(st, { memberIds: crew.map((s) => s.id), dest: tile.id, mission: "scavenge", stance: "normal", vehicleId: null, supplies: { food: 6, water: 6, ammo: 40, meds: 2 } }).party;

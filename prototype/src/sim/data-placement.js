@@ -118,6 +118,8 @@ export const PLACEMENT_ROWS = {
   truckstop: "highway 2 M, rural 0.3 M, town 0.2 M",
   autoshop: "centre 0.4 S, city 1 M, suburb 1.4 M, town 1.4 S, highway 0.6 S, rural 0.2 S",
   motel: "roadside",
+  gym: "centre 1.4 L, city 1.4 M, suburb 1.4 M, town 1.2 S, highway 0.3 S, rural 0.3 S", // issue #56: a YMCA or a health club downtown, chain gyms, boxing gyms and climbing gyms in the city and suburbs, a dojo, a yoga studio or a strip-mall gym in a town, a powerlifting barn out of town
+  bowling: "centre 0.4 M, city 1 M, suburb 1.4 L, town 1.2 M, highway 0.5 M, rural 0.4 M", // a bowling bar or a bowl upstairs downtown, the 24- to 40-lane centres in the suburbs, a small-town alley in the country
   hotel: "centre 2 H, city 1.6 L, suburb 1 M, town 0.8 S, highway 0.3 S, coast 0.3 M, scenic 0.2 M", // a convention hotel downtown, a town's inn
   // Issue #55's six shops (data-newshops.js; a new world's only): the size class picks among each kind's plans (S a
   // mattress store, a village bakery; M a family furniture store, an attended laundromat; L a big-box showroom, a thrift
@@ -156,6 +158,8 @@ export const PLACEMENT_ROWS = {
   callcenter: "centre 1 L, city 1.4 L, suburb 1.4 L, town 0.3 M",
   techoffice: "centre 2 L, city 1.6 L, suburb 1 M",
   station: "centre 0.5 M, city 0.6 M, suburb 0.8 M, town 1.6 S",
+  // ---- zoos (issue #59, zoo.js: its variant by the size class here) ----
+  zoo: "centre 1.2 H, city 1 H, suburb 0.8 L, town 0.8 M, highway 0.5 M, coast 0.5 M, scenic 0.5 L, rural 0.6 M", // a city's big zoo or aquarium by the centre, a safari park or a primate centre in the suburbs and the hills, a town's zoo or bird park, a petting zoo, a roadside zoo or a sanctuary out in the country
   // ---- colleges ----
   univ: "centre 1 H, city 1.4 H, suburb 1 L", // a city's university: its biggest campuses by the centre
   college: "town 1 L", // a town's college
@@ -169,7 +173,8 @@ export const PLACEMENT_ROWS = {
   sawmill: "suburb 0.2 M, town 0.6 M, highway 0.5 M, coast 1 M, scenic 2 L, rural 0.8 M", // issue #53: forest and hills (a big mill's yard there), some in towns
   machineshed: "farm",
   barn: "farm",
-  farm: "farm",
+  farm: "farm", // a farm site's layout by its terrain (issue #62, farmstead.js); mapgen.js puts the sites in the country
+  farmbldg: "of farm", // a farm's or a ranch's working buildings (issue #62, farmplans.js)
   ranch: "highway 0.4 L, scenic 0.6 L, rural 1.4 L",
   quarry: "scenic 1.6 L, rural 0.4 L", // issue #52: the quarry type (minelayout.js) at the quarry sites and as a point of interest (PLACE_EXTRA)
   mine: "scenic 1.5 M, rural 0.4 M", // issue #52: hills and mountains most, the country now and then; never a town's (PLACE_EXTRA; the mine shacks)

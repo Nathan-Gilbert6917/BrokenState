@@ -65,7 +65,7 @@ Modules: [woodcutting, woodwork, upkeep, needs]. Test `tools/woodworktest.js`.
 ### The governor fells for wood
 - govWoodwork, every 2 hours: when woodpile + queued felling < the fires' reserve (woodNeed dailyKeep, or the share of the cold's need its next big wooden build leaves back: buildWoodKeep, all of it in the stocking season) + its next builds' wood (the Ring wall's still to come in, the next wish's), it queues the nearest trees and fallen logs beyond the walls (6 cells past the ring: the yard's layout untouched), one job a tree, at most 3 of its own waiting.
 - Queued behind its builds (builders fell when there is nothing else), or at the front while the pile is under the fires' days plus three days of the daily burn (the opening, after the first bunkhouse).
-- **Clears ahead**: the sites of builds it has queued (siteWaits at once) and of the one it will queue next (woodwork siteFor: where the auto layout would put it), only where no open ground was left, one such site at a time.
+- **Clears ahead**: the sites of builds it has queued (siteWaits at once) and of the one it will queue next (woodwork siteFor: where the auto layout would put it), only where no open ground was left, one such site at a time. Looked at again only when the queue or the next build changed; the last look is kept on the base (`base.aheadSig`, saved), so a loaded world does what the original would have (issue #72: kept by module before, a loaded world queued a clearing the original never did).
 - Modules: [autopilot govWoodwork / nextBuildWood, woodwork queueChop / nearestTrees / clearAhead / siteFor].
 
 ### Heating
