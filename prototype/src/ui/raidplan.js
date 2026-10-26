@@ -88,7 +88,8 @@ function previewUrl(b) {
   // reach (the fog's memory on a raid map; the circle on a base's).
   const known = (x, y) => scouted && (memoKnown(x, y) || (sc && Math.hypot(x - sc.x, y - sc.y) <= sc.r));
   // Under the roofs: what nobody has seen inside is one flat roof (the fog of war indoors).
-  const roofs = R ? [...(R.plan && R.plan.building ? [R.plan.building] : []), ...R.areas.filter((a) => !a.outdoor && !(a.f > 0))] : [];
+  const B = R && R.plan ? R.plan.building : null;
+  const roofs = R ? [...(B ? B.parts || [B] : []), ...R.areas.filter((a) => !a.outdoor && !(a.f > 0))] : []; // a shaped building (sim/buildingmaps.js, issue #23): its parts, not its bounding box (a courtyard is open ground)
   const roofed = (x, y) => roofs.some((a) => x >= a.x0 && y >= a.y0 && x < a.x0 + a.w && y < a.y0 + a.h) && !memoKnown(x, y);
   for (let y = 0; y < b.h; y++) for (let x = 0; x < b.w; x++) {
     if (!known(x, y)) { g.fillStyle = FOG; g.fillRect(x * PX, y * PX, PX, PX); continue; }
