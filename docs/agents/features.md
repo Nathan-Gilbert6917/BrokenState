@@ -152,6 +152,7 @@ Detail: [travel.md](../features/travel.md).
 - **POI surveys and the per-POI raid flow**: Survey and Quick look, per-POI threat, raids into one POI at a time [survey, pois, poiraid, ui/poipick]. [details](../features/travel.md#poi-surveys-and-the-per-poi-raid-flow)
 - **Walking to a POI**: 5–20 minutes to each place, a tile map dialogue, the walk shown, leaving by an edge [poiwalk, ui/poimap, ui/poipick] `tools/poiwalktest.js`. [details](../features/travel.md#walking-to-a-poi)
 - **The dead on the land**: dead and raider counts per tile and POI: raids, kills and reinforcements draw on them [deadpop, scavenge, combat] `tools/deadpoptest.js`. [details](../features/travel.md#the-dead-on-the-land-tile-and-poi-populations)
+- **Hunt the dead**: a team sweeps its tile 2–24 h; each group met: Attack on a small map or Retreat; kills off the tile [deadhunt, deadpop, orders, ui/landorder] `tools/huntdeadtest.js`. [details](../features/travel.md#hunt-the-dead)
 - **Persistent POI containers**: containers keep their contents between visits; tile heat is a thin wrapper over the dead's noise [pois, poicont]. [details](../features/travel.md#tile-heat-and-persistent-poi-containers)
 - **Other groups survey and raid POIs** with their own knowledge, picker and the shared ledger [grouppois, aiscav, visitors] `tools/poipacingtest.js` (4 years). [details](../features/travel.md#other-groups-survey-and-raid-pois)
 - **Abstract scavenging**: hour-by-hour search with rising Heat [scavenge]; shared finite loot AI groups also scavenge [aiscav].
