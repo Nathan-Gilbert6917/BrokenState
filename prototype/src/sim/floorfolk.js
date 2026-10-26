@@ -55,7 +55,7 @@ export const FOLK = {
     // Asking them to join: base + perLead × the team's best Leadership + their mood + talked (after a good talk), at most max.
     join: { base: 0.2, perLead: 0.03, talked: 0.2, refused: -0.1, max: 0.9, mood: { desperate: 0.15, friendly: 0.1, wary: 0 } },
     gift: { food: [2, 4], water: [2, 4] }, // what a good talk brings out through the barricade (not from the desperate)
-    prefer: { hospital: ["ward", "icu"], hotel: ["penthouse"] }, // the rooms they hold first, by the building's kind (a hospital's wards: #14; a hotel's penthouse, #29: by its style, the room's shop)
+    prefer: { hospital: ["ward", "icu"], hotel: ["penthouse"], dorm: ["bedroom"] }, // the rooms they hold first, by the building's kind (a hospital's wards: #14; a hotel's penthouse, #29: by its style, the room's shop; a campus's dorm rooms: #28)
   },
   RAIDERS: {
     types: ["offices", "apartments", "police", "hotel"], // a hotel's (#29): the penthouse first

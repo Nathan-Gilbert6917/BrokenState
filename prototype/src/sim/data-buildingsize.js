@@ -135,6 +135,24 @@ export const REAL_SIZE = {
   workshop:    { w: [12, 20], d: [10, 14], storeys: [1, 1], set: "rural" },
   machineshed: { w: [12, 20], d: [8, 14], storeys: [1, 1], set: "rural" },
   barn:        { w: [15, 30], d: [10, 20], storeys: [1, 1], set: "rural" }, // plus its hayloft (a raised room on one grid)
+  // #28's college campus buildings: planned at their own real size (campuslayout.js CAMPUS_SIZE and campusplans.js's
+  // named plans, a metre a cell; these rows their range over the plans); on a campus each is laid out as it is
+  // (campus.js), raided alone through realScale like #25's. The chapel and the health centre are the church's and the
+  // clinic's plans at their sizes.
+  dorm:         { w: [24, 46], d: [10, 28], storeys: [2, 8], set: "town", planned: true },
+  lecturehall:  { w: [30, 46], d: [12, 26], storeys: [1, 4], set: "town", planned: true },
+  sciencehall:  { w: [20, 46], d: [12, 26], storeys: [1, 6], set: "town", planned: true }, // with #37's lab plans
+  univlibrary:  { w: [14, 56], d: [13, 44], storeys: [1, 8], set: "town", planned: true }, // with #34's library plans (the law library to the central library)
+  studentunion: { w: [32, 46], d: [16, 26], storeys: [1, 4], set: "town", planned: true },
+  dininghall:   { w: [28, 34], d: [20, 24], storeys: [1, 2], set: "town", planned: true },
+  athletics:    { w: [30, 46], d: [16, 32], storeys: [1, 2], set: "town", planned: true },
+  admin:        { w: [22, 44], d: [12, 26], storeys: [1, 6], set: "town", planned: true },
+  security:     { w: [10, 28], d: [8, 18], storeys: [1, 2], set: "town", planned: true },
+  maintenance:  { w: [22, 40], d: [11, 20], storeys: [1, 2], set: "town", planned: true },
+  theatre:      { w: [24, 46], d: [13, 28], storeys: [1, 3], set: "town", planned: true },
+  parkgarage:   { w: [30, 48], d: [18, 32], storeys: [2, 6], set: "town", planned: true },
+  chapel:       { w: [14, 24], d: [22, 36], storeys: [1, 1], set: "town", wings: "back" },
+  healthcentre: { w: [15, 25], d: [12, 20], storeys: [1, 3], set: "town" },
 };
 
 const pick = (rng, [lo, hi]) => rng.int(Math.round(lo / CELL_M), Math.round(hi / CELL_M));

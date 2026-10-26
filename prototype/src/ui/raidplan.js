@@ -7,6 +7,7 @@
 // Esc), the side to go in from (going in: the team is placed there and the fight begins; one way in: Go in), and Leave
 // (asks, then calls the raid off). Buttons: data-action="cb-plan" (ui/combat.js combatAction → planAction).
 import { planOf, planOpen, scoutChoices, scoutText, nightTradeoff, sendScout, waitNight, enterFrom, callOff, unstage, refit, planParty, SCOUT, SIDES, NIGHT_FROM } from "../sim/raidplan.js";
+import { campusBriefing } from "../sim/campus.js"; // a campus's buildings by row (issue #28)
 import { CELL } from "../sim/combat.js";
 import { mapSizeText, bigMapNote } from "../sim/battlesize.js"; // the map's size in the header, and what a big one brings
 import { teamsTogether } from "../sim/teammeet.js"; // your other teams on the site's tile: goods handed across before going in
@@ -142,6 +143,8 @@ export function planModalHtml(state) {
     <div class="small muted" style="margin-bottom:0.5rem">Nobody is on the map yet. Send a scout first, ${b.night ? "" : "wait for night, "}then pick the side to go in from${P.sides.length > 1 ? "" : " (one way in here)"}; or leave. You can go in with or without a scout: a scout only tells you more.</div>`;
   const url = previewUrl(b);
   if (url) html += `<img class="rplanmap" src="${url}" alt="The site" style="display:block;margin:0 auto;height:9.5rem;width:auto;max-width:100%;object-fit:contain;image-rendering:pixelated;border:1px solid var(--line);border-radius:4px" data-tip="${esc(`The site from above, under the fog of war. Green: the ways in and out${R ? " (north at the top)" : ""}. ${scouted ? "What the scout saw: the dead (red) and their people (orange) where they stood, the containers (yellow) and locked doors (dark orange) within the circle." : "Send a scout to see who is where."}`)}">`;
+  // A campus (sim/campus.js): its buildings by row with the nearest way in, its links: where to head for.
+  if (R && R.plan && R.plan.campus) html += `<div style="margin-top:0.5rem" class="small" data-tip="${esc("A college campus: its buildings in rows north to south round the quads, each its own floors, rooms and containers; some joined by a walkway, a corridor or a bridge between upper floors. The number after a building: its storeys. Pick the side to go in from by the building you head for.")}">${campusBriefing(b).map((l) => `<div>${esc(l)}</div>`).join("")}</div>`;
   // A campsite (sim/campsite.js): who is at the camp as last seen; a scout come back unseen saw it as it is now.
   if (R && R.camp && R.camp.poi != null) html += `<div style="margin-top:0.5rem" class="small" data-tip="${esc("A campsite: its tents round a fire. Abandoned: a few of the dead about, the best loot left. Overrun: a pack of the dead among the tents. An active raider camp: a band round a lit fire, some asleep in the tents at night (noise wakes them). Tents can be taken down (Take down, 2 actions a go) and carried off.")}">${esc(campLine(state, b, scouted))}</div>`;
   // The scout.
