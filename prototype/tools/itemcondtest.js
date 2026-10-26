@@ -150,6 +150,8 @@ const ALLOWED = {
   "barricade.js": /newItem\("boards"\)/, // boards pried off a door or window come back as bundles (the team's own: not loot)
   "tents.js": /newItem\(r\.kind\)|newItem\("tent1"\)/, // a pitched tent with no bag on its record struck into one (an old camp's tents: not loot); the hardcore start's own one-person tents (as starting gear)
   "volunteers.js": /newItem\("(knife|flashlight)"\)/, // a volunteer's own plain knife and light when their group lent no weapon (as recruit gear: not loot)
+  "furnicarry.js": /item = d\.item \? newItem\(d\.item\) : null/, // a piece of furniture lifted off the floor or a wall becomes its item (issue #12): not loot; its wear is the piece's own (pieceHp)
+  "citycrawl.js": /itemValue\(newItem\(d\.item\)\)|push\(newItem\(def\.item\)\)/, // the crawl's quick search: a piece's worth probed, and the one piece carried out to the vehicle (issue #18: the piece, as furnicarry.js)
 };
 const strays = [];
 for (const f of readdirSync("src/sim").filter((x) => x.endsWith(".js"))) {
@@ -368,6 +370,9 @@ MILDEAD.BODY_EXTRA = {};
 KIT_LOOT.on = false; // the carry kit (carrykit.js) only adds: checked below
 ZSURV.on = false; // the dead who were survivors (inventory.js survivorDead): their own dice, they only add
 const NEW_AREAS = ["hardware", "pawnshop", ...Object.keys(AREA_DEFS)]; // raid rooms added after the baseline (shops.js, data-shops.js: their own rows, the rest's dice as they were)
+// and the interiors epic's (#7) rooms with finds of their own: the prison's (#25 militarylayout.js), the campus dorm (#28),
+// the school hall (#23), the fire station's engine bay (#36)
+NEW_AREAS.push("pcells", "parmory", "pcontrol", "pkitchen", "plaundry", "property", "pstores", "dormroom", "schoolhall", "enginebay");
 // (only the flashbang hook: the roster's guns and the rounds by calibre stay, they are in the baselines above)
 const takeHooks = (re) => { const out = TRUCK_LOOT_HOOKS.filter((f) => re.test(String(f))); for (const f of out) TRUCK_LOOT_HOOKS.splice(TRUCK_LOOT_HOOKS.indexOf(f), 1); return out; };
 const takeFlashHooks = () => takeHooks(/truckflash/);

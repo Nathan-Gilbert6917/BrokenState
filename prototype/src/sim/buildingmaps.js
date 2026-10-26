@@ -2159,7 +2159,9 @@ const hintCache = new Map();
 export function buildingHint(key) {
   let h = hintCache.get(key);
   if (h) return h;
-  const sr = new Rng(7919), spec = realScale(sr, BUILDINGS[key].make(sr), key, { setting: REAL_SIZE[key] ? REAL_SIZE[key].set : "town" }); // at real size (issue #24)
+  // The kind's classic plan (plan 0: the first of its dozen variants, today's plan for the kinds that kept it), not a variant
+  // its dice pick: the hint is the kind's, the one every variant shares most with (an office tower's offices, not a newsroom's).
+  const sr = new Rng(7919), spec = realScale(sr, BUILDINGS[key].make(sr, { plan: 0 }), key, { setting: REAL_SIZE[key] ? REAL_SIZE[key].set : "town" }); // at real size (issue #24)
   const plan = assemble(new Rng(104729), spec, { key, name: BUILDINGS[key].name });
   const types = plan.rooms.filter((r) => r.type && AREAS[r.type] && !r.outdoor).map((r) => r.type);
   const score = {};
