@@ -40,6 +40,7 @@ import * as ALLY_SIM from "../sim/allyorders.js"; // the exports that may not be
 import { TENT_TAKE, tentsNear, strikeRefusal, slashTargets, slashRefusal, goesLeft, tentWord, tentWear } from "../sim/tentfight.js"; // Take down and Slash at a tent (the user's request 2026-10-20)
 import { clearEnough } from "../sim/battlesize.js";
 import { SUPPLIES, GEAR } from "../sim/data.js";
+import { earshotChip } from "./threatui.js"; // the raid strip's Earshot: the tile's dead a loud fight can still draw in (issue #67)
 import { rescueOptions } from "../sim/rescueraid.js"; // a rescue raid on a group's base: captives, the cell, the armory
 import { LIFT, liftTargets, liftRefusal as pieceLiftRefusal, liftPlan, liftHelpers, setTargets, setRefusal, stowRefusal, carriedPiece } from "../sim/furnicarry.js"; // furniture and appliances lifted, carried, set down, loaded into the vehicle (issue #12)
 import { extractNote } from "../sim/furnihome.js"; // what becomes of a piece in the arms at the way out (issue #18)
@@ -2521,7 +2522,8 @@ export function renderRaidTop(state) {
   const phase = b.over ? `<span class="ct-phase ${b.result.outcome === "extracted" ? "player" : "enemy"}">${b.result.raid && b.result.raid.calledOff ? "Called off" : b.result.outcome === "extracted" ? "Got out" : "Nobody made it out"}</span>` : b.phase === "player" ? `<span class="ct-phase player">Your turn</span>` : `<span class="ct-phase enemy">Enemy turn</span>`;
   let mid = `<div class="ct-box"><span class="ct-title" data-tip="${esc(I ? `Scavenging the ${I.name.toLowerCase()} at ${b.place}.` : `Scavenging ${b.place}.`)}">${I ? `${esc(I.name)} · ` : ""}${esc(b.place)}</span>
     <span class="ct-sub" data-tip="Six turns are about an hour on the map clock.">Turn ${b.turn} · ${Math.floor((b.turn - 1) / 6)}h ${((b.turn - 1) % 6) * 10}m in</span> ${phase}
-    <span class="ct-heat" data-tip="Heat rises every turn and faster with gunfire and car alarms. Each new stage (Stirring 25, Swarming 50, Overrun 75) brings a wave of the dead from the map edges.">Heat <b>${HEAT_NAMES[stage]}</b> <span class="muted">${Math.round(R.heat)}</span><span class="heat"><i style="left:${Math.min(100, R.heat)}%"></i></span></span>`;
+    <span class="ct-heat" data-tip="Heat rises every turn and faster with gunfire and car alarms. Each new stage (Stirring 25, Swarming 50, Overrun 75) brings a wave of the dead from the map edges.">Heat <b>${HEAT_NAMES[stage]}</b> <span class="muted">${Math.round(R.heat)}</span><span class="heat"><i style="left:${Math.min(100, R.heat)}%"></i></span></span>
+    ${earshotChip(state, party && party.path ? party.path[party.idx] : b.setup.deadPop ? b.setup.deadPop.tile : null, R.spawned || 0, !!(sel && sel.side === "player" && active(sel) && WEAPONS[sel.weapon] && WEAPONS[sel.weapon].noise > 0 && !sel.suppressor))}`;
   const F = floorsOf(b);
   if (F) {
     const f = floorNo(b), name = F[f] && F[f].name ? ` (${F[f].name})` : "";

@@ -48,6 +48,7 @@ import { migrateTools } from "./toolreqs.js"; // the tools: an older save's hub 
 import { migrateCots } from "./beds.js"; // beds as furniture: the retired makeshift cots become Cots set at the base
 import { pondsOnMap } from "./mapgen.js"; // ponds on the land: a save from before them gets them from its seed
 import { ensureDeadPop } from "./deadpop.js"; // the dead on the land (issue #65): an older save's tile heat folded into the pools
+import { ensureThreatKnow } from "./threatknow.js"; // knowing the threat level (issue #67): an older save's tile-heat stamps
 import { ensurePois, packPois } from "./pois.js"; // points of interest: saved as the changes from the seed's lists; a save from before gets its lists on load
 import { RAID_MAPS } from "./worldcfg.js"; // raid maps by the World… dials: an older save keeps the sizes it was made with
 import { tidyCarts } from "./carts.js"; // carts: grids sized, lots only real supplies (every load; nothing older needs changing)
@@ -354,6 +355,7 @@ export function deserializeState(save) {
   // has its list keeps it.
   ensurePois(state);
   ensureDeadPop(state); // deadpop.js: state.tileHeat (an older save's) folded into the pools, then gone
+  ensureThreatKnow(state); // threatknow.js (issue #67): an older save's tile-heat stamps become threat stamps
   // Ponds on the land (mapgen.js tile.pond, the user's words 2026-10-23): a save from before them gets them from its seed
   // (hash dice: the ponds a new world on that seed has), except on a tile one of your bases stands on, so the spring's
   // hollow (basescatter.js SPRING) never opens under what was built there. Once: state.worldPonds.

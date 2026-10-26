@@ -311,7 +311,9 @@ section("The Survey (8h) and the Quick look (2h)");
     for (let i = 0; i < 3 && q.phase === "task"; i++) tickHour(st4);
     const f = recOf(st4, q, t4.id);
     check(!!f && f.looked === day(st4) && f.surveyed == null, "stamped looked, never surveyed");
-    check(poisOf(t4).every((x) => !x.threatStamp), "no threat stamp from a quick look");
+    // Issue #67: a Quick look gives each place known there a general estimate of its dead, rougher than a Survey's
+    // (sim/threatknow.js), and the team on the tile keeps it live.
+    check(knownPois(st4, t4).every((k) => { const x = poiAt(t4, k).threatStamp; return x && x.d != null && x.de > THREAT.ERR.survey; }), "a quick look: a rough estimate of the dead in each place known (rougher than a Survey's)");
     check(full * LOOK.quick < full, `each hidden place at ${Math.round(LOOK.quick * 100)}% of the Survey's ${Math.round(full * 100)}%`);
     // A recon's look on arrival is a quick look too.
     const st5 = W();

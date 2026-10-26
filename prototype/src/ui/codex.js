@@ -23,7 +23,7 @@ import { KITCHEN } from "../sim/kitchen.js"; // the stove's wood
 import { HELMETS, HELMET_ATTACH, MOUNT_NAMES as HELM_MOUNTS } from "../sim/helmets.js"; // helmet mounts (codex lines)
 import { ZTYPES, GROWTHS, TECH, HIVE, BOSS_NAMES } from "../sim/hiveconst.js";
 import { GEAR, SUPPLIES, CATEGORIES, FACTION_TYPES, FACTION_COLORS, SKILL_NAMES, LOCATIONS, SITE_ZONES, DANGER_NAMES, siteDanger } from "../sim/data.js";
-import { POI, allPoiKinds, poisOf, knownPois, TILE_HEAT } from "../sim/pois.js"; // points of interest: one entry a kind, opened once one is known; tile heat
+import { POI, allPoiKinds, poisOf, knownPois } from "../sim/pois.js"; // points of interest: one entry a kind, opened once one is known
 import { poiSpriteCanvas } from "./mapsprites.js"; // their map sprites
 import { STREET, DOOR_KINDS } from "../sim/buildingmaps.js"; // the neighbourhood's street of houses; the kinds of door
 import { WINDOW } from "../sim/windows.js"; // the map's windows: open, locked, fixed or broken
@@ -421,10 +421,10 @@ function placeEntries() {
     text: "Each place is the same building with the same drawers, cupboards and cars on every visit, and each container holds the same things whenever it is first opened. How picked over a place is (rich, some, little, picked clean) is how many of its containers are still untouched: other groups' raids ransack them, and they can take what you left behind too. What you leave in a container never makes the place richer.",
     how: "Leave things in a container you opened on a raid to come back for them. The dialogue that picks a place shows the containers you opened, what you left there, and \"looted by others since your visit\".", sprite: null,
   }, {
-    key: "k:tileheat", cat: "places", name: "🔥 Tile heat", sub: "How stirred up a tile is",
-    stats: [["Rises", `going into a place (+${TILE_HEAT.ENTER}), coming out (sneaking ${7}, normal ${13}, loud ${22}, plus the shots fired), other groups' raids (+${TILE_HEAT.AI})`], ["Falls", "about 30% a day"], ["Effect", "the noise draws the tile's own dead: more fights in a search, the dead in places refill faster, and when very loud a horde or a wandering band"], ["Words", "as seen: the dead about the tile, none, low, medium, high, overrun"]],
-    text: "A tile's heat stays after the raid: every visit to its places stirs it up a little more, and noise and gunfire most. It is not the Heat of one raid (which starts afresh each time) nor a team's Field Heat. You see it as your people last saw it: the tile panel's Tile heat row and the place dialogue say how hot it was and how long ago, stale after two weeks.",
-    how: "Spread your raids over several tiles, sneak in and out, and let a hot tile cool down for a week or two before going back.", sprite: null,
+    key: "k:deadland", cat: "places", name: "☠ The dead on the land", sub: "How many of the dead and raiders a tile and its places hold",
+    stats: [["Levels", "none, low, medium, high, overrun: the count against what the land can hold (a city centre holds far more than the wild); a skull a level"], ["A full Survey", "an approximate level of the tile's dead and raiders, closer with binoculars or a scope, rougher at night; an estimate for each place it knows"], ["A look at a place", "a Quick look or a visit: a general estimate of the dead in it, rougher than a Survey's"], ["Live", "while a team or a base of yours is on the tile, updated every hour"], ["After you leave", "as last seen: rougher with the days, stale after two weeks; never looked at: threat unknown"], ["Earshot", "in a raid, the top strip's rough count of the tile's dead a loud fight can still draw in"]],
+    text: "The dead are real numbers now: each tile holds so many on its open ground and in each of its places, and every one killed is one fewer on both. Noise (gunfire, car alarms, going in and out loudly) draws the tile's dead in and the places refill from it; quiet kills draw none. What you see is what your people make of it: the tile panel's The dead here and Raiders rows, the place dialogue and The dead on the land layer on the map.",
+    how: "Survey a tile before you settle or raid there. Go quiet to clear a place without drawing more; go loud on purpose to pull a high tile's dead into a fight you chose, and bring its level down.", sprite: null,
   }, {
     key: "k:aipois", cat: "places", name: "🎒 Other scavengers", sub: "Who else picks the places over",
     stats: [["Who", "the other groups' scavenging parties, raiders and travellers from outside, and in hardcore the bands on the road"], ["What they know", "the places by the roads and in the towns near where they live, and what their own surveys find (8 hours on a tile, as yours)"], ["Where first", "the places on the roads near their bases go first; off-road and unknown ground stays richer for longer"], ["Same tile", "in different places nobody minds; in the same place you meet them (a group at war with you comes for you either way)"]],
@@ -630,7 +630,7 @@ function seenNow(state) {
   for (const b of (state.nomads && state.nomads.bands) || []) if (b && b.known && live.has(b.tile)) keys.add(`n:${b.tier}`); // sim/nomads.js
   // Points of interest known on a tile seen or reported (sim/pois.js: the hub's knowledge, never a hidden one).
   for (const t of state.tiles || []) if (t && Array.isArray(t.pois) && t.pois.length && known(t.id)) for (const i of knownPois(state, t)) { keys.add(`p:${poisOf(t)[i].kind}`); keys.add("k:pois"); if (poisOf(t)[i].cont && Object.keys(poisOf(t)[i].cont.mine || {}).length) keys.add("k:containers"); if (poisOf(t)[i].cont && poisOf(t)[i].cont.last) keys.add("k:aipois"); }
-  if (Object.values(state.poiKnow || {}).some((k) => k && k.heat)) keys.add("k:tileheat"); // a team has seen a tile's heat (sim/pois.js noteTileHeat)
+  if (Object.values(state.poiKnow || {}).some((k) => k && k.threat)) keys.add("k:deadland"); // a team has sized up the dead on a tile (sim/threatknow.js noteTileThreat)
   if (Object.values(state.rel || {}).some((r) => r && (r.o >= BOND.friendly || r.o <= BOND.disliked))) keys.add("k:bonds"); // sim/bonds.js: two of yours more than strangers
   weatherSeen(state, keys);
   return keys;
