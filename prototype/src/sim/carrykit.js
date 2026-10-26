@@ -377,6 +377,7 @@ export const SITE_KIT = {
   crash_mil: { p: 0.06, items: { mag_stanag_30: 3, chestrig: 1, ceramicplate: 1 } },
   convoy: { p: 0.05, items: { mag_stanag_30: 3, mag_m249_100: 0.6, chestrig: 1, ceramicplate: 0.8 } },
   prison: { p: 0.03, items: { mag_glock_15: 2, softinsert: 1, tacvest: 0.4 } },
+  jail:   { p: 0.03, items: { mag_glock_15: 2, softinsert: 1, tacvest: 0.4 } }, // a county jail (issue #31): the prison's
   lodge: { p: 0.03, items: { mag_22_10: 1, mag_bolt_5: 1, mag_bolt_10: 0.4, stripper308: 1 } },
   cabin: { p: 0.02, items: { mag_22_10: 1, stripper308: 1 } },
   town: { p: 0.008, items: { mag_glock_15: 1, mag_22_10: 1 } },

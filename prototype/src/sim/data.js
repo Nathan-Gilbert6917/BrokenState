@@ -520,6 +520,9 @@ export const LOCATIONS = {
   // Crashlanding (2026-10-24, crashstart.js): the unit's secret fallback in the mountains, made on its tile only once the
   // hive at the unit's base is destroyed; secret, so only a look or a team standing on it finds it (discovery.js).
   bunker_mil: { name: "Mountain bunker", glyph: "▲", cat: "special", danger: 2, loot: { ammo: 4, meds: 1, parts: 2, fuel: 1, food: 1.5 }, gear: ["ar", "carbine", "plate", "milhelmet", "milradio", "nvg", "assaultpack", "rucksack", "binoculars", "combatknife", "etool"], richness: 1.1, known: "secret" },
+  // A county jail (issue #31, prison.js): a point of interest in the suburb ring of a town (pois.js jailExtra), a
+  // complex of the jail and its housing pods; the prison's gear on a smaller scale.
+  jail:     { name: "County jail",    glyph: "J",  cat: "town",    danger: 2, loot: { food: 2, scrap: 1, ammo: 1, meds: 0.4 }, gear: ["shotgun", "pistol", "vest", "riothelmet", "baton", "cuffs", "semishotgun"], richness: 0.6, known: "public" },
   // Air bases (issue #25, 2026-10-25): hangars of aircraft, a control tower, flight operations, barracks and a mess
   // (buildingmaps.js SITES airbase), near the National Guard bases; public like them.
   airbase:  { name: "Air base", glyph: "✈", cat: "special", danger: 3, loot: { ammo: 3, fuel: 5, parts: 3, meds: 0.6 }, gear: ["ar", "carbine", "vest", "plate", "milhelmet", "milradio", "nvg", "assaultpack", "rucksack", "binoculars", "combatknife", "flare", "chestrig"], richness: 1.0, known: "public" },

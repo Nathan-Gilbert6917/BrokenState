@@ -9,12 +9,14 @@ import { LOCATIONS, DANGER_NAMES, siteDanger } from "../sim/data.js";
 import { poisOf, poiAt, isSitePoi, poiName, knownPois, morePoisHidden, poiEligible, inKnownZone, poiLootBand, poiKnowledge, permanentSite, tileHeatEstimate } from "../sim/pois.js";
 import { LOOT_BANDS } from "../sim/aiscav.js";
 import { campSeen } from "../sim/campsite.js"; // a campsite's state as last seen
+import { poiPlace } from "../sim/poiraid.js";
+import { buildingSpec, siteBuildings } from "../sim/buildingmaps.js";
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
 /**
  * The tile's POIs as known: null when the tile can hold none (water, a city or town centre, a hive).
- * rows: the known POIs in list order ({ i, kind, name, site, band: 0–3 or null when never seen, then: as last seen });
+ * rows: the known POIs in list order ({ i, kind, name, layout (a shop's variant, else ""), site, band: 0–3 or null when never seen, then: as last seen });
  * more: something may still be hidden; unknown: nothing known in the unknown zone; empty: nothing known in the known zone.
  * @param {any} state @param {number} id @param {boolean} isLive @param {any} [snap] the tile's last snapshot when not in view
  */
@@ -26,11 +28,23 @@ export function poiView(state, id, isLive, snap = null) {
   const rows = known.map((i) => {
     const p = poiAt(t, i);
     const pool = isLive ? undefined : seen && seen.has(i) ? seen.get(i) : null;
-    return { i, kind: p.kind, name: poiName(t, i), site: isSitePoi(t, i), band: pool === null ? null : poiLootBand(t, i, pool), then: !isLive && pool != null };
+    return { i, kind: p.kind, name: poiName(t, i), layout: poiLayout(state, t, i), site: isSitePoi(t, i), band: pool === null ? null : poiLootBand(t, i, pool), then: !isLive && pool != null };
   });
   const more = morePoisHidden(state, t);
   const k = poiKnowledge(state, id);
   return { rows, more, unknown: !rows.length && !inKnownZone(state, t), empty: !rows.length && inKnownZone(state, t), surveyed: k && k.surveyed != null ? k.surveyed : null, looked: k && k.looked != null ? k.looked : null, hasSite: permanentSite(t) };
+}
+
+/**
+ * The layout variant a known shop or service shows under its name ("Chain drugstore with a drive-through": sim/
+ * shopvariants.js, issue #35), its building's own (the spec its raid builds); "" for any other place or an older save.
+ * @param {any} state @param {any} t @param {number} i
+ */
+function poiLayout(state, t, i) {
+  if (state.roomsLegacy) return "";
+  const sb = isSitePoi(t, i) ? siteBuildings(t) : null;
+  const o = sb ? (sb.single ? sb.options[0] : null) : poiPlace(t, i);
+  return o ? (buildingSpec(state, t.id, o).layout || {}).name || "" : ""; // only shopvariants.js's specs carry a layout
 }
 
 /** The top POI's name for the heading of a bare tile once it is known (a site tile keeps its site's name), else null. @param {any} state @param {number} id */
@@ -65,7 +79,7 @@ export function poiPanelRows(state, id, isLive, snap = null) {
     if (r.site) continue;
     const def = LOCATIONS[r.kind];
     const camp = r.kind === "campsite" ? campSeen(state, id, r.i) : null; // sim/campsite.js: abandoned, overrun, raiders (as seen)
-    out.push(`<div title="${esc(`${def.name}: danger ${DANGER_NAMES[siteDanger({ type: r.kind, zone: def.cat })].toLowerCase()}. Loot left here against what it held: rich, some, little, picked clean.${r.kind === "campsite" ? " A campsite: who is there (abandoned, overrun by the dead, raiders) as a survey or a visit last saw it." : ""}`)}">${esc(r.name)}</div><div>${bandText(r)}${r.kind === "campsite" ? ` <span class="muted">· ${camp ? esc(camp.text) : "who is there unknown"}</span>` : ""}</div>`);
+    out.push(`<div title="${esc(`${def.name}: danger ${DANGER_NAMES[siteDanger({ type: r.kind, zone: def.cat })].toLowerCase()}. Loot left here against what it held: rich, some, little, picked clean.${r.kind === "campsite" ? " A campsite: who is there (abandoned, overrun by the dead, raiders) as a survey or a visit last saw it." : ""}`)}">${esc(r.name)}${r.layout && r.layout !== r.name ? ` <span class="muted">· ${esc(r.layout)}</span>` : ""}</div><div>${bandText(r)}${r.kind === "campsite" ? ` <span class="muted">· ${camp ? esc(camp.text) : "who is there unknown"}</span>` : ""}</div>`);
   }
   if (v.unknown) out.push(`<div>Places</div><div class="muted">POIs unknown. Survey the tile to find what stands here.</div>`);
   else if (v.empty) out.push(`<div>Places</div><div class="muted">Nothing of note here as far as you know.</div>`);
