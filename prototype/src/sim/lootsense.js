@@ -107,7 +107,7 @@ export const LOOT_SENSE = {
   pizza:          S({ food: 0.9, drink: 0.9 }, [...ARMY, "ammo", "gunmods", "armour"], { note: "as a restaurant" }),
   diner:          S({ food: 0.9, drink: 0.9 }, NO_GUNS),
   bar:            S({ liquor: 0.5, drink: 0.9, food: 0.9 }, [...ARMY, "armour"], { note: "a bar's shotgun or revolver behind the counter" }),
-  liquor:         S({ liquor: 0.9, drink: 0.9 }, [...ARMY, "armour"], { note: "a pistol or a revolver under the till (BOX_LOOT checkout@liquor)" }),
+  liquor:         S({ liquor: 0.9, drink: 0.9 }, [...ARMY, "armour"], { note: "a gun under the counter now and then (data-shops.js ROWS.ARSENAL_AREA); its table's pistol and revolver on every shelf are its bottles since issue #43" }),
   gasstation:     S({ food: 0.9, drink: 0.9, fuel: 0.8, treats: 0.25 }, [...ARMY, "guns", "gunmods", "armour"], { note: "a country station's bait room sells .22 rounds" }),
   truckstop:      S({ food: 0.9, drink: 0.9, fuel: 0.9, treats: 0.6 }, ARMY),
   cinema:         S({ food: 0.9, drink: 0.9, treats: 0.3 }, NO_GUNS),
