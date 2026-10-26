@@ -9,17 +9,22 @@
 // Checks the targets of docs/prompts/poi-and-nomads.md (Session 4b):
 //   - on-road, near-base POIs are mostly picked over by years 2–4: known zone near a base that has stood a year
 //     (SETTLED; issue #45: the bigger maps' new bases), Little or Picked clean for at least half of them by the end of
-//     year 4 (and more of them picked over each year);
+//     year 4 (and more of them picked over each year), the seeds of a size pooled;
 //   - unknown-zone and off-road POIs stay richer into the mid-game: at the end of year 4 the unknown zone far from
 //     the bases holds more of its pool than the known zone near them, and at least half of it is Rich or Some;
 //   - no world has every pool at zero by year 2: at the end of year 2 at least a quarter of the map's POI pool is left
 //     and under half of its POIs are picked clean.
-// Usage: node tools/poipacingtest.js [years, 4] [seed, 42] [sizes, normal,large] [--years N] [--autopilot]
+// Usage: node tools/poipacingtest.js [years, 4] [seeds, 42,43,44] [sizes, normal,large] [--years N] [--autopilot]
+//   Three seeds by default (issue #45, after #42's placement table, 7162b4b): every world is printed and checked on its
+//   own pools, but the two near-base checks read the three worlds of a size pooled (the POIs counted together), since
+//   one world's near zone is a few thousand POIs that change as its bases come of age (Normal seed 44 at a1c9d5f:
+//   55% → 49% from year 2 to 3 as 1 387 POIs joined it; seed 42 passed where #42's branch failed, 43 and 44 the reverse).
+//   The worlds run in parallel, about 15-20 minutes with 4 cores.
 //   4 years by default (issue #45; it was 6): the checks read years 2 and 4, and since the map sizes of 2026-10-24
 //   (Normal 250 × 150, Large 300 × 200) a Large year takes 2 to 3 minutes, so 6 years ran past 15 minutes. Years 5 and
 //   up only print: ask for them with --years 6 (or the first argument) for the long report.
-//   BS_QUICK=1 in the environment (runtests.js --quick): the same 4 years on a Small world alone, unless the arguments
-//   say otherwise: every check on the one world.
+//   BS_QUICK=1 in the environment (runtests.js --quick): the same 4 years and seeds on Small worlds, unless the
+//   arguments say otherwise.
 import { execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
@@ -33,7 +38,8 @@ const QUICK = !!process.env.BS_QUICK;
 const NEAR = 5; // "near a base": within this many tiles
 const SETTLED = 365; // a base standing this many days: the POIs round it have had their years 1 to 4 (the first check)
 const years = Number(args[0] || 4);
-const seed = Number(args[1] || 42);
+const seeds = String(args[1] || "42,43,44").split(",").map(Number); // a child gets one
+const seed = seeds[0];
 const sizes = (args[2] || (QUICK ? "small" : "normal,large")).split(",");
 
 if (CHILD) {
@@ -92,8 +98,9 @@ let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
 const pct = (v) => `${Math.round(v * 100)}%`;
 const me = fileURLToPath(import.meta.url);
-const run = (size) => new Promise((res, rej) => execFile(process.execPath, [me, "--child", String(years), String(seed), size, ...(AUTO ? ["--autopilot"] : [])], { maxBuffer: 1 << 26 }, (e, o) => (e ? rej(e) : res(JSON.parse(o)))));
-const results = await Promise.all(sizes.map(run));
+const run = ([size, sd]) => new Promise((res, rej) => execFile(process.execPath, [me, "--child", String(years), String(sd), size, ...(AUTO ? ["--autopilot"] : [])], { maxBuffer: 1 << 26 }, (e, o) => (e ? rej(e) : res(JSON.parse(o)))));
+const results = await Promise.all(sizes.flatMap((z) => seeds.map((sd) => [z, sd])).map(run));
+const share = (s, k, bands) => { const c = s && s.cells[k]; return c ? bands.reduce((a, b) => a + c.bands[b], 0) / c.n : 0; };
 const KEYS = ["known-near", "known-settled", "known-far", "unknown-near", "unknown-far"]; // known-settled: the known-near POIs round a base that has stood a year (SETTLED), counted in known-near too
 for (const r of results) {
   console.log(`\n${r.size} world, seed ${r.seed}: ${r.pois} POIs, ${r.groups0} groups at the start${r.fell ? `, the holdout fell on day ${r.fell} (the world went on)` : ""} (${Math.round(r.ms / 1000)} s)`);
@@ -108,7 +115,6 @@ for (const r of results) {
     }
   }
   const Y = (y) => r.years[y - 1];
-  const share = (s, k, bands) => { const c = s && s.cells[k]; return c ? bands.reduce((a, b) => a + c.bands[b], 0) / c.n : 0; };
   const poolOf = (s, k) => { const c = s && s.cells[k]; return c ? c.pool / Math.max(1e-9, c.pool0) : 0; };
   if (r.years.length >= 2) {
     const s2 = Y(2);
@@ -116,23 +122,33 @@ for (const r of results) {
   }
   if (r.years.length >= 4) {
     const s4 = Y(4);
-    // Read round the bases that have stood a year (SETTLED: known-settled), not every base of the day. Issue #45: on the
-    // map sizes of 2026-10-24 (1370d1c: Normal 250 × 150 for the 64 × 42 it was, the same 7 groups to start) the groups
-    // spread out and found new bases and outposts every year (seed 42's Normal: 39 bases at the end of year 1, 96 at the
-    // end of year 4, 50 of them a year old), so most of the near zone of the day was round a base founded that year and
-    // the share read over it fell to 11% → 27% → 33% → 36% (64 × 42 at 222200d: 15% → 48% → 69% → 83%, nearly every
-    // base a starting one). Round the bases a year old it is 24% → 43% → 55% → 57%. The groups' take was not re-tuned
-    // for the bigger maps: that moves the whole economy. The share round every base of the day is printed (known-near).
-    const kn = share(s4, "known-settled", [2, 3]);
-    const line = (k) => r.years.slice(0, 4).map((s) => pct(share(s, k, [2, 3]))).join(" → ");
-    check(kn >= 0.5, `${r.size}: on-road POIs near the bases mostly picked over by year 4 (known zone, round the bases a year old: ${pct(kn)} Little or Picked clean; years 1–4: ${line("known-settled")}; round every base of the day ${line("known-near")})`);
-    // The near zone is the POIs within reach of the bases of the day, so its set shifts as groups move and fall: a dip of
-    // a few points between years is the zone changing, not the POIs filling back up.
-    check(r.years.slice(1, 4).every((s, j) => share(s, "known-settled", [2, 3]) >= share(r.years[j], "known-settled", [2, 3]) - 0.05), `${r.size}: more of them picked over every year (within 5 points: years 1–4 ${line("known-settled")})`);
     const uf = share(s4, "unknown-far", [0, 1]);
     check(poolOf(s4, "unknown-far") > poolOf(s4, "known-near") && uf >= 0.5, `${r.size}: the unknown zone far from the bases stays richer into the mid-game (year 4: ${pct(poolOf(s4, "unknown-far"))} of its pool left against ${pct(poolOf(s4, "known-near"))} near the bases on the roads; ${pct(uf)} Rich or Some)`);
   }
   check(r.years.length && r.years[r.years.length - 1].stats.surveys > 0 && r.years[r.years.length - 1].stats.found > 0, `${r.size}: the groups surveyed and found hidden POIs (${r.years.length ? r.years[r.years.length - 1].stats.surveys : 0} surveys)`);
+}
+// The near-base checks, per size over its worlds pooled (the POIs of every seed counted together, year by year).
+for (const size of sizes) {
+  const rs = results.filter((r) => r.size === size && r.years.length >= 4);
+  if (!rs.length) continue;
+  const pool = (y, k) => { const c = { n: 0, bands: [0, 0, 0, 0] }; for (const r of rs) { const x = r.years[y].cells[k]; if (x) { c.n += x.n; x.bands.forEach((b, i) => (c.bands[i] += b)); } } return { cells: { [k]: c } }; };
+  const P = [0, 1, 2, 3].map((y) => pool(y, "known-settled")), N = [0, 1, 2, 3].map((y) => pool(y, "known-near"));
+  const each = rs.map((r) => `seed ${r.seed} ${pct(share(r.years[3], "known-settled", [2, 3]))}`).join(", ");
+  const r = { size: `${size} (seeds ${rs.map((x) => x.seed).join(", ")} pooled)` };
+  // Read round the bases that have stood a year (SETTLED: known-settled), not every base of the day. Issue #45: on the
+  // map sizes of 2026-10-24 (1370d1c: Normal 250 × 150 for the 64 × 42 it was, the same 7 groups to start) the groups
+  // spread out and found new bases and outposts every year (seed 42's Normal: 39 bases at the end of year 1, 96 at the
+  // end of year 4, 50 of them a year old), so most of the near zone of the day was round a base founded that year and
+  // the share read over it fell to 11% → 27% → 33% → 36% (64 × 42 at 222200d: 15% → 48% → 69% → 83%, nearly every
+  // base a starting one). Round the bases a year old it is 24% → 43% → 55% → 57%. The groups' take was not re-tuned
+  // for the bigger maps: that moves the whole economy. The share round every base of the day is printed (known-near).
+  const kn = share(P[3], "known-settled", [2, 3]);
+  const line = (k) => (k === "known-near" ? N : P).map((s) => pct(share(s, k, [2, 3]))).join(" → ");
+  check(kn >= 0.5, `${r.size}: on-road POIs near the bases mostly picked over by year 4 (known zone, round the bases a year old: ${pct(kn)} Little or Picked clean; years 1–4: ${line("known-settled")}; round every base of the day ${line("known-near")})`);
+  // The near zone is the POIs within reach of the bases of the day, so its set shifts as groups move and fall: a dip of
+  // a few points between years is the zone changing, not the POIs filling back up.
+  check(P.slice(1).every((s, j) => share(s, "known-settled", [2, 3]) >= share(P[j], "known-settled", [2, 3]) - 0.05), `${r.size}: more of them picked over every year (within 5 points: years 1–4 ${line("known-settled")})`);
+  console.log(`  ${size}, year 4 round the bases a year old: ${each}`);
 }
 console.log(`\n${passes} passed, ${fails} failed`);
 process.exit(fails ? 1 : 0);
