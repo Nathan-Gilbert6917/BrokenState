@@ -1479,7 +1479,7 @@ const FURN_DRAW = {
   // Farms and ranches (issue #62, sim/data-furniture.js): a concrete stave silo with its domed cap, a round stock tank
   // of galvanised steel with water in it, the squeeze chute's steel frame and head gate, a white calf hutch, a beehive's
   // stacked supers on a stand, a vineyard's trellis (posts, wires and the vines on them), a coop's row of nest boxes.
-  silo: { top: 44, p: () => [{ cyl: [0.5, 0.5, 0.44], z0: 0, z1: 38, m: (f, s, t, X) => (f === "top" ? mul(FURNC.beige, 1.1) : Math.floor(t) % 5 < 1 ? mul(FURNC.beige, 0.72) : mul(FURNC.beige, 0.92 + n2(Math.floor(X), 0, 191) * 0.08)) }, { blob: [0.5, 0.5, 38], ru: 0.44, rz: 6, m: flatM(mul(PAL.metal, 1.1)) }] },
+  silo: { top: 44, p: () => [{ cyl: [0.5, 0.5, 0.44], z0: 0, z1: 38, m: (f, s, t, X) => (f === "top" ? mul(FURNC.beige, 1.1) : Math.floor(t) % 5 < 1 ? mul(FURNC.beige, 0.72) : mul(FURNC.beige, 0.92 + n2(Math.floor(X), 0, 191) * 0.08)) }, { cyl: [0.5, 0.5, 0.36], z0: 38, z1: 41, m: flatM(mul(PAL.metal, 1.1)) }, { cyl: [0.5, 0.5, 0.22], z0: 41, z1: 43, m: flatM(mul(PAL.metal, 1.2)) }, { cyl: [0.5, 0.5, 0.08], z0: 43, z1: 44, m: flatM(PAL.metalDk) }] },
   stocktank: { top: 8, p: () => [{ cyl: [0.5, 0.5, 0.44], z0: 0, z1: 7, m: (f, s, t) => (f === "top" ? FURNC.water : Math.floor(t) % 3 < 1 ? mul(FURNC.chrome, 0.75) : FURNC.chrome) }, { cyl: [0.5, 0.5, 0.38], z0: 7, z1: 8, m: flatM(mul(FURNC.water, 0.85)) }] },
   chute: { top: 18, p: (o) => {
     const ax = along(o), bar = (f, s, t) => (Math.floor(t) % 4 < 1 ? mul(FURNC.steel, 0.6) : FURNC.steel);
