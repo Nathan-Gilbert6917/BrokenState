@@ -198,7 +198,8 @@ export const deadHuntLabel = (o) => `Hunt the dead ${deadHuntHours(o)}h${huntSta
 export function deadHuntHour(state, p) {
   const t = p.task;
   if (!t || t.type !== "deadhunt") return;
-  if (t.enc) { t.done -= 1; return; } // the card is still up: the hours wait for it
+  if (t.enc && (state.cards || []).some((c) => c.deadHunt && c.partyId === p.id)) { t.done -= 1; return; } // the card is still up: the hours wait for it
+  if (t.enc) t.enc = null; // its card was dropped (a world written without its cards): the group never left the open ground
   if (t.done - (t.owed || 0) > t.hours + 1e-9) return; // its hours were up while a card waited: it ends this hour
   const tile = partyTile(p);
   const S = DEAD_HUNT.STANCES[huntStance(t)];

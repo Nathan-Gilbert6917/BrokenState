@@ -28,6 +28,7 @@ import {
 } from "../src/sim/deadhunt.js";
 import { battleSize } from "../src/sim/combat.js";
 import { stepsToOrders, STEP_KINDS } from "../src/sim/plans.js";
+import { serializeState, deserializeState } from "../src/sim/save.js";
 import { askLand, landHtml, landModel, LAND_ACTIONS } from "../src/ui/landorder.js";
 import { landPick, runTeamAction, teamTileMenu } from "../src/ui/teamctx.js";
 
@@ -271,6 +272,24 @@ section("The right-click menu, the team panel and the box: hours and stance");
   // The planner's step.
   const orders = stepsToOrders(state, [{ kind: "deadhunt", hours: 30, stance: "lure" }, { kind: "home" }], town.id);
   check(orders[0].type === "deadhunt" && orders[0].hours === 24 && orders[0].stance === "lure" && orders[0].at === town.id && STEP_KINDS.deadhunt, "the planner's step: Hunt the dead on the target");
+}
+
+section("Saves: a hunt under way is saved and goes on; an older save loads");
+{
+  const state = mk();
+  const town = tileOf(state, "town", 15);
+  const p = team(state, 3, town.id);
+  startOrder(state, p, { type: "deadhunt", hours: 10, stance: "lure" });
+  state.hour++; taskHour(state, p);
+  state.cards = state.cards.filter((c) => !c.deadHunt); // a world written without its cards
+  const back = deserializeState(serializeState(state));
+  const q = back.parties.find((x) => x.id === p.id);
+  check(q && q.phase === "task" && q.task.type === "deadhunt" && q.task.hours === 10 && q.task.stance === "lure", "the hunt is in the save, its hours and stance");
+  const d0 = q.task.done;
+  back.hour++; taskHour(back, q);
+  check(q.task && (q.task.done === d0 + 1 || back.cards.some((c) => c.deadHunt)), "and goes on after loading (an hour's sweep)");
+  const old = deserializeState(serializeState(mk()));
+  check(!old.deadPop || !Object.values(old.factions).some((f) => f.deadHunts), "an older world (no hunts) loads with nothing new in it");
 }
 
 section("The governor's pick; no Hunt raiders");
