@@ -82,7 +82,7 @@ console.log(`Generation: every type (${Object.keys(BUILDINGS).length}), ${SEEDS}
       else if (n < range[0] || n > range[1]) errs.push(`${n} storeys, expected ${range[0]}–${range[1]}`);
       if (!spec.foot || !FOOT[spec.foot]) errs.push(`no footprint class (${spec.foot})`);
       else if (!FOOT[spec.foot](spec.bw * spec.bh, spec.bw)) errs.push(`footprint ${spec.bw}x${spec.bh} is not ${spec.foot}`);
-      if (spec.foot === "tower") towers.push([n, spec.bw * spec.bh]);
+      if (spec.foot === "tower" && key === "offices") towers.push([n, spec.bw * spec.bh]); // an office tower (an air base's control tower, #25, is no office: its own small footprint)
       if (n > 1 && typeof spec.upper !== "function") errs.push("storeys but no upper-floor plan");
       let m;
       try { m = assemble(rng, spec, { key, name: BUILDINGS[key].name, withVehicle: s % 2 === 1 }); } catch (e) { bad++; console.log(`  ${key} seed ${s}: ${e.stack}`); continue; }
