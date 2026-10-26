@@ -664,7 +664,7 @@ export const CAMP = {
   name: "Camp",
   beds: 0, plots: 0, vision: 1, // beds: none of its own: its tents (TENTS, tentBeds) and the beds set in its buildings; until one is up its people sleep rough (morale.js crowding). No crop plots of its own: the Farm plots dug on its map
   fireHours: 1,      // Set up camp: the camp fire's build in work-hours (a ring of stones, a pit); with the clearing of the 5 × 5 round it, the setup's work (staging.js siteSetup; the user's request 2026-10-22: "the time to set up camp is based on build time for campfire and clearing all in the 5x5 zone")
-  fireCost: { wood: 20, stone: 8 }, // the camp fire's ring of stones and its first wood, carried by the team setting up camp (staging.js fireCostProblem, taken by makeCamp; the user's request 2026-10-23: stone "is used to create campfires", "The first campfire for hardcore will also require the cost of wood and stone")
+  fireCost: { wood: 5, stone: 8 }, // the camp fire's ring of stones and its first wood, carried by the team setting up camp (staging.js fireCostProblem, taken by makeCamp; the user's request 2026-10-23: stone "is used to create campfires", "The first campfire for hardcore will also require the cost of wood and stone"; wood 20 until the user's request 2026-10-26: "Change the campfire start needs to 5 wood")
   tarpHours: 1,      // the tarps and bedrolls on the road (tents.js pitchHours: a band's camp at the day's end, its tent bags quicker)
   // The yard things a camp may build (the most of each; they share its two utility plots). The crafting bench, the
   // water boiler, the cook fire and the drying rack (BASE-03, user request 2026-10-12): camps build them too. The camp's
