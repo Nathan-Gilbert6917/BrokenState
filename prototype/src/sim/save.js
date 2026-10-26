@@ -216,6 +216,9 @@ export function deserializeState(save) {
   // Data centres (datacenter.js, issue #51): a save from before gets none on its tiles (placement.js placeExtraKind,
   // worldcfg.js legacyDc), so its points of interest regenerate as they were.
   if (!state.dcV) { state.dcLegacy = true; state.dcV = 1; }
+  // Sawmills (sawmilllayout.js, issue #53): a save from before gets none on its tiles (placement.js placeExtraKind,
+  // worldcfg.js legacySaw), so its points of interest regenerate as they were.
+  if (!state.sawV) { state.sawLegacy = true; state.sawV = 1; }
   if (!state.woodcutting) {
     for (const b of state.bases || []) if (b.stock && !Number.isFinite(b.stock.wood)) b.stock.wood = 0;
     for (const r of (state.work && state.work.roles) || []) if (r.pri && r.pri.wood == null && r.pri.forage > 0) r.pri.wood = r.pri.forage;

@@ -351,6 +351,19 @@ export const FURNITURE_KINDS = {
   grainbin:   P("Grain bin",     STEEL, 150, 4000, "fixed", S1, false, ["yard"], "none"),
   labfreezer: P("Lab freezer",   FULL, 40, 120, "two", S1, true, ["lab"], "storage:40", true),
   drum:       P("Fuel drum",     HALF, 25, 40, "two", S1, true, ["bay", "yard"], "storage:60"),
+  // ---------- sawmills and lumber yards (issue #53: sawmilllayout.js lays them) ----------
+  // Fixed: the headsaw (a band head rig on its frame, bolted to the floor), the edger, a log pile (tonnes of logs on the
+  // deck), a dry kiln's door (insulated steel on its track, on the kiln's wall) and the wigwam burner (a steel cone in
+  // the yard). Liftable: stacked lumber (a lift of boards on its stickers, two people: wood and building materials,
+  // combat.js BOX_LOOT lumberstack; at a base a stack to keep things on) and a saw-blade rack (a filing room's wall rack
+  // of blades: the saws, BOX_LOOT bladerack).
+  headsaw:     P("Headsaw",          STEEL, 80, 2500, "fixed", S21, false, ["bay"], "none"),
+  edger:       P("Edger",            HALF, 60, 1200, "fixed", S21, false, ["bay"], "none"),
+  logpile:     P("Log pile",         HALF, 120, 4000, "fixed", S1, false, ["yard"], "none"),
+  kilndoor:    P("Kiln door",        FULL, 90, 600, "fixed", S1, false, ["bay"], "none", true),
+  burner:      P("Wigwam burner",    STEEL, 150, 9000, "fixed", S1, false, ["yard"], "none"),
+  lumberstack: P("Stacked lumber",   HALF, 40, 140, "two", S1, true, ["bay", "yard", "shop"], "storage:150"),
+  bladerack:   P("Saw-blade rack",   HALF, 20, 24, "one", S1, true, ["bay"], "storage:20", true),
   // ---------- military bases, air bases, airports and prisons laid out like the real thing (issue #25: militarylayout.js) ----------
   // A suitcase in an airport's baggage hall, an ammo crate (rounds and grenades), a fuel bladder (fuel) and an inmate's
   // property locker (what was taken off them at intake) hold their own tables (combat.js BOX_LOOT). The barrier gate, the

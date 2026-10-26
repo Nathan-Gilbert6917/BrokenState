@@ -7030,6 +7030,10 @@ export const BOX_LOOT = {
   meatcase:        { rest: 0, loot: { preserved: [0.15, 1, 2] }, cold: { food: [0.8, 3, 8], preserved: [0.15, 1, 2] }, gear: [["knife", 0.05]] },
   producebin:      { rest: 0, loot: { food: [0.25, 1, 3] }, gear: [] },
   breadrack:       { rest: 0, loot: { preserved: [0.3, 1, 2], food: [0.15, 1, 2] }, gear: [] },
+  // Sawmills (issue #53, sawmilllayout.js): stacked lumber its boards (wood, building materials, a bundle of boards and
+  // nails), a filing room's saw-blade rack its saws.
+  lumberstack:     { rest: 0.2, loot: { wood: [0.9, 30, 90], buildmat: [0.7, 1, 3], scrap: [0.3, 1, 3] }, gear: [["boards", 0.2]] },
+  bladerack:       { rest: 0.2, loot: { scrap: [0.5, 1, 3] }, gear: [["handsaw", 0.22], ["bowsaw", 0.2], ["scrapsaw", 0.08], ["toolkit", 0.04], ["hatchet", 0.04]] },
   "palletrack@store": { rest: 0, loot: { preserved: [0.85, 5, 12], water: [0.7, 5, 12], food: [0.35, 2, 5] }, gear: [] },
   boxtruck:        { rest: 0, loot: { preserved: [0.85, 8, 20], water: [0.75, 6, 16], food: [0.4, 3, 8], fuel: [0.4, 2, 6] }, gear: [["prybar", 0.1], ["flashlight", 0.15]] },
   // Police stations, fire stations, schools and churches (issue #15, civiclayout.js). An armory's gun racks hold the long
@@ -7184,7 +7188,7 @@ export const AREA_SETS = {
   hospital: ["clinic", "clinic", "pharmacy", "office", "kitchen"], police: ["armory", "office", "garage", "cellblock"],
   military: ["armory", "barracks", "motorpool", "warehouse"], airbase: ["hangar", "barracks", "armory", "warehouse"], prison: ["cellblock", "cellblock", "kitchen", "armory", "clinic"],
   univ: ["lab", "lab", "office", "kitchen"], college: ["office", "lab", "kitchen", "lockers"], dam: ["control", "workshop", "warehouse"], airport: ["hangar", "warehouse", "store", "office"],
-  factory: ["workshop", "warehouse", "office", "garage"], quarry: ["workshop", "garage", "campsite"],
+  factory: ["workshop", "warehouse", "office", "garage"], quarry: ["workshop", "garage", "campsite"], sawmill: ["hardware", "workshop", "garage", "warehouse"],
   datacenter: ["control", "office", "garage", "workshop"], // a data centre's street map (issue #51): the halls, offices, generators, the dock
   forest: ["cabin", "campsite", "wreck"], hills: ["cabin", "campsite"], mountain: ["campsite", "cabin"], plains: ["farmhouse", "barn", "wreck"],
   suburb: ["house", "house", "house", "garage"], water: ["campsite", "wreck"],

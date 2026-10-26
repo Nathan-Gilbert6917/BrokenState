@@ -168,6 +168,9 @@ export const legacyShopsR2 = (state) => !!(state && state.shopsR2Legacy);
 // A save from before the data centres (issue #51, save.js dcLegacy: no state.dcV): its tiles get none (placement.js
 // placeExtraKind), so its points of interest stay as they were.
 export const legacyDc = (state) => !!(state && state.dcLegacy);
+// A save from before the sawmills (issue #53, save.js sawLegacy: no state.sawV): its tiles get none (placement.js
+// placeExtraKind), so its points of interest stay as they were.
+export const legacySaw = (state) => !!(state && state.sawLegacy);
 // The run's raid map dials as [smallest, largest]: each clamped to its range, the two in order whatever was stored
 // (a hand-edited or older settings object can hold them the wrong way round: the range never runs backwards).
 /** @param {any} state */
