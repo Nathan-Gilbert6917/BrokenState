@@ -95,7 +95,7 @@ export function mallArchetype(kind, rng, o = {}) {
       return base(bw, bh, { split: "y", parts: [["*", { role: "arcade", name: "Arcade", entry: true, lay: "arcade" }], [4, { split: "x", parts: leaves([["*", { role: "office", name: "Prize counter office", type: "arcade", lay: "manager" }], [3, "restroom"]]) }]] }, { windows: false });
     }
     case "mallservices": { // management, mall security (its locker room: a few weapons), the first-aid room
-      const bw = o.w || rng.int(16, 20), bh = o.d || rng.int(16, 19);
+      const bw = o.w || rng.int(16, 20), bh = o.d || rng.int(16, 18);
       const rooms = leaves([
         ["*", { role: "office", name: "Mall security", type: "mallsec", lay: "security", maxBoxes: 2 }],
         [4, { role: "armory", name: "Security locker room", type: "mallsec", lay: "seclocker", lock: ["door", 0.6], boxLock: ["locker", 0.35], maxBoxes: 3, dk: "steel" }],
