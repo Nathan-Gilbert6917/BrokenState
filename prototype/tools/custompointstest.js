@@ -87,7 +87,11 @@ section("A blank start, Start from the dice, Clear");
     check(st.survivors.every((s) => s.startPoints && pricePerson(st, s).total === 0 && SKILLS.every((k) => s.skills[k] === 0) && !s.traits.length), `${mode}: everyone blank, 0 points spent`);
     check(st.survivors.every((s) => !allCarried(s).length && START_GEAR.SLOTS.every((k) => !s.gear[k])), `${mode}: nothing worn, held or carried`);
     // (the armory's own tool shelf aside: world.js HUB_TOOLS, every new hub's, since the tools of 2026-10-21)
-    if (mode === "normal") check(st.bases[0].armory.every((it) => HUB_TOOLS.includes(it.key)) && !st.bases[0].armory.some((it) => GEAR[it.key].slot === "weapon" && !HUB_TOOLS.includes(it.key)), "normal: the dice's weapons and vest are not handed to the armory on top");
+    // Since 2026-10-25 a normal start's vehicles are rolled by whose they are, as Hardcore's car (hardcore-start.js
+    // rollHubFleet): their backs as rolled, on nobody's points, unloaded into the armory and stores; nothing else is.
+    const sorted = (a) => [...a].sort().join();
+    const backs = st.fleet.flatMap((f) => (f.diceTrunk && !f.load ? f.diceTrunk.items : []));
+    if (mode === "normal") check(sorted(st.bases[0].armory.filter((it) => !HUB_TOOLS.includes(it.key)).map((it) => it.key)) === sorted(backs), `normal: the dice's weapons and vest are not handed to the armory on top (only the vehicles' backs as rolled: ${backs.join(", ") || "nothing"})`);
     else {
       // The car's back is the starting vehicle's own since 2026-10-24 (sim/startfleet.js): as rolled, the dice's, on nobody's points.
       const dice = (st.survivors.find((s) => s.diceTrunk) || {}).diceTrunk;
@@ -232,23 +236,27 @@ section("The vehicle's back");
 {
   // A normal start: the hub's pickup, unloaded on day 1. Its back is the vehicle's own (sim/startfleet.js): priced against
   // its point limit, on nobody's points.
-  const st = blankWorld(42);
+  // The pickup picked: since 2026-10-25 a normal start's vehicles are rolled by whose they are (kind and back, as
+  // Hardcore's: hardcore-start.js rollHubFleet), so the kind is set here and the dice's back emptied before filling it.
+  const PICKUP = [{ type: "truck" }];
+  const st = blankWorld(42, { fleet: PICKUP });
   const ui = UI();
   ui.fleetEdit = { i: 0, msg: "" };
   const info = startVehicleInfo(st);
   check(info && info.type === "truck" && !info.hard && info.room === 650, `normal: the hub's ${info && info.name}, ${info && info.room} kg`);
+  check(SG_ACTIONS["sg-trunk-clear"](st, ui) === "fleet" && ui.fleet[0].load && !ui.fleet[0].load.items.length && !Object.keys(ui.fleet[0].load.supplies).length, "normal: Empty, an empty back of its own");
   SG_CHANGE["sg-trunk-add"](st, ui, { value: "ar", dataset: {} });
   SG_CHANGE["sg-trunk-sup"](st, ui, { value: "30", dataset: { k: "food" } });
   SG_CHANGE["sg-trunk-sup"](st, ui, { value: "4", dataset: { k: "meds" } });
   const V = ui.fleet[0].load;
   check(V && V.items.join() === "ar" && V.supplies.food === 30 && JSON.stringify(st.fleet[0].load) === JSON.stringify(V), "the pickup's back: on the screen's fleet and the world's");
   check(vehiclePoints(V) === loosePoints("ar") + suppliesPoints({ food: 30, meds: 4 }) && loosePoints("ar") === itemPoints("ar") + suppliesPoints({ a_556_fmj: 30 }) && st.survivors.every((s) => pricePerson(st, s).total === 0), `priced against its limit, the rifle with its loaded magazine (${vehiclePoints(V)}), nobody's points`);
-  const base = createWorld({ seed: 42, factionCount: 5, crewRoll: ROLL });
+  const base = createWorld({ seed: 42, factionCount: 5, crewRoll: ROLL, fleet: [{ type: "truck", load: { items: [], supplies: {} } }] }); // the pickup with an empty back
   const b = again(st, { fleet: ui.fleet });
   check(b.bases[0].armory.some((it) => it.key === "ar") && Math.abs(food(b.bases[0]) - food(base.bases[0]) - 30) < 1.01 && b.bases[0].stock.meds === base.bases[0].stock.meds + 4, "built: the rifle in the hub's armory, the food and meds in its stores");
   SG_CHANGE["sg-trunk-sup"](b, ui, { value: "999", dataset: { k: "fuel" } });
   check((ui.fleet[0].load.supplies.fuel || 0) === 40, "a supply held to its cap");
-  check(SG_ACTIONS["sg-trunk-dice"](b, ui) === false && /come empty/.test(ui.fleetEdit.msg), "normal: the dice's back is empty, it says so");
+  check(SG_ACTIONS["sg-trunk-dice"](b, ui) === "fleet" && ui.fleet[0].load === null, "normal: As rolled, the dice's back again (rolled by whose it is since 2026-10-25)");
   // Hardcore: the car the team flees in.
   const hc = blankWorld(42, { mode: "hardcore" });
   const hi = startVehicleInfo(hc);
@@ -312,6 +320,7 @@ section("Every rebuild keeps the picks and the points");
   SG_CHANGE["sg-slot"](st, ui, { value: "huntrifle", dataset: { slot: "weapon" } });
   SG_CHANGE["sg-item-add"](st, ui, { value: "phone", dataset: {} });
   ui.fleetEdit = { i: 0, msg: "" };
+  SG_ACTIONS["sg-trunk-clear"](st, ui); // the dice's back emptied first (rolled since 2026-10-25): only the binoculars
   SG_CHANGE["sg-trunk-add"](st, ui, { value: "binoculars", dataset: {} });
   ui.fleetEdit = null;
   const want = pricePerson(st, s).total;

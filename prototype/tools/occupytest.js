@@ -20,6 +20,7 @@ import { relation } from "../src/sim/diplomacy.js";
 import { overwriteClaims, CLAIM } from "../src/sim/claims.js";
 import * as G from "../src/sim/groupworld.js";
 import * as O from "../src/sim/occupy.js";
+import { crawlTile } from "../src/sim/citycrawl.js";
 
 const seed = Number(process.argv[2] || 42);
 let fails = 0, passes = 0;
@@ -27,7 +28,8 @@ const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FA
 const section = (t) => console.log(`\n${t}`);
 const world = (s = seed) => { const st = createWorld({ seed: s, factionCount: 8 }); st.started = true; st.noNewGangs = true; st.erasOff = true; st.noWanderers = true; return st; };
 const pick = (card, re) => card.choices.find((c) => re.test(c.label));
-const free = (st, t) => st.tiles[t].terrain !== "water" && st.tiles[t].terrain !== "mountain" && st.tiles[t].owner == null && !st.factions.some((f) => f.bases.includes(t)) && !st.bases.some((b) => b.tile === t) && !st.hordes.some((h) => h.tile === t);
+// Not a town's or a city's crawl tile: no base goes up there (citycrawl.js crawlTile, parties.js CRAWL_WHY, 2026-10-23).
+const free = (st, t) => !crawlTile(st.tiles[t]) && st.tiles[t].terrain !== "water" && st.tiles[t].terrain !== "mountain" && st.tiles[t].owner == null && !st.factions.some((f) => f.bases.includes(t)) && !st.bases.some((b) => b.tile === t) && !st.hordes.some((h) => h.tile === t);
 function nearFree(st, from, lo, hi) {
   const g = st.grid;
   return g.within(from, hi).find((t) => g.distance(t, from) >= lo && free(st, t) && planPath(st, from, t, false));
