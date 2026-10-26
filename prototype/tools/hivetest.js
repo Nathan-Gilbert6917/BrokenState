@@ -24,6 +24,7 @@ import {
   ensureHives, hiveIncome, hivesDaily, hiveTracker, destroyHive, deliverToSite, hiveForce, assaultHive, zombieToughness, hiveDanger, newHiveCap, siteDue,
 } from "../src/sim/hives.js";
 import { HIVE } from "../src/sim/hiveconst.js";
+import { sizeDef } from "../src/sim/worldsize.js";
 import { HORDE_SIZES, hordeScore, makeHorde, splitHorde, mergeHordes, hordesHour, hordesDaily, SPLIT_MIN, HORDE_MAX_SIZE } from "../src/sim/hordes.js";
 import { holdLimit, holdCheck, hordeAttackBase, spikeKill, breakInForce, DEFENCE } from "../src/sim/defences.js";
 import { addBuilding } from "../src/sim/buildings.js";
@@ -54,9 +55,20 @@ const t0 = Date.now();
 {
   console.log("Start and income");
   const st = world();
-  const counts = [42, 1, 2, 3, 4, 5, 6, 7].map((seed) => world(seed).hives.length);
+  // The rule as written for the original 64 × 42 State of Calder, now a custom size: since 1370d1c (the map sizes of
+  // 2026-10-24) the presets keep the hives' density per hex (worldsize.js originHives, hotspots × spotHives), so a
+  // Normal 250 × 150 map starts with about 60. Both are checked.
+  const counts = [42, 1, 2, 3, 4, 5, 6, 7].map((seed) => createWorld({ seed, factionCount: 8, size: "custom", customW: 64, customH: 42 }).hives.length);
   check(st.hives.every((h) => h.res === HIVE.START_RES) && counts.every((n) => n >= HIVE.START_ORIGIN + HIVE.START_SPOT && n <= HIVE.START_ORIGIN + 2 * HIVE.START_SPOT),
-    `${st.hives.length} hives at the start, each with ${HIVE.START_RES} resources (8 seeds: ${counts.join(", ")}; ${HIVE.START_ORIGIN} at the origin, ${HIVE.START_SPOT} per other hot spot)`);
+    `the original 64 × 42 map: 5–6 hives at the start, each with ${HIVE.START_RES} resources (8 seeds: ${counts.join(", ")}; ${HIVE.START_ORIGIN} at the origin, ${HIVE.START_SPOT} per other hot spot)`);
+  // Normal: originHives round the origin, one round each city more than 10 tiles from it (its own hot spot) and
+  // spotHives round each extra hot spot the map found room for (at most def.hotspots).
+  const D = sizeDef("normal"), g0 = st.grid;
+  const lone = st.cityIds.filter((c) => g0.distance(c, st.originId) > 10).length;
+  const atOrigin = st.hives.filter((h) => g0.distance(h.tile, st.originId) <= 6).length;
+  const extra = st.hives.length - D.originHives - lone * HIVE.START_SPOT;
+  check(atOrigin >= D.originHives && extra >= D.spotHives && extra <= D.hotspots * D.spotHives,
+    `Normal (250 × 150): ${st.hives.length} hives at the start: ${atOrigin} within 6 tiles of the origin (${D.originHives} set), ${lone} lone cities' hot spots, ${extra} in the extra hot spots (up to ${D.hotspots} × ${D.spotHives})`);
   check(st.hordes.length === 0, "no hordes exist when the game starts");
   check([1, 2, 3, 4, 5, 6, 9].map(hiveIncome).join(",") === "1,3,6,8,10,12,12", `income per hive by cluster size 1..6, 9: ${[1, 2, 3, 4, 5, 6, 9].map(hiveIncome).join(", ")}`);
   // A lone hive and a pair 3 tiles apart, everything else removed.
@@ -93,7 +105,11 @@ const t0 = Date.now();
   const s3 = world(12);
   s3.hour = (HIVE.BOSS_DAY + 5) * 24;
   for (const h of s3.hives) { h.res = 0; h.growDay = 1e9; }
-  const b = s3.hives[0], nb = s3.hives[1];
+  // The hive raising it: one with a base to attack in reach (hives.js attackTarget: yours within attackRange, a group's
+  // within 22 tiles). On the original 64 × 42 map every hive had one; since 1370d1c (Normal 250 × 150, the hub kept
+  // worldsize.js hiveClear 40 tiles from the origin) the first hive may have none, and its Wallbreaker waits at home.
+  const reachOf = (hv) => Math.min(...s3.factions.filter((f) => f.alive).flatMap((f) => f.bases.map((fb) => s3.grid.distance(hv.tile, fb))));
+  const b = [...s3.hives].sort((x, y) => reachOf(x) - reachOf(y))[0], nb = s3.hives.find((h) => h !== b);
   nb.res = 40 + 30;
   hivesDaily(s3);
   check(!s3.hordes.some((h) => h.bosses) && s3.hiveInfo.stats.bosses === 0, `a hive without a Wallbreaker den raises none, resources or not (${s3.hiveInfo.stats.bosses} made)`);
@@ -177,7 +193,9 @@ const t0 = Date.now();
   for (const size of Object.keys(caps)) for (const seed of QUICK ? [1] : [1, 2, 3]) caps[size].push(grow(seed, size)); // quick: one world a size
   for (const [size, runs] of Object.entries(caps)) {
     const [lo, hi] = HIVE.NEW_CAP;
-    const capLo = size === "normal" ? HIVE.NEW_MIN : lo, capHi = size === "normal" ? hi - 1 : hi;
+    // Every preset is past NEW_SCALE since 1370d1c (Normal 250 × 150 is bigger than the old Large), so each has the
+    // full NEW_CAP range; it was NEW_MIN to hi - 1 on the old 64 × 42 Normal.
+    const capLo = lo, capHi = hi;
     check(runs.every((r) => r.cap >= capLo && r.cap <= capHi), `${size}: the cap on new hives in ${HIVE.NEW_SPAN} days is ${capLo}–${capHi} by the dice (${runs.map((r) => r.cap).join(", ")})`);
     check(runs.every((r) => r.built.length <= r.cap && r.picks.length <= r.cap && r.built.length >= Math.min(2, r.cap - 1)),
       `${size}: within the cap over three years (built ${runs.map((r) => `${r.built.length} of ${r.cap}`).join(", ")}; sites on days ${runs.map((r) => r.picks.join("/")).join("; ")})`);
@@ -589,8 +607,13 @@ const answer = (st, re) => { const c = st.cards.pop(); const ch = c && c.choices
     hub(s).stock.ammo = 200;
     s.combat = createBattle(s, setupFor(s, pl, types));
     const bb = s.combat;
+    // Every line of the battle: b.log keeps its last 80 (combat.js say). Since 1370d1c (the map sizes of 2026-10-24:
+    // another battle ground on seed 52) the fight lasts 32 turns and the spitters' acid, early on, had scrolled out
+    // of it. Lines are kept as they are pushed and read at the end (sayFirst fills its text in later).
+    const lines = [], push = bb.log.push;
+    bb.log.push = function (...xs) { lines.push(...xs); return push.apply(this, xs); };
     for (let i = 0; i < 60 && !bb.over; i++) { autoPlayerTurn(s); runEnemyPhase(s); }
-    const out = { over: bb.over, turns: bb.turn, called: bb.screamed || 0, units: bb.units.length, log: bb.log.map((l) => l.text).join("|") };
+    const out = { over: bb.over, turns: bb.turn, called: bb.screamed || 0, units: bb.units.length, log: lines.map((l) => l.text).join("|") };
     if (bb.over) closeCombat(s); else s.combat = null;
     return out;
   };

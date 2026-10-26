@@ -339,9 +339,14 @@ console.log("Screamer");
 console.log("Silences and snarls");
 {
   // n of the dead standing about for secs seconds, the cues heard (battleCues at 10 frames a second).
-  const quiet = (n, secs = 120, seed = 27) => {
+  // tile: the battle's tile (b.setup.tile), the salt of every voice seed (zombiesfx.js unitSeed). isobattles.js puts a
+  // field fight on the world's first land tile that is not the hub: since 1370d1c (the map sizes of 2026-10-24) that is
+  // tile 0 on seeds 27 and 31 alike, so the two battles had the same voices (and seed 27's lost its one snarl in 120 s).
+  // Each keeps the tile it had before: 1 on seed 27, 0 on seed 31.
+  const quiet = (n, secs = 120, seed = 27, tile = seed === 27 ? 1 : 0) => {
     const [x] = battles(seed, ["field-forest"]);
     const { b } = x;
+    b.setup.tile = tile;
     const zs = b.units.filter((u) => u.kind === "zombie");
     while (zs.length < n) { const z = C.enemyUnit(b, b.rng, "zombies", 3, zs.length + 1); const f = zs[zs.length % zs.length]; z.x = f.x; z.y = f.y; b.units.push(z); zs.push(z); }
     zs.forEach((u, i) => { if (i >= n) u.dead = true; });
