@@ -153,7 +153,8 @@ for (let i = 0; i < runs; i++) {
 
   // ---- a bare road tile's raid map ----
   {
-    const rt = state.tiles.find((t) => t.road && !t.bridge && !t.loc && t.terrain !== "water" && t.id !== h.tile && state.grid.distance(t.id, h.tile) > 1);
+    // Not a pond tile: since the ponds (46c3f529, 2026-10-23) a pond tile's raid map has its pond's water on it (seed 14's first road tile).
+    const rt = state.tiles.find((t) => t.road && !t.bridge && !t.pond && !t.loc && t.terrain !== "water" && t.id !== h.tile && state.grid.distance(t.id, h.tile) > 1);
     if (rt) {
       check(raidAreasFor(rt).includes("roadcars"), "a bare road's raid areas are the cars on it");
       const b = raidOn(state, rt.id, true);

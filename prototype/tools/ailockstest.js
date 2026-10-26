@@ -31,6 +31,8 @@ import { itemDurMax } from "../src/sim/crafting.js";
 import { ensureMembers, syncMembers } from "../src/sim/members.js";
 import { weightOf } from "../src/sim/groupcare.js";
 import { totalRounds } from "../src/sim/ammo.js";
+import { CLASSES } from "../src/sim/cooking.js"; // the food classes: fresh game (G)
+import { FOODS } from "../src/sim/foods.js";
 
 let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
@@ -43,6 +45,9 @@ function G(st, type, { pop = 16, knows = [], works = {} } = {}) {
   f.works = {}; Object.assign(worksAt(f, f.bases[0]), works);
   f.tech = { known: [...knows], held: [], study: {} };
   Object.assign(f.stock, { scrap: 300, parts: 30, food: pop * 10, fuel: 60, ammo: 400, wood: 2000, brass: 0, powder: 0, primers: 0 }); // food under the machines' 12 days
+  // No fresh game in their pantry: a group with it wants a meat grinder next (cooking.js groupWantsGrinder), and since the
+  // map sizes (1370d1c, merged 67fe4c3) seed 42's first group starts with venison, ahead of the gate section 3 checks.
+  for (const k of Object.keys(f.stock)) if (FOODS[k] && CLASSES.game.test(k, FOODS[k], { fresh: true })) delete f.stock[k];
   f.partsMach = 0;
   f.jails = { [f.bases[0]]: 3 }; // a jailhouse (groupjails.js): not the next job
   // members.js: a group's skills are its people's (groupworks.js groupSkill: the best at home); its people at the

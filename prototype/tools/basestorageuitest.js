@@ -32,7 +32,8 @@ const SEED = Number(process.argv[2] || 42);
 let pass = 0, fail = 0;
 const check = (ok, what) => { if (ok) pass++; else { fail++; console.log(`  FAIL: ${what}`); } return !!ok; };
 const section = (t) => console.log(t);
-const W = () => { const st = createWorld({ seed: SEED, factionCount: 6 }); st.visitorsOff = true; stockTools(hub(st)); return st; }; // every tool (toolset.js)
+// The starting vehicle pinned to the pickup these checks are about: since d0adaca (2026-10-25) it is rolled by its owner's background (seed 42: a work van, 800 kg), as vehupgradetest pins it.
+const W = () => { const st = createWorld({ seed: SEED, factionCount: 6, fleet: [{ type: "truck" }] }); st.visitorsOff = true; stockTools(hub(st)); return st; }; // every tool (toolset.js)
 const ui = (baseView) => ({ started: true, speed: 0, tab: "bases", selected: -1, survivor: null, baseView, expedition: null, diary: null, roster: null, help: false });
 const modal = (st, b, tab) => { st.cards.length = 0; return renderModal(st, ui({ id: b.id, tab })) || ""; };
 const plain = (h) => String(h).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");

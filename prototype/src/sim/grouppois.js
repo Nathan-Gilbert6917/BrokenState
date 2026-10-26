@@ -33,6 +33,7 @@
 // as goods by the POI's kind (aiscav.js haulFor). The log says when a POI is stripped, and when strangers emptied
 // what your people left there (seen from your land, or on the radio near one of your bases).
 /** @import { State, Tile } from "./types" */
+import { poiCampFoundBy } from "./poicamp.js"; // your camp inside a POI found by a group raiding it (issue #70; call-time only)
 import { LOCATIONS } from "./data.js";
 import { log, localId, day } from "./world.js";
 import { tileLabel } from "./parties.js";
@@ -290,6 +291,7 @@ const stats = (state) => { const st = /** @type {any} */ (state); return st.grou
 export function raidPoiAsGroup(state, who, tile, i, need, opts = {}) {
   const t = tileOf(state, tile), p = poiAt(t, i);
   if (!p) return null;
+  if (poiCampFoundBy(state, who, t.id, i)) return null; // poicamp.js (issue #70): your camp stands there: a hostile group raids your base (on the POI's map), nobody loots it by the numbers
   const before = poiPool(t, i), was = !!p.stripped, band0 = poiBand(t, i);
   const r = lootPoiAbstract(state, who, t, i, need / poiHouses(state, t, i), { floor: opts.floor != null ? opts.floor : AISCAV.floor, heat: opts.heat != null ? opts.heat : TILE_HEAT.AI, hours: opts.hours, room: opts.room });
   if (!r) return null;

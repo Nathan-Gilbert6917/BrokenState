@@ -40,7 +40,8 @@ import { typeFind, AREA_MIX } from "./foods.js"; // the food in a container as i
 import { survivorById, factionById, alive, atBase, homeAt, combatPower, hurt, log, skill, gearEffect, isNight, usesArrows, armedFactor, arrowsBack, meleeAimBonus, meleeDmgMult } from "./world.js";
 import { partyMembers, partyTile, partyCapacity, cargoLoad, cargoRoom, unitsThatFit, wipeParty, leaveVehicle } from "./parties.js";
 import { noteGunfire } from "./fieldheat.js";
-import { deadPopBattleEnd, earshot, DEADPOP } from "./deadpop.js"; // the dead on the land (issue #65): reinforcements drawn from the tile's open ground, the kills off the pools
+import { deadPopBattleEnd, earshot, DEADPOP } from "./deadpop.js";
+import { POICAMP_ACTS, poiCampAct, poiCampTurn, poiCampRaidStart, botPoiCamp, noteSeen } from "./poicamp.js"; // a camp set up inside a POI mid-raid (issue #70; call-time only) // the dead on the land (issue #65): reinforcements drawn from the tile's open ground, the kills off the pools
 import { GEAR, SUPPLIES, TERRAIN } from "./data.js";
 import * as Weather from "./weather.js"; // the season: a chest freezer's food kept in winter (BOX_LOOT; call-time only)
 import { partyVehicle, partyVehicles, isBike, upgradesOf, armourOf, riderMult, vehicleOdds, UPGRADE_FX, technicalPlated, SEATS, teamDrivers, driversFor } from "./vehicles.js"; // the team's car or truck on the map (placeVehicle); its upgrades (glass, plating)
@@ -4915,6 +4916,7 @@ export function combatAct(state, act) {
     return err;
   }
   if (b.phase !== "player") return "Wait for the enemy turn to finish.";
+  if (POICAMP_ACTS.has(act.type)) { const err = poiCampAct(state, b, act); if (!err && state.combat === b && !b.over) bump(b); return err; } // poicamp.js: Set up camp, work on it, Settle in, build mode
   if (act.type === "takeAlive") { setTakeAlive(b, act.on); bump(b); return ""; } // nonlethal.js: the AI playing your side prefers non-lethal
   if (act.type === "evac") { const why = evacRefusal(b); if (why) return why; b.evacOrder = true; say(b, "Evac! Everyone heads for the way out.", "danger"); if (b.parley) allyEvac(state, b); evacTurn(state, b); return ""; } // allyorders.js: the allies told to retreat too // evacTurn: everyone to the exits or the vehicle
   if (act.type === "evacStop") { b.evacOrder = false; say(b, "The evac is called off.", "info"); bump(b); return ""; }
@@ -4966,6 +4968,7 @@ export function combatAct(state, act) {
       followTether(state, b, u, c); // furnicarry.js: the other end of the piece steps along (free)
       // skills.js: Stealth XP for moving while enemies still have not noticed anyone.
       if (u.xpT && active(u) && b.units.some((e) => e.side === "enemy" && !e.aware && active(e))) u.xpT.sneak++;
+      if (b.poiCamp) noteSeen(b); // poicamp.js: what they saw on the way is known ground
       break;
     }
     case "face": { // vision.js: turn where they stand (free: it needs an action left, it does not use one)
@@ -5609,6 +5612,7 @@ function startPlayerTurn(state, b) {
   if (b.intel && !b.over) allyIntelTick(b); // allyorders.js: what an ally told you of, dropped where your people now see
   offerClear(b);
   if (b.evacOrder && !b.over) evacTurn(state, b); // the Evac order stands: the next leg toward the way out
+  if (b.raid && !b.over) poiCampTurn(state, b); // poicamp.js: what your people saw kept, the camp's "safe" countdown, build mode closed by a sighting
 }
 
 // ---------- the area is clear enough (battlesize.js clearEnough) ----------
@@ -7710,6 +7714,7 @@ export function createRaid(state, setup) {
   b.enemyStart = b.units.filter((u) => u.side === "enemy").length;
   lockRaid(state, b); // locks.js: locked containers and a locked room
   poiRaidStart(state, b); // poicont.js: a point of interest's containers as its ledger keeps them (ransacked, as you left them, fresh)
+  poiCampRaidStart(state, b); // poicamp.js: a half-built camp left here, or your camp in this place
   if (pick) {
     const rooms = map.areas.filter((a) => !a.outdoor).length;
     const st = b.raid.storeys > 1 ? ` on ${b.raid.storeys} storeys (the stairs are marked; Go up / Go down takes an action)` : "";
@@ -8239,6 +8244,7 @@ function autoRaidTurn(state) {
   const party = state.parties.find((x) => x.id === b.setup.partyId);
   const stairCells = () => (R.stairs || []).filter(([x, y]) => cellAt(b, x, y).walk);
   const exitCells = () => { const out = []; for (const zz of R.zones) for (let y = zz.y0; y < zz.y0 + zz.h; y++) for (let x = zz.x0; x < zz.x0 + zz.w; x++) if (cellAt(b, x, y).walk) out.push([x, y]); return out; };
+  if (b.poiCamp || (b.setup.raid && b.setup.raid.camp)) { const hold = botPoiCamp(state, b); if (b.over || state.combat !== b) return; if (hold) { bump(b); return void endPlayerTurn(state); } } // poicamp.js: the camp worked on, Settle in at 0; a team sent to camp holds there while nothing is in sight
   if (R.folk || b.parley) resolveBattleCards(state); // floorfolk.js: a card raised over the fight (the survivors upstairs, parley.js: a group's call) answered by its weights
   // The squad's call to leave, once a turn (BOT_LEAVE above).
   const squad = b.units.filter((x) => x.side === "player" && !x.left && !x.dead);

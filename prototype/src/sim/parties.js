@@ -897,13 +897,13 @@ export function missionProblem(state, tile, mission) {
   const theirs = state.factions.find((f) => f.alive && f.known && f.bases.includes(tile));
   if (mission === "outpost") {
     if (t.terrain === "water" && !t.bridge) return "An outpost cannot be built on open water. A bridge can be barricaded with one.";
-    if (state.bases.some((b) => b.tile === tile)) return "You already have a base there.";
+    if (state.bases.some((b) => b.tile === tile && b.poi == null)) return "You already have a base there."; // poicamp.js: one normal base a tile, a camp inside a POI aside
     if (theirs) return `${theirs.name} holds that place.`;
     if (crawlTile(t)) return CRAWL_WHY; // citycrawl.js: no base on a town's or a city's crawl tile
   }
   if (mission === "camp" || mission === "establish") { // a camp (staging.js campProblem: checked again on arrival)
     if ((t.terrain === "water" && !t.bridge) || t.hive) return t.hive ? "Not on a hive." : "A camp cannot go on open water.";
-    if (state.bases.some((b) => b.tile === tile)) return "You already have a base there.";
+    if (state.bases.some((b) => b.tile === tile && b.poi == null)) return "You already have a base there."; // poicamp.js: one normal base a tile
     if (theirs) return `${theirs.name} holds that place.`;
     if (crawlTile(t)) return CRAWL_WHY;
   }
@@ -1794,7 +1794,7 @@ export function orderOptions(state, p, tile = partyTile(p)) {
     // No base at all (hardcore's first hub, the exiles): Establish base, a camp built up into the hub (staging.js).
     const est = establishOption(state, p, tile);
     if (est) out.push(est);
-  } else if (!left && !state.bases.some((b) => b.tile === tile) && !ownedByOther && (t.terrain !== "water" || t.bridge)) { // a bridge: the outpost barricades it (bridgeClosedTo)
+  } else if (!left && !state.bases.some((b) => b.tile === tile && b.poi == null) && !ownedByOther && (t.terrain !== "water" || t.bridge)) { // a bridge: the outpost barricades it (bridgeClosedTo)
     add("outpost", fireCostProblem(state, p) || null); // staging.js: the camp fire's wood and stone carried
     const taken = claimsTaken(state, tile); // claims.js: the groups' claims round it become yours
     if (taken.length) out[out.length - 1].desc += ` Building here takes claims round it and angers ${claimsTakenText(taken)}.`;
@@ -2108,7 +2108,7 @@ function arrive(state, p) {
       // A base standing empty here (it was left since the team set out, or the planner was not told): move in instead
       // of building over it (occupy.js).
       if (abandonedAt(state, p.dest)) { p.mission = "occupy"; return occupyArrive(state, p); }
-      const mine = state.bases.some((b) => b.tile === p.dest);
+      const mine = state.bases.some((b) => b.tile === p.dest && b.poi == null); // poicamp.js: a camp in one of its POIs leaves the tile's own map free
       const blocked = mine || state.factions.some((f) => f.bases.includes(p.dest)) || (t.owner != null && t.owner !== "player");
       if ((t.terrain === "water" && !t.bridge) || blocked) {
         awaitOrders(state, p, t.terrain === "water" && !t.bridge ? "An outpost cannot be built on open water." : mine ? "You already have a base here." : `Someone else holds ${tileLabel(state, p.dest)}.`, { failed: true });

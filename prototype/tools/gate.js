@@ -36,6 +36,12 @@ const CORE = [
   ["seasongroundtest", false], ["puddletest", false], ["zombiesfxtest", false], ["siegetest", false],
   ["allyorderstest", false], ["hivebirthtest", false], ["sizetest", false], ["rescuetest", false], ["hiveplustest", false],
   ["stealthtest", true], // quick: 20-day soaks, 160 prisoners a setup; about 3 minutes
+  // #63's later twelve made green (alone on 2026-10-26: basestorage 7 s, basestorageui 14 s, basestoragemap 12 s,
+  // ailocks 6 s, floorfolk 19 s, field 36 s, basebuildauto 50 s, bridge 83 s); left out: basetest (7 minutes), medstest
+  // (25 minutes of CPU), and depletetest and exploretest (quick about 2 minutes each, in child processes; left out while
+  // citycrawltest ran at 1748 s of its 1800 in the gate, before #74 split it)
+  ["basestoragetest", false], ["basestorageuitest", false], ["basestoragemaptest", false], ["ailockstest", false],
+  ["floorfolktest", false], ["fieldtest", false], ["basebuildautotest", false], ["bridgetest", false],
   // #72: red tests made green, kept so (officestest 80 s, plannametest 65 s in the gate on 2026-10-26); savetest is left out,
   // too long (quick: 8 minutes alone, 12 in the gate, where it pushed citycrawltest past the time limit; full: over 30)
   ["officestest", false], ["plannametest", false],
