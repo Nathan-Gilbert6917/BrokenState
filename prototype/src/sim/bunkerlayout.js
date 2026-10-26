@@ -654,7 +654,7 @@ function bitten(ctx) {
   for (const r of bunkerRooms(ctx, ["bunkhall"])) {
     const f = r.f || 0, free = ctx.freeIn(r);
     if (free.length < 5) continue;
-    const spots = rng.shuffle(free);
+    const spots = rng.shuffle(free.slice()); // a copy: free[0] marks the scene below once the spots are taken
     const people = rng.int(2, 4), dead = rng.int(2, 3);
     for (let i = 0; i < people; i++) { const [x, y] = spots.shift(); ctx.body(f, x, y, { human: true }); ctx.splatter(f, x, y, "human", rng.int(2, 3)); }
     for (let i = 0; i < dead && spots.length; i++) { const [x, y] = spots.shift(); ctx.body(f, x, y, { sleeper: i === 0 && rng.chance(0.4) }); ctx.blood(f, x, y, "zombie", 1); }

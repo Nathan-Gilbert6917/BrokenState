@@ -21,14 +21,15 @@
 //   0–3: the painter's shape, ui/mapsprites.js) and its layout inside (plan: buildingmaps.js reads fl, the main
 //   room's floor; depth, the share of the building the front room takes; wide; flat, the chance of a flat above;
 //   storeys; room, the front room's name; back, the back's arrangement by kind; libs, a library's variants and their
-//   weights: librarylayout.js). A place's franchise is its own dice
+//   weights: librarylayout.js; variants, the layout variants of shopvariants.js that fit it, issue #35: a new save's
+//   plan is one of them, the older keys keep an older save's). A place's franchise is its own dice
 //   (shops.js franchiseFor): poi.v, place.v, a site's by its tile.
 // ROWS: the new kinds' rows in the find tables, by table (each module merges its own: loot.js SITE_FINDS …).
 
 import { OFFICE_KINDS, OFFICE_AREAS, OFFICE_W, OFFICE_FIRMS, OFFICE_ROWS } from "./data-offices.js"; // the office buildings of every kind, with their firms (issue #27)
 
 /** @typedef {{ wall: string, trim: string, sign: string, text: string, accent: string, roof?: string, style: number }} Look */
-/** @typedef {{ fl?: string, depth?: number, wide?: boolean, flat?: number, storeys?: [number, number], room?: string, back?: string, office?: string, media?: string, truck?: boolean, hotel?: string, libs?: Record<string, number> }} Plan */
+/** @typedef {{ fl?: string, depth?: number, wide?: boolean, flat?: number, storeys?: [number, number], room?: string, back?: string, office?: string, media?: string, truck?: boolean, hotel?: string, libs?: Record<string, number>, variants?: string[] }} Plan */
 /** @typedef {{ id: string, name: string, w: { city: number, suburb: number, town: number, scenic?: number }, look: Look, plan?: Plan, eat?: { cuisine: string, format: string, size: string, brew?: boolean, truck?: boolean } }} Franchise */
 
 import { VARIANTS } from "./data-eateries.js"; // the restaurant variants (issue #33): pure data too
@@ -241,33 +242,33 @@ export const PLACE_W = {
 // big glass front).
 export const FRANCHISES = {
   sportshop: [
-    { id: "peaksports", name: "Peak Sports", w: G(1, 1, 0.3), look: L("#c9ced3", "#5d6168", "#1f4f9a", "#ffffff", "#e8c04a", 3), plan: { fl: "tile", depth: 0.7, wide: true, back: "big" } },
-    { id: "allstar", name: "All-Star Athletics", w: G(1, 0.8, 0.4), look: L("#d9d4c8", "#3c3a36", "#c8402f", "#ffffff", "#1f4f9a", 1), plan: { fl: "wood", depth: 0.65, back: "lockers" } },
-    { id: "trailhead", name: "Trailhead Outfitters", w: G(0.5, 1, 1), look: L("#7a5230", "#4a3424", "#3f6b3a", "#f0e6c8", "#c9873c", 0), plan: { fl: "wood", depth: 0.6, back: "camp" } },
-    { id: "bigbuck", name: "Big Buck Sporting Goods", w: G(0.1, 0.6, 1), look: L("#8b6a48", "#4a3424", "#5f7a3e", "#f0d070", "#a2713f", 2), plan: { fl: "conc", depth: 0.6, back: "hunt" } },
-    { id: "riverbend", name: "Riverbend Bait & Tackle", w: G(0, 0.3, 0.8), look: L("#5d8aa8", "#2d4a5e", "#e8e4d8", "#1f4f9a", "#d9a520", 0), plan: { fl: "wood", depth: 0.55, back: "camp" } },
-    { id: "summit", name: "Summit Outdoor Co.", w: G(0.8, 0.8, 0.5), look: L("#3d4a3c", "#232b23", "#e2826f", "#ffffff", "#9cc46e", 3), plan: { fl: "conc", depth: 0.7, wide: true, back: "big" } },
+    { id: "peaksports", name: "Peak Sports", w: G(1, 1, 0.3), look: L("#c9ced3", "#5d6168", "#1f4f9a", "#ffffff", "#e8c04a", 3), plan: { fl: "tile", depth: 0.7, wide: true, back: "big", variants: ["superstore", "flagship", "twofloor"] } },
+    { id: "allstar", name: "All-Star Athletics", w: G(1, 0.8, 0.4), look: L("#d9d4c8", "#3c3a36", "#c8402f", "#ffffff", "#1f4f9a", 1), plan: { fl: "wood", depth: 0.65, back: "lockers", variants: ["main", "corner", "wrap", "strip"] } },
+    { id: "trailhead", name: "Trailhead Outfitters", w: G(0.5, 1, 1), look: L("#7a5230", "#4a3424", "#3f6b3a", "#f0e6c8", "#c9873c", 0), plan: { fl: "wood", depth: 0.6, back: "camp", variants: ["outlet", "roadside", "counter"] } },
+    { id: "bigbuck", name: "Big Buck Sporting Goods", w: G(0.1, 0.6, 1), look: L("#8b6a48", "#4a3424", "#5f7a3e", "#f0d070", "#a2713f", 2), plan: { fl: "conc", depth: 0.6, back: "hunt", variants: ["counter", "roadside", "outlet"] } },
+    { id: "riverbend", name: "Riverbend Bait & Tackle", w: G(0, 0.3, 0.8), look: L("#5d8aa8", "#2d4a5e", "#e8e4d8", "#1f4f9a", "#d9a520", 0), plan: { fl: "wood", depth: 0.55, back: "camp", variants: ["narrow", "roadside", "main"] } },
+    { id: "summit", name: "Summit Outdoor Co.", w: G(0.8, 0.8, 0.5), look: L("#3d4a3c", "#232b23", "#e2826f", "#ffffff", "#9cc46e", 3), plan: { fl: "conc", depth: 0.7, wide: true, back: "big", variants: ["flagship", "twin", "superstore"] } },
   ],
   electronics: [
-    { id: "voltmart", name: "VoltMart", w: G(1, 1, 0.2), look: L("#2d4a6e", "#1c2a3a", "#e8c04a", "#1c2026", "#e2412f", 3), plan: { fl: "tile", depth: 0.72, wide: true } },
-    { id: "circuittown", name: "Circuit Town", w: G(1, 0.8, 0.3), look: L("#c9ced3", "#5d6168", "#c8402f", "#ffffff", "#3a6fb0", 1), plan: { fl: "tile", depth: 0.65 } },
-    { id: "megabyte", name: "MegaByte Electronics", w: G(1, 0.6, 0), look: L("#2a2a2e", "#111114", "#7fe6ff", "#111114", "#b06ae0", 3), plan: { fl: "tile", depth: 0.75, wide: true } },
-    { id: "hifihut", name: "Hi-Fi Hut", w: G(0.6, 0.8, 0.5), look: L("#d8b47a", "#7a5230", "#5b3a7a", "#f0d070", "#e88aa0", 0), plan: { fl: "carpet", depth: 0.6 } },
-    { id: "tvrepair", name: "Hometown TV & Repair", w: G(0, 0.3, 1), look: L("#b9a98a", "#6b5434", "#3d6fb0", "#ffffff", "#c9873c", 2), plan: { fl: "wood", depth: 0.5, back: "repair" } },
+    { id: "voltmart", name: "VoltMart", w: G(1, 1, 0.2), look: L("#2d4a6e", "#1c2a3a", "#e8c04a", "#1c2026", "#e2412f", 3), plan: { fl: "tile", depth: 0.72, wide: true, variants: ["superstore", "outlet", "twin"] } },
+    { id: "circuittown", name: "Circuit Town", w: G(1, 0.8, 0.3), look: L("#c9ced3", "#5d6168", "#c8402f", "#ffffff", "#3a6fb0", 1), plan: { fl: "tile", depth: 0.65, variants: ["main", "corner", "strip", "twofloor"] } },
+    { id: "megabyte", name: "MegaByte Electronics", w: G(1, 0.6, 0), look: L("#2a2a2e", "#111114", "#7fe6ff", "#111114", "#b06ae0", 3), plan: { fl: "tile", depth: 0.75, wide: true, variants: ["flagship", "superstore", "twin"] } },
+    { id: "hifihut", name: "Hi-Fi Hut", w: G(0.6, 0.8, 0.5), look: L("#d8b47a", "#7a5230", "#5b3a7a", "#f0d070", "#e88aa0", 0), plan: { fl: "carpet", depth: 0.6, variants: ["wrap", "narrow", "main"] } },
+    { id: "tvrepair", name: "Hometown TV & Repair", w: G(0, 0.3, 1), look: L("#b9a98a", "#6b5434", "#3d6fb0", "#ffffff", "#c9873c", 2), plan: { fl: "wood", depth: 0.5, back: "repair", variants: ["counter", "roadside", "narrow"] } },
   ],
   radioshop: [
-    { id: "signalhill", name: "Signal Hill Radio", w: G(0.8, 0.8, 0.6), look: L("#c9b28a", "#6b5434", "#c8402f", "#ffffff", "#e8c04a", 1), plan: { fl: "tile", depth: 0.55 } },
-    { id: "wavelength", name: "Wavelength Electronics", w: G(1, 0.6, 0.3), look: L("#3a5f6e", "#20363f", "#7fe6ff", "#20363f", "#e8e4d8", 3), plan: { fl: "tile", depth: 0.62 } },
-    { id: "cbcorner", name: "CB Corner", w: G(0.1, 0.5, 1), look: L("#8e4f3c", "#4a2a20", "#e8c04a", "#2a2a2a", "#3f6b3a", 2), plan: { fl: "wood", depth: 0.5, back: "repair" } },
-    { id: "antennajoe", name: "Antenna Joe's", w: G(0, 0.4, 1), look: L("#9a8f7a", "#4d4741", "#3d6fb0", "#ffffff", "#e2654f", 1), plan: { fl: "conc", depth: 0.45, back: "repair" } },
-    { id: "freqsupply", name: "Frequency Supply", w: G(1, 0.5, 0.1), look: L("#5d6168", "#2a2a2e", "#e8e4d8", "#c8402f", "#7d848c", 0), plan: { fl: "tile", depth: 0.6 } },
+    { id: "signalhill", name: "Signal Hill Radio", w: G(0.8, 0.8, 0.6), look: L("#c9b28a", "#6b5434", "#c8402f", "#ffffff", "#e8c04a", 1), plan: { fl: "tile", depth: 0.55, variants: ["main", "corner", "wrap"] } },
+    { id: "wavelength", name: "Wavelength Electronics", w: G(1, 0.6, 0.3), look: L("#3a5f6e", "#20363f", "#7fe6ff", "#20363f", "#e8e4d8", 3), plan: { fl: "tile", depth: 0.62, variants: ["superstore", "twofloor", "twin", "flagship"] } },
+    { id: "cbcorner", name: "CB Corner", w: G(0.1, 0.5, 1), look: L("#8e4f3c", "#4a2a20", "#e8c04a", "#2a2a2a", "#3f6b3a", 2), plan: { fl: "wood", depth: 0.5, back: "repair", variants: ["counter", "roadside", "strip"] } },
+    { id: "antennajoe", name: "Antenna Joe's", w: G(0, 0.4, 1), look: L("#9a8f7a", "#4d4741", "#3d6fb0", "#ffffff", "#e2654f", 1), plan: { fl: "conc", depth: 0.45, back: "repair", variants: ["outlet", "roadside", "counter", "narrow"] } },
+    { id: "freqsupply", name: "Frequency Supply", w: G(1, 0.5, 0.1), look: L("#5d6168", "#2a2a2e", "#e8e4d8", "#c8402f", "#7d848c", 0), plan: { fl: "tile", depth: 0.6, variants: ["flagship", "superstore", "main"] } },
   ],
   bookstore: [
-    { id: "dogeared", name: "Dog-Eared Books", w: G(0.4, 0.7, 1), look: L("#7a3b32", "#4a2420", "#3f6b3a", "#f0e6c8", "#d9a520", 0), plan: { fl: "wood", depth: 0.7 } },
-    { id: "chapterverse", name: "Chapter & Verse", w: G(1, 0.8, 0.3), look: L("#2d4a3c", "#16241d", "#d9a520", "#16241d", "#e8e4d8", 3), plan: { fl: "carpet", depth: 0.72, wide: true } },
-    { id: "secondstory", name: "Second Story Used Books", w: G(0.5, 0.5, 1), look: L("#b9a98a", "#6b5434", "#5b3a7a", "#ffffff", "#c9873c", 1), plan: { fl: "wood", depth: 0.6, flat: 0.7 } },
-    { id: "boundfound", name: "Bound & Found", w: G(0.6, 1, 0.5), look: L("#d9c9a8", "#8a7a5a", "#c8402f", "#ffffff", "#3a6fb0", 2), plan: { fl: "wood", depth: 0.65 } },
-    { id: "readwells", name: "Readwell's", w: G(1, 0.6, 0.2), look: L("#e8e4d8", "#5d6168", "#1f4f9a", "#ffffff", "#e8c04a", 3), plan: { fl: "carpet", depth: 0.7, wide: true } },
+    { id: "dogeared", name: "Dog-Eared Books", w: G(0.4, 0.7, 1), look: L("#7a3b32", "#4a2420", "#3f6b3a", "#f0e6c8", "#d9a520", 0), plan: { fl: "wood", depth: 0.7, variants: ["main", "counter", "wrap"] } },
+    { id: "chapterverse", name: "Chapter & Verse", w: G(1, 0.8, 0.3), look: L("#2d4a3c", "#16241d", "#d9a520", "#16241d", "#e8e4d8", 3), plan: { fl: "carpet", depth: 0.72, wide: true, variants: ["superstore", "flagship", "twofloor"] } },
+    { id: "secondstory", name: "Second Story Used Books", w: G(0.5, 0.5, 1), look: L("#b9a98a", "#6b5434", "#5b3a7a", "#ffffff", "#c9873c", 1), plan: { fl: "wood", depth: 0.6, flat: 0.7, variants: ["narrow", "roadside", "outlet"] } },
+    { id: "boundfound", name: "Bound & Found", w: G(0.6, 1, 0.5), look: L("#d9c9a8", "#8a7a5a", "#c8402f", "#ffffff", "#3a6fb0", 2), plan: { fl: "wood", depth: 0.65, variants: ["corner", "strip", "twin"] } },
+    { id: "readwells", name: "Readwell's", w: G(1, 0.6, 0.2), look: L("#e8e4d8", "#5d6168", "#1f4f9a", "#ffffff", "#e8c04a", 3), plan: { fl: "carpet", depth: 0.7, wide: true, variants: ["flagship", "twin", "superstore"] } },
   ],
   // Libraries (issue #34): each name lays its building out as one of librarylayout.js's variants (plan.libs: their
   // weights; the five first names' ids as before, so a saved place keeps its name): a Carnegie Library is always a
@@ -297,27 +298,27 @@ export const FRANCHISES = {
     { id: "harmonhall", name: "Harmon Hall Library", w: G(0.1, 0.1, 0.1), look: L("#7a5240", "#d9d0b8", "#4a2a20", "#f0d070", "#d9d0b8", 0), plan: { libs: { historic: 1 } } },
   ],
   petstore: [
-    { id: "pawsclaws", name: "Paws & Claws", w: G(1, 1, 0.5), look: L("#e8c04a", "#a8842a", "#3a6fb0", "#ffffff", "#e2412f", 3), plan: { fl: "tile", depth: 0.68, wide: true } },
-    { id: "happytails", name: "Happy Tails Pet Supply", w: G(0.8, 1, 0.6), look: L("#9cc46e", "#5f7a3e", "#e88aa0", "#ffffff", "#e8c04a", 0), plan: { fl: "tile", depth: 0.62 } },
-    { id: "finsfeathers", name: "Fins & Feathers", w: G(1, 0.6, 0.3), look: L("#5d8aa8", "#2d4a5e", "#e8c04a", "#2d4a5e", "#7fe6ff", 1), plan: { fl: "tile", depth: 0.6, back: "tanks" } },
-    { id: "feedbin", name: "The Feed Bin", w: G(0, 0.4, 1), look: L("#8b6a48", "#4a3424", "#c8402f", "#ffffff", "#d8b47a", 2), plan: { fl: "conc", depth: 0.5, back: "feed" } },
-    { id: "wagmore", name: "Wagmore Pet Mart", w: G(1, 0.8, 0.2), look: L("#d9d4c8", "#5d6168", "#b06ae0", "#ffffff", "#3a6fb0", 3), plan: { fl: "tile", depth: 0.72, wide: true } },
+    { id: "pawsclaws", name: "Paws & Claws", w: G(1, 1, 0.5), look: L("#e8c04a", "#a8842a", "#3a6fb0", "#ffffff", "#e2412f", 3), plan: { fl: "tile", depth: 0.68, wide: true, variants: ["superstore", "twin", "flagship"] } },
+    { id: "happytails", name: "Happy Tails Pet Supply", w: G(0.8, 1, 0.6), look: L("#9cc46e", "#5f7a3e", "#e88aa0", "#ffffff", "#e8c04a", 0), plan: { fl: "tile", depth: 0.62, variants: ["main", "corner", "strip"] } },
+    { id: "finsfeathers", name: "Fins & Feathers", w: G(1, 0.6, 0.3), look: L("#5d8aa8", "#2d4a5e", "#e8c04a", "#2d4a5e", "#7fe6ff", 1), plan: { fl: "tile", depth: 0.6, back: "tanks", variants: ["twin", "wrap", "twofloor"] } },
+    { id: "feedbin", name: "The Feed Bin", w: G(0, 0.4, 1), look: L("#8b6a48", "#4a3424", "#c8402f", "#ffffff", "#d8b47a", 2), plan: { fl: "conc", depth: 0.5, back: "feed", variants: ["outlet", "roadside", "counter"] } },
+    { id: "wagmore", name: "Wagmore Pet Mart", w: G(1, 0.8, 0.2), look: L("#d9d4c8", "#5d6168", "#b06ae0", "#ffffff", "#3a6fb0", 3), plan: { fl: "tile", depth: 0.72, wide: true, variants: ["flagship", "superstore", "narrow"] } },
   ],
   garden: [
-    { id: "greenthumb", name: "Green Thumb Garden Center", w: G(1, 1, 0.6), look: L("#3f6b3a", "#232b23", "#e8e4d8", "#3f6b3a", "#e8c04a", 3), plan: { depth: 0.55, wide: true } },
-    { id: "bloomingacres", name: "Blooming Acres Nursery", w: G(0.2, 0.7, 1), look: L("#c9b28a", "#6b5434", "#e88aa0", "#ffffff", "#9cc46e", 0), plan: { depth: 0.5, back: "yard" } },
-    { id: "sunflower", name: "Sunflower Garden Supply", w: G(0.6, 1, 0.7), look: L("#e8c04a", "#a8842a", "#5f7a3e", "#ffffff", "#c8402f", 2), plan: { depth: 0.55 } },
-    { id: "rootbranch", name: "Root & Branch", w: G(0.8, 0.9, 0.4), look: L("#5f4a3a", "#3a2a20", "#9cc46e", "#232b23", "#d8b47a", 1), plan: { depth: 0.6, back: "yard" } },
-    { id: "hillcrest", name: "Hillcrest Greenhouses", w: G(0, 0.5, 1), look: L("#a9cbe0", "#5d6168", "#3f6b3a", "#ffffff", "#e8e4d8", 3), plan: { depth: 0.65, wide: true, back: "yard" } },
+    { id: "greenthumb", name: "Green Thumb Garden Center", w: G(1, 1, 0.6), look: L("#3f6b3a", "#232b23", "#e8e4d8", "#3f6b3a", "#e8c04a", 3), plan: { depth: 0.55, wide: true, variants: ["superstore", "flagship", "twin"] } },
+    { id: "bloomingacres", name: "Blooming Acres Nursery", w: G(0.2, 0.7, 1), look: L("#c9b28a", "#6b5434", "#e88aa0", "#ffffff", "#9cc46e", 0), plan: { depth: 0.5, back: "yard", variants: ["outlet", "roadside"] } },
+    { id: "sunflower", name: "Sunflower Garden Supply", w: G(0.6, 1, 0.7), look: L("#e8c04a", "#a8842a", "#5f7a3e", "#ffffff", "#c8402f", 2), plan: { depth: 0.55, variants: ["main", "corner", "strip", "narrow"] } },
+    { id: "rootbranch", name: "Root & Branch", w: G(0.8, 0.9, 0.4), look: L("#5f4a3a", "#3a2a20", "#9cc46e", "#232b23", "#d8b47a", 1), plan: { depth: 0.6, back: "yard", variants: ["outlet", "counter", "wrap"] } },
+    { id: "hillcrest", name: "Hillcrest Greenhouses", w: G(0, 0.5, 1), look: L("#a9cbe0", "#5d6168", "#3f6b3a", "#ffffff", "#e8e4d8", 3), plan: { depth: 0.65, wide: true, back: "yard", variants: ["twofloor", "roadside", "flagship"] } },
   ],
   clothing: [
-    { id: "threadline", name: "Threadline", w: G(1, 1, 0.3), look: L("#e8e4d8", "#3c3a36", "#1c2026", "#ffffff", "#e2412f", 3), plan: { fl: "tile", depth: 0.72, wide: true } },
-    { id: "denimco", name: "Denim & Co.", w: G(1, 0.8, 0.5), look: L("#3a5f8e", "#1f3550", "#e8e4d8", "#1f3550", "#c9873c", 1), plan: { fl: "wood", depth: 0.65 } },
-    { id: "westernwear", name: "Western Wear Outlet", w: G(0, 0.4, 1), look: L("#a2713f", "#5a3a20", "#f0d070", "#5a3a20", "#c8402f", 2), plan: { fl: "wood", depth: 0.6 } },
-    { id: "workwear", name: "Workwear Depot", w: G(0.3, 1, 0.9), look: L("#7d858c", "#3c3a36", "#e8a020", "#1c2026", "#5d6168", 0), plan: { fl: "conc", depth: 0.62 } },
-    { id: "urbanthread", name: "Urban Thread", w: G(1, 0.5, 0), look: L("#2a2a2e", "#111114", "#e88aa0", "#111114", "#7fe6ff", 3), plan: { fl: "tile", depth: 0.7 } },
-    { id: "mackinaw", name: "Mackinaw Outfitters", w: G(0.2, 0.6, 1), look: L("#7a3b32", "#3a1c18", "#e8e4d8", "#7a3b32", "#2d4a3c", 1), plan: { fl: "wood", depth: 0.6, flat: 0.5 } },
-    { id: "velvetlane", name: "Velvet Lane Boutique", w: G(1, 0.6, 0.2), look: L("#d9c9d8", "#6a4a6a", "#5b3a7a", "#f0d070", "#e88aa0", 0), plan: { fl: "carpet", depth: 0.68 } },
+    { id: "threadline", name: "Threadline", w: G(1, 1, 0.3), look: L("#e8e4d8", "#3c3a36", "#1c2026", "#ffffff", "#e2412f", 3), plan: { fl: "tile", depth: 0.72, wide: true, variants: ["superstore", "flagship", "twofloor"] } },
+    { id: "denimco", name: "Denim & Co.", w: G(1, 0.8, 0.5), look: L("#3a5f8e", "#1f3550", "#e8e4d8", "#1f3550", "#c9873c", 1), plan: { fl: "wood", depth: 0.65, variants: ["main", "corner", "strip"] } },
+    { id: "westernwear", name: "Western Wear Outlet", w: G(0, 0.4, 1), look: L("#a2713f", "#5a3a20", "#f0d070", "#5a3a20", "#c8402f", 2), plan: { fl: "wood", depth: 0.6, variants: ["roadside", "outlet"] } },
+    { id: "workwear", name: "Workwear Depot", w: G(0.3, 1, 0.9), look: L("#7d858c", "#3c3a36", "#e8a020", "#1c2026", "#5d6168", 0), plan: { fl: "conc", depth: 0.62, variants: ["outlet", "counter", "wrap"] } },
+    { id: "urbanthread", name: "Urban Thread", w: G(1, 0.5, 0), look: L("#2a2a2e", "#111114", "#e88aa0", "#111114", "#7fe6ff", 3), plan: { fl: "tile", depth: 0.7, variants: ["narrow", "twin", "corner"] } },
+    { id: "mackinaw", name: "Mackinaw Outfitters", w: G(0.2, 0.6, 1), look: L("#7a3b32", "#3a1c18", "#e8e4d8", "#7a3b32", "#2d4a3c", 1), plan: { fl: "wood", depth: 0.6, flat: 0.5, variants: ["narrow", "roadside", "main"] } },
+    { id: "velvetlane", name: "Velvet Lane Boutique", w: G(1, 0.6, 0.2), look: L("#d9c9d8", "#6a4a6a", "#5b3a7a", "#f0d070", "#e88aa0", 0), plan: { fl: "carpet", depth: 0.68, variants: ["twin", "counter", "strip"] } },
   ],
   vet: [
     { id: "countryvet", name: "Country Vet", w: G(0, 0.5, 1), look: L("#c9b28a", "#6b5434", "#3f6b3a", "#ffffff", "#e8e4d8", 2), plan: { back: "barn" } },
@@ -327,12 +328,12 @@ export const FRANCHISES = {
     { id: "companion", name: "Companion Care Vet", w: G(0.8, 1, 0.4), look: L("#b8d0c8", "#4a6a60", "#e88aa0", "#ffffff", "#3a6fb0", 2) },
   ],
   dealer: [
-    { id: "calder", name: "Calder Motors", w: G(0.8, 1, 0.6), look: L("#e8e4d8", "#5d6168", "#1f4f9a", "#ffffff", "#c8402f", 3), plan: { wide: true, depth: 0.55 } },
-    { id: "bargainbob", name: "Bargain Bob's Used Cars", w: G(0.3, 0.8, 1), look: L("#d8b47a", "#7a5230", "#e8c04a", "#c8402f", "#3a6fb0", 2), plan: { depth: 0.4, back: "lot" } },
-    { id: "highline", name: "Highline Auto Mall", w: G(1, 0.8, 0), look: L("#2a2a2e", "#111114", "#c9ced3", "#111114", "#7fe6ff", 3), plan: { wide: true, depth: 0.6, storeys: [1, 2] } },
-    { id: "truckcountry", name: "Truck Country", w: G(0, 0.6, 1), look: L("#7d848c", "#3c3a36", "#c8402f", "#ffffff", "#e8c04a", 1), plan: { depth: 0.45, back: "service" } },
-    { id: "hometownauto", name: "Hometown Auto Sales", w: G(0.3, 0.8, 1), look: L("#b9a98a", "#6b5434", "#3f6b3a", "#ffffff", "#e8e4d8", 0), plan: { depth: 0.5 } },
-    { id: "prestige", name: "Prestige Imports", w: G(1, 0.6, 0), look: L("#c9ced3", "#3c3a36", "#1c2026", "#d9a520", "#d9a520", 3), plan: { wide: true, depth: 0.62 } },
+    { id: "calder", name: "Calder Motors", w: G(0.8, 1, 0.6), look: L("#e8e4d8", "#5d6168", "#1f4f9a", "#ffffff", "#c8402f", 3), plan: { wide: true, depth: 0.55, variants: ["franchise", "automall", "glass"] } },
+    { id: "bargainbob", name: "Bargain Bob's Used Cars", w: G(0.3, 0.8, 1), look: L("#d8b47a", "#7a5230", "#e8c04a", "#c8402f", "#3a6fb0", 2), plan: { depth: 0.4, back: "lot", variants: ["usedlot", "rental", "superstore"] } },
+    { id: "highline", name: "Highline Auto Mall", w: G(1, 0.8, 0), look: L("#2a2a2e", "#111114", "#c9ced3", "#111114", "#7fe6ff", 3), plan: { wide: true, depth: 0.6, storeys: [1, 2], variants: ["automall", "boutique", "glass"] } },
+    { id: "truckcountry", name: "Truck Country", w: G(0, 0.6, 1), look: L("#7d848c", "#3c3a36", "#c8402f", "#ffffff", "#e8c04a", 1), plan: { depth: 0.45, back: "service", variants: ["truck", "country", "rv"] } },
+    { id: "hometownauto", name: "Hometown Auto Sales", w: G(0.3, 0.8, 1), look: L("#b9a98a", "#6b5434", "#3f6b3a", "#ffffff", "#e8e4d8", 0), plan: { depth: 0.5, variants: ["franchise", "country", "bodyshop", "motorcycle"] } },
+    { id: "prestige", name: "Prestige Imports", w: G(1, 0.6, 0), look: L("#c9ced3", "#3c3a36", "#1c2026", "#d9a520", "#d9a520", 3), plan: { wide: true, depth: 0.62, variants: ["boutique", "glass", "motorcycle"] } },
   ],
   restaurant: [
     { id: "burgerbarn", name: "Burger Barn", w: G(1, 1, 1), look: L("#c8402f", "#7a1c18", "#e8c04a", "#7a1c18", "#ffffff", 1), plan: { room: "Dining room", depth: 0.5, back: "fastfood" } },
@@ -347,12 +348,12 @@ export const FRANCHISES = {
     { id: "sals", name: "Sal's Italian Kitchen", w: G(0.8, 0.8, 0.6), look: L("#d9c9a8", "#3f6b3a", "#c8402f", "#ffffff", "#3f6b3a", 1), plan: { room: "Dining room", fl: "wood", depth: 0.62, back: "sitdown", flat: 0.4 } },
   ],
   bank: [
-    { id: "firstcalder", name: "First Calder Bank", w: G(1, 0.8, 0.6), look: L("#d9d4c8", "#7d786c", "#1f3550", "#e8e4d8", "#d9a520", 1), plan: { storeys: [1, 3], wide: true } },
-    { id: "mercantile", name: "Mercantile Trust", w: G(1, 0.5, 0.1), look: L("#c9c2b0", "#5d6168", "#2a2a2e", "#d9a520", "#d9a520", 3), plan: { storeys: [2, 3], wide: true } },
-    { id: "farmersmerch", name: "Farmers & Merchants Bank", w: G(0.1, 0.5, 1), look: L("#8e4f3c", "#d9d0b8", "#3f6b3a", "#e8e4d8", "#d9d0b8", 0), plan: { storeys: [1, 2] } },
-    { id: "libertysl", name: "Liberty Savings & Loan", w: G(0.3, 0.8, 1), look: L("#e8e4d8", "#3a5f8e", "#c8402f", "#ffffff", "#3a5f8e", 2), plan: { storeys: [1, 1] } },
-    { id: "granite", name: "Granite National Bank", w: G(1, 0.6, 0.2), look: L("#8a8780", "#4d4741", "#e8e4d8", "#2a2a2e", "#c9ced3", 3), plan: { storeys: [2, 3] } },
-    { id: "unioncu", name: "Union Credit Union", w: G(0.6, 1, 0.6), look: L("#b9a98a", "#5d6168", "#2aa0a0", "#ffffff", "#e8c04a", 2), plan: { storeys: [1, 1] } },
+    { id: "firstcalder", name: "First Calder Bank", w: G(1, 0.8, 0.6), look: L("#d9d4c8", "#7d786c", "#1f3550", "#e8e4d8", "#d9a520", 1), plan: { storeys: [1, 3], wide: true, variants: ["marble", "corner", "drivethru", "headquarters", "trust"] } },
+    { id: "mercantile", name: "Mercantile Trust", w: G(1, 0.5, 0.1), look: L("#c9c2b0", "#5d6168", "#2a2a2e", "#d9a520", "#d9a520", 3), plan: { storeys: [2, 3], wide: true, variants: ["tower", "grand", "headquarters", "marble"] } },
+    { id: "farmersmerch", name: "Farmers & Merchants Bank", w: G(0.1, 0.5, 1), look: L("#8e4f3c", "#d9d0b8", "#3f6b3a", "#e8e4d8", "#d9d0b8", 0), plan: { storeys: [1, 2], variants: ["farmers", "smalltown", "grand"] } },
+    { id: "libertysl", name: "Liberty Savings & Loan", w: G(0.3, 0.8, 1), look: L("#e8e4d8", "#3a5f8e", "#c8402f", "#ffffff", "#3a5f8e", 2), plan: { storeys: [1, 1], variants: ["savings", "drivethru", "driveup"] } },
+    { id: "granite", name: "Granite National Bank", w: G(1, 0.6, 0.2), look: L("#8a8780", "#4d4741", "#e8e4d8", "#2a2a2e", "#c9ced3", 3), plan: { storeys: [2, 3], variants: ["marble", "tower", "grand"] } },
+    { id: "unioncu", name: "Union Credit Union", w: G(0.6, 1, 0.6), look: L("#b9a98a", "#5d6168", "#2aa0a0", "#ffffff", "#e8c04a", 2), plan: { storeys: [1, 1], variants: ["creditunion", "driveup", "savings", "corner"] } },
   ],
   bar: [
     { id: "rustynail", name: "The Rusty Nail", w: G(0.3, 0.6, 1), look: L("#7b5a44", "#3a2a20", "#2a2a2a", "#e2654f", "#c4562a", 0), plan: { room: "Barroom", fl: "wood", flat: 0.4 } },
@@ -364,33 +365,33 @@ export const FRANCHISES = {
     { id: "neonmoose", name: "Neon Moose Saloon", w: G(0, 0.3, 1), look: L("#a2713f", "#5a3a20", "#7fe6ff", "#5a3a20", "#e2412f", 2), plan: { room: "Saloon", fl: "wood", back: "stage" } },
   ],
   liquor: [
-    { id: "spiritshoppe", name: "Spirit Shoppe", w: G(1, 1, 0.5), look: L("#5b3a7a", "#2a1c3a", "#e8c04a", "#2a1c3a", "#e88aa0", 1) },
-    { id: "bottleking", name: "Bottle King", w: G(1, 0.9, 0.4), look: L("#c8402f", "#5a1410", "#e8c04a", "#5a1410", "#ffffff", 3), plan: { wide: true } },
-    { id: "package", name: "Package Liquors", w: G(0.2, 0.6, 1), look: L("#b9a98a", "#6b5434", "#c8402f", "#ffffff", "#3f6b3a", 2) },
-    { id: "cornercork", name: "Corner Cork Wine & Spirits", w: G(1, 0.6, 0.2), look: L("#7a3b32", "#3a1c18", "#e8e4d8", "#7a3b32", "#d9a520", 0) },
-    { id: "libertyliquor", name: "Liberty Liquor", w: G(0.6, 1, 0.8), look: L("#e8e4d8", "#3a5f8e", "#3a5f8e", "#ffffff", "#c8402f", 2) },
-    { id: "hopsbarley", name: "Hops & Barley", w: G(0.5, 0.6, 0.9), look: L("#a2713f", "#5a3a20", "#3f6b3a", "#f0d070", "#e8c04a", 0) },
+    { id: "spiritshoppe", name: "Spirit Shoppe", w: G(1, 1, 0.5), look: L("#5b3a7a", "#2a1c3a", "#e8c04a", "#2a1c3a", "#e88aa0", 1), plan: { variants: ["main", "corner", "wrap"] } },
+    { id: "bottleking", name: "Bottle King", w: G(1, 0.9, 0.4), look: L("#c8402f", "#5a1410", "#e8c04a", "#5a1410", "#ffffff", 3), plan: { wide: true, variants: ["superstore", "outlet", "flagship"] } },
+    { id: "package", name: "Package Liquors", w: G(0.2, 0.6, 1), look: L("#b9a98a", "#6b5434", "#c8402f", "#ffffff", "#3f6b3a", 2), plan: { variants: ["roadside", "strip", "counter"] } },
+    { id: "cornercork", name: "Corner Cork Wine & Spirits", w: G(1, 0.6, 0.2), look: L("#7a3b32", "#3a1c18", "#e8e4d8", "#7a3b32", "#d9a520", 0), plan: { variants: ["narrow", "counter", "twofloor"] } },
+    { id: "libertyliquor", name: "Liberty Liquor", w: G(0.6, 1, 0.8), look: L("#e8e4d8", "#3a5f8e", "#3a5f8e", "#ffffff", "#c8402f", 2), plan: { variants: ["main", "twin", "strip"] } },
+    { id: "hopsbarley", name: "Hops & Barley", w: G(0.5, 0.6, 0.9), look: L("#a2713f", "#5a3a20", "#3f6b3a", "#f0d070", "#e8c04a", 0), plan: { variants: ["outlet", "roadside", "twin"] } },
   ],
   // ---------- the old kinds, as franchises (their own painters take the look, buildingmaps.js the plan) ----------
   grocery: [
-    { id: "freshway", name: "FreshWay Market", w: G(1, 1, 0.5), look: L("#e8e4d8", "#3f6b3a", "#3f6b3a", "#ffffff", "#e8c04a", 3), plan: { depth: 0.68, wide: true } },
-    { id: "valuebasket", name: "Value Basket", w: G(0.8, 1, 0.8), look: L("#d9c9a8", "#c8402f", "#c8402f", "#ffffff", "#e8c04a", 1), plan: { depth: 0.62 } },
-    { id: "hilltop", name: "Hilltop Grocers", w: G(0.3, 0.8, 1), look: L("#8e4f3c", "#4a2a20", "#2d4a3c", "#e8e4d8", "#9cc46e", 0), plan: { depth: 0.6, fl: "wood" } },
-    { id: "generalstore", name: "Mercer's General Store", w: G(0, 0.3, 1), look: L("#a2713f", "#5a3a20", "#e8e4d8", "#5a3a20", "#c8402f", 2), plan: { depth: 0.55, fl: "wood", flat: 0.6 } },
-    { id: "bodega", name: "Corner Bodega", w: G(1, 0.4, 0), look: L("#e8a020", "#8a4b32", "#2a2a2a", "#e8c04a", "#c8402f", 0), plan: { depth: 0.6, flat: 0.8 } },
-    { id: "harvest", name: "Harvest Foods", w: G(0.8, 1, 0.6), look: L("#9cc46e", "#3f6b3a", "#e8a020", "#ffffff", "#3f6b3a", 3), plan: { depth: 0.66 } },
+    { id: "freshway", name: "FreshWay Market", w: G(1, 1, 0.5), look: L("#e8e4d8", "#3f6b3a", "#3f6b3a", "#ffffff", "#e8c04a", 3), plan: { depth: 0.68, wide: true, variants: ["dock", "corridor", "pharmacy"] } },
+    { id: "valuebasket", name: "Value Basket", w: G(0.8, 1, 0.8), look: L("#d9c9a8", "#c8402f", "#c8402f", "#ffffff", "#e8c04a", 1), plan: { depth: 0.62, variants: ["neighbourhood", "bakery", "international", "twostorey"] } },
+    { id: "hilltop", name: "Hilltop Grocers", w: G(0.3, 0.8, 1), look: L("#8e4f3c", "#4a2a20", "#2d4a3c", "#e8e4d8", "#9cc46e", 0), plan: { depth: 0.6, fl: "wood", variants: ["butcher", "florist", "country"] } },
+    { id: "generalstore", name: "Mercer's General Store", w: G(0, 0.3, 1), look: L("#a2713f", "#5a3a20", "#e8e4d8", "#5a3a20", "#c8402f", 2), plan: { depth: 0.55, fl: "wood", flat: 0.6, variants: ["country", "coop", "butcher"] } },
+    { id: "bodega", name: "Corner Bodega", w: G(1, 0.4, 0), look: L("#e8a020", "#8a4b32", "#2a2a2a", "#e8c04a", "#c8402f", 0), plan: { depth: 0.6, flat: 0.8, variants: ["international", "annex", "coop"] } },
+    { id: "harvest", name: "Harvest Foods", w: G(0.8, 1, 0.6), look: L("#9cc46e", "#3f6b3a", "#e8a020", "#ffffff", "#3f6b3a", 3), plan: { depth: 0.66, variants: ["bakery", "florist", "pharmacy", "annex"] } },
   ],
   corner: [
-    { id: "quikstop", name: "Quik Stop", w: G(1, 1, 0.6), look: L("#e8e4d8", "#c8402f", "#c8402f", "#ffffff", "#3a6fb0", 1) },
-    { id: "sevenstar", name: "Seven Star Mart", w: G(1, 0.8, 0.4), look: L("#3a6fb0", "#1f3550", "#e8a020", "#1f3550", "#c8402f", 3) },
-    { id: "pennymart", name: "Penny Mart", w: G(0.5, 0.8, 1), look: L("#b9a98a", "#6b5434", "#3f6b3a", "#ffffff", "#e8c04a", 0) },
-    { id: "nightowl", name: "Night Owl", w: G(1, 0.6, 0.3), look: L("#2a2a2e", "#111114", "#b06ae0", "#ffffff", "#e8c04a", 2) },
+    { id: "quikstop", name: "Quik Stop", w: G(1, 1, 0.6), look: L("#e8e4d8", "#c8402f", "#c8402f", "#ffffff", "#3a6fb0", 1), plan: { variants: ["classic", "twodoor", "cooler", "kiosk"] } },
+    { id: "sevenstar", name: "Seven Star Mart", w: G(1, 0.8, 0.4), look: L("#3a6fb0", "#1f3550", "#e8a020", "#1f3550", "#c8402f", 3), plan: { variants: ["booth", "laundro", "sidestock"] } },
+    { id: "pennymart", name: "Penny Mart", w: G(0.5, 0.8, 1), look: L("#b9a98a", "#6b5434", "#3f6b3a", "#ffffff", "#e8c04a", 0), plan: { variants: ["post", "general", "flat", "wrap"] } },
+    { id: "nightowl", name: "Night Owl", w: G(1, 0.6, 0.3), look: L("#2a2a2e", "#111114", "#b06ae0", "#ffffff", "#e8c04a", 2), plan: { variants: ["booth", "bodega", "kiosk", "wrap"] } },
   ],
   gas: [
-    { id: "petrostar", name: "PetroStar", w: G(1, 1, 0.6), look: L("#e8e4d8", "#c8402f", "#c8402f", "#ffffff", "#e8c04a", 1) },
-    { id: "bluefalcon", name: "Blue Falcon Gas", w: G(0.8, 1, 0.8), look: L("#e8e4d8", "#1f4f9a", "#1f4f9a", "#ffffff", "#c9ced3", 2) },
-    { id: "greenleaf", name: "Greenleaf Fuel", w: G(0.6, 0.8, 1), look: L("#e8e4d8", "#3f6b3a", "#3f6b3a", "#ffffff", "#e8c04a", 0) },
-    { id: "sundown", name: "Sundown Gas & Go", w: G(0.3, 0.6, 1), look: L("#e8a020", "#8a4b32", "#2a2a2a", "#e8a020", "#c8402f", 3) },
+    { id: "petrostar", name: "PetroStar", w: G(1, 1, 0.6), look: L("#e8e4d8", "#c8402f", "#c8402f", "#ffffff", "#e8c04a", 1), plan: { variants: ["kiosk", "carwash", "deli", "plaza"] } },
+    { id: "bluefalcon", name: "Blue Falcon Gas", w: G(0.8, 1, 0.8), look: L("#e8e4d8", "#1f4f9a", "#1f4f9a", "#ffffff", "#c9ced3", 2), plan: { variants: ["service", "tyres", "citycorner", "carwash"] } },
+    { id: "greenleaf", name: "Greenleaf Fuel", w: G(0.6, 0.8, 1), look: L("#e8e4d8", "#3f6b3a", "#3f6b3a", "#ffffff", "#e8c04a", 0), plan: { variants: ["general", "bait", "filling", "towing"] } },
+    { id: "sundown", name: "Sundown Gas & Go", w: G(0.3, 0.6, 1), look: L("#e8a020", "#8a4b32", "#2a2a2a", "#e8a020", "#c8402f", 3), plan: { variants: ["fuelstop", "plaza", "kiosk", "towing", "deli"] } },
   ],
   pizza: [
     { id: "tonys", name: "Tony's Pizzeria", w: G(1, 1, 0.8), look: L("#d9b98a", "#3f6b3a", "#c8402f", "#ffffff", "#3f6b3a", 0), plan: { room: "Dining room", depth: 0.55 } },
@@ -422,14 +423,19 @@ export const FRANCHISES = {
   ],
   // Hotels (issue #29): plan.hotel the kind (hotellayout.js), w.scenic its weight in scenic land (hotels.js: the resorts).
   hotel: [
-    { id: "willowcreek", name: "Willow Creek Inn", w: { city: 0, suburb: 0.4, town: 1, scenic: 0 }, look: L("#e8e4d8", "#3f6b3a", "#3f6b3a", "#f0e6c8", "#c8402f", 0, "#4a3424"), plan: { hotel: "inn", fl: "hardwood" } },
-    { id: "oldmill", name: "Old Mill Bed & Breakfast", w: { city: 0, suburb: 0.2, town: 0.9, scenic: 0 }, look: L("#a2713f", "#5a3a20", "#e8e0c8", "#5a3a20", "#3f6b3a", 2, "#5a3a20"), plan: { hotel: "inn", fl: "plank" } },
-    { id: "interstate", name: "Interstate Inn & Suites", w: { city: 0.5, suburb: 1, town: 0.7, scenic: 0 }, look: L("#d9c9a8", "#1f4f9a", "#1f4f9a", "#ffffff", "#e8c04a", 2), plan: { hotel: "business", fl: "carpet" } },
-    { id: "meridian", name: "Meridian Business Hotel", w: { city: 1, suburb: 0.8, town: 0.3, scenic: 0 }, look: L("#a7adb3", "#3c3a36", "#2d4a5e", "#e8e4d8", "#9cc46e", 3), plan: { hotel: "business", fl: "carpet" } },
-    { id: "pinecrest", name: "Pinecrest Lodge Resort", w: { city: 0, suburb: 0, town: 0.12, scenic: 1 }, look: L("#7a5230", "#4a3424", "#3f6b3a", "#f0e6c8", "#c9873c", 1, "#3f4a3a"), plan: { hotel: "resort", fl: "hardwood" } },
-    { id: "lakeshore", name: "Lakeshore Grand Resort", w: { city: 0, suburb: 0.08, town: 0.08, scenic: 0.8 }, look: L("#e8e4d8", "#2d4a5e", "#5d8aa8", "#ffffff", "#d9a520", 3, "#2d4a5e"), plan: { hotel: "resort", fl: "carpet" } },
-    { id: "caldergrand", name: "Calder Grand Hotel", w: { city: 1, suburb: 0, town: 0, scenic: 0 }, look: L("#8e4f3c", "#4a2a20", "#3c3a36", "#e8c04a", "#d9a520", 1), plan: { hotel: "tower", fl: "carpet" } },
-    { id: "harborview", name: "Harbor View Tower", w: { city: 0.8, suburb: 0, town: 0, scenic: 0 }, look: L("#c9ced3", "#2d4a5e", "#1f4f9a", "#ffffff", "#5d8aa8", 3), plan: { hotel: "tower", fl: "carpet" } },
+    { id: "willowcreek", name: "Willow Creek Inn", w: { city: 0, suburb: 0.4, town: 1, scenic: 0 }, look: L("#e8e4d8", "#3f6b3a", "#3f6b3a", "#f0e6c8", "#c8402f", 0, "#4a3424"), plan: { hotel: "inn", fl: "hardwood", variants: ["inn-country", "inn-bnb", "inn-seaside", "inn-vineyard", "inn-mainstreet", "inn-hotspring"] } },
+    { id: "oldmill", name: "Old Mill Bed & Breakfast", w: { city: 0, suburb: 0.2, town: 0.9, scenic: 0 }, look: L("#a2713f", "#5a3a20", "#e8e0c8", "#5a3a20", "#3f6b3a", 2, "#5a3a20"), plan: { hotel: "inn", fl: "plank", variants: ["inn-coaching", "inn-boarding", "inn-mainstreet", "inn-vineyard", "inn-country", "inn-bnb"] } },
+    { id: "interstate", name: "Interstate Inn & Suites", w: { city: 0.5, suburb: 1, town: 0.7, scenic: 0 }, look: L("#d9c9a8", "#1f4f9a", "#1f4f9a", "#ffffff", "#e8c04a", 2), plan: { hotel: "business", fl: "carpet", variants: ["biz-classic", "biz-airport", "biz-extended", "biz-budget", "biz-highway", "biz-medical"] } },
+    { id: "meridian", name: "Meridian Business Hotel", w: { city: 1, suburb: 0.8, town: 0.3, scenic: 0 }, look: L("#a7adb3", "#3c3a36", "#2d4a5e", "#e8e4d8", "#9cc46e", 3), plan: { hotel: "business", fl: "carpet", variants: ["biz-classic", "biz-conference", "biz-allsuites", "biz-boutique", "biz-convention", "biz-campus", "biz-station"] } },
+    { id: "pinecrest", name: "Pinecrest Lodge Resort", w: { city: 0, suburb: 0, town: 0.12, scenic: 1 }, look: L("#7a5230", "#4a3424", "#3f6b3a", "#f0e6c8", "#c9873c", 1, "#3f4a3a"), plan: { hotel: "resort", fl: "hardwood", variants: ["res-mountain", "res-ranch", "res-cabins", "res-wellness", "res-golf", "res-classic"] } },
+    { id: "lakeshore", name: "Lakeshore Grand Resort", w: { city: 0, suburb: 0.08, town: 0.08, scenic: 0.8 }, look: L("#e8e4d8", "#2d4a5e", "#5d8aa8", "#ffffff", "#d9a520", 3, "#2d4a5e"), plan: { hotel: "resort", fl: "carpet", variants: ["res-classic", "res-beach", "res-spa", "res-golf", "res-family", "res-wedding", "res-cabins"] } },
+    { id: "caldergrand", name: "Calder Grand Hotel", w: { city: 1, suburb: 0, town: 0, scenic: 0 }, look: L("#8e4f3c", "#4a2a20", "#3c3a36", "#e8c04a", "#d9a520", 1), plan: { hotel: "tower", fl: "carpet", variants: ["tow-classic", "tow-grand", "tow-deco", "tow-atrium", "tow-convention", "tow-core"] } },
+    { id: "harborview", name: "Harbor View Tower", w: { city: 0.8, suburb: 0, town: 0, scenic: 0 }, look: L("#c9ced3", "#2d4a5e", "#1f4f9a", "#ffffff", "#5d8aa8", 3), plan: { hotel: "tower", fl: "carpet", variants: ["tow-classic", "tow-twin", "tow-podium", "tow-skylobby", "tow-mixed", "tow-core"] } },
+    // Issue #38: a chain a kind more, so a dozen variants have chains to carry them (plan.variants: data-hotels.js).
+    { id: "timberline", name: "Timberline Lodges", w: { city: 0, suburb: 0.1, town: 0.6, scenic: 0 }, look: L("#6b4a2e", "#3a2a1c", "#4a5a3a", "#e8dcc0", "#b8632e", 1, "#3a2a1c"), plan: { hotel: "inn", fl: "plank", variants: ["inn-chalet", "inn-lakeside", "inn-fishing", "inn-hunting", "inn-hotspring", "inn-country"] } },
+    { id: "keystone", name: "Keystone Suites", w: { city: 0.4, suburb: 0.8, town: 0.5, scenic: 0 }, look: L("#c8c0b0", "#5a2a2a", "#7a2e2e", "#f4efe4", "#c9a64a", 2), plan: { hotel: "business", fl: "carpet", variants: ["biz-extended", "biz-allsuites", "biz-budget", "biz-highway", "biz-airport", "biz-medical", "biz-campus"] } },
+    { id: "sundance", name: "Sundance Resorts & Casino", w: { city: 0, suburb: 0.05, town: 0.06, scenic: 0.6 }, look: L("#e6cfa0", "#8a4a20", "#c0702e", "#fff4dc", "#d94a2e", 3, "#8a4a20"), plan: { hotel: "resort", fl: "carpet", variants: ["res-casino", "res-waterpark", "res-family", "res-beach", "res-classic"] } },
+    { id: "pinnacle", name: "Pinnacle Tower Hotels", w: { city: 0.7, suburb: 0, town: 0, scenic: 0 }, look: L("#9aa4ad", "#22303c", "#2f4a63", "#e8eef2", "#7fb0d0", 3), plan: { hotel: "tower", fl: "carpet", variants: ["tow-casino", "tow-capsule", "tow-twin", "tow-podium", "tow-atrium", "tow-mixed", "tow-skylobby", "tow-convention"] } },
   ],
   church: [
     { id: "firstbaptist", name: "First Baptist Church", w: G(0.6, 1, 1), look: L("#e8e4d8", "#5d6168", "#5d6168", "#ffffff", "#c8402f", 0) },
@@ -439,11 +445,11 @@ export const FRANCHISES = {
     { id: "holytrinity", name: "Holy Trinity Lutheran", w: G(0.8, 0.8, 0.8), look: L("#a7adb3", "#4d4741", "#5b3a7a", "#ffffff", "#d9a520", 3) },
   ],
   autoshop: [
-    { id: "quicklube", name: "Quick Lube Express", w: G(1, 1, 0.6), look: L("#e8e4d8", "#c8402f", "#e8c04a", "#c8402f", "#3a6fb0", 3), plan: { depth: 0.4 } },
-    { id: "hanks", name: "Hank's Garage & Tow", w: G(0.3, 0.8, 1), look: L("#7b5a44", "#3a2a20", "#2a2a2a", "#e8a020", "#c8402f", 0) },
-    { id: "precision", name: "Precision Auto Repair", w: G(1, 1, 0.6), look: L("#c9ced3", "#1f4f9a", "#1f4f9a", "#ffffff", "#e8e4d8", 1) },
-    { id: "tiretown", name: "Tire Town", w: G(0.8, 1, 0.8), look: L("#2a2a2e", "#111114", "#e8c04a", "#111114", "#c8402f", 2) },
-    { id: "mainmuffler", name: "Main Street Muffler", w: G(0.6, 0.8, 1), look: L("#b9a98a", "#5d6168", "#c8402f", "#ffffff", "#e8c04a", 1) },
+    { id: "quicklube", name: "Quick Lube Express", w: G(1, 1, 0.6), look: L("#e8e4d8", "#c8402f", "#e8c04a", "#c8402f", "#3a6fb0", 3), plan: { depth: 0.4, variants: ["drivethru", "wash", "small"] } },
+    { id: "hanks", name: "Hank's Garage & Tow", w: G(0.3, 0.8, 1), look: L("#7b5a44", "#3a2a20", "#2a2a2a", "#e8a020", "#c8402f", 0), plan: { variants: ["tow", "flat", "standard"] } },
+    { id: "precision", name: "Precision Auto Repair", w: G(1, 1, 0.6), look: L("#c9ced3", "#1f4f9a", "#1f4f9a", "#ffffff", "#e8e4d8", 1), plan: { variants: ["standard", "engine", "counter", "fleet"] } },
+    { id: "tiretown", name: "Tire Town", w: G(0.8, 1, 0.8), look: L("#2a2a2e", "#111114", "#e8c04a", "#111114", "#c8402f", 2), plan: { variants: ["tyres", "heavy", "counter"] } },
+    { id: "mainmuffler", name: "Main Street Muffler", w: G(0.6, 0.8, 1), look: L("#b9a98a", "#5d6168", "#c8402f", "#ffffff", "#e8c04a", 1), plan: { variants: ["small", "paint", "engine"] } },
   ],
   firestation: [
     { id: "engine7", name: "Engine Company 7", w: G(1, 0.6, 0.1), look: L("#8e4f3c", "#4a2a20", "#c8402f", "#ffffff", "#e8c04a", 1) },
@@ -456,23 +462,23 @@ export const FRANCHISES = {
     { id: "statepatrol", name: "State Patrol Post", w: G(0.2, 0.6, 0.8), look: L("#c9c2b0", "#5d6168", "#2d4a3c", "#ffffff", "#d9a520", 2) },
   ],
   gunstore: [
-    { id: "bigiron", name: "Big Iron Guns", w: G(0.6, 1, 1), look: L("#5e4a3e", "#3a2a20", "#e8a020", "#1f1c1a", "#c8402f", 0) },
-    { id: "patriot", name: "Patriot Firearms", w: G(0.8, 1, 0.8), look: L("#e8e4d8", "#1f3550", "#c8402f", "#ffffff", "#1f3550", 1) },
-    { id: "tactical", name: "Tactical Supply Co.", w: G(1, 0.8, 0.4), look: L("#3d4a3c", "#232b23", "#2a2a2a", "#9cc46e", "#7d848c", 3) },
-    { id: "huntersrest", name: "Hunter's Rest Gun Shop", w: G(0, 0.5, 1), look: L("#7a5230", "#4a3424", "#5f7a3e", "#f0d070", "#e8a020", 2) },
+    { id: "bigiron", name: "Big Iron Guns", w: G(0.6, 1, 1), look: L("#5e4a3e", "#3a2a20", "#e8a020", "#1f1c1a", "#c8402f", 0), plan: { variants: ["main", "corner", "narrow", "wrap"] } },
+    { id: "patriot", name: "Patriot Firearms", w: G(0.8, 1, 0.8), look: L("#e8e4d8", "#1f3550", "#c8402f", "#ffffff", "#1f3550", 1), plan: { variants: ["strip", "twofloor", "twin", "counter"] } },
+    { id: "tactical", name: "Tactical Supply Co.", w: G(1, 0.8, 0.4), look: L("#3d4a3c", "#232b23", "#2a2a2a", "#9cc46e", "#7d848c", 3), plan: { variants: ["superstore", "flagship", "outlet"] } },
+    { id: "huntersrest", name: "Hunter's Rest Gun Shop", w: G(0, 0.5, 1), look: L("#7a5230", "#4a3424", "#5f7a3e", "#f0d070", "#e8a020", 2), plan: { variants: ["roadside", "counter", "outlet"] } },
   ],
   pawnshop: [
-    { id: "quickcash", name: "Quick Cash Pawn", w: G(1, 0.8, 0.6), look: L("#8e4f3c", "#3c3a36", "#e8c04a", "#1c2026", "#d9a520", 0) },
-    { id: "goldgun", name: "Gold & Gun Exchange", w: G(0.6, 1, 1), look: L("#5e4a3e", "#2a1c10", "#2a2a2a", "#e8c04a", "#d9a520", 1) },
-    { id: "silverdollar", name: "Silver Dollar Pawn", w: G(0.6, 0.8, 1), look: L("#b9a98a", "#5d6168", "#c9ced3", "#1c2026", "#c9ced3", 2) },
-    { id: "mainloan", name: "Main Street Loan", w: G(1, 0.6, 0.6), look: L("#3a5f8e", "#1f3550", "#e8e4d8", "#1f3550", "#e8c04a", 3) },
+    { id: "quickcash", name: "Quick Cash Pawn", w: G(1, 0.8, 0.6), look: L("#8e4f3c", "#3c3a36", "#e8c04a", "#1c2026", "#d9a520", 0), plan: { variants: ["main", "strip", "narrow", "wrap"] } },
+    { id: "goldgun", name: "Gold & Gun Exchange", w: G(0.6, 1, 1), look: L("#5e4a3e", "#2a1c10", "#2a2a2a", "#e8c04a", "#d9a520", 1), plan: { variants: ["flagship", "counter", "twin"] } },
+    { id: "silverdollar", name: "Silver Dollar Pawn", w: G(0.6, 0.8, 1), look: L("#b9a98a", "#5d6168", "#c9ced3", "#1c2026", "#c9ced3", 2), plan: { variants: ["roadside", "outlet", "corner"] } },
+    { id: "mainloan", name: "Main Street Loan", w: G(1, 0.6, 0.6), look: L("#3a5f8e", "#1f3550", "#e8e4d8", "#1f3550", "#e8c04a", 3), plan: { variants: ["twofloor", "superstore", "corner"] } },
   ],
   hardware: [
-    { id: "handyhank", name: "Handy Hank's Hardware", w: G(0.6, 1, 1), look: L("#c8402f", "#5a1410", "#e8e4d8", "#c8402f", "#e8a020", 0) },
-    { id: "builders", name: "Builders Supply Co.", w: G(1, 1, 0.6), look: L("#e8a020", "#8a4b32", "#2a2a2a", "#e8a020", "#7d848c", 3), plan: { depth: 0.66, wide: true } },
-    { id: "nailbolt", name: "Nail & Bolt Hardware", w: G(0.8, 0.8, 0.8), look: L("#3a6fb0", "#1f3550", "#e8c04a", "#1f3550", "#c9ced3", 1) },
-    { id: "lumberbarn", name: "Lumber Barn", w: G(0.2, 0.8, 1), look: L("#a2713f", "#5a3a20", "#3f6b3a", "#f0d070", "#c9a46a", 2), plan: { back: "yard" } },
-    { id: "fixit", name: "Fix-It Depot", w: G(1, 1, 0.5), look: L("#e8e4d8", "#3f6b3a", "#3f6b3a", "#ffffff", "#e8a020", 3), plan: { depth: 0.66, wide: true } },
+    { id: "handyhank", name: "Handy Hank's Hardware", w: G(0.6, 1, 1), look: L("#c8402f", "#5a1410", "#e8e4d8", "#c8402f", "#e8a020", 0), plan: { variants: ["main", "corner", "narrow"] } },
+    { id: "builders", name: "Builders Supply Co.", w: G(1, 1, 0.6), look: L("#e8a020", "#8a4b32", "#2a2a2a", "#e8a020", "#7d848c", 3), plan: { depth: 0.66, wide: true, variants: ["superstore", "flagship", "twin"] } },
+    { id: "nailbolt", name: "Nail & Bolt Hardware", w: G(0.8, 0.8, 0.8), look: L("#3a6fb0", "#1f3550", "#e8c04a", "#1f3550", "#c9ced3", 1), plan: { variants: ["strip", "wrap", "counter", "twofloor"] } },
+    { id: "lumberbarn", name: "Lumber Barn", w: G(0.2, 0.8, 1), look: L("#a2713f", "#5a3a20", "#3f6b3a", "#f0d070", "#c9a46a", 2), plan: { back: "yard", variants: ["outlet", "roadside"] } },
+    { id: "fixit", name: "Fix-It Depot", w: G(1, 1, 0.5), look: L("#e8e4d8", "#3f6b3a", "#3f6b3a", "#ffffff", "#e8a020", 3), plan: { depth: 0.66, wide: true, variants: ["superstore", "twin", "flagship"] } },
   ],
   // the office buildings' firms (data-offices.js); the tower's are the site type "office"'s (the crawl's "offices" reads
   // them: shops.js franchisesOf)

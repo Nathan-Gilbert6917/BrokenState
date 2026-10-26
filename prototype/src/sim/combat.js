@@ -7603,7 +7603,7 @@ export function createRaid(state, setup) {
     const st = b.raid.storeys > 1 ? ` on ${b.raid.storeys} storeys (the stairs are marked; Go up / Go down takes an action)` : "";
     if (map.complex) say(b, `You reach ${b.place}: ${map.plan.houses.length} buildings behind ${map.plan.perimeter ? (map.plan.perimeter.wall ? "a wall and a fence" : "a double fence") : "the street"}. ${map.containers.length} places to search in ${rooms} rooms${st}.`, "info"); // prison.js: a prison's or a jail's complex
     else if (map.campus) say(b, `You reach the campus of ${b.place}: ${map.plan.houses.length} buildings. ${map.containers.length} places to search in ${rooms} rooms${st}.`, "info"); // campus.js campusMap: a college campus
-    else if (map.street) say(b, `You reach the street at ${b.place}: ${map.plan.houses.length} houses. ${map.containers.length} places to search in ${rooms} rooms${st}.`, "info"); // buildingmaps.js streetMap: a neighbourhood
+    else if (map.street) say(b, `You reach ${map.plan.word ? "" : "the street at "}${b.place}: ${map.plan.houses.length} ${map.plan.word || "houses"}. ${map.containers.length} places to search in ${rooms} rooms${st}.`, "info"); // buildingmaps.js streetMap: a neighbourhood
     else say(b, `You reach the ${pick.name.toLowerCase()} at ${b.place}. ${map.containers.length} places to search in ${rooms} rooms${st}.`, "info");
     say(b, map.complex ? prisonIntro(b) : interiorIntro(b), "info");
   } else say(b, `You slip into ${b.place}. ${map.containers.length} places to search across ${map.areas.length} areas.`, "info");

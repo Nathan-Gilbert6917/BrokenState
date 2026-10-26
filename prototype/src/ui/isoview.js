@@ -200,7 +200,7 @@ const GROUNDY = new Set(["water", "trench", "spikes", "hivewall"]);
 function sceneFor(b) {
   let sig = 0, fsig = 0;
   for (let i = 0; i < b.cells.length; i++) {
-    const c = b.cells[i], kc = c.k.charCodeAt(0) * 7 + c.k.length + (c.k.charCodeAt(2) || 0), fc = (c.f ? c.f.charCodeAt(0) + c.f.length : 0) + (c.fl ? c.fl.charCodeAt(0) * 3 + c.fl.length : 0) + (c.deco ? decoSig(c.deco) : 0) + (c.wc ? c.wc.charCodeAt(3) * 11 + c.wc.charCodeAt(5) : 0) + (c.wart ? c.wart.k.charCodeAt(1) * 17 + c.wart.d : 0); // decor (sim/decor.js) drawn in the ground and the walls
+    const c = b.cells[i], kc = c.k.charCodeAt(0) * 7 + c.k.length + (c.k.charCodeAt(2) || 0), fc = (c.f ? c.f.charCodeAt(0) + c.f.length : 0) + (c.fl ? c.fl.charCodeAt(0) * 3 + c.fl.length : 0) + (c.deco ? decoSig(c.deco) : 0) + (c.wc ? c.wc.charCodeAt(3) * 11 + c.wc.charCodeAt(5) : 0) + (c.wart ? c.wart.k.charCodeAt(1) * 17 + c.wart.d : 0) + (c.neon ? 131 : 0); // decor (sim/decor.js) drawn in the ground and the walls
     sig = (Math.imul(sig, 31) + kc + fc + (c.hp > 0 ? (c.hp | 0) + 1 : 0)) | 0;
     fsig = (Math.imul(fsig, 31) + fc + (GROUNDY.has(c.k) ? kc : 0)) | 0;
   }
@@ -2692,6 +2692,7 @@ function wartTexel(k, s, t, sw, v) {
     case "poster": if (Math.abs(s - m) < 3 && t >= 14 && t < 24) return t >= 21 ? WARTC.white : mul(WARTC.poster[v % 4], 0.85 + ((t | 0) % 3) * 0.06); return null;
     case "crucifix": if ((Math.abs(s - m) < 0.8 && t >= 14 && t < 26) || (Math.abs(t - 22) < 0.8 && Math.abs(s - m) < 3)) return WARTC.frame; return null;
     case "notice": if (Math.abs(s - m) < 5 && t >= 14 && t < 23) { if (Math.abs(s - m) >= 4.4 || t < 14.6 || t >= 22.4) return WARTC.frame; const cell = Math.floor((s - m + 5) / 3) * 3 + Math.floor((t - 14) / 3); return hash3(cell, v, 71) > 0.5 && (s | 0) % 3 && (t | 0) % 3 ? (hash3(cell, v, 72) > 0.7 ? WARTC.poster[2] : WARTC.white) : WARTC.cork; } return null;
+    case "neon": if (Math.abs(s - m) < 7 && t >= 24 && t < 30) { if (Math.abs(s - m) >= 6.4 || t < 24.6 || t >= 29.4) return hex("#ff5aa8"); return (s | 0) % 3 && t >= 26 && t < 28 && Math.abs(s - m) < 5 ? hex("#ffe08a") : hex("#2a1430"); } return null; // a motel's neon sign: pink tubes round a dark board, yellow letters
     case "sign": if (Math.abs(s - m) < 6 && t >= 22 && t < 26) { if (Math.abs(s - m) >= 5.4 || t < 22.5 || t >= 25.5) return WARTC.white; return (s | 0) % 3 && t >= 23.4 && t < 24.6 && Math.abs(s - m) < 4 ? WARTC.white : WARTC.sign; } return null; // a hospital's corridor sign (sim/decor.js MED_ART): white letters on green
     case "shelf": if (Math.abs(s - m) < 6 && t >= 19 && t < 20.5) return WARTC.shelf; if (Math.abs(s - m) < 5.5 && t >= 20.5 && t < 23.5) { const i = Math.floor((s - m + 6) / 2.4); return hash3(i, v, 73) > 0.4 ? WARTC.knick[i % 3] : null; } return null;
   }
@@ -2998,6 +2999,7 @@ function lookOf(b, scene, x, y, cut, focus = null) {
       const nc = b.cells[ny * b.w + nx];
       if (nc.wc && scene.comp[ny * b.w + nx] === bid) o[face === "e" ? "ie" : "is"] = nc.wc;
       if (c.wart && VD[c.wart.d] && VD[c.wart.d][0] === dx && VD[c.wart.d][1] === dy) o.art = `${face}${c.wart.k}`;
+      if (c.neon && VD[c.neon] && VD[c.neon][0] === dx && VD[c.neon][1] === dy) o.art = `${face}neon`; // a motel office's neon sign on its outside wall (sim/buildingmaps.js)
     }
     // The cutaway: a cut building's near walls (the ones with its inside behind them) drop to stubs (behind: up the
     // screen, toward −u and −v; in a straight view toward −v).

@@ -96,14 +96,15 @@ console.log("Barricades, pieces and connectivity");
       }
     }
     // Every walkable cell reached: the living through doors, boards and pieces (shoved or vaulted), the dead crawling
-    // over half cover or battering what has hit points. From the front zone on the ground, the stairwell upstairs.
+    // over half cover or battering what has hit points. From the front zone on the ground, the stairwell upstairs (each
+    // building's on a map of several).
     const z = m.zones[0];
     F.forEach((cells, f) => {
-      const from = f ? (m.stairs[0] || null) : [z.x0 + 1, z.y0 + 1];
-      if (!from) return;
+      const from = f ? (m.street ? m.stairs : m.stairs.slice(0, 1)) : [[z.x0 + 1, z.y0 + 1]]; // upstairs from the stairwell (several buildings on one map: from each one's, #32's garden apartments)
+      if (!from.length) return;
       const flood = (pass) => {
-        const seen = new Uint8Array(cells.length), q = [from[1] * m.w + from[0]];
-        seen[q[0]] = 1;
+        const seen = new Uint8Array(cells.length), q = from.map(([x, y]) => y * m.w + x);
+        for (const i of q) seen[i] = 1;
         while (q.length) { const i = q.pop(), x = i % m.w, y = (i / m.w) | 0; for (const [dx, dy] of NEXT4) { const nx = x + dx, ny = y + dy; if (nx < 0 || ny < 0 || nx >= m.w || ny >= m.h) continue; const j = ny * m.w + nx; if (!seen[j] && pass(cells[j])) { seen[j] = 1; q.push(j); } } }
         return seen;
       };
