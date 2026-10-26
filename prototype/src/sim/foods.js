@@ -83,6 +83,7 @@ export const FOODS = {
   f_chips:      { name: "Chips",              word: "bags of chips",        icon: "🥔", group: "packaged", tier: "plain", kcal: 1070, kg: 0.22, shelf: 90, diet: "veg",   desc: "A big bag of potato chips. Goes stale in a few months." },
   f_candybar:   { name: "Candy bar",          word: "candy bars",           icon: "🍫", group: "packaged", tier: "plain", kcal: 250,  kg: 0.06, shelf: 300, diet: "animal", desc: "Chocolate, nougat and peanuts. Light and keeps." },
   f_energybar:  { name: "Energy bar",         word: "energy bars",          icon: "🍫", group: "packaged", tier: "plain", kcal: 230,  kg: 0.06, shelf: 365, diet: "veg",   desc: "Oats, nuts and syrup in a wrapper. A hiker's snack." },
+  f_protein:    { name: "Protein powder",     word: "tubs of protein powder", icon: "🥛", group: "packaged", tier: "plain", kcal: 3800, kg: 1, shelf: 730, diet: "animal", desc: "A kilo tub of whey from a gym's counter (issue #56): a scoop in water is a thin meal, and it keeps two years." },
   // ---- military and survival rations: light, very long keeping, the best food to carry ----
   f_mre:        { name: "MRE",                word: "MREs",                 icon: "🍱", group: "military", tier: "survival", kcal: 1250, kg: 0.7, shelf: 1800, diet: "mixed", desc: "Meal, Ready-to-Eat: an Army ration with its own flameless heater. Keeps five years." },
   f_rationbar:  { name: "Ration bar",         word: "ration bars",          icon: "🧱", group: "military", tier: "survival", kcal: 2400, kg: 0.5, shelf: 1800, diet: "veg",   desc: "A lifeboat ration block: a day's calories in half a kilo, dry and dull." },
@@ -525,6 +526,8 @@ export const MIXES = {
   farm:     { f_potatoes: 12, f_onions: 6, f_apples: 8, f_squash: 4, f_eggs: 4, f_grain: 16, f_drybeans: 10, f_flour: 8, f_oats: 6, f_honey: 4, f_jarred: 12, f_driedfruit: 4, f_beans: 4, f_cannedveg: 2 },
   // cabins, hunting lodges, ranger stations, campgrounds
   wild:     { f_beans: 10, f_cannedmeat: 10, f_soup: 4, f_survivalmeal: 12, f_jerky: 14, f_energybar: 10, f_oats: 10, f_peanutbutter: 10, f_driedfruit: 6, f_honey: 4, f_crackers: 6, f_rice: 4 },
+  // gyms (issue #56): the front desk's and the smoothie bar's protein, bars and peanut butter
+  gym:      { f_protein: 35, f_energybar: 35, f_peanutbutter: 12, f_candybar: 6, f_crackers: 6, f_oats: 6 },
   // the Army, crashed supply planes, supply drops
   military: { f_mre: 60, f_rationbar: 28, f_survivalmeal: 8, f_energybar: 4 },
   prison:   { f_beans: 18, f_soup: 10, f_cannedveg: 10, f_cannedmeat: 8, f_rice: 20, f_oats: 18, f_pasta: 8, f_crackers: 8 },

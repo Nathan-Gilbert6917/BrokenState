@@ -183,6 +183,9 @@ export const legacyMines = (state) => !!(state && (state.minesLegacy || state.ro
 // A save from before the zoos (issue #59, save.js zooLegacy: no state.zooV): its tiles get none (placement.js
 // placeExtraKind), so its points of interest stay as they were.
 export const legacyZoo = (state) => !!(state && state.zooLegacy);
+// A save from before the gyms and bowling alleys (save.js recLegacy, issue #56): none on its tiles or its crawls' blocks
+// (placement.js placeExtraKind, crawlExtraKind).
+export const legacyRec = (state) => !!(state && state.recLegacy);
 // The run's raid map dials as [smallest, largest]: each clamped to its range, the two in order whatever was stored
 // (a hand-edited or older settings object can hold them the wrong way round: the range never runs backwards).
 /** @param {any} state */
