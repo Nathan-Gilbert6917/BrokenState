@@ -50,8 +50,10 @@ const BASELINE = {
   govbunker: 1037.7, shelter: 151.4, prepper: 273.0, regionalmall: 17794.1, stripmall: 2735.9, outlet: 3947.1,
   cinema: 52.7, arcade: 53.4, mallservices: 89.9, mallrestrooms: 18.5, vacantunit: 5.9,
 };
-// Kinds whose loot moved past ±10% because a row was clearly wrong: the reason.
+// Kinds whose loot moved past ±10% because a row was clearly wrong, or its plans grew (the same loot a floor cell over
+// more floor): the reason.
 const SHIFTED = {
+  hotel: "issue #50: eight of its 48 variants shaped in a new save (an L, a T, a U, an E, a crescent, a podium, twin towers, a courtyard block), bigger than their rectangles; their loot a floor cell within ×0.95–×1.06 of the rectangles' (tools/hotelshapetest.js)",
   bookstore: "its shelves (data-shops.js AREA_DEFS books) held no books of their own: novels, comics, magazines, a few skill books",
   library: "its stacks are the bookstore's \"books\" rooms (above)",
   univlibrary: "its stacks are the bookstore's \"books\" rooms (above)",
