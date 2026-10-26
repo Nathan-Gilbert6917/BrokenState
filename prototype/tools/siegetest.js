@@ -123,7 +123,12 @@ section("Grenades over walls: no line of sight needed to a cell a teammate sees,
   b.losCache.fill(0);
   check(!canSeeAt(b, g, 15, y) && canSeeAt(b, w, 15, y), "behind the wall on the ground one cannot see out; up on the walkway one can");
   const s = st.survivors.find((x) => x.id === g.sid);
-  stow(s, newItem("frag")); stow(s, newItem("frag"));
+  // Room for the two grenades: since 1370d1c (the map sizes of 2026-10-24: other dice for the run's people) the thrower
+  // starts with two pistol magazines and a box of rounds in three of their four pockets and no rig or pack (one
+  // magazine before), so the second grenade had nowhere to go and the counts below were one short. Their pockets
+  // are emptied first.
+  s.pockets = s.pockets.map(() => null);
+  check(!!stow(s, newItem("frag")) && !!stow(s, newItem("frag")) && throwablesOf(st, b, g).frag === 2, "(test setup: two frag grenades on the thrower)");
   check(throwBlind(b, g, 15, y) === true, "a cell a teammate on the walkway sees: a blind throw over the wall is allowed");
   w.x = 3; w.y = y; b.losCache.fill(0);
   g.ap = 2;

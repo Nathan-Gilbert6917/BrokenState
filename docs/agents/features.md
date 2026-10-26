@@ -190,6 +190,7 @@ Detail: [combat.md](../features/combat.md).
 - **Buildings that are not boxes**: L, T, U, cross, annexes, notches, stepped backs; a school 2.5× the floor round a yard, a dozen named school plans [buildingmaps, ui/isoview] `tools/interiortest.js`. [details](../features/combat.md#raids-into-building-interiors)
 - **Grocery stores by size**: corner store, grocery, a supermarket twice the old each way, its warehouse and dock [shoplayout, buildingmaps, data-furniture] `tools/shopstest.js`. [details](../features/combat.md#raids-into-building-interiors)
 - **Layout variants: motels, homes, rural**: 12 named layouts each for the motel, house, farmhouse, cabin, lodge, ranger station, apartments, neighbourhood, barn and machine shed, by dice and setting; POIs named by them [buildvariants, buildingmaps, pois] `tools/varianttest.js`. [details](../features/combat.md#raids-into-building-interiors)
+- **Radio tower compounds**: 12 plans, AM mast to rooftop repeater; transmitter room, generator shed, a climbable mast [radiotowerlayout] `tools/radiotowertest.js`. [details](../features/groups.md#the-building-type-a-dozen-plans)
 - **Industrial plans**: 12 named plans each for the warehouse, factory and lab, by dice and setting [industrylayout, buildingmaps] `tools/industryvarianttest.js`. [details](../features/combat.md#raids-into-building-interiors)
 - **Hotels**: inns, business hotels, resorts, city towers; named chains, maps up to 200 × 200 [hotellayout, hotels, buildingmaps, data-shops] `tools/hoteltest.js`. [details](../features/travel.md#hotels-and-their-chains)
 - **Hotel variants**: 12 plans a kind (48: a B&B to a casino tower), picked by chain, setting and dice, named on the POI [data-hotels, hotellayout, hotels] `tools/hotelvarianttest.js`. [details](../features/combat.md#hotel-variants)
@@ -295,6 +296,7 @@ Detail: [groups.md](../features/groups.md).
 ## 11. Radio and intel
 - **Radio network**: stations and relays, talking to groups, radio deals and trades; radios are mid game; coverage is a map layer [radio, radiotrade]. [details](../features/groups.md#radio-network)
 - **Your radio and your allies' on the Radio layer**: your rings in blue, each Coalition member's in its colour [radioallies, ui/render, ui/ui] `tools/radioalliestest.js`. [details](../features/groups.md#your-radio-and-your-allies-on-the-radio-layer)
+- **Radio towers a base powers**: a generator and 2 fuel a day give 30 tiles of coverage; dark without fuel, raided, sabotaged [radiotower, data-radiotower, radio] `tools/radiotowertest.js`. [details](../features/groups.md#radio-towers-a-base-powers)
 - **Listening in** on group channels [radiolisten].
 - **Intel**: what groups overhear, radio discipline, decoys, captured scouts [intel]; notes on enemy bases and strength estimates [intelnotes, intelest].
 

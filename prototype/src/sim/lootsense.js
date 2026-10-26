@@ -164,6 +164,7 @@ export const LOOT_SENSE = {
   workshop:       S({ tools: 0.9, parts: 0.9, build: 0.7 }, ARMY),
   control:        S({ parts: 0.9, gadgets: 0.7 }, ARMY),
   radio:          S({ parts: 0.9, gadgets: 0.6 }, ["explosive"], { note: "the relay's guard post and its gun rack (milplans.js; #54 reworks radio towers)" }),
+  radiotower:     S({ parts: 0.95, fuel: 0.8, tools: 0.5, gadgets: 0.4 }, ARMY, { site: "radiotower", note: "the tower compound (#54, radiotowerlayout.js): electronics and radio parts, batteries and radios, the generator shed's fuel and tools, the cable store's cable (scrap); a military relay's compound has its guard post" }),
   // Offices and civic.
   offices:        S({ gadgets: 0.6, parts: 0.8, drink: 0.9 }, ARMY, { note: "a pistol in an executive's desk now and then" }),
   storefront:     S({ parts: 0.5, drink: 0.8 }, NO_GUNS),

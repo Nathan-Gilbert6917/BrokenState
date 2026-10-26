@@ -11,7 +11,7 @@
 //       most a rack's 15 kg, within the racks' room, raidloot.js trunkSpace) into its cargo (parties.js addGearToCargo, the room as furnicarry.js stowAct's:
 //       homeRoom) with a line ("Dana and Lee heaved the refrigerator into the pickup."), and into the raid's loot;
 //     - the car or truck too full for it: set down at the exit (placeNear: the free cells nearest where the carrier
-//       left) with its own line ("The pickup is full: the stove stays by the door.");
+//       left) with its own line ("The pickup is full: the stove stays behind.");
 //     - no vehicle (or bikes that cannot take it: a bike is no vehicle for a fridge): set down at the exit the same
 //       way, and the message (exhaustText: "Exhausted, the team dropped what
 //       it was carrying: a refrigerator, two chairs. …") in the raid's summary, the log (scavenge.js afterRaid) and so
@@ -120,7 +120,7 @@ export function piecesAtExtraction(state, b, kept) {
   }
   if (res.full.length) {
     const many = res.full.length > 1;
-    res.fullText = `${cap1(veh.name)} ${isBike(veh.v) ? "are" : "is"} full: ${many ? piecesText(res.full) : `the ${res.full[0]}`} ${res.ledger ? `stay${many || pluralName(res.full[0]) ? "" : "s"} by the door` : `${many || pluralName(res.full[0]) ? "are" : "is"} left by the door and lost`}.`;
+    res.fullText = `${cap1(veh.name)} ${isBike(veh.v) ? "are" : "is"} full: ${many ? piecesText(res.full) : `the ${res.full[0]}`} ${res.ledger ? `stay${many || pluralName(res.full[0]) ? "" : "s"} behind` : `stay${many || pluralName(res.full[0]) ? "" : "s"} behind and ${many || pluralName(res.full[0]) ? "are" : "is"} lost`}.`; // the user's wording (2026-10-26): "X stays behind"
     res.lines.push(res.fullText);
   }
   if (res.dropped.length) { res.text = exhaustText(res.dropped, res.ledger); res.lines.push(res.text); }
