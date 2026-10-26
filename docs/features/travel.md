@@ -910,6 +910,7 @@ Every other group knows, surveys and raids POIs on its own knowledge, through on
 - Outsider raiders survey and raid POIs; explorers pick through a site's [visitors `raidTargets`, `searchSite`].
 - Hardcore bands raid their camp's POIs after a survey; the hardcore start doubles every POI pool [hardcore-groups `bandDay`, hardcore-loot].
 - The pacing report [tools/poipacingtest]; the codex's "Other scavengers" [ui/codex].
+- Issue #45 (2026-10-26): the pacing report runs 4 years by default (`--years N` for more; the checks read years 2 and 4), about 15 minutes for Normal and Large in parallel since the map sizes of 2026-10-24. Its near-base target is read round the bases that have stood a year (the bigger maps' groups found a new base or outpost every few weeks, so most of the near zone of the day is fresh): Normal seed 42 24% → 43% → 55% → 57% Little or Picked clean, against 11% → 27% → 33% → 36% round every base of the day. The groups' take was not re-tuned.
 
 ## City crawl
 Block-by-block roguelike extraction in a city or town, with multi-storey buildings and who lives on each floor [citycrawl, floorfolk]. Design: [docs/multi-storey-crawl.md](../multi-storey-crawl.md), [docs/crawl-balance.md](../crawl-balance.md).
