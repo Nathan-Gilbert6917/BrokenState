@@ -48,7 +48,7 @@ export const INDOOR = {
   ROUND: 5,  // the dead and anyone with no front, all round in an unlit room
   AP: 1,     // flipping a switch
   UNPOWERED: ["barnfloor", "hayloft", "tack"], // a barn's rooms: no wiring, no switch
-  UNPOWERED_KEYS: ["barn"], // a barn's every room (its layouts' offices, feed rooms and shearing floors too: issue #32)
+  UNPOWERED_KEYS: ["barn"], // a barn's every room (its layouts' offices, feed rooms and shearing floors too: issue #32); on a farm's map (farmstead.js, issue #62) by its room's a.bldg
   DARK_ROLES: ["barnfloor", "hayloft", "tack", "storage", "pantry", "restroom", "gunroom", "dispensary", "pharmroom", "armory", "evidence"], // dark even by day
   DARK_TYPES: ["barn"], // a street map's buildings (no roles): by their area type
 };
@@ -74,7 +74,7 @@ export function indoorSetup(b) {
     a.dark = !!a.bunker || !!a.under || (a.role ? INDOOR.DARK_ROLES.includes(a.role) : INDOOR.DARK_TYPES.includes(a.type)); // a bunker's rooms: underground, dark by day
     if (a.bunker || a.under) b.raid.bunker = 1; // a mine's rooms below (issue #52, minelayout.js: area.under) as a bunker's
     a.on = false;
-    const powered = !unwired && (a.role ? !INDOOR.UNPOWERED.includes(a.role) : !INDOOR.DARK_TYPES.includes(a.type));
+    const powered = !unwired && !INDOOR.UNPOWERED_KEYS.includes(a.bldg) && (a.role ? !INDOOR.UNPOWERED.includes(a.role) : !INDOOR.DARK_TYPES.includes(a.type));
     const sw = powered ? switchSpot(b, a, used) : null;
     a.sw = sw ? sw.at : null;
     a.swIn = sw ? sw.inside : null;
