@@ -146,6 +146,7 @@ section("Every variant keeps its kind's signature, everything connected");
     return seen;
   };
   const has = (m, re) => m.rooms.some((a) => !a.outdoor && re.test(a.name));
+  const cellsOf = (m) => (m.floors ? m.floors.flatMap((f) => f.cells) : m.cells);
   const SIGN = {
     pharmacy: (m) => m.rooms.some((a) => a.role === "dispensary"),
     gunstore: (m) => m.rooms.some((a) => a.name === "Gun cage" && a.role === "armory"), // locked behind its vault door on the dice, as before (below)
@@ -160,6 +161,14 @@ section("Every variant keeps its kind's signature, everything connected");
     garden: (m) => has(m, /^Greenhouse$/),
     clothing: (m) => has(m, /^Fitting rooms$/),
     hardware: (m) => has(m, /^Tool crib$/),
+    // issue #55's six: the showroom of pieces to lift, the washers and the change machine, the racks and the sorting, the
+    // bakehouse's deck oven and mixer, the cutting room's band saw and the walk-in, the deli's slicer and cases
+    furnstore: (m) => m.rooms.some((a) => a.type === "furnshow") && cellsOf(m).some((c) => ["sofa", "bed", "fridge", "piano", "table"].includes(c.k)),
+    laundromat: (m) => cellsOf(m).some((c) => c.k === "washer") && cellsOf(m).some((c) => c.k === "dryer") && m.containers.some((c) => c.kind === "changer"),
+    thrift: (m) => has(m, /^(Sales floor|Market hall)$/) && m.rooms.some((a) => a.type === "thriftsort" || a.name === "Back room"),
+    bakery: (m) => has(m, /^Bakehouse$/) && cellsOf(m).some((c) => c.k === "deckoven") && cellsOf(m).some((c) => c.k === "mixer"),
+    butcher: (m) => (has(m, /^Cutting room$/) && cellsOf(m).some((c) => c.k === "meatsaw") || has(m, /^Sausage kitchen$/)) && m.containers.some((c) => c.kind === "meatcase"),
+    deli: (m) => cellsOf(m).some((c) => c.k === "slicer") && m.containers.some((c) => c.kind === "meatcase") && has(m, /^Prep kitchen$/),
   };
   const errs = {};
   const err = (k, msg) => { (errs[k] = errs[k] || []).push(msg); };
@@ -229,7 +238,10 @@ section("#22's tiers: the fronts' pieces in every variant");
 // as below: #22's corner store, grocery and supermarket by their tiers), against which the variants hold within ±10%.
 // The bookstore re-baselined for issue #43 (13.3 → 19.1, 200 seeds): its shelves (data-shops.js AREA_DEFS books) held no
 // books of their own before (a bag and a lamp); novels, comics, magazines and a few skill books since.
-const TODAY = { pharmacy: 175.1, gasstation: 87.2, truckstop: 91.4, gunstore: 207.4, pawnshop: 193.9, sportshop: 76.4, electronics: 65.7, radioshop: 67.8, bookstore: 19.1, petstore: 58.4, garden: 43.7, clothing: 31.1, liquor: 29.8, hardware: 113.2, feedstore: 76.3, dealer: 36.2, bank: 16.5, autoshop: 62.8, garage: 75.1, workshop: 68.1, corner: 121.6, grocery: 40.8, supermarket: 57.5 };
+const TODAY = { pharmacy: 175.1, gasstation: 87.2, truckstop: 91.4, gunstore: 207.4, pawnshop: 193.9, sportshop: 76.4, electronics: 65.7, radioshop: 67.8, bookstore: 19.1, petstore: 58.4, garden: 43.7, clothing: 31.1, liquor: 29.8, hardware: 113.2, feedstore: 76.3, dealer: 36.2, bank: 16.5, autoshop: 62.8, garage: 75.1, workshop: 68.1, corner: 121.6, grocery: 40.8, supermarket: 57.5,
+  // issue #55's six, new: their own density when they came (200 seeds), held as the rest are
+  furnstore: 20.1, laundromat: 12.6, thrift: 23.1, bakery: 27.9, butcher: 33.5, deli: 39.3,
+};
 const LN = QUICK ? 60 : 200;
 section(`Loot per kind by the area against today's (${LN} seeds)`);
 {

@@ -35,6 +35,7 @@ import { Rng } from "./rng.js";
 import { cfgOf } from "./worldcfg.js"; // the run's dials: Food spoilage
 import { ROWS, mergeRows } from "./data-shops.js";
 import { CUISINES } from "./data-eateries.js"; // the restaurants' food by cuisine (issue #33)
+import { NEWSHOP_MIXES } from "./data-newshops.js"; // issue #55's bakery, butcher and laundromat food
 
 export const DAY_KCAL = 2000;
 // Stable food (shelf ≥ STABLE_DAYS) needs no cold room: it sits in any dry corner (storage.js). The rest fills the
@@ -548,6 +549,8 @@ export const MIXES = {
 // Restaurants by kind of food (issue #33, data-eateries.js CUISINES): "eat:<cuisine>" its walk-ins', dry store's and
 // cases' food, "eat:<cuisine>:keeps" their preserved draws (typeFind).
 for (const [k, c] of Object.entries(CUISINES)) { MIXES[`eat:${k}`] = c.mix; MIXES[`eat:${k}:keeps`] = c.keeps; }
+// Issue #55's shops (data-newshops.js): a bakery's flour, sugar and bread, a butcher's meat, a laundromat's vending snacks.
+for (const [k, m] of Object.entries(NEWSHOP_MIXES)) if (!MIXES[k]) MIXES[k] = m;
 // The mix a site type's food comes in (and its "preserved" draws).
 export const SITE_MIX = {
   supermarket: "shop", grocery: "shop", mall: "shop", diner: "diner", gas: "roadside", truckstop: "roadside", pharmacy: "pharmacy",

@@ -128,6 +128,16 @@ export const LOOT_SENSE = {
   deptstore:      S({ clothing: 0.6, gadgets: 0.3, food: 0.9 }, ARMY),
   bank:           S({ valuables: 0.8, gadgets: 0.5 }, ARMY, { note: "a revolver in a safe-deposit box (the vault)" }),
   library:        S({ books: 0.9 }, NO_GUNS),
+  museum:         S({ valuables: 0.75, food: 0.9, treats: 0.8, tools: 0.75, books: 0.65 }, [...ARMY, "ammo", "gunmods"], { note: "a military museum's arms vault holds a working antique now and then (its locked cases: locks.js relic); its galleries the odd helmet" }),
+  // Issue #55's six shops (data-newshops.js): a showroom's stock is its furniture (lifted, not looted); its warehouse's
+  // packing, straps and timber; a laundromat's soap, coins and vending snacks; a thrift store's clothes, books and
+  // collectibles; a bakery's flour, sugar and bread; a butcher's meat; a deli's cheese, cured meats and drinks.
+  furnstore:      S({ parts: 0.9, build: 0.85, tools: 0.5 }, NO_GUNS),
+  laundromat:     S({ drink: 0.75, food: 0.6, valuables: 0.3 }, NO_GUNS, { note: "food: the vending machine's snacks" }),
+  thrift:         S({ clothing: 0.8, books: 0.6, valuables: 0.5, sports: 0.25 }, NO_GUNS),
+  bakery:         S({ food: 0.95, drink: 0.75, treats: 0.3 }, NO_GUNS),
+  butcher:        S({ food: 0.95, drink: 0.55 }, NO_GUNS),
+  deli:           S({ food: 0.9, drink: 0.9, treats: 0.45 }, NO_GUNS),
   // Medical.
   vet:            S({ drugs: 0.9, vetmeds: 0.6, medgear: 0.7, surgical: 0.25 }, NO_GUNS),
   clinic:         S({ drugs: 0.9, medgear: 0.9, surgical: 0.4 }, NO_GUNS),
@@ -195,6 +205,7 @@ export const LOOT_SENSE = {
   regionalmall:   S({ clothing: 0.95, food: 0.95, gadgets: 0.95 }),
   stripmall:      S({ clothing: 0.9, food: 0.9 }),
   outlet:         S({ clothing: 0.9, food: 0.9 }),
+  amusement:      S({ food: 0.9, drink: 0.9, treats: 0.8, drugs: 0.6, medgear: 0.4, tools: 0.5, parts: 0.8, fuel: 0.8 }, NO_GUNS, { note: "issue #60: a park's snacks and prizes, the first-aid station's, the maintenance shop's tools and parts, the fuel for the generators and the karts; no guns anywhere on it" }),
   arcade:         S({ parts: 0.8, food: 0.5 }, NO_GUNS),
   mallservices:   S({ drugs: 0.5, gadgets: 0.5 }, ["explosive"], { note: "mall security's gun rack" }),
   mallrestrooms:  S({ drink: 0.25, food: 0.25 }, NO_GUNS),

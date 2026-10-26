@@ -32,6 +32,7 @@ import { POWER_TAGS } from "./data-power.js"; // found generators, spotlights, f
 import { rollSiteKit, rollAreaKit, kitWares } from "./carrykit.js"; // their own tables and dice, after the attachments
 import { rollPartFind, rollAreaPart, partWares } from "./partfinds.js"; // the parts catalogue (2026-10-10): by tags and rarity, its own dice, last
 import { PART_INFO } from "./data-gunmods.js"; // the catalogue's parts: where each is kept
+import { PARK_TAGS } from "./data-parks.js"; // a park's prizes (issue #60)
 import { NEW_KINDS, AREA_DEFS, ROWS, mergeRows } from "./data-shops.js"; // the shops and services new as places
 
 // ---------- theme tags ----------
@@ -192,6 +193,7 @@ Object.assign(ITEM_TAGS, CART_TAGS); // carts (data-carts.js)
 Object.assign(ITEM_TAGS, BED_TAGS); // beds as furniture (data-beds.js)
 Object.assign(ITEM_TAGS, TENT_TAGS); // tent bags (data-tents.js)
 Object.assign(ITEM_TAGS, POWER_TAGS); // found generators, spotlights, fridges (data-power.js)
+Object.assign(ITEM_TAGS, PARK_TAGS); // a park's prizes (data-parks.js, issue #60)
 
 // ---------- small finds per site type (the hour-by-hour search) ----------
 // p = chance per search hour at full loot (× the approach's pace, Treasure Hunter ×2); items = weights.
@@ -845,6 +847,12 @@ addTags("handradio", "police", "prison"); // the guards' radios (a prison's armo
 // then"): a tag of its own, "desk", on the pistol and city hall alone. No gun use, part or calibre theme reads it, so
 // no other place's pools change (the guns' "office" or the hall's "home" would have put guns and parts in offices).
 addTags("pistol", "desk"); SITE_TAGS.cityhall = [...new Set([...(SITE_TAGS.cityhall || []), "desk"])];
+// Museums (issue #58, museumlayout.js; data-museums.js MUSEUM_AREAS): a theme of their own, "museum" (no gun, part or
+// ammunition pool reads it), on the site and its rooms, and on what a museum keeps: the curios in the galleries' cases,
+// the military museum's sabres, bayonets and kit, the gift shop's cards and bags, a conservation lab's first aid and
+// sewing kit, security's baton, cuffs and pepper spray, a play room's harmonica and bike helmet.
+SITE_TAGS.museum = ["museum", "shop", "office", "kitchen"];
+for (const k of ["coins", "silverware", "pearls", "goldchain", "watch", "stamps", "telescope", "vinyl", "photos", "camera", "binoculars", "sabre", "cutlass", "bayonet", "tomahawk", "milhelmet", "etool", "armymanual", "cards", "backpack", "sewingkit", "bandagekit", "lantern", "diybook", "baton", "cuffs", "pepper", "taser", "harmonica", "bikehelmet"]) addTags(k, "museum");
 addTags("bandagekit", "school"); addTags("waterfilter", "mall", "sport"); addTags("knife", "medical"); // a nurse's office; the outlet's camping aisle; a dentist's tray
 // Prisons and county jails (issue #31, prison.js): a jail's finds are a prison's, and the prison's own rooms (combat.js
 // AREAS pcells, pcontrol, parmory, pkitchen...) find what the rooms they stand for find (the cell block's, the armory's).

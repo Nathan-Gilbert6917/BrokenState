@@ -38,6 +38,10 @@
 // the crawl's "offices" reads the same list) name it and lay it out as a corporate tower. A save from before them
 // (worldcfg.js legacyOffices) gets none of it: its lists, its blocks and its towers stay as they were.
 //
+// ISSUE #55's SIX SHOPS (data-newshops.js: the furniture store, the laundromat, the thrift store, the bakery, the butcher,
+// the deli) roll with the shops in a new world (shopKinds); a save from before them (worldcfg.js legacyShopsR2) rolls
+// among the old kinds only. The country's bakeries and butchers: placement.js PLACE_EXTRA.
+//
 // THE SHELVES OF A SHOP POI (shopshelves.js, from scavenge.js searchHour): a site's own tables roll by the tile's site
 // type; a shop or a service that is a POI beside another site (or on a bare block) rolls its own kind's rows on dice
 // of its own, × what is left of it. (This module stays light: pois.js and citycrawl.js import it.)
@@ -46,7 +50,8 @@ import { LOCATIONS } from "./data.js";
 import { hash01 } from "./skills.js";
 import { PLACE_W, FRANCHISES } from "./data-shops.js";
 import { OFFICE_W, COUNTY_SEAT } from "./data-offices.js"; // the office buildings: their own rolls (issue #27)
-import { legacyOffices } from "./worldcfg.js"; // a save from before them: none of the office places, its towers without firms
+import { legacyOffices, legacyShopsR2 } from "./worldcfg.js"; // a save from before them: none of the office places, its towers without firms; none of #55's shops
+import { NEWSHOP_W } from "./data-newshops.js"; // issue #55's six shops: a new world's only
 import { placeMult, tileClass, crawlClass } from "./placement.js"; // call-time only: a new world's picks weighted by the placement table (issue #42)
 
 export const SHOP = {
@@ -66,6 +71,11 @@ export const SHOP_KINDS = Object.keys(PLACE_W);
 // The office kinds (rolled on their own dice) and the shops' (the old rolls pick among these only, as they always did).
 export const OFFICE_KINDS = SHOP_KINDS.filter((k) => !!OFFICE_W[k]);
 const BASE_KINDS = SHOP_KINDS.filter((k) => !OFFICE_W[k]);
+// Issue #55's six shops (data-newshops.js) join the shops' rolls in a new world; a save from before them rolls among the
+// kinds it always had (worldcfg.js legacyShopsR2), so its lists and blocks stay as they were.
+const OLD_KINDS = BASE_KINDS.filter((k) => !NEWSHOP_W[k]);
+/** @param {State} state */
+const shopKinds = (state) => (legacyShopsR2(state) ? OLD_KINDS : BASE_KINDS);
 /** @param {string} k */
 export const isShopKind = (k) => !!PLACE_W[k];
 
@@ -136,7 +146,7 @@ export function shopExtras(state, t, list, knownZone, max) {
   };
   SHOP.POI[set].forEach((chance, j) => {
     if (list.length + out.length >= max || hash01(state.seed, "shoppoi", t.id, j) >= chance) return;
-    roll(BASE_KINDS, "shop", j);
+    roll(shopKinds(state), "shop", j);
   });
   // An office building (data-offices.js), on its own dice after the shops (theirs as they were).
   if (!legacyOffices(state) && list.length + out.length < max && hash01(state.seed, "officepoi", t.id) < SHOP.OFFICE[set]) roll(OFFICE_KINDS, "office", 0);
@@ -158,7 +168,7 @@ export function shopPlaces(state, tileId, cell, places, max, n, setting, has, cl
   };
   (SHOP.CRAWL[setting] || SHOP.CRAWL.city).forEach((chance, j) => {
     if (places.length + out.length >= max || hash01(state.seed, "crawlshop", tileId, cell, j) >= chance) return;
-    const kind = pick(BASE_KINDS, 0.02, hash01(state.seed, "crawlshopkind", tileId, cell, j));
+    const kind = pick(shopKinds(state), 0.02, hash01(state.seed, "crawlshopkind", tileId, cell, j));
     if (kind) out.push(kind);
   });
   // An office building (data-offices.js), on its own dice after the shops.
