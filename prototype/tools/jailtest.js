@@ -387,7 +387,10 @@ const noDice = (fn) => {
   check(groupJailTier({ bases: [5] }, 5) === 2 && groupJailTier({ hcMilitary: true }, 5) === 3, "no jail record (older saves): holding cells; the hardcore military: a jailhouse");
   // Build after capturing: the works give way to it once the essentials are up.
   const g = commune || raider;
-  for (const t of g.bases) Object.assign((g.works || (g.works = {}))[t] || (g.works[t] = {}), { water: 9, farms: 9, beds: 9, walls: 9 });
+  // A commune's jail comes later than a raider's (groupworks.js nextWork: jailWork(state, f, true), after the infirmary,
+  // the fields and the pens), so those are up too. Issue #45: seed 51's world has a commune since the map sizes of
+  // 2026-10-24 (1370d1c; a raider group before), and its infirmary came first ("a sick bay for the wounded").
+  for (const t of g.bases) Object.assign((g.works || (g.works = {}))[t] || (g.works[t] = {}), { water: 9, farms: 9, beds: 9, walls: 9, sickbay: 1, pens: 9 });
   g.stock.scrap = 100; g.stock.parts = 10; g.job = null;
   const nw0 = nextWork(st, g);
   check(!nw0 || nw0.type !== "jail" || jailOf(g).early, `${g.name} (${g.type}) holding nobody: ${nw0 ? nw0.type : "nothing"} next`);
