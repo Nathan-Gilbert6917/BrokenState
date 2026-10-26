@@ -22,7 +22,7 @@
 import { PLACEMENT, TILE_CLASSES, SIZE_CLASSES, SIZE_AREA, PLACE } from "./data-placement.js";
 import { LOCATIONS } from "./data.js";
 import { hash01 } from "./skills.js";
-import { settingOf } from "./shops.js"; // call-time only: a suburb tile's city or town
+import { settingAt } from "./settings.js"; // the six settings (issue #40): this module adds coast and scenic land
 import { legacyPlace } from "./worldcfg.js";
 import { maxLevel } from "./citygrid.js";
 
@@ -48,15 +48,14 @@ export function tileClass(state, tile) {
   if (!m[t.id]) m[t.id] = TILE_CLASSES.indexOf(classOf(state, t)) + 1;
   return TILE_CLASSES[m[t.id] - 1];
 }
+// The six settings are settings.js settingAt's (the centre rule is there); a tile out of the cities and towns is coast or
+// scenic land before it is a highway's or rural.
 /** @param {State} state @param {Tile} t @returns {TileClass} */
 function classOf(state, t) {
-  const type = t.loc ? t.loc.type : null;
-  if (t.terrain !== "water" && (t.terrain === "city" || type === "city") && cityDistance(state, t.id) <= PLACE.CENTRE_R) return "centre";
-  if (t.terrain === "city" || type === "city") return "city";
-  if (t.terrain === "suburb") return settingOf(state, t) === "suburb" ? "suburb" : "town";
-  if (type === "town" || (t.loc && t.loc.zone === "town")) return "town";
+  const s = settingAt(state, t);
+  if (s !== "rural" && s !== "highway") return s;
   if (t.terrain === "water") return "coast";
-  if (t.road) return "highway";
+  if (s === "highway") return "highway";
   const g = state.grid;
   if (t.river || (g && g.neighbors && g.neighbors(t.id).some((n) => state.tiles[n] && state.tiles[n].terrain === "water"))) return "coast";
   if (t.terrain === "forest" || t.terrain === "hills" || t.terrain === "mountain") return "scenic";

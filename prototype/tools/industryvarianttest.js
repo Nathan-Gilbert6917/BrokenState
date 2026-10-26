@@ -194,7 +194,8 @@ section("Names before the raid, and the scenes");
   const opts = t ? buildingOptions(t, st) : null;
   const ind = opts ? opts.filter((o) => INDUSTRY_KEYS.includes(o.key)) : [];
   const names = new Set(plansOf("warehouse").concat(plansOf("factory")).map((p) => p.name));
-  check(!!ind.length && ind.every((o) => names.has(o.name) || o.name === "Second warehouse"), `a ${t ? t.loc.type : "?"} site's buildings by their plans' names (${ind.map((o) => o.name).join(", ")})`);
+  // A building the site names ("Second warehouse") says its plan after it (issue #40: buildingOptions shows every plan, "Second warehouse (tyre warehouse)").
+  check(!!ind.length && ind.every((o) => names.has(o.name) || [...names].some((n) => o.name === `Second warehouse (${n.toLowerCase()})`)), `a ${t ? t.loc.type : "?"} site's buildings by their plans' names (${ind.map((o) => o.name).join(", ")})`);
   let rolled = 0, legacyRolled = 0;
   for (let s = 0; s < 120; s++) {
     const key = INDUSTRY_KEYS[s % 3];

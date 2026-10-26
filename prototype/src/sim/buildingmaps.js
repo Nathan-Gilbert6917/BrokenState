@@ -78,6 +78,9 @@ import { libraryPlan, libraryStyle } from "./librarylayout.js"; // libraries: th
 import { pickLayout, settingOfTile, LAYOUTS } from "./buildvariants.js"; // the homes' and the motel's layout variants (issue #32): which plan a building takes, its name
 import { placing, tileClass } from "./placement.js"; // a new world's tile class for the variant picker (issue #42)
 export { libraryPlan }; // mall.js: the civic strip's library (#30)
+import { planId, planName } from "./planname.js"; // every plan's id and name, one field (spec.vid / spec.vname: issue #40)
+import { whereOf } from "./settings.js"; // the one setting vocabulary (centre, city, suburb, town, rural, highway: issue #40, #42)
+export { planId, planName }; // the readers' one way to a plan's id and name (pois.js, citycrawl.js placeHint, the gallery, the tests)
 
 export const BMAP = {
   MARGIN: { front: 5, back: 4, left: 4, right: 4 }, // cells of outside around the building
@@ -3450,11 +3453,15 @@ export function buildingOptions(tile, state = null) {
   const sb = siteBuildings(tile, state);
   if (!sb || sb.single) return null;
   const [bw, bh] = buildingTarget(tile, false, state), [sw, sh] = raidDims(tile, state);
-  // An industrial building by its plan's name (industrylayout.js: "Cold-storage warehouse"), where the site has not named it.
-  const named = (o) => (state && (INDUSTRIAL.has(o.key) || o.key === "school") && o.name === BUILDINGS[o.key].name && tile.id != null ? { name: buildingSpec(state, tile.id, o).vname || o.name } : {});
-  // A home's or a motel's by its layout's name (buildvariants.js, issue #32): "Ranch house", or "House on the corner (ranch house)".
-  const laid = (o) => { if (!state || !state.tiles || tile.id == null || !LAYOUTS[o.key]) return {}; const sp = buildingSpec(state, tile.id, o); return sp.vname ? { layout: sp.vid, name: o.name === BUILDINGS[o.key].name ? sp.vname : `${o.name} (${sp.vname.toLowerCase()})` } : {}; };
-  const out = sb.options.map((o) => ({ ...o, ...buildingHint(o.key), map: `${bw} × ${bh}+`, ...named(o), ...laid(o) }));
+  // A building by its plan's name (planname.js planName, issue #40: every type with named plans, its spec.vname): "Ranch
+  // house", "Cold-storage warehouse", or "House on the corner (ranch house)" where the site named it. vid: the plan's id
+  // (layout: its older name, #32's).
+  const laid = (o) => {
+    if (!state || !state.tiles || tile.id == null || !BUILDINGS[o.key]) return {};
+    const P = buildingPlan(state, tile.id, o);
+    return P ? { layout: P.vid, vid: P.vid, vname: P.vname, name: o.name === BUILDINGS[o.key].name ? P.vname : `${o.name} (${P.vname.toLowerCase()})` } : {};
+  };
+  const out = sb.options.map((o) => ({ ...o, ...buildingHint(o.key), map: `${bw} × ${bh}+`, ...laid(o) }));
   out.push({ id: "street", key: "street", name: "The street", hint: "Search the area around the buildings: small buildings, cars, the open ground (the usual raid map).", size: "", rooms: 0, map: `${sw} × ${sh}` });
   return out;
 }
@@ -3514,13 +3521,29 @@ export function settingOf(tile) {
 export function siteWhere(state, tileId) {
   const t = state && state.tiles ? state.tiles[tileId] : null;
   if (!t) return null;
-  return { setting: shopSetting(state, t) || settingOf(t), site: t.loc ? t.loc.type : null, ...(placing(state) ? { tileClass: tileClass(state, t) } : {}) }; // tileClass: a new world's (placement.js, issue #42): the variant picker's size by the placement table (sizeFor)
+  return { setting: shopSetting(state, t) || settingOf(t), site: t.loc ? t.loc.type : null, where: whereOf(state, t), ...(placing(state) ? { tileClass: tileClass(state, t) } : {}) }; // where: the canonical setting (settings.js, issue #40) a new picker reads (o.where); setting stays #36's word; tileClass: a new world's (placement.js, issue #42): the variant picker's size by the placement table (sizeFor)
 }
 const scaleOf = (state, tileId) => (legacyScale(state) ? null : { setting: settingOf(state.tiles[tileId]) });
 // The archetype's spec for a building at a site (its storeys and footprint) without building the map: the same dice
 // buildingMap rolls, so the block card can say how many storeys a place has.
 export function buildingSpec(state, tileId, option) {
   return makeSpec(new Rng(specSeed(state, tileId, option)), option, legacyRooms(state), scaleOf(state, tileId), legacyOffices(state), siteWhere(state, tileId), !legacyShapes(state), variantSetting(state.tiles[tileId]), state.tiles ? state.tiles[tileId] : null);
+}
+// The plan a site's building is built as ({ vid, vname }: planname.js, issue #40), or null, without building its map:
+// what buildingOptions and the crawl's hint say. A street of houses its neighbourhood layout (streetMap's pick); a
+// cell block standing alone its housing unit's plan; a mall, a prison, a jail or a campus null: their plan (a mall's
+// variant, a complex's site layout) is drawn among the map's own dice, so only the map knows it (map.vid, map.vname).
+export function buildingPlan(state, tileId, option) {
+  const B = BUILDINGS[option.key];
+  if (!B || B.compound || B.complex || B.campus) return null;
+  if (B.street) {
+    if (legacyRooms(state)) return null;
+    const v = pickLayout("neighbourhood", specSeed(state, tileId, option), { layout: option.layout || null, setting: option.setting || settingOfTile(state.tiles[tileId]) });
+    return v ? { vid: v.id, vname: v.name } : null;
+  }
+  const spec = option.key === "cellblock" && !legacyPrisons(state) ? cellblockSpec(new Rng(specSeed(state, tileId, option)), { plan: option.plan }) : buildingSpec(state, tileId, option);
+  const vname = planName(spec);
+  return vname ? { vid: /** @type {string} */ (planId(spec)), vname } : null;
 }
 export function buildingMap(state, tileId, option, withVehicle) {
   if (BUILDINGS[option.key] && BUILDINGS[option.key].compound) { const m = mallMap(state, tileId, option, withVehicle); rollScenes(m, sceneRng(state, tileId, option), option.key, option.scenes || null); return m; } // a shopping mall (mall.js): the whole complex; its scenes through its shops
@@ -3854,13 +3877,13 @@ export function streetMap(state, tileId, option, withVehicle, def = null, varian
   const zoneExits = () => zones.slice(1).map((z, j) => ({ side: z.side, name: z.name, x: z.x0 + 1, y: z.y0 + 1, cells: [], locked: null, roller: false, zone: j + 1 }));
   const plan = {
     key: option.key, id: option.id, name: option.name, w: W, h: H, street: true, building: houses[0].rect, buildings: houses.map((h) => ({ ...h.rect })),
-    ...(variant ? { variant: variant.name, vid: variant.id } : {}), ...(def && def.word ? { word: def.word } : {}), // the layout (buildvariants.js); what its buildings are called (a motor lodge's "buildings")
+    ...(variant ? { variant: variant.name, vid: variant.id, vname: variant.name } : {}), ...(def && def.word ? { word: def.word } : {}), // the layout (buildvariants.js); what its buildings are called (a motor lodge's "buildings")
     houses: houses.map((h) => ({ k: h.k, name: h.name, row: h.row, ...h.rect, front: h.front, rooms: areas.filter((a) => a.house === h.k).map((a) => a.id), ...(h.variant ? { vid: h.variant } : {}), ...(h.out ? { out: true } : {}) })),
     tall: true, storeys, stairs: stairs.map((s) => s.slice()), runs: runs.map((r) => ({ ...r })),
     rooms: areas.filter((a) => !a.outdoor).map((a) => ({ id: a.id, f: a.f, name: a.name, role: a.role, type: a.type, x0: a.x0, y0: a.y0, w: a.w, h: a.h, locked: a.locked, up: a.up, hub: a.hub, entry: a.entry, house: a.house })),
     front: houses[0].front, exits: zoneExits(),
   };
-  return { w: W, h: H, cells, rooms: areas, containers, zones, vehicle, exits: zoneExits(), front: houses[0].front, lockedDoors, plan, building: plan.building, buildings: plan.buildings, floors, stairs, runs, storeys, street: true };
+  return { w: W, h: H, ...(variant ? { vid: variant.id, vname: variant.name } : {}), cells, rooms: areas, containers, zones, vehicle, exits: zoneExits(), front: houses[0].front, lockedDoors, plan, building: plan.building, buildings: plan.buildings, floors, stairs, runs, storeys, street: true };
 }
 
 // ======================================================================================
@@ -4919,11 +4942,10 @@ export function assemble(rng, spec, opts = {}) {
     key: opts.key, id: opts.id || opts.key, name: opts.name, w: W, h: H, building: { x0: bx0, y0: by0, w: bw, h: bh, ...(parts ? { shape: spec.shape.kind || null, parts: parts.map((p) => ({ x0: p.x0, y0: p.y0, w: p.w, h: p.h, storeys: p.n, ...(p.tall ? { tall: true } : {}), name: p.name || null })) } : {}) }, tall, storeys, height, ...(milGround ? { ground: milGround } : {}), stairs: stairCells.map((s) => s.slice()), runs: runs.map((r) => ({ ...r })),
     rooms: areas.filter((a) => !a.outdoor).map((a) => ({ id: a.id, f: a.f, name: a.name, role: a.role, type: a.type, x0: a.x0, y0: a.y0, w: a.w, h: a.h, locked: a.locked, up: a.up, hub: a.hub, entry: a.entry, ...(a.civic ? { civic: a.civic } : {}), ...(a.bunker ? { bunker: a.bunker } : {}), ...(a.campus ? { campus: a.campus } : {}), ...(a.lib ? { lib: a.lib } : {}) })), // civic, bunker: wanderers.js interiorOccupants' rooms by kind
     front: { x: front.x, y: front.y },
-    ...(spec.variant ? { variant: spec.variant } : {}), // a plan's name among its kind's (bunkerlayout.js BUNKER_VARIANTS)
     exits: exits.map((e) => ({ side: e.side, name: e.name, x: e.x, y: e.y, cells: e.cells, locked: e.locked, roller: e.roller, zone: e.zone })),
-    ...(spec.vname ? { variant: spec.vname, vid: spec.vid } : {}), // the plan's name (industrylayout.js: a warehouse's, a factory's, a lab's; shopvariants.js: a shop's or a service's, issue #35)
+    ...(planName(spec) ? { vid: planId(spec), vname: planName(spec), variant: planName(spec) } : {}), // the plan's id and name (planname.js, issue #40: every variant-bearing spec's spec.vid / spec.vname); variant: the name's older field, kept for the readers from before #40
   };
-  return { w: W, h: H, cells, rooms: areas, containers, zones, vehicle, exits, front, lockedDoors, plan, building: plan.building, floors, stairs: plan.stairs, runs: plan.runs, storeys, height, deadK: spec.deadK || 0, natMap: spec.deadK ? spec.natMap || [spec.natW + BMAP.MARGIN.left + BMAP.MARGIN.right, spec.natH + BMAP.MARGIN.front + BMAP.MARGIN.back] : null };
+  return { w: W, h: H, ...(plan.vid ? { vid: plan.vid, vname: plan.vname } : {}), cells, rooms: areas, containers, zones, vehicle, exits, front, lockedDoors, plan, building: plan.building, floors, stairs: plan.stairs, runs: plan.runs, storeys, height, deadK: spec.deadK || 0, natMap: spec.deadK ? spec.natMap || [spec.natW + BMAP.MARGIN.left + BMAP.MARGIN.right, spec.natH + BMAP.MARGIN.front + BMAP.MARGIN.back] : null };
 }
 
 // ======================================================================================
@@ -5491,7 +5513,7 @@ export function interiorIntro(b) {
   const lockedEx = (R.plan.exits || []).filter((e) => e.locked).length;
   const names = ["the front", ...ex.map((e) => e.name.toLowerCase())];
   const st = R.storeys > 1 ? ` ${R.storeys} storeys: ${stairsText(R)}; the ways out are on the ground floor.` : "";
-  return `${R.plan.variant ? `${R.plan.variant}. ` : ""}Ways out: ${names.join(", ")}${lockedEx ? ` (${lockedEx} locked)` : ""}.${st} Rooms, walls and closed doors block sight (a glass or a screen door is seen through): peek through a door (K) before you go in, shut doors behind you (Shift+E): the dead have to batter them down. Windows: check one from next to it (free), open it if it is unlocked (or from inside if it is locked: 1 action, quiet), then climb or vault through; a fixed one only breaks (loud).`;
+  return `${planName(R.plan) ? `${planName(R.plan)}. ` : ""}Ways out: ${names.join(", ")}${lockedEx ? ` (${lockedEx} locked)` : ""}.${st} Rooms, walls and closed doors block sight (a glass or a screen door is seen through): peek through a door (K) before you go in, shut doors behind you (Shift+E): the dead have to batter them down. Windows: check one from next to it (free), open it if it is unlocked (or from inside if it is locked: 1 action, quiet), then climb or vault through; a fixed one only breaks (loud).`;
 }
 // A street of houses (streetMap): the houses, the ways out, and the houses your side has been into before (the
 // containers the POI's ledger brought back as you left them: poicont.js poiRaidStart marks them mine).

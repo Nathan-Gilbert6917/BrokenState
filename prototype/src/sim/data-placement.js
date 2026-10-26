@@ -27,6 +27,7 @@
 //
 // A ROW is a string, one entry a class: "<class> <weight> <S|M|L|H>", separated by commas; or "of <row>" for a building
 // that only stands as part of a site (a barracks: the military base's), the site's row; or a profile below by name.
+import { CENTRE_R } from "./settings.js";
 /** @typedef {"centre" | "city" | "suburb" | "town" | "highway" | "coast" | "scenic" | "rural"} TileClass */
 /** @typedef {"small" | "medium" | "large" | "huge"} SizeClass */
 
@@ -40,7 +41,7 @@ export const SIZE_AREA = [400, 2000, 10000];
 // stadiums, zoos, museums, amusement parks, convention hotels). Their huge variants stand within BIG_R of a heart.
 export const BIG_KINDS = ["hospital", "mall", "regionalmall", "univ", "campus", "stadium", "zoo", "museum", "amusement", "convention"];
 export const PLACE = {
-  CENTRE_R: 1, // a city's heart and the ring next to it are its centre
+  CENTRE_R, // a city's heart and the ring next to it are its centre (settings.js settingAt's rule)
   BIG_R: 2,    // a huge building stands within this many tiles of a city's heart (placementtest.js)
 };
 
