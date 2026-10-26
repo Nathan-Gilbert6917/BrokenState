@@ -136,8 +136,9 @@ section("Retreat: made, nobody drawn; failed, the fight, caught out");
   partyMembers(state, p)[0].health = 100;
   let made = 0, caught = 0, tries = 0;
   for (let k = 0; k < 30 && (made === 0 || caught === 0); k++) {
-    if (!p.task || p.task.type !== "deadhunt") startOrder(state, p, { type: "deadhunt", hours: 8, stance: "stealthy" });
     for (const s of partyMembers(state, p)) s.health = 100;
+    if (!p.task || p.task.type !== "deadhunt") startOrder(state, p, { type: "deadhunt", hours: 8, stance: "stealthy" });
+    if (!p.task) break; // the team was lost
     p.task.enc = { n: 6, at: state.hour }; p.task.met++;
     const open0 = openDead(state, town.id), fled0 = p.task.fled;
     state.hour += 1;
