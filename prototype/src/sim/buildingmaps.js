@@ -2029,7 +2029,7 @@ export const BUILDINGS = {
   campus: { name: "Campus", make: (r, o) => CAMPUS_PLANS.dorm(r, o), street: true, campus: true },
   ...Object.fromEntries(Object.entries(CAMPUS_PLANS).map(([k, make]) => [k, { name: CAMPUS_NAMES[k], make: (r, o) => make(r, o) }])),
   chapel: { name: "Chapel", make: (r, o) => church(r, o) },
-  healthcentre: { name: "Health centre", make: (r, o) => institution(r, "clinic", o) },
+  healthcentre: { name: "Health centre", make: (r, o = {}) => (o.legacy || !r.chance(0.6) ? institution(r, "clinic", o) : institution(r, "infirmary", { ...o, plan: o.plan || "campus" })) }, // #36's college health centre (civicvariants.js infirmary "campus") 60% of the time, else one of its clinic plans; the chapel (church above) takes #36's church plans
   // Bunkers (issue #26, bunkerlayout.js): the military command bunker (a rare military site), Crashlanding's mountain
   // bunker (the same plan, always three levels deep), the government bunker, the fallout shelter and the prepper's.
   milbunker:      { name: "Military command bunker", make: (r, o) => BUNKER_PLANS.milbunker(r, o) },
@@ -2053,7 +2053,7 @@ export const STOREYS_BY_TYPE = {
   restaurant: [1, 2], bar: [1, 2], dealer: [1, 2], bank: [1, 3], library: [1, 8], vet: [1, 2], pizza: [1, 1],
   // a college campus's buildings (issue #28: campuslayout.js CAMPUS_SIZE; a state university's dorms up to 8)
   dorm: [2, 8], lecturehall: [1, 4], sciencehall: [1, 6], univlibrary: [1, 8], studentunion: [1, 4], dininghall: [1, 2], athletics: [1, 2],
-  admin: [1, 6], security: [1, 2], maintenance: [1, 2], theatre: [1, 3], parkgarage: [2, 6], chapel: [1, 1], healthcentre: [1, 3], campus: [2, 8],
+  admin: [1, 6], security: [1, 2], maintenance: [1, 2], theatre: [1, 3], parkgarage: [2, 6], chapel: [1, 2], healthcentre: [1, 3], campus: [2, 8],
   milbunker: [2, 3], mountainbunker: [3, 3], govbunker: [2, 3], shelter: [2, 2], prepper: [2, 3], // bunkers: the Entrance level and the levels below it (bunkerlayout.js)
   // the office buildings (issue #27; officeplans.js SIZE, the crawl's bonus for the city's kinds)
   storefront: [1, 2], bizpark: [1, 3], cityhall: [1, 3], courthouse: [1, 3], callcenter: [1, 2], techoffice: [1, 5], station: [1, 3],
