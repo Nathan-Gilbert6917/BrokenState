@@ -27,6 +27,7 @@
 // ROWS: the new kinds' rows in the find tables, by table (each module merges its own: loot.js SITE_FINDS …).
 
 import { OFFICE_KINDS, OFFICE_AREAS, OFFICE_W, OFFICE_FIRMS, OFFICE_ROWS } from "./data-offices.js"; // the office buildings of every kind, with their firms (issue #27)
+import { TOWER_AREAS } from "./data-radiotower.js"; // a radio tower compound's rooms (issue #54)
 
 /** @typedef {{ wall: string, trim: string, sign: string, text: string, accent: string, roof?: string, style: number }} Look */
 /** @typedef {{ fl?: string, depth?: number, wide?: boolean, flat?: number, storeys?: [number, number], room?: string, back?: string, office?: string, media?: string, truck?: boolean, hotel?: string, libs?: Record<string, number>, variants?: string[] }} Plan */
@@ -262,6 +263,7 @@ export const AREA_DEFS = {
   proshop: { tags: ["sport", "shop", "travel"], def: { name: "Pro shop", boxes: ["displaycase", "shelf", "counter"],
     loot: { scrap: [0.4, 1, 3], water: [0.15, 1, 1] }, gear: [["slingbag", 0.05], ["duffle", 0.06], ["backpack", 0.03], ["kneeguards", 0.02]] } },
   ...OFFICE_AREAS,
+  ...TOWER_AREAS, // radio towers (issue #54, data-radiotower.js)
 };
 
 // ---------- where each stands (shops.js) ----------

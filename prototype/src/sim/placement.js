@@ -133,6 +133,7 @@ export const PLACE_EXTRA = [
   ["church", { rural: 0.006, highway: 0.004 }],
   ["feedstore", { rural: 0.004, highway: 0.006 }],
   ["farmstand", { highway: 0.01 }],
+  ["radiotower", { centre: 0.008, city: 0.006, suburb: 0.003, town: 0.004, highway: 0.01, scenic: 0.004 }], // issue #54: a radio tower (radiotowerlayout.js), the hills' sites aside
   ["gym", { centre: 0.08, city: 0.08, suburb: 0.07, town: 0.05, highway: 0.003, rural: 0.003 }], // issue #56: a gym or a bowling alley on a tile now and then
   ["bowling", { centre: 0.006, city: 0.012, suburb: 0.02, town: 0.015, highway: 0.005, rural: 0.004 }],
 ];

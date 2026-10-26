@@ -84,6 +84,7 @@ import { mendTents } from "./softcover.js"; // a camp's tents slashed or burned 
 import { siteCost, payCost, SITE_MAKE, MADE_KEYS } from "./buildmats.js"; // metal sheets in the repairs of what is clad or roofed in them (made on site from scrap when short)
 import { BED_FIXTURES } from "./data-beds.js"; // beds as furniture: their raid wear and repair
 import { POWER_FIXTURES, SOLAR, BATTERY, ALARM, HEATER, CHARGER, GENSETS, CIRCUITS } from "./data-power.js"; // the power grid: found generators by the days they ran, the powered machines by the days they had power; the 2026-10-24 pieces' numbers for machinesHelp
+import { towerRaided } from "./radiotower.js"; // a raid wrecks the radio tower the base holds (issue #54)
 
 export const WELL_WATER = 6; // the hub pump's share (hubevents.js WELL_DOWN.water)
 export const SCRAP_PER_PART = 4; // a repair short of scrap can use a part instead of this much
@@ -853,7 +854,8 @@ export function raidDamage(state, base, { strength = 0, hours = 8, outcome = "he
   if (toBreak.length) bits.push(`${wreckedN.text} ${wreckedN.plural ? "were" : "was"} wrecked (repair: ${costText(bill.cost)}, about ${bill.hours} work-hours)`);
   if (destroyed) { const d = namesText([destroyed], base); bits.push(`${d.text} ${d.plural ? "were" : "was"} torn down for good`); }
   if (damaged.length) bits.push(`${damagedN.text} ${damagedN.plural ? "are" : "is"} damaged and may give way`);
-  const text = bits.length ? `Damage: ${bits.join("; ")}.` : scratched.length ? `Only scratches on ${namesText(scratched, base).text}.` : "No damage to the buildings.";
+  const tower = towerRaided(state, base, outcome, key); // radiotower.js (issue #54): a tower the base holds, wrecked by the outcome's chance
+  const text = (bits.length ? `Damage: ${bits.join("; ")}.` : scratched.length ? `Only scratches on ${namesText(scratched, base).text}.` : "No damage to the buildings.") + (tower ? ` ${tower}` : "");
   const rep = {
     day: day(state), by, outcome, hours: Math.round(hours * 10) / 10, budget: total,
     broken: toBreak.map((fx) => fixtureName(fx)), damaged: damaged.map((fx) => fixtureName(fx)), scratched: scratched.map((fx) => fixtureName(fx)),
