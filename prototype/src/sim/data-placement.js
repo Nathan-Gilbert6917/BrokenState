@@ -105,6 +105,7 @@ export const PLACEMENT_ROWS = {
   radioshop: "mainstreet",
   bookstore: "centre 1.4 S, city 1.2 S, suburb 1 S, town 1 S",
   library: "centre 1.4 L, city 1.2 M, suburb 1 M, town 1 S, rural 0.1 S",
+  museum: "centre 2 H, city 1 L, suburb 0.5 M, town 1 S, highway 0.3 M, coast 0.3 M, rural 0.1 S", // #58: a city centre's natural history or art museum, a town's local history museum
   petstore: "city 0.6 S, suburb 1.6 M, town 1 S",
   garden: "bigLot",
   clothing: "downtown",

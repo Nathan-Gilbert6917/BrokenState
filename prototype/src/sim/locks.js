@@ -67,6 +67,10 @@ export const LOCKS = {
   car:      { name: "Locked car", diff: 1, force: true, loot: "car", glass: true, nokey: true },
   // An Army truck's cargo bed, chained and padlocked (combat.js AREAS.miltrucks, miltrucks.js). No site key opens it.
   cargobed: { name: "Padlocked cargo bed", diff: 2, force: true, loot: "miltruck", nokey: true },
+  // A museum's (issue #58, museumlayout.js): a gallery's locked display case (its curios: a lock's extras are coins,
+  // jewellery, a watch), the military museum's arms vault cases (now and then a working antique, no rounds).
+  showcase: { name: "Locked display case", diff: 2, force: true, loot: "exhibit" },
+  relic:    { name: "Locked weapons case", diff: 2, force: true, loot: "relic" },
 };
 export const PICK = { base: 0.55, perStealth: 0.04, perDiff: 0.15, quiet: 0.1, heat: 1, xpWin: 6, xpMiss: 2 };
 // Makeshift picks (GEAR makeshiftpick, crafting.js CRAFTS.makeshiftpick): the pick roll from a lower base (the Stealth,
@@ -424,6 +428,8 @@ const LOCK_LOOT = {
   crash:    { sup: [["meds", 0.45, 1, 3], ["ammo", 0.5, 10, 30]], gear: [["ar", 0.1], ["plate", 0.08], ["nvg", 0.06], ["milradio", 0.06], ["assaultpack", 0.08], ["flashbang", 0.08]], key: 0 },
   // A locked car: what its people packed to flee with, still in the back seat and the glovebox.
   miltruck: { sup: [["ammo", 0.5, 10, 25]], gear: [["frag", 0.1], ["smokegren", 0.1], ["flashbang", 0.08]], key: 0 }, // a padlocked Army truck: the good crates went in the back
+  exhibit:  { sup: [], gear: [["coins", 0.25], ["watch", 0.12], ["goldchain", 0.08], ["pearls", 0.06], ["stamps", 0.12], ["silverware", 0.1]], key: 0 }, // a museum's display case (issue #58)
+  relic:    { sup: [], gear: [["revolver", 0.12], ["leverrifle", 0.06], ["single12", 0.06], ["singlerifle", 0.04], ["sabre", 0.25], ["cutlass", 0.15], ["bayonet", 0.25]], key: 0 }, // a military museum's working antiques, unloaded
   car:      { sup: [["fuel", 0.5, 1, 3], ["food", 0.4, 2, 4], ["water", 0.35, 1, 3], ["ammo", 0.2, 4, 10], ["meds", 0.1, 1, 1]], gear: [["pistol", 0.08], ["flashlight", 0.1], ["bottle", 0.1], ["slingbag", 0.05], ["backpack", 0.04], ["binoculars", 0.03], ["revolver", 0.03]], key: 0.05 },
 };
 const BP_MULT = { lock: 4, room: 2, plain: 0.5 };

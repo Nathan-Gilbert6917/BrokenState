@@ -27,7 +27,7 @@
 // its map, ui/citycrawl.js).
 import { crashSiphon } from "./crashstart.js"; // Crashlanding (2026-10-24): limited fuel can be siphoned
 import { legacyRooms } from "./worldcfg.js"; // an older save: the checkpoint as it always was (issue #25)
-import { placeMult, crawlClass } from "./placement.js"; // a new world's blocks weighted by the placement table (issue #42)
+import { placeMult, crawlClass, placing } from "./placement.js"; // a new world's blocks weighted by the placement table (issue #42)
 import { typeFind } from "./foods.js"; // a crawl's food finds as items
 import { keyWord } from "./water.js"; // supplies as words: "9mm FMJ", "rounds"
 import { Rng } from "./rng.js";
@@ -83,6 +83,7 @@ export const CRAWL = {
   MAX_BLOCK: 8,                 // the heart of the city: no block beyond this one
   PLACES: [2, 4],               // places on a block (2–3 at the edge; a fourth more likely deeper)
   STRIPMALL: { city: 0.04, town: 0.12 }, // a block with a strip mall among its places (issue #30)
+  MUSEUM: { centre: 0.07, city: 0.03, suburb: 0.01, town: 0.03 }, // a block with a museum among its places, by its class (issue #58: a new world only; the big ones by the heart)
   EVENTS: { none: 0.3, two: 0.25, perBlock: 0.04 }, // a block's street events: none, one or two (two likelier deeper)
   BLOCKED: 0.12,                // a place shut this visit (fire, a collapse, the doors chained), by the visit's dice
   MOVE_HOURS: 1,                // walking to the next block (on the way out too)
@@ -510,6 +511,12 @@ export function genBlock(state, c, cell = c.cell) {
   // A strip mall now and then (issue #30, mall.js: its whole row of shops one place; never a regional mall, too big for a
   // block), on its own dice after everything above.
   if (places.length < CRAWL.PLACES[1] && hash01(state.seed, "crawlmall", c.tile, cell) < CRAWL.STRIPMALL[setting] && placeMult(state, "stripmall", cls) > 0) addPlace(new Rng(seedOf(state.seed, "crawlmall", c.tile, cell)), "stripmall", { dead: 1.2, rich: 1.1, w: 0, deep: 0, from: 1 }, places.length);
+  // A museum now and then (issue #58, museumlayout.js), a new world only, on its own dice after everything above; its
+  // variant by the block's class (mcls: the heart's natural history or art museum, a town's local history museum).
+  if (BUILDINGS.museum && placing(state) && places.length < CRAWL.PLACES[1] && hash01(state.seed, "crawlmuseum", c.tile, cell) < (CRAWL.MUSEUM[cls] || 0) && placeMult(state, "museum", cls) > 0) {
+    addPlace(new Rng(seedOf(state.seed, "crawlmuseum", c.tile, cell)), "museum", { dead: 1.1, rich: 1.1, w: 0, deep: 0, from: 1, rare: true }, places.length);
+    places[places.length - 1].mcls = cls;
+  }
   // This visit: a place may be shut.
   if (places.length > 2 && vr.chance(CRAWL.BLOCKED)) {
     const pl = vr.pick(places);
@@ -607,7 +614,7 @@ export const placeOption = (c, place, n = c.block) => {
   const snap = c.buildings && c.buildings[place.id];
   const variant = (snap ? snap.v : place.v) || null;
   const scenes = { dead: place.dead ?? 1, raiders: !!place.raiders, looted: place.looted || 0, rich: place.rich ?? 1, survivors: !!(place.folk && place.folk.survivors) };
-  return { id: `cc${n}-${place.slot}`, key: place.key, name: place.name, storeyBonus: storeyBonus(n), ...(variant ? { variant } : {}), ...(place.hv && variant === place.v ? { plan: place.hv } : {}), scenes }; // plan: a hotel's variant (issue #38)
+  return { id: `cc${n}-${place.slot}`, key: place.key, name: place.name, storeyBonus: storeyBonus(n), ...(variant ? { variant } : {}), ...(place.hv && variant === place.v ? { plan: place.hv } : {}), ...(place.mcls ? { mcls: place.mcls } : {}), scenes }; // plan: a hotel's variant (issue #38); mcls: a museum's block class (issue #58: buildingmaps.js makeSpec, its tile class)
 };
 // How many storeys a place has (the block card): the archetype's dice for this place, without building its map.
 export function placeStoreys(state, c, place, n = c.block) {
