@@ -28,6 +28,7 @@ import { launchExpedition, partyTile, planPath } from "../src/sim/parties.js";
 import { PRESETS } from "../src/sim/plans.js";
 import { createBattle, autoPlayerTurn, runEnemyPhase, registerCombatHandler, closeCombat } from "../src/sim/combat.js";
 import { addBuilding } from "../src/sim/buildings.js";
+import { totalRounds } from "../src/sim/rounds.js";
 import { newItem } from "../src/sim/inventory.js";
 import { setHuntMix } from "../src/sim/hunting.js";
 import { captiveRecords, capturePrisoners, prisonersAt } from "../src/sim/prisoners.js";
@@ -146,7 +147,8 @@ console.log("Loaded in a fresh process");
 
 // ---------- 1b. world sizes (sim/worldsize.js) ----------
 // A Small and a Huge world saved on day 20, played on and loaded: identical, with their size. A save from before
-// sizes (no worldSize on the state) loads as what its grid is: a Normal 64 × 42 map, or whatever it really is.
+// sizes (no worldSize on the state) loads as what its grid is (worldSizeOf): a Normal 250 × 150 map as Normal, the
+// original 64 × 42 map (Normal before the presets changed on 2026-10-24) as a custom map of its own grid, a Huge as Huge.
 console.log("World sizes");
 for (const size of ["small", "huge"]) {
   const st = createWorld({ seed: 31, factionCount: 6, size });
@@ -165,13 +167,18 @@ for (const size of ["small", "huge"]) {
   const old = { ...st };
   delete old.worldSize;
   const B = deserializeState(JSON.parse(JSON.stringify(serializeState(old))));
-  check(B.worldSize === "normal" && B.grid.width === 64 && B.grid.height === 42, `a save without a size loads as ${B.worldSize}`);
+  check(B.worldSize === "normal" && B.grid.width === 250 && B.grid.height === 150, `a save without a size loads as ${B.worldSize} ${B.grid.width}×${B.grid.height}`);
+  const orig = createWorld({ seed: 32, factionCount: 6, size: "custom", customW: 64, customH: 42 });
+  const oldOrig = { ...orig };
+  delete oldOrig.worldSize;
+  const O = deserializeState(JSON.parse(JSON.stringify(serializeState(oldOrig))));
+  check(O.worldSize === "custom" && O.grid.width === 64 && O.grid.height === 42 && O.tiles.length === orig.tiles.length, `the original 64×42 map's save without a size loads as ${O.worldSize} ${O.grid.width}×${O.grid.height}`);
   const hu = createWorld({ seed: 33, factionCount: 10, size: "huge" });
   const oldHuge = { ...hu };
   delete oldHuge.worldSize;
   const C = deserializeState(JSON.parse(JSON.stringify(serializeState(oldHuge))));
   check(C.worldSize === "huge", `a Huge save without its size loads as ${C.worldSize}`);
-  console.log(`  a save without a size loads as ${B.worldSize} (${B.grid.width}×${B.grid.height}); a 100×66 one as ${C.worldSize}`);
+  console.log(`  a save without a size loads as ${B.worldSize} (${B.grid.width}×${B.grid.height}); the original 64×42 one as ${O.worldSize}; a ${hu.grid.width}×${hu.grid.height} one as ${C.worldSize}`);
 }
 
 // ---------- 2. saved at awkward moments ----------
@@ -198,13 +205,14 @@ const world = (seed, d = 0, style = "balanced") => {
 
 console.log("Saved at awkward moments");
 {
-  // A team out on a plan (the autopilot launches none; this one is sent by hand).
+  // A team out on a plan (the autopilot launches no plan team; this one is sent by hand). It takes up to 20 rounds: the
+  // autopilot's own teams may have packed the hub's loose rounds by day 6 (seed 42's first team takes all 53 at hour 7).
   const st = world(42, 6);
   const h = hub(st);
   const dest = st.tiles.find((t) => { const d = st.grid.distance(h.tile, t.id); return d >= 4 && d <= 8 && t.loc && t.loot > 0.3 && t.loc.type !== "town" && planPath(st, h.tile, t.id, false); });
   const crew = atBase(st, h.id).slice(0, 3).map((s) => s.id);
-  const res = launchExpedition(st, { memberIds: crew, dest: dest.id, mission: "scavenge", stance: "normal", supplies: { food: 14, water: 14, ammo: 20 }, plan: { preset: "scavenge", steps: PRESETS.scavenge.steps(1) } });
-  check(!res.error, `plan team launched (${res.error || "ok"})`);
+  const res = launchExpedition(st, { memberIds: crew, dest: dest.id, mission: "scavenge", stance: "normal", supplies: { food: 14, water: 14, ammo: Math.min(20, totalRounds(h.stock)) }, plan: { preset: "scavenge", steps: PRESETS.scavenge.steps(1) } });
+  if (!check(!res.error, `plan team launched (${res.error || "ok"})`)) throw new Error(`savetest: the plan team was not launched (${res.error})`);
   const p = res.party;
   for (let i = 0; i < 30 && (st.cards.length || p.phase === "waiting" || p.idx < 2); i++) tickHour(st);
   check(st.parties.includes(p) && p.plan && p.orders && !saveBlocker(st), `the team is under way on its plan (${p.phase}, ${p.orders.length} orders left${st.cards.length ? ", a card is open" : ""})`);

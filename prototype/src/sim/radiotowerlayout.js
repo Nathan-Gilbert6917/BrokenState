@@ -262,7 +262,7 @@ export function radioTowerPlan(rng, o = {}) {
 
 // ======================================================================================
 // The signs of survival (interiorscenes.js registerScene; their own dice there), only on a radio tower's map:
-//   lastbroadcast  the operator who kept the emergency broadcast going: a body at the transmitter room's console,
+//   towerbroadcast the operator who kept the emergency broadcast going: a body at the transmitter room's console,
 //                  a hand-crank radio by them, the door shoved shut with a cabinet.
 // ======================================================================================
 const lower = (r) => String(r.name || "room").replace(/ \(upstairs\)$/, "").toLowerCase();
@@ -274,8 +274,8 @@ function lastBroadcast(ctx) {
     const [x, y] = free[0];
     ctx.body(f, x, y, { human: true, quiet: rng.chance(0.6), name: "The last operator" });
     ctx.splatter(f, x, y, "human", 1);
-    return ctx.done("lastbroadcast", r, x, y, `Someone kept the emergency broadcast going in the ${lower(r)} to the end: they are still at the console.`);
+    return ctx.done("towerbroadcast", r, x, y, `Someone kept the emergency broadcast going in the ${lower(r)} to the end: they are still at the console.`);
   }
   return null;
 }
-registerScene("lastbroadcast", { w: 3, place: lastBroadcast, kinds: ["radiotower"], when: (ctx) => ctx.key === "radiotower" });
+registerScene("towerbroadcast", { w: 3, place: lastBroadcast, kinds: ["radiotower"], when: (ctx) => ctx.key === "radiotower" });
