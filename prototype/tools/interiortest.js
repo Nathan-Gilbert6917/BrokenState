@@ -77,7 +77,7 @@ import { noiseAt } from "../src/sim/stealth.js";
 import { newItem, stow } from "../src/sim/inventory.js";
 import { raidEnemies } from "../src/sim/scavenge.js";
 import { raidBuildings, buildingPickFor } from "../src/sim/poiraid.js"; // a site's building, picked before the map
-import { BUILDINGS, SITES, assemble, siteBuildings, buildingMap, buildingOptions, placeOccupantGroups, windowsNear, BMAP, runSteps, runLandings } from "../src/sim/buildingmaps.js";
+import { SCHOOL_VARIANTS, BUILDINGS, SITES, assemble, siteBuildings, buildingMap, buildingOptions, placeOccupantGroups, windowsNear, BMAP, runSteps, runLandings } from "../src/sim/buildingmaps.js";
 import { HOME_STYLES, HOME_KEYS, MEDICAL_STYLES, MED_KEYS } from "../src/sim/roomlayout.js";
 import { rollScenes } from "../src/sim/interiorscenes.js";
 import { COMMERCIAL_KEYS, styleName } from "../src/sim/shoplayout.js";
@@ -982,7 +982,7 @@ console.log("\nPolice stations, fire stations, schools and churches laid out for
   const sw = createWorld({ seed: 11, factionCount: 2 }), stiles = sw.tiles.filter((t) => t.loc).slice(0, 4);
   const seenKinds = new Set();
   let turnedOk = true;
-  for (const key of ["police", "school", "church"]) for (let i = 0; i < (key === "church" ? 60 : 30); i++) { // a church's pewdoors comes up about one map in 14: 60 of them (issue #24's real-size churches drew a run of 30 without it)
+  for (const key of ["police", "school", "church"]) for (let i = 0; i < (key === "police" ? 30 : 60); i++) { // a church's pewdoors comes up about one map in 14: 60 of them (issue #24's real-size churches drew a run of 30 without it); a school's gymshelter one in 10 (issue #23's one-room schoolhouse has no gym)
     const m = buildingMap(sw, stiles[i % stiles.length].id, { key, id: `${key}-${i}`, name: key }, false);
     for (const sc of (m.scenes && m.scenes.list) || []) {
       seenKinds.add(sc.kind);
@@ -1099,23 +1099,48 @@ console.log("\nFootprint shapes: buildings that are not boxes (issue #23)");
   let sOk = 0, foot = 0, floorsNew = 0, floorsOld = 0, footOld = 0;
   const S = 60;
   for (let s = 0; s < S; s++) {
-    const rng = new Rng(41000 + s * 7919), spec = BUILDINGS.school.make(rng, { shapes: true }), m = assemble(rng, spec, { key: "school", name: "School", noDecor: true });
+    const rng = new Rng(41000 + s * 7919), spec = BUILDINGS.school.make(rng, { shapes: true, plan: "highschool" }), m = assemble(rng, spec, { key: "school", name: "School", noDecor: true });
     const P = spec.shape.parts;
-    if (spec.bw >= 50 && spec.bw <= 70 && spec.bh >= 34 && spec.bh <= 46 && P.filter((p) => p.wing).length >= 2 && P.some((p) => p.gym && p.storeys === 1 && p.tall)) sOk++;
+    if (spec.bw >= 50 && spec.bw <= 80 && spec.bh >= 34 && spec.bh <= 46 && P.filter((p) => p.wing).length >= 2 && P.some((p) => p.gym && p.storeys === 1 && p.tall)) sOk++;
     foot += area(m, true); floorsNew += area(m, false);
     const r2 = new Rng(41000 + s * 7919), m2 = assemble(r2, BUILDINGS.school.make(r2, {}), { key: "school", name: "School", noDecor: true });
     footOld += area(m2, true); floorsOld += area(m2, false);
   }
-  check(sOk === S, `every school a 50–70 × 34–46 box with two wings or more and a gym annex of one tall storey (${sOk} of ${S})`);
+  check(sOk === S, `every suburban high school (the school's biggest plan) a 50–80 × 34–46 box (its auditorium past the issue's 70: a school at real size, 60–120 m) with two wings or more and a gym annex of one tall storey (${sOk} of ${S})`);
   const ratio = floorsNew / floorsOld;
   check(ratio >= 2 && ratio <= 3, `a school's floors (every storey) ${ratio.toFixed(2)} times the old school's (${Math.round(floorsNew / S)} cells against ${Math.round(floorsOld / S)}; its footprint ${(foot / footOld).toFixed(2)} times)`);
+  // The school's dozen plans (SCHOOL_VARIANTS, the user's request 2026-10-25: "a dozen varients per building type"):
+  // each built when pinned, named on the map's plan, laid out from its own room list (no two alike), every one keeping
+  // the shape rules above; each setting's dice reach the plans it weighs, all twelve over the three settings.
+  const lootVal = (def) => { let v = 0; for (const [k, [p, lo, hi]] of Object.entries(def.loot)) v += Math.min(0.95, p) * ((lo + hi) / 2) * supValue(k); for (const [k, p] of def.gear) v += p * ((GEAR[k] && GEAR[k].value) || 0); return v; };
+  const vOk = [], vRooms = new Map(), vLoot = [];
+  for (const v of SCHOOL_VARIANTS) {
+    let ok = true, val = 0, cellsN = 0;
+    const names = new Set();
+    for (let s = 0; s < 12; s++) {
+      const rng = new Rng(43000 + s * 7919), spec = BUILDINGS.school.make(rng, { shapes: true, plan: v.id }), m = assemble(rng, spec, { key: "school", name: "School", noDecor: true });
+      if (spec.vid !== v.id || m.plan.variant !== v.name || !m.building.parts || !m.rooms.some((r) => r.role === "classroom")) ok = false;
+      for (const r of m.rooms) if (!r.outdoor) names.add(r.name.replace(/ \d+$/, ""));
+      for (const c of m.containers) { const a = m.rooms.find((r) => r.id === c.area); if (a && a.type) val += lootVal(boxLoot(a.type, c.kind)); }
+      cellsN += area(m, false);
+    }
+    if (ok) vOk.push(v.id);
+    vRooms.set(v.id, [...names].sort().join("|"));
+    vLoot.push(`${v.name} ${(val / 12).toFixed(0)} (${((val / cellsN) * 100).toFixed(1)}/100 cells)`);
+  }
+  check(vOk.length === SCHOOL_VARIANTS.length && SCHOOL_VARIANTS.length >= 12, `the school's ${SCHOOL_VARIANTS.length} plans each built when pinned, named, shaped, with classrooms (${vOk.length} ok)`);
+  check(new Set(vRooms.values()).size === SCHOOL_VARIANTS.length, `no two school plans share their room list (${new Set(vRooms.values()).size} distinct)`);
+  const seenV = new Set();
+  for (const setting of ["rural", "town", "city"]) for (let s = 0; s < 300; s++) seenV.add(BUILDINGS.school.make(new Rng(44000 + s * 7919), { shapes: true, setting }).vid);
+  check(seenV.size === SCHOOL_VARIANTS.length, `every school plan turns up by the settings' dice (${seenV.size} of ${SCHOOL_VARIANTS.length})`);
+  console.log(`    the plans' loot: ${vLoot.join("; ")}`);
   // The loot: room by room as before (#14, #15, #16's styles), so a building holds what it did where its floor is about
   // the same (within ±10%) and more where it grew: the school by its area (reported per 100 cells of floor).
   const value = (def) => { let v = 0; for (const [k, [p, lo, hi]] of Object.entries(def.loot)) v += Math.min(0.95, p) * ((lo + hi) / 2) * supValue(k); for (const [k, p] of def.gear) v += p * ((GEAR[k] && GEAR[k].value) || 0); return v; };
-  const lootOf = (key, shapes, n = 120) => {
+  const lootOf = (key, shapes, n = 120, more = {}) => {
     let v = 0, cellsN = 0;
     for (let s = 0; s < n; s++) {
-      const rng = new Rng(9000 + s * 104729 + 5), m = assemble(rng, BUILDINGS[key].make(rng, { shapes, ...(["police", "firestation", "hospital", "church"].includes(key) ? { plan: "general" } : {}) }), { key, name: key, noDecor: true });
+      const rng = new Rng(9000 + s * 104729 + 5), m = assemble(rng, BUILDINGS[key].make(rng, { shapes, ...more, ...(["police", "firestation", "hospital", "church"].includes(key) ? { plan: "general" } : {}) }), { key, name: key, noDecor: true });
       for (const c of m.containers) { const a = m.rooms.find((r) => r.id === c.area); if (a && a.type) v += value(boxLoot(a.type, c.kind)); }
       cellsN += area(m, false);
     }
@@ -1127,7 +1152,7 @@ console.log("\nFootprint shapes: buildings that are not boxes (issue #23)");
     rows.push(`${key} ${b.v.toFixed(1)} against ${a.v.toFixed(1)}`);
     check(Math.abs(b.v / a.v - 1) <= 0.1, `a shaped ${key} holds what it did within ±10%: ${b.v.toFixed(1)} against ${a.v.toFixed(1)} (its floor ${b.cells.toFixed(0)} cells against ${a.cells.toFixed(0)})`);
   }
-  const so = lootOf("school", false), sn = lootOf("school", true);
+  const so = lootOf("school", false), sn = lootOf("school", true, 120, { plan: "highschool" }); // the issue's big school: the suburban high school
   const per = (x) => (x.v / x.cells) * 100;
   check(sn.v > so.v * 1.4 && Math.abs(per(sn) / per(so) - 1) <= 0.35, `the big school holds more by its floor: ${sn.v.toFixed(1)} against ${so.v.toFixed(1)} (${per(sn).toFixed(1)} against ${per(so).toFixed(1)} per 100 cells: its new floor is mostly classrooms and corridors of lockers)`);
   // Older saves: a building's spec seed gives the rectangle it always did (the roomsLegacy saves and those since #10
@@ -1147,7 +1172,7 @@ console.log("\nFootprint shapes: buildings that are not boxes (issue #23)");
   const tile = st.tiles.find((t) => t.loc);
   const oldMap = buildingMap({ ...st, shapesLegacy: true }, tile.id, { id: "s1", key: "school", name: "School" }, false);
   const newMap = buildingMap(st, tile.id, { id: "s1", key: "school", name: "School" }, false);
-  check(!oldMap.building.parts && newMap.building.parts && newMap.building.parts.length >= 4, `a school at a site: the old save's the rectangle (${oldMap.building.w} × ${oldMap.building.h}), a new one's shaped (${newMap.building.shape}, ${newMap.building.w} × ${newMap.building.h}, ${newMap.w} × ${newMap.h} map)`);
+  check(!oldMap.building.parts && !oldMap.plan.variant && newMap.building.parts && newMap.building.parts.length >= 2 && newMap.plan.variant, `a school at a site: the old save's the rectangle (${oldMap.building.w} × ${oldMap.building.h}), a new one's one of the dozen plans, shaped (${newMap.plan.variant}: ${newMap.building.shape}, ${newMap.building.w} × ${newMap.building.h}, ${newMap.w} × ${newMap.h} map)`);
   // The neighbourhood's street: 3–5 houses still, shaped ones among them, each fitting its plot, every cell reached.
   let streets = 0, shapedHouses = 0, houses = 0, streetBad = 0;
   for (let i = 0; i < 12; i++) {
