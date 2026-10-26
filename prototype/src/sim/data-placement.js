@@ -156,6 +156,7 @@ export const PLACEMENT_ROWS = {
   warehouse: "centre 0.2 L, city 0.6 L, suburb 1.6 L, town 0.4 M, highway 0.8 L, rural 0.2 M",
   factory: "city 0.4 H, suburb 1.4 L, town 0.3 L, highway 0.6 L, coast 0.4 L",
   workshop: "suburb 0.6 S, town 0.8 S, highway 0.4 S, rural 0.4 S",
+  sawmill: "suburb 0.2 M, town 0.6 M, highway 0.5 M, coast 1 M, scenic 2 L, rural 0.8 M", // issue #53: forest and hills (a big mill's yard there), some in towns
   machineshed: "farm",
   barn: "farm",
   farm: "farm",

@@ -159,6 +159,7 @@ export const LOOT_SENSE = {
   terminal:       S({ food: 0.9, drink: 0.9, treats: 0.5, gadgets: 0.5 }, ARMY),
   warehouse:      S({ food: 0.8, tools: 0.8, parts: 0.8, build: 0.8 }, ARMY),
   factory:        S({ tools: 0.8, parts: 0.8, build: 0.6 }, NO_GUNS),
+  sawmill:        S({ build: 0.95, tools: 0.9, parts: 0.8, fuel: 0.8 }, NO_GUNS, { note: "issue #53: lumber in its sheds and stacks, saws in the filing room's blade racks" }),
   autoshop:       S({ tools: 0.9, parts: 0.9, fuel: 0.9 }, ARMY),
   garage:         S({ tools: 0.9, parts: 0.9, fuel: 0.7 }, ARMY),
   workshop:       S({ tools: 0.9, parts: 0.9, build: 0.7 }, ARMY),
