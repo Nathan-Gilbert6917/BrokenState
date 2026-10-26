@@ -6,7 +6,7 @@ import { FOOD_PACK_KG } from "../sim/parties.js"; // days of food packed: about 
 import { FOODS, foodIn, bestFoodKey } from "../sim/foods.js"; // food by type in the trade window
 import { foodTip } from "./food.js";
 import { SUPPLIES, SUPPLY_KEYS, STOCK_KEYS, GEAR, FACTION_TYPES, supWeight } from "../sim/data.js";
-import { hub, day, factionById, baseById, survivorById, atBase, skill, combatPower, RADIO_RANGE } from "../sim/world.js";
+import { hub, day, factionById, baseById, survivorById, atBase, skill, combatPower, RADIO_RANGE, log } from "../sim/world.js";
 import { attitude } from "../sim/factions.js";
 import { tileLabel, partyTile, carryCapacity, STANCES } from "../sim/parties.js";
 import { waterIn, keyWord } from "../sim/water.js"; // purified and un-purified water
@@ -38,6 +38,7 @@ import { vehicleOffers, buyVehicle, sellVehicle } from "../sim/vehicletrade.js";
 import { visitorTradeHead, visitorTradeButtons } from "./visitors.js";
 import { baseListenSection } from "./radiolisten.js"; // Listen in at a base (sim/radiolisten.js)
 import { radioSecurity } from "./intel.js"; // radio discipline, encryption, decoys (sim/intel.js)
+import { towerLine, claimTower, setTower, installGen, removeGen, repairTower, releaseTower, TOWER } from "../sim/radiotower.js"; // a radio tower the base powers (issue #54)
 import { ask } from "./confirm.js"; // attacking a caravan asks first (one confirmation style)
 import { supplyAmt } from "../sim/rounds.js"; // "ammo": every round, any calibre
 import { stackLabel, isRoundItem, isBulk, countOf } from "../sim/itemstack.js"; // stacks in the trade lists (2026-10-10)
@@ -356,8 +357,26 @@ export function caravanLines(state, base) {
   return caravansAt(state, base.id).map((c) => {
     const f = factionById(state, c.owner);
     return `<div>Caravan</div><div><span class="good">${esc(f ? f.name : "Traders")}</span> until ${when(c.stayUntil)} <button class="mini" data-action="cv-trade" data-id="${c.id}"${tip("Open the trade window")}>Trade</button></div>`;
-  }).join("") + `<div${tip(`Radio stations reach ${RADIO_RANGE} tiles, relays ${RELAY_RANGE} (when linked: within range of a station or another linked relay). A relay goes up at any base without a station.`)}>Radio</div><div>${esc(radioSummary(state, base))}</div>`;
+  }).join("") + `<div${tip(`Radio stations reach ${RADIO_RANGE} tiles, relays ${RELAY_RANGE} (when linked: within range of a station or another linked relay). A relay goes up at any base without a station.`)}>Radio</div><div>${esc(radioSummary(state, base))}</div>` + towerRow(state, base);
 }
+// The radio tower the base holds or could claim (sim/radiotower.js towerLine): its state and its buttons.
+function towerRow(state, base) {
+  const L = towerLine(state, base);
+  if (!L) return "";
+  const btns = L.acts.map((a) => `<button class="mini" data-action="rt-${a.act}" data-id="${base.id}" ${a.why ? "disabled" : ""}${tip(a.why || TOWER_TIPS[a.act] || "")}>${esc(a.label)}</button>`).join(" ");
+  return `<div${tip(`A powered radio tower carries this base's radio station ${TOWER.RANGE} tiles from the tower (a station alone ${RADIO_RANGE}). It needs a working generator (or a found one carried to its shed) and ${TOWER.FUEL} fuel a day; without fuel or power it goes dark, and raids or saboteurs can wreck it.`)}>Radio tower</div><div>${esc(L.text)} ${btns}</div>`;
+}
+// A tower button's handler: its message on the base screen and in the log.
+const towerAct = (fn) => (state, ui, d) => { const b = baseById(state, Number(d.id)); if (!b) return; const msg = fn(state, b); if (msg) { ui.baseMsg = msg; log(state, msg); } };
+const TOWER_TIPS = {
+  claim: "Take the tower for this base: then power it with a generator and fuel",
+  on: `Put the base's radio on the tower's mast: ${TOWER.RANGE} tiles of coverage, ${TOWER.FUEL} fuel a day`,
+  off: "Switch the tower off: it burns nothing, and your radio is back to the station's reach",
+  gen: "Carry the best found generator in the stores to the tower's generator shed",
+  ungen: "Take the generator back into the stores",
+  repair: `Repair the wrecked transmitter (${Object.entries(TOWER.REPAIR).map(([k, v]) => `${v} ${k}`).join(", ")})`,
+  release: "Give the tower up (its generator comes back to the stores)",
+};
 
 // "out of reach" in a group's radio panel, with how to reach it (radio.js relaySpotFor: a relay that would do it).
 function outOfReachTag(state, f) {
@@ -511,6 +530,14 @@ export const TRADE_ACTIONS = {
   "rd-open": (state, ui, d) => { ui.radioWith = Number(d.id); ui.radioMsg = ""; ui.radioDeal = ui.radioDeal || { wantKey: "meds", wantQty: 10, payKey: "ammo", payQty: 40 }; },
   "rd-close": (state, ui) => { ui.radioWith = null; ui.radioMsg = ""; },
   "rd-scan": (state, ui) => { ui.radioMsg = radioScan(state); },
+  // A radio tower (sim/radiotower.js, issue #54), from the base's card.
+  "rt-claim": towerAct((state, b) => claimTower(state, b)),
+  "rt-on": towerAct((state, b) => setTower(state, b, true)),
+  "rt-off": towerAct((state, b) => setTower(state, b, false)),
+  "rt-gen": towerAct(installGen),
+  "rt-ungen": towerAct(removeGen),
+  "rt-repair": towerAct(repairTower),
+  "rt-release": towerAct(releaseTower),
   "rd-greet": (state, ui) => { const f = radioF(state, ui); if (f) ui.radioMsg = radioGreet(state, f); },
   "rd-news": (state, ui) => { const f = radioF(state, ui); if (f) ui.radioMsg = radioNews(state, f); },
   "rd-caravan": (state, ui) => { const f = radioF(state, ui); if (f) ui.radioMsg = radioRequestCaravan(state, f, ui.radioMeet && ui.radioMeet.factionId === f.id ? { meetTile: ui.radioMeet.tile } : { baseId: ui.radioBase }); },

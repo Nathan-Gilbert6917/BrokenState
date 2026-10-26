@@ -39,7 +39,7 @@ const BASELINE = {
   bar: 196.9, dealer: 382.0, bank: 169.4, library: 69.7, vet: 248.6, hardware: 713.5, feedstore: 292.0, diner: 191.9,
   gasstation: 210.9, truckstop: 706.1, supermarket: 1784.2, deptstore: 421.2, clinic: 336.7, infirmary: 511.4,
   hospital: 2093.3, police: 376.1, school: 244.6, offices: 419.3, lab: 396.5, barracks: 1540.5, armorybldg: 794.1,
-  cellblock: 164.2, messhall: 323.7, control: 238.9, radio: 218.4, terminal: 348.4, firestation: 512.7, hq: 752.7,
+  cellblock: 164.2, messhall: 323.7, control: 238.9, radio: 218.4, radiotower: 186.6, terminal: 348.4, firestation: 512.7, hq: 752.7,
   aidstation: 212.6, gatehouse: 371.0, tower: 459.6, flightops: 318.6, warehouse: 283.2, factory: 347.9,
   hangar: 444.5, motorpool: 503.0, autoshop: 205.2, garage: 108.8, workshop: 136.0, machineshed: 102.7, barn: 161.7,
   church: 112.6, motel: 328.2, apartments: 623.0, hotel: 811.0, storefront: 43.4, bizpark: 288.6, cityhall: 423.5,

@@ -169,6 +169,58 @@ Modules: [radio, radiotrade]. Stations and relays, talking to groups, radio deal
   - Draws the dashed ring round each of your stations and relays with its reach on the ring's top: Radio 12 tiles, 24 with the military set, Relay 6 tiles; red and "not linked" or "off the air" for a relay not on the net.
   - While you listen in, a tuned group's network dotted in its colour. Unticked, no rings are drawn (ui/render.js; the help's Map layers topic in ui/help.js).
 
+## Radio towers a base powers
+A base claims a radio tower near it and powers it with a generator and fuel: its radio station's set goes up the mast, and its coverage reaches 30 tiles from the tower. The tower is also a building type of its own with a dozen plans.
+
+- The user's request 2026-10-26 (issue #54, round-2 epic #39, wave 2): "radio tower(can have a base turn it on with generators to extend radio communications further)".
+- Modules: [radiotower] (the base feature), [radiotowerlayout] (the plans, the yard, the scene), [data-radiotower] (TOWER numbers, the rooms' loot), [radio] (radioNodes, groupNetwork), [radioallies] (the ring's label), [breakdowns] (raidDamage), [ui/tradewindow] (the base card's line). Test: `tools/radiotowertest.js`.
+
+**What "radio communications" meant before this ticket** (radio.js header): a station reaches 12 tiles (RADIO_RANGE), a Military encrypted radio in the armory 24 (MIL_RADIO_RANGE), a linked relay 6 (RELAY_RANGE), +2 for a station on generator power (power.js RADIO_BOOST). Coverage (radioNodes) gates who can be called and invited into the coalition (canRadioGroup: coverage + 6), the groups' calls with offers and requests, radio trades and deals with their caravans, Scan the airwaves and the news (map reveal of their bases and the tiles round them), your teams reporting live (world.js radioBasesInRange), listening in, envoys when there is no link, and the Radio coverage layer. A powered tower is one more transmitter in radioNodes, so all of these follow its range with no change of their own.
+
+**Where towers stand.** A radio tower site (mapgen.js: on the hills) or a radio tower point of interest (a new world's, placement.js PLACE_EXTRA: by the highways, in city centres and cities, now and then in the suburbs and towns, on scenic land; data-placement.js row `centre 0.4 M, city 0.6 M, suburb 0.4 S, town 0.6 S, highway 1.2 S, scenic 1.4 S, rural 0.4 S`). radiotower.js towerTiles lists them (cached on the state, not saved).
+
+**Claiming** (claimTower, releaseTower): a base claims a tower on its own tile or within TOWER.CLAIM_R (2) tiles that no other base of yours holds; one tower a base. base.tower = { tile, on, gen, wrecked, dark, paid } (new-only key). Giving it up puts a generator carried there back in the stores.
+
+**Turning it on** (setTower, towerRefusal). It needs:
+- a radio station at the base (built, or a Military encrypted radio in the armory: the tower carries the base's set further and does not replace it, so it opens no earlier than radios do);
+- a generator: a working one at the base (power.js generators: built or a found set, not broken, not switched off), or a found generator carried there as a piece (installGen: the strongest genset_* item in the base's stores goes into the tower's generator shed; removeGen takes it back);
+- fuel: TOWER.FUEL (2) a day from the base's fuel above its reserve (power.js genReserve), paid when it is switched on and at each day's turn (towerDaily, from radio.js radioDaily). The tower's draw is TOWER.NEED (4) power: any working generator gives it. Decision: the tower's fuel is its own line, not a load on the base's grid, so the base's power budget (powerStatus) and every grid test stay as they were.
+
+**Running** (towerStatus → { live, why }; towerOnAir): a transmitter of yours at the tower's tile, kind "tower", reaching TOWER.RANGE (30) tiles, linked (it is the station's mast). Decision: 30, between the military set's 24 and twice it, so a tower on a hill opens a region, not the map.
+
+**Going dark**: no fuel above the reserve at the day's turn (dark "Out of fuel", logged; back on the air the first day the fuel is there, logged), the generator gone, broken or switched off, the base's station gone, or the tower wrecked. Switched off, it burns nothing.
+
+**Raided or sabotaged**: a raid on the base (breakdowns.js raidDamage → towerRaided) wrecks it with the chance TOWER.RAID by the outcome (held 0, won 0.5, broken 0.6, overrun 1; hash dice of the raid's key), named in the raid's report. Each hostile group with a base within TOWER.SAB_R (12) tiles of a tower on the air adds TOWER.SABOTAGE (3%) a day to the chance it is sabotaged (at most TOWER.SAB_MAX, 15%; logged). A wrecked tower is off the air until repaired (repairTower: TOWER.REPAIR, 4 parts and 2 electronics, from the base's stores).
+
+**The groups (AI parity, ADR 0001: your rules, coarse)**: a group base standing on a tower's tile with a radio station (groupworks.js works.radio; the military's and the Guard's splinters' army sets), a generator (works.power; the military's sets) and the day's TOWER.FUEL in its fuel runs the tower (groupTowersDaily: f.towersOn[tile], its fuel burned); its network's node there reaches TOWER.RANGE (radio.js groupNetwork), so the Radio layer draws an ally's tower ring and its reach counts for calls and listening in. Their towers are not raided or sabotaged (their bases' raids are abstract).
+
+**Shown in the UI**: the ring on the Radio coverage layer at the tower's tile, "Your radio tower: 30 tiles" (radioallies.js yourLabel; ui/render draws every radioNodes ring); a "Radio tower" line on the base's card under its Radio line (ui/tradewindow.js towerRow from radiotower.js towerLine): "A radio tower at … (2 tiles away): claim it to power it", "Radio tower at …: on the air, 30 tiles of coverage, 2 fuel a day (Portable generator)" or "…: dark (why)", with Claim, Turn on (disabled with the reason), Switch off, Carry a generator there / Take the generator back, Repair, Give it up (rt-* actions; the message on the base screen and in the log).
+
+**Older saves** (worldcfg.js legacyTowers: save.js towerLegacy when no state.towerV, or roomsLegacy): their radio tower sites keep the transmitter hut (BUILDINGS.radio, milplans.js's dozen hut plans) with its maps and containers, and no tower can be claimed or powered.
+
+### The building type: a dozen plans
+The building type "radiotower" (buildingmaps.js BUILDINGS; a new save's radio tower site and a new world's radio tower point of interest open it: TOWER_SITES, siteEntry, poiraid.js poiPlace). One raid map: the transmitter building and, outside it, the yard (radiotowerlayout.js towerYard, through assemble's spec.outside): the mast (combat.js CELL "tower" cells at its foot, 1 × 1 to 3 × 3: climbed, a lookout two levels up, full cover from anything not next to it), a chain-link fence round the building and the mast with the gate in the front (the paths stay open: block refuses a cell that would cut the yard off), the fuel drums by the generator shed (the "Fuel store", containers), cable spools (the "Cable yard") and equipment cabinets on a slab.
+
+| Plan | Rooms | Size (m) | Storeys | Mast, fence |
+|---|---|---|---|---|
+| Guyed AM mast | lobby, engineer's office, washroom, transmitter room, tuning house, generator room | 14–18 × 10–13 | 1 | guyed mast 1 × 1, chain-link; drums, spools, cabinets |
+| FM and TV tower | entry, FM transmitter hall, winter crew bunks, TV transmitter hall, equipment room, generator room, cable store | 20–26 × 12–15 | 1 | lattice tower 3 × 3, chain-link |
+| Cell tower compound | radio shelter, battery cabinet, generator shed | 12–14 × 5–7 | 1 | monopole 1 × 1, a tight chain-link compound, cabinets outside |
+| Microwave relay | entry, battery room, microwave radio room, equipment shelter, generator room | 14–17 × 9–11 | 1 | lattice 2 × 2, chain-link |
+| Fire-service repeater | radio room, kit room, generator shed | 10–12 × 8–10 | 1 | lattice 1 × 1 beside it, no fence (in the woods) |
+| Ham radio club | meeting room, kitchenette, the shack, workshop, generator closet | 14–18 × 11–14 | 1 | lattice in the back yard, no fence |
+| Military relay | guard post, kit room, washroom, relay room, duty bunk room, generator room | 16–20 × 11–14 | 1 | lattice 2 × 2; the compound ground's wire, fence, watchtowers and gate (militarylayout.js) |
+| Emergency broadcast station | hall, studio, first aid, transmitter room, generator room, cable store; upstairs the director's office, washroom, duty bunk room, records | 16–20 × 12–15 | 2 | lattice 2 × 2 beside it, chain-link |
+| Weather radar | entry, instrument room, radar equipment room, generator room | 12–15 × 10–12 | 1 | the radome's tower 3 × 3, chain-link |
+| Rooftop repeater | lobby, leasing office, washroom, tenants' storage, standby generator room; offices; on the top floor the equipment room, the repeater room, the battery room | 16–22 × 14–18 | 3–4 | none on the ground: the roof floor is the lookout |
+| Broadcast studio and mast | reception, on-air studio, master control, record library, transmitter room, generator room; upstairs the station manager's office, newsroom, staff kitchen | 18–24 × 13–16 | 2 | guyed mast out back, chain-link |
+| Utility radio relay | radio room, battery room, line store, generator shed | 10–13 × 9–11 | 1 | lattice 2 × 2 beside it, chain-link |
+
+- Sizes: data-buildingsize.js REAL_SIZE.radiotower (planned: each plan drawn at its sizes row). Map caps: battlesize.js MAP_CAP's default (no cap of its own; the maps run about 27 × 22 to 40 × 35, the site's raid map at least), well under 300 × 300, so #47's perf budget does not apply.
+- The pick: the shared picker (variantpick.js, key "radiotower"), weighted by the setting (centre, city, suburb, town, rural, highway; w.any where unset), the tile class and #42's size class for it (placement.js sizeFor: medium in a city's centre and blocks, the rooftop, the studio, the broadcast station; small elsewhere), on the building's hash dice. Hills and the country: the AM mast, FM/TV, the microwave relay, the radar, the military relay; highways: cell sites and relays; towns and suburbs: cell sites, the ham club, the fire repeater; cities: rooftop repeaters, broadcast studios, the emergency broadcast station.
+- Loot (data-radiotower.js TOWER_AREAS, rooms' types): the transmitter room (txroom: electronics, parts, scrap; hand-crank radios, batteries, soldering irons, flashlights), the generator shed (genshed: fuel, parts; tool kits, repair kits), the equipment shelter (eqshelter: electronics, parts; batteries), the cable store (cablestore: copper cable as scrap, connectors as parts, a little electronics). Decision: cable is scrap (copper) and parts, not a new item. lootsense.js LOOT_SENSE.radiotower: parts 0.95, fuel 0.8, tools 0.5, gadgets 0.4, never the Army's arms; its baseline 186.6 (tools/lootsensetest.js: the radio hut 218.4, a control building 238.9).
+- The rooms are furnished by the military and industrial styles' marks (comms, tequip, weather, nco, guardroom, avionics, tradar, records, medic, hparts; genshed, instruments). The scene lastbroadcast (registerScene, when: a radio tower's map): the operator who kept the emergency broadcast going, still at the transmitter room's console.
+
 ## Your radio and your allies' on the Radio layer
 The Radio layer draws your rings in blue and each Calder Coalition member's network in its colour with its reach and link; groups outside the coalition are never shown.
 - The user's request 2026-10-23: "Radio layer shows your radio distance and when allied you can see their radio distance".
