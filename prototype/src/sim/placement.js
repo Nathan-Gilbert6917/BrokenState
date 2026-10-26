@@ -133,6 +133,7 @@ export const PLACE_EXTRA = [
   ["church", { rural: 0.006, highway: 0.004 }],
   ["feedstore", { rural: 0.004, highway: 0.006 }],
   ["farmstand", { highway: 0.01 }],
+  ["stadium", { centre: 0.05, city: 0.02, suburb: 0.006, town: 0.012, highway: 0.004, scenic: 0.001, rural: 0.002 }], // issue #57: a pro stadium by the centre, a town's ballpark, a rodeo out in the country
 ];
 export const PLACE_KNOWN = 0.7; // the share of them known from the start in the known zone (shops.js SHOP.KNOWN)
 /**

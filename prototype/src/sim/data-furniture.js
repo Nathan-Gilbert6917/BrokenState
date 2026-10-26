@@ -374,6 +374,13 @@ export const FURNITURE_KINDS = {
   // own tables (combat.js BOX_LOOT, data-offices.js OFFICE_BOX).
   dentalchair:  P("Dental chair",         HALF, 30, 120, "two", S12, false, ["ward", "office"], "comfort:0.3"),
   turnstile:    P("Turnstile",            C(false, 1, false), 40, 150, "fixed", S1, false, ["office"], "none"),
+  // Sports stadiums and arenas (issue #57, stadiumlayout.js): a stand's rows of fixed seats, the goalposts and goals at
+  // the ends of a field, a basketball hoop on its stanchion, a scoreboard on a wall. All bolted down.
+  stadseat:     P("Stadium seats",        HALF, 20, 40, "fixed", S1, false, ["sport"], "none"),
+  goalpost:     P("Goalposts",            POLE, 60, 300, "fixed", S1, false, ["sport"], "none"),
+  soccergoal:   P("Goal",                 POLE, 30, 80, "fixed", S1, false, ["sport"], "none"),
+  hoop:         P("Basketball hoop",      POLE, 40, 250, "fixed", S1, false, ["sport"], "none"),
+  scoreboard:   P("Scoreboard",           FULL, 50, 300, "fixed", S1, false, ["sport"], "none", true),
   liftdoor:     P("Lift doors",           FULL, 80, 300, "fixed", S1, false, ["office", "library"], "none", true), // a central library's lift bank too (issue #34)
   judgebench:   P("Judge's bench",        STEEL, 60, 400, "fixed", S21, false, ["office"], "none"),
   jurybox:      P("Jury box",             HALF, 50, 300, "fixed", S21, false, ["office"], "none"),

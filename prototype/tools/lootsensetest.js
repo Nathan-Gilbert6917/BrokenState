@@ -49,6 +49,7 @@ const BASELINE = {
   theatre: 73.7, parkgarage: 557.6, chapel: 152.2, healthcentre: 508.4, milbunker: 1415.1, mountainbunker: 1827.5,
   govbunker: 1037.7, shelter: 151.4, prepper: 273.0, regionalmall: 17794.1, stripmall: 2735.9, outlet: 3947.1,
   cinema: 52.7, arcade: 53.4, mallservices: 89.9, mallrestrooms: 18.5, vacantunit: 5.9,
+  stadium: 10788.5, // issue #57: a new type, measured when it landed (--baseline stadium)
 };
 // Kinds whose loot moved past ±10% because a row was clearly wrong: the reason.
 const SHIFTED = {
@@ -57,7 +58,7 @@ const SHIFTED = {
   univlibrary: "its stacks are the bookstore's \"books\" rooms (above)",
 };
 
-const BIG = (key) => !!(BUILDINGS[key].compound || BUILDINGS[key].campus || BUILDINGS[key].complex);
+const BIG = (key) => !!(BUILDINGS[key].compound || BUILDINGS[key].campus || BUILDINGS[key].complex || BUILDINGS[key].venue); // venue: a stadium (issue #57)
 const cat = (k) => (GEAR[k] && GEAR[k].cat) || "";
 const value = (def) => { let v = 0; for (const [k, [p, lo, hi]] of Object.entries(def.loot)) v += Math.min(0.95, p) * ((lo + hi) / 2) * supValue(k); for (const [k, p] of def.gear) v += p * ((GEAR[k] && GEAR[k].value) || 0); return v; };
 const listOf = (s) => (Array.isArray(SITES[s]) ? SITES[s] : SITES[s].list).map((e) => (Array.isArray(e) ? e[0] : e));

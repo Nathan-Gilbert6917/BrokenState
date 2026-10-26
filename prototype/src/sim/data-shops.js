@@ -27,6 +27,7 @@
 // ROWS: the new kinds' rows in the find tables, by table (each module merges its own: loot.js SITE_FINDS …).
 
 import { OFFICE_KINDS, OFFICE_AREAS, OFFICE_W, OFFICE_FIRMS, OFFICE_ROWS } from "./data-offices.js"; // the office buildings of every kind, with their firms (issue #27)
+import { STADIUM_KINDS, STADIUM_AREAS, STADIUM_ROWS } from "./data-stadiums.js"; // sports stadiums and arenas (issue #57)
 
 /** @typedef {{ wall: string, trim: string, sign: string, text: string, accent: string, roof?: string, style: number }} Look */
 /** @typedef {{ fl?: string, depth?: number, wide?: boolean, flat?: number, storeys?: [number, number], room?: string, back?: string, office?: string, media?: string, truck?: boolean, hotel?: string, libs?: Record<string, number>, variants?: string[] }} Plan */
@@ -149,6 +150,7 @@ export const NEW_KINDS = {
     areas: ["liquor", "liquor", "store", "office"], size: 0.5, storeys: [1, 1],
   },
   ...OFFICE_KINDS, // the office buildings (data-offices.js)
+  ...STADIUM_KINDS, // the stadiums and arenas (data-stadiums.js, issue #57)
 };
 
 // ---------- their raid rooms (combat.js AREAS; tags: loot.js AREA_TAGS) ----------
@@ -219,6 +221,7 @@ export const AREA_DEFS = {
   libtech: { tags: ["tech", "office", "school"], def: { name: "Computers", boxes: ["computer", "printer"],
     loot: { electronics: [0.2, 1, 1], parts: [0.2, 1, 1], scrap: [0.3, 1, 2] }, gear: [["laptop", 0.01], ["phone", 0.01], ["camera", 0.005], ["handradio", 0.005]] } },
   ...OFFICE_AREAS,
+  ...STADIUM_AREAS, // a venue's concessions, suites, team store, security, press box, groundskeeping (issue #57)
 };
 
 // ---------- where each stands (shops.js) ----------
@@ -632,6 +635,7 @@ export const ROWS = {
 
 // The office buildings' rows (data-offices.js), each table's own rows first.
 for (const [t, rows] of Object.entries(OFFICE_ROWS)) ROWS[t] = { ...rows, ...(ROWS[t] || {}) };
+for (const [t, rows] of Object.entries(STADIUM_ROWS)) ROWS[t] = { ...rows, ...(ROWS[t] || {}) }; // the stadiums' (data-stadiums.js, issue #57)
 
 /** Merges rows into a table, never over a row it has (a module's own rows win). @param {Record<string, any>} into @param {Record<string, any>} [rows] */
 export function mergeRows(into, rows) {

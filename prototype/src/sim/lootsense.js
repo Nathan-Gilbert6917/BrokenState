@@ -198,4 +198,6 @@ export const LOOT_SENSE = {
   mallservices:   S({ drugs: 0.5, gadgets: 0.5 }, ["explosive"], { note: "mall security's gun rack" }),
   mallrestrooms:  S({ drink: 0.25, food: 0.25 }, NO_GUNS),
   vacantunit:     S({ food: 0.1 }, NO_GUNS),
+  // Stadiums and arenas (issue #57).
+  stadium:        S({ food: 0.95, drink: 0.95, sports: 0.9, liquor: 0.7, tools: 0.5, fuel: 0.8 }, ARMY, { note: "stadium security's radios and batons, an officer's pistol now and then" }),
 };

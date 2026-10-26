@@ -92,6 +92,23 @@ export const REAL_SIZE = {
   regionalmall: { set: "city", own: true }, stripmall: { set: "town", own: true }, outlet: { set: "town", own: true },
   cinema: { set: "city", own: true }, arcade: { set: "city", own: true }, mallservices: { set: "city", own: true },
   mallrestrooms: { set: "city", own: true }, vacantunit: { set: "city", own: true },
+  // #57's stadiums and arenas (stadium.js): the venue's own plans, a sizes row per venue (its plan's id): w × d the
+  // bowl (the stands round the field, an arena's or a complex's building) in metres, its storeys (the main stand's). A
+  // venue is several buildings on one map: only the storeys rule applies to the main building the archetype tests see.
+  stadium: { set: "city", own: true, storeys: [1, 4], sizes: {
+    profootball: { w: [186, 206], d: [124, 136], storeys: [3, 4] }, // a 130 × 64 m field (its end zones and sidelines), a bowl of four stands
+    ballpark:    { w: [176, 190], d: [164, 172], storeys: [3, 4] }, // a 120 × 116 m field, the stands round home plate and down the lines, outfield bleachers
+    soccer:      { w: [165, 175], d: [130, 140], storeys: [2, 3] }, // a 105 × 68 m pitch and its run-off
+    arena:       { w: [110, 124], d: [92, 100], storeys: [3, 3] },  // the arena building: the rink or the court, the bowl round it
+    college:     { w: [150, 156], d: [126, 134], storeys: [2, 3] }, // a horseshoe: both sides, bleachers at one end
+    highschool:  { w: [156, 156], d: [112, 116], storeys: [2, 2] }, // a field inside its running track, the home stand and its press box
+    minorleague: { w: [140, 150], d: [124, 130], storeys: [2, 2] },
+    speedway:    { w: [292, 292], d: [140, 146], storeys: [3, 4] }, // a 292 × 108 m oval, the grandstand along the front straight
+    horse:       { w: [244, 244], d: [118, 124], storeys: [3, 3] }, // a 244 × 88 m dirt oval, the grandstand and clubhouse
+    complex:     { w: [120, 140], d: [70, 80], storeys: [2, 2] },   // the building: three or four courts (a turf hall among them)
+    tennis:      { w: [96, 100], d: [86, 90], storeys: [2, 2] },    // the centre court's bowl (the outer courts beside it)
+    rodeo:       { w: [84, 84], d: [80, 84], storeys: [2, 2] },     // an 84 × 48 m dirt arena, the grandstand on one side
+  } },
   // Institutions
   clinic:      { w: [15, 25], d: [12, 20], storeys: [1, 2], set: "town" },
   infirmary:   { w: [15, 25], d: [12, 20], storeys: [1, 2], set: "rural" },
