@@ -37,6 +37,7 @@
 //               station's booth; a newspaper's press room) at the front; the control room, the archive and a break
 //               room behind; upstairs the editorial offices, the station manager's office, the tape library and the
 //               transmitter room.
+import { registerVariants, pickVariant as pickRegistered } from "./variantpick.js"; // the shared picker (issue #41)
 import { planSlug, stampPlan } from "./planname.js"; // the plan's id and name on the spec (issue #40)
 import { REAL_SIZE } from "./data-buildingsize.js"; // the sizes (issue #24 took over SIZE)
 
@@ -654,9 +655,10 @@ export const OFFICE_VARIANTS = {
 // (planname.js planSlug: "Brutalist office block" → "brutalist-office-block", issue #40).
 /** @param {string} kind @param {any} rng @param {any} o */
 export function pickVariant(kind, rng, o) {
-  const L = OFFICE_VARIANTS[kind];
-  if (o && o.plan != null) { const i = typeof o.plan === "number" ? o.plan : L.findIndex((v) => v.name === o.plan || planSlug(v.name) === o.plan); if (i >= 0 && L[i]) return L[i]; }
-  return L[rng.int(0, L.length - 1)];
+  // variantpick.js (issue #41): "office:<kind>", pinned by index, id or name, else one draw of the dice (only when not
+  // pinned), uniform, as before.
+  return /** @type {any} */ (pickRegistered(`office:${kind}`, rng, { plan: o && o.plan != null ? o.plan : null, r: () => rng.next() })).src;
 }
 const dispatch = (kind) => (rng, o, plan, max) => { const v = pickVariant(kind, rng, o || {}); const spec = v.make(kind)(rng, o || {}, plan, max); stampPlan(spec, planSlug(v.name), v.name); spec.variant = v.name; return spec; }; // spec.vid / spec.vname (planname.js, issue #40); variant: the name's older field (the tower's restorey pins by it)
+for (const kind of Object.keys(OFFICE_VARIANTS)) registerVariants(`office:${kind}`, OFFICE_VARIANTS[kind].map((v) => ({ id: planSlug(v.name), name: v.name, src: v })), { index: true, byName: true }); // the registry's views (variantpick.js, issue #41)
 export const OFFICE_PLANS = { storefront: dispatch("storefront"), bizpark: dispatch("bizpark"), tower: dispatch("tower"), cityhall: dispatch("cityhall"), courthouse: dispatch("courthouse"), callcenter: dispatch("callcenter"), techoffice: dispatch("techoffice"), station: dispatch("station") };

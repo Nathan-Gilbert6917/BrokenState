@@ -11,7 +11,9 @@
 // near its kind's). "classic" is #29's plan of the kind, as it was: a hotel with a chain and no variant (one made before
 // the variants) keeps it.
 //
-// No imports: pois.js (the POI's name), hotels.js, citycrawl.js and hotellayout.js all read it.
+// One import, the shared picker (variantpick.js, issue #41: a leaf): pois.js (the POI's name),
+// hotels.js, citycrawl.js and hotellayout.js all read it.
+import { registerVariants, pickFrom } from "./variantpick.js";
 
 /** @typedef {{ id: string, kind: string, name: string, w?: Record<string, number>, size?: { w?: number[], d?: number[], storeys?: number[] }, boxK?: number }} HotelVariant */
 /** @type {HotelVariant[]} */
@@ -87,10 +89,11 @@ export const hotelVariantName = (id) => { const v = hotelVariantById(id); return
 export function hotelVariantFor(kind, ids, setting, r) {
   let list = (ids && ids.length ? ids.map(hotelVariantById).filter(Boolean) : hotelVariantsOf(kind)).filter((v) => v && v.kind === kind);
   if (!list.length) list = hotelVariantsOf(kind);
-  const wt = (v) => (setting && v.w && v.w[setting] != null ? v.w[setting] : 1);
-  const tot = list.reduce((a, v) => a + wt(v), 0);
-  if (!(tot > 0)) return list[Math.floor(r * list.length) % list.length].id;
-  let x = r * tot;
-  for (const v of list) { x -= wt(v); if (x < 0) return v.id; }
-  return list[list.length - 1].id;
+  // variantpick.js (issue #41): the shared rule on the chain's list in its own order (pickFrom), weighted by the setting
+  // (1 where unset), on the caller's dice r.
+  const views = list.map((v) => VIEW.get(v.id));
+  return /** @type {any} */ (pickFrom(views, null, { setting: setting || null, r }, { missing: 1 })).id;
 }
+// The registry's views: "hotel:<kind>" (variantpick.js), each variant's setting weights.
+const VIEW = new Map(HOTEL_VARIANTS.map((v) => [v.id, { id: v.id, name: v.name, w: { ...(v.w || {}) }, src: v }]));
+for (const kind of [...new Set(HOTEL_VARIANTS.map((v) => v.kind))]) registerVariants(`hotel:${kind}`, HOTEL_VARIANTS.filter((v) => v.kind === kind).map((v) => VIEW.get(v.id)));

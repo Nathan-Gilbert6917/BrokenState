@@ -79,6 +79,7 @@ import { pickLayout, settingOfTile, LAYOUTS } from "./buildvariants.js"; // the 
 import { placing, tileClass } from "./placement.js"; // a new world's tile class for the variant picker (issue #42)
 export { libraryPlan }; // mall.js: the civic strip's library (#30)
 import { planId, planName } from "./planname.js"; // every plan's id and name, one field (spec.vid / spec.vname: issue #40)
+import { registerVariants, pickVariant } from "./variantpick.js"; // the shared picker (issue #41): the schools' plans
 import { whereOf } from "./settings.js"; // the one setting vocabulary (centre, city, suburb, town, rural, highway: issue #40, #42)
 export { planId, planName }; // the readers' one way to a plan's id and name (pois.js, citycrawl.js placeHint, the gallery, the tests)
 
@@ -1925,10 +1926,12 @@ export const SCHOOL_VARIANTS = [
   { id: "middle", name: "Middle school", w: { rural: 1, town: 2, city: 1 } },
   { id: "elementary", name: "Elementary school", w: { rural: 2, town: 3, city: 1 } },
 ];
+// The registry's view (variantpick.js, issue #41): "school", a zero weight 0.01 (a school never quite ruled out), the
+// walk Rng.weighted's (le), one draw only when not pinned, as before.
+registerVariants("school", SCHOOL_VARIANTS.map((v) => ({ id: v.id, name: v.name, w: Object.fromEntries(Object.entries(v.w).map(([k, n]) => [k, n || 0.01])), src: v })), { le: true });
 function schoolVariant(rng, o = {}) {
-  const pinned = o.plan ? SCHOOL_VARIANTS.find((v) => v.id === o.plan) : null;
   const set = o.setting === "city" || o.setting === "rural" ? o.setting : "town";
-  const v = pinned || rng.weighted(SCHOOL_VARIANTS, (q) => q.w[set] || 0.01);
+  const v = /** @type {any} */ (pickVariant("school", rng, { plan: typeof o.plan === "string" ? o.plan : null, setting: set, r: () => rng.next() })).src;
   const spec = SCHOOL_PLANS[v.id](rng);
   return { ...spec, vid: v.id, vname: v.name };
 }
