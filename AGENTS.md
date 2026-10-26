@@ -21,3 +21,5 @@ Every major game feature, grouped by area, one line each with its key modules an
 ## Testing
 
 Never run the full suite (`npm test`): it takes hours. Run only the tests your change affects, by the recipe in `docs/agents/testing.md` (`node prototype/tools/affected.js` lists them).
+
+**The merge gate.** Before merging to dev, run `node tools/gate.js` from `prototype/`: a merge that adds a failing check is not done. It runs the typecheck and the shared core tests and compares their failing checks with `tools/gate-baseline.json`; `--against origin/dev` proves a failure is old. See `docs/agents/testing.md`.
