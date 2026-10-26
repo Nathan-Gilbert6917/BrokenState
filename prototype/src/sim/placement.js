@@ -9,7 +9,7 @@
 // - placeWeight(key, cls), sizeFor(key, cls): a kind's weight and its variant's size class on a class (0 / null where it
 //   never stands). sizeClassOf(w, d, storeys): a footprint's size class by its floor area.
 // - placementCtx(state, tile, key): what the variant picker (variantpick.js pickVariant, #41) is passed: { tileClass,
-//   setting (rural | town | city, buildvariants.js's word), size } for a building of kind key on that tile.
+//   setting (the six: centre, city, suburb, town, rural, highway; settingOfClass gives buildvariants.js's three), size } for a building of kind key on that tile.
 // - New worlds only (state.placeV; save.js marks an older save placeLegacy, worldcfg.js legacyPlace): a new world's
 //   POI lists draw their kinds by the table's weights (pois.js generatePois), its shops' and its crawl blocks' picks are
 //   weighted by it (shops.js shopExtras / shopPlaces, citycrawl.js genBlock), a hotel, a mall or a bunker never stands
@@ -62,6 +62,8 @@ function classOf(state, t) {
   if (t.terrain === "forest" || t.terrain === "hills" || t.terrain === "mountain") return "scenic";
   return "rural";
 }
+/** A class as one of the six settings (#40's settings.js SETTINGS: centre, city, suburb, town, rural, highway): coast and scenic land are rural. @param {TileClass | string | null | undefined} cls */
+export const settingAtClass = (cls) => (cls === "coast" || cls === "scenic" || !cls ? "rural" : cls);
 /** A class as the three settings the layouts read (buildvariants.js): rural | town | city. @param {TileClass | string | null | undefined} cls */
 export const settingOfClass = (cls) => (cls === "centre" || cls === "city" ? "city" : cls === "suburb" || cls === "town" ? "town" : "rural");
 /**
@@ -92,18 +94,19 @@ export function sizeClassOf(w, d, storeys = 1) {
 }
 /**
  * What the variant picker is passed for a building of kind key on a tile (variantpick.js pickVariant's ctx, #41):
- * { tileClass, setting, size }. size is the table's for the kind on the class, null where it does not stand.
+ * { tileClass, setting, size }: setting the six-word one (settingAtClass: coast and scenic land rural; settingOfClass gives
+ * the layouts' three), size the table's for the kind on the class, null where it does not stand.
  * @param {State} state @param {Tile | number} tile @param {string} key
- * @returns {{ tileClass: TileClass, setting: "rural" | "town" | "city", size: SizeClass | null }}
+ * @returns {{ tileClass: TileClass, setting: string, size: SizeClass | null }}
  */
 export function placementCtx(state, tile, key) {
   const cls = tileClass(state, tile);
-  return { tileClass: cls, setting: /** @type {any} */ (settingOfClass(cls)), size: sizeFor(key, cls) };
+  return { tileClass: cls, setting: settingAtClass(cls), size: sizeFor(key, cls) };
 }
 /** The same for a crawl block. @param {any} c @param {number} n @param {string} key @param {string} [setting] */
 export function crawlCtx(c, n, key, setting) {
   const cls = crawlClass(c, n, setting);
-  return { tileClass: cls, setting: /** @type {any} */ (settingOfClass(cls)), size: sizeFor(key, cls) };
+  return { tileClass: cls, setting: settingAtClass(cls), size: sizeFor(key, cls) };
 }
 
 // ---------- a new world's picks ----------

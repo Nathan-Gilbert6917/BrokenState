@@ -135,7 +135,7 @@ check(!tally.notHere.length, `no POI where the table says its kind never stands 
   const st = firstWorld;
   const t = st.tiles.find((x) => tileClass(st, x) === "centre");
   const ctx = placementCtx(st, t, "hospital");
-  check(ctx.tileClass === "centre" && ctx.setting === "city" && ctx.size === "huge", `the picker's ctx: ${JSON.stringify(ctx)}`);
+  check(ctx.tileClass === "centre" && ctx.setting === "centre" && ctx.size === "huge", `the picker's ctx: ${JSON.stringify(ctx)}`);
 }
 
 // ---------- 3. older worlds ----------
