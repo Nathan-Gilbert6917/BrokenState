@@ -30,7 +30,7 @@ import { GEAR, supValue } from "../src/sim/data.js";
 
 const QUICK = !!process.env.BS_QUICK;
 const SEEDS = Math.max(2, Number(process.argv[2]) || (QUICK ? 3 : 6));
-const LOOT_SEEDS = 10; // a plan's loot to the square metre: its few containers need the seeds (quick or not)
+const LOOT_SEEDS = 20; // a plan's loot to the square metre: its few containers need the seeds (quick or not)
 let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) { passes++; console.log(`  ok: ${msg}`); } else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
 const t0 = performance.now();
@@ -57,6 +57,9 @@ const cityT = world.tiles.find((t) => t.loc && t.loc.type === "city"), townT = w
 const value = (def) => { let v = 0; for (const [k, [p, lo, hi]] of Object.entries(def.loot)) v += Math.min(0.95, p) * ((lo + hi) / 2) * supValue(k); for (const [k, p] of def.gear) v += p * ((GEAR[k] && GEAR[k].value) || 0); return v; };
 const worth = (m, k = 1) => { const rooms = new Map(m.rooms.map((r) => [r.id, r])); let v = 0; for (const c of m.containers) { const a = rooms.get(c.area); if (a && a.type && !a.outdoor) v += value(boxLoot(a.type, c.kind, false)) * k; } return [v, m.rooms.filter((r) => !r.outdoor).reduce((x, r) => x + r.w * r.h, 0)]; };
 const interior = (m) => { const B = m.building; let n = 0; for (const F of m.floors || [{ cells: m.cells }]) for (let y = B.y0; y < B.y0 + B.h; y++) for (let x = B.x0; x < B.x0 + B.w; x++) { const c = F.cells[y * m.w + x]; if (c && c.k !== "void" && c.k !== "wall") n++; } return n; };
+// Plans stocked on purpose at real scale (civicvariants.js: a cabinet more in their exam rooms, the country's clinic and
+// a dental practice): more containers to the square metre than drawn, their worth held to the drawn plan's (LOOT_K).
+const STOCKED = new Set(["clinic/rural", "clinic/dental"]);
 const SITE_PLANS = new Set(["hospital/medcampus", "church/churchyard", "police/hqsite", "firestation/hqsite"]);
 for (const kind of KINDS) {
   const bad = [], sig = [], capBad = [], dens = [], worthOff = [];
@@ -88,7 +91,7 @@ for (const kind of KINDS) {
       D.va += va; D.fa += fa; D.vb += vb; D.fb += fb;
     }
     const k = (D.a / D.ia) / Math.max(1e-9, D.b / D.ib); // over every seed and setting: a small plan's few containers are noisy alone
-    if (id !== "general" && (k < 0.75 || k > 1.25)) dens.push(`${id} ×${k.toFixed(2)}`);
+    if (id !== "general" && (k < 0.75 || k > (STOCKED.has(`${kind}/${id}`) ? 1.5 : 1.25))) dens.push(`${id} ×${k.toFixed(2)}`);
     const kv = (D.va / D.fa) / Math.max(1e-9, D.vb / D.fb); // the loot to the square metre (#43's economy), with the plan's worth (LOOT_K)
     if (id !== "general" && (kv < 0.9 || kv > 1.1)) worthOff.push(`${id} ×${kv.toFixed(2)}`);
     if (!SITE_PLANS.has(`${kind}/${id}`)) for (const t of [cityT, townT]) {
