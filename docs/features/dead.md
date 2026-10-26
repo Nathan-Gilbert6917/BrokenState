@@ -4,7 +4,7 @@ Detail for section 8 of [docs/agents/features.md](../agents/features.md). `[name
 
 Contents: [Bosses on 2 × 2 cells](#bosses-on-2--2-cells) · [Hive crawl](#hive-crawl) · [Hordes](#hordes) · [Special dead and the dead beasts](#special-dead-and-the-dead-beasts) · [Attacked alone (2026-10-19)](#attacked-alone-2026-10-19) · [The counter-dead](#the-counter-dead) · [The Digger's tunnels](#the-diggers-tunnels) · [The pool of the dead widens with the years](#the-pool-of-the-dead-widens-with-the-years)
 
-The dead on the land (how many there are per tile and per POI, their caps, kills, reinforcements and the daily recalculation, issue #65): [travel.md](travel.md#the-dead-on-the-land-tile-and-poi-populations).
+The dead on the land (how many there are per tile and per POI, their caps, kills, reinforcements and the daily recalculation, issue #65): [travel.md](travel.md#the-dead-on-the-land-tile-and-poi-populations); their spread between tiles out from the towns, cities and hives (issue #66): [travel.md](travel.md#spread-between-tiles).
 
 ## Bosses on 2 × 2 cells
 The two boss dead take 2 × 2 cells.
