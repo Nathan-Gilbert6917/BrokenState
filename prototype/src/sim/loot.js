@@ -54,6 +54,7 @@ export const SITE_TAGS = {
   crash_mil: ["military", "crash"], crash_cargo: ["crash", "camp", "medical"], crash_med: ["medical", "crash"],
   crash_news: ["tech", "crash"], airdrop: ["military", "camp", "medical"],
   convoy: ["military", "travel", "camp"], // miltrucks.js: an abandoned Army convoy
+  zoo: ["farm", "medical", "shop", "kitchen", "outdoor"], // a zoo (issue #59, zoo.js): its keepers, vet, café and gift shop
   // Points of interest (pois.js): the small places a tile holds besides its site.
   house: ["home", "kitchen"], neighbourhood: ["home", "kitchen", "garage"], garage: ["garage", "tools"], corner: ["shop", "kitchen"],
   pizza: ["kitchen", "shop"], farmstand: ["farm", "shop", "kitchen"], shed: ["tools", "farm", "garage"], blind: ["hunt", "outdoor"],
@@ -840,6 +841,7 @@ for (const k of ["cookbook", "gardenbook", "survivalbook", "diybook", "medbook",
 addTags("armymanual", "books", "military"); addTags("tcards", "books"); addTags("silverware", "books"); addTags("telescope", "outdoor");
 addTags("traumakit", "medical", "military", "police", "fire", "crash"); // a trauma kit (the crash start's own, a bunker's aid station)
 addTags("makeshiftpick", "prison", "crime"); // a shiv-maker's lock pick, in the cells
+addTags("tranqdarts", "medical", "farm"); // a zoo vet's darts (issue #59, data-zoo.js): the vet's and the farm's sedatives
 // The things an office's desks and a front desk keep: a torch and spare batteries, a smoker's pack, a bag.
 addTags("flashlight", "office", "prison"); addTags("batteries", "office"); addTags("cigarettes", "office"); addTags("backpack", "office");
 addTags("handradio", "police", "prison"); // the guards' radios (a prison's armory and its control room)

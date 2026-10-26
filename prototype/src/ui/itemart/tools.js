@@ -331,6 +331,12 @@ export const GEAR_ART = {
     R(p, 2, 2, 13, 4, C.green); H(p, 3, 11, 3, C.greenL);
     for (const y of [6, 10]) for (const x of [3, 7, 11]) { R(p, x, y, x + 1, y + 2, C.white); p.set(x + 1, y + 2, C.whiteD); p.set(x, y, C.paperL); }
   },
+  tranqdarts: (p) => { // a zoo vet's case of tranquilliser darts (issue #59): an open grey case, three darts in its foam, a vial
+    box(p, 0, 5, 15, 14, K.gun, "#454a52", shade(K.gun, -0.3)); R(p, 1, 6, 14, 13, "#2b2f35");
+    for (const y of [7, 9, 11]) { H(p, 2, 10, y, C.silver); R(p, 11, y, 12, y, C.orange); p.set(2, y, C.silverD); }
+    R(p, 13, 7, 14, 12, C.white); R(p, 13, 7, 14, 8, C.blue);
+    R(p, 1, 1, 14, 4, shade(K.gun, 0.15)); H(p, 1, 14, 4, shade(K.gun, -0.3));
+  },
   puritabs: (p) => {
     R(p, 3, 1, 8, 3, C.blue); H(p, 3, 8, 1, C.blueL);
     box(p, 3, 4, 8, 15, K.amber, K.amberL, shade(K.amber, -0.3));

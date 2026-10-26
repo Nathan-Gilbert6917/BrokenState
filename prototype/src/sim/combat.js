@@ -174,6 +174,7 @@ import { campRaidMap, campRaidUnits, campSleeperTurn, tentBoxLoot, campAfter } f
 import { furnitureCells } from "./data-furniture.js"; // the furniture and appliance catalogue: its cells (merged into CELL below)
 import { MUSEUM_BOX } from "./data-museums.js"; // a museum's exhibit vehicles (issue #58)
 import { NEW_KINDS, AREA_DEFS } from "./data-shops.js"; // the shops and services new as places: their raid rooms
+import { ZOO_BOX } from "./data-zoo.js"; // a zoo's dart cabinet and feed crates (issue #59)
 import { OFFICE_BOX } from "./data-offices.js"; // the office buildings' new pieces: their own tables (issue #27)
 import { NEWSHOP_BOX } from "./data-newshops.js"; // issue #55: a showroom's furniture for sale, the change machine
 
@@ -7709,6 +7710,7 @@ export function createRaid(state, setup) {
     if (map.complex) say(b, `You reach ${b.place}: ${map.plan.houses.length} buildings behind ${map.plan.perimeter ? (map.plan.perimeter.wall ? "a wall and a fence" : "a double fence") : "the street"}. ${map.containers.length} places to search in ${rooms} rooms${st}.`, "info"); // prison.js: a prison's or a jail's complex
     else if (map.farmstead) say(b, `You reach ${b.place}: ${map.plan.houses.length} buildings round the yard. ${map.containers.length} places to search in ${rooms} rooms${st}.`, "info"); // farmstead.js: a farm or a ranch
     else if (map.campus) say(b, `You reach the campus of ${b.place}: ${map.plan.houses.length} buildings. ${map.containers.length} places to search in ${rooms} rooms${st}.`, "info"); // campus.js campusMap: a college campus
+    else if (map.zoo) say(b, `You reach ${b.place}, ${String(map.plan.kindName || "a zoo").toLowerCase()}: ${map.plan.houses.length} buildings among the enclosures. ${map.containers.length} places to search in ${rooms} rooms${st}.`, "info"); // zoo.js zooMap: a zoo (issue #59)
     else if (map.street) say(b, `You reach ${map.plan.word ? "" : "the street at "}${b.place}: ${map.plan.houses.length} ${map.plan.word || "houses"}. ${map.containers.length} places to search in ${rooms} rooms${st}.`, "info"); // buildingmaps.js streetMap: a neighbourhood
     else say(b, `You reach the ${pick.name.toLowerCase()} at ${b.place}. ${map.containers.length} places to search in ${rooms} rooms${st}.`, "info");
     say(b, map.complex ? prisonIntro(b) : interiorIntro(b), "info");
@@ -7794,7 +7796,7 @@ function raidTurn(b) {
   const noise = b.noise;
   b.noise = 0;
   const K = RAID_HEAT;
-  R.heat = Math.min(100, R.heat + K.turn * (R.big ? (R.plan && R.plan.campus ? campusHeatRate(b) : raidHeatRate(b.w, b.h)) : 1) + noise * K.noise + b.infection * K.infection); // a big map (battlesize.js raidBig): the clock runs slower
+  R.heat = Math.min(100, R.heat + K.turn * (R.big ? (R.plan && (R.plan.campus || R.plan.zoo) ? campusHeatRate(b) : raidHeatRate(b.w, b.h)) : 1) + noise * K.noise + b.infection * K.infection); // a big map (battlesize.js raidBig): the clock runs slower
   const stage = Math.min(3, Math.floor(R.heat / K.stage));
   if (stage > R.stage) {
     R.stage = stage;
@@ -7961,7 +7963,7 @@ export function searchBox(state, b, u, box, open = false, quick = false) {
   const party = state.parties.find((x) => x.id === b.setup.partyId);
   if (u.xpT && !box.contents) u.xpT.boxes++; // skills.js: Scavenging XP for each container opened
   const rich = box.kind === "body" ? 1 : R.richness * Math.min(FLOOR_RICH.cap, Math.pow(FLOOR_RICH.perFloor, box.f || 0)) * (box.rich || 1) * (box.lootK || 1); // lootK: a civic plan at real scale holds its drawn plan's worth a square metre (civicvariants.js LOOT_K, issue #49); upper storeys are less picked over (buildingmaps.js); a nest's floor richer still (floorfolk.js)
-  const reward = box.kind === "body" ? 1 : (R.reward ?? 1) * (box.truck || !R.big ? 1 : R.plan && (R.plan.campus || R.plan.civicSite) ? campusLootShare(b, box) : R.natMap ? raidLootShare(R.natMap[0], R.natMap[1]) : raidLootShare(b.w, b.h)); // a campus's or a civic site's (civicsite.js, issue #49) container what its building's own map's would; a building at real size (R.natMap): its containers hold what its plan's map's did (as many to the square metre, each as full) // buildingmaps.js rewardMult: city sites pay more, the countryside less; a map past the old Large has more containers, each holds a little less (battlesize.js BIG)
+  const reward = box.kind === "body" ? 1 : (R.reward ?? 1) * (box.truck || !R.big ? 1 : R.plan && (R.plan.campus || R.plan.civicSite || R.plan.zoo) ? campusLootShare(b, box) : R.natMap ? raidLootShare(R.natMap[0], R.natMap[1]) : raidLootShare(b.w, b.h)); // a campus's a civic site's (civicsite.js, issue #49) or a zoo's (zoo.js, issue #59) container what its building's own map's would; a building at real size (R.natMap): its containers hold what its plan's map's did (as many to the square metre, each as full) // buildingmaps.js rewardMult: city sites pay more, the countryside less; a map past the old Large has more containers, each holds a little less (battlesize.js BIG)
   // Roll what is inside (once); anything that does not fit stays in the container.
   if (!box.contents) {
     const sup = {}, gear = [];
@@ -8405,3 +8407,4 @@ for (const [k, d] of Object.entries(AREA_DEFS)) if (!AREAS[k]) AREAS[k] = d.def;
 for (const [k, d] of Object.entries(NEW_KINDS)) if (!AREA_SETS[k]) AREA_SETS[k] = d.areas;
 for (const [k, d] of Object.entries(OFFICE_BOX)) if (!BOX_LOOT[k]) BOX_LOOT[k] = d;
 for (const [k, d] of Object.entries(NEWSHOP_BOX)) if (!BOX_LOOT[k]) BOX_LOOT[k] = d;
+for (const [k, d] of Object.entries(ZOO_BOX)) if (!BOX_LOOT[k]) BOX_LOOT[k] = d; // data-zoo.js (issue #59)
