@@ -7180,6 +7180,7 @@ export const AREA_SETS = {
   military: ["armory", "barracks", "motorpool", "warehouse"], airbase: ["hangar", "barracks", "armory", "warehouse"], prison: ["cellblock", "cellblock", "kitchen", "armory", "clinic"],
   univ: ["lab", "lab", "office", "kitchen"], college: ["office", "lab", "kitchen", "lockers"], dam: ["control", "workshop", "warehouse"], airport: ["hangar", "warehouse", "store", "office"],
   factory: ["workshop", "warehouse", "office", "garage"], quarry: ["workshop", "garage", "campsite"],
+  datacenter: ["control", "office", "garage", "workshop"], // a data centre's street map (issue #51): the halls, offices, generators, the dock
   forest: ["cabin", "campsite", "wreck"], hills: ["cabin", "campsite"], mountain: ["campsite", "cabin"], plains: ["farmhouse", "barn", "wreck"],
   suburb: ["house", "house", "house", "garage"], water: ["campsite", "wreck"],
   // A road with no site on it, and a bridge: the cars people left on the road (roadcars, placed on the road itself).
