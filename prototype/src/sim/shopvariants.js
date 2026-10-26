@@ -738,9 +738,11 @@ export function shopVariantSpec(key, rng, o = {}, withPlan = (l) => l, plan = {}
   }
   const s = { side: colSide, other, col: v.lay === "side" || v.lay === "wrap" ? colSide : null };
   const exits = [];
+  let bay = null; // #23's annex on a new save's shaped plan (buildingmaps.js shopShape): the bay beside the box, the box without it
   if (v.bays) { // a service bay at one end (the other end from the side column), its roller door on the front
     const leaf = R(v.bays.leaf || "bay"), atLeft = !flip;
     const b = [sz(v.bays.w, rng), leaf];
+    bay = { right: !atLeft, w: b[0] + 2, leaf: Object.assign(leaf, { nextTo: ["sales", "stock"] }), program };
     program = Xs(atLeft ? [b, ["*", program]] : [["*", program], b]);
     exits.push({ side: "front", roles: ["bays"], chance: 1, roller: true, width: v.bays.width || 2, lock: 0.2, name: v.bays.ex || "Bay door" });
     if (v.bays.back) exits.push({ side: "back", roles: ["bays"], chance: 1, roller: true, width: v.bays.width || 2, lock: 0.2, name: "Back bay door" });
@@ -760,7 +762,7 @@ export function shopVariantSpec(key, rng, o = {}, withPlan = (l) => l, plan = {}
     bw, bh, program, exits, front: { width: v.fw || T.fw || (bw >= 14 ? 2 : 1) }, openDoors: T.openDoors ?? 0.3,
     ground: v.ground || T.ground || "town", pumps: v.pumps ?? T.pumps ?? 0,
     storeys: n, upper: up ? (g, r, ctx) => scaleBoxes(up(g, r, { ...ctx, type }), bk) : null, foot: footOf(bw, bh),
-    stairs: { roles: BACK_STAIRS }, layout: { id: v.id, name: v.name }, vname: v.name, vid: v.id, backParts,
+    stairs: { roles: BACK_STAIRS }, layout: { id: v.id, name: v.name }, vname: v.name, vid: v.id, backParts, bay,
   };
 }
 

@@ -992,7 +992,8 @@ function shop(rng, v, o = {}) {
   }
   if (!o.legacy && hasVariants(v)) { // issue #35: the type's 12 named plans (shopvariants.js), #23's shape on a new save's
     const sp = shopVariantSpec(v, rng, o, withPlan, planOf(v === "gasstation" ? "gas" : v, o));
-    return o.shapes ? shopShape(rng, sp, sp.backParts, null) : sp;
+    if (!o.shapes) return sp;
+    return sp.bay ? shopShape(rng, { ...sp, program: sp.bay.program }, sp.backParts, sp.bay) : shopShape(rng, sp, sp.backParts, null); // a car wash's or a service bay's plan: the bay #23's annex beside the shop
   }
   const gas = v === "gasstation", truck = v === "truckstop";
   const plan = planOf(v === "gasstation" ? "gas" : v, o); // data-shops.js: the franchise's layout
