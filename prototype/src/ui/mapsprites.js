@@ -2571,6 +2571,7 @@ const POI_PAINT = {
   house: paintHouse, neighbourhood: paintNeighbourhood, garage: paintGarage, corner: paintCorner, pizza: paintPizza,
   farmstand: paintFarmstand, shed: paintShed, blind: paintBlind, campsite: paintCampsite, hikercamp: paintHikercamp, mineshack: paintMineshack, bunker: () => paintBunkerPortal(false), govbunker: () => paintBunkerPortal(true), shelter: paintFalloutShelter, prepper: paintPrepper, // bunkers (issue #26)
   pawnshop: paintPawnShop, // sim/shops.js
+  stripmall: paintMall, outlet: paintMall, // sim/mall.js (issue #30): the mall's own sprite for now
   jail: paintPolice, // sim/pois.js jailExtra: a county jail, a station's look
   // The shops and services (sim/data-shops.js NEW_KINDS), each painted in its franchise's look.
   sportshop: paintSportShop, electronics: paintElectronics, radioshop: paintRadioShop, bookstore: paintBookstore, library: paintLibrary,

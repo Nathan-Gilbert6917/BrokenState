@@ -36,6 +36,7 @@ import {
   bestKnownPoi, poiScore, permanentSite, morePoisHidden, isSitePoi,
 } from "./pois.js";
 import { franchiseName } from "./shops.js"; // a franchise's name (a POI's poi.v)
+import { layoutName } from "./buildvariants.js"; // a layout's name (a POI's poi.lay, issue #32)
 import { poiWalkMins, walkText, startPoiWalk, startExitWalk, exitsOf } from "./poiwalk.js"; // the minutes on foot to each place, the walk there, and out to an edge
 import { groundsBase, groundsRaid, raidCount, GROUNDS_LABEL } from "./campscout.js"; // your base here set up blind: the dead on its grounds (call-time only)
 
@@ -227,7 +228,8 @@ export function poiPlace(t, i) {
   if (!list || !list.length) return null;
   const [key, name] = Array.isArray(list[0]) ? list[0] : [list[0], null];
   // shops.js: a franchise's name and layout (variant; a POI saved before franchises keeps its old building)
-  return { id: `poi${i}:${key}`, key, name: poi.v ? franchiseName(poi.kind, poi.v) : name || (BUILDINGS[key] ? BUILDINGS[key].name : LOCATIONS[poi.kind].name), ...(poi.v ? { variant: poi.v, kind: poi.kind } : {}), ...(poi.hv ? { plan: poi.hv } : {}) }; // hv: a hotel's variant (issue #38)
+  // buildvariants.js: a POI's layout (poi.lay, issue #32: its plan and its name)
+  return { id: `poi${i}:${key}`, key, name: poi.v ? franchiseName(poi.kind, poi.v) : poi.lay && layoutName(key, poi.lay) ? layoutName(key, poi.lay) : name || (BUILDINGS[key] ? BUILDINGS[key].name : LOCATIONS[poi.kind].name), ...(poi.v ? { variant: poi.v, kind: poi.kind } : {}), ...(poi.lay ? { layout: poi.lay } : {}), ...(poi.hv ? { plan: poi.hv } : {}) }; // hv: a hotel's variant (issue #38)
 }
 
 // The tile's scavenge text for the panels: "3 places known, possibly more unknown" ("" off a POI tile).

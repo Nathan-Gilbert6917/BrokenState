@@ -38,6 +38,7 @@ import { pieceDef } from "../src/sim/data-furniture.js";
 import { boxLoot, CELL } from "../src/sim/combat.js";
 import { supValue } from "../src/sim/data.js";
 import { rollScenes } from "../src/sim/interiorscenes.js";
+import { LAYOUTS } from "../src/sim/buildvariants.js"; // a type's layouts (issue #32): the loot is the classic's, furnished old and new
 import { SIZES } from "../src/sim/battlesize.js";
 import { SITE_KIT, AREA_KIT } from "../src/sim/carrykit.js";
 import { SURV_FINDS, AREA_SURV } from "../src/sim/data-survival.js";
@@ -370,9 +371,9 @@ section("Laid out for their kind (shoplayout.js, issue #16)");
   const N = process.env.BS_QUICK ? 10 : 30;
   const FK = { gasstation: "gas" };
   const KEYS = [...COMMERCIAL_KEYS];
-  const make = (key, s, legacy = false, noDecor = false) => {
+  const make = (key, s, legacy = false, noDecor = false, layout = null) => {
     const fr = FRANCHISES[FK[key] || key] || [], rng = new Rng(9000 + s * 104729 + key.length);
-    return assemble(rng, BUILDINGS[key].make(rng, { variant: fr.length ? fr[s % fr.length].id : null, legacy, officesLegacy: true }), { key, name: key, legacy, noDecor }); // officesLegacy: the office tower #16 laid out (a new save's are officeplans.js's plans, issue #27: tools/officestest.js)
+    return assemble(rng, BUILDINGS[key].make(rng, { variant: fr.length ? fr[s % fr.length].id : null, legacy, officesLegacy: true, layout }), { key, name: key, legacy, noDecor }); // officesLegacy: the office tower #16 laid out (a new save's are officeplans.js's plans, issue #27: tools/officestest.js)
   };
   const grid = (m, f) => (m.floors ? m.floors[f].cells : m.cells);
   const inside = (m, a) => { const out = []; for (let y = a.y0 + 1; y < a.y0 + a.h - 1; y++) for (let x = a.x0 + 1; x < a.x0 + a.w - 1; x++) out.push([x, y, grid(m, a.f)[y * m.w + x]]); return out; };
@@ -459,7 +460,8 @@ section("Laid out for their kind (shoplayout.js, issue #16)");
   check(KEYS.filter((k) => sig(make(k, 3)) !== sig(make(k, 4))).length >= KEYS.length - 1, "two of a kind lay out differently");
   // Loot per kind: the old layout (legacy) against the new over 200 seeds, by the tables' value (as tools/interiortest.js).
   const value = (def) => { let v = 0; for (const [k, [p, lo, hi]] of Object.entries(def.loot)) v += Math.min(0.95, p) * ((lo + hi) / 2) * supValue(k); for (const [k, p] of def.gear) v += p * ((GEAR[k] && GEAR[k].value) || 0); return v; };
-  const tally = (key, legacy) => { let v = 0, area = 0; for (let s = 0; s < 200; s++) { const m = make(key, s, legacy); area += m.building.w * m.building.h * (m.storeys || 1); for (const c of m.containers) { const a = m.rooms.find((r) => r.id === c.area); if (a && a.type) v += value(boxLoot(a.type, c.kind)); } } return { v: v / 200, dens: (v / area) * 100 }; };
+  const classic = (key) => (LAYOUTS[key] ? LAYOUTS[key][0].id : null); // the plan the furnishing replaced (its other layouts' loot: tools/varianttest.js)
+  const tally = (key, legacy) => { let v = 0, area = 0; for (let s = 0; s < 200; s++) { const m = make(key, s, legacy, false, classic(key)); area += m.building.w * m.building.h * (m.storeys || 1); for (const c of m.containers) { const a = m.rooms.find((r) => r.id === c.area); if (a && a.type) v += value(boxLoot(a.type, c.kind)); } } return { v: v / 200, dens: (v / area) * 100 }; };
   const off = [], rows = [];
   // The supermarket is twice the store it was each way since issue #22: its own check below (by the area), not this one;
   // the restaurants, pizza places, diners and bars come in sizes from a kiosk to a banquet hall since issue #33: their
@@ -471,7 +473,7 @@ section("Laid out for their kind (shoplayout.js, issue #16)");
   // within ±10% per area"): by the area, a 100 cells of all its floors (tools/shopvarianttest.js holds them to today's
   // too); #22's corner store and grocery keep #22's footprints, by the building as before.
   const byArea = (k) => hasVariants(k) && !["corner", "grocery"].includes(k);
-  for (const key of KEYS.filter((k) => !["supermarket", "restaurant", "pizza", "diner", "bar", "warehouse", "factory", "hotel", "library"].includes(k))) { const B = tally(key, true), A = tally(key, false), area = byArea(key), b = area ? B.dens : B.v, a = area ? A.dens : A.v, r = a / b - 1; rows.push(`${key} ${(r * 100).toFixed(0)}%${area ? " a cell" : ""}`); if (Math.abs(r) > 0.1) off.push(`${key} ${a.toFixed(0)} against ${b.toFixed(0)}${area ? " a 100 cells" : ""}`); }
+  for (const key of KEYS.filter((k) => !["supermarket", "deptstore", "restaurant", "pizza", "diner", "bar", "warehouse", "factory", "hotel", "library"].includes(k))) { const B = tally(key, true), A = tally(key, false), area = byArea(key), b = area ? B.dens : B.v, a = area ? A.dens : A.v, r = a / b - 1; rows.push(`${key} ${(r * 100).toFixed(0)}%${area ? " a cell" : ""}`); if (Math.abs(r) > 0.1) off.push(`${key} ${a.toFixed(0)} against ${b.toFixed(0)}${area ? " a 100 cells" : ""}`); }
   check(!off.length, `every kind holds what it did within ±10% (200 seeds each: ${off.join("; ") || rows.join(", ")})`);
   // An older save: furnished the old way (none of the new pieces, no style's marks).
   const NEWK = new Set(["freezercase", "islandfreezer", "meatcase", "freezershelf", "producebin", "breadrack", "selfcheckout", "cartcorral", "baler", "aislesign", "range", "fryer", "pizzaoven", "coldshelf", "jukebox", "pooltable", "clothesrack", "gunrack", "tank", "pottingbench", "palletrack", "tirerack", "compressor", "carlift", "machine", "forklift", "saddlerack", "cubicle", "whiteboard", "watercooler", "secdesk", "keyrack", "icemachine", "teller", "deposit", "atm", "stanchion", "checkout", "displaycase", "coldcase", "barcounter", "barstool", "desk", "filing", "bookshelf"]);
@@ -520,7 +522,7 @@ section("Grocery stores by size: a corner store, a neighbourhood grocery, a real
     if (c.bw < 10 || c.bw > 14 || c.bh < 10 || c.bh > 12) err("foot", `corner ${c.bw}x${c.bh}`);
     if (g.bw < 20 || g.bw > 26 || g.bh < 17 || g.bh > 20) err("foot", `grocery ${g.bw}x${g.bh}`);
     if (m.bw < 54 || m.bw > 58 || m.bh < 36 || m.bh > 40) err("foot", `supermarket ${m.bw}x${m.bh}`);
-    if (d.bw < 26 || d.bw > 30 || d.bh < 18 || d.bh > 21) err("dept", `${d.bw}x${d.bh}`);
+    if (d.bw < 22 || d.bw > 36 || d.bh < 16 || d.bh > 26) err("dept", `${d.bw}x${d.bh}`); // issue #30 / #32: the department store's dozen plans (mall.js DEPT_VARIANTS: a junior anchor 22 × 16 to a discount store 36 × 22); its own checks in tools/malltest.js
     for (const k of ["corner", "grocery"]) { const o = spec(k, s, true); if (o.bw < 14 || o.bw > 21 || o.bh < 11 || o.bh > 14) err("old", `${k} ${o.bw}x${o.bh}`); }
     const o = spec("supermarket", s, true); if (o.bw < 26 || o.bw > 30 || o.bh < 18 || o.bh > 21) err("old", `supermarket ${o.bw}x${o.bh}`);
   }

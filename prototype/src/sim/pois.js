@@ -59,7 +59,8 @@ import { campsiteExtra, campDanger, noteCampSeen } from "./campsite.js"; // call
 import { shopExtras, franchiseFor, franchisesOf, franchiseName, settingOf, noFirm } from "./shops.js"; // call-time only: the shops a suburb or city block may hold, a place's franchise
 import { hotelVariantName } from "./data-hotels.js"; // a hotel's variant's name (issue #38)
 import { hotelExtra } from "./hotels.js"; // call-time only: a hotel a tile may hold (issue #29)
-import { legacyPrisons } from "./worldcfg.js"; // an older save: no county jails
+import { layoutFor, layoutName, poiLayoutKey, settingOfTile } from "./buildvariants.js"; // a POI's building layout (issue #32): its name and its plan
+import { legacyRooms, legacyPrisons } from "./worldcfg.js"; // an older save: no layouts, no county jails
 
 export const POI = {
   MAX: 4,                 // POIs a tile can hold, the site among them
@@ -136,7 +137,10 @@ function makePoi(state, t, kind, site, slot, before = []) {
     const onTile = new Set(before.filter((p) => p.kind === kind && p.v).map((p) => p.v));
     if (onTile.has(v)) { const ids = franchisesOf(kind).map((f) => f.id), at = ids.indexOf(v); v = ids.map((_, i) => ids[(at + 1 + i) % ids.length]).find((id) => !onTile.has(id)) || v; }
   }
-  return { kind, hidden: false, pool: pool == null ? null : Math.min(1, pool), visits: 0, lastDay: null, cont: null, threatStamp: null, stripped: false, ...(site ? { site: true } : {}), ...(v ? { v } : {}) };
+  // A kind with no franchise takes one of its building's layouts (buildvariants.js, issue #32): its plan and its name
+  // ("Ranch house", "Dairy barn"); not in an older save (its buildings keep their plans: worldcfg.js legacyRooms).
+  const lay = v || legacyRooms(state) ? null : layoutFor(poiLayoutKey(kind), settingOfTile(t), hash01(state.seed, "poilay", t.id, slot));
+  return { kind, hidden: false, pool: pool == null ? null : Math.min(1, pool), visits: 0, lastDay: null, cont: null, threatStamp: null, stripped: false, ...(site ? { site: true } : {}), ...(v ? { v } : {}), ...(lay ? { lay } : {}) };
 }
 // The tile's list from the world seed and the tile (no state.rng: the same for a world made before POIs existed).
 /** @param {State} state @param {Tile} t */
@@ -189,6 +193,10 @@ export function generatePois(state, t) {
   // Bunkers (issue #26): now and then one, on their own dice after everything above (bunkerExtra).
   const bunker = bunkerExtra(state, t, out, inKnownZone(state, t));
   if (bunker) out.push(bunker);
+  // Shopping malls (issue #30): now and then a strip mall in a town or a suburb, an outlet centre by a highway, on their
+  // own dice after everything above but the hotel (mallExtra; a hotel stays last).
+  const mall = mallExtra(state, t, out, inKnownZone(state, t));
+  if (mall) out.push(mall);
   // hotels.js: now and then a hotel (a town's inn, a city's tower, a resort in scenic land), on its own dice after all.
   const hotel = hotelExtra(state, t, out, inKnownZone(state, t));
   if (hotel) out.push(hotel);
@@ -251,6 +259,31 @@ export function bunkerExtra(state, t, list, knownZone) {
     const spread = BUNKER_POI.POOL[0] + (BUNKER_POI.POOL[1] - BUNKER_POI.POOL[0]) * hash01(state.seed, "bunkerpool", t.id);
     const hidden = !(kind === "shelter" && knownZone && hash01(state.seed, "bunkerknown", t.id) < BUNKER_POI.SHELTER_KNOWN);
     return { kind, hidden, pool: Math.min(1, LOCATIONS[kind].richness * spread), visits: 0, lastDay: null, cont: null, threatStamp: null, stripped: false, extra: "bunker" };
+  }
+  return null;
+}
+
+// Shopping malls as places (issue #30, mall.js): a strip mall on a suburb tile or a town (its own tile: the town's
+// site), an outlet centre on a road out in the open or the suburbs (a highway's), never in a city block (a regional
+// mall is the city's own "mall" site). Their raid map is the whole complex (buildingmaps.js SITES stripmall, outlet).
+export const MALL_POI = {
+  stripmall: { suburb: 0.06, town: 0.3 },      // town: a tile whose site is a town
+  outlet: { plains: 0.004, suburb: 0.01 },    // a tile with a road only
+  KNOWN: 0.7, POOL: [0.8, 1.1],
+};
+/** @param {State} state @param {Tile} t @param {any[]} list @param {boolean} knownZone */
+export function mallExtra(state, t, list, knownZone) {
+  if (!t || list.length >= POI.MAX || t.terrain === "water" || t.terrain === "city") return null;
+  for (const kind of ["stripmall", "outlet"]) {
+    const T = /** @type {Record<string, number>} */ (MALL_POI[kind]);
+    let p = (t.loc && t.loc.type === "town" ? T.town : 0) || (!t.loc || t.loc.type !== "town" ? T[t.terrain] || 0 : 0);
+    if (kind === "outlet" && !t.road) p = 0;
+    if (!p || list.some((q) => q.kind === kind) || (t.loc && t.loc.type === kind)) continue;
+    if (permanentSite(t) && LOCATIONS[t.loc.type] && LOCATIONS[kind].richness > LOCATIONS[t.loc.type].richness) continue; // never out-ranks the tile's site
+    if (hash01(state.seed, "mallpoi", t.id, kind) >= p) continue;
+    const spread = MALL_POI.POOL[0] + (MALL_POI.POOL[1] - MALL_POI.POOL[0]) * hash01(state.seed, "mallpool", t.id);
+    const hidden = !(knownZone && hash01(state.seed, "mallknown", t.id) < MALL_POI.KNOWN);
+    return { kind, hidden, pool: Math.min(1, LOCATIONS[kind].richness * spread), visits: 0, lastDay: null, cont: null, threatStamp: null, stripped: false, extra: "mall" };
   }
   return null;
 }
@@ -325,7 +358,7 @@ export function poiName(t, i) {
   const p = poiAt(t, i);
   if (!p) return "";
   if (!isSitePoi(t, i) && p.hv && hotelVariantName(p.hv)) return `${franchiseName(p.kind, p.v)} (${hotelVariantName(p.hv)})`; // a hotel's variant (issue #38): "Willow Creek Inn (Victorian B&B)"
-  return isSitePoi(t, i) ? t.loc.name : p.v ? franchiseName(p.kind, p.v) : LOCATIONS[p.kind].name; // shops.js: a franchise's name
+  return isSitePoi(t, i) ? t.loc.name : p.v ? franchiseName(p.kind, p.v) : p.lay ? layoutName(poiLayoutKey(p.kind), p.lay) || LOCATIONS[p.kind].name : LOCATIONS[p.kind].name; // shops.js: a franchise's name; buildvariants.js: a layout's
 }
 
 // ---------- pools ----------

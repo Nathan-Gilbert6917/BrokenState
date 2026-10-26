@@ -52,6 +52,7 @@
 /** @import { State, Tile } from "./types" */
 import { poiAt, poiLedger, poiPool, poiTake, poiFull, poiBand, isSitePoi, addTileHeat, TILE_HEAT } from "./pois.js";
 import { siteBuildings, SITES, BUILDINGS, streetHouses } from "./buildingmaps.js";
+import { mallUnits } from "./mall.js"; // a mall's buildings (issue #30)
 import { campusBuildings } from "./campus.js"; // a college campus's buildings (issue #28)
 import { hash01 } from "./skills.js";
 import { Rng } from "./rng.js";
@@ -89,11 +90,21 @@ export const poiMapRng = (state, tileId, i) => new Rng(Math.floor(hash01(state.s
  */
 export function poiHouses(state, tile, i) {
   const t = tileOf(state, tile), poi = poiAt(t, i);
-  if (poi && isSitePoi(t, i)) { const sb = siteBuildings(t), o = sb && sb.single ? sb.options[0] : null; return o && BUILDINGS[o.key] && BUILDINGS[o.key].campus ? campusBuildings(state, t, o) : 1; } // a campus (campus.js): a building at a time
   if (!poi) return 1;
+  // A shopping mall (mall.js) or a campus (campus.js): the site's one map of many buildings, each apart in the ledger;
+  // a strip mall's or an outlet's POI likewise (below): the search goes through them a building at a time.
+  if (isSitePoi(t, i)) { const sb = siteBuildings(t); const o = sb && sb.single ? sb.options[0] : null; return o && BUILDINGS[o.key] && BUILDINGS[o.key].compound ? mallHouses(state, t.id, o) : o && BUILDINGS[o.key] && BUILDINGS[o.key].campus ? campusBuildings(state, t, o) : 1; }
   const entry = SITES[poi.kind], first = entry ? (Array.isArray(entry) ? entry : entry.list)[0] : null;
   const key = Array.isArray(first) ? first[0] : first;
+  if (key && BUILDINGS[key] && BUILDINGS[key].compound) return mallHouses(state, t.id, { id: `poi${i}:${key}`, key, name: BUILDINGS[key].name });
   return key && BUILDINGS[key] && BUILDINGS[key].street ? streetHouses(state, t.id, { id: `poi${i}:${key}` }) : 1;
+}
+// A mall's buildings, counted once per map (the map is made from the mall's own dice; cached by the seed and the place).
+const mallCount = new Map();
+function mallHouses(state, tileId, option) {
+  const k = `${state.seed}:${tileId}:${option.id}`;
+  if (!mallCount.has(k)) { if (mallCount.size > 1024) mallCount.clear(); mallCount.set(k, mallUnits(state, tileId, option)); }
+  return mallCount.get(k);
 }
 
 /** How many maps POI i opens: a site with several buildings has each and its street; any other one. @param {Tile} t @param {number} i */

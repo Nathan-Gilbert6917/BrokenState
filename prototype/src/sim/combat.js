@@ -7466,7 +7466,7 @@ export function createRaid(state, setup) {
   const b = {
     setup, tileId: party ? partyTile(party) : tileId, w: W, h: H, cells: map.cells, reach: map.reach,
     place: placeName(tile),
-    units: [], turn: 1, phase: "player", log: [], fx: [], fxSeq: 0, rev: 1, nextId: 1000, vehicle: map.vehicle || null, // the team's car or truck (placeVehicle, driveTo)
+    units: [], turn: 1, phase: "player", log: [], fx: [], fxSeq: 0, rev: 1, nextId: (map.containers || []).reduce((n, c) => (Number.isFinite(c.id) ? Math.max(n, c.id + 1) : n), 1000), vehicle: map.vehicle || null, // the team's car or truck (placeVehicle, driveTo); nextId past the map's containers (a mall holds over a thousand: a pile dropped takes the next id)
     ...(map.convoy && map.convoy.length ? { convoy: map.convoy } : {}), // the team's other vehicles, parked (placeRaidConvoy)
     pools: party ? [party.supplies, party.cargo ? party.cargo.supplies : {}] : [{}],
     ammoUsed: 0, arrowsUsed: 0, medsUsed: 0, noise: 0, reinf: 0, infection: tile ? tile.infection || 0 : 0,
@@ -7603,7 +7603,7 @@ export function createRaid(state, setup) {
     const st = b.raid.storeys > 1 ? ` on ${b.raid.storeys} storeys (the stairs are marked; Go up / Go down takes an action)` : "";
     if (map.complex) say(b, `You reach ${b.place}: ${map.plan.houses.length} buildings behind ${map.plan.perimeter ? (map.plan.perimeter.wall ? "a wall and a fence" : "a double fence") : "the street"}. ${map.containers.length} places to search in ${rooms} rooms${st}.`, "info"); // prison.js: a prison's or a jail's complex
     else if (map.campus) say(b, `You reach the campus of ${b.place}: ${map.plan.houses.length} buildings. ${map.containers.length} places to search in ${rooms} rooms${st}.`, "info"); // campus.js campusMap: a college campus
-    else if (map.street) say(b, `You reach the street at ${b.place}: ${map.plan.houses.length} houses. ${map.containers.length} places to search in ${rooms} rooms${st}.`, "info"); // buildingmaps.js streetMap: a neighbourhood
+    else if (map.street) say(b, `You reach ${map.plan.word ? "" : "the street at "}${b.place}: ${map.plan.houses.length} ${map.plan.word || "houses"}. ${map.containers.length} places to search in ${rooms} rooms${st}.`, "info"); // buildingmaps.js streetMap: a neighbourhood
     else say(b, `You reach the ${pick.name.toLowerCase()} at ${b.place}. ${map.containers.length} places to search in ${rooms} rooms${st}.`, "info");
     say(b, map.complex ? prisonIntro(b) : interiorIntro(b), "info");
   } else say(b, `You slip into ${b.place}. ${map.containers.length} places to search across ${map.areas.length} areas.`, "info");

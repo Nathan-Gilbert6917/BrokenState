@@ -200,7 +200,7 @@ const GROUNDY = new Set(["water", "trench", "spikes", "hivewall"]);
 function sceneFor(b) {
   let sig = 0, fsig = 0;
   for (let i = 0; i < b.cells.length; i++) {
-    const c = b.cells[i], kc = c.k.charCodeAt(0) * 7 + c.k.length + (c.k.charCodeAt(2) || 0), fc = (c.f ? c.f.charCodeAt(0) + c.f.length : 0) + (c.fl ? c.fl.charCodeAt(0) * 3 + c.fl.length : 0) + (c.deco ? decoSig(c.deco) : 0) + (c.wc ? c.wc.charCodeAt(3) * 11 + c.wc.charCodeAt(5) : 0) + (c.wart ? c.wart.k.charCodeAt(1) * 17 + c.wart.d : 0); // decor (sim/decor.js) drawn in the ground and the walls
+    const c = b.cells[i], kc = c.k.charCodeAt(0) * 7 + c.k.length + (c.k.charCodeAt(2) || 0), fc = (c.f ? c.f.charCodeAt(0) + c.f.length : 0) + (c.fl ? c.fl.charCodeAt(0) * 3 + c.fl.length : 0) + (c.deco ? decoSig(c.deco) : 0) + (c.wc ? c.wc.charCodeAt(3) * 11 + c.wc.charCodeAt(5) : 0) + (c.wart ? c.wart.k.charCodeAt(1) * 17 + c.wart.d : 0) + (c.neon ? 131 : 0); // decor (sim/decor.js) drawn in the ground and the walls
     sig = (Math.imul(sig, 31) + kc + fc + (c.hp > 0 ? (c.hp | 0) + 1 : 0)) | 0;
     fsig = (Math.imul(fsig, 31) + fc + (GROUNDY.has(c.k) ? kc : 0)) | 0;
   }
@@ -1166,6 +1166,54 @@ const FURN_DRAW = {
     return [run(ax, 0.16, 0.84, 0, 30, body, 0.06, 0.94)];
   } },
   aislesign: { top: 34, p: () => [{ cyl: [0.5, 0.5, 0.12], z0: 0, z1: 1, m: flatM(FURNC.steel) }, { cyl: [0.5, 0.5, 0.04], z0: 1, z1: 26, m: flatM(FURNC.chrome) }, fbox(0.2, 0.8, 0.46, 0.54, 26, 34, (f, s, t) => (f === "top" ? FURNC.white : t > 1 && t < 7 && s > 1 ? (Math.floor(s) % 3 < 1 ? FURNC.white : hex("#2f5d8a")) : FURNC.white))] },
+  // ---------- shopping malls (issue #30, sim/mall.js, sim/malllayout.js) ----------
+  kiosk: { top: 22, p: (o, v) => {
+    const ax = along(o), awn = (f, s, t, X) => (Math.floor(X / 3) % 2 ? FURNC.red : FURNC.cream), goods = (f, s, t, X, Y) => (f === "top" ? mul(fgoods(Math.floor(X / 2), Math.floor(Y / 2) + v, 180), 1.1) : fwood(PAL.woodLt)(f, s, t, X, Y));
+    return [run(ax, 0.22, 0.78, 0, 9, goods, 0.04, 0.96), run(ax, 0.24, 0.27, 9, 19, flatM(FURNC.chrome), 0.06, 0.1), run(ax, 0.73, 0.76, 9, 19, flatM(FURNC.chrome), 0.9, 0.94), run(ax, 0.16, 0.84, 19, 22, awn, 0, 1)];
+  } },
+  mallbench: { top: 8, p: (o) => {
+    const ax = along(o), slat = (f, s, t, X) => (f === "top" ? (Math.floor(X) % 3 < 1 ? PAL.woodDk : PAL.woodLt) : PAL.woodDk);
+    return [run(ax, 0.3, 0.34, 0, 5, flatM(FURNC.steel), 0.1, 0.16), run(ax, 0.3, 0.34, 0, 5, flatM(FURNC.steel), 0.84, 0.9), run(ax, 0.2, 0.8, 5, 6, slat, 0.02, 0.98), run(ax, 0.2, 0.26, 6, 8, slat, 0.02, 0.98)];
+  } },
+  planter: { top: 18, p: (o, v) => {
+    const ax = along(o), rim = (f) => (f === "top" ? mul(FLOORC.dirt, 0.75) : mul(PAL.conc, 1.25)), leaf = (f, s, t, X, Y) => mul(n2(Math.floor(X / 2), Math.floor(Y / 2) + v, 181) > 0.5 ? PAL.leaf : PAL.leaf2, 0.9 + n2(X, Y, 182) * 0.25);
+    return [run(ax, 0, 1, 0, 6, rim, 0, 1), fcyl(ax, 0.5, 0.5, 0.36, 6, 18, leaf)];
+  } },
+  directory: { top: 26, p: (o) => {
+    const ax = along(o), map = (f, s, t, X, Y) => (f === "top" ? FURNC.black : t > 2 && t < 22 && s > 1 && s < 9 ? mul(fgoods(Math.floor(X / 2), Math.floor(t / 4), 183), 1.25) : FURNC.black);
+    return [run(ax, 0.42, 0.58, 0, 26, map, 0.2, 0.8)];
+  } },
+  escalator: { top: 14, p: (o) => {
+    const ax = along(o), out = [];
+    for (let i = 0; i < 4; i++) out.push(run(ax, 0.2, 0.8, 0, 2 + i * 3, (f) => (f === "top" ? mul(FURNC.steel, 1.15) : mul(FURNC.steel, 0.7)), i * 0.25, (i + 1) * 0.25));
+    out.push(run(ax, 0.12, 0.2, 0, 14, flatM(FURNC.black), 0, 1), run(ax, 0.8, 0.88, 0, 14, flatM(FURNC.black), 0, 1));
+    return out;
+  } },
+  cinemaseat: { top: 10, p: (o) => {
+    const ax = along(o), plush = (f) => (f === "top" ? mul(FURNC.red, 1.1) : mul(FURNC.red, 0.85));
+    return [run(ax, 0.3, 0.7, 0, 4, flatM(FURNC.black), 0.06, 0.94), run(ax, 0.3, 0.72, 4, 5, plush, 0.06, 0.94), run(ax, 0.68, 0.78, 4, 10, plush, 0.06, 0.94), run(ax, 0.3, 0.78, 5, 7, flatM(FURNC.black), 0, 0.05)];
+  } },
+  projector: { top: 18, p: (o) => {
+    const ax = along(o), body = flatM(mul(FURNC.steel, 0.65)), reel = (f) => (f === "top" ? FURNC.black : mul(FURNC.black, 1.4));
+    return [run(ax, 0.4, 0.6, 0, 8, flatM(FURNC.black), 0.4, 0.6), run(ax, 0.3, 0.7, 8, 13, body, 0.2, 0.8), fcyl(ax, 0.5, 0.3, 0.16, 13, 18, reel), fcyl(ax, 0.5, 0.7, 0.16, 13, 18, reel)];
+  } },
+  concession: { top: 20, p: (o) => {
+    const ax = along(o), front = (f, s, t) => (f === "top" ? FURNC.cream : t > 9 && t < 11 ? FURNC.gold : FURNC.red), pop = (f, s, t, X, Y) => (f === "top" ? FURNC.red : t < 1 ? FURNC.chrome : mul(FURNC.gold, 1.1 + n2(X, Y, 184) * 0.2));
+    return [run(ax, 0.22, 0.78, 0, 12, front, 0, 1), run(ax, 0.3, 0.7, 12, 20, pop, 0.3, 0.7)];
+  } },
+  arcadecab: { top: 28, p: (o) => {
+    const ax = along(o), face = (f, s, t, X, Y, sw) => { if (f === "top") return FURNC.black; const w = sw || 12; if (t > 24) return mul(FURNC.amber, 1.2); if (t > 14 && t < 22 && s > 2 && s < w - 2) return mul(FURNC.led, 0.5 + n2(X, Y, 185) * 0.4); if (t > 11 && t < 13) return FURNC.red; return FURNC.black; };
+    return [run(ax, 0.26, 0.74, 0, 28, face, 0.16, 0.84)];
+  } },
+  carousel: { top: 24, p: (o, v) => {
+    const ax = along(o), stripe = (f, s, t, X) => (f === "top" ? (Math.floor(X / 3) % 2 ? FURNC.red : FURNC.cream) : FURNC.gold), horse = (f) => (f === "top" ? FURNC.cream : mul(FURNC.cream, 0.85));
+    return [run(ax, 0, 1, 0, 2, flatM(FURNC.gold), 0, 1), fcyl(ax, 0.5, 0.5, 0.06, 2, 22, flatM(FURNC.chrome)), fcyl(ax, 0.3 + (v & 1) * 0.4, 0.5, 0.1, 6, 11, horse), run(ax, 0, 1, 22, 24, stripe, 0, 1)];
+  } },
+  mannequin: { top: 22, p: () => [{ cyl: [0.5, 0.5, 0.14], z0: 0, z1: 1, m: flatM(FURNC.steel) }, fbox(0.48, 0.52, 0.48, 0.52, 1, 8, flatM(FURNC.steel)), { cyl: [0.5, 0.5, 0.15], z0: 8, z1: 18, m: flatM(FURNC.cloth) }, { cyl: [0.5, 0.5, 0.09], z0: 18, z1: 22, m: flatM(FURNC.cloth) }] },
+  dumpster: { top: 14, p: (o) => {
+    const ax = along(o), green = (f, s, t, X, Y) => (f === "top" ? mul(hex("#2f5a3a"), 0.8) : mul(hex("#2f5a3a"), 0.9 + n2(X, Y, 186) * 0.12));
+    return [run(ax, 0.14, 0.86, 0, 13, green, 0.04, 0.96), run(ax, 0.12, 0.88, 13, 14, flatM(FURNC.black), 0.02, 0.98)];
+  } },
   // ---------- workshops and bays ----------
   workbench: { top: 14, p: (o) => {
     const ax = along(o), w = flatM(PAL.woodDk);
@@ -2692,6 +2740,7 @@ function wartTexel(k, s, t, sw, v) {
     case "poster": if (Math.abs(s - m) < 3 && t >= 14 && t < 24) return t >= 21 ? WARTC.white : mul(WARTC.poster[v % 4], 0.85 + ((t | 0) % 3) * 0.06); return null;
     case "crucifix": if ((Math.abs(s - m) < 0.8 && t >= 14 && t < 26) || (Math.abs(t - 22) < 0.8 && Math.abs(s - m) < 3)) return WARTC.frame; return null;
     case "notice": if (Math.abs(s - m) < 5 && t >= 14 && t < 23) { if (Math.abs(s - m) >= 4.4 || t < 14.6 || t >= 22.4) return WARTC.frame; const cell = Math.floor((s - m + 5) / 3) * 3 + Math.floor((t - 14) / 3); return hash3(cell, v, 71) > 0.5 && (s | 0) % 3 && (t | 0) % 3 ? (hash3(cell, v, 72) > 0.7 ? WARTC.poster[2] : WARTC.white) : WARTC.cork; } return null;
+    case "neon": if (Math.abs(s - m) < 7 && t >= 24 && t < 30) { if (Math.abs(s - m) >= 6.4 || t < 24.6 || t >= 29.4) return hex("#ff5aa8"); return (s | 0) % 3 && t >= 26 && t < 28 && Math.abs(s - m) < 5 ? hex("#ffe08a") : hex("#2a1430"); } return null; // a motel's neon sign: pink tubes round a dark board, yellow letters
     case "sign": if (Math.abs(s - m) < 6 && t >= 22 && t < 26) { if (Math.abs(s - m) >= 5.4 || t < 22.5 || t >= 25.5) return WARTC.white; return (s | 0) % 3 && t >= 23.4 && t < 24.6 && Math.abs(s - m) < 4 ? WARTC.white : WARTC.sign; } return null; // a hospital's corridor sign (sim/decor.js MED_ART): white letters on green
     case "shelf": if (Math.abs(s - m) < 6 && t >= 19 && t < 20.5) return WARTC.shelf; if (Math.abs(s - m) < 5.5 && t >= 20.5 && t < 23.5) { const i = Math.floor((s - m + 6) / 2.4); return hash3(i, v, 73) > 0.4 ? WARTC.knick[i % 3] : null; } return null;
   }
@@ -2998,6 +3047,7 @@ function lookOf(b, scene, x, y, cut, focus = null) {
       const nc = b.cells[ny * b.w + nx];
       if (nc.wc && scene.comp[ny * b.w + nx] === bid) o[face === "e" ? "ie" : "is"] = nc.wc;
       if (c.wart && VD[c.wart.d] && VD[c.wart.d][0] === dx && VD[c.wart.d][1] === dy) o.art = `${face}${c.wart.k}`;
+      if (c.neon && VD[c.neon] && VD[c.neon][0] === dx && VD[c.neon][1] === dy) o.art = `${face}neon`; // a motel office's neon sign on its outside wall (sim/buildingmaps.js)
     }
     // The cutaway: a cut building's near walls (the ones with its inside behind them) drop to stubs (behind: up the
     // screen, toward −u and −v; in a straight view toward −v).

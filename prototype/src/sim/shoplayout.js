@@ -702,6 +702,15 @@ export const COMMERCIAL_STYLES = {
     const ws = L.walls();
     L.run(["washer", "dryer", "washer", "dryer"], ws.length ? [ws[0].side] : ["n"]);
   },
+  // A studio (an extended-stay motel's room, a motor lodge's cabin: issue #32): a kitchenette along one wall (a fridge,
+  // a sink, a stove: data-appliances.js's), then the room's bed, nightstand, TV stand and chest of drawers.
+  motelstudio(L) {
+    const ws = L.walls();
+    L.run(["fridge", "sink", "stove"], [ws[0] ? ws[0].side : "n"], { plain: () => full(L) });
+    COMMERCIAL_STYLES.motelroom(L);
+  },
+  // An ice and vending nook (a motel's, issue #32): the vending machine and the ice machine.
+  vendnook(L) { L.wall("vending", P(L)) || L.need("vending", P(L)); L.wall("icemachine"); },
   // The motel's upper walkway: the ice machine.
   walkway(L) { L.wall("icemachine", { sides: ["n"], prefer: "corner" }); },
   // A big shop's service corridor behind the sales floor (issue #35, shopvariants.js corridor plans): staff lockers and
@@ -776,8 +785,9 @@ export const COMMERCIAL_STYLES = {
 // room: its plan leaf with ROLES' defaults (role, name, type, marks: lay, pizza, fry, flat); key: the building's key.
 /** @param {any} room @param {string | undefined} key @returns {string | null} */
 export function styleName(room, key) {
-  if (!key || !COMMERCIAL_KEYS.has(key) || room.flat) return null;
-  if (room.lay) return room.lay;
+  if (room.flat) return null;
+  if (room.lay && COMMERCIAL_STYLES[room.lay]) return room.lay; // a plan leaf's own style, in any building (a variant's room borrowing a shop's: issue #32)
+  if (!key || !COMMERCIAL_KEYS.has(key)) return null;
   const n = room.name || "", shop = SHOP_SET.has(key);
   switch (room.role) {
     case "sales":
