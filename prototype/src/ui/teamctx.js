@@ -316,7 +316,9 @@ export function teamTileMenu(state, ui, p, tile, { append = false, who = null } 
   if (standing || (ui && ui.ctxAll)) {
     const shown = (m) => items.some((it) => it.key === `mission:${m}` || (["survey", "fullsurvey", "sweep"].includes(m) && it.key === m) || (m === "camp" && it.key === "setcamp"));
     for (const o of water ? [] : orderOptions(state, p, tile)) {
-      if (shown(o.mission)) continue;
+      // Not on a base of yours: there only its known places are raided (the Site group above). orderOptions offers a
+      // plain scavenge on any tile with stray loot, so the hub on bare land (seed 42 since the 250 × 150 maps) got one.
+      if (shown(o.mission) || (base && o.mission === "scavenge")) continue;
       add(ALL, `mission:${o.mission}`, o.label, [{ type: "mission", mission: o.mission }], { why: o.disabled || "", hint: o.desc });
     }
     if (standing) spotOrders(state, p, tile, water, items, (...a) => add(ALL, ...a));

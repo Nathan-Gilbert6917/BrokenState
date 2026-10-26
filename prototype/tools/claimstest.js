@@ -24,7 +24,7 @@ import { ensureJobs } from "../src/sim/jobs.js";
 import { launchExpedition, partyTile, carried, outpostName } from "../src/sim/parties.js";
 import { startOrder, queueEstimate, describeOrder, queueOrder } from "../src/sim/orders.js";
 import * as C from "../src/sim/claims.js";
-import { controlledLand, allianceVictory, accordHolds, goalsProgress, ensureAlliance, ALLIANCE, coalitionMask, inviteProblem, reachVia } from "../src/sim/alliance.js";
+import { controlledLand, landCentres, allianceVictory, accordHolds, goalsProgress, ensureAlliance, ALLIANCE, coalitionMask, inviteProblem, reachVia } from "../src/sim/alliance.js";
 import { radioNodes, canRadioGroup, GROUP_REACH, MIL_RADIO_RANGE, hasMilRadio, RELAY_RANGE, relayReach, relaySpotFor, radioSummary, radioDaily } from "../src/sim/radio.js";
 import { waterProduction } from "../src/sim/economy.js";
 import { worksAt } from "../src/sim/groupworks.js"; // envoys.js: a radio link needs a set at their end too
@@ -150,8 +150,11 @@ section("Land counting: claims add to the coalition's land");
   C.claimTile(state, null, edge);
   const mid = controlledLand(state);
   check(mid.held === before.held && mid.claims === 0 && mid.claimed === 1, `a claim inside a base's reach adds no held tile (${before.held} → ${mid.held}, claims ${mid.claims}, claimed ${mid.claimed})`);
-  // A claim outside every reach: force it (the chain of claims would get there in time).
-  const far = tileNear(state, h.tile, 14, 20);
+  // A claim outside every reach: force it (the chain of claims would get there in time). The reach grows with the
+  // map (controlRadius × √worldScale: the hub's is 34 on a Normal 250 × 150 map), so the tile is found past it.
+  const reach = landCentres(state);
+  const r = Math.max(...reach.map((c) => c.r));
+  const far = tileNear(state, h.tile, r + 1, r + 8, (t) => reach.every((c) => state.grid.distance(c.tile, t.id) > c.r));
   C.ensureClaims(state)[far] = { owner: "player", since: state.hour };
   const after = controlledLand(state);
   check(after.held === before.held + 1 && after.claims === 1 && after.pct > before.pct, `a claim outside adds one held tile (${before.held} → ${after.held})`);

@@ -100,7 +100,7 @@ section("The estimate: hours, gear and skills");
 section("Fishing: a rod");
 {
   const state = mk();
-  const shore = find(state, hub(state).tile, (t) => !!fishSpot(state, t.id), 1, 14);
+  const shore = find(state, hub(state).tile, (t) => !!fishSpot(state, t.id), 1, 40); // the team is put on it, so any distance does (the hub's nearest shore is 15 away on seed 42 since the 250 × 150 maps, 1370d1cf)
   if (check(shore != null, "a shore to fish from")) {
     const p = team(state, 2, shore);
     const e0 = landEstimate(state, p, "fish", { tile: shore, hours: 8 });
