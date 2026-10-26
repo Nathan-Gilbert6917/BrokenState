@@ -38,11 +38,11 @@ export function threatHtml(est) {
   return `<span style="color:${THREAT_COLOR[est.band]}"${tip(`What your people made of it when they looked (${when}): the kind of place, the infection here, how stirred up the tile is (its heat), hive land. An estimate: the error grows with the days since (${Math.round(est.err * 100)}% now), so an old look says less. True threat decides the fight.`)}>${esc(est.word)}${est.skulls ? ` ${est.skulls}` : ""}</span> <span class="muted small">(${when}${est.stale ? ", stale" : ""})</span>`;
 }
 
-// The tile's heat as last seen (sim/pois.js tileHeatEstimate): a line over the rows, or "" without a look.
+// The tile's heat as last seen (sim/pois.js tileHeatEstimate: the dead's band, deadpop.js): a line over the rows, or "" without a look.
 export function heatLine(state, tile) {
   const h = tileHeatEstimate(state, tile);
   if (!h) return "";
-  return `<div class="text small"><span${tip("Tile heat: how stirred up this tile is by raids on its places (going in, coming out, the noise and shots; others' raids too). It fades about 10% a day. A hot tile draws more of the dead, and when very hot a horde or a wandering band may turn up. As last seen: new heat since is not known.")}>Tile heat: <span style="color:${THREAT_COLOR[h.band]}">${esc(h.word)}</span></span> <span class="muted">(seen ${h.age < 1 ? "today" : `${Math.floor(h.age)}d ago`}${h.stale ? ", stale" : ""})</span></div>`;
+  return `<div class="text small"><span${tip("Tile heat: how many of the dead are about this tile and its places, as your people last saw it (none, low, medium, high, overrun of what the land can hold). Kills bring it down; noise draws the tile's dead in, and the places refill from it. As last seen: what changed since is not known.")}>Tile heat: <span style="color:${THREAT_COLOR[h.band]}">${esc(h.word)}</span></span> <span class="muted">(seen ${h.age < 1 ? "today" : `${Math.floor(h.age)}d ago`}${h.stale ? ", stale" : ""})</span></div>`;
 }
 
 // The card's screen: the tile map, the picked place's details and its buttons, the list of places folded at the side.
