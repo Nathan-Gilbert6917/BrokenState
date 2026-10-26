@@ -1,0 +1,778 @@
+// @ts-check
+// A dozen named floor plans for every campus building type (the user's request 2026-10-25: "for buildings with no to
+// only a few varients create a dozen varients per building type"; issue #32's rule: a variant is a distinct plan that
+// changes at least two of the room list, the rooms' order and arrangement, the entrances, corridor or open plan, the
+// footprint's shape and the storeys, not a recolour). CAMPUS_VARIANTS[key] lists twelve; campuslayout.js's plan maker
+// for the type picks one by the building's dice (o.plan: a given one, by its index or its id; the tests'), and the
+// first of each is the type's original plan (campuslayout.js), kept as it was. The others are data for planFrom here.
+//
+// A variant: { id, name, w, h, storeys (the dice when the campus says nothing: campus.js sets a dorm's storeys and a
+// community college's dorm width), foot, door (the front door's width), ground ("town" | "lot"), stairs, g (the ground
+// floor's plan), u (the upper floors': a plan or (f, ctx) → a plan), top (the top floor's, if its own), exits }.
+// A floor's plan has a form:
+//   hall    rooms along the front (fd deep), a corridor (cw), rooms behind (the rest): the corridor plan;
+//   single  one band of rooms, the corridor behind it (a single-loaded gallery);
+//   triple  front rooms, a corridor, a middle band (md), a second corridor, back rooms (a deep block, a tower's core);
+//   open    rooms along the front, one open hall behind them (hub: its leaf), rooms behind that (bd deep, if any);
+//   wings   two corridor plans either side of a central hall (cx wide: an entrance in front, an atrium behind);
+//   tree    the plan's own split tree (t: (f, ctx, Q) → a tree): the parking decks, the bays and the halls.
+// A row: [size, key, overrides?] (the key a room of the type's vocabulary below, size a width or "*" for the rest), or
+// ["rep", unit, key] for as many such rooms unit wide as the row has room for (a dorm's rooms, offices, labs).
+import { CAMPUS_SIZE } from "./campuslayout.js";
+import { libraryPlan } from "./librarylayout.js"; // #34's library plans: the university library's
+import { industryPlan } from "./industrylayout.js"; // #37's lab plans: more science buildings
+
+const L = (role, name, campus, x = {}) => ({ role, name, campus, ...x });
+const C = (role, name, civic, x = {}) => ({ role, name, civic, ...x });
+const O = (role, name, office, x = {}) => ({ role, name, office, type: "office", ...x });
+const range = (rng, [a, b]) => rng.int(a, b);
+// The footprint's class by its area (buildingmaps.js's classes, tools/storeytest.js FOOT).
+export const footClass = (bw, bh) => (bw * bh <= 190 ? "small" : bw * bh <= 360 ? "medium" : "large");
+
+// ---------- the rooms (by key; each call a fresh leaf; u: the unit id of a suite's or a flat's rooms) ----------
+/** @type {Record<string, (u?: string) => any>} */
+const Q = {
+  // the residence halls
+  droom: () => L("bedroom", "Dorm room", "dormroom", { type: "dormroom", maxBoxes: 3, boxTarget: 3, fl: "carpet" }),
+  single: () => L("bedroom", "Single room", "dormroom", { type: "dormroom", maxBoxes: 2, boxTarget: 2, fl: "carpet" }),
+  ra: () => L("bedroom", "RA's room", "raroom", { type: "dormroom", maxBoxes: 2, fl: "carpet", ra: true }),
+  manager: () => L("bedroom", "Resident manager's flat", "raroom", { type: "dormroom", maxBoxes: 2, fl: "carpet", ra: true }),
+  lounge: () => L("dayroom", "Lounge", "lounge", { hub: false, type: "dormroom", maxBoxes: 2 }),
+  slounge: () => L("dayroom", "Study lounge", "lounge", { hub: false, type: "dormroom", maxBoxes: 2 }),
+  klounge: () => L("dayroom", "Kitchen and lounge", "lounge", { hub: false, type: "dormroom", maxBoxes: 2 }),
+  common: () => L("dayroom", "Common room", "lounge", { hub: true, type: "dormroom", maxBoxes: 2 }),
+  dbath: () => L("bath", "Bathroom", "dormbath", { maxBoxes: 1, type: "dormroom" }),
+  laundry: () => L("laundry", "Laundry", "laundry"),
+  desk: () => L("lobby", "Front desk", "dormlobby", { entry: true, type: "office", maxBoxes: 1 }),
+  foyer: () => L("lobby", "Entrance hall", "dormlobby", { entry: true, type: "office", maxBoxes: 1 }),
+  study: () => L("office", "Study room", "study", { type: "office", maxBoxes: 2 }),
+  chapter: () => O("office", "Chapter room", "boardroom", { maxBoxes: 2 }),
+  hdining: () => L("dining", "Dining room", "ballroom", { type: "kitchen", maxBoxes: 2 }),
+  hkitchen: () => L("kitchen", "Kitchen", "kitchen", { maxBoxes: 3 }),
+  mailroom: () => O("office", "Mail room", "mailroom", { maxBoxes: 2 }),
+  shop: () => L("sales", "Convenience store", "bookstore", { type: "store", hub: false, maxBoxes: 5 }),
+  // a suite's, a flat's and a pod's rooms (one unit: its doors stay inside it, one onto the corridor)
+  sbed: (u) => L("bedroom", "Suite bedroom", "dormroom", { type: "dormroom", unit: u, maxBoxes: 2, boxTarget: 2, fl: "carpet" }),
+  scommon: (u) => L("apt", "Suite common room", "suitecommon", { type: "dormroom", unit: u, maxBoxes: 1, fl: "carpet" }),
+  abed: (u) => L("bedroom", "Apartment bedroom", "dormroom", { type: "dormroom", unit: u, maxBoxes: 2, boxTarget: 2, fl: "carpet" }),
+  aliving: (u) => L("apt", "Apartment kitchen and living room", "suitecommon", { type: "dormroom", unit: u, maxBoxes: 2, fl: "carpet" }),
+  studio: (u) => L("apt", "Graduate studio", "suitecommon", { type: "dormroom", unit: u, maxBoxes: 3, fl: "carpet" }),
+  // teaching
+  lecture: () => L("classroom", "Lecture hall", "lecture", { type: "office", maxBoxes: 1, fl: "carpet" }),
+  theatrel: () => L("classroom", "Lecture theatre", "lecture", { type: "office", maxBoxes: 1, fl: "carpet" }),
+  caseroom: () => L("classroom", "Case room", "lecture", { type: "office", maxBoxes: 1, fl: "carpet" }),
+  seminar: () => C("classroom", "Seminar room", "classroom"),
+  classroom: () => C("classroom", "Classroom", "classroom"),
+  faculty: () => L("office", "Faculty office", "faculty", { type: "office", maxBoxes: 2 }),
+  dept: () => L("office", "Department office", "faculty", { type: "office", maxBoxes: 2 }),
+  lobby: () => L("lobby", "Lobby", "hallobby", { entry: true, type: "office", maxBoxes: 1 }),
+  atrium: () => L("lobby", "Atrium", "hallobby", { hub: true, type: "office", maxBoxes: 1 }),
+  rotunda: () => O("lobby", "Rotunda", "rotunda", { entry: true, maxBoxes: 1 }),
+  rest: () => C("restroom", "Restroom", "washroom"),
+  complab: () => L("office", "Computer lab", "complab", { type: "office", maxBoxes: 3 }),
+  commons: () => L("office", "Computer commons", "complab", { type: "office", hub: true, maxBoxes: 4 }),
+  langlab: () => L("office", "Language lab", "complab", { type: "office", maxBoxes: 3 }),
+  reading: () => L("office", "Reading room", "reading", { type: "office", maxBoxes: 2, fl: "carpet" }),
+  stacks: () => L("stock", "Stacks", "stacks", { type: "office", maxBoxes: 4, fl: "carpet" }),
+  av: () => L("storage", "AV store", "stores", { type: "office", maxBoxes: 2 }),
+  cafe: () => L("dining", "Café", "foodcourt", { type: "kitchen", maxBoxes: 2 }),
+  moot: () => O("office", "Moot court", "courtroom", { maxBoxes: 1 }),
+  lawlib: () => O("office", "Law library", "lawlibrary", { maxBoxes: 3 }),
+  mediastudio: () => O("control", "Media studio", "studio", { maxBoxes: 2 }),
+  booth: () => O("control", "Recording booth", "booth", { maxBoxes: 1 }),
+  // the sciences
+  teach: () => L("lab", "Teaching lab", "teachlab", { maxBoxes: 3 }),
+  chemlab: () => L("lab", "Chemistry lab", "teachlab", { maxBoxes: 3 }),
+  biolab: () => L("lab", "Biology lab", "teachlab", { maxBoxes: 3 }),
+  anatomy: () => L("lab", "Anatomy lab", "teachlab", { maxBoxes: 3 }),
+  research: () => L("lab", "Research lab", "research", { maxBoxes: 3 }),
+  prep: () => L("storage", "Prep room", "prep", { type: "lab", maxBoxes: 2 }),
+  specimen: () => L("storage", "Specimen room", "prep", { type: "lab", maxBoxes: 2 }),
+  chem: () => L("storage", "Chemical store", "chemstore", { type: "lab", lock: ["door", 0.6], boxLock: ["drugs", 0.4], maxBoxes: 3, windows: false }),
+  cold: () => L("pantry", "Cold room", "freezerroom", { type: "lab", dk: "coldroom", maxBoxes: 3 }),
+  server: () => O("storage", "Server room", "serverroom", { maxBoxes: 2 }),
+  machineshop: () => L("workshop", "Machine shop", "toolroom", { maxBoxes: 3 }),
+  highbay: () => L("workshop", "High bay lab", "toolroom", { hub: true, maxBoxes: 4 }),
+  corestore: () => L("storage", "Core store", "stores", { type: "lab", maxBoxes: 3 }),
+  growroom: () => L("lab", "Grow room", "research", { maxBoxes: 2 }),
+  simlab: () => C("nurse", "Simulation lab", "nurse", { maxBoxes: 2 }),
+  // the student union
+  bookstore: () => L("sales", "Campus bookstore", "bookstore", { type: "store", hub: false, maxBoxes: 6 }),
+  foodcourt: () => L("dining", "Food court", "foodcourt", { type: "kitchen", maxBoxes: 3 }),
+  foodhall: () => L("dining", "Food hall", "foodcourt", { type: "kitchen", hub: true, maxBoxes: 4 }),
+  ukitchen: () => L("kitchen", "Kitchen", "kitchen", { maxBoxes: 3 }),
+  walkin: () => L("pantry", "Walk-in", "walkin", { type: "kitchen", dk: "steel", maxBoxes: 2 }),
+  games: () => L("dayroom", "Games room", "games", { hub: false, type: "dormroom", maxBoxes: 2 }),
+  arcade: () => L("dayroom", "Arcade", "games", { hub: false, type: "dormroom", maxBoxes: 2 }),
+  club: () => L("office", "Club office", "faculty", { type: "office", maxBoxes: 2 }),
+  paper: () => L("office", "Student newspaper", "faculty", { type: "office", maxBoxes: 2 }),
+  radio: () => O("control", "Campus radio", "studio", { maxBoxes: 2 }),
+  ballroom: () => L("dining", "Ballroom", "ballroom", { type: "kitchen", maxBoxes: 2, fl: "hardwood" }),
+  ulounge: () => L("dayroom", "Lounge", "lounge", { hub: false, type: "dormroom", maxBoxes: 2 }),
+  bigLounge: () => L("dayroom", "Student lounge", "lounge", { hub: true, type: "dormroom", maxBoxes: 3 }),
+  store: () => L("storage", "Storeroom", "drystore", { type: "warehouse", maxBoxes: 2 }),
+  pub: () => O("dining", "Campus pub", "canteen", { type: "bar", maxBoxes: 3 }),
+  coffee: () => O("dining", "Coffee shop", "cafe", { type: "kitchen", maxBoxes: 2 }),
+  creditunion: () => O("office", "Credit union", "clerk", { lock: ["door", 0.3], maxBoxes: 2 }),
+  printshop: () => O("storage", "Print shop", "mailroom", { maxBoxes: 2 }),
+  cinema: () => L("classroom", "Cinema", "auditorium", { type: "office", maxBoxes: 1, fl: "carpet" }),
+  commuter: () => C("lockerroom", "Commuter lockers", "plockers", { type: "lockers", maxBoxes: 3 }),
+  infodesk: () => L("lobby", "Information desk", "hallobby", { entry: true, type: "office", maxBoxes: 1 }),
+  meeting: () => O("office", "Meeting room", "meeting", { maxBoxes: 1 }),
+  // athletics
+  court: () => L("gym", "Basketball court", "court", { maxBoxes: 1 }),
+  arena: () => L("gym", "Arena floor", "court", { hub: true, maxBoxes: 1 }),
+  track: () => L("gym", "Indoor track", "court", { hub: true, maxBoxes: 1 }),
+  squash: () => L("gym", "Squash court", "court", { maxBoxes: 1 }),
+  gymhall: () => L("gym", "Gymnastics hall", "court", { maxBoxes: 1 }),
+  rink: () => L("gym", "Ice rink", "court", { hub: true, maxBoxes: 1, fl: "conc" }),
+  pool: () => L("gym", "Pool hall", "pool", { maxBoxes: 1, fl: "tile" }),
+  natatorium: () => L("gym", "Natatorium", "pool", { hub: true, maxBoxes: 1, fl: "tile" }),
+  weights: () => L("gym", "Weight room", "weights", { maxBoxes: 1 }),
+  mats: () => L("gym", "Mat room", "weights", { maxBoxes: 1 }),
+  ergs: () => L("gym", "Erg room", "weights", { maxBoxes: 1 }),
+  fitness: () => O("gym", "Fitness centre", "fitness", { type: "lockers", maxBoxes: 2 }),
+  dance: () => L("classroom", "Dance studio", "music", { type: "office", maxBoxes: 1, fl: "hardwood" }),
+  mlock: () => C("lockerroom", "Men's locker room", "plockers", { type: "lockers", maxBoxes: 3 }),
+  wlock: () => C("lockerroom", "Women's locker room", "plockers", { type: "lockers", maxBoxes: 3 }),
+  team: () => C("lockerroom", "Team locker room", "plockers", { type: "lockers", maxBoxes: 4 }),
+  coach: () => L("office", "Coaches' office", "faculty", { type: "office", maxBoxes: 2 }),
+  equip: () => L("storage", "Equipment room", "equipment", { type: "lockers", maxBoxes: 3 }),
+  skates: () => L("storage", "Skate hire", "equipment", { type: "lockers", maxBoxes: 3 }),
+  boats: () => L("storage", "Boat bay", "equipment", { type: "lockers", hub: true, maxBoxes: 3 }),
+  training: () => C("nurse", "Training room", "nurse", { maxBoxes: 2 }),
+  film: () => L("classroom", "Film room", "lecture", { type: "office", maxBoxes: 1, fl: "carpet" }),
+  concession: () => L("dining", "Concessions", "foodcourt", { type: "kitchen", maxBoxes: 2 }),
+  ticket: () => L("office", "Ticket office", "faculty", { type: "office", maxBoxes: 1 }),
+  alobby: () => L("lobby", "Lobby", "hallobby", { entry: true, type: "office", maxBoxes: 1 }),
+  concourse: () => L("lobby", "Concourse", "hallobby", { entry: true, type: "office", maxBoxes: 1 }),
+  kitlaundry: () => L("laundry", "Kit laundry", "laundry"),
+  // administration (#27's office rooms)
+  registrar: () => O("office", "Registrar", "clerk", { maxBoxes: 3 }),
+  reception: () => O("lobby", "Lobby", "reception", { entry: true, maxBoxes: 1 }),
+  welcome: () => O("lobby", "Welcome centre", "reception", { entry: true, maxBoxes: 1 }),
+  waiting: () => O("lobby", "Service hall", "waiting", { hub: true, maxBoxes: 1 }),
+  visitor: () => O("office", "Visitor lounge", "waiting", { maxBoxes: 1 }),
+  admissions: () => O("office", "Admissions", "openplan", { maxBoxes: 3 }),
+  bursar: () => O("office", "Bursar", "openplan", { maxBoxes: 3 }),
+  finaid: () => O("office", "Financial aid", "openplan", { maxBoxes: 3 }),
+  hr: () => O("office", "Human resources", "openplan", { maxBoxes: 3 }),
+  payroll: () => O("office", "Payroll", "openplan", { maxBoxes: 3 }),
+  affairs: () => O("office", "Student affairs", "openplan", { maxBoxes: 3 }),
+  offices: () => O("office", "Offices", "openplan", { maxBoxes: 3 }),
+  aoffice: () => O("office", "Office", "privoffice", { maxBoxes: 2 }),
+  records: () => O("storage", "Records", "fileroom", { lock: ["door", 0.3], maxBoxes: 3 }),
+  archive: () => O("storage", "University archive", "archive", { lock: ["door", 0.5], maxBoxes: 3, windows: false }),
+  breakroom: () => O("breakroom", "Break room", "breakroom", { type: "kitchen" }),
+  arest: () => ({ role: "restroom", name: "Restroom", office: "restroom" }),
+  president: () => O("office", "President's office", "execsuite", { lock: ["door", 0.3], maxBoxes: 3 }),
+  provost: () => O("office", "Provost's office", "execoffice", { maxBoxes: 2 }),
+  deans: () => O("office", "Deans' offices", "openplan", { maxBoxes: 3 }),
+  board: () => O("office", "Boardroom", "boardroom", { maxBoxes: 2 }),
+  trainingroom: () => O("office", "Training room", "training", { maxBoxes: 1 }),
+  itcloset: () => O("storage", "IT room", "itcloset", { maxBoxes: 1 }),
+  loading: () => O("storage", "Loading bay", "loadingbay", { maxBoxes: 2 }),
+  alumni: () => O("office", "Alumni lounge", "lounge", { maxBoxes: 2 }),
+  events: () => L("dining", "Events room", "ballroom", { type: "kitchen", maxBoxes: 2, fl: "hardwood" }),
+  akitchen: () => O("kitchen", "Kitchenette", "kitchenette", { type: "kitchen", maxBoxes: 1 }),
+  // campus security (#15's police rooms)
+  sdesk: () => C("lobby", "Front desk", "frontdesk", { entry: true, type: "office", maxBoxes: 1 }),
+  dispatch: () => C("office", "Dispatch", "dispatch", { maxBoxes: 2 }),
+  eoc: () => C("office", "Emergency operations centre", "dispatch", { maxBoxes: 2 }),
+  squad: () => C("office", "Officers' room", "squad", { maxBoxes: 2 }),
+  slock: () => C("lockerroom", "Locker room", "plockers", { type: "lockers", maxBoxes: 2 }),
+  gunlocker: () => L("armory", "Gun locker", "smallarmory", { lock: ["vault", 0.85], boxLock: ["cage", 0.4], dk: "steel", boxTarget: 3 }),
+  interview: () => C("office", "Interview room", "interview", { maxBoxes: 1 }),
+  holding: () => C("cells", "Holding cell", "cells", { type: "cellblock" }),
+  evidence: () => C("evidence", "Evidence room", "evidence", { lock: ["door", 0.6] }),
+  chief: () => C("office", "Chief's office", "chief", { maxBoxes: 2 }),
+  sbrief: () => C("office", "Briefing room", "briefing", { maxBoxes: 1 }),
+  srecords: () => C("storage", "Records", "records", { type: "office", maxBoxes: 2 }),
+  permits: () => O("office", "Parking permits", "clerk", { maxBoxes: 2 }),
+  lostfound: () => L("storage", "Lost property", "stores", { type: "office", maxBoxes: 3 }),
+  patrolbay: () => L("bays", "Patrol car bay", "vehbay", { type: "garage", maxBoxes: 2 }),
+  sbreak: () => C("breakroom", "Break room", "breakroom"),
+  // maintenance
+  vehbay: () => L("bays", "Vehicle bay", "vehbay", { type: "garage", maxBoxes: 4 }),
+  grounds: () => L("bays", "Grounds equipment bay", "vehbay", { type: "garage", maxBoxes: 4 }),
+  toolroom: () => L("workshop", "Tool room", "toolroom", { maxBoxes: 3 }),
+  carpentry: () => L("workshop", "Carpentry shop", "toolroom", { maxBoxes: 3 }),
+  paint: () => L("storage", "Paint store", "stores", { type: "warehouse", lock: ["door", 0.3], maxBoxes: 2 }),
+  electric: () => L("workshop", "Electrical shop", "toolroom", { maxBoxes: 3 }),
+  locksmith: () => L("workshop", "Key and lock shop", "toolroom", { lock: ["door", 0.5], maxBoxes: 2 }),
+  boiler: () => L("workshop", "Boiler room", "plantroom", { maxBoxes: 2 }),
+  boilerhouse: () => L("workshop", "Boiler house", "plantroom", { hub: true, maxBoxes: 3 }),
+  chiller: () => L("workshop", "Chiller room", "plantroom", { maxBoxes: 2 }),
+  control: () => O("control", "Plant control room", "control", { maxBoxes: 2 }),
+  mstores: () => L("storage", "Stores", "stores", { type: "warehouse", lock: ["door", 0.3], maxBoxes: 3 }),
+  warefloor: () => L("warefloor", "Central stores", "stores", { type: "warehouse", maxBoxes: 6 }),
+  seed: () => L("storage", "Seed and salt store", "stores", { type: "warehouse", maxBoxes: 3 }),
+  foreman: () => L("office", "Foreman's office", "faculty", { type: "office", maxBoxes: 2 }),
+  facilities: () => L("office", "Facilities office", "faculty", { type: "office", maxBoxes: 2 }),
+  mlocker: () => C("lockerroom", "Crew locker room", "plockers", { type: "lockers", maxBoxes: 2 }),
+  mbreak: () => C("breakroom", "Crew room", "breakroom"),
+  custodial: () => L("storage", "Custodial stores", "stores", { type: "warehouse", maxBoxes: 3 }),
+  mlaundry: () => L("laundry", "Linen laundry", "laundry"),
+  sorting: () => L("storage", "Sorting room", "stores", { type: "warehouse", maxBoxes: 3 }),
+  shoplobby: () => L("workshop", "Shop floor", "toolroom", { entry: true, hub: true, maxBoxes: 3 }),
+  // the theatre and the arts
+  auditorium: () => L("classroom", "Auditorium", "auditorium", { type: "office", maxBoxes: 1, fl: "carpet" }),
+  recital: () => L("classroom", "Recital hall", "auditorium", { type: "office", maxBoxes: 1, fl: "hardwood" }),
+  blackbox: () => L("classroom", "Black box studio", "auditorium", { type: "office", maxBoxes: 1, fl: "conc" }),
+  balcony: () => L("classroom", "Balcony", "auditorium", { type: "office", maxBoxes: 1, fl: "carpet" }),
+  sceneshop: () => L("workshop", "Scene shop", "sceneshop", { maxBoxes: 2 }),
+  soundstage: () => L("workshop", "Sound stage", "sceneshop", { hub: true, maxBoxes: 2 }),
+  greenroom: () => L("dayroom", "Green room", "greenroom", { hub: false, type: "dormroom", maxBoxes: 2 }),
+  dressing: () => L("dayroom", "Dressing room", "greenroom", { hub: false, type: "dormroom", maxBoxes: 2 }),
+  boxoffice: () => L("office", "Box office", "faculty", { type: "office", maxBoxes: 1 }),
+  tlobby: () => L("lobby", "Lobby", "hallobby", { entry: true, type: "office", maxBoxes: 1 }),
+  gallery: () => L("lobby", "Gallery", "hallobby", { hub: true, type: "office", maxBoxes: 1 }),
+  artstudio: () => L("workshop", "Art studio", "artstudio", { type: "office", maxBoxes: 2 }),
+  ceramics: () => L("workshop", "Ceramics studio", "artstudio", { type: "office", maxBoxes: 2 }),
+  music: () => L("classroom", "Music room", "music", { type: "office", maxBoxes: 1 }),
+  practice: () => L("classroom", "Practice room", "music", { type: "office", maxBoxes: 1 }),
+  rehearsal: () => L("classroom", "Rehearsal room", "music", { type: "office", maxBoxes: 1, fl: "hardwood" }),
+  drama: () => L("office", "Drama office", "faculty", { type: "office", maxBoxes: 2 }),
+  costume: () => L("storage", "Costume store", "stores", { type: "dormroom", maxBoxes: 3 }),
+  instruments: () => L("storage", "Instrument store", "stores", { type: "office", lock: ["door", 0.4], maxBoxes: 2 }),
+  edit: () => O("control", "Editing suite", "booth", { maxBoxes: 2 }),
+  projection: () => O("control", "Projection booth", "booth", { maxBoxes: 1 }),
+};
+
+// ---------- the forms ----------
+const corridor = (x = {}) => ({ role: "corridor", ...x });
+// A row of [size, key, o] and ["rep", unit, key] entries, w cells across, as assemble's [size, leaf] parts.
+function rowOf(list, w, ctx) {
+  const fixed = list.filter((e) => e[0] !== "rep" && e[0] !== "*").reduce((a, e) => a + e[0] + 1, 0);
+  const stars = list.filter((e) => e[0] === "*").length;
+  const reps = list.filter((e) => e[0] === "rep");
+  const free = w - fixed - stars * 5;
+  const unitSum = reps.reduce((a, e) => a + e[1] + 1, 0);
+  const k = reps.length ? Math.max(1, Math.floor(free / Math.max(1, unitSum))) : 0;
+  /** @type {[number | string, any][]} */
+  const out = [];
+  for (const e of list) {
+    if (e[0] === "rep") { for (let i = 0; i < k; i++) out.push([e[1], leafOf(e[2], e[3], ctx)]); continue; }
+    out.push([e[0], leafOf(e[1], e[2], ctx)]);
+  }
+  if (!out.some(([s]) => s === "*")) out[out.length - 1][0] = "*";
+  return out;
+}
+// A key's leaf, or a unit of rooms (a suite: two bedrooms either side of its common room; a flat: a bedroom, its living
+// room and kitchen; a pod: two bedrooms over their common room; a graduate studio alone), the unit's id fresh.
+function leafOf(key, o, ctx) {
+  const u = () => `u${ctx.f}-${ctx.n++}`;
+  if (typeof key !== "string") return { ...key, ...(o || {}) };
+  if (key === "suite") { const id = u(); return { split: "x", parts: [[4, Q.sbed(id)], ["*", Q.scommon(id)], [4, Q.sbed(id)]] }; }
+  if (key === "flat") { const id = u(); return { split: "x", parts: [[4, Q.abed(id)], ["*", Q.aliving(id)]] }; }
+  if (key === "pod") { const id = u(), beds = { split: "x", parts: [["*", Q.sbed(id)], ["*", Q.sbed(id)]] }; return { split: "y", parts: ctx.side === "back" ? [["*", Q.scommon(id)], [4, beds]] : [[4, beds], ["*", Q.scommon(id)]] }; }
+  if (key === "gstudio") return Q.studio(u());
+  if (!Q[key]) throw new Error(`campusplans: no room ${key}`);
+  return { ...Q[key](), ...(o || {}) };
+}
+const band = (list, w, ctx, side) => ({ split: "x", parts: rowOf(list, w, { ...ctx, side }) });
+/** A floor's plan → assemble's split tree. @param {any} P @param {number} w the inner width @param {any} ctx */
+function treeOf(P, w, ctx) {
+  const cw = P.cw || 2;
+  switch (P.form || "hall") {
+    case "hall": return { split: "y", parts: [[P.fd || 6, band(P.front, w, ctx, "front")], [cw, corridor()], ["*", band(P.back, w, ctx, "back")]] };
+    case "single": return { split: "y", parts: [["*", band(P.front, w, ctx, "front")], [cw, corridor()]] };
+    case "triple": return { split: "y", parts: [[P.fd || 6, band(P.front, w, ctx, "front")], [cw, corridor()], [P.md || 5, band(P.mid, w, ctx, "mid")], [cw, corridor()], ["*", band(P.back, w, ctx, "back")]] };
+    case "open": {
+      const parts = [[P.fd || 6, band(P.front, w, ctx, "front")], ["*", leafOf(P.hub, null, ctx)]];
+      if (P.back) parts.push([P.bd || 5, band(P.back, w, ctx, "back")]);
+      return { split: "y", parts };
+    }
+    case "wings": {
+      const cx = P.cx || 8, ww = Math.floor((w - cx - 2) / 2);
+      const wing = (W) => ({ split: "y", parts: [[P.fd || 6, band(W.front, ww, ctx, "front")], [cw, corridor()], ["*", band(W.back, ww, ctx, "back")]] });
+      const centre = { split: "y", parts: [[P.fd || 6, leafOf(P.entry, null, ctx)], ["*", leafOf(P.hall || "atrium", null, ctx)]] };
+      return { split: "x", parts: [["*", wing(P.left)], [cx, centre], ["*", wing(P.right)]] };
+    }
+    case "tree": return P.t(ctx.f, ctx, (k, o) => leafOf(k, o, ctx), (list, side, wd = w) => band(list, wd, ctx, side));
+    default: throw new Error(`campusplans: no form ${P.form}`);
+  }
+}
+const ENDS = { roles: ["corridor"], n: 2, len: 2, ends: true };
+const FIRE = (lock = 0.3) => [{ side: "left", roles: ["corridor"], chance: 0.8, lock }, { side: "right", roles: ["corridor"], chance: 0.8, lock }];
+const BACK = (roles, chance = 0.6, lock = 0.4, x = {}) => ({ side: "back", roles, chance, lock, ...x });
+const SIDE = (side, roles, chance = 0.7, lock = 0.3, x = {}) => ({ side, roles, chance, lock, ...x });
+
+/** A variant's spec (buildingmaps.js assemble). @param {any} rng @param {string} key @param {any} V @param {any} o */
+export function planFrom(rng, key, V, o = {}) {
+  if (V.ext) return V.ext(rng, o); // another ticket's plan (#34's libraries, #37's labs)
+  const S = CAMPUS_SIZE[key];
+  const bw = o.bw || range(rng, V.w || S.w), bh = o.bh || range(rng, V.h || S.h);
+  const n = Math.max(1, Math.min(o.maxStoreys || 8, o.storeys || range(rng, V.storeys || S.storeys)));
+  const inner = bw - 2;
+  const plan = (P, f, top) => treeOf(P, inner, { f, n: 0, top, bw, bh, storeys: n });
+  const upper = (f, r, ctx) => {
+    const top = !!(ctx && ctx.top);
+    const P = top && V.top ? V.top : typeof V.u === "function" ? V.u(f, top) : V.u || V.g;
+    return plan(P, f, top);
+  };
+  return {
+    bw, bh, front: { width: V.door || 2 }, ground: V.ground || "town", storeys: n, foot: footClass(bw, bh),
+    stairs: V.stairs || ENDS, program: plan(V.g, 0, n === 1), upper: n > 1 ? upper : null,
+    exits: V.exits || [BACK(["dayroom", "office", "classroom", "lab", "storage"]), ...FIRE()],
+    variant: V.name, variantId: V.id,
+  };
+}
+
+// ---------- the variants (the first of each type is campuslayout.js's own plan) ----------
+const ORIGINAL = (id, name) => ({ id, name, original: true });
+const DORM_UP = { front: [["rep", 4, "droom"], [7, "lounge"], ["rep", 4, "droom"]], back: [[5, "dbath"], [4, "ra"], ["rep", 4, "droom"], [5, "study"]] };
+const deck = (f, name) => L("bays", name || `Level ${f + 1}`, "deck", { type: "wreck", fl: "conc", maxBoxes: 14, entry: f === 0 });
+const stairCol = (f, below = "stores", n2 = "Utility room") => ({ split: "y", parts: [[8, { role: "stairwell", name: "Stairs" }], ["*", L("storage", f === 0 && below === "booth" ? "Pay booth" : n2, "stores", { type: "garage", maxBoxes: 1 })]] });
+const GSTAIRS = { roles: ["stairwell", "bays"], n: 2, len: 2 };
+
+// Another ticket's plan as a campus variant: #34's library (libraryPlan: a variant and its plan, at its own size; a
+// campus's storeys kept) and #37's lab (industryPlan "lab" with the plan's id; its rooms by their ind mark).
+const LIB = (variant, plan, name) => ({ id: `${variant}-${plan}`, name, ext: (rng, o) => libraryPlan(rng, { variant, plan, ...(o.storeys ? { storeys: o.storeys } : {}) }) });
+const LAB = (plan, name) => ({ id: `lab-${plan}`, name, ext: (rng, o) => industryPlan("lab", rng, { plan, site: "univ" }, () => null) });
+/** @type {Record<string, any[]>} */
+export const CAMPUS_VARIANTS = {
+  univlibrary: [
+    ORIGINAL("research", "Research library"),
+    LIB("university", "commons", "Learning commons library"), LIB("university", "tower", "Library tower"),
+    LIB("central", "centre", "Main library, central hall"), LIB("central", "side", "Main library, side hall"),
+    LIB("historic", "centre", "Old library, domed reading room"), LIB("historic", "side", "Old library, side reading room"),
+    LIB("law", "reading", "Law library, reading room"), LIB("law", "stacks", "Law library, stacks"),
+    LIB("archive", "vault", "Special collections vault"), LIB("archive", "house", "Rare books house"),
+    LIB("county", "hall", "Branch library"),
+  ],
+  dorm: [
+    ORIGINAL("corridor", "Double-loaded corridor hall"),
+    { id: "suites", name: "Suite-style hall", h: [17, 19],
+      g: { fd: 7, front: [["rep", 14, "suite"], [7, "desk"], ["rep", 14, "suite"]], back: [[5, "dbath"], [5, "laundry"], [4, "ra"], ["*", "lounge"], [5, "study"]] },
+      u: { fd: 7, front: [["rep", 14, "suite"], [7, "lounge"], ["rep", 14, "suite"]], back: [[5, "dbath"], [4, "ra"], ["rep", 14, "suite"]] },
+      exits: [BACK(["dayroom", "laundry"], 0.6, 0.4), ...FIRE()] },
+    { id: "gallery", name: "Single-loaded gallery hall", w: [40, 46], h: [10, 11],
+      g: { form: "single", front: [["rep", 4, "droom"], [7, "desk"], [5, "laundry"], [5, "dbath"], [6, "lounge"], ["rep", 4, "droom"]] },
+      u: { form: "single", front: [[4, "ra"], ["rep", 4, "droom"], [6, "lounge"], [5, "dbath"], ["rep", 4, "droom"]] },
+      exits: [...FIRE(0.2), BACK(["corridor"], 0.5, 0.3)] },
+    { id: "apartments", name: "Apartment-style hall", h: [19, 21],
+      g: { fd: 8, front: [["rep", 10, "flat"], [7, "desk"], ["rep", 10, "flat"]], back: [[5, "laundry"], [7, "lounge"], [4, "manager"], ["rep", 10, "flat"]] },
+      u: { fd: 8, front: [["rep", 10, "flat"], [6, "lounge"], ["rep", 10, "flat"]], back: [["rep", 10, "flat"], [4, "ra"]] },
+      exits: [BACK(["dayroom", "laundry"], 0.7, 0.4), ...FIRE()] },
+    { id: "pods", name: "Cluster pod hall", h: [20, 22],
+      g: { fd: 9, front: [["rep", 9, "pod"], [7, "desk"], ["rep", 9, "pod"]], back: [[5, "dbath"], [5, "laundry"], [7, "lounge"], [4, "ra"], ["rep", 9, "pod"]] },
+      u: { fd: 9, front: [["rep", 9, "pod"], [7, "lounge"], ["rep", 9, "pod"]], back: [[5, "dbath"], [4, "ra"], ["rep", 9, "pod"]] },
+      exits: [BACK(["dayroom"], 0.6, 0.4), ...FIRE()] },
+    { id: "tower", name: "Freshman tower", w: [30, 34], h: [26, 28], storeys: [6, 8],
+      g: { form: "triple", front: [["rep", 4, "droom"], [7, "desk"], ["rep", 4, "droom"]], md: 6, mid: [[5, "dbath"], [5, "laundry"], ["*", "lounge"], [5, "dbath"]], back: [["rep", 4, "droom"], [4, "ra"]] },
+      u: { form: "triple", front: [["rep", 4, "droom"], [4, "ra"], ["rep", 4, "droom"]], md: 6, mid: [[5, "dbath"], ["*", "lounge"], [5, "study"], [5, "dbath"]], back: [["rep", 4, "droom"]] },
+     exits: FIRE(0.4) },
+    { id: "singles", name: "Singles hall",
+      g: { front: [["rep", 3, "single"], [7, "desk"], ["rep", 3, "single"]], back: [[6, "dbath"], [5, "laundry"], ["rep", 3, "single"], [6, "lounge"], [4, "ra"]] },
+      u: { front: [["rep", 3, "single"], [6, "lounge"], ["rep", 3, "single"]], back: [[6, "dbath"], ["rep", 3, "single"], [4, "ra"]] },
+      exits: [BACK(["dayroom"], 0.5, 0.4), ...FIRE()] },
+    { id: "honors", name: "Honors house", w: [30, 36], h: [17, 19], storeys: [2, 3],
+      g: { front: [["*", "reading"], [7, "desk"], ["*", "study"]], back: [["*", "common"], [6, "klounge"], [5, "dbath"], [4, "manager"]] },
+      u: { front: [["rep", 4, "single"], [6, "slounge"], ["rep", 4, "single"]], back: [[5, "dbath"], ["rep", 4, "single"], [4, "ra"]] },
+      exits: [BACK(["dayroom"], 0.8, 0.3), SIDE("left", ["office"], 0.4)] },
+    { id: "coop", name: "Co-op house", w: [24, 30], h: [15, 17], storeys: [2, 3], door: 1,
+      g: { form: "open", fd: 6, front: [["*", "hdining"], [6, "foyer"], ["*", "hkitchen"]], hub: "common", back: [[5, "laundry"], ["*", "study"], [5, "dbath"]], bd: 4 },
+      u: { front: [["rep", 4, "single"], [6, "klounge"], ["rep", 4, "single"]], back: [[5, "dbath"], ["rep", 4, "single"]] },
+      stairs: { roles: ["dayroom", "corridor"], n: 1, len: 2 }, exits: [BACK(["dayroom", "laundry"], 0.9, 0.3)] },
+    { id: "graduate", name: "Graduate studios", h: [17, 19],
+      g: { fd: 7, front: [["rep", 6, "gstudio"], [7, "desk"], ["rep", 6, "gstudio"]], back: [[5, "laundry"], [6, "lounge"], ["rep", 6, "gstudio"], [4, "manager"]] },
+      u: { fd: 7, front: [["rep", 6, "gstudio"], [6, "slounge"], ["rep", 6, "gstudio"]], back: [["rep", 6, "gstudio"]] },
+      exits: [BACK(["dayroom", "laundry"], 0.5, 0.5), ...FIRE(0.5)] },
+    { id: "greek", name: "Greek house", w: [26, 32], h: [17, 19], storeys: [2, 3],
+      g: { front: [["*", "chapter"], [7, "foyer"], ["*", "hdining"]], back: [[7, "hkitchen"], [5, "dbath"], ["*", "lounge"], [5, "laundry"]] },
+      u: { front: [["rep", 4, "droom"], [6, "lounge"], ["rep", 4, "droom"]], back: [[5, "dbath"], ["rep", 4, "droom"], [4, "manager"]] },
+      exits: [BACK(["kitchen", "dayroom"], 0.9, 0.3), SIDE("left", ["corridor"], 0.5)] },
+    { id: "mixeduse", name: "Mixed-use hall", storeys: [3, 5], h: [18, 20],
+      g: { fd: 8, front: [["*", "shop"], [7, "desk"], ["*", "cafe"]], back: [[5, "laundry"], [6, "mailroom"], ["*", "lounge"], [5, "dbath"], [4, "ra"]] },
+      u: { ...DORM_UP, fd: 7 },
+      exits: [BACK(["dayroom", "laundry", "office"], 0.8, 0.3), SIDE("left", ["sales"], 0.6, 0.2), ...FIRE()] },
+  ],
+  lecturehall: [
+    ORIGINAL("twin", "Twin lecture halls"),
+    { id: "grand", name: "Grand lecture theatre",
+      g: { front: [["*", "seminar"], [3, "rest"], [8, "lobby"], [5, "faculty"], ["*", "seminar"]], back: [["*", "theatrel"], [4, "av"]] },
+      u: { front: [["rep", 5, "faculty"], [7, "dept"], ["rep", 5, "faculty"]], back: [["*", "seminar"], [3, "rest"], ["*", "seminar"]] },
+      exits: [BACK(["classroom"], 0.8, 0.3), ...FIRE()] },
+    { id: "seminar", name: "Seminar block", h: [17, 19], storeys: [2, 3],
+      g: { front: [["rep", 6, "seminar"], [7, "lobby"], ["rep", 6, "seminar"]], back: [["rep", 4, "faculty"], [3, "rest"], [5, "study"]] },
+      u: { front: [["rep", 6, "seminar"], [3, "rest"], ["rep", 6, "seminar"]], back: [["rep", 4, "faculty"], [6, "dept"]] } },
+    { id: "wing", name: "Single-loaded classroom wing", w: [40, 46], h: [12, 14],
+      g: { form: "single", front: [["rep", 7, "classroom"], [6, "lobby"], [3, "rest"], ["rep", 7, "classroom"]] },
+      u: { form: "single", front: [["rep", 7, "classroom"], [3, "rest"], ["rep", 4, "faculty"]] },
+      exits: [...FIRE(0.2), BACK(["corridor"], 0.6, 0.3)] },
+    { id: "atrium", name: "Atrium lecture building", w: [38, 44],
+      g: { form: "wings", cx: 8, entry: "lobby", hall: "atrium", left: { front: [["*", "seminar"], [3, "rest"]], back: [["*", "lecture"]] }, right: { front: [["*", "cafe"]], back: [["*", "lecture"]] } },
+      u: { form: "wings", cx: 8, entry: "dept", hall: "atrium", left: { front: [["rep", 4, "faculty"]], back: [["*", "seminar"]] }, right: { front: [["rep", 4, "faculty"]], back: [["*", "seminar"], [3, "rest"]] } },
+      stairs: { roles: ["lobby", "corridor"], n: 2, len: 2 }, exits: [BACK(["lobby", "classroom"], 0.8, 0.3), ...FIRE()] },
+    { id: "core", name: "Lecture halls round a core", h: [24, 26],
+      g: { form: "triple", front: [["*", "seminar"], [7, "lobby"], ["*", "seminar"]], md: 5, mid: [["rep", 4, "faculty"], [3, "rest"], [4, "av"]], back: [["*", "lecture"], ["*", "lecture"]] },
+      u: { form: "triple", front: [["rep", 5, "faculty"]], md: 5, mid: [[3, "rest"], ["*", "study"]], back: [["*", "seminar"], ["*", "seminar"], ["*", "seminar"]] },
+      exits: [BACK(["classroom"], 0.7, 0.3), ...FIRE()] },
+    { id: "humanities", name: "Humanities building", h: [17, 19], storeys: [3, 4],
+      g: { front: [["rep", 4, "faculty"], [7, "lobby"], ["rep", 4, "faculty"]], back: [["*", "seminar"], ["*", "seminar"], [6, "dept"], [3, "rest"]] },
+      u: { front: [["rep", 4, "faculty"], [7, "dept"], ["rep", 4, "faculty"]], back: [["*", "seminar"], ["*", "reading"], [3, "rest"]] } },
+    { id: "business", name: "Business school",
+      g: { front: [["*", "caseroom"], [7, "reception"], ["*", "complab"]], back: [["rep", 6, "seminar"], [5, "breakroom"], [3, "rest"]] },
+      u: { front: [["*", "offices"], [8, "board"], ["*", "offices"]], back: [["rep", 4, "aoffice"], [3, "arest"], ["*", "caseroom"]] },
+      exits: [BACK(["breakroom", "classroom"], 0.6, 0.4), ...FIRE()] },
+    { id: "law", name: "Law school", storeys: [2, 3],
+      g: { front: [["*", "moot"], [7, "rotunda"], ["*", "lawlib"]], back: [["rep", 6, "seminar"], ["rep", 4, "faculty"], [3, "rest"]] },
+      u: { front: [["*", "lawlib"], [6, "reading"], ["*", "stacks"]], back: [["rep", 4, "faculty"], [3, "rest"], ["*", "seminar"]] },
+      exits: [BACK(["office", "classroom"], 0.5, 0.4), ...FIRE(0.4)] },
+    { id: "media", name: "Language and media centre", h: [18, 20],
+      g: { front: [["*", "langlab"], [7, "lobby"], ["*", "mediastudio"]], back: [["rep", 6, "seminar"], [4, "booth"], [4, "booth"], [3, "rest"]] },
+      u: { front: [["rep", 6, "seminar"], [3, "rest"]], back: [["rep", 4, "faculty"], ["*", "langlab"]] },
+      exits: [BACK(["control", "classroom"], 0.6, 0.4), ...FIRE()] },
+    { id: "oldmain", name: "Old Main", w: [34, 40], h: [19, 21], storeys: [3, 4],
+      g: { front: [["*", "seminar"], [9, "rotunda"], ["*", "seminar"]], back: [["*", "lecture"], [4, "faculty"], [4, "faculty"], ["*", "lecture"]] },
+      u: { front: [["*", "seminar"], [9, "dept"], ["*", "seminar"]], back: [["rep", 4, "faculty"], [3, "rest"]] },
+      top: { front: [["*", "reading"], [9, "dept"], ["*", "reading"]], back: [["*", "stacks"], [3, "rest"], ["*", "faculty"]] },
+      exits: [BACK(["classroom"], 0.6, 0.4), SIDE("left", ["classroom"], 0.5), SIDE("right", ["classroom"], 0.5)] },
+    { id: "commons", name: "Learning commons", storeys: [1, 2],
+      g: { form: "open", front: [["*", "study"], [7, "lobby"], [3, "rest"], ["*", "cafe"]], hub: "commons", back: [["rep", 6, "seminar"]], bd: 6 },
+      u: { front: [["rep", 6, "seminar"]], back: [["*", "complab"], [3, "rest"], ["*", "study"]] },
+      stairs: { roles: ["office", "corridor"], n: 1, len: 2 }, exits: [BACK(["classroom"], 0.6, 0.3), SIDE("left", ["office"], 0.6), SIDE("right", ["office"], 0.6)] },
+  ],
+  sciencehall: [
+    ORIGINAL("labs", "Teaching and research labs"),
+    { id: "chemistry", name: "Chemistry building",
+      g: { fd: 7, front: [["rep", 8, "chemlab"], [7, "lobby"], [4, "prep"]], back: [[5, "chem"], [5, "chem"], ["*", "research"], [4, "faculty"], [3, "rest"]] },
+      u: { fd: 7, front: [["rep", 8, "chemlab"], [4, "prep"]], back: [[5, "chem"], ["rep", 7, "research"], [3, "rest"]] },
+      exits: [BACK(["storage", "lab"], 0.8, 0.5), ...FIRE(0.2)] },
+    { id: "biology", name: "Biology building",
+      g: { fd: 7, front: [["*", "biolab"], [7, "lobby"], [4, "specimen"], [3, "rest"]], back: [["*", "research"], [5, "cold"], ["*", "biolab"], [4, "faculty"]] },
+      u: { fd: 7, front: [["*", "biolab"], [4, "specimen"], ["*", "biolab"]], back: [["*", "growroom"], [5, "cold"], ["rep", 4, "faculty"]] } },
+    { id: "physics", name: "Physics building",
+      g: { fd: 8, front: [["*", "lecture"], [7, "lobby"], ["*", "teach"]], back: [["*", "machineshop"], ["rep", 7, "research"], [4, "faculty"], [3, "rest"]] },
+      u: { front: [["rep", 7, "teach"], [3, "rest"]], back: [["rep", 4, "faculty"], ["*", "research"]] },
+      exits: [BACK(["workshop"], 0.8, 0.4, { roller: true, width: 2, name: "Loading door" }), ...FIRE()] },
+    { id: "engineering", name: "Engineering hall", w: [36, 42], storeys: [1, 2],
+      g: { form: "open", fd: 6, front: [["*", "faculty"], [7, "lobby"], ["*", "complab"], [3, "rest"]], hub: "highbay", back: [[5, "mstores"], ["*", "machineshop"], [5, "prep"]], bd: 5 },
+      u: { front: [["rep", 7, "teach"], [3, "rest"]], back: [["rep", 4, "faculty"], ["*", "complab"]] },
+      stairs: { roles: ["workshop", "corridor"], n: 1, len: 2 },
+      exits: [BACK(["workshop", "storage"], 1, 0.3, { roller: true, width: 3, name: "High bay door" }), SIDE("left", ["office"], 0.5)] },
+    { id: "tower", name: "Research tower", w: [28, 32], h: [24, 26], storeys: [4, 6],
+      g: { form: "triple", front: [["*", "research"], [7, "lobby"], ["*", "research"]], md: 5, mid: [[4, "prep"], [5, "chem"], [3, "rest"], ["*", "server"]], back: [["rep", 7, "research"]] },
+      u: { form: "triple", front: [["rep", 7, "research"]], md: 5, mid: [[4, "prep"], [5, "cold"], [3, "rest"], ["*", "faculty"]], back: [["rep", 7, "research"]] },
+     exits: FIRE(0.4) },
+    { id: "wing", name: "Single-loaded lab wing", w: [42, 46], h: [13, 14],
+      g: { form: "single", front: [["rep", 9, "teach"], [6, "lobby"], [4, "prep"], [3, "rest"], ["rep", 9, "teach"]] },
+      u: { form: "single", front: [["rep", 9, "research"], [4, "prep"], [3, "rest"], ["rep", 4, "faculty"]] },
+      exits: [...FIRE(0.2), BACK(["lab"], 0.6, 0.4)] },
+    { id: "computing", name: "Computer science building",
+      g: { front: [["rep", 9, "complab"], [7, "lobby"], [3, "rest"]], back: [[6, "server"], ["rep", 4, "faculty"], [6, "study"]] },
+      u: { front: [["rep", 9, "complab"], [3, "rest"]], back: [["rep", 4, "faculty"], [6, "seminar"], [5, "server"]] } },
+    { id: "geology", name: "Earth sciences building",
+      g: { fd: 7, front: [["*", "teach"], [7, "lobby"], [6, "corestore"]], back: [[6, "corestore"], ["*", "research"], ["rep", 4, "faculty"], [3, "rest"]] },
+      u: { fd: 7, front: [["*", "teach"], [4, "prep"], ["*", "teach"]], back: [["*", "research"], [3, "rest"], ["rep", 4, "faculty"]] },
+      exits: [BACK(["storage"], 0.8, 0.4, { roller: true, width: 2, name: "Core store door" }), ...FIRE()] },
+    { id: "medical", name: "Medical sciences building",
+      g: { fd: 7, front: [["*", "anatomy"], [7, "lobby"], ["*", "simlab"]], back: [["rep", 7, "research"], [5, "cold"], [5, "chem"], [3, "rest"]] },
+      u: { fd: 7, front: [["*", "anatomy"], [4, "prep"], ["*", "teach"]], back: [["rep", 7, "research"], [5, "cold"], [4, "faculty"]] },
+      exits: [BACK(["lab", "pantry"], 0.6, 0.6), ...FIRE(0.4)] },
+    { id: "agriculture", name: "Agricultural science building", storeys: [1, 2], h: [21, 23],
+      g: { fd: 7, front: [["*", "teach"], [7, "lobby"], [5, "seed"], [3, "rest"]], back: [["*", "growroom"], ["*", "growroom"], [5, "cold"], [4, "faculty"]] },
+      u: { front: [["rep", 8, "teach"]], back: [["rep", 4, "faculty"], ["*", "research"]] },
+      exits: [BACK(["lab", "storage"], 0.9, 0.3), SIDE("left", ["lab"], 0.6)] },
+    { id: "interdisciplinary", name: "Interdisciplinary science centre", w: [40, 46],
+      g: { form: "wings", cx: 8, entry: "lobby", hall: "atrium", left: { front: [["*", "teach"], [4, "prep"]], back: [["*", "research"], [5, "chem"]] }, right: { front: [["*", "cafe"], [3, "rest"]], back: [["*", "teach"]] } },
+      u: { form: "wings", cx: 8, entry: "dept", hall: "atrium", left: { front: [["rep", 7, "research"]], back: [["*", "research"]] }, right: { front: [["rep", 4, "faculty"]], back: [["*", "complab"], [3, "rest"]] } },
+      stairs: { roles: ["lobby", "corridor"], n: 2, len: 2 }, exits: [BACK(["lobby", "lab"], 0.7, 0.4), ...FIRE()] },
+    LAB("teaching", "University teaching lab"), LAB("rnd", "Corporate R&D lab"), LAB("biohazard", "Biohazard lab"),
+    LAB("pharma", "Pharmaceutical lab"), LAB("cleanfab", "Clean-room fab"), LAB("agri", "Agricultural research station"),
+  ],
+  // (the science building ends with #37's lab plans, after its own twelve)
+  studentunion: [
+    ORIGINAL("union", "Union with food court and ballroom"),
+    { id: "atrium", name: "Atrium union", w: [42, 46],
+      g: { form: "wings", cx: 9, entry: "infodesk", hall: "bigLounge", left: { front: [["*", "bookstore"]], back: [["*", "games"], [3, "rest"]] }, right: { front: [["*", "foodcourt"]], back: [["*", "ukitchen"], [3, "walkin"]] } },
+      u: { form: "wings", cx: 9, entry: "club", hall: "atrium", left: { front: [["rep", 4, "club"]], back: [["*", "ballroom"]] }, right: { front: [["*", "paper"], ["*", "radio"]], back: [["*", "meeting"], [3, "rest"]] } },
+      stairs: { roles: ["dayroom", "corridor"], n: 2, len: 2 }, exits: [BACK(["kitchen", "dayroom"], 0.8, 0.3), ...FIRE()] },
+    { id: "foodhall", name: "Food hall union",
+      g: { form: "open", fd: 7, front: [["*", "bookstore"], [7, "lobby"], ["*", "coffee"]], hub: "foodhall", back: [[7, "ukitchen"], [3, "walkin"], [4, "store"], ["*", "games"], [3, "rest"]], bd: 6 },
+      u: { front: [["*", "ballroom"], [6, "ulounge"]], back: [["rep", 4, "club"], [3, "rest"]] },
+      stairs: { roles: ["dining", "corridor"], n: 1, len: 2 }, exits: [BACK(["kitchen", "pantry"], 0.9, 0.3, { roller: true, width: 2, name: "Service door" }), SIDE("left", ["dining"], 0.6), SIDE("right", ["dining"], 0.6)] },
+    { id: "ballroom", name: "Ballroom union", h: [24, 26],
+      g: { fd: 7, front: [["*", "ulounge"], [7, "lobby"], ["*", "coffee"]], back: [["*", "ballroom"], [7, "ukitchen"], [3, "walkin"], [3, "rest"]] },
+      u: { front: [["*", "bookstore"], ["*", "games"]], back: [["rep", 4, "club"], [3, "rest"]] },
+      exits: [BACK(["kitchen", "dining"], 0.8, 0.3), ...FIRE()] },
+    { id: "clubs", name: "Club tower union", w: [32, 36], h: [20, 22], storeys: [3, 4],
+      g: { fd: 7, front: [["*", "foodcourt"], [7, "lobby"], ["*", "games"]], back: [[7, "ukitchen"], [3, "walkin"], ["rep", 4, "club"], [3, "rest"]] },
+      u: { front: [["rep", 4, "club"], [6, "ulounge"], ["rep", 4, "club"]], back: [["*", "meeting"], ["rep", 4, "club"], [3, "rest"]] },
+      top: { front: [["*", "paper"], [6, "radio"], ["*", "club"]], back: [["*", "ballroom"], [3, "rest"]] } },
+    { id: "pub", name: "Pub and games union", storeys: [1, 2],
+      g: { fd: 8, front: [["*", "pub"], [7, "lobby"], ["*", "arcade"]], back: [["*", "games"], [6, "ukitchen"], [3, "walkin"], [4, "store"], [3, "rest"]] },
+      u: { front: [["*", "ulounge"], ["*", "cinema"]], back: [["rep", 4, "club"], [3, "rest"]] },
+      exits: [BACK(["kitchen", "storage"], 0.9, 0.4, { name: "Cellar door" }), ...FIRE()] },
+    { id: "bookstore", name: "Bookstore union", h: [24, 26],
+      g: { form: "open", fd: 7, front: [["*", "coffee"], [7, "lobby"], [5, "mailroom"]], hub: { ...Q.bookstore(), hub: true }, back: [[5, "store"], [5, "store"], ["*", "club"], [3, "rest"]], bd: 5 },
+      u: { front: [["*", "foodcourt"], [6, "ulounge"]], back: [[7, "ukitchen"], [3, "walkin"], ["*", "meeting"], [3, "rest"]] },
+      stairs: { roles: ["sales", "corridor"], n: 1, len: 2 }, exits: [BACK(["storage"], 0.9, 0.4, { roller: true, width: 2, name: "Goods door" }), SIDE("left", ["dining"], 0.5)] },
+    { id: "services", name: "Student services centre",
+      g: { front: [["*", "creditunion"], [7, "infodesk"], ["*", "mailroom"]], back: [["*", "printshop"], ["*", "coffee"], [3, "rest"], [5, "store"]] },
+      u: { front: [["*", "affairs"], [7, "meeting"], ["*", "finaid"]], back: [["rep", 4, "club"], [3, "rest"]] },
+      exits: [BACK(["storage", "office"], 0.7, 0.4), ...FIRE()] },
+    { id: "gallery", name: "Single-loaded gallery union", w: [44, 46], h: [16, 18],
+      g: { form: "single", front: [["*", "foodcourt"], [6, "ukitchen"], [7, "lobby"], ["*", "bookstore"], [3, "rest"], ["*", "games"]] },
+      u: { form: "single", front: [["*", "ballroom"], ["rep", 4, "club"], [3, "rest"], ["*", "ulounge"]] },
+      exits: [...FIRE(0.2), BACK(["corridor"], 0.6, 0.3)] },
+    { id: "commuter", name: "Commuter centre", storeys: [1, 2],
+      g: { form: "open", fd: 6, front: [["*", "commuter"], [7, "lobby"], ["*", "coffee"]], hub: "bigLounge", back: [["*", "study"], [6, "klounge"], [3, "rest"]], bd: 5 },
+      u: { front: [["rep", 6, "meeting"]], back: [["rep", 4, "club"], [3, "rest"]] },
+      stairs: { roles: ["dayroom", "corridor"], n: 1, len: 2 }, exits: [SIDE("left", ["dayroom"], 0.8), SIDE("right", ["dayroom"], 0.8), BACK(["dayroom"], 0.5)] },
+    { id: "media", name: "Media union",
+      g: { front: [["*", "radio"], [7, "lobby"], ["*", "foodcourt"]], back: [["*", "paper"], [5, "booth"], ["*", "cinema"], [6, "ukitchen"], [3, "rest"]] },
+      u: { front: [["*", "mediastudio"], [5, "edit"], ["*", "ulounge"]], back: [["rep", 4, "club"], [3, "rest"]] } },
+    { id: "rec", name: "Recreation union", storeys: [1, 2], h: [24, 26],
+      g: { fd: 8, front: [["*", "arcade"], [7, "lobby"], ["*", "foodcourt"]], back: [["*", "games"], ["*", "cinema"], [6, "ukitchen"], [3, "rest"]] },
+      u: { front: [["*", "dance"], ["*", "ulounge"]], back: [["rep", 4, "club"], [3, "rest"]] },
+      exits: [BACK(["dayroom", "kitchen"], 0.8, 0.3), ...FIRE()] },
+  ],
+  athletics: [
+    ORIGINAL("gym", "Gym, pool and weight room"),
+    { id: "fieldhouse", name: "Field house", w: [42, 46], h: [30, 32],
+      g: { form: "open", fd: 7, front: [["*", "mlock"], [5, "coach"], [8, "alobby"], [5, "equip"], ["*", "wlock"]], hub: "track", back: [[6, "weights"], ["*", "training"], [6, "equip"], [3, "rest"]], bd: 5 },
+      stairs: null, exits: [BACK(["gym"], 1, 0.3, { roller: true, width: 3, name: "Field door" }), SIDE("left", ["gym"], 0.7), SIDE("right", ["gym"], 0.7)] },
+    { id: "natatorium", name: "Natatorium",
+      g: { form: "open", fd: 7, front: [["*", "mlock"], [8, "alobby"], [5, "coach"], ["*", "wlock"]], hub: "natatorium", back: [[5, "equip"], ["*", "training"], [5, "boiler"]], bd: 4 },
+      exits: [BACK(["workshop", "storage"], 0.8, 0.4), SIDE("left", ["gym"], 0.5)] },
+    { id: "arena", name: "Basketball arena", w: [42, 46], h: [30, 32],
+      g: { form: "open", fd: 6, front: [["*", "concession"], [5, "ticket"], [8, "concourse"], [3, "rest"], ["*", "concession"]], hub: "arena", back: [["*", "team"], [6, "film"], [5, "coach"], ["*", "team"], [5, "training"]], bd: 6 },
+      exits: [BACK(["lockerroom", "gym"], 0.9, 0.4, { name: "Players' entrance" }), SIDE("left", ["gym"], 0.8), SIDE("right", ["gym"], 0.8)] },
+    { id: "fitness", name: "Fitness centre", w: [32, 38], h: [22, 24], storeys: [2, 2],
+      g: { fd: 8, front: [["*", "fitness"], [8, "alobby"], ["*", "weights"]], back: [["*", "mlock"], [3, "rest"], ["*", "wlock"], [5, "equip"]] },
+      u: { fd: 8, front: [["*", "dance"], ["*", "fitness"]], back: [["*", "mats"], [5, "training"], [3, "rest"]] }, stairs: ENDS },
+    { id: "gymnastics", name: "Gymnastics and dance centre", h: [26, 28],
+      g: { fd: 9, front: [["*", "dance"], [8, "alobby"], ["*", "dance"]], back: [["*", "gymhall"], [6, "equip"], [6, "mlock"], [6, "wlock"]] } },
+    { id: "combat", name: "Wrestling and combat sports centre", w: [32, 36], h: [22, 24],
+      g: { fd: 9, front: [["*", "mats"], [7, "alobby"], ["*", "mats"]], back: [["*", "team"], [5, "coach"], [5, "training"], ["*", "weights"], [3, "rest"]] } },
+    { id: "rec", name: "Recreation centre",
+      g: { form: "triple", fd: 7, front: [["*", "mlock"], [8, "alobby"], ["*", "wlock"]], md: 6, mid: [["*", "fitness"], [5, "equip"], ["*", "weights"]], back: [["*", "court"], ["*", "pool"]] } },
+    { id: "rink", name: "Ice rink", w: [42, 46], h: [30, 32],
+      g: { form: "open", fd: 6, front: [["*", "skates"], [8, "concourse"], [5, "ticket"], ["*", "concession"]], hub: "rink", back: [["*", "team"], [6, "boiler"], ["*", "team"]], bd: 6 },
+      exits: [BACK(["workshop"], 0.9, 0.3, { roller: true, width: 3, name: "Ice resurfacer door" }), SIDE("left", ["gym"], 0.6)] },
+    { id: "racquet", name: "Racquet centre", w: [44, 46], h: [16, 18],
+      g: { form: "single", front: [["rep", 7, "squash"], [6, "alobby"], [5, "mlock"], [5, "wlock"], ["rep", 7, "squash"]] },
+      exits: [...FIRE(0.3)] },
+    { id: "boathouse", name: "Boathouse", w: [30, 36], h: [20, 24], storeys: [1, 2], door: 3,
+      g: { form: "open", fd: 6, front: [[6, "mlock"], [7, "alobby"], [6, "wlock"], ["*", "coach"]], hub: "boats" },
+      u: { front: [["*", "ergs"], [5, "coach"]], back: [["*", "ulounge"], [3, "rest"]] }, stairs: { roles: ["storage", "corridor"], n: 1, len: 2 },
+      exits: [BACK(["storage"], 1, 0.3, { roller: true, width: 4, name: "Boat doors" })] },
+    { id: "training", name: "Varsity training complex", storeys: [1, 2],
+      g: { fd: 8, front: [["*", "team"], [6, "coach"], [8, "alobby"], [6, "film"], ["*", "team"]], back: [["*", "weights"], [6, "training"], [5, "kitlaundry"], ["*", "court"]] },
+      u: { front: [["rep", 5, "coach"], ["*", "film"]], back: [["*", "meeting"], [3, "rest"]] }, stairs: ENDS },
+  ],
+  admin: [
+    ORIGINAL("offices", "Registrar, admissions and the president's floor"),
+    { id: "oldmain", name: "Old Main administration", w: [32, 38], h: [19, 21], storeys: [3, 3],
+      g: { front: [["*", "registrar"], [9, "rotunda"], ["*", "admissions"]], back: [["*", "bursar"], [5, "records"], [3, "arest"], ["*", "finaid"]] },
+      u: { front: [["*", "hr"], [9, "board"], ["*", "affairs"]], back: [["rep", 5, "aoffice"], [3, "arest"]] },
+      top: { front: [["*", "president"], [9, "board"], ["*", "provost"]], back: [["*", "archive"], [3, "arest"], ["*", "deans"]] },
+      exits: [BACK(["storage", "office"], 0.5, 0.4), SIDE("left", ["office"], 0.4), SIDE("right", ["office"], 0.4)] },
+    { id: "welcome", name: "Welcome centre", storeys: [1, 2],
+      g: { form: "open", front: [["*", "admissions"], [8, "welcome"], ["*", "visitor"]], hub: "waiting", back: [["rep", 6, "meeting"], [3, "arest"]], bd: 5 },
+      u: { front: [["*", "admissions"], [6, "akitchen"]], back: [["rep", 4, "aoffice"], [3, "arest"]] }, stairs: { roles: ["lobby", "corridor"], n: 1, len: 2 },
+      exits: [SIDE("left", ["lobby"], 0.7), SIDE("right", ["lobby"], 0.7)] },
+    { id: "onestop", name: "One-stop student services hall", w: [32, 36], h: [19, 21],
+      g: { form: "open", front: [["*", "registrar"], [7, "reception"], ["*", "finaid"]], hub: "waiting", back: [["*", "bursar"], [5, "records"], [5, "breakroom"], [3, "arest"]], bd: 6 },
+      u: { front: [["*", "affairs"], ["*", "hr"]], back: [["rep", 4, "aoffice"], [5, "records"], [3, "arest"]] }, stairs: { roles: ["lobby", "corridor"], n: 1, len: 2 } },
+    { id: "wing", name: "Single-loaded office wing", w: [40, 44], h: [12, 13],
+      g: { form: "single", front: [["*", "registrar"], [6, "reception"], ["rep", 5, "aoffice"], [5, "records"], [3, "arest"]] },
+      u: { form: "single", front: [["rep", 5, "aoffice"], [6, "board"], [3, "arest"], ["*", "offices"]] },
+      top: { form: "single", front: [["*", "president"], [6, "board"], ["*", "provost"], [3, "arest"]] }, exits: FIRE(0.4) },
+    { id: "tower", name: "Administration tower", w: [26, 30], h: [24, 26], storeys: [4, 6],
+      g: { form: "triple", front: [["*", "registrar"], [7, "reception"], ["*", "admissions"]], md: 5, mid: [[5, "records"], [5, "breakroom"], [3, "arest"], ["*", "itcloset"]], back: [["*", "bursar"], ["*", "finaid"]] },
+      u: { form: "triple", front: [["rep", 5, "aoffice"]], md: 5, mid: [[5, "records"], [3, "arest"], ["*", "akitchen"]], back: [["*", "offices"], ["*", "hr"]] },
+      top: { form: "triple", front: [["*", "president"], ["*", "provost"]], md: 5, mid: [[3, "arest"], ["*", "akitchen"]], back: [["*", "board"], ["*", "deans"]] }, exits: FIRE(0.5) },
+    { id: "alumni", name: "Alumni house", w: [22, 26], h: [15, 17], storeys: [2, 2], door: 1,
+      g: { front: [["*", "alumni"], [6, "reception"], ["*", "events"]], back: [[5, "akitchen"], ["*", "aoffice"], [3, "arest"]] },
+      u: { front: [["rep", 5, "aoffice"]], back: [["*", "board"], [3, "arest"]] },
+      exits: [BACK(["kitchen", "office"], 0.8, 0.4)] },
+    { id: "executive", name: "President's and provost's hall", storeys: [2, 3],
+      g: { front: [["*", "provost"], [7, "reception"], ["*", "deans"]], back: [["*", "board"], [5, "akitchen"], [3, "arest"], ["*", "aoffice"]] },
+      u: { front: [["*", "president"], [7, "board"], ["*", "aoffice"]], back: [["*", "archive"], [3, "arest"]] },
+      exits: [BACK(["office"], 0.5, 0.6), ...FIRE(0.5)] },
+    { id: "records", name: "Records and IT centre", storeys: [1, 2],
+      g: { front: [["*", "registrar"], [7, "reception"], ["*", "server"]], back: [["rep", 6, "records"], [5, "itcloset"], [3, "arest"]] },
+      u: { front: [["*", "archive"], ["*", "offices"]], back: [["rep", 6, "records"], [3, "arest"]] },
+      exits: [BACK(["storage"], 0.6, 0.6), ...FIRE(0.5)] },
+    { id: "hr", name: "Human resources and payroll", storeys: [2, 3],
+      g: { front: [["*", "hr"], [7, "reception"], ["*", "payroll"]], back: [["*", "trainingroom"], [5, "records"], [5, "breakroom"], [3, "arest"]] },
+      u: { front: [["*", "offices"], [7, "meeting"], ["*", "payroll"]], back: [["rep", 4, "aoffice"], [3, "arest"]] } },
+    { id: "admissions", name: "Admissions hall", storeys: [1, 2],
+      g: { fd: 7, front: [["*", "visitor"], [8, "welcome"], ["*", "trainingroom"]], back: [["rep", 5, "meeting"], ["*", "admissions"], [3, "arest"]] },
+      u: { front: [["*", "admissions"], [6, "akitchen"]], back: [["rep", 4, "aoffice"], [3, "arest"]] },
+      exits: [BACK(["office"], 0.6, 0.3), SIDE("left", ["office"], 0.5)] },
+    { id: "mail", name: "Mail and print services", storeys: [1, 1], h: [17, 19],
+      g: { form: "open", front: [["*", "printshop"], [7, "reception"], ["*", "aoffice"]], hub: { ...Q.mailroom(), hub: true, name: "Sorting floor", maxBoxes: 4 }, back: [["*", "loading"], [5, "records"], [3, "arest"]], bd: 5 },
+      exits: [BACK(["storage"], 1, 0.3, { roller: true, width: 3, name: "Mail dock" })] },
+  ],
+  security: [
+    ORIGINAL("station", "Campus security office"),
+    { id: "precinct", name: "Campus police station", w: [22, 26], h: [15, 17],
+      g: { front: [["*", "sdesk"], [5, "dispatch"], [5, "interview"]], back: [["*", "squad"], [4, "holding"], [4, "holding"], [4, "evidence"], [4, "gunlocker"]], fd: 6 },
+      exits: [BACK(["office", "cells"], 0.8, 0.6, { name: "Sally port" })] },
+    { id: "dispatch", name: "Dispatch centre", h: [14, 16],
+      g: { form: "open", fd: 5, front: [["*", "sdesk"], [5, "chief"]], hub: { ...Q.dispatch(), hub: true, name: "Dispatch floor" }, back: [[5, "server"], [4, "slock"], [4, "gunlocker"], ["*", "sbreak"]], bd: 4 },
+      exits: [BACK(["office"], 0.6, 0.5)] },
+    { id: "kiosk", name: "Security kiosk", w: [12, 14], h: [9, 10], door: 1,
+      g: { form: "tree", t: (f, ctx, K) => ({ split: "x", parts: [["*", K("sdesk")], [4, { split: "y", parts: [["*", K("squad")], [3, K("gunlocker")]] }]] }) },
+      stairs: null, exits: [] },
+    { id: "gatehouse", name: "Gatehouse post", w: [10, 12], h: [8, 9], door: 1,
+      g: { form: "tree", t: (f, ctx, K) => ({ split: "y", parts: [["*", K("sdesk", { name: "Gate office" })], [3, { split: "x", parts: [["*", K("slock")], [3, K("gunlocker")]] }]] }) },
+      stairs: null, exits: [{ side: "back", roles: ["lobby"], chance: 1, lock: 0.5 }] },
+    { id: "hq", name: "Two-storey security headquarters", w: [20, 24], h: [15, 16], storeys: [2, 2],
+      g: { fd: 6, front: [["*", "sdesk"], [5, "dispatch"]], back: [["*", "squad"], [4, "slock"], [4, "gunlocker"]] },
+      u: { fd: 6, front: [["*", "chief"], [5, "sbrief"]], back: [["*", "srecords"], [4, "evidence"], [3, "rest"]] }, stairs: { roles: ["corridor"], n: 1, len: 2 },
+      exits: [BACK(["office"], 0.6, 0.5), SIDE("left", ["corridor"], 0.5, 0.5)] },
+    { id: "gallery", name: "Single-loaded security wing", w: [24, 28], h: [9, 10],
+      g: { form: "single", front: [["*", "sdesk"], [5, "dispatch"], [5, "squad"], [4, "slock"], [4, "gunlocker"]] },
+      exits: [SIDE("left", ["corridor"], 0.7, 0.5), SIDE("right", ["corridor"], 0.7, 0.5)] },
+    { id: "eoc", name: "Emergency operations centre", w: [22, 26], h: [16, 18],
+      g: { fd: 7, front: [["*", "sdesk"], [6, "chief"]], back: [["*", "eoc"], [5, "sbrief"], [5, "server"], [4, "gunlocker"]] },
+      exits: [BACK(["office"], 0.7, 0.6)] },
+    { id: "parking", name: "Parking and security office", h: [13, 15],
+      g: { fd: 5, front: [["*", "permits"], [6, "sdesk"]], back: [["*", "squad"], [4, "slock"], [4, "gunlocker"], [4, "srecords"]] },
+      exits: [BACK(["office", "storage"], 0.5, 0.5), SIDE("left", ["office"], 0.5)] },
+    { id: "patrol", name: "Patrol garage and office", w: [24, 28], h: [14, 16],
+      g: { form: "tree", t: (f, ctx, K, B) => ({ split: "x", parts: [[0.4, K("patrolbay")], ["*", { split: "y", parts: [[5, B([["*", "sdesk"], [5, "dispatch"]], "front", 12)], [1, corridor()], ["*", B([["*", "squad"], [4, "slock"], [4, "gunlocker"]], "back", 12)]] }]] }) },
+      stairs: null, exits: [{ side: "front", roles: ["bays"], chance: 1, roller: true, width: 3, lock: 0.3, name: "Garage door" }, BACK(["office"], 0.5, 0.5)], ground: "lot" },
+    { id: "lostfound", name: "Records and lost property office", h: [13, 15],
+      g: { fd: 5, front: [["*", "sdesk"], [6, "lostfound"]], back: [["*", "srecords"], [5, "interview"], [4, "gunlocker"], ["*", "squad"]] },
+      exits: [BACK(["storage"], 0.6, 0.5)] },
+    { id: "substation", name: "Security substation", w: [16, 18], h: [11, 12],
+      g: { form: "open", fd: 4, front: [["*", "sdesk"], [4, "gunlocker"], [3, "rest"]], hub: { ...Q.squad(), hub: true, name: "Patrol room" } },
+      stairs: null, exits: [BACK(["office"], 0.5, 0.5)] },
+  ],
+  maintenance: [
+    ORIGINAL("plant", "Physical plant"),
+    { id: "central", name: "Central heating plant", w: [26, 30], h: [18, 20],
+      g: { form: "open", fd: 5, front: [["*", "control"], [5, "foreman"], [6, "shoplobby"]], hub: "boilerhouse", back: [["*", "chiller"], [5, "mstores"], [5, "mlocker"]], bd: 5 },
+      exits: [BACK(["workshop"], 0.9, 0.3, { roller: true, width: 3, name: "Plant door" }), SIDE("left", ["workshop"], 0.5)], ground: "lot" },
+    { id: "grounds", name: "Grounds depot", ground: "lot",
+      g: { form: "tree", t: (f, ctx, K) => ({ split: "x", parts: [["*", K("grounds")], [0.38, { split: "y", parts: [["*", K("shoplobby", { name: "Potting shed" })], [5, { split: "x", parts: [["*", K("seed")], [5, K("mbreak")]] }]] }]] }) },
+      stairs: null, exits: [{ side: "front", roles: ["bays"], chance: 1, roller: true, width: 4, lock: 0.2, name: "Bay door" }, BACK(["workshop", "storage"], 0.6, 0.4)] },
+    { id: "motorpool", name: "Motor pool", w: [30, 34], ground: "lot",
+      g: { form: "tree", t: (f, ctx, K) => ({ split: "x", parts: [["*", K("vehbay")], [7, { split: "y", parts: [["*", K("shoplobby", { name: "Parts counter" })], [5, K("foreman")]] }], ["*", K("vehbay", { name: "Second vehicle bay" })]] }) },
+      stairs: null, exits: [{ side: "front", roles: ["bays"], chance: 1, roller: true, width: 3, lock: 0.2, name: "Bay door" }, { side: "back", roles: ["bays"], chance: 0.8, roller: true, width: 3, lock: 0.3, name: "Rear bay door" }] },
+    { id: "trades", name: "Carpentry and paint shops", ground: "lot",
+      g: { form: "hall", fd: 7, front: [["*", "carpentry"], [6, "shoplobby"], ["*", "paint"]], back: [["*", "electric"], [5, "mlocker"], [5, "mbreak"]], cw: 2 },
+      exits: [BACK(["workshop"], 0.9, 0.3, { roller: true, width: 2, name: "Shop door" }), ...FIRE(0.4)] },
+    { id: "electric", name: "Electrical and locksmith shops", w: [22, 26], h: [14, 16], ground: "lot",
+      g: { form: "open", fd: 6, front: [["*", "electric"], [6, "foreman"]], hub: "shoplobby", back: [["*", "locksmith"], [5, "mstores"]], bd: 5 },
+      stairs: null, exits: [BACK(["workshop"], 0.6, 0.5)] },
+    { id: "gallery", name: "Single-loaded workshop row", w: [34, 40], h: [11, 12], ground: "lot",
+      g: { form: "single", front: [["*", "carpentry"], [6, "foreman"], [6, { ...Q.toolroom(), entry: true }], ["*", "electric"], [5, "paint"], [5, "mstores"]] },
+      exits: [...FIRE(0.3), BACK(["corridor"], 0.6, 0.4)] },
+    { id: "stores", name: "Central stores warehouse", w: [28, 32], h: [18, 20], ground: "lot",
+      g: { form: "open", fd: 5, front: [["*", "facilities"], [6, { ...Q.foreman(), name: "Stores counter", entry: true }], [5, "mbreak"]], hub: "warefloor" },
+      exits: [BACK(["warefloor"], 1, 0.3, { roller: true, width: 3, name: "Goods door" }), SIDE("left", ["warefloor"], 0.6, 0.3, { roller: true, width: 2 })] },
+    { id: "facilities", name: "Facilities management offices", w: [24, 28], h: [16, 17], storeys: [2, 2], ground: "lot",
+      g: { form: "tree", t: (f, ctx, K, B) => ({ split: "x", parts: [[0.42, K("vehbay")], ["*", { split: "y", parts: [[6, B([["*", "shoplobby"], [5, "mlocker"]], "front", 14)], [2, corridor()], ["*", B([["*", "boiler"], [5, "mstores"]], "back", 14)]] }]] }) },
+      u: { fd: 6, front: [["*", "facilities"], [6, "foreman"], ["*", "facilities"]], back: [["*", "meeting"], [5, "mbreak"], [3, "rest"]] }, stairs: { roles: ["corridor"], n: 1, len: 2 },
+      exits: [{ side: "front", roles: ["bays"], chance: 1, roller: true, width: 3, lock: 0.2, name: "Bay door" }, BACK(["workshop", "storage"], 0.5, 0.4)] },
+    { id: "custodial", name: "Custodial depot", w: [22, 26], h: [14, 16], ground: "lot",
+      g: { fd: 6, front: [["*", "custodial"], [6, "shoplobby"], ["*", "mlaundry"]], back: [["*", "mstores"], [5, "mlocker"], [5, "mbreak"]] },
+      exits: [BACK(["storage", "laundry"], 0.8, 0.4), ...FIRE(0.4)] },
+    { id: "recycling", name: "Recycling centre", w: [26, 30], ground: "lot",
+      g: { form: "tree", t: (f, ctx, K) => ({ split: "y", parts: [["*", { split: "x", parts: [["*", K("grounds", { name: "Collection bay" })], ["*", K("sorting", { hub: true })]] }], [5, { split: "x", parts: [["*", K("shoplobby", { name: "Baling room" })], [5, K("foreman")], [5, K("mlocker")]] }]] }) },
+      stairs: null, exits: [{ side: "front", roles: ["bays"], chance: 1, roller: true, width: 3, lock: 0.2, name: "Bay door" }, BACK(["workshop"], 0.7, 0.3)] },
+    { id: "yard", name: "Plant and yard shops", w: [28, 30], h: [17, 18], ground: "lot",
+      g: { form: "tree", t: (f, ctx, K) => ({ split: "y", parts: [[0.5, { split: "x", parts: [["*", K("shoplobby", { name: "Shop floor" })], [6, K("toolroom")], ["*", K("vehbay")]] }], ["*", { split: "x", parts: [["*", K("boiler")], [5, K("paint")], [5, K("foreman")], ["*", K("mstores")]] }]] }) },
+      stairs: null, exits: [{ side: "front", roles: ["bays"], chance: 1, roller: true, width: 3, lock: 0.2, name: "Bay door" }, BACK(["workshop", "storage"], 0.7, 0.4)] },
+  ],
+  theatre: [
+    ORIGINAL("playhouse", "Playhouse with the arts upstairs"),
+    { id: "concert", name: "Concert hall", h: [26, 28],
+      g: { fd: 6, front: [[4, "boxoffice"], ["*", "tlobby"], [3, "rest"]], back: [["*", "recital"], [8, { split: "y", parts: [["*", Q.instruments()], ["*", Q.greenroom()]] }]] },
+      u: { front: [["rep", 4, "practice"], [3, "rest"]], back: [["*", "rehearsal"], [6, "drama"]] },
+      stairs: { roles: ["lobby", "corridor"], n: 1, len: 2 } },
+    { id: "blackbox", name: "Black box theatre", w: [24, 28], h: [20, 22], storeys: [1, 1],
+      g: { fd: 5, front: [[4, "boxoffice"], ["*", "tlobby"], [3, "rest"]], back: [["*", "blackbox"], [6, { split: "y", parts: [["*", Q.dressing()], ["*", Q.costume()]] }]] },
+      exits: [BACK(["dayroom", "storage"], 0.8, 0.3)] },
+    { id: "gallery", name: "Art gallery and studios", storeys: [1, 2],
+      g: { form: "open", fd: 6, front: [["*", "artstudio"], [7, "tlobby"], ["*", "ceramics"]], hub: "gallery", back: [["rep", 6, "artstudio"], [4, "costume"]], bd: 6 },
+      u: { front: [["rep", 6, "artstudio"], [3, "rest"]], back: [["*", "ceramics"], [6, "drama"]] }, stairs: { roles: ["lobby", "corridor"], n: 1, len: 2 },
+      exits: [BACK(["workshop"], 0.8, 0.3, { roller: true, width: 2, name: "Crate door" }), SIDE("left", ["lobby"], 0.5)] },
+    { id: "music", name: "Music building", h: [20, 22], storeys: [2, 3],
+      g: { front: [["rep", 4, "practice"], [7, "tlobby"], ["rep", 4, "practice"]], back: [["*", "recital"], [5, "instruments"], [3, "rest"]] },
+      u: { front: [["rep", 4, "practice"], [3, "rest"]], back: [["*", "rehearsal"], ["*", "music"], [6, "drama"]] } },
+    { id: "proscenium", name: "Proscenium theatre", h: [26, 28], storeys: [1, 2],
+      g: { form: "triple", fd: 5, front: [[4, "boxoffice"], ["*", "tlobby"], [3, "rest"], [3, "rest"]], md: 10, mid: [["*", "auditorium"]], back: [["*", "sceneshop"], [6, "dressing"], [6, "dressing"], ["*", "costume"]] },
+      u: { front: [["*", "balcony"], [4, "projection"]], back: [["*", "rehearsal"], [6, "greenroom"]] },
+      stairs: { roles: ["lobby", "corridor"], n: 1, len: 2 }, exits: [BACK(["workshop"], 0.9, 0.3, { roller: true, width: 3, name: "Scene dock" }), ...FIRE()] },
+    { id: "film", name: "Film school",
+      g: { fd: 7, front: [["*", "cinema"], [7, "tlobby"], [4, "projection"]], back: [["*", "soundstage"], ["rep", 5, "edit"], [3, "rest"]] },
+      u: { front: [["rep", 5, "edit"], [3, "rest"]], back: [["*", "seminar"], [6, "drama"]] },
+      exits: [BACK(["workshop"], 0.9, 0.3, { roller: true, width: 3, name: "Stage door" }), ...FIRE()] },
+    { id: "dance", name: "Dance studios", w: [30, 34], h: [20, 22], storeys: [1, 2],
+      g: { fd: 8, front: [["*", "dance"], [7, "tlobby"], ["*", "dance"]], back: [["*", "dance"], [6, "dressing"], [6, "dressing"], [3, "rest"]] },
+      u: { fd: 8, front: [["*", "dance"], ["*", "dance"]], back: [["*", "rehearsal"], [6, "drama"]] } },
+    { id: "artscentre", name: "Arts centre", w: [36, 40],
+      g: { form: "wings", cx: 8, entry: "tlobby", hall: "gallery", left: { front: [[4, "boxoffice"], ["*", "cafe"]], back: [["*", "auditorium"]] }, right: { front: [["*", "artstudio"], [3, "rest"]], back: [["*", "sceneshop"], [6, "greenroom"]] } },
+      u: { form: "wings", cx: 8, entry: "drama", hall: "gallery", left: { front: [["rep", 4, "practice"]], back: [["*", "rehearsal"]] }, right: { front: [["*", "ceramics"]], back: [["*", "artstudio"], [3, "rest"]] } },
+      stairs: { roles: ["lobby", "corridor"], n: 2, len: 2 } },
+    { id: "studiowing", name: "Single-loaded studio wing", w: [40, 46], h: [13, 14], storeys: [1, 2],
+      g: { form: "single", front: [["rep", 7, "artstudio"], [6, "tlobby"], [3, "rest"], ["rep", 7, "music"]] },
+      u: { form: "single", front: [["rep", 6, "practice"], [3, "rest"], ["*", "rehearsal"]] }, exits: FIRE(0.3) },
+    { id: "recital", name: "Lecture-recital hall", w: [26, 30], h: [22, 24], storeys: [1, 1],
+      g: { form: "open", fd: 6, front: [[4, "boxoffice"], ["*", "tlobby"], [3, "rest"]], hub: { ...Q.recital(), hub: true }, back: [[5, "instruments"], ["*", "greenroom"], [5, "practice"]], bd: 5 },
+      exits: [BACK(["dayroom", "storage"], 0.8, 0.3), SIDE("left", ["classroom"], 0.6)] },
+    { id: "opera", name: "Opera house", w: [32, 34], h: [26, 28], storeys: [2, 3],
+      g: { form: "triple", fd: 5, front: [[4, "boxoffice"], ["*", "tlobby"], [4, "cafe"], [3, "rest"]], md: 11, mid: [["*", "auditorium"]], back: [["*", "sceneshop"], [6, "dressing"], ["*", "costume"]] },
+      u: (f, top) => ({ form: "triple", fd: 5, front: [["*", top ? "drama" : "ulounge"], [3, "rest"]], md: 11, mid: [["*", "balcony"], [4, "projection"]], back: [["*", top ? "rehearsal" : "dressing"], [6, "greenroom"]] }),
+      stairs: { roles: ["lobby", "corridor"], n: 2, len: 2 }, exits: [BACK(["workshop"], 0.9, 0.3, { roller: true, width: 3, name: "Scene dock" }), ...FIRE()] },
+  ],
+  parkgarage: [
+    ORIGINAL("deck", "Parking deck"),
+    { id: "twinstair", name: "Twin-stair garage", w: [42, 46], h: [22, 24], storeys: [2, 3],
+      g: { form: "tree", t: (f) => ({ split: "x", parts: [[5, stairCol(f, "booth", "Utility room")], ["*", deck(f)], [5, stairCol(f)]] }) }, u: null, stairs: GSTAIRS,
+      exits: [{ side: "back", roles: ["bays"], chance: 0.8, width: 3, lock: 0.1, name: "Exit ramp" }, SIDE("right", ["bays"], 0.4)] },
+    { id: "long", name: "Long deck", w: [46, 48], h: [18, 20],
+      g: { form: "tree", t: (f) => ({ split: "x", parts: [["*", deck(f)], [5, stairCol(f, "booth")]] }) }, stairs: GSTAIRS,
+      exits: [{ side: "left", roles: ["bays"], chance: 0.9, width: 3, lock: 0.1, name: "Exit ramp" }] },
+    { id: "square", name: "Square deck", w: [32, 34], h: [30, 32],
+      g: { form: "tree", t: (f) => ({ split: "y", parts: [["*", deck(f)], [5, { split: "x", parts: [["*", L("storage", f === 0 ? "Pay booth" : "Utility room", "stores", { type: "garage", maxBoxes: 1 })], [8, { role: "stairwell", name: "Stairs" }]] }]] }) }, stairs: GSTAIRS,
+      exits: [{ side: "left", roles: ["bays"], chance: 0.7, width: 3, lock: 0.1, name: "Exit ramp" }, SIDE("right", ["bays"], 0.5)] },
+    { id: "shops", name: "Garage over shops", storeys: [3, 4],
+      g: { form: "tree", t: (f, ctx, K, B) => ({ split: "y", parts: [[7, B([["*", "shop"], [6, "coffee"], ["*", "printshop"]], "front")], ["*", { split: "x", parts: [["*", deck(f)], [5, stairCol(f)]] }]] }) },
+      u: { form: "tree", t: (f) => ({ split: "x", parts: [["*", deck(f)], [5, stairCol(f)]] }) }, stairs: GSTAIRS,
+      exits: [{ side: "back", roles: ["bays"], chance: 0.9, width: 3, lock: 0.1, name: "Exit ramp" }, SIDE("left", ["sales"], 0.5)] },
+    { id: "security", name: "Garage with a security office",
+      g: { form: "tree", t: (f, ctx, K) => ({ split: "x", parts: [[7, { split: "y", parts: [[6, K("sdesk", { entry: false, name: "Security office" })], [8, { role: "stairwell", name: "Stairs" }], ["*", K("gunlocker")]] }], ["*", deck(f)]] }) },
+      u: { form: "tree", t: (f) => ({ split: "x", parts: [[7, { split: "y", parts: [[6, L("storage", "Utility room", "stores", { type: "garage", maxBoxes: 1 })], [8, { role: "stairwell", name: "Stairs" }], ["*", L("storage", "Store", "stores", { type: "garage", maxBoxes: 1 })]] }], ["*", deck(f)]] }) }, stairs: GSTAIRS,
+      exits: [{ side: "back", roles: ["bays"], chance: 0.8, width: 3, lock: 0.1, name: "Exit ramp" }] },
+    { id: "split", name: "Split-level decks", w: [40, 44],
+      g: { form: "tree", t: (f) => ({ split: "x", parts: [["*", deck(f, `Level ${f + 1}, east`)], [6, stairCol(f, "booth")], ["*", L("bays", `Level ${f + 1}, west`, "deck", { type: "wreck", fl: "conc", maxBoxes: 10 })]] }) }, stairs: GSTAIRS,
+      exits: [{ side: "back", roles: ["bays"], chance: 0.8, width: 3, lock: 0.1, name: "Exit ramp" }, { side: "left", roles: ["bays"], chance: 0.6, width: 3, lock: 0.1, name: "Entry ramp" }] },
+    { id: "tall", name: "Tall garage", w: [30, 32], h: [28, 30], storeys: [5, 6],
+      g: { form: "tree", t: (f) => ({ split: "y", parts: [[5, { split: "x", parts: [[8, { role: "stairwell", name: "Stairs" }], ["*", L("storage", f === 0 ? "Pay booth" : "Lift lobby", "stores", { type: "garage", maxBoxes: 1 })]] }], ["*", deck(f)]] }) }, stairs: GSTAIRS,
+      exits: [SIDE("left", ["bays"], 0.9, 0.1, { width: 3, name: "Exit ramp" })] },
+    { id: "low", name: "Two-level deck", w: [36, 42], h: [26, 30], storeys: [2, 2],
+      g: { form: "tree", t: (f) => ({ split: "y", parts: [["*", deck(f)], [5, { split: "x", parts: [["*", L("storage", f === 0 ? "Pay booth" : "Roof plant", "stores", { type: "garage", maxBoxes: 1 })], [8, { role: "stairwell", name: "Stairs" }], ["*", L("storage", "Utility room", "stores", { type: "garage", maxBoxes: 1 })]] }]] }) }, stairs: GSTAIRS,
+      exits: [SIDE("left", ["bays"], 0.8, 0.1, { width: 3, name: "Exit ramp" }), SIDE("right", ["bays"], 0.8, 0.1, { width: 3, name: "Entry ramp" })] },
+    { id: "payplaza", name: "Garage with a pay plaza",
+      g: { form: "tree", t: (f, ctx, K, B) => ({ split: "y", parts: [[4, B([["*", { role: "storage", name: "Pay machines", campus: "stores", type: "garage", maxBoxes: 1 }], [6, "permits"], ["*", { role: "storage", name: "Pay booth", campus: "stores", type: "garage", maxBoxes: 1 }]], "front")], ["*", { split: "x", parts: [["*", deck(f)], [5, stairCol(f)]] }]] }) },
+      u: { form: "tree", t: (f) => ({ split: "x", parts: [["*", deck(f)], [5, stairCol(f)]] }) }, stairs: GSTAIRS,
+      exits: [{ side: "back", roles: ["bays"], chance: 0.8, width: 3, lock: 0.1, name: "Exit ramp" }] },
+    { id: "bikes", name: "Garage with a bike store",
+      g: { form: "tree", t: (f) => ({ split: "x", parts: [["*", deck(f)], [6, { split: "y", parts: [[8, { role: "stairwell", name: "Stairs" }], ["*", L("storage", f === 0 ? "Bike store" : "Utility room", "equipment", { type: "garage", maxBoxes: 2 })]] }]] }) }, stairs: GSTAIRS,
+      exits: [{ side: "back", roles: ["bays"], chance: 0.6, width: 3, lock: 0.1, name: "Exit ramp" }, SIDE("left", ["storage"], 0.6, 0.3, { name: "Bike gate" })] },
+    { id: "motorpool", name: "Garage over the motor pool", storeys: [3, 4], ground: "lot",
+      g: { form: "tree", t: (f, ctx, K) => ({ split: "x", parts: [["*", deck(f)], [0.35, { split: "y", parts: [["*", K("vehbay", { name: "Fleet workshop" })], [8, { role: "stairwell", name: "Stairs" }]] }]] }) },
+      u: { form: "tree", t: (f) => ({ split: "x", parts: [["*", deck(f)], [5, stairCol(f)]] }) }, stairs: GSTAIRS,
+      exits: [{ side: "back", roles: ["bays"], chance: 0.8, width: 3, lock: 0.1, name: "Exit ramp" }, { side: "front", roles: ["bays"], chance: 0.9, roller: true, width: 3, lock: 0.3, name: "Workshop door" }] },
+  ],
+};
+for (const k of Object.keys(CAMPUS_VARIANTS)) for (const V of CAMPUS_VARIANTS[k]) if (V.u === undefined && V.g && V.g.form === "tree") V.u = V.g;
+
+/** The variant a building takes: o.plan (an index or an id) or the building's dice. @returns {[number, any]} */
+export function campusVariantOf(rng, key, o = {}) {
+  const list = CAMPUS_VARIANTS[key];
+  if (!list) return [0, null];
+  let i = -1;
+  if (o.plan != null) i = typeof o.plan === "number" ? o.plan : list.findIndex((V) => V.id === o.plan);
+  if (i < 0 || i >= list.length) i = rng.int(0, list.length - 1);
+  return [i, list[i]];
+}

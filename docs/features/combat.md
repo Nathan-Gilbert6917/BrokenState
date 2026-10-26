@@ -22,6 +22,7 @@ Every cached picture is redrawn after the browser loses and restores its GPU con
 Battle maps are sized by context, from 24×18 up to 48×34, with anti-slog endings.
 - Raid maps run between the run's *Raid map, smallest / largest* dials (32×24 to 56×42 as it stands; cities and towns always the largest). Past 40×30 the dead, Heat's rise, a container's find and the ways out scale with the ground; the plan window and the building choice show the size.
 - **Up to 300 × 300** (issue #24, 2026-10-25): the *Raid map, largest* dial goes to 300 across (the default stays 56); a building's map is its real-size footprint plus margins (`fitMargins`), as big as it needs to be, never past 300 × 300. What makes that playable is under [Big maps: what keeps them fast](#big-maps-what-keeps-them-fast-issue-24-2026-10-25).
+- **Campuses** (issue #28, [Campuses](#campuses)) open maps of their own past the dials: a community college about 150–170 × 120–150, a liberal arts college 200–240 × 180–220, a state university 400–500 across (its rows 240–330 deep), each at most `CAMPUS.MAX` 500 across (raised from 300 once #24's big-map engine was on dev: tiled, culled rendering, 32-bit paths, packed snapshots).
 - Modules: [battlesize, worldcfg]; `tools/raidshot.cjs` shoots a big raid in the browser; `tools/bigmapbench.js` measures a big raid (turn, frame, save).
 
 ## A raid without the side panel
@@ -232,6 +233,136 @@ Raids go into generated buildings and neighbourhood streets to search, past lock
   - Decor: decor.js `DECOR_CIVIC` by style (notice boards at a front desk, a narthex and a watch office, whiteboards in squad and dispatch rooms, crucifixes in the nave and the parish hall); a classroom's or a briefing room's whiteboard is set by its style on the wall the desks face.
   - Scenes (interiorscenes.js `registerScene`, from civiclayout.js): `frontstand` (police: officers' bodies in uniform with their kit, kit `guards`, behind the front desk's counter, brass round them, 2–4 dead in front of it), `turned` (police: a Sleeper locked in a cell, its door a locked cell door on the map's `lockedDoors`; 60% another cell's prisoner dead, locked in: there is no prisoner-freeing flow for strangers), `classbar` (school: a chair jammed in a classroom's doorway, a school desk behind it, chairs, the bodies far side), `gymshelter` and `naveshelter` (cots in rows, a water barrel, 2–4 bodies by the cots, the last of the water), `pewdoors` (church: pews shoved against its outer doors from inside). Weights 3 (pewdoors 2), and only on a map laid out by the styles (`registerScene`'s new `when`: an older save's building draws its scenes exactly as before). A scene's body may carry `kit`, `name` and `sleeper`.
   - Older saves keep the old plans and `FURNISH` (no civic marks, none of the new pieces: checked in the test). Modules: [civiclayout `CIVIC_STYLES`, `civicStyle`, `naveLayout`, `CIVIC`; buildingmaps `policeStation`, `fireStation`, `schoolPlan`, `churchPlan`, `corridorPlan` (hall marks), `DOOR_KINDS.coldroom`, `furnishCtx`; data-furniture; combat `AREAS.enginebay`, `AREAS.schoolhall`, `BOX_LOOT`; loot `AREA_FINDS`; data-tools `AREA_TOOLS`; decor `DECOR_CIVIC`; interiorscenes; wanderers; floorfolk; ui/isoview `CIV_TOPS` and the new pieces' sprites]. `node tools/raidshot.cjs <dir> 80 80 <police | school | firestation | church> noon` renders each with no page errors (2026-10-25).
+- **Special buildings: a dozen plans per civic and medical kind** (issue #36 of the interiors epic #7, the user's requests 2026-10-25: "every building should have several varients"; "for buildings with no to only a few varients create a dozen varients per building type"). Module [civicvariants]; tests `tools/variantcivictest.js` and `tools/interiortest.js`.
+  - The rule: the hospital, the infirmary, the clinic, the vet, the church, the police station and the fire station each have 12 plans (`civicvariants.js VARIANTS`), new saves only. A plan differs from every other of its kind in at least two of: the room list, the rooms' adjacency, the entrances (count and sides), corridor or open plan, the size, the storeys. Sizes: a named plan's row in #24's table (data-buildingsize.js `REAL_SIZE` `"<kind>.<plan id>"`, planned, in metres at `CELL_M` 1 m; `civicvariants.js SIZE` reads them), drawn at that size by its own plan; `realScale` leaves it as it is (a `vid` other than `general`: #37's convention), its floors past the tall rule's not built. Each kind's `general` plan goes through #24's real-size step as before (a city hospital 64–100 × 40–60 m). Not one is a recolour. #14's and #15's plans are one of the twelve: each kind's first, its `general` plan.
+  - Every plan keeps its kind's signature rooms: a hospital's emergency room, wards and the pharmacy behind its steel door (always locked, the drug safe in it); a clinic's or an infirmary's exam rooms and drug cupboard; a vet's kennels; a church's nave with its altar and two columns of pews; a police station's front desk, squad room, chief's office, armory, evidence room, cell block (two cells or more) and a police car in its sally port; a fire station's engine bay behind its bay door (a roller door named "Bay door", the fire engine in it), its dorm and its kitchen. A hospital's corridors stay 2 wide.
+  - Which plan (`pickVariant`): one draw of the building's own dice (first, pinned or not, so the rest of the plan rolls the same way), weighted by the site's setting (`buildingmaps.js siteWhere`: city, suburb or town by `shops.js settingOf`, a town's own tile a town, else rural), among the plans the place's franchise maps to (a plan's `fr`; a franchise's plan in a setting it seldom stands in still turns up, at a weight of 0.05). A site some plans name takes those plans only (an infirmary at a prison: the prison infirmary, the prison hospital wing, the county jail clinic and #14's infirmary; a fire station at an airport: the airport crash station). `o.plan` (a building option's `plan`, `makeSpec`'s convention since #26 and #37) pins a plan by its id: the tests, the renders and another ticket's building (#25's airport crash station `firestation` `airport`, #28's campus health centre `infirmary` `campus`, #31's county jail `police` `jail` or `infirmary` `jail`). The site: `siteBuildings`' `option.site`, else the tile's place (`siteWhere`).
+  - Names: each plan has its own (the tables below); the spec carries `vid` and `vname` (#37's names), the map's plan keeps them (`plan.vid`, `plan.variant`) and the raid's opening lines start with the name (`interiorIntro`). A place's name is still its franchise's or its site's (`pois.js poiName`): no franchise was added, because a save keeps only its points of interest's differences from the regenerated defaults (`packPois`), so a new franchise would rename an older save's churches and clinics; a synagogue and a mosque were left out for that reason (every church place is one of the five Christian franchises).
+  - Furnishing: the rooms take their kind's styles as before (roomlayout.js `MEDICAL_STYLES` by role in the medical kinds, civiclayout.js `CIVIC_STYLES` by the civic mark), with four additions: an ambulance bay tries every spot for its ambulance (#14's first twelve first, so its bays are as they were), a room with a civic mark keeps the civic style in a medical building (`medicalStyle`: a prison infirmary's cell block), an emergency room's `bays` caps its bays (a small ER keeps room for its triage desk; #14's ER is unchanged), and a K-9 unit's kennels (`CIVIC_STYLES.kennels`: bars every other cell along the walls, as a vet's). A flat's rooms (`flat: true`: a rectory, a matron's flat) are furnished as a home.
+  - Loot (tools/variantcivictest.js, every plan by the dice against the plan before #36, the same seeds, the expected meds of a medical kind or the value of a civic kind over the interior's cells, by the floor's richness): hospital +1.2%, infirmary −2.5%, clinic −0.9%, vet −7.4%, church −5.5%, police −3.1%, fire station −8.9% (2026-10-26; per 100 cells: hospital 18.3 meds against 18.1, infirmary 15.9 against 16.3, clinic 16.1 against 16.3, vet 8.0 against 8.7; church 34.9 value against 36.9, police 66.0 against 68.1, fire station 88.9 against 97.7). The plans spread round that: a small critical-access hospital or a cottage hospital is richer by area than a big teaching hospital, a fire headquarters' offices poorer than a brush station. Rooms' `boxTarget` (their container count) and their loot type hold each kind within ±10% (a busier exam room a cabinet more, a surgery centre's theatres an instrument cabinet each). #14's and #15's measures against the old layouts are taken on their own plans (`layout` pinned) and hold as before.
+  - Older saves (`roomsLegacy`) never reach the plans: `institution`, `vet` and `church` keep their old plans with the old dice; 60 legacy maps of each of the seven kinds hash the same as origin/dev's (cells, containers, rooms, locked doors, exits).
+  - Tests: `tools/variantcivictest.js` (above); `tools/interiortest.js` builds every plan pinned by its id in its hospital and civic sections (#14's floor-by-floor rooms and the meds against the old layout on the `general` plan; every plan its kind's signature rooms; a bell tower raised where a plan has one; a container of several cells reached from any cell round it, as combat.js `nearBox` searches it); `tools/scaletest.js` judges each kind's `general` plan by the kind's row as before and every named plan by its own.
+  - Not done: footprint shapes (#23: L, T, U) are not on dev yet, so every plan is a rectangle (the signature's shape class "rect"); a helipad (no roof terrain); multi-building plans (a pavilion hospital's separate pavilions, a farm vet's separate barns: `compound.js` could take them later); a cemetery round the country church; the named plans were drawn at a raid map's old sizes (at most 36 × 25 m), so a cathedral or a trauma centre is smaller than the real thing, and only the `general` hospital is a city's 64–100 m.
+  - The plans (rooms from 8 builds of each, by name; restrooms left out; "Most often": the settings or sites it is weighted to most):
+
+  **hospital** (`hospital`)
+
+  | Plan (`id`) | Rooms | Size (cells) | Storeys | Most often | Franchises |
+  |---|---|---|---|---|---|
+  | General hospital (`general`) | Emergency, Waiting room, Pharmacy, Ambulance bay, Morgue, Cafeteria, Kitchen, Ward, Nurses' station, Operating theatre, Supply room, ICU, Doctors' office, Maternity ward, Staff room, Laundry | 26–30 × 17–19 | 3–5 | city, suburb, town | — |
+  | Critical-access hospital (`critical`) | Emergency, Waiting room, Pharmacy, Ward, Ambulance bay, Kitchen, Morgue, Nurses' station, Operating theatre, Doctors' office | 23–24 × 16–17 | 1–2 | rural, town, suburb | — |
+  | Regional medical tower (`tower`) | Emergency, Waiting room, Pharmacy, Ambulance bay, Cafeteria, Kitchen, Ward, Nurses' station, Operating theatre, ICU, Supply room, Doctors' office, Rehab gym, Staff room, Laundry | 22 × 16 | 5–7 | city, suburb | — |
+  | Children's hospital (`children`) | Children's emergency, Family waiting room, Pharmacy, Ambulance bay, Cafeteria, Kitchen, Playroom, Children's ward, Nurses' station, Operating theatre, Paediatric ICU, Doctors' office, Hospital school, Supply room, Neonatal unit, Maternity ward, Staff room, Laundry | 26–29 × 16–18 | 2–4 | city, suburb, town | — |
+  | Psychiatric hospital (`psych`) | Intake, Admissions, Pharmacy, Day room, Dining hall, Kitchen, Seclusion rooms, Secure ward, Nurses' station, Art therapy, Group therapy, Psychiatrist's office | 26–29 × 15–17 | 2–3 | town, rural, suburb | — |
+  | Veterans' hospital (`va`) | Emergency, Veterans' lobby, Pharmacy, Ambulance bay, Physical therapy, Cafeteria, Kitchen, Ward, Nurses' station, Operating theatre, Supply room, ICU, Doctors' office, Prosthetics workshop, Long-term care, Veterans' lounge, Staff room, Laundry, Benefits office | 27–30 × 17–19 | 3–4 | city, suburb, town | — |
+  | Trauma centre (`trauma`) | Trauma bays, Emergency waiting, Pharmacy, Decontamination, Ambulance bay, Blood bank, Radiology, Morgue, Trauma theatre, Nurses' station, Operating theatre, Supply room, Trauma ICU, Surgical ICU, Ward, Burns unit, Staff room, Laundry, Doctors' office | 28–31 × 18–19 | 3–4 | city, suburb | — |
+  | Pavilion-plan hospital (`pavilion`) | Ward, Ambulance bay, Emergency, Entrance hall, Pharmacy, Kitchen, Cafeteria, Nurses' station, Operating theatre, Staff room | 32–36 × 15–17 | 1–2 | town, rural, suburb | — |
+  | University teaching hospital (`teaching`) | Emergency, Main lobby, Pharmacy, Ambulance bay, Morgue, Cafeteria, Kitchen, Ward, Nurses' station, Operating theatre, Supply room, ICU, Doctors' office, Lecture theatre, Seminar room, Research lab, Medical library, Maternity ward, Staff room, Laundry | 28–31 × 18–19 | 4–5 | city, suburb | — |
+  | Cottage hospital (`cottage`) | Emergency, Front hall, Pharmacy, Ward, Doctor's office, Kitchen | 20–22 × 13–15 | 1 | town, rural, suburb | — |
+  | Surgical hospital (`surgical`) | Urgent care, Waiting room, Pharmacy, Operating theatre, Recovery, Sterile store, Pre-op, Nurses' station, Ward, Surgeons' office, Staff room | 21–22 × 15–16 | 2–3 | suburb, city, town | — |
+  | Community hospital and nursing home (`nursing`) | Emergency, Reception, Pharmacy, Residents' lounge, Ward, Ambulance bay, Kitchen, Residents' dining room, Long-term care, Nurses' station, Memory care, Staff room, Doctors' office, Laundry | 32–35 × 17–18 | 2 | town, suburb, rural | — |
+
+  **infirmary** (`infirmary`)
+
+  | Plan (`id`) | Rooms | Size (cells) | Storeys | Most often | Franchises |
+  |---|---|---|---|---|---|
+  | Infirmary (`general`) | Exam room, Waiting room, Drug cupboard, Kitchenette, Office, Storage | 16–18 × 13–15 | 1–3 | prison, city, suburb | — |
+  | Prison infirmary (`prison`) | Officers' post, Exam room, Sick call, Secure ward, Drug cupboard, Medical records | 20–22 × 14–15 | 1 | prison, rural | — |
+  | Prison hospital wing (`prisonhosp`) | Exam room, Sick call, X-ray, Dental room, Secure ward, Holding cells, Drug cupboard, Supply room, Nurses' station, Ward, Isolation cells, Doctor's exam, Storage | 27–30 × 16–18 | 2–3 | prison | — |
+  | County jail clinic (`jail`) | Booking medical, Exam room, Medical holding, Drug cupboard | 18–19 × 13–14 | 1 | prison, town, rural | — |
+  | Camp infirmary (`camp`) | Nurse's porch, Exam room, Sick bay, Drug cupboard, Washroom | 14–15 × 11–12 | 1 | rural, town | — |
+  | College health centre (`campus`) | Exam room, Health centre lobby, Counselling, Clinic lab, Drug cupboard, Health education, Overnight beds, Supply room | 20–23 × 13–15 | 2 | suburb, town, city | — |
+  | Field hospital (`field`) | Triage tent, Treatment tent, Ward tent, Surgical tent, Medical supply | 24–28 × 14–16 | 1 | base, rural, town | — |
+  | Base aid station (`aid`) | Aid station, Decontamination, Exam room, Ward, Medical supply, Field ambulance bay | 19–21 × 15–16 | 1 | base, rural | — |
+  | Works infirmary (`company`) | First-aid room, Exam room, Occupational health, Rest room, Drug cupboard, Eyewash and showers, Company doctor, Supply room | 17–19 × 12–14 | 1–2 | factory, town, city | — |
+  | Boarding-school sanatorium (`boarding`) | Exam room, Front hall, Drug cupboard, Sick bay, Supply room, Treatment room, Matron's bedroom, Matron's bathroom, Matron's sitting room, Matron's kitchen, Doctor's surgery | 16–18 × 12–14 | 2 | town, rural, suburb | — |
+  | Quarantine station (`quarantine`) | Decontamination, Screening, Exam room, Isolation room, Sample room, Drug cupboard, Supply room | 21–23 × 14–15 | 1–2 | rural, base, town | — |
+  | Shelter infirmary (`shelter`) | Drop-in room, Exam room, Respite beds, Drug cupboard, Kitchenette, Showers | 19–22 × 13–15 | 1 | city, suburb, town | — |
+
+  **clinic** (`clinic`)
+
+  | Plan (`id`) | Rooms | Size (cells) | Storeys | Most often | Franchises |
+  |---|---|---|---|---|---|
+  | Medical clinic (`general`) | Exam room, Waiting room, Drug cupboard, Kitchenette, Office, Storage | 16–18 × 13–15 | 1–3 | suburb, town, city | familymed, valleyhealth, drhale |
+  | Urgent care (`urgent`) | Exam room, Waiting room, Treatment bay, X-ray, Drug cupboard, Kitchenette, Doctors' office, Storage | 21–23 × 14–15 | 1–2 | city, suburb, town | urgentnow, medfirst |
+  | Family practice (`family`) | Exam room, Waiting room, Doctor's office, Drug cupboard, Kitchenette | 18–20 × 12–14 | 1 | town, suburb, rural | familymed, drhale, valleyhealth |
+  | Dialysis centre (`dialysis`) | Waiting room, Exam room, Nephrologist's office, Dialysis floor, Water treatment, Drug cupboard, Kitchenette | 22–24 × 13–15 | 1 | city, suburb, town | familymed, valleyhealth, urgentnow |
+  | Dental practice (`dental`) | Reception, Dentist's office, Operatory, Sterilisation room | 18–20 × 12–13 | 1 | suburb, town, city | drhale, familymed |
+  | Walk-in clinic (`stripmall`) | Waiting room, Exam room, Drug cupboard, Kitchenette | 11–13 × 18–20 | 1 | city, suburb, town | medfirst, urgentnow |
+  | Occupational health clinic (`occhealth`) | Exam room, Waiting room, Hearing booth, Physical therapy, Drug testing, Drug cupboard, Doctors' office, Supply room | 19–21 × 13–15 | 1–2 | city, suburb, town | valleyhealth, medfirst |
+  | Free clinic (`free`) | Waiting room, Exam room, Donated medicines, Food pantry | 17–19 × 12–14 | 1 | city, town, suburb | valleyhealth, drhale |
+  | Multi-specialty medical centre (`multi`) | Exam room, Waiting room, Imaging, Clinic lab, Drug cupboard, Kitchenette, Doctors' office, Storage, Supply room | 25–27 × 15 | 2–3 | city, suburb, town | familymed, urgentnow |
+  | Paediatric practice (`paediatric`) | Well waiting room, Playroom, Sick waiting room, Exam room, Vaccine room | 21–23 × 13–15 | 1 | suburb, town, city | familymed, drhale |
+  | Rural health post (`rural`) | Waiting room, Drug cupboard, Exam room | 12–14 × 10–11 | 1 | rural, town | valleyhealth, drhale |
+  | Outpatient surgery centre (`surgery`) | Waiting room, Consult room, Pre-op, Operating theatre, Recovery, Drug cupboard, Surgeons' office, Staff room, Sterile store | 21–23 × 14–15 | 1–2 | suburb, city, town | urgentnow, medfirst |
+
+  **vet** (`vet`)
+
+  | Plan (`id`) | Rooms | Size (cells) | Storeys | Most often | Franchises |
+  |---|---|---|---|---|---|
+  | Small-animal clinic (`general`) | Exam room, Waiting room, Kennels, Surgery, Drug room, Food store | 18–21 × 13–15 | 1 | suburb, city, town | pawsclinic, companion, animalhosp |
+  | Country vet (`country`) | Exam room, Waiting room, Large-animal stalls, Kennels, Surgery, Drug room, Food store | 25–28 × 14–15 | 1 | town, rural, suburb | countryvet, valleyvet |
+  | Large-animal and farm vet (`farm`) | Waiting room, Exam room, Small-animal exam, Kennels, Drug room, Surgery, Large-animal barn, Treatment stocks, Feed and hay | 28–32 × 14–16 | 1 | rural, town | valleyvet, countryvet |
+  | Emergency animal hospital (`emergency`) | Exam room, Triage, Waiting room, Kennels, Surgery, Critical care, Drug room, Office, Break room, Recovery ward, Food store | 26–28 × 15 | 1–2 | city, suburb, town | animalhosp, companion |
+  | Animal shelter (`shelter`) | Intake, Adoption lobby, Exam room, Office, Dog kennels, Cat room, Spay and neuter, Drug room, Food store, Laundry | 27–30 × 14–16 | 1 | suburb, town, city | pawsclinic, companion, countryvet |
+  | Boarding kennel (`boarding`) | Check-in, Grooming, Drug room, Kennel run, Exam room, Food store | 21–24 × 13–15 | 1 | town, rural, suburb | companion, pawsclinic |
+  | Equine hospital (`equine`) | Lameness exam, Reception, Farrier's room, Treatment stocks, Stall barn, Equine surgery, Recovery stall, Barn kennels, Drug room, Feed room | 29–32 × 15–17 | 1 | rural, town, suburb | valleyvet, countryvet |
+  | Storefront vet (`storefront`) | Waiting room, Exam room, Drug room, Surgery, Kennels | 11–13 × 20–22 | 1 | city, suburb, town | pawsclinic, companion |
+  | Veterinary specialty centre (`specialty`) | Cardiology, Imaging, Waiting room, Oncology, Kennels, Surgery, Drug room, Food store, Office, Break room, Hydrotherapy, Consult room, Recovery ward, Specialists' office | 22–24 × 15 | 2 | city, suburb, town | animalhosp |
+  | Exotic and bird clinic (`exotic`) | Exam room, Waiting room, Avian exam, Aviary ward, Reptile room, Drug room, Food store | 17–19 × 12–14 | 1 | city, suburb, town | companion, animalhosp |
+  | Cat clinic (`cat`) | Exam room, Cats-only waiting room, Consult room, Cat ward, Surgery, Drug room | 15–16 × 12–13 | 1 | suburb, city, town | pawsclinic, companion |
+  | Veterinary teaching hospital (`teaching`) | Exam room, Waiting room, Teaching lab, Kennels, Large-animal ward, Surgery, Teaching surgery, Drug room, Food store, Consult room, Student exam, Recovery ward, Diagnostic lab, Break room | 31–34 × 16–18 | 2 | city, suburb, town | animalhosp, valleyvet |
+
+  **church** (`church`)
+
+  | Plan (`id`) | Rooms | Size (cells) | Storeys | Most often | Franchises |
+  |---|---|---|---|---|---|
+  | Parish church (`general`) | Narthex, Nave, Vestry, Parish hall, Food bank pantry, Bell tower | 14–16 × 19–22 | 1 | suburb, town, city | holytrinity, gracemethodist, stmarys |
+  | White clapboard chapel (`chapel`) | Narthex, Nave, Vestry, Belfry | 11–12 × 15–17 | 1 | rural, town, suburb | firstbaptist, calvary, gracemethodist |
+  | Brick church with a fellowship hall (`brick`) | Narthex, Steeple, Nave, Vestry, Sunday school, Fellowship hall, Food bank pantry | 23–26 × 19–22 | 1 | suburb, town, rural | firstbaptist, gracemethodist, holytrinity |
+  | Megachurch (`mega`) | Café, Lobby, Welcome centre, Sunday school, Worship centre, Youth room, Nursery, Fellowship hall, Food bank pantry, Office, Media booth, Gallery, Pastors' offices, Stage storage | 32–36 × 21–24 | 2 | suburb, city, town | calvary, firstbaptist |
+  | Cathedral (`cathedral`) | North tower, Lady chapel, Chapter house, Narthex, Nave, Sacristy, South tower, Side chapel, Almonry | 31–36 × 24–25 | 1 | city, suburb | stmarys, holytrinity |
+  | Storefront church (`storefront`) | Sanctuary, Pastor's office, Kitchenette | 11–13 × 15–18 | 1 | city, suburb, town | calvary, firstbaptist |
+  | Catholic church with a rectory (`rectory`) | Narthex, Nave, Sacristy, Bell tower, Rectory parlour, Rectory kitchen, Priest's bedroom, Rectory bathroom, Parish office, Food bank pantry | 22–25 × 19–22 | 1 | suburb, town, city | stmarys |
+  | Country church (`country`) | Narthex, Bell tower, Nave, Vestry, Church hall | 13–15 × 20–22 | 1 | rural, town, suburb | firstbaptist, gracemethodist, holytrinity |
+  | Cruciform stone church (`cruciform`) | Parish office, Food bank pantry, North transept, Narthex, Nave, Sacristy, Bell tower, Sunday school, Hall kitchen, South transept | 32–36 × 21–24 | 1 | city, suburb, town | stmarys, holytrinity |
+  | Mission church (`mission`) | Narthex, Nave, Vestry, Campanario, Mission office, Food bank pantry, Refectory, School room | 22–25 × 19–21 | 1 | town, rural, suburb | stmarys, calvary |
+  | Church with a parish school (`school`) | Narthex, Nave, Vestry, Bell tower, School office, Classroom, School hall, Choir loft, Staff room | 26–30 × 19–22 | 1–2 | suburb, town, city | stmarys, holytrinity, gracemethodist |
+  | Meeting house (`meeting`) | Porch, Elders' room, Meeting room, Food bank pantry, Fellowship room | 15–17 × 15–17 | 2 | town, suburb, rural | gracemethodist, firstbaptist, calvary |
+
+  **police** (`police`)
+
+  | Plan (`id`) | Rooms | Size (cells) | Storeys | Most often | Franchises |
+  |---|---|---|---|---|---|
+  | Police station (`general`) | Detectives' office, Front desk, Locker room, Chief's office, Armory, Evidence room, Cell block, Sally port, Squad room, Interview room, Observation, Dispatch, Records, Break room, Briefing room | 25–28 × 15–17 | 2–3 | suburb, city, town | precinct, sheriff |
+  | Sheriff's substation (`substation`) | Front counter, Sergeant's office, Armory, Evidence room, Cell block, Carport, Deputies' room | 21–22 × 14–15 | 1 | rural, town, suburb | sheriff |
+  | Small-town police department (`smalltown`) | Squad room, Sally port, Chief's office, Front desk, Evidence room, Armory, Cell block, Records, Interview room, Observation, Break room, Locker room | 22–24 × 15–16 | 1–2 | town, suburb, rural | sheriff, precinct, statepatrol |
+  | City precinct house (`precinct`) | Detectives' squad, Locker room, Desk sergeant, Captain's office, Patrol room, Armory, Evidence room, Cell block, Sally port, Squad room, Interview room, Observation, Records, Break room, Narcotics, Briefing room, Dispatch | 28–31 × 17–19 | 3 | city, suburb | precinct |
+  | State patrol post (`patrol`) | Public counter, Radio room, Post commander, Armory, Evidence room, Cell block, Patrol garage, Troopers' room | 27–30 × 14–15 | 1 | rural, town, suburb | statepatrol |
+  | Police headquarters (`hq`) | Armory, Public hall, Evidence room, Watch commander, Cell block, Sally port, Squad room, Interview room, Observation, Dispatch, Locker room, Crime lab, Detectives' squad, Records, Break room, Commissioner's office, Press room, Internal affairs | 21–22 × 15 | 4–5 | city, suburb | precinct |
+  | County sheriff's office and jail (`jail`) | Deputies' room, Sheriff's office, Public lobby, Locker room, Armory, Evidence room, Cellblock A, Booking, Cellblock B, Sally port, Investigations, Interview room, Observation, Dispatch, Cellblock C, Jailers' post, Break room, Cellblock D | 32–35 × 19–21 | 2 | town, rural, suburb | sheriff |
+  | Neighbourhood police office (`community`) | Storefront counter, Armory, Evidence room, Squad room, Side garage, Cell block, Sergeant's office, Records, Break room, Community room, Interview room, Observation, Locker room | 18–20 × 21–23 | 1–2 | city, suburb, town | precinct |
+  | Highway patrol barracks (`barracks`) | Barracks commander, Public counter, Radio room, Troopers' room, Armory, Evidence room, Cell block, Patrol garage, Troopers' dorm, Day room, Barracks kitchen, Locker room | 25–27 × 16–17 | 2 | rural, town, suburb | statepatrol |
+  | Town hall and police department (`townhall`) | Front desk, Chief's office, Squad room, Armory, Evidence room, Cell block, Sally port, Town clerk, Mayor's office, Council chamber, Town records, Interview room, Observation, Break room, Planning office | 30–33 × 20–22 | 2 | town, rural, suburb | sheriff, precinct |
+  | Police station with a K-9 unit (`k9`) | Squad room, Front desk, Chief's office, Evidence room, Armory, Cell block, K-9 kennels, K-9 garage, K-9 unit, Interview room, Observation, Records, Break room, Locker room | 26–29 × 16–17 | 1–2 | suburb, town, rural | statepatrol, sheriff |
+  | Old courthouse police station (`courthouse`) | Squad room, Chief's office, Rotunda, Armory, Evidence room, Holding cells, Locker room, Sally port, Courtroom, Judge's chambers, Jury room, Court clerk, Break room, County records, Interview room, Observation, Detectives' squad | 26–29 × 18–20 | 2–3 | town, rural, suburb | sheriff, precinct, statepatrol |
+
+  **firestation** (`firestation`)
+
+  | Plan (`id`) | Rooms | Size (cells) | Storeys | Most often | Franchises |
+  |---|---|---|---|---|---|
+  | Fire station (`general`) | Engine bay, Day room, Kitchen, Medical store, Workshop, Dormitory, Gym, Watch office | 20–23 × 13–15 | 2 | suburb, city, town | engine7, countyfire |
+  | Volunteer fire hall (`volunteer`) | Meeting hall, Kitchen, Bunk room, Engine bay | 24–27 × 14–15 | 1 | rural, town, suburb | volunteer |
+  | Two-bay station (`twobay`) | Engine bay, Day room, Kitchen, Medical store, Truck bay, Dormitory, Lounge, Watch office, Gym | 24–27 × 15–16 | 2 | suburb, town, city | countyfire, engine7 |
+  | Fire station with a training tower (`tower`) | Engine bay, Day room, Watch office, Dormitory, Kitchen, Gym, Medical store, Training tower, Workshop | 33–36 × 16–18 | 1 | suburb, city, town | engine7, countyfire |
+  | Airport crash station (`airport`) | Crash tender bay, Ready room, Kitchen, Medical store, Dormitory, Foam store, Watch room, Gym, Crew dorm, Office | 28–32 × 16–18 | 2 | airport, city, suburb | countyfire, engine7 |
+  | Fire headquarters (`hq`) | Engine bay, Public lobby, Fire marshal, Day room, Kitchen, Medical store, Workshop, Dormitory, Watch office, Gym, Turnout and hose store, Chief's office, Dispatch centre, Training room | 28–31 × 17–18 | 3 | city, suburb | engine7 |
+  | Rural brush station (`brush`) | Brush truck bay, Crew room, Kitchen, Bunk room | 16–18 × 13–14 | 1 | rural, town | volunteer, countyfire |
+  | Historic firehouse (`firehouse`) | Apparatus floor, Kitchen, Workshop, Dormitory, Day room, Captain's office, Gym, Hose store, Medical store | 13–15 × 19–21 | 2–3 | city, suburb, town | engine7 |
+  | Drive-through station (`drive`) | Drive-through bay, Day room, Kitchen, Medical store, Dormitory, Mezzanine store, Gym, Watch office | 22–25 × 17–19 | 1–2 | suburb, town, city | countyfire |
+  | Fire and rescue station (`rescue`) | Engine bay, Day room, Kitchen, EMS supply, Rescue bay, Dormitory, Gym, Watch office, EMS dorm | 28–31 × 15–17 | 2 | suburb, town, city | countyfire, engine7, volunteer |
+  | Fire training academy (`academy`) | Apparatus bay, Classroom, Academy office, Recruits' dorm, Kitchen, Drill hall, Smoke tower, Medical store | 33–36 × 17–19 | 1 | suburb, town, rural | engine7, countyfire |
+  | County fire and rescue (`county`) | Station office, Watch office, Day room, Kitchen, Dormitory, Medical store, Engine bay, Workshop | 24–27 × 17–19 | 1 | town, rural, suburb | countyfire, volunteer |
 - **Special buildings: military bases, air bases, airports and prisons laid out like the real thing** (issue #25 of the interiors epic #7, the user's request 2026-10-25: "yes open a ticket for the military buildings bases, airports, air bases, etc that fits too"). Test `tools/interiortest.js` ("Military bases, air bases, airports and prisons laid out like the real thing"); renders `node tools/milshot.cjs [outdir] [key:site ...]` (roofs off, fully revealed; to `docs/shots/issue-25/` by default, which git ignores).
   - How: new plans in new saves (buildingmaps.js `milPlan`; an older save keeps the old plans and `FURNISH`, `o.legacy`); each leaf carries `civic: <style>`, and `assemble`'s furnishing loop runs `militarylayout.js MILITARY_STYLES[style]` (`militaryStyle`, first: a base's warehouse is the supply warehouse, not #16's) or civiclayout.js's shared styles (briefing, records, washroom, breakroom, squad). The site's type reaches the plan (`siteBuildings` puts `site` on each option, `makeSpec` passes it): a hangar at an air base holds military aircraft, a warehouse at a base is the supply warehouse. The archetypes new with this ticket (HQ, aid station, gatehouse, control tower, flight ops) are laid out the new way in an older save too (`NEW_KEYS`).
   - Sizes: real-world, at about a metre a cell (`CELL_M` ≈ 1: a bed 1 × 2, a doorway 1), the issue's reference sizes at their low end, one row each in `militarylayout.js MIL_SIZE` (metres and storeys) for #24's size table to take over: HQ 26–32 × 17–20 (2 storeys), barracks 40–50 × 15–17 (2–3), armory 17–21 × 12–14, mess hall 26–32 × 17–20, motor pool 40–48 × 26–30, supply warehouse 40–48 × 25–29, aid station 17–21 × 13–15, gatehouse 8–10 × 6–7, hangar 50–58 × 40–46, control tower 9–11 × 9–11 (4–5), flight ops 24–28 × 15–17 (1–2), terminal 80–90 × 40–44 (1–2), cell block 40–48 × 24–27 (2 tiers). The bunkers (`bunker_mil` among them) are #26's (bunkerlayout.js). The raid map grows to fit (`fitMargins`; up to 300 × 300 with #24). Plans are split trees, ready to become wings of #23's shapes (an L-shaped HQ, a T-shaped terminal, an H-shaped cell block) once `spec.shape` lands.
@@ -244,6 +375,26 @@ Raids go into generated buildings and neighbourhood streets to search, past lock
   - Loot (combat.js `BOX_LOOT`, `AREAS.flightgear`; gear.md; the footlocker, the radio console and the Humvee by #26's rows): an ammo crate rounds (90% 20–60, a grenade 8%), a fuel bladder fuel, a property locker a phone, a watch, cigarettes, a knife, a suitcase a traveller's things, an armory's storage cage the optics (NVG 12%, thermal 4%, sights), the vehicles their kit (an Army truck, a helicopter, a fighter, a transport, an airliner, a crash tender). Flight gear maps to the nearest items there are (a military helmet, a chest rig, flares): no new items, as #15 did. By value over 200 seeded buildings each, old layout against new (after the merge of #26, whose footlocker, radio console and Humvee rows these use): the barracks 2514 against 819 (×3.07; 1.39 a m² against 1.70), the armory 509 against 253 (×2.01; 2.05 a m² against 1.84: the richest a m² of the rebuilt), the motor pool 417 against 231 (×1.81), the mess hall 312 against 333 (×0.94), the cell block 466 against 131 (×3.58), an airport's hangar 324 against 221, an air base's 433 against 221, the terminal 898 against 277 (×3.24), a base's warehouse 234 against 170. Every one holds about what it did or more (bigger: the totals scale with the area; the mess hall lost its upstairs) and is no richer a square metre than it was (+25% at most; all but the armory poorer, their big floors open). New: the HQ 668, the aid station 156, the gatehouse 130, the control tower 593 (its radio consoles), flight ops 291.
   - People (AI parity, docs/adr/0001-ai-parity.md): wanderers.js `KIND_ROOMS` sends the soldiers holding a base (side military) to its ops room, comms, bays, guard post, motor pool , armed squatters to the same and a prison's control room, a terminal's security; survivors to a barracks' or a prison's day room, a terminal's gates and lounges, a mess hall. floorfolk.js's raiders take an HQ's ops room or a prison's control room first, as a police station's squad room. Kits as before (the soldiers', the guards' tables).
   - Scenes (interiorscenes.js `registerScene` from militarylayout.js, `when`: only on maps these styles laid out): `gatestand` (a last stand at the duty desk, the guard post or the HQ's: soldiers' bodies with their kit, brass, sandbags in the doorway, the dead before it), `barracksoverrun` (an overrun bay: soldiers and the dead among the bunks, blood), `armorybarricade` (an armory emptied, its containers searched and empty, a locker against the door, a soldier's body), `helipadevac` (an HQ's lobby or briefing room: cots and a pile of bags left for the last flight), `cellsopen` (every cell door on the day room's floor open, inmates' bodies in the day room, a guard's), `terminalshelter` (cots between the gates, a water barrel, the ones who never left).
+  - **A dozen plans a type** (the user's request 2026-10-25: "for buildings with no to only a few varients create a dozen varients per building type"; #32's rule): `milplans.js MIL_PLANS`, 12 named plans for each of the barracks, the armory, the motor pool, the mess hall, the hangar, the terminal, the control building, the transmitter hut, the HQ, the aid station, the gatehouse, the control tower and flight operations (today's plan of each is "standard"). Each has its own set of room roles and an arrangement (`LAYOUTS`: a corridor, two corridors, an open hall with rooms behind, rooms across the front, down one side or both, a split hall, a court round the entrance hall, a tower's stack of floors), sized from the type's `REAL_SIZE` row and grown to fit its rooms. Picked by the building's dice (a hash, never consumed) or `o.plan`; its name is `spec.vname` (the raid's opening line). The kits (`KITS`) give every room a style. Containers: `boxScale` for the barracks (×2), the gatehouse (×1.6) and the transmitter hut (×0.35), so each type's mix holds within ×0.5–×1.5 of its standard plan a floor cell. The cell block is #31's; the bunkers #26's; the airport's fire station picks #36's crash station (civicvariants.js plan `airport`) by its site.
+  - **A dozen layouts a site** (`MIL_SITES`, by hash dice of the tile): a base's, an air base's and an airport's buildings beyond their core (the core's ids as they were: a base's first four, an airport's first three, an air base's hangar), and their grounds through `spec.sl` (militarylayout.js `militaryOutside`): the perimeter (`wire`, `double`, `sandbag`, `open`), 0–4 watchtowers, the gate on the front or a side (`gatehouseSide`), the airfield's runway across the front, down a side or along the back. Only a new save's grounds follow a layout.
+  - The plans and layouts:
+    - **barracks**: Barracks (today's); Open-bay barracks; Hammerhead barracks; Rolling-pin barracks; Modular barracks; Recruit training barracks; NCO quarters; Guard company barracks; Transient barracks; Barracks with a gym; Quonset huts; Signals company barracks.
+    - **armorybldg**: Armory (today's); Company arms room; Battalion armory; Ordnance depot; Armory and indoor range; Guard armory; Vault row; Small-arms repair shop; NBC and arms store; Bunkered magazine; Special-forces cage; Arms depot.
+    - **motorpool**: Motor pool (today's); Drive-through motor pool; Twin-bay motor pool; Heavy maintenance shop; Motor pool with a wash rack; Dispatch yard; Tyre and parts depot; Signals vehicle shop; Fuel and oil point; Paint and body shop; Vehicle depot; Field maintenance tent line.
+    - **messhall**: Mess hall (today's); Dining facility; Field kitchen; Officers' club; Mess and bakery; Cafeteria line; Twin dining halls; Ration depot kitchen; Cooks' training kitchen; NCO club; Chow hall with a scullery; Dining facility, two lines.
+    - **hangar**: Hangar (today's); Maintenance hangar; Double hangar; Engine shop hangar; Paint hangar; Alert hangar; Cargo hangar; Helicopter hangar; Lean-to shop hangar; Hardened aircraft shelter; Corporate hangar; Depot hangar.
+    - **terminal**: Terminal (today's); Regional terminal; Pier terminal; Satellite terminal; Commuter terminal; International terminal; Charter terminal; Cargo terminal; Linear terminal; Hub terminal; Military passenger terminal; Small-field terminal.
+    - **control**: Control building (today's); Dam control house; Substation control; Pumping station control; Plant control room; Grid dispatch centre; Water treatment control; Signal box; Hardened control bunker; Control tower block; Remote telemetry hut; District control centre.
+    - **radio**: Transmitter hut (today's); Relay station; Broadcast station; Manned relay with bunks; Solar relay; Diesel relay; Listening post; Emergency broadcast hut; Forestry radio hut; Military radio relay; Repeater shed; Radio station.
+    - **hq**: Headquarters (today's); Battalion headquarters; Brigade headquarters; Company orderly room; Tactical operations centre; Garrison headquarters; Hardened command post; Signals headquarters; National Guard armory HQ; Emergency operations centre; Intelligence section; Staff college block.
+    - **aidstation**: Aid station (today's); Battalion aid station; Troop clinic; Forward surgical team; Field hospital tent; Casualty collection point; Dental clinic; Decontamination station; Medical supply point; Aid station with quarters; Isolation ward; Combat support hospital.
+    - **gatehouse**: Gatehouse (today's); Main gate; Checkpoint booth; Visitor centre; Guard room; Vehicle search station; Sentry post; Military police post; Gate lodge; Pass and ID office; Barrier control; Fortified gatehouse.
+    - **flightops**: Flight operations (today's); Squadron operations; Alert facility; Base operations; Aircrew life support; Weather and planning; Flight training centre; Flight medicine; Wing command post; Helicopter operations; Ready room; Operations group.
+    - **tower**: Control tower (today's); Field control tower; Tower with approach control; Tower over the crash crew; Tower with a weather room; Training tower; Tall tower; Tower with crew bunks; Low tower; Tower with its own power; Military tower; Regional tower.
+    - **military sites**: Garrison (wire, 4 towers, gate front); Training base (wire, 2 towers, gate front); Supply depot (double, 4 towers, gate side); Armor base (wire, 3 towers, gate front); National Guard armory (open, 0 towers, gate front); Signals base (wire, 2 towers, gate side); Airmobile base (double, 4 towers, gate front); Forward operating base (sandbag, 4 towers, gate front); Logistics base (wire, 2 towers, gate side); Medical brigade post (wire, 1 towers, gate front); Reserve centre (open, 0 towers, gate side); Command post (double, 4 towers, gate side).
+    - **airbase sites**: Fighter wing (wire, 4 towers, gate front, runway front); Airlift wing (wire, 2 towers, gate front, runway side); Helicopter base (wire, 3 towers, gate side, runway front); Air Guard field (open, 0 towers, gate front, runway back); Flight school (wire, 2 towers, gate front, runway side); Dispersal field (sandbag, 4 towers, gate side, runway back); Tanker wing (double, 4 towers, gate front, runway front); Forward airstrip (sandbag, 2 towers, gate front, runway side); Bomber base (double, 4 towers, gate side, runway front); Rescue squadron (wire, 2 towers, gate front, runway back); Radar station (wire, 3 towers, gate side, runway side); Reserve air base (open, 0 towers, gate front, runway front).
+    - **airport sites**: Regional airport (open, 0 towers, gate front, runway front); County airfield (open, 0 towers, gate front, runway side); Cargo airport (wire, 0 towers, gate side, runway front); International airport (wire, 2 towers, gate front, runway front); General-aviation field (open, 0 towers, gate front, runway back); Joint civil-military airport (wire, 2 towers, gate side, runway front); Commuter airport (open, 0 towers, gate front, runway back); Hub airport (wire, 0 towers, gate front, runway side); Lakeside airfield (open, 0 towers, gate side, runway side); Crop-duster strip (open, 0 towers, gate front, runway back); Freight hub (double, 2 towers, gate side, runway front); Private jet centre (wire, 0 towers, gate front, runway side).
+  - Test `tools/milvarianttest.js` (BS_QUICK: fewer seeds): 12+ distinct plans by #32's signature for each type by the dice (72 buildings) and pinned, every named plan drawn; every plan built, reached (every room, every walkable cell), its storeys and footprint class, every room styled, its name; the loot mix against the standard plan; older saves unchanged; the sites' 12 layouts each, drawn by the tiles' dice, and their grounds (open, sandbag, double fence with a side gate, the runway's three sides, an open or fenced airport).
   - Older saves (`roomsLegacy`): every archetype's cells, containers, rooms and locked doors identical to origin/dev (checked by hash, 59 archetypes × 12 seeds); new saves' buildings of every other kind identical too. The checkpoint only for a new save.
   - Modules: [militarylayout `MILITARY_STYLES`, `MIL_SIZE`, `MIL`, `MIL_KEYS`, `militaryStyle`, `militaryOutside`, `dressCheckpoint`; buildingmaps `milPlan`, `SITES`, `GROUNDS`, `assemble` (styleOf, the outside's api); civiclayout (its helpers exported, `cellBlock`'s `most`, `vehicleIn`'s `wide`); combat `placeCar` wide, `BOX_LOOT`, `AREAS.flightgear`, `AREA_SETS.airbase`; data-furniture; wanderers; floorfolk; citycrawl; ui/isoview; ui/vehiclemodel; ui/itemart/furniture; ui/mapsprites `paintAirBase`]. Merged with #26 (bunkers): the bunker this ticket first built for `bunker_mil` gave way to #26's mountain bunker, which covers it (its blast door, airlock, command, barracks, armory, generator and stores).
 - **Shops, restaurants, bars, offices, motels, banks and big stores laid out for their kind** (the special buildings: issue #16 of the interiors epic #7, the user's request 2026-10-25: "Make the layouts make sense and filled with appliances, furniture and decor that makes it feel lived in. Special buildings [...] should have furniture, appliances, decor, rooms and layouts that make sense for the type of building. [...] Improve the building, furniture, appliances etc fidelity for raids and crawls."). Tests `tools/shopstest.js` ("Laid out for their kind"), `tools/interiortest.js` ("Commercial buildings room by room").
@@ -423,7 +574,8 @@ The user's request 2026-10-25 (the interiors epic #7): "All buildings should sca
   - Containers: a room tops up to one container every `OFFICE.CELLS[key]` cells of its floor (at least one), not ROLES' `maxBoxes` (big open-plan rooms held two at most): loot per cell within ±10% of the old tower's.
   - Two stair runs on every floor of a tower (`stairs: { roles: ["stairwell"], n: 2 }`, a stairwell at each end of its front band, the same cells every floor); city hall's and the courthouse's at the corridor's ends; the others one.
   - Scenes (`registerScene`, `when`: the map's areas carry `office` marks, so an older save rolls as it did): `officehold` (an upper floor held: the stairwell's door jammed with a filing cabinet in its frame and a piece against it, or the top of a stair run ringed with half cover; the floor's biggest room held, alive `SCENES.ALIVE` of the time for floorfolk.js's survivors, else bodies and the last snacks; the office kinds), `heldcell` (the courthouse's holding cell: a Sleeper behind its locked cell door), `councilshelter` (city hall's council chambers as the town's shelter: cots, a water barrel, the ones who never left, emergency rations), `lastbroadcast` (a station's studio, booth or newsroom: the anchor's body at the desk, the script of the last broadcast and a hand-crank radio as a ground pile).
-  - Not done: footprint shapes (an L-shaped business park, a stepped tower, a portico notch: #23 is not on dev),  a fallout shelter under city hall (#26), a lift shaft, the mast as a piece outside a station.
+  - A dozen named plans a kind (`OFFICE_VARIANTS`, the names in [travel.md](travel.md#shops-and-services-as-places-as-franchises)); their rooms' new styles: `labroom`, `atrium`, and #16's banking hall, vault, aisles, pallet racks and workshop (`bankhall`, `vault`, `shopunit`, `pallets`, `workshoproom`); a town hall's engine bay and a courthouse's sally port are #15's (`civic`). The checks run per style over every plan: each room of a style has its pieces, each kind its core rooms (`tools/officestest.js`).
+  - Not done: footprint shapes (an L-shaped business park, a stepped tower, a portico notch: #23 is not on dev), a fallout shelter under city hall (#26), a lift shaft, the mast as a piece outside a station.
   - Modules: [officeplans, officelayout, data-offices, data-shops, shops (`officeExtras`, `civicPlaces`, `noFirm`), citycrawl (`civicBlock`, genBlock), pois (makePoi), buildingmaps (BUILDINGS, SITES, STOREYS_BY_TYPE, `assemble` styleOf), combat (BOX_LOOT merge), decor (`DECOR_OFFICE`), data-furniture, worldcfg (`legacyOffices`), save, world; ui/isoview, ui/itemart/furniture, ui/mapsprites; tools/officestest.js, tools/officeshot.cjs].
 
 ## Bunkers
@@ -460,6 +612,264 @@ The user's request (2026-10-25, issue #26 of the interiors epic #7): "Add bunker
 - **Scenes** (interiorscenes.js `registerScene`, `when`: a bunker's map): `sealed` (military, government: a bunk gallery sealed behind a locked steel door, its people dead in their bunks or alive), `lastlog` (the command centre's or the situation room's last duty-log entry by the map table: the sentence read when the room is seen), `bitten` (a shelter overrun from within: bodies among the cots, two or three of the dead, a Sleeper sometimes), `laststand` (the prepper's: brass round their body in the gun room, the dead in the airlock), `sealedhatch` (`BUNKER.SEALED` 30%: the shed's door locked from inside), `booby` (`BUNKER.TRAPPED` 30%: a bear trap set in the airlock's floor).
 - **Where**: see [travel.md "Bunkers as places"](travel.md#bunkers-as-places). Older saves: the kinds are new, so nothing an older save holds changes; a saved `bunker_mil` site (which had no buildings, so the street map) opens its bunker's map the next time.
 - Modules: [bunkerlayout `BUNKER`, `BUNKER_PLANS`, `BUNKER_STYLES`, `bunkerStyle`, `levelName`, `BUNKER_WALL`; buildingmaps (`BUILDINGS`, `ROLES` portal, airlock, checkpoint, hatch, tunnel, genroom, waterstore, medbay; rock leaves, `rockFill`, `ventStack`, `fenceLine`, `GROUNDS.rock`, `DOOR_KINDS.blast`, `SITES`); indoorlight `GEN`, `gensetOptions`, `gensetAct`; combat `genset` act, `BOX_LOOT`; wanderers; civiclayout `vehicleIn` (exported); data-furniture; data-survival; ui/combat (the button, `floorLabel`); ui/isoview; ui/itemart]. Renders (2026-10-25, every kind, the surface and every level, revealed): no page errors.
+
+## Campuses
+The user's request (2026-10-25, issue #28 of the interiors epic #7): "Add college campus maps that are max 500x500 with connected and disconnected buildings courtyards and dorms". Modules `sim/campus.js` (the map) and `sim/campuslayout.js` (the buildings), on #30's shared multi-building code `sim/compound.js`; test `tools/campustest.js`; renders `tools/campusshot.cjs`; the turn and the save measured by `tools/campusbench.js`.
+- **Where**: a university (`univ`, one in the first city) and a town's college (`college`, new: [travel.md "Universities and colleges"](travel.md#universities-and-colleges)) each open one campus map (buildingmaps.js `SITES`: `["campus"]`, `BUILDINGS.campus`), as a neighbourhood opens its street. City crawls get no campus (too big for a block).
+- **The kind** (`campusKind`, `CAMPUS.KINDS`): a university is a state university, a liberal arts one a quarter of the time (the site's dice); a college is the kind mapgen.js named it (`tile.loc.campus`: "… Community College", "… Technical College" a community college, else a liberal arts one).
+  - **Community college**: 4–8 buildings (the administration, a lecture hall, the science building, a two-storey library, then the student union, athletics, the plant, security, the health centre, the theatre, a second lecture hall or a dining hall by the dice), one quad, a parking lot, no dorm or one small one.
+  - **Liberal arts college**: 8–15 round one or two quads: the administration, a chapel, lecture and science buildings, the library, the dining hall, the student union, 2–4 dorms of 2–4 storeys, a sports field with its running track, a lot.
+  - **State university**: 15–40: everything above, 4–10 dorms of 3–6 storeys (8 with #24's `MAX_STOREYS`), a second dining hall, the parking garage, a stadium stand over the field, two lots, several quads. At the 500 cap the rows hold 18–29 of them (seeds 42, 7, 11: 18, 21, 29; the browser's world 23; at the old 300 cap 18–28); the optional ones that do not fit are left out, the last first (`campusPlan`), never the fewest dorms.
+- **The layout** (`campusMap`): rows of buildings north to south (`CAMPUS.ZONES`: the dorms and the dining hall, the teaching buildings, athletics, the garage and the plant), every front to the south onto a promenade with a path and a plaza to each front door; between the rows a quad (lawns, crossing paths, trees, benches, a fountain or a statue at the crossing) or between two rows of dorms a residence yard; the south strip the sports field in its running track (a stadium stand of bleachers at a state university) and the parking lots (compound.js `parkingLot`: double rows of bays, cars left in `CAMPUS.CARS` of them, each a container, AREAS.wreck); the campus road along the south, a service road down the east side. The buildings are copied in by compound.js `placeBuilding` (rooms named "Lounge, Hale Hall", containers numbered on with `c.house`, locked doors, stair runs); dorms are named from a list of people's names ("Hale Hall"), the rest by their kind ("Science Center", "Science Center II").
+- **Connected and separate buildings**: neighbours in a row are joined on the campus's dice (`CAMPUS.LINKS`: 45% / 40% / 35% by kind; at least one pair a campus, never every building) by compound.js `link`: a **covered walkway** (a canopy over a 2-wide path, open at the sides: `c.canopy`), a **connecting corridor** (walls and windows, a steel door each end and one onto the courtyard) or, between two buildings of 2+ storeys, a **glass bridge** on the same upper floor of both (`CAMPUS.BRIDGE` 45% of those; the cells between them on that floor only, the ground under it open). Each is a room of its own (`plan.links`, the area's `link`) with a door into each building, so the dead and the living path through it; the doors have their kind's hit points. In front of each link the ground between the two buildings is an **enclosed courtyard**: hedges along the promenade with a gate in the middle, a statue or a bench in it now and then. The rest stand alone across the lawns.
+- **The view** (ui/isoview.js `overheadFor`): a walkway's canopy is drawn as a corrugated roof a storey up over its cells, a bridge seen from the floors below as its own roof (its deck's underside) over the ground it crosses; both see-through close to your people and under the cut-away, gone with Roofs off. The drained pool's blue tiles (`fl: "pool"`) and the running track's red surface (`f: "track"`) have their own colours.
+- **The buildings** (`CAMPUS_PLANS`, BUILDINGS archetypes: each can be raided alone with `setup.raid.place`; sizes in `CAMPUS_SIZE`, about a metre a cell, one table until #24's is on dev):
+  - **Residence hall** (`dorm`, 34–46 × 17, 2–4 storeys by itself): a corridor of double rooms (two beds, two dorm desks with their hutches, two wardrobes, a mini fridge, a chair; the desks, a wardrobe and the fridge searched) or, 35% of the time, suites (two bedrooms either side of a common room with a sofa, a TV and the fridge: one unit, its doors inside it); every floor a lounge (a TV with a sofa facing it, an armchair, a kitchenette with the fridge, a microwave and a sink, a table, a vending machine), a shared bathroom (shower stalls, toilets, sinks, a medicine cabinet) and the RA's room; the ground floor the front desk with a wall of mailboxes and the laundry (washers and dryers); upstairs a study room (carrels, a table). A stair run at each end of the corridor.
+  - **Lecture hall** (`lecturehall`, 30–38 × 22–26, 1–2): two lecture halls (rows of fixed lecture seating every other row facing the lectern and the screen on the wall with no door; the tiers drawn flat: floors change height only at the stairs), seminar rooms (#15's classrooms), faculty offices (a desk, bookshelves, filing), restrooms; upstairs offices and seminar rooms.
+  - **Science building** (`sciencehall`, 32–40 × 19–21, 2–3): teaching labs (fume hoods and a sink on the quiet wall, lab benches, the whiteboard), a prep room (a sink, a counter, a fridge), the chemical store (locked 60% of the time, its cabinets locked: reagents as meds and parts, the game has no chemicals), a research lab (one or two chest freezers: #19's freezer rules, good food only in winter; a server rack, a fume hood, a patient monitor), faculty offices.
+  - **University library** (`univlibrary`, 34–42 × 24–28, 3–4; a community college's 2): the circulation desk, the stacks (#16's bookshelf aisles), reading rooms, study carrels, a computer lab (desks, a server rack), the archive (locked half the time; on the top floor "Special collections").
+  - **Student union** (`studentunion`, 38–46 × 22–26, 2): the campus bookstore (#16's bookshelf aisles and checkout), the food court (#16's dining room), its kitchen (#16's range, fryer, counters) and walk-in behind a steel door, a games room (a pool table, a TV and a sofa, a card table, the vending machine, a jukebox), a club office; upstairs the ballroom (tables with chairs, a piano, a lectern), a lounge, club and student-newspaper offices.
+  - **Dining hall** (`dininghall`, 28–34 × 20–24, 1–2): the dining room (#15's cafeteria tables), the servery (counters, cold cases, a display case), the industrial kitchen, a walk-in cooler and a walk-in freezer (chest freezers, cold-room shelving) behind cold-room doors, a dish room, a dry store; a loading dock at the back.
+  - **Athletics centre** (`athletics`, 38–46 × 28–32, one tall storey): the basketball court (bleachers along both long walls), the weight room (weight benches, racks), the pool hall (the pool drained: its tiles blue, walked in; benches, lockers), locker rooms (#15's), the equipment room (storage cages: bats, hockey sticks, pads: melee weapons), the coaches' office.
+  - **Administration** (`admin`, 28–36 × 17–19, 2–3): the registrar (a counter run with queue posts before it, filing), admissions and the bursar (#16's office floors), records (locked 30%), a break room; on the top floor the president's office (a desk, bookshelves, a sofa, a safe: always locked, its own container), the boardroom (a long table, the screen), the provost's office. (#27's office variants were not on dev: these are #16's offices.)
+  - **Campus security** (`security`, 18–22 × 13–15): the front desk, dispatch (desks, a server rack of radios), the officers' room, the locker room and a small armory (a gun rack, an ammo cabinet, a locker; a steel door, locked 85%).
+  - **Maintenance building** (`maintenance`, 24–30 × 16–18): the vehicle bay behind a roller door with the maintenance truck (a 2 × 5 container: fuel, parts, tools), a workbench, a tool chest, a compressor, tyre racks; the boiler room (boilers, the water heater), the tool room, the stores, the foreman's office.
+  - **Theatre and arts building** (`theatre`, 28–34 × 24–28, 1–2): the auditorium (a stage of boards along the quiet wall with a piano and a lectern, seating facing it), the scene shop, the green room (wardrobes, a clothes rack, a sofa), the box office; upstairs an art studio, a music room and a rehearsal room.
+  - **Parking garage** (`parkgarage`, 34–42 × 24–30, 2–4 levels): each level a deck of parked cars (each a container, AREAS.wreck), a stairwell and two stair runs (the ramp); the pay booth.
+  - **Chapel** (`chapel`): #15's church plan (the nave's pews either side of the aisle, the altar, the vestry, the parish hall). **Health centre** (`healthcentre`): #14's clinic (exam rooms, the drug cupboard), its rooms by `MEDICAL_STYLES`.
+- **New pieces** (data-furniture.js, each with its iso sprite, the liftable ones with an item drawing): `dormdesk` (one-person, searched), `minifridge` (#29's minibar piece, shared: a dorm's has its own loot row, `minifridge@dormroom`), `lectureseat` (fixed, 2 × 1), `lectern` and `carrel` (#34's library pieces, shared), `fumehood` (#37's, shared), `mailboxes` (two-person, searched), outdoors `campusbench` (2 × 1), `statue` and `fountain` (2 × 2, fixed). Reused: beds, wardrobes, desks, bookshelves, lab benches, school desks, vending machines, sofas, TV stands, washers and dryers, bleachers, storage cages, weight benches, pool tables, chest freezers.
+- **Loot**: a new raid area `AREAS.dormroom` for a dorm's rooms, its lounge and its bathroom (snacks, drinks, a few meds, a bag, a bat now and then; no guns; its finds, loot.js `AREA_FINDS.dormroom`: phones, laptops, consoles, cards, toiletries; tags home, school, sport), and `BOX_LOOT` rows: `dormdesk` (a laptop or a phone now and then), `minifridge` (drinks), `carrel`, `mailboxes` (parcels: photos, batteries, a phone), `maintruck` (fuel, parts, tools), `cabinet@lab` (meds and parts). The other rooms use the existing areas (lab, kitchen, office, store, lockers, armory, clinic, workshop, chapel). Expected finds of the containers' tables (`tools/campustest.js`, seed 42): a community college about 223 containers (scrap 220, water 78, parts 38, food 28, meds 11), a liberal arts college 583 (food 651, scrap 555, water 418, meds 33, parts 67), a state university 1209 (food 1603, scrap 1160, water 887, meds 130, parts 115); per building a dorm food 59, water 80, its finds 18 (phones, laptops); the science building meds 7, parts 13; the dining hall food 101; campus security 77 rounds and the long guns of its rack; the health centre meds 53. In a raid a container holds what it would on its building's own map (`campusLootShare`), not the 300 × 300 map's share.
+- **The dead** (`campusDead`, buildingmaps.js `placeInterior`): the site's roster × (the campus's ground-floor building area / `CAMPUS.DEAD_AREA` 2500) ^ 0.75, at most `CAMPUS.DEAD_MAX` 100 in all the groups together; spread over the buildings by their area × `CAMPUS.DENSE` (dorms 1.7, the dining hall 1.6, the student union 1.2, the garage and the plant 0.6, security 0.8) and over the open ground (`CAMPUS.OUTSIDE` 30%), on every floor (55% on the ground floor of a building with storeys); none in a way out or within 8 of the way in. A state university with a roster of 20: about 60.
+- **Students holed up** (`campusFolk`, floorfolk.js `placeFolk`): `CAMPUS.SURVIVORS` 45% of campuses with a dorm of 2+ storeys have a group barricaded in an upper floor's dorm room (`FOLK.SURVIVORS.prefer.dorm`; a scene's barricaded room with nobody dead first), its door barred, their card on meeting them as in the crawl; those who agree to join wait outside after the raid (scavenge.js `afterRaid` → `folkAfterPlace`).
+- **Heat** (`campusHeatRate`, combat.js): the big-map clock by the area searched, not the map's: the buildings your people opened a container in or stand in, each with a raid map's margin (`campusHeatDims`), at least 40 × 30.
+- **Raid planning and the intro**: the plan's sides (raidplan.js) and the ways out (`zones`): both ends of the campus road (the team comes in at the west end with its vehicle), the north edge, the west and east edges, south of each parking lot. The intro names the kind, every building, each link ("a glass bridge on floor 2 joins Hale Hall and Quill Hall"), the ways out, the buildings your people went through before and those that look ransacked (`campusIntro`).
+- **Scenes** (`registerScene` with `when`; each building rolls its own on its own map, `SCENES.ODDS` dorm 0.7, lecture hall 0.55, science 0.6, dining 0.65…, moved onto the campus with it): `dormbarricade` (a dorm's upper floor barricaded: furniture jammed on the stair run's top landing, the RA's last notes in their room, the students alive behind it or bodies in the rooms), `lectureshelter` (a lecture hall used as a shelter: cots between the rows, a water barrel, the ones who never left, a pile of water bottles and granola bars), `diningoverrun` (the dining room overrun at a mealtime: tables and chairs knocked about, 4–8 of the dead, a student's body), `sealedlab` (a lab sealed from inside: its door boarded, a table shoved against it, a researcher dead inside with their notebook, or a Sleeper), and `quarantine` (campus.js, an outdoor scene on its own dice, `CAMPUS.QUARANTINE` 50%: a quarantine tent on a quad, cots in rows, 3–6 bodies).
+- **The site's ledger and the AI** (poicont.js): the campus is one map of its site's POI (`"campus"`); every building's containers keep their ids (`c.house`), so a building nobody went into stays fresh and a revisit finds each as it was left. Other groups and your headless crews take from it through the POI rules a building at a time (`poiHouses` counts the campus's buildings: `campusBuildings`).
+- **Performance** (headless `tools/campusbench.js`, browser `tools/campusshot.cjs`; a state university at the 300 × 300 cap, 6 floors, 18 buildings, 1227 containers): the map built in 1.1–1.4 s; with 100 of the dead, every one of them aware, a turn 991 ms on average (the bot's turn 131 ms, the enemy phase 860 ms; the worst 1.4 s) against the issue's 1.5 s; a frame at the battle's zoom 16 ms warm (23 ms at worst, 21 ms cold) against 25 ms; a save mid-raid 23.6 MB of JSON, 1.2 MB gzipped. At the 500 cap with #24's engine (2026-10-25, three seeds: 487 × 253, 434 × 242, 428 × 291; 18–29 buildings, 1377–2311 containers): built in 1.6–1.8 s; a turn with 100 aware dead 1.3–1.8 s (the bot 150–184 ms, the enemy phase 1.2–1.7 s, the worst 1.9 s): over the issue's 1.5 s on the biggest, a cost of the horde's pathing over the bigger ground; a frame 10 ms warm, 13 ms at worst, 14 ms cold (449 × 250, 82 dead); a save 26–30 MB of JSON, 1.24–1.33 MB gzipped.
+- **Older saves**: a university one of whose buildings a raid already went into keeps its three (buildingmaps.js `SITES_LEGACY`, `campusLegacy`: its site's ledger names their maps); every other university and every college is a campus, in a new run and in an older save alike (the issue's rule). A battle saved mid-raid is the battle as it was.
+- **Not done**: no tunnel between buildings (no basements, as #9 decided); the lecture halls' tiers are drawn flat; a lower building's footprint shows as open air on the upper floors' views (#23's lower parts are not on dev); fronts all face south (compound.js could turn them); the campus cap stays 300 until #24's engine work is on dev.
+- Modules: [campus `CAMPUS`, `campusMap`, `campusPlan`, `campusKind`, `campusLegacy`, `campusDead`, `campusFolk`, `campusHeatDims`, `campusLootShare`, `campusIntro`, `campusBuildings`, `COLLEGE_NAMES`; campuslayout `CAMPUS_SIZE`, `CAMPUS_PLANS`, `CAMPUS_STYLES`, `campusStyle`, the scenes; compound; buildingmaps (`BUILDINGS`, `SITES`, `SITES_LEGACY`, `placeInterior`, `interiorIntro`); combat (`AREAS.dormroom`, `BOX_LOOT`, Heat, the loot share); floorfolk; poicont `poiHouses`; scavenge `afterRaid`; mapgen; data `LOCATIONS.college`; loot; locks; ui/isoview (`overheadFor`, `FURN_DRAW`, the pool and track floors); ui/itemart/furniture]. Tests: `tools/campustest.js`, `tools/furnituretest.js`, `tools/itemarttest.js`.
+
+### Named plans and site layouts
+The user's request (2026-10-25, relayed for issue #32): "for buildings with no to only a few varients create a dozen varients per building type". Module `sim/campusplans.js` (`CAMPUS_VARIANTS`, `planFrom`, `campusVariantOf`); campus.js `CAMPUS.LAYOUTS`, `campusLayout`. Tests: tools/campustest.js "The named plans".
+- **Twelve plans for each campus type this issue owns** (dorm, lecture hall, science building, student union, athletics, administration, security, maintenance, theatre, parking garage): a building takes one on its own dice (`campusVariantOf`; `option.plan`, an index or an id, picks one: the tests'); the plan's name is on the map (`plan.variant`, buildingmaps.js assemble). The first of each is the type's original plan in campuslayout.js, kept as it was; the others are data (`planFrom`): a footprint range, the storeys' dice (a campus still sets a dorm's storeys: `CAMPUS.KINDS` `dormStoreys`), the ground floor's plan, the upper floors' (and the top floor's, if its own), the doors out.
+- **A floor's form**: `hall` (rooms, a corridor, rooms: the corridor plan), `single` (a single-loaded gallery: one band of rooms, the corridor behind), `triple` (two corridors round a middle band: a tower's core), `open` (rooms along the front, one open hall behind them, rooms behind that), `wings` (two corridor wings either side of an entrance and an atrium), `tree` (its own split tree: the decks, the bays). A row is `[size, key]` entries (a key a room of the plan's vocabulary `Q`, each laid out by its style: `campus`, #15's `civic`, #27's `office`), and `["rep", unit, key]` for as many such rooms as fit (a dorm's rooms, offices, labs, practice rooms); `suite`, `flat`, `pod` and `gstudio` are a unit of rooms (their doors inside the unit, one onto the corridor).
+- **What counts as a different plan** (issue #32): every two plans of a type differ in at least two of the room list, the ground floor's order, the doors out, corridor or open plan, the footprint's shape, the storeys (the test builds every pair and compares).
+- **Footprint classes**: a campus plan's class is its area's (small ≤ 190 cells, medium ≤ 360, large above; `footClass`), not "tower" (a residence tower is a large footprint); a parking garage's stair runs are 2 steps (tools/storeytest.js's rule), not 3.
+- **Storeys by type** (buildingmaps.js `STOREYS_BY_TYPE`) widened to the plans': university library 1–8 (#34's law library to its central library), lecture hall 1–4, science building 1–6 (the research tower), student union 1–4, athletics 1–2 (the fitness centre, the boathouse), administration 1–6 (the tower), security 1–2, maintenance 1–2, theatre 1–3, garage 2–6.
+- **Types owned elsewhere**: the **university library** takes #34's library plans (librarylayout.js `libraryPlan` with the variant and its plan pinned: the learning commons and the tower, the central library's two halls, the historic library's two reading rooms, the law library's two, the archive's vault and rare-books house, the county branch; rooms by their `lib` mark), twelve with the original; the **science building** adds six of #37's lab plans after its own twelve (industrylayout.js `industryPlan("lab", …, { plan, site: "univ" })`: the teaching lab, corporate R&D, biohazard, pharmaceutical, clean-room fab, agricultural station; rooms by their `ind` mark). These plans are drawn at their own size (`ext`: their ticket's spec as it comes). The **dining hall** keeps its one plan (#33's restaurant plans are restaurants, not a campus servery), the **chapel** and the **health centre** keep #15's church and #14's clinic until #36's plans (its infirmary's `campus` plan) are on dev.
+- **Twelve site layouts** (`CAMPUS.LAYOUTS`, a campus's by its site's dice: `campusLayout`, `option.layout` a given one; its name on the plan, `layoutName`, and in the raid plan's first line): the rows' order, buildings moved between rows, the links' odds and kinds, the gaps, the quads' depth, the lawns' trees and benches, a quad's centrepiece. The first is the layout as it was.
+- **The small fixes with it**: a community college 150–170 × 120–150 (more of its 4–8 buildings fit); a trimmed campus keeps its fewest dorms (`campusPlan`: the must-haves and `K.dorms[0]` dorms); the briefing and the intro say "a quad", not "1 quads".
+**University library** (`univlibrary`)
+
+| # | Plan (`id`) | Size | Storeys | Ground floor |
+|---|---|---|---|---|
+| 1 | Research library (`research`) | 34–42 × 24–28 | 3–4 | the original plan |
+| 2 | Learning commons library (`university-commons`) | its own | its own | #34's library plan |
+| 3 | Library tower (`university-tower`) | its own | its own | #34's library plan |
+| 4 | Main library, central hall (`central-centre`) | its own | its own | #34's library plan |
+| 5 | Main library, side hall (`central-side`) | its own | its own | #34's library plan |
+| 6 | Old library, domed reading room (`historic-centre`) | its own | its own | #34's library plan |
+| 7 | Old library, side reading room (`historic-side`) | its own | its own | #34's library plan |
+| 8 | Law library, reading room (`law-reading`) | its own | its own | #34's library plan |
+| 9 | Law library, stacks (`law-stacks`) | its own | its own | #34's library plan |
+| 10 | Special collections vault (`archive-vault`) | its own | its own | #34's library plan |
+| 11 | Rare books house (`archive-house`) | its own | its own | #34's library plan |
+| 12 | Branch library (`county-hall`) | its own | its own | #34's library plan |
+
+**Residence hall** (`dorm`)
+
+| # | Plan (`id`) | Size | Storeys | Ground floor |
+|---|---|---|---|---|
+| 1 | Double-loaded corridor hall (`corridor`) | 34–46 × 17 | 2–4 | the original plan |
+| 2 | Suite-style hall (`suites`) | 34–46 × 17–19 | 2–4 | corridor |
+| 3 | Single-loaded gallery hall (`gallery`) | 40–46 × 10–11 | 2–4 | single-loaded |
+| 4 | Apartment-style hall (`apartments`) | 34–46 × 19–21 | 2–4 | corridor |
+| 5 | Cluster pod hall (`pods`) | 34–46 × 20–22 | 2–4 | corridor |
+| 6 | Freshman tower (`tower`) | 30–34 × 26–28 | 6–8 | two corridors |
+| 7 | Singles hall (`singles`) | 34–46 × 17 | 2–4 | corridor |
+| 8 | Honors house (`honors`) | 30–36 × 17–19 | 2–3 | corridor |
+| 9 | Co-op house (`coop`) | 24–30 × 15–17 | 2–3 | open hall |
+| 10 | Graduate studios (`graduate`) | 34–46 × 17–19 | 2–4 | corridor |
+| 11 | Greek house (`greek`) | 26–32 × 17–19 | 2–3 | corridor |
+| 12 | Mixed-use hall (`mixeduse`) | 34–46 × 18–20 | 3–5 | corridor |
+
+**Lecture hall** (`lecturehall`)
+
+| # | Plan (`id`) | Size | Storeys | Ground floor |
+|---|---|---|---|---|
+| 1 | Twin lecture halls (`twin`) | 30–38 × 22–26 | 1–2 | the original plan |
+| 2 | Grand lecture theatre (`grand`) | 30–38 × 22–26 | 1–2 | corridor |
+| 3 | Seminar block (`seminar`) | 30–38 × 17–19 | 2–3 | corridor |
+| 4 | Single-loaded classroom wing (`wing`) | 40–46 × 12–14 | 1–2 | single-loaded |
+| 5 | Atrium lecture building (`atrium`) | 38–44 × 22–26 | 1–2 | wings and atrium |
+| 6 | Lecture halls round a core (`core`) | 30–38 × 24–26 | 1–2 | two corridors |
+| 7 | Humanities building (`humanities`) | 30–38 × 17–19 | 3–4 | corridor |
+| 8 | Business school (`business`) | 30–38 × 22–26 | 1–2 | corridor |
+| 9 | Law school (`law`) | 30–38 × 22–26 | 2–3 | corridor |
+| 10 | Language and media centre (`media`) | 30–38 × 18–20 | 1–2 | corridor |
+| 11 | Old Main (`oldmain`) | 34–40 × 19–21 | 3–4 | corridor |
+| 12 | Learning commons (`commons`) | 30–38 × 22–26 | 1–2 | open hall |
+
+**Science building** (`sciencehall`)
+
+| # | Plan (`id`) | Size | Storeys | Ground floor |
+|---|---|---|---|---|
+| 1 | Teaching and research labs (`labs`) | 32–40 × 19–21 | 2–3 | the original plan |
+| 2 | Chemistry building (`chemistry`) | 32–40 × 19–21 | 2–3 | corridor |
+| 3 | Biology building (`biology`) | 32–40 × 19–21 | 2–3 | corridor |
+| 4 | Physics building (`physics`) | 32–40 × 19–21 | 2–3 | corridor |
+| 5 | Engineering hall (`engineering`) | 36–42 × 19–21 | 1–2 | open hall |
+| 6 | Research tower (`tower`) | 28–32 × 24–26 | 4–6 | two corridors |
+| 7 | Single-loaded lab wing (`wing`) | 42–46 × 13–14 | 2–3 | single-loaded |
+| 8 | Computer science building (`computing`) | 32–40 × 19–21 | 2–3 | corridor |
+| 9 | Earth sciences building (`geology`) | 32–40 × 19–21 | 2–3 | corridor |
+| 10 | Medical sciences building (`medical`) | 32–40 × 19–21 | 2–3 | corridor |
+| 11 | Agricultural science building (`agriculture`) | 32–40 × 21–23 | 1–2 | corridor |
+| 12 | Interdisciplinary science centre (`interdisciplinary`) | 40–46 × 19–21 | 2–3 | wings and atrium |
+| 13 | University teaching lab (`lab-teaching`) | its own | its own | #37's lab plan |
+| 14 | Corporate R&D lab (`lab-rnd`) | its own | its own | #37's lab plan |
+| 15 | Biohazard lab (`lab-biohazard`) | its own | its own | #37's lab plan |
+| 16 | Pharmaceutical lab (`lab-pharma`) | its own | its own | #37's lab plan |
+| 17 | Clean-room fab (`lab-cleanfab`) | its own | its own | #37's lab plan |
+| 18 | Agricultural research station (`lab-agri`) | its own | its own | #37's lab plan |
+
+**Student union** (`studentunion`)
+
+| # | Plan (`id`) | Size | Storeys | Ground floor |
+|---|---|---|---|---|
+| 1 | Union with food court and ballroom (`union`) | 38–46 × 22–26 | 2 | the original plan |
+| 2 | Atrium union (`atrium`) | 42–46 × 22–26 | 2 | wings and atrium |
+| 3 | Food hall union (`foodhall`) | 38–46 × 22–26 | 2 | open hall |
+| 4 | Ballroom union (`ballroom`) | 38–46 × 24–26 | 2 | corridor |
+| 5 | Club tower union (`clubs`) | 32–36 × 20–22 | 3–4 | corridor |
+| 6 | Pub and games union (`pub`) | 38–46 × 22–26 | 1–2 | corridor |
+| 7 | Bookstore union (`bookstore`) | 38–46 × 24–26 | 2 | open hall |
+| 8 | Student services centre (`services`) | 38–46 × 22–26 | 2 | corridor |
+| 9 | Single-loaded gallery union (`gallery`) | 44–46 × 16–18 | 2 | single-loaded |
+| 10 | Commuter centre (`commuter`) | 38–46 × 22–26 | 1–2 | open hall |
+| 11 | Media union (`media`) | 38–46 × 22–26 | 2 | corridor |
+| 12 | Recreation union (`rec`) | 38–46 × 24–26 | 1–2 | corridor |
+
+**Athletics centre** (`athletics`)
+
+| # | Plan (`id`) | Size | Storeys | Ground floor |
+|---|---|---|---|---|
+| 1 | Gym, pool and weight room (`gym`) | 38–46 × 28–32 | 1 | the original plan |
+| 2 | Field house (`fieldhouse`) | 42–46 × 30–32 | 1 | open hall |
+| 3 | Natatorium (`natatorium`) | 38–46 × 28–32 | 1 | open hall |
+| 4 | Basketball arena (`arena`) | 42–46 × 30–32 | 1 | open hall |
+| 5 | Fitness centre (`fitness`) | 32–38 × 22–24 | 2 | corridor |
+| 6 | Gymnastics and dance centre (`gymnastics`) | 38–46 × 26–28 | 1 | corridor |
+| 7 | Wrestling and combat sports centre (`combat`) | 32–36 × 22–24 | 1 | corridor |
+| 8 | Recreation centre (`rec`) | 38–46 × 28–32 | 1 | two corridors |
+| 9 | Ice rink (`rink`) | 42–46 × 30–32 | 1 | open hall |
+| 10 | Racquet centre (`racquet`) | 44–46 × 16–18 | 1 | single-loaded |
+| 11 | Boathouse (`boathouse`) | 30–36 × 20–24 | 1–2 | open hall |
+| 12 | Varsity training complex (`training`) | 38–46 × 28–32 | 1–2 | corridor |
+
+**Administration building** (`admin`)
+
+| # | Plan (`id`) | Size | Storeys | Ground floor |
+|---|---|---|---|---|
+| 1 | Registrar, admissions and the president's floor (`offices`) | 28–36 × 17–19 | 2–3 | the original plan |
+| 2 | Old Main administration (`oldmain`) | 32–38 × 19–21 | 3 | corridor |
+| 3 | Welcome centre (`welcome`) | 28–36 × 17–19 | 1–2 | open hall |
+| 4 | One-stop student services hall (`onestop`) | 32–36 × 19–21 | 2–3 | open hall |
+| 5 | Single-loaded office wing (`wing`) | 40–44 × 12–13 | 2–3 | single-loaded |
+| 6 | Administration tower (`tower`) | 26–30 × 24–26 | 4–6 | two corridors |
+| 7 | Alumni house (`alumni`) | 22–26 × 15–17 | 2 | corridor |
+| 8 | President's and provost's hall (`executive`) | 28–36 × 17–19 | 2–3 | corridor |
+| 9 | Records and IT centre (`records`) | 28–36 × 17–19 | 1–2 | corridor |
+| 10 | Human resources and payroll (`hr`) | 28–36 × 17–19 | 2–3 | corridor |
+| 11 | Admissions hall (`admissions`) | 28–36 × 17–19 | 1–2 | corridor |
+| 12 | Mail and print services (`mail`) | 28–36 × 17–19 | 1 | open hall |
+
+**Campus security** (`security`)
+
+| # | Plan (`id`) | Size | Storeys | Ground floor |
+|---|---|---|---|---|
+| 1 | Campus security office (`station`) | 18–22 × 13–15 | 1 | the original plan |
+| 2 | Campus police station (`precinct`) | 22–26 × 15–17 | 1 | corridor |
+| 3 | Dispatch centre (`dispatch`) | 18–22 × 14–16 | 1 | open hall |
+| 4 | Security kiosk (`kiosk`) | 12–14 × 9–10 | 1 | own plan |
+| 5 | Gatehouse post (`gatehouse`) | 10–12 × 8–9 | 1 | own plan |
+| 6 | Two-storey security headquarters (`hq`) | 20–24 × 15–16 | 2 | corridor |
+| 7 | Single-loaded security wing (`gallery`) | 24–28 × 9–10 | 1 | single-loaded |
+| 8 | Emergency operations centre (`eoc`) | 22–26 × 16–18 | 1 | corridor |
+| 9 | Parking and security office (`parking`) | 18–22 × 13–15 | 1 | corridor |
+| 10 | Patrol garage and office (`patrol`) | 24–28 × 14–16 | 1 | own plan |
+| 11 | Records and lost property office (`lostfound`) | 18–22 × 13–15 | 1 | corridor |
+| 12 | Security substation (`substation`) | 16–18 × 11–12 | 1 | open hall |
+
+**Maintenance building** (`maintenance`)
+
+| # | Plan (`id`) | Size | Storeys | Ground floor |
+|---|---|---|---|---|
+| 1 | Physical plant (`plant`) | 24–30 × 16–18 | 1 | the original plan |
+| 2 | Central heating plant (`central`) | 26–30 × 18–20 | 1 | open hall |
+| 3 | Grounds depot (`grounds`) | 24–30 × 16–18 | 1 | own plan |
+| 4 | Motor pool (`motorpool`) | 30–34 × 16–18 | 1 | own plan |
+| 5 | Carpentry and paint shops (`trades`) | 24–30 × 16–18 | 1 | corridor |
+| 6 | Electrical and locksmith shops (`electric`) | 22–26 × 14–16 | 1 | open hall |
+| 7 | Single-loaded workshop row (`gallery`) | 34–40 × 11–12 | 1 | single-loaded |
+| 8 | Central stores warehouse (`stores`) | 28–32 × 18–20 | 1 | open hall |
+| 9 | Facilities management offices (`facilities`) | 24–28 × 16–17 | 2 | own plan |
+| 10 | Custodial depot (`custodial`) | 22–26 × 14–16 | 1 | corridor |
+| 11 | Recycling centre (`recycling`) | 26–30 × 16–18 | 1 | own plan |
+| 12 | Plant and yard shops (`yard`) | 28–30 × 17–18 | 1 | own plan |
+
+**Theatre and arts building** (`theatre`)
+
+| # | Plan (`id`) | Size | Storeys | Ground floor |
+|---|---|---|---|---|
+| 1 | Playhouse with the arts upstairs (`playhouse`) | 28–34 × 24–28 | 1–2 | the original plan |
+| 2 | Concert hall (`concert`) | 28–34 × 26–28 | 1–2 | corridor |
+| 3 | Black box theatre (`blackbox`) | 24–28 × 20–22 | 1 | corridor |
+| 4 | Art gallery and studios (`gallery`) | 28–34 × 24–28 | 1–2 | open hall |
+| 5 | Music building (`music`) | 28–34 × 20–22 | 2–3 | corridor |
+| 6 | Proscenium theatre (`proscenium`) | 28–34 × 26–28 | 1–2 | two corridors |
+| 7 | Film school (`film`) | 28–34 × 24–28 | 1–2 | corridor |
+| 8 | Dance studios (`dance`) | 30–34 × 20–22 | 1–2 | corridor |
+| 9 | Arts centre (`artscentre`) | 36–40 × 24–28 | 1–2 | wings and atrium |
+| 10 | Single-loaded studio wing (`studiowing`) | 40–46 × 13–14 | 1–2 | single-loaded |
+| 11 | Lecture-recital hall (`recital`) | 26–30 × 22–24 | 1 | open hall |
+| 12 | Opera house (`opera`) | 32–34 × 26–28 | 2–3 | two corridors |
+
+**Parking garage** (`parkgarage`)
+
+| # | Plan (`id`) | Size | Storeys | Ground floor |
+|---|---|---|---|---|
+| 1 | Parking deck (`deck`) | 34–42 × 24–30 | 2–4 | the original plan |
+| 2 | Twin-stair garage (`twinstair`) | 42–46 × 22–24 | 2–3 | own plan |
+| 3 | Long deck (`long`) | 46–48 × 18–20 | 2–4 | own plan |
+| 4 | Square deck (`square`) | 32–34 × 30–32 | 2–4 | own plan |
+| 5 | Garage over shops (`shops`) | 34–42 × 24–30 | 3–4 | own plan |
+| 6 | Garage with a security office (`security`) | 34–42 × 24–30 | 2–4 | own plan |
+| 7 | Split-level decks (`split`) | 40–44 × 24–30 | 2–4 | own plan |
+| 8 | Tall garage (`tall`) | 30–32 × 28–30 | 5–6 | own plan |
+| 9 | Two-level deck (`low`) | 36–42 × 26–30 | 2 | own plan |
+| 10 | Garage with a pay plaza (`payplaza`) | 34–42 × 24–30 | 2–4 | own plan |
+| 11 | Garage with a bike store (`bikes`) | 34–42 × 24–30 | 2–4 | own plan |
+| 12 | Garage over the motor pool (`motorpool`) | 34–42 × 24–30 | 3–4 | own plan |
+
+**Site layouts** (`CAMPUS.LAYOUTS`)
+
+| # | Layout (`id`) | What changes |
+|---|---|---|
+| 1 | Classic quads (`quads`) | the defaults (as before) |
+| 2 | Academic front (`academicfront`) | rows teaching, residences, athletics and service north to south |
+| 3 | Residences by the fields (`residentialsouth`) | rows teaching, athletics and service, residences north to south |
+| 4 | Linked megastructure (`megastructure`) | links ×2.2; bridges 70%; gaps 6–7 |
+| 5 | Pavilion campus (`pavilions`) | links ×0.3; gaps 10–14; trees ×2 |
+| 6 | Garden campus (`garden`) | quads 24–30 deep; trees ×3; benches ×2 |
+| 7 | Compact town campus (`compact`) | gaps 6–7; quads 18–20 deep; trees ×0.3; a statue on every quad |
+| 8 | Grand mall (`mall`) | quads 26–30 deep; benches ×2; a fountain on every quad |
+| 9 | Covered walkways (`walkways`) | links ×1.6; bridges 0%; walkways 100% |
+| 10 | Skybridge campus (`skybridges`) | links ×1.6; bridges 100%; walkways 0% |
+| 11 | Connected halls (`connected`) | links ×1.8; bridges 0%; walkways 0%; gaps 7–9 |
+| 12 | Residential colleges (`colleges`) | dorm and dininghall in the teaching rows; links ×1.3; trees ×1.5 |
+
 
 
 ## Libraries

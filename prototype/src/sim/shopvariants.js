@@ -37,7 +37,7 @@
 // Picking (shopVariant): o.plan (a variant's id, buildingmaps.js option.plan as #37's: a strip mall's slot, a test, a
 // render; o.layout the same) first; else the franchise's
 // variants (data-shops.js FRANCHISES plan.variants: a franchise maps to the plans that fit it) weighted by the setting
-// (o.setting: buildingmaps.js variantSetting from the tile; a crawl's place: its city or town), drawn on the building's
+// (o.vset: buildingmaps.js variantSetting from the tile; o.setting a caller's own: a strip mall's slot), drawn on the building's
 // dice (the plan's first roll). A kind without franchises names its variants itself.
 //
 // For a strip mall (#30): shopPlan(kind, { size, setting, layout, variant }) returns the spec of a kind's plan for a slot.
@@ -653,7 +653,7 @@ export function shopVariant(key, rng, o = {}) {
   const fr = o.variant ? (FRANCHISES[(o.kind && FRANCHISES[o.kind] ? o.kind : frKind(key))] || []).find((f) => f.id === o.variant) : null;
   const ids = fr && fr.plan && fr.plan.variants ? fr.plan.variants : null;
   const pool = ids ? list.filter((v) => ids.includes(v.id)) : list;
-  const si = SETTINGS.indexOf(o.setting);
+  const si = SETTINGS.indexOf(o.vset || o.setting); // vset: buildingmaps.js variantSetting (o.setting: #36's siteWhere, or a caller's own)
   const ws = (pool.length ? pool : list).map((v) => (si >= 0 ? v.w[si] : 1));
   const cands = pool.length ? pool : list;
   const tot = ws.reduce((a, b) => a + b, 0);

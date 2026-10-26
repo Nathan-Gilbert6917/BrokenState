@@ -372,7 +372,7 @@ section("Laid out for their kind (shoplayout.js, issue #16)");
   const KEYS = [...COMMERCIAL_KEYS];
   const make = (key, s, legacy = false, noDecor = false) => {
     const fr = FRANCHISES[FK[key] || key] || [], rng = new Rng(9000 + s * 104729 + key.length);
-    return assemble(rng, BUILDINGS[key].make(rng, { variant: fr.length ? fr[s % fr.length].id : null, legacy }), { key, name: key, legacy, noDecor });
+    return assemble(rng, BUILDINGS[key].make(rng, { variant: fr.length ? fr[s % fr.length].id : null, legacy, officesLegacy: true }), { key, name: key, legacy, noDecor }); // officesLegacy: the office tower #16 laid out (a new save's are officeplans.js's plans, issue #27: tools/officestest.js)
   };
   const grid = (m, f) => (m.floors ? m.floors[f].cells : m.cells);
   const inside = (m, a) => { const out = []; for (let y = a.y0 + 1; y < a.y0 + a.h - 1; y++) for (let x = a.x0 + 1; x < a.x0 + a.w - 1; x++) out.push([x, y, grid(m, a.f)[y * m.w + x]]); return out; };

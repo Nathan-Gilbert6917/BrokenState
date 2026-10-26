@@ -22,7 +22,10 @@
 //     corridors 2 wide, their parked pieces on one wall only; the pharmacy's steel door locked and its drug safe
 //     locked; every room's doors reachable from the stairs on every floor; the containers exactly the lootable pieces
 //     (and the ambulance); the meds per building within ±10% of the old layout (200 seeded buildings); the hospital's
-//     scenes (an ER overrun, a sealed ward, the morgue's dead) roll; an older save keeps the old plan;
+//     scenes (an ER overrun, a sealed ward, the morgue's dead) roll; an older save keeps the old plan; since issue #36
+//     every one of the kind's dozen plans (civicvariants.js) is built, pinned by its id: each keeps its kind's
+//     signature rooms (a hospital's ER, wards and locked pharmacy, a clinic's or an infirmary's exam rooms and drug
+//     cupboard, a vet's kennels), the floor-by-floor rooms checked on #14's own plan, the meds measured on it;
 //   - commercial buildings laid out for their kind (shoplayout.js, issue #16: the rest in tools/shopstest.js): every
 //     room's doors and stairs reachable from each other, no piece of 2+ cells on a door's front;
 //   - civic buildings laid out for their kind (civiclayout.js, issue #15): a police station's rooms with their pieces
@@ -32,7 +35,9 @@
 //     school's classrooms with every desk facing the whiteboard wall, a corridor of lockers, a gym with bleachers and a
 //     storage cage, a walk-in behind a cold room door, a church's pews in two columns either side of a clear aisle to
 //     the altar; every room's doors reachable; the containers are exactly the lootable pieces and the vehicles; the
-//     armory, the evidence room and a school hold what they did within ±10%; an older save keeps the old layouts.
+//     armory, the evidence room and a school hold what they did within ±10%; an older save keeps the old layouts; since
+//     issue #36 every one of the police station's, the fire station's and the church's dozen plans is built, each with
+//     its kind's signature rooms (a nave and its altar in every church; a bell tower raised where a plan has one).
 //   - bunkers (bunkerlayout.js, issue #26): the military, mountain, government, shelter and prepper kinds each have
 //     their signature rooms and pieces (the blast door, the airlock between two steel doors with its showers and hazmat
 //     rack, the command centre, the barracks' bunks and footlockers, the genset, the pantry), no windows, the levels
@@ -72,9 +77,11 @@ import { rollScenes } from "../src/sim/interiorscenes.js";
 import { COMMERCIAL_KEYS, styleName } from "../src/sim/shoplayout.js";
 import { CIVIC_STYLES } from "../src/sim/civiclayout.js";
 import { MIL_KEYS, MILITARY_STYLES, MIL_SIZE } from "../src/sim/militarylayout.js";
+import { CAMPUS_KEYS } from "../src/sim/campuslayout.js";
 import { BUNKER_STYLES, BUNKER_KEYS, BUNKER_VARIANTS } from "../src/sim/bunkerlayout.js"; // bunkers (issue #26)
 import { INDUSTRY_KEYS, plansOf } from "../src/sim/industrylayout.js"; // warehouses, factories and labs (issue #37)
 import { BUNKER_POI, POI } from "../src/sim/pois.js";
+import { VARIANTS } from "../src/sim/civicvariants.js"; // a dozen plans each for the civic and medical kinds (issue #36)
 import { pieceDef } from "../src/sim/data-furniture.js";
 import { boxLoot, FLOOR_RICH } from "../src/sim/combat.js";
 import { GEAR, supValue } from "../src/sim/data.js";
@@ -136,7 +143,7 @@ console.log(`Every archetype (${Object.keys(BUILDINGS).length}), ${SEEDS} seeds 
       const errs = [];
       const cap = mapCap(key); // a hotel's map up to 200 × 200 (its grounds round it, issue #29)
       const huge = spec.foot === "huge" || spec.foot === "xl" || (m.building && m.building.w >= 50); // a bunker at real-world scale (bunkerlayout.js BUNKER.SIZE, issue #26); the supermarket since issue #22: past the largest size class, its map its footprint and margins
-      if (W < 14 || H < 14 || (MIL_KEYS.has(key) ? W > 300 || H > 300 : W > (cap || (huge ? m.building.w + 12 : 44)) || H > (cap || (huge ? m.building.h + 16 : 34)))) errs.push(`size ${W}x${H}`); // issue #25: the military buildings at their real size (the maps up to 300 × 300, #24)
+      if (W < 14 || H < 14 || (MIL_KEYS.has(key) || CAMPUS_KEYS.has(key) || key === "campus" ? W > 300 || H > 300 : W > (cap || (huge ? m.building.w + 12 : 44)) || H > (cap || (huge ? m.building.h + 16 : 34)))) errs.push(`size ${W}x${H}`); // issue #25: the military buildings at their real size (the maps up to 300 × 300, #24)
       const z0 = m.zones[0];
       const start = [z0.x0 + 1, z0.y0 + (s % 2 === 1 ? 0 : 1)];
       if (!CELL[m.cells[start[1] * W + start[0]].k].walk) errs.push("the front zone is blocked");
@@ -175,7 +182,10 @@ console.log(`Every archetype (${Object.keys(BUILDINGS).length}), ${SEEDS} seeds 
         const grid = gridOf(c.f), rf = reachOf[c.f || 0];
         const k = grid[c.y * W + c.x].k;
         if (CELL[k].walk) errs.push(`container ${c.label} on walkable ${k}`);
-        const near = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]].some(([dx, dy]) => { const x = c.x + dx, y = c.y + dy; return x >= 0 && y >= 0 && x < W && y < H && CELL[grid[y * W + x].k].walk && rf[y * W + x]; });
+        // Next to a container is next to any of its cells (combat.js nearBox: a car of 2 × 4 is searched from any side).
+        const cw = c.w || 1, ch = c.h || 1;
+        let near = false;
+        for (let y = c.y - 1; y <= c.y + ch && !near; y++) for (let x = c.x - 1; x <= c.x + cw; x++) { if (x >= c.x && x < c.x + cw && y >= c.y && y < c.y + ch) continue; if (x >= 0 && y >= 0 && x < W && y < H && CELL[grid[y * W + x].k].walk && rf[y * W + x]) { near = true; break; } }
         if (!near) errs.push(`container ${c.label} unreachable`);
         const area = m.rooms[c.area];
         if (!area || area.id !== c.area || !AREAS[area.type]) errs.push(`container ${c.label} in an area with no loot type`);
@@ -687,24 +697,28 @@ console.log("\nHospitals, clinics, infirmaries and vets room by room (roomlayout
     [(f) => f >= 1, "ward", /^Ward/], [(f) => f >= 1, "nursestation", /Nurses' station/], [(f) => f >= 1, "office", /Doctors' office/],
   ];
   let built = 0, beds = 0, gurneys = 0, scenes = {}, rise = 0, safes = 0;
-  for (const key of ["hospital", "clinic", "infirmary", "vet"]) for (let s = 0; s < N; s++) {
-    const rng = new Rng(52000 + s * 7919 + key.length * 31);
-    const m = assemble(rng, BUILDINGS[key].make(rng, {}), { key, name: key });
+  // Every plan of the kind (civicvariants.js, issue #36), pinned by its id: the first (#14's) N times, the others a few.
+  const runs = (keys, n) => keys.flatMap((key) => (VARIANTS[key] || [{ id: null }]).flatMap((v, vi) => Array.from({ length: vi === 0 ? n : Math.max(3, Math.ceil(n / 8)) }, (_, s) => [key, v.id, vi, s])));
+  const MED_SIG = { hospital: ["er", "ward", "pharmroom"], clinic: ["exam", "pharmroom"], infirmary: ["exam", "pharmroom"], vet: ["cells"] };
+  for (const [key, layout, vi, s] of runs(["hospital", "clinic", "infirmary", "vet"], N)) {
+    const rng = new Rng(52000 + s * 7919 + key.length * 31 + vi * 104729);
+    const m = assemble(rng, BUILDINGS[key].make(rng, { plan: layout }), { key, name: key });
     const grids = m.floors || [{ cells: m.cells }];
     const rooms = m.rooms.filter((a) => !a.outdoor);
-    const tag = `${key} ${s}`;
+    const tag = `${key}.${layout} ${s}`;
+    for (const r of MED_SIG[key]) if (!rooms.some((a) => a.role === r)) err("plans", `${tag}: no ${r}`);
     built++;
     const cellsIn = (a) => { const out = []; for (let y = a.y0 + 1; y < a.y0 + a.h - 1; y++) for (let x = a.x0 + 1; x < a.x0 + a.w - 1; x++) out.push([x, y, grids[a.f].cells[y * m.w + x]]); return out; };
     const kindsIn = (a) => new Set(cellsIn(a).map(([, , c]) => c.k));
     // The rooms by name on their floors (a hospital).
     if (key === "hospital") {
       const top = m.storeys - 1;
-      for (const [onF, role, re] of FLOORS) for (let f = 0; f <= top; f++) if (onF(f, top) && !rooms.some((a) => a.f === f && a.role === role && re.test(a.name))) err("rooms", `${tag} floor ${f}: no ${role} ${re}`);
+      if (layout === "general") for (const [onF, role, re] of FLOORS) for (let f = 0; f <= top; f++) if (onF(f, top) && !rooms.some((a) => a.f === f && a.role === role && re.test(a.name))) err("rooms", `${tag} floor ${f}: no ${role} ${re}`); // #14's plan floor by floor
       const ph = rooms.find((a) => a.role === "pharmroom");
       if (!ph || ph.locked !== "vault" || !m.lockedDoors.some((d) => d.area === ph.id)) err("pharmacy", `${tag} ${ph ? ph.locked : "none"}`);
       const safe = m.containers.find((c) => c.kind === "drugsafe");
       if (!safe || safe.lockKind !== "drugs") err("pharmacy", `${tag} drug safe ${safe ? safe.lockKind : "none"}`); else safes++;
-      if (!m.containers.some((c) => c.kind === "ambulance" && c.w && c.h)) err("ambulance", tag);
+      if (rooms.some((a) => a.role === "ambbay") && !m.containers.some((c) => c.kind === "ambulance" && c.w && c.h)) err("ambulance", tag); // a plan with an ambulance bay
     }
     for (const a of rooms) {
       const ks = kindsIn(a), g = grids[a.f].cells;
@@ -755,7 +769,7 @@ console.log("\nHospitals, clinics, infirmaries and vets room by room (roomlayout
     const sc = rollScenes(m, new Rng(700 + s), "hospital");
     for (const x of (sc && sc.list) || []) { scenes[x.kind] = (scenes[x.kind] || 0) + 1; if (x.kind === "morgue") rise += x.rise || 0; }
   }
-  for (const [what, label] of [["rooms", "a hospital's rooms by name on their floors"], ["signature", "every room has its signature pieces"], ["stand", "every bed has a nightstand or an IV stand beside it, every ER gurney its IV stand"], ["corridor", "a hospital's corridors 2 wide, the parked pieces on one wall"], ["pharmacy", "the pharmacy's steel door locked, its drug safe locked"], ["ambulance", "the ambulance in its bay, a container of its own"], ["reach", "every room's doors reachable from the stairs on every floor"], ["containers", "the containers are exactly the lootable pieces"]]) {
+  for (const [what, label] of [["plans", "every plan keeps its kind's signature rooms"], ["rooms", "a hospital's rooms by name on their floors"], ["signature", "every room has its signature pieces"], ["stand", "every bed has a nightstand or an IV stand beside it, every ER gurney its IV stand"], ["corridor", "a hospital's corridors 2 wide, the parked pieces on one wall"], ["pharmacy", "the pharmacy's steel door locked, its drug safe locked"], ["ambulance", "the ambulance in its bay, a container of its own"], ["reach", "every room's doors reachable from the stairs on every floor"], ["containers", "the containers are exactly the lootable pieces"]]) {
     check(!errs[what], `${label} (${built} buildings, ${beds} beds, ${gurneys} gurneys, ${safes} drug safes)${errs[what] ? `: ${errs[what].length} bad, e.g. ${errs[what].slice(0, 3).join("; ")}` : ""}`);
   }
   check(scenes.eroverrun > 0 && scenes.sealedward > 0 && scenes.morgue > 0 && rise > 0, `a hospital's scenes roll: ER overrun ${scenes.eroverrun || 0}, sealed ward ${scenes.sealedward || 0}, the morgue's dead ${scenes.morgue || 0} (${rise} rising)`);
@@ -768,7 +782,7 @@ console.log("\nHospitals, clinics, infirmaries and vets room by room (roomlayout
       const by = {};
       for (let s = 0; s < 200; s++) {
         const rng = new Rng(9000 + s * 104729 + 5);
-        const m = assemble(rng, BUILDINGS[key].make(rng, { legacy }), { key, name: key, legacy, noDecor: true });
+        const m = assemble(rng, BUILDINGS[key].make(rng, legacy ? { legacy } : { plan: VARIANTS[key][0].id }), { key, name: key, legacy, noDecor: true }); // #14's plan (every plan's meds by area: tools/variantcivictest.js)
         for (const c of m.containers) { const a = m.rooms.find((r) => r.id === c.area); if (!a || !a.type) continue; const x = meds(boxLoot(a.type, c.kind)) * Math.min(FLOOR_RICH.cap, Math.pow(FLOOR_RICH.perFloor, c.f || 0)); v += x; by[a.role] = (by[a.role] || 0) + x; }
       }
       return { v: v / 200, by };
@@ -834,10 +848,12 @@ console.log("\nPolice stations, fire stations, schools and churches laid out for
   const D4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
   let classes = 0, desks = 0, facing = 0, cellsN = 0, naves = 0;
   const value = (def) => { let v = 0; for (const [k, [p, lo, hi]] of Object.entries(def.loot)) v += Math.min(0.95, p) * ((lo + hi) / 2) * supValue(k); for (const [k, p] of def.gear) v += p * ((GEAR[k] && GEAR[k].value) || 0); return v; };
-  for (const key of ["police", "firestation", "school", "church"]) for (let s = 0; s < N; s++) {
-    const rng = new Rng(47000 + s * 7919 + key.length * 13);
-    const m = assemble(rng, BUILDINGS[key].make(rng, {}), { key, name: key });
-    const tag = `${key} ${s}`;
+  // Every plan of the kind (civicvariants.js, issue #36), pinned by its id: the first (#15's) N times, the others a few.
+  const plans = ["police", "firestation", "school", "church"].flatMap((key) => (VARIANTS[key] || [{ id: null }]).flatMap((v, vi) => Array.from({ length: vi === 0 ? N : Math.max(3, Math.ceil(N / 8)) }, (_, s) => [key, v.id, vi, s])));
+  for (const [key, layout, vi, s] of plans) {
+    const rng = new Rng(47000 + s * 7919 + key.length * 13 + vi * 104729);
+    const m = assemble(rng, BUILDINGS[key].make(rng, layout ? { plan: layout } : {}), { key, name: key });
+    const tag = `${key}${layout ? `.${layout}` : ""} ${s}`;
     const grids = m.floors || [{ cells: m.cells }];
     const rooms = m.rooms.filter((a) => !a.outdoor);
     const at = (f, x, y) => (x >= 0 && y >= 0 && x < m.w && y < m.h ? grids[f].cells[y * m.w + x] : null);
@@ -913,6 +929,7 @@ console.log("\nPolice stations, fire stations, schools and churches laid out for
       for (const a of civ("walkin")) if (!(a.doors || []).some(([x, y]) => (at(a.f, x, y) || {}).dk === "coldroom")) err("walk-in: a cold room door", `${tag}`);
     }
     if (key === "church") {
+      if (!civ("nave").length) err("nave: a nave", tag);
       for (const a of civ("nave")) {
         naves++;
         const pews = cellsIn(a).filter(([, , c]) => c.k === "pew"), altar = cellsIn(a).filter(([, , c]) => c.k === "altar");
@@ -923,7 +940,7 @@ console.log("\nPolice stations, fire stations, schools and churches laid out for
         const ay = Math.max(...altar.map(([, y]) => y));
         for (let y = ay + 1; y < a.y0 + a.h - 1; y++) { const c = at(a.f, a.aisle, y); if (!c || !CELL[c.k].walk) err("nave: a clear centre aisle", `${tag} ${a.aisle},${y} ${c && c.k}`); }
       }
-      if (!rooms.some((a) => a.civic === "belltower" && a.up)) err("bell tower raised", tag);
+      if ((layout === "general" || rooms.some((a) => a.civic === "belltower")) && !rooms.some((a) => a.civic === "belltower" && a.up)) err("bell tower raised", tag); // #15's plan has one; another plan's where it has one
     }
   }
   for (const [what, list] of Object.entries(errs)) check(false, `${what}: ${list.length} bad, e.g. ${list.slice(0, 3).join("; ")}`);
@@ -935,7 +952,7 @@ console.log("\nPolice stations, fire stations, schools and churches laid out for
     let v = 0;
     for (let s = 0; s < 200; s++) {
       const rng = new Rng(9000 + s * 104729 + 5);
-      const m = assemble(rng, BUILDINGS[key].make(rng, { legacy }), { key, name: key, legacy });
+      const m = assemble(rng, BUILDINGS[key].make(rng, legacy ? { legacy } : VARIANTS[key] ? { plan: VARIANTS[key][0].id } : {}), { key, name: key, legacy }); // #15's plan (every plan's loot by area: tools/variantcivictest.js)
       for (const c of m.containers) { const a = m.rooms.find((r) => r.id === c.area); if (a && a.type && pick(a)) v += value(boxLoot(a.type, c.kind)); }
     }
     return v / 200;
@@ -1231,7 +1248,7 @@ console.log("\nMilitary bases, air bases, airports and prisons laid out like the
     const [k, siteArg] = key.split(":");
     const site = siteArg || SITE[k] || null;
     const rng = new Rng(61000 + s * 7919 + key.length * 17);
-    const spec = BUILDINGS[k].make(rng, { site });
+    const spec = BUILDINGS[k].make(rng, { site, plan: "standard" }); // today's plan of each (its dozen plans: tools/milvarianttest.js)
     const m = assemble(rng, spec, { key: k, name: k });
     const tag = `${key} ${s}`;
     const grids = m.floors || [{ cells: m.cells }];
@@ -1368,8 +1385,8 @@ console.log("\nMilitary bases, air bases, airports and prisons laid out like the
   // The sites: an air base offers its hangars, tower, flight ops, barracks
   // and mess; a base its HQ, mess hall, aid station and gatehouse besides its first four (their ids as they were).
   const sb = (type) => siteBuildings({ loc: { type }, pois: [] });
-  check(sb("airbase") && ["hangar", "tower", "flightops", "barracks", "messhall"].every((kk) => sb("airbase").options.some((o) => o.key === kk && o.site === "airbase")), `an air base's buildings (${sb("airbase").options.map((o) => o.name).join(", ")})`);
-  check(sb("military").options.slice(0, 4).map((o) => o.id).join() === "barracks,armorybldg,motorpool,warehouse" && ["hq", "messhall", "aidstation", "gatehouse"].every((kk) => sb("military").options.some((o) => o.key === kk)), "a base's buildings, its first four's ids as they were");
+  check(sb("airbase") && sb("airbase").options[0].key === "hangar" && sb("airbase").options.every((o) => o.site === "airbase" && BUILDINGS[o.key]), `an air base's buildings (${sb("airbase").options.map((o) => o.name).join(", ")}: by its layout, milplans.js MIL_SITES)`);
+  check(sb("military").options.slice(0, 4).map((o) => o.id).join() === "barracks,armorybldg,motorpool,warehouse" && sb("military").options.length >= 4, "a base's buildings, its first four's ids as they were (the rest by its layout)");
   // The air base on generated maps: one a six of the military sites (a Normal map: two), never the only one.
   const ab = [1, 2].map((seed) => { const w = createWorld({ seed, factionCount: 3 }); return [w.tiles.filter((t) => t.loc && t.loc.type === "airbase").length, w.militaryIds.length, w.tiles.filter((t) => t.loc && t.loc.type === "military").length]; });
   check(ab.every(([a, n, g]) => a >= 1 && g >= 1 && a + g === n && a <= Math.ceil(n / 4)), `air bases on generated maps at a sensible rate (${ab.map(([a, n]) => `${a} of ${n} military sites`).join(", ")})`);
