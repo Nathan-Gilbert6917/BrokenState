@@ -69,7 +69,8 @@ export const SCENES = {
     prison: 1, jail: 0.95, // prison.js's complexes (issue #31): prisonlayout.js's scenes
     police: 0.8, firestation: 0.6, school: 0.7, church: 0.4, barracks: 0.75, cellblock: 0.6, messhall: 0.5,
     grocery: 0.55, supermarket: 0.6, deptstore: 0.55, offices: 0.6, library: 0.45, bank: 0.5,
-    warehouse: 0.35, factory: 0.35, barn: 0.25, garage: 0.35, gasstation: 0.45, diner: 0.45,
+    warehouse: 0.35, factory: 0.35, sawmill: 0.35, mine: 0.4, quarry: 0.25, barn: 0.25, // mine, quarry: minelayout.js (issue #52)
+    garage: 0.35, gasstation: 0.45, diner: 0.45,
     // a campus's buildings (issue #28: campuslayout.js; each rolls its own on a campus)
     dorm: 0.7, lecturehall: 0.55, sciencehall: 0.6, dininghall: 0.65, studentunion: 0.55, univlibrary: 0.5, athletics: 0.5, admin: 0.45, security: 0.6,
     zoo: 0.95, // a zoo (issue #59): its scenes rolled over the whole site (zoolayout.js: empty cages, the keepers' last stand, an escaped enclosure)

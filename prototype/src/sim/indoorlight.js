@@ -33,6 +33,8 @@
 //   battery rack) is started from any of the 8 cells round it (act "genset", GEN.AP actions: combat.js): every room of
 //   the bunker lit at once; started again it is shut down and every room goes dark. A genset is loud (GEN.HEAT Heat and
 //   the dead within GEN.RADIUS come to look); the batteries are quiet. Saved with the battle (plain values).
+// Mines (issue #52, minelayout.js): a mine's rooms below (area.under) are a bunker's here: dark by day, lit only while
+//   the generator house's genset runs, all of them at once.
 // Not changed: battles that are not raids (your own base's, a field fight), every outdoor cell (the battle's own day
 //   or night, flares and floodlights as before). No dice (no b.rng, no hash01 needed: the switch's place is the first
 //   free wall cell beside a door).
@@ -69,8 +71,8 @@ export function indoorSetup(b) {
   const unwired = !!(b.raid.interior && INDOOR.UNPOWERED_KEYS.includes(b.raid.interior.key));
   for (const a of b.raid.areas) {
     if (!isRoom(a)) continue;
-    a.dark = !!a.bunker || (a.role ? INDOOR.DARK_ROLES.includes(a.role) : INDOOR.DARK_TYPES.includes(a.type)); // a bunker's rooms: underground, dark by day
-    if (a.bunker) b.raid.bunker = 1;
+    a.dark = !!a.bunker || !!a.under || (a.role ? INDOOR.DARK_ROLES.includes(a.role) : INDOOR.DARK_TYPES.includes(a.type)); // a bunker's rooms: underground, dark by day
+    if (a.bunker || a.under) b.raid.bunker = 1; // a mine's rooms below (issue #52, minelayout.js: area.under) as a bunker's
     a.on = false;
     const powered = !unwired && (a.role ? !INDOOR.UNPOWERED.includes(a.role) : !INDOOR.DARK_TYPES.includes(a.type));
     const sw = powered ? switchSpot(b, a, used) : null;
@@ -205,6 +207,7 @@ export function lightsAct(b, u, act = {}) {
   if (!a) return { err: opts.length || !switchNear(b, u) ? "Stand next to a light switch (in the room or its doorway) to flip it." : "Reach the switch from inside the room (or its doorway)." };
   if (u.ap < INDOOR.AP) return { err: "Not enough actions." };
   if (a.bunker && !b.raid.genOn) return { err: "No power: the bunker's lights need the generator running (start it in the generator room)." };
+  if (a.under && !b.raid.genOn) return { err: "No power: the mine's lights need the generator running (start it in the generator house)." };
   a.on = !a.on;
   return { room: a };
 }
@@ -230,7 +233,7 @@ export function gensetAct(b, u) {
   if (u.ap < GEN.AP) return { err: "Not enough actions." };
   const on = !b.raid.genOn;
   b.raid.genOn = on ? 1 : 0;
-  for (const a of b.raid.areas) if (isRoom(a) && a.bunker) a.on = on;
+  for (const a of b.raid.areas) if (isRoom(a) && (a.bunker || a.under)) a.on = on;
   return { on, loud: opts.some((o) => o.k === "genset"), kind: opts.find((o) => o.k === "genset") ? "genset" : "batteries" };
 }
 const switchNear = (b, u) => b.raid.areas.some((a) => isRoom(a) && a.sw && (a.f || 0) === (u.f || 0) && Math.max(Math.abs(a.sw[0] - u.x), Math.abs(a.sw[1] - u.y)) <= 1);

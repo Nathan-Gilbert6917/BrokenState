@@ -535,11 +535,11 @@ export function campusHeatDims(b) {
   return [Math.max(40 * 30, a), 1];
 }
 // What a container holds on a campus, as a share of the usual (combat.js: raidLootShare): its building's own map's
-// (the building and a margin round it), the open ground's a big raid map's.
+// (the building and a margin round it), the open ground's a big raid map's. A civic site's (civicsite.js, issue #49) too.
 export function campusLootShare(b, box) {
   const P = b.raid && b.raid.plan;
   const h = P && P.houses && box && box.house != null ? P.houses.find((q) => q.k === box.house) : null;
-  return h ? raidLootShare(h.w + 10, h.h + 10) : raidLootShare(b.w, b.h);
+  return h ? raidLootShare((h.natW || h.w) + 10, (h.natH || h.h) + 10) : raidLootShare(b.w, b.h); // natW, natH: a civic site's building at real scale, its plan's own size (civicsite.js, issue #49)
 }
 export const campusHeatRate = (b) => { const [w, h] = campusHeatDims(b); return raidHeatRate(w, h); };
 // The opening lines: the campus, its buildings (the ones your side has been into, the ones that look ransacked), the

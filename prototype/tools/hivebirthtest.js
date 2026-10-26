@@ -200,7 +200,10 @@ const t0 = Date.now();
   console.log("The autopilot");
   const st = world();
   setAutopilot(st, true, "aggressive");
-  const site = placeSite(st, 4, 8, { fed: true });
+  // 4–8 tiles out: within the Cautious autopilot's reach too (range 8 × 1.15). Not { fed: true } since 67fe4c3 (the map
+  // sizes of 2026-10-24: seed 42's nearest hive stands 21 tiles from the hub, so no site that near is within a hive's
+  // SUPPORT); the gathering's mass is put there by gather, and nothing here reads the hives feeding it.
+  const site = placeSite(st, 4, 8);
   gather(st, site, 150);
   st.knowledge[site.tile] = snapshot(st, site.tile);
   hiveBirthHour(st);

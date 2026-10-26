@@ -105,11 +105,12 @@ export const PLACEMENT_ROWS = {
   radioshop: "mainstreet",
   bookstore: "centre 1.4 S, city 1.2 S, suburb 1 S, town 1 S",
   library: "centre 1.4 L, city 1.2 M, suburb 1 M, town 1 S, rural 0.1 S",
+  museum: "centre 2 H, city 1 L, suburb 0.5 M, town 1 S, highway 0.3 M, coast 0.3 M, rural 0.1 S", // #58: a city centre's natural history or art museum, a town's local history museum
   petstore: "city 0.6 S, suburb 1.6 M, town 1 S",
   garden: "bigLot",
   clothing: "downtown",
   liquor: "mainstreet",
-  vet: "city 0.4 S, suburb 1.2 M, town 1.4 S, highway 0.3 S, rural 0.3 S",
+  vet: "city 0.4 S, suburb 1.2 M, town 1.4 S, highway 0.3 S, rural 0.3 M", // the country's farm and equine vets (issue #49: the size letters only, the weights as #42 set them)
   dealer: "bigLot",
   bank: "downtown",
   gasstation: "roadside",
@@ -118,6 +119,15 @@ export const PLACEMENT_ROWS = {
   autoshop: "centre 0.4 S, city 1 M, suburb 1.4 M, town 1.4 S, highway 0.6 S, rural 0.2 S",
   motel: "roadside",
   hotel: "centre 2 H, city 1.6 L, suburb 1 M, town 0.8 S, highway 0.3 S, coast 0.3 M, scenic 0.2 M", // a convention hotel downtown, a town's inn
+  // Issue #55's six shops (data-newshops.js; a new world's only): the size class picks among each kind's plans (S a
+  // mattress store, a village bakery; M a family furniture store, an attended laundromat; L a big-box showroom, a thrift
+  // superstore). The country's bakeries and butchers stand on placement.js PLACE_EXTRA's dice.
+  furnstore: "centre 0.4 M, city 0.8 M, suburb 1.6 L, town 1 M, highway 0.6 L, rural 0.1 S",
+  laundromat: "centre 1 S, city 1.4 M, suburb 1 M, town 1 S, highway 0.2 S",
+  thrift: "centre 0.6 S, city 1 M, suburb 1.2 L, town 1.2 M, highway 0.4 L, rural 0.2 S",
+  bakery: "centre 1.2 S, city 1.2 M, suburb 1 M, town 1.4 S, highway 0.3 S, coast 0.2 S, scenic 0.1 S, rural 0.5 S",
+  butcher: "centre 0.6 S, city 0.8 M, suburb 0.8 M, town 1.4 S, highway 0.3 S, rural 0.6 S",
+  deli: "centre 1.6 S, city 1.4 M, suburb 0.8 S, town 0.8 S, highway 0.2 S",
   // ---- malls ----
   mall: "centre 0.6 H, city 1 H, suburb 1.4 L", // a regional mall: a city's own site
   regionalmall: "of mall",
@@ -129,9 +139,9 @@ export const PLACEMENT_ROWS = {
   hospital: "centre 3 H, city 2 H, suburb 0.8 L, town 0.15 L", // a city centre's medical centre, the suburbs' community hospital, a county hospital in a town
   infirmary: "of prison",
   police: "centre 2 L, city 1.6 M, suburb 1 M, town 1 S",
-  firestation: "centre 1 M, city 1.2 M, suburb 1 M, town 1 S, rural 0.1 S",
+  firestation: "centre 1 L, city 1.2 M, suburb 1 M, town 1 S, rural 0.1 S", // downtown, the fire headquarters (issue #49)
   school: "centre 0.6 L, city 1 L, suburb 1.4 L, town 1 L, rural 0.1 S", // a town's regional high school: large; a one-room schoolhouse in the country
-  church: "centre 0.6 M, city 0.8 M, suburb 1 M, town 1.4 S, highway 0.3 S, rural 0.6 S", // a chapel in the country
+  church: "centre 0.6 L, city 0.8 M, suburb 1 M, town 1.4 S, highway 0.3 S, rural 0.6 S", // a chapel in the country; downtown, a cathedral (issue #49)
   chapel: "of univ",
   cityhall: "centre 2 L, city 0.5 L, town 1 M",
   courthouse: "centre 2 L, city 0.5 L, town 1 M",
@@ -158,12 +168,14 @@ export const PLACEMENT_ROWS = {
   warehouse: "centre 0.2 L, city 0.6 L, suburb 1.6 L, town 0.4 M, highway 0.8 L, rural 0.2 M",
   factory: "city 0.4 H, suburb 1.4 L, town 0.3 L, highway 0.6 L, coast 0.4 L",
   workshop: "suburb 0.6 S, town 0.8 S, highway 0.4 S, rural 0.4 S",
+  sawmill: "suburb 0.2 M, town 0.6 M, highway 0.5 M, coast 1 M, scenic 2 L, rural 0.8 M", // issue #53: forest and hills (a big mill's yard there), some in towns
   machineshed: "farm",
   barn: "farm",
   farm: "farm",
   ranch: "highway 0.4 L, scenic 0.6 L, rural 1.4 L",
-  quarry: "scenic 1.6 L, rural 0.4 L",
-  radiotower: "scenic 1.4 S, rural 0.3 S",
+  quarry: "scenic 1.6 L, rural 0.4 L", // issue #52: the quarry type (minelayout.js) at the quarry sites and as a point of interest (PLACE_EXTRA)
+  mine: "scenic 1.5 M, rural 0.4 M", // issue #52: hills and mountains most, the country now and then; never a town's (PLACE_EXTRA; the mine shacks)
+  radiotower: "centre 0.4 M, city 0.6 M, suburb 0.4 S, town 0.6 S, highway 1.2 S, scenic 1.4 S, rural 0.4 S", // issue #54: masts on the hills, cell sites and relays by the highways, rooftop repeaters and broadcast studios in the cities (PLACE_EXTRA)
   radio: "of radiotower",
   dam: "coast 1 L, scenic 0.4 L",
   control: "of dam",
@@ -180,6 +192,13 @@ export const PLACEMENT_ROWS = {
   govbunker: "centre 0.6 L, city 1 L, highway 0.3 L, coast 0.3 L, scenic 0.6 L",
   shelter: "centre 0.6 M, city 1 M, suburb 1.2 M, town 0.8 M",
   prepper: "hideout",
+  // ---- data centres (issue #51, datacenter.js) ----
+  // A colocation hall or a playout centre downtown, edge sites, exchanges and container sites in towns (medium), the
+  // hyperscale campuses, cloud regions and the government's out by the highways and in the suburbs (large halls: a
+  // campus is many large buildings, never one huge one).
+  datacenter: "centre 0.8 L, city 1 L, suburb 1 L, town 0.6 M, highway 1.5 L",
+  // ---- amusement parks (issue #60, amusement.js: its variant by the class, variantpick.js) ----
+  amusement: "centre 1 H, city 1 L, suburb 1.2 L, town 1 L, highway 0.8 L, coast 1 L, scenic 0.3 L, rural 0.25 L", // a destination theme park by a city's centre (huge), a regional park, a water park or a fun park in the city and its suburbs, a fairground in a town, a pier or a funfair on the coast
   // ---- the places themselves (a town, a city and the bare land as sites: their own buildings) ----
   town: "town 1 M",
   city: "centre 1 L, city 1 L",
