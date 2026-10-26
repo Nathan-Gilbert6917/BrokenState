@@ -50,6 +50,7 @@
 // Older saves (roomsLegacy: opts.legacy) keep today's plan, laid out as before: buildingmaps.js calls industryPlan only
 // for a new save.
 import { hash01 } from "./skills.js";
+import { registerVariants, pickVariant } from "./variantpick.js"; // the shared picker (issue #41)
 import { registerScene } from "./interiorscenes.js";
 import { COMMERCIAL_STYLES } from "./shoplayout.js";
 
@@ -489,6 +490,9 @@ export const GENERAL = { warehouse: { id: "general", name: "Warehouse", sig: ["p
 export const INDUSTRY_KEYS = Object.keys(INDUSTRY_PLANS);
 /** Every plan of a key, today's included. @param {string} key */
 export const plansOf = (key) => [...(INDUSTRY_PLANS[key] || []), GENERAL[key]];
+// The registry's views (variantpick.js, issue #41): "industry:<key>", weighted by the setting (at: urban, industrial,
+// campus, rural; 1 where unset), on the building's hash dice (read, never consumed), as before.
+for (const key of Object.keys(INDUSTRY_PLANS)) registerVariants(`industry:${key}`, plansOf(key).map((q) => ({ id: q.id, name: q.name, w: { ...(q.at || {}) }, src: q })), { missing: 1 });
 
 /**
  * The spec of an industrial building (a new save's): its plan by its dice and its setting (o.site), or o.plan's.
@@ -496,15 +500,7 @@ export const plansOf = (key) => [...(INDUSTRY_PLANS[key] || []), GENERAL[key]];
  * @param {string} key @param {any} rng @param {any} o @param {() => any} general
  */
 export function industryPlan(key, rng, o, general) {
-  const list = plansOf(key);
-  let p = o && o.plan ? list.find((q) => q.id === o.plan) : null;
-  if (!p) {
-    const set = settingOf(o && o.site);
-    const w = list.map((q) => (q.at && q.at[set] != null ? q.at[set] : 1));
-    let t = hash01(rng.state, "indplan", key) * w.reduce((a, b) => a + b, 0);
-    p = list[list.length - 1];
-    for (let i = 0; i < list.length; i++) { t -= w[i]; if (t < 0) { p = list[i]; break; } }
-  }
+  const p = /** @type {any} */ (pickVariant(`industry:${key}`, rng, { plan: (o && o.plan) || null, setting: settingOf(o && o.site), r: hash01(rng.state, "indplan", key) })).src;
   const spec = p.id === "general" ? general() : /** @type {IndustryPlan} */ (p).make(rng, o || {});
   const scale = INDUSTRY.LOOT[p.id];
   return { ...spec, vid: p.id, vname: p.name, ...(scale && p.id !== "general" ? { boxScale: scale } : {}) };
