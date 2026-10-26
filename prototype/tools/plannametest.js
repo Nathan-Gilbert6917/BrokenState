@@ -4,7 +4,7 @@
 //     (buildingmaps.js, planname.js) read exactly them; one id has one name within its type;
 //   - the assembled map carries them as map.vid / map.vname and map.plan.vid / map.plan.vname (a compound's too: a
 //     mall's variant, a prison's or a campus's site layout), and buildingPlan (what the readers ask without building
-//     the map) gives the map's plan, or null for a mall, a prison, a jail or a campus (only their map knows it);
+//     the map) gives the map's plan, or null for a mall, a prison, a jail, a campus, a farm or a ranch (only their map knows it);
 //   - buildingOptions shows a site's buildings by their plan's name (option.vname, option.vid; its name says it);
 //   - a POI with its plan pinned (poi.lay: #32's layouts; poi.hv: #38's hotels) is named by it and its building is it;
 //   - an older save (roomsLegacy) is unchanged: its buildings' cells and rooms hash as they did before #40 (GOLDEN,
@@ -83,7 +83,13 @@ const GOLDEN = {
   mountainbunker: "nv1cg2.twqldz", govbunker: "rrmjr6.xvw2l1", shelter: "b8hpej.x7xxhr", prepper: "s64ew2.y9ewyj",
   regionalmall: "oi0i0e.9jy7uk", stripmall: "d84s7v.ihjhex", outlet: "yjmtk6.9xi056", cinema: "bjwb7c.sk046q",
   arcade: "4fx8nr.y9hjfs", mallservices: "bs9jxr.dewn7z", mallrestrooms: "1ipqw3.h4grrs",
-  vacantunit: "35skdb.ugnhfp"
+  vacantunit: "35skdb.ugnhfp",
+  // The types added after #40 (#49, #51, #52, #53, #54, #55, #59, #60, #62), taken on dev 2026-10-26 (issue #72) with --golden;
+  // the ones above unchanged.
+  museum: "ke8s5b.pz59ra", furnstore: "wssqkg.nxwpsq", laundromat: "mo1wwg.wq8gck", thrift: "ywi6w1.1rwe60", bakery: "20n5w4.8fd645",
+  butcher: "3n9nu1.949674", deli: "ucjk23.45xld2", radiotower: "28y5ut.mslivu", datacenter: "3g8k4u.50550s", amusement: "7qyzj9.ru5nqy",
+  sawmill: "we63nu.voe1ga", mine: "8o2xr6.1zgwnf", quarry: "f0d0fs.n05gci", zoo: "7usmeq.iqdnyh",
+  shed: "1k3a9.gzr8t8", farmstand: "nxejvs.k902he", farmbldg: "v4t9tu.8hd4q", farm: "wofdf1.qkaa4n", ranch: "i3oa7h.j50fwa"
 };
 
 // ---------- every type ----------
@@ -109,7 +115,7 @@ for (const key of Object.keys(BUILDINGS)) {
     let m;
     try { m = buildingMap(state, tileId, opt, null); } catch (e) { bad(`map: ${e.message}`); continue; }
     maps++;
-    const B = BUILDINGS[key], whole = B.compound || B.complex || B.campus, P = buildingPlan(state, tileId, opt);
+    const B = BUILDINGS[key], whole = B.compound || B.complex || B.campus || B.farmstead, P = buildingPlan(state, tileId, opt);
     if (whole && P) bad(`buildingPlan names a ${key}'s plan (${P.vid}) without its map`);
     if (m.plan.vid != null && (m.vid !== m.plan.vid || m.vname !== m.plan.vname || !m.vname)) bad(`map carries ${m.vid}/${m.vname}, plan ${m.plan.vid}/${m.plan.vname}`);
     if (!whole && ((P && P.vid) || null) !== (m.vid || null)) bad(`buildingPlan says ${P && P.vid}, the map is ${m.vid}`);
@@ -183,7 +189,7 @@ check(rows.filter((r) => r.plans).length >= 40, `${rows.filter((r) => r.plans).l
 {
   const diff = [];
   for (const key of Object.keys(BUILDINGS)) { const h = legacyHash(key); if (GOLDEN[key] !== undefined && GOLDEN[key] !== h) diff.push(key); }
-  check(Object.keys(GOLDEN).length >= Object.keys(BUILDINGS).length - 5, `the older save's golden hashes cover ${Object.keys(GOLDEN).length} types`);
+  check(Object.keys(GOLDEN).length >= Object.keys(BUILDINGS).length - 5, `the older save's golden hashes cover ${Object.keys(GOLDEN).length} types (none for ${Object.keys(BUILDINGS).filter((k) => GOLDEN[k] === undefined).join(", ")}: add them from --golden)`);
   check(!diff.length, `an older save's buildings changed: ${diff.join(", ")}`);
 }
 

@@ -164,6 +164,28 @@ export const FURNITURE_KINDS = {
   loungechair: P("Lounge chair",      HALF, 15, 25, "one", S1, false, ["living", "office"], "comfort:0.5"),
   lounger:     P("Pool lounger",      HALF, 8, 12, "one", S1, false, ["yard"], "comfort:0.3"),
   tennisnet:   P("Tennis net",        POLE, 5, 15, "fixed", S1, false, ["yard"], "none"),
+  // ---------- gyms and bowling alleys (issue #56: reclayout.js lays them) ----------
+  // A gym's machines: a treadmill (1 × 2), an exercise bike, a rowing machine (1 × 2), a squat rack's steel cage, a
+  // dumbbell rack (2 × 1, against a wall), a heavy bag on its stand, a boxing ring's corner post, a climbing wall's holds
+  // on a wall panel, a spa's hot tub (2 × 2), a bin of rolled yoga mats. A bowling alley's lane-end pins on their deck,
+  // the ball return between two lanes, the pinsetter machine behind each lane, a rack of house balls (2 × 1), the shoe
+  // counter's cubbies, the scoring console at the settee. None holds loot: the rooms' cabinets, lockers and counters do.
+  treadmill:   P("Treadmill",          HALF, 30, 90, "two", S12, false, ["gym"], "none"),
+  exbike:      P("Exercise bike",      HALF, 20, 40, "two", S1, false, ["gym"], "comfort:0.2"),
+  rower:       P("Rowing machine",     HALF, 15, 28, "one", S12, false, ["gym"], "comfort:0.2"),
+  squatrack:   P("Squat rack",         C(false, 1, false), 70, 140, "two", S1, false, ["gym"], "comfort:0.2"),
+  dumbbells:   P("Dumbbell rack",      HALF, 50, 220, "two", S21, false, ["gym"], "comfort:0.2", true),
+  punchbag:    P("Heavy bag",          C(false, 1, false), 25, 45, "two", S1, false, ["gym"], "comfort:0.2"),
+  ringpost:    P("Ring post",          POLE, 30, 60, "fixed", S1, false, ["gym"], "none"),
+  climbwall:   P("Climbing wall",      FULL, 80, 300, "fixed", S1, false, ["gym"], "none", true),
+  hottub:      P("Hot tub",            HALF, 60, 400, "fixed", S22, false, ["gym", "bath"], "none"),
+  yogamats:    P("Yoga mats",          HALF, 8, 12, "one", S1, false, ["gym"], "comfort:0.1"),
+  pins:        P("Bowling pins",       HALF, 10, 15, "fixed", S1, false, ["bowling"], "none"),
+  ballreturn:  P("Ball return",        HALF, 40, 150, "fixed", S1, false, ["bowling"], "none"),
+  pinsetter:   P("Pinsetter",          FULL, 90, 1000, "fixed", S1, false, ["bowling", "bay"], "none", true),
+  ballrack:    P("Ball rack",          HALF, 35, 160, "two", S21, false, ["bowling", "shop"], "none", true),
+  shoecubby:   P("Shoe cubbies",       FULL, 25, 40, "two", S1, false, ["bowling", "shop"], "storage:30", true),
+  scorer:      P("Scoring console",    HALF, 15, 25, "one", S1, false, ["bowling"], "none"),
   // ---------- grocery stores by size (issue #22: shoplayout.js cornerstore, grocerfloor, superstore, the back of house) ----------
   // The freezer case (an upright glass-door freezer), the island freezer and the butcher's case are appliances at a base
   // (data-appliances.js freezer_case, island_freezer, meat_case: #19's rules through their use); each holds its own table
@@ -426,6 +448,16 @@ export const FURNITURE_KINDS = {
   screener:     P("Walk-through scanner", POLE, 30, 120, "fixed", S1, false, ["office"], "none"),
   liquorcab:    P("Liquor cabinet",       HALF, 25, 30, "one", S1, true, ["office", "living", "bar"], "storage:30", true),
   phonebooth:   P("Phone booth",          C(false, 1, false), 30, 200, "fixed", S1, false, ["office"], "none", true),
+  // ---------- farms and ranches (issue #62: farmplans.js's rooms, farmstead.js's yards) ----------
+  // All fixed (built on, set in concrete or too awkward to carry off): a concrete stave silo, a stock tank by the corral,
+  // the squeeze chute, a calf hutch, a beehive on its stand, a vineyard's trellis post and wire, a coop's nest boxes.
+  silo:       P("Silo",          FULL, 200, 20000, "fixed", S1, false, ["yard"], "none"),
+  stocktank:  P("Stock tank",    HALF, 60, 250, "fixed", S1, false, ["yard"], "none"),
+  chute:      P("Squeeze chute", HALF, 80, 600, "fixed", S1, false, ["yard", "barn"], "none"),
+  calfhutch:  P("Calf hutch",    HALF, 30, 90, "fixed", S1, false, ["yard"], "none"),
+  beehive:    P("Beehive",       HALF, 15, 60, "fixed", S1, false, ["yard", "shop"], "none"),
+  trellis:    P("Trellis",       C(false, 1, false), 15, 80, "fixed", S1, false, ["yard"], "none"),
+  nestbox:    P("Nest boxes",    HALF, 15, 40, "fixed", S1, false, ["barn"], "none", true),
   // ---------- data centres (issue #51: datacenter.js lays them) ----------
   // Fixed: a CRAC unit (a computer-room air conditioner, plumbed to the chillers), a hall's 2 MW diesel set on its skid,
   // a cable tray riser, a substation's transformer and a cooling tower out in the yard. Liftable: a UPS cabinet and a
@@ -466,6 +498,10 @@ export const FURNITURE_KINDS = {
   meatsaw:      P("Band saw",             HALF, 30, 120, "two", S1, false, ["kitchen", "bay"], "none", true),
   changer:      P("Change machine",       FULL, 40, 90, "two", S1, true, ["laundry", "shop"], "storage:10", true),
   foldtable:    P("Folding table",        HALF, 12, 14, "one", S1, false, ["laundry", "shop", "kitchen"], "work:table"),
+  // ---------- zoos (issue #59: zoo.js lays them) ----------
+  // The vet hospital's dart cabinet: a steel wall cabinet of the sedatives and the tranquilliser darts (its own table:
+  // combat.js BOX_LOOT, data-zoo.js ZOO_BOX).
+  dartcab:      P("Dart cabinet",         HALF, 30, 28, "one", S1, true, ["ward"], "storage:20", true),
   // ---------- lootable decor (issue #13: decor.js places them; light comfort pieces for the base) ----------
   // The plant and the floor lamp stand on a room's floor cell; the painting and the wall clock hang on a wall (decor.js:
   // c.wart = { k, d, piece: true } on the wall cell, the wall's own kind unchanged) and stand on a cell only once set down.

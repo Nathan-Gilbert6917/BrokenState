@@ -104,6 +104,12 @@ export const REAL_SIZE = {
     sizes: { family: { w: [7, 9], d: [13, 16], storeys: [1, 1] }, smokehouse: { w: [10, 13], d: [15, 19], storeys: [1, 1] }, meatmarket: { w: [14, 18], d: [18, 22], storeys: [1, 1] }, game: { w: [16, 20], d: [14, 18], storeys: [1, 1] }, halal: { w: [13, 15], d: [12, 15], storeys: [1, 1] }, sausage: { w: [10, 13], d: [16, 20], storeys: [1, 1] }, packer: { w: [24, 30], d: [24, 30], storeys: [1, 1] }, delibutcher: { w: [11, 14], d: [15, 18], storeys: [1, 1] }, flat: { w: [7, 9], d: [13, 16], storeys: [2, 2] }, wrap: { w: [13, 15], d: [14, 18], storeys: [1, 1] }, ranch: { w: [14, 18], d: [16, 20], storeys: [1, 1] }, stall: { w: [6, 8], d: [9, 11], storeys: [1, 1] } } },
   deli: { w: [6, 24], d: [10, 24], storeys: [1, 2], set: "town", planned: true, // a sandwich counter to a food hall deli
     sizes: { classic: { w: [7, 9], d: [12, 15], storeys: [1, 1] }, nyc: { w: [14, 18], d: [18, 22], storeys: [1, 1] }, salumeria: { w: [10, 13], d: [16, 20], storeys: [1, 1] }, sandwich: { w: [6, 8], d: [10, 13], storeys: [1, 1] }, market: { w: [16, 20], d: [20, 24], storeys: [1, 1] }, caterer: { w: [11, 14], d: [15, 18], storeys: [1, 1] }, flat: { w: [13, 15], d: [12, 15], storeys: [2, 2] }, smokehouse: { w: [11, 14], d: [15, 18], storeys: [1, 1] }, foodhall: { w: [20, 24], d: [20, 24], storeys: [1, 1] }, wrap: { w: [13, 15], d: [14, 17], storeys: [1, 1] }, country: { w: [11, 14], d: [13, 16], storeys: [1, 2] }, lunch: { w: [11, 13], d: [14, 17], storeys: [2, 2] } } },
+  // #56's gyms and bowling alleys: thirteen variants each drawn at their real size (reclayout.js GYM.SIZE, BOWL.SIZE: a
+  // bowling alley's width is its lanes', laneWidth), a variant's row by its id (tools/rectest.js holds them equal).
+  gym:         { w: [10, 48], d: [10, 40], storeys: [1, 2], set: "town", planned: true,
+    sizes: { chain24: { w: [30, 40], d: [25, 32], storeys: [1, 1] }, boxing: { w: [18, 22], d: [22, 26], storeys: [1, 1] }, crossfit: { w: [18, 24], d: [24, 30], storeys: [1, 1] }, ymca: { w: [40, 48], d: [34, 40], storeys: [2, 2] }, climbing: { w: [24, 30], d: [20, 26], storeys: [1, 1] }, dojo: { w: [14, 18], d: [16, 20], storeys: [1, 1] }, yoga: { w: [12, 16], d: [14, 18], storeys: [1, 1] }, club: { w: [40, 48], d: [32, 38], storeys: [2, 2] }, strip: { w: [12, 15], d: [24, 30], storeys: [1, 1] }, barn: { w: [14, 18], d: [20, 24], storeys: [1, 1] }, fitness: { w: [10, 13], d: [10, 13], storeys: [1, 1] }, circuit: { w: [12, 15], d: [14, 17], storeys: [1, 1] }, iron: { w: [18, 22], d: [22, 26], storeys: [2, 2] } } },
+  bowling:     { w: [16, 84], d: [30, 48], storeys: [1, 2], set: "town", planned: true,
+    sizes: { classic: { w: [28, 28], d: [34, 38], storeys: [1, 1] }, mega: { w: [84, 84], d: [42, 46], storeys: [1, 1] }, bowlbar: { w: [20, 20], d: [34, 38], storeys: [1, 1] }, smalltown: { w: [16, 16], d: [32, 34], storeys: [1, 1] }, duckpin: { w: [24, 24], d: [30, 32], storeys: [1, 1] }, family: { w: [44, 44], d: [44, 48], storeys: [1, 1] }, legion: { w: [16, 16], d: [32, 34], storeys: [1, 1] }, glow: { w: [52, 52], d: [40, 44], storeys: [1, 1] }, roadside: { w: [36, 36], d: [38, 42], storeys: [1, 1] }, billiards: { w: [24, 24], d: [40, 44], storeys: [1, 1] }, downtown: { w: [20, 20], d: [32, 36], storeys: [2, 2] }, league: { w: [68, 68], d: [44, 48], storeys: [1, 1] }, candlepin: { w: [20, 20], d: [30, 32], storeys: [1, 1] } } },
   motel:       { w: [40, 70], d: [10, 14], storeys: [2, 2], set: "rural", wings: "along" },
   church:      { w: [14, 24], d: [22, 36], storeys: [1, 1], set: "town", wings: "back" }, // a long nave (and a tower), a parish hall behind
   // #22's grocery tiers and #23's school: their own sizes
@@ -133,6 +139,18 @@ export const REAL_SIZE = {
     abandoned: { w: [300, 360], d: [260, 320], storeys: [1, 2] }, funfair: { w: [220, 260], d: [180, 220], storeys: [1, 1] },
     lights: { w: [220, 280], d: [200, 260], storeys: [1, 1] }, trampoline: { w: [120, 140], d: [110, 130], storeys: [1, 2] },
     western: { w: [260, 320], d: [240, 300], storeys: [1, 2] },
+  } },
+  // #59's zoos: a site of many buildings on one map (zoo.js zooMap lays it out from its variant's grid, zoolayout.js
+  // ZOO_SIZE its buildings): a sizes row per variant, the site's width and depth in metres (the whole map, a metre a
+  // cell) and its buildings' storeys (zoo.js caps every building's at the row's most: a city zoo's keepers' block of
+  // two, a city aquarium's three levels, a university zoo's research building of three, the rest one).
+  zoo: { set: "city", own: true, storeys: [1, 3], sizes: { // measured over 40 sites a plan (tools/zootest.js holds every map to its row)
+    cityzoo: { w: [360, 464], d: [294, 390], storeys: [1, 2] }, cityaquarium: { w: [321, 349], d: [194, 218], storeys: [1, 3] },
+    safari: { w: [298, 458], d: [301, 352], storeys: [1, 1] }, researchzoo: { w: [163, 239], d: [136, 199], storeys: [1, 3] },
+    primate: { w: [167, 195], d: [175, 208], storeys: [1, 1] }, townzoo: { w: [142, 169], d: [125, 147], storeys: [1, 1] },
+    birdpark: { w: [147, 175], d: [160, 189], storeys: [1, 1] }, petting: { w: [91, 112], d: [112, 133], storeys: [1, 1] },
+    reptile: { w: [95, 116], d: [89, 139], storeys: [1, 1] }, rescue: { w: [91, 143], d: [112, 133], storeys: [1, 1] },
+    bigcat: { w: [104, 165], d: [124, 145], storeys: [1, 1] }, roadside: { w: [87, 104], d: [83, 130], storeys: [1, 1] },
   } },
   // Institutions
   clinic:      { w: [15, 25], d: [12, 20], storeys: [1, 2], set: "town" },
@@ -351,6 +369,27 @@ export const REAL_SIZE = {
       kilnmill: { w: [36, 40], d: [20, 24], storeys: [1, 1] },
     } },
   barn:        { w: [15, 30], d: [10, 20], storeys: [1, 1], set: "rural" }, // plus its hayloft (a raised room on one grid)
+  // The farm's own buildings (issue #62, farmplans.js FARM_PLANS): each plan drawn at its row's size, one storey (a
+  // metre a cell; a shed's rooms are small, but a person and a shelf fit in each).
+  shed: { w: [6, 10], d: [5, 7], storeys: [1, 1], set: "rural", planned: true, sizes: {
+    tool: { w: [7, 9], d: [5, 6] }, potting: { w: [8, 10], d: [6, 7] }, pump: { w: [7, 8], d: [5, 6] }, smoke: { w: [6, 7], d: [7, 8] }, rootcellar: { w: [7, 9], d: [8, 9] },
+    spring: { w: [7, 9], d: [6, 7] }, coop: { w: [9, 11], d: [6, 7] }, wood: { w: [7, 9], d: [5, 6] }, crib: { w: [9, 11], d: [6, 7] }, outhouse: { w: [8, 9], d: [6, 7] },
+    well: { w: [7, 8], d: [6, 6] }, gen: { w: [7, 9], d: [6, 7] }, ice: { w: [8, 9], d: [6, 7] },
+  } },
+  farmstand: { w: [8, 26], d: [6, 14], storeys: [1, 1], set: "rural", planned: true, sizes: {
+    shack: { w: [8, 10], d: [7, 8] }, producebarn: { w: [16, 20], d: [12, 14] }, pyo: { w: [10, 12], d: [7, 8] }, honey: { w: [10, 12], d: [7, 8] }, pumpkin: { w: [14, 18], d: [10, 12] },
+    xmas: { w: [10, 12], d: [6, 7] }, market: { w: [20, 26], d: [9, 11] }, egg: { w: [8, 10], d: [6, 7] }, cider: { w: [12, 14], d: [9, 10] }, berry: { w: [9, 11], d: [8, 9] },
+    flower: { w: [12, 14], d: [8, 9] }, maple: { w: [11, 13], d: [8, 9] }, creamery: { w: [12, 15], d: [10, 11] },
+  } },
+  // A farm and a ranch (farmstead.js): one map of many buildings; their rows are their farmhouse's (BUILDINGS make: the
+  // hint, the archetype tests), each building on the map its own type's row.
+  farm:  { w: [12, 18], d: [10, 14], storeys: [1, 2], set: "rural" },
+  ranch: { w: [12, 18], d: [10, 14], storeys: [1, 2], set: "rural" },
+  farmbldg: { w: [9, 44], d: [7, 24], storeys: [1, 1], set: "rural", planned: true, sizes: {
+    milkhouse: { w: [9, 11], d: [7, 8] }, greenhouse: { w: [22, 30], d: [9, 11] }, packshed: { w: [22, 28], d: [14, 17] }, coldstore: { w: [18, 22], d: [13, 15] }, winery: { w: [22, 28], d: [16, 19] },
+    bunkhouse: { w: [15, 18], d: [9, 11] }, arena: { w: [36, 44], d: [20, 24] }, stable: { w: [24, 30], d: [13, 15] }, sugarhouse: { w: [10, 12], d: [8, 9] }, processing: { w: [14, 16], d: [10, 12] },
+    cookhouse: { w: [15, 18], d: [10, 12] }, feedmill: { w: [14, 16], d: [12, 14] }, scalehouse: { w: [10, 12], d: [7, 8] },
+  } },
   // #28's college campus buildings: planned at their own real size (campuslayout.js CAMPUS_SIZE and campusplans.js's
   // named plans, a metre a cell; these rows their range over the plans); on a campus each is laid out as it is
   // (campus.js), raided alone through realScale like #25's. The chapel and the health centre are the church's and the

@@ -752,6 +752,11 @@ function f_plotter(p) { // a plotter: a long beige body on two legs, the paper r
   box(p, 0, 3, 15, 8, "#d8d4c8"); H(p, 0, 15, 3, "#efece2"); R(p, 11, 4, 14, 5, "#383b41"); p.set(13, 6, "#6fe08a");
   R(p, 2, 9, 13, 10, "#eef0f2"); legs(p, 2, 13, 11, 15, "#383b41");
 }
+function f_dartcab(p) { // a zoo vet's dart cabinet (issue #59): grey steel, a glass door on a rack of orange-flighted darts, a hazard stripe
+  box(p, 2, 0, 13, 15, STEEL, "#a4adb4", STEELD); R(p, 4, 2, 11, 11, "#2f3a44");
+  for (let x = 5; x <= 10; x += 2) { V(p, x, 4, 10, "#c9ced3"); R(p, x, 3, x, 4, "#e8742a"); }
+  for (let x = 3; x <= 12; x++) p.set(x, 13, x % 2 ? "#e6c23a" : "#202226"); p.set(12, 7, "#d9b13b");
+}
 function f_liquorcab(p) { // a liquor cabinet: dark wood, glass doors with bottles behind them, a carved top
   R(p, 1, 0, 14, 1, "#5f3c20"); box(p, 2, 2, 13, 15, "#4a2a18"); R(p, 3, 3, 12, 10, "#2a3a44");
   for (const [x, c] of [[4, "#c9873c"], [6, "#4f8a3a"], [8, "#a83a30"], [10, "#e8c04a"]]) { V(p, x, 5, 9, c); p.set(x, 4, c); }
@@ -834,9 +839,52 @@ function f_boat(p) { // a rowing boat's clinker hull, a blue band, an oar inside
   line(p, 0, 7, 3, 12, "#2d5a8a"); line(p, 15, 7, 12, 12, "#2d5a8a"); R(p, 3, 9, 12, 12, "#2d5a8a"); H(p, 0, 15, 7, "#e8e4dc"); H(p, 1, 14, 8, "#a06a3a");
   H(p, 4, 11, 13, "#1f3d5e"); line(p, 2, 4, 13, 8, "#a2713f");
 }
+// ---------- gyms and bowling alleys (issue #56, sim/reclayout.js) ----------
+function f_treadmill(p) { // a treadmill: the black belt on its deck, the uprights, the console with its screen
+  line(p, 1, 14, 13, 11, "#26272a"); H(p, 1, 14, 15, "#3a3b40"); R(p, 1, 12, 13, 13, "#1f1f22");
+  V(p, 12, 3, 12, STEEL); V(p, 14, 3, 12, STEEL); R(p, 10, 1, 15, 3, "#3a3b40"); R(p, 11, 2, 14, 2, "#5ad06a");
+}
+function f_exbike(p) { // an exercise bike: the flywheel, the frame, the saddle and the bars
+  disc(p, 5, 11, 3, "#3a3b40"); p.set(5, 11, STEEL); line(p, 5, 11, 11, 4, "#26272a"); V(p, 11, 4, 13, "#26272a"); H(p, 8, 14, 14, STEELD);
+  R(p, 9, 3, 13, 3, "#5a3424"); line(p, 5, 8, 4, 2, "#26272a"); H(p, 2, 6, 2, STEEL);
+}
+function f_rower(p) { // a rowing machine: the long rail, the sliding seat, the fan wheel at the front, the handle
+  H(p, 1, 15, 12, STEEL); H(p, 1, 15, 13, STEELD); disc(p, 3, 9, 3, "#26272a"); p.set(3, 9, STEEL);
+  R(p, 8, 10, 11, 11, "#26272a"); line(p, 4, 7, 7, 6, "#9aa1a8"); H(p, 6, 9, 6, "#26272a"); for (const x of [2, 14]) V(p, x, 13, 15, STEELD);
+}
+function f_squatrack(p) { // a squat rack: four black uprights, a loaded bar across the hooks
+  for (const x of [2, 5, 10, 13]) V(p, x, 1, 15, "#26272a"); H(p, 2, 13, 1, "#26272a");
+  H(p, 0, 15, 7, "#c9ced3"); for (const x of [0, 15]) R(p, x === 0 ? 0 : 14, 4, x === 0 ? 1 : 15, 10, "#1f1f22");
+}
+function f_dumbbells(p) { // a dumbbell rack: two tiers of black dumbbells, chrome handles, on a steel frame
+  for (const y of [5, 10]) { H(p, 1, 14, y + 2, STEEL); for (let x = 1; x <= 12; x += 4) { R(p, x, y, x, y + 1, "#1f1f22"); H(p, x + 1, x + 1, y, "#c9ced3"); R(p, x + 2, y, x + 2, y + 1, "#1f1f22"); } }
+  legs(p, 2, 13, 13, 15, STEELD);
+}
+function f_punchbag(p) { // a heavy bag: red leather hanging from a chain on its stand
+  V(p, 2, 0, 15, "#26272a"); H(p, 2, 9, 0, "#26272a"); V(p, 8, 1, 2, "#9aa1a8"); box(p, 5, 3, 11, 13, "#a8302a"); V(p, 6, 4, 12, "#c8402f"); H(p, 0, 5, 15, "#26272a");
+}
+function f_yogamats(p) { // a bin of rolled yoga mats in four colours
+  box(p, 2, 9, 13, 15, STEEL);
+  for (const [x, c] of [[3, "#7a4fa0"], [6, "#3a8a8a"], [9, "#c8602a"], [12, "#4f7a3a"]]) { R(p, x, 2, x + 1, 9, c); p.set(x, 2, "#e8e0c8"); }
+}
+function f_ballrack(p) { // a rack of house balls: two rows of coloured balls on a steel frame
+  H(p, 0, 15, 8, STEEL); H(p, 0, 15, 14, STEEL); legs(p, 1, 14, 8, 15, STEELD);
+  [["#2a4a8a", 2], ["#a8302a", 7], ["#2a6a3a", 12]].forEach(([c, x]) => disc(p, x, 5, 2, c));
+  [["#e0a030", 4], ["#5a2a7a", 10]].forEach(([c, x]) => disc(p, x, 11, 2, c));
+}
+function f_shoecubby(p) { // shoe cubbies: a grid of wooden pigeonholes, a pair of red and blue bowling shoes in some
+  box(p, 1, 0, 14, 15, WOOD);
+  for (const x of [5, 10]) V(p, x, 0, 15, WOODD); for (const y of [4, 8, 12]) H(p, 1, 14, y, WOODD);
+  for (const [x, y] of [[2, 2], [7, 6], [12, 10], [2, 10], [12, 2]]) { R(p, x, y, x + 1, y + 1, "#a8302a"); p.set(x + 1, y, "#2a4a8a"); }
+}
+function f_scorer(p) { // a scoring console: the screen on its stand, the keypad below
+  box(p, 3, 1, 12, 8, "#26272a"); R(p, 4, 2, 11, 7, "#1c3a5a"); for (const y of [3, 5]) H(p, 5, 10, y, "#5ad06a");
+  V(p, 7, 9, 13, STEEL); V(p, 8, 9, 13, STEELD); R(p, 5, 10, 10, 11, "#3a3b40"); H(p, 4, 11, 14, STEELD); H(p, 3, 12, 15, STEELD);
+}
 
 export const GEAR_ART = {
   f_upscab, f_batterystring, f_cablereel, f_miningrig,
+  f_treadmill, f_exbike, f_rower, f_squatrack, f_dumbbells, f_punchbag, f_yogamats, f_ballrack, f_shoecubby, f_scorer,
   f_kiosk, f_concession, f_arcadecab, f_projector, f_mannequin,
   f_dormdesk, f_mailboxes, f_campusbench,
   f_bookstack, f_lowshelf, f_mobileshelf, f_cardcat, f_mapcase, f_booktruck, f_bookreturn, f_computer, f_printer, f_microfilm, f_selfcheck, f_readtable, f_carrel, f_globe, f_lectern, f_woodstove,
@@ -849,7 +897,7 @@ export const GEAR_ART = {
   f_hazmatrack, f_rationshelf, f_handfilter, f_screens, f_maptable, f_radioconsole, f_footlocker, f_batteries,
   f_freezercase, f_islandfreezer, f_meatcase, f_freezershelf, f_producebin, f_breadrack, f_selfcheckout, f_aislesign,
   f_luggage, f_ammocrate, f_fuelbladder, f_gateseat, f_intakelocker,
-  f_dentalchair, f_podium, f_headsetdesk, f_beanbag, f_camera, f_studiolight, f_newsdesk, f_sorter, f_plotter, f_liquorcab,
+  f_dentalchair, f_podium, f_headsetdesk, f_beanbag, f_camera, f_studiolight, f_newsdesk, f_sorter, f_plotter, f_liquorcab, f_dartcab,
   f_medcart, f_drugsafe, f_instcab, f_morguelocker, f_autopsy, f_wheelchair, f_vettable, f_curtain, f_linencart, f_monitor, f_crib, f_exambed,
   f_bed, f_bunk, f_hospbed, f_gurney, f_ivstand, f_hay, f_barrel, f_range, f_dishwasher, f_washer, f_dryer, f_fryer, f_coldshelf,
   f_icemachine, f_watercooler, f_compressor, f_tank, f_jukebox, f_pooltable, f_clothesrack, f_pottingbench, f_palletrack, f_tirerack,

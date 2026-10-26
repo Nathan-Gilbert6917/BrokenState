@@ -125,8 +125,11 @@ console.log("The site picked on the POI card with no building");
 {
   const st = W();
   const h = hub(st);
-  const m = st.tiles.find((x) => x.loc && (x.loc.type === "farm" || x.loc.type === "ranch") && isSitePoi(x, 0) && knownPois(st, x).includes(0) && x.id !== h.tile && !st.factions.some((f) => f.bases.includes(x.id)));
-  if (check(!!m && !!raidBuildings(st, m, 0), `a farm site (${m ? m.loc.type : "none"}) with its buildings`)) {
+  // A site with a choice of buildings (a farm or a ranch was one until issue #62 made each one map of the whole place;
+  // an older save's still is: farmLegacy).
+  const multi = (x) => x.loc && isSitePoi(x, 0) && knownPois(st, x).includes(0) && x.id !== h.tile && !st.factions.some((f) => f.bases.includes(x.id)) && !!raidBuildings(st, x, 0);
+  const m = st.tiles.find((x) => multi(x) && (x.loc.type === "farm" || x.loc.type === "ranch")) || st.tiles.find(multi);
+  if (check(!!m && !!raidBuildings(st, m, 0), `a site (${m ? m.loc.type : "none"}) with its buildings`)) {
     const p = teamAt(st, m.id);
     p.poi = 0; // the site, as the POI card or the walk there leaves it, with no building
     check(buildingPickWanted(st, p, m.id), "the card is wanted");

@@ -52,9 +52,11 @@
 /** @import { State, Tile } from "./types" */
 import { poiAt, poiLedger, poiPool, poiTake, poiFull, poiBand, isSitePoi, TILE_HEAT } from "./pois.js";
 import { noteNoise } from "./deadpop.js"; // the dead on the land (issue #65): the noise of a raid on the tile and the place
-import { siteBuildings, SITES, BUILDINGS, streetHouses } from "./buildingmaps.js";
+import { siteBuildings, SITES, BUILDINGS, streetHouses, zooBuildings } from "./buildingmaps.js"; // zooBuildings: a zoo's (issue #59, zoo.js), through buildingmaps so the modules load in their order
 import { mallUnits } from "./mall.js"; // a mall's buildings (issue #30)
 import { campusBuildings } from "./campus.js"; // a college campus's buildings (issue #28)
+import { farmBuildingCount } from "./farmstead.js"; // a farm's or a ranch's buildings, each apart in the ledger (issue #62)
+import { legacyFarms } from "./worldcfg.js"; // an older save's farms keep their buildings (issue #62)
 import { parkBuildings } from "./amusement.js"; // an amusement park's buildings (issue #60)
 import { hash01 } from "./skills.js";
 import { Rng } from "./rng.js";
@@ -95,13 +97,17 @@ export function poiHouses(state, tile, i) {
   if (!poi) return 1;
   // A shopping mall (mall.js) or a campus (campus.js): the site's one map of many buildings, each apart in the ledger;
   // a strip mall's or an outlet's POI likewise (below): the search goes through them a building at a time.
-  if (isSitePoi(t, i)) { const sb = siteBuildings(t); const o = sb && sb.single ? sb.options[0] : null; return o && BUILDINGS[o.key] && BUILDINGS[o.key].compound ? mallHouses(state, t.id, o) : o && BUILDINGS[o.key] && BUILDINGS[o.key].campus ? campusBuildings(state, t, o) : 1; }
+  if (isSitePoi(t, i)) { const sb = siteBuildings(t, farmsOld(state)); const o = sb && sb.single ? sb.options[0] : null; return o && BUILDINGS[o.key] && BUILDINGS[o.key].compound ? mallHouses(state, t.id, o) : o && BUILDINGS[o.key] && BUILDINGS[o.key].campus ? campusBuildings(state, t, o) : o && BUILDINGS[o.key] && BUILDINGS[o.key].farmstead ? farmBuildingCount(state, t, o) : 1; } // farmstead.js: a farm's or a ranch's buildings (issue #62)
   const entry = SITES[poi.kind], first = entry ? (Array.isArray(entry) ? entry : entry.list)[0] : null;
   const key = Array.isArray(first) ? first[0] : first;
   if (key && BUILDINGS[key] && BUILDINGS[key].park) return parkHouses(state, t.id, { id: `poi${i}:${key}`, key, name: BUILDINGS[key].name });
   if (key && BUILDINGS[key] && BUILDINGS[key].compound) return mallHouses(state, t.id, { id: `poi${i}:${key}`, key, name: BUILDINGS[key].name });
+  if (key && BUILDINGS[key] && BUILDINGS[key].zoo) return zooBuildings(state, t.id, { id: `poi${i}:${key}` }); // a zoo (zoo.js): its buildings
   return key && BUILDINGS[key] && BUILDINGS[key].street ? streetHouses(state, t.id, { id: `poi${i}:${key}`, key, ...(poi.lay ? { layout: poi.lay } : {}) }) : 1;
 }
+// An older save's farm or ranch (worldcfg.js legacyFarms, issue #62) is still its pick of buildings: siteBuildings is
+// told so (nothing else of the state, so every other site reads as it always did here).
+const farmsOld = (state) => (legacyFarms(state) ? { farmLegacy: true } : null);
 // A mall's buildings, counted once per map (the map is made from the mall's own dice; cached by the seed and the place).
 const mallCount = new Map();
 function mallHouses(state, tileId, option) {
@@ -119,9 +125,9 @@ function parkHouses(state, tileId, option) {
 }
 
 /** How many maps POI i opens: a site with several buildings has each and its street; any other one. @param {Tile} t @param {number} i */
-export function poiMapCount(t, i) {
+export function poiMapCount(t, i, state = null) {
   if (!isSitePoi(t, i)) return 1;
-  const sb = siteBuildings(t);
+  const sb = siteBuildings(t, farmsOld(state));
   return !sb || sb.single ? 1 : sb.options.length + 1;
 }
 
@@ -249,7 +255,7 @@ export function poiRaidEnd(state, b) {
   }
   if (opened) {
     const ids = (c.maps && c.maps[mapId]) || [];
-    const per = poiFull(t, i) / Math.max(1, ids.length) / poiMapCount(t, i);
+    const per = poiFull(t, i) / Math.max(1, ids.length) / poiMapCount(t, i, state);
     const took = poiTake(t, i, Math.max(0, Math.min(per * opened, poiPool(t, i) - CONT.FLOOR)));
     c.took = (c.took || 0) + took;
     if (!c.opened) c.opened = {};

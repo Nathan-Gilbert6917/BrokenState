@@ -36,6 +36,9 @@ const CORE = [
   ["seasongroundtest", false], ["puddletest", false], ["zombiesfxtest", false], ["siegetest", false],
   ["allyorderstest", false], ["hivebirthtest", false], ["sizetest", false], ["rescuetest", false], ["hiveplustest", false],
   ["stealthtest", true], // quick: 20-day soaks, 160 prisoners a setup; about 3 minutes
+  // #72: red tests made green, kept so (officestest 80 s, plannametest 65 s in the gate on 2026-10-26); savetest is left out,
+  // too long (quick: 8 minutes alone, 12 in the gate, where it pushed citycrawltest past the time limit; full: over 30)
+  ["officestest", false], ["plannametest", false],
 ];
 
 const args = process.argv.slice(2);

@@ -308,6 +308,10 @@ export const SUPPLY_ART = {
     for (let y = 4; y <= 11; y++) { p.set(0, y, y % 2 ? C.silver : C.silverD); p.set(15, y, y % 2 ? C.silverD : C.silver); }
     R(p, 4, 6, 11, 9, C.bread); H(p, 4, 11, 6, "#e0a860"); dots(p, 5, 11, 7, C.breadD, 2); dots(p, 4, 10, 8, C.brownL, 3); H(p, 3, 12, 10, C.yellow);
   },
+  f_protein: (p) => { // a black tub of whey protein, its white lid, a red label with the scoop on it
+    R(p, 3, 4, 12, 15, "#26272a"); H(p, 3, 12, 15, "#1a1a1c"); R(p, 2, 2, 13, 4, "#e8e4d8"); H(p, 2, 13, 2, "#ffffff");
+    R(p, 4, 7, 11, 12, "#c8402f"); H(p, 4, 11, 7, "#e05a48"); R(p, 6, 9, 9, 10, "#f0e6c8"); p.set(10, 9, "#f0e6c8");
+  },
   f_mre: (p) => { // a tan MRE pouch, its heat seal, the letters MRE
     box(p, 1, 1, 14, 15, C.khaki, "#bdb48a", C.khakiD); dots(p, 2, 13, 2, C.khakiD); p.clear(1, 4); p.clear(14, 4);
     text(p, 2, 6, "MRE", C.ink); H(p, 3, 12, 13, C.khakiD);
