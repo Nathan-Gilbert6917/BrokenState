@@ -136,7 +136,7 @@ export const PLACE_EXTRA = [
   ["radiotower", { centre: 0.008, city: 0.006, suburb: 0.003, town: 0.004, highway: 0.01, scenic: 0.004 }], // issue #54: a radio tower (radiotowerlayout.js), the hills' sites aside
   ["museum", { centre: 0.05, city: 0.02, suburb: 0.006, town: 0.012, highway: 0.002, coast: 0.002 }], // issue #58: by and next to a city's heart most, a town's own
   ["amusement", { centre: 0.06, city: 0.02, suburb: 0.006, town: 0.004, highway: 0.001, coast: 0.0012, scenic: 0.00012, rural: 0.0001 }], // issue #60: a theme park by a city's centre, a fairground in a town, a pier on the coast
-  ["stadium", { centre: 0.05, city: 0.02, suburb: 0.006, town: 0.012, highway: 0.004, scenic: 0.001, rural: 0.002 }], // issue #57: a pro stadium by the centre, a town's ballpark, a rodeo out in the country
+  ["stadium", { centre: 0.04, city: 0.012, suburb: 0.003, town: 0.003, highway: 0.0015, scenic: 0.0003, rural: 0.0006 }], // issue #57: a pro stadium by the centre, a town's ballpark, a rodeo out in the country
 ];
 export const PLACE_KNOWN = 0.7; // the share of them known from the start in the known zone (shops.js SHOP.KNOWN)
 /**
