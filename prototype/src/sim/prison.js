@@ -46,6 +46,7 @@
 import { Rng } from "./rng.js";
 import { realFoot } from "./data-buildingsize.js"; // the buildings' footprints (#24's REAL_SIZE rows, a metre a cell)
 import { hash01 } from "./skills.js";
+import { registerVariants, pickVariant, variantsOf, variantFor } from "./variantpick.js"; // the shared picker (issue #41)
 import { assemble, BMAP, DOOR_KINDS } from "./buildingmaps.js"; // call-time only (buildingmaps.js builds the complexes through here)
 import { placeCar, placeVehicle, CELL } from "./combat.js";
 import { mapCap } from "./battlesize.js"; // the per-site map cap (#24): a prison's 400, a jail's 130
@@ -97,9 +98,24 @@ export const PRISON_PLANS = {};
 /** @param {any} rng @param {string | any[]} type @param {any} o */
 export function pickPlan(rng, type, o = {}) {
   const all = Array.isArray(type) ? type : PRISON_PLANS[type] || [];
-  const ok = all.filter((v) => !o.only || o.only(v));
+  const key = prisonKey(type);
   const want = o.plan ?? o.layout; // o.plan pins a building's plan (the other plan pickers' convention), o.layout a complex's
-  return (want && all.find((v) => v.id === want)) || ok[Math.floor(rng.next() * ok.length)] || all[0];
+  if (!variantsOf(key).length && all.length) registerPrison(); // a plan asked for while the module still loads
+  // variantpick.js (issue #41): pinned by id, else one draw of the dice (only when not pinned), uniform over the plans
+  // that fit (o.only); none fits: the first, the draw still made, as before.
+  if (!all.length) return undefined;
+  if (!(want && variantFor(key, want)) && o.only && !all.some(o.only)) { rng.next(); return all[0]; }
+  const e = pickVariant(key, rng, { plan: want || null, only: o.only ? (q) => /** @type {any} */ (o.only)(q.src) : undefined, r: () => rng.next() });
+  return e ? e.src : all[0];
+}
+/** The registry's key of a plan list (a building type's, or a complex's layouts). @param {string | any[]} type */
+const prisonKey = (type) => (type === PRISON_LAYOUTS ? "prison:layouts" : type === JAIL_LAYOUTS ? "jail:layouts" : `prison:${type}`);
+/** Registers every list (variantpick.js): "prison:<type>", "prison:layouts", "jail:layouts". */
+function registerPrison() {
+  const views = (list) => list.map((v) => ({ id: v.id, name: v.name, src: v }));
+  for (const type of Object.keys(PRISON_PLANS)) registerVariants(`prison:${type}`, views(PRISON_PLANS[type]));
+  registerVariants("prison:layouts", views(PRISON_LAYOUTS));
+  registerVariants("jail:layouts", views(JAIL_LAYOUTS));
 }
 // A housing unit's plans: tiers (2, or 3), where its officers' station stands (picket: at one end, at both, in the
 // middle between two half blocks), its core (cells both sides of the day room, cells one side, a dormitory of bunks,
@@ -1054,3 +1070,4 @@ export function prisonHolders(state, b, place) {
   b.raid.holders = { room: room.id, n, name: "a prison gang" };
   return n;
 }
+registerPrison(); // every plan list filled by now (variantpick.js, issue #41)
