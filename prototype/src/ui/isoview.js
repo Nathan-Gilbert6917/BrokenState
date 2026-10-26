@@ -4665,7 +4665,7 @@ export function drawIso(ctx, cw, ch, state, b, now, H) {
     if (inP.size) { fillCells(ctx, b, (i) => inP.has(i), "rgba(255,209,102,0.3)"); outlineCells(ctx, b, (i) => inP.has(i), "rgba(255,209,102,0.95)", 2.5); }
     if (inG.size) { fillCells(ctx, b, (i) => inG.has(i), H.ghost.ok ? `rgba(${COL.goodRgb},0.35)` : "rgba(220,70,60,0.35)"); outlineCells(ctx, b, (i) => inG.has(i), H.ghost.ok ? `rgba(${COL.goodRgb},0.95)` : "rgba(240,90,80,0.95)", 2); }
   }
-  if (H.ghost && H.ghost.pickedAt) { const [X, Y] = project(H.ghost.pickedAt[0] + 0.5, H.ghost.pickedAt[1] + 0.5, 34); tag(ctx, "Camp fire here", X, Y, "#ffd166", Math.max(10, 3.6 * S)); } // the camp's spot picked (sim/basemap.js siteGhostAt)
+  if (H.ghost && H.ghost.pickedAt) { const [X, Y] = project(H.ghost.pickedAt[0] + 0.5, H.ghost.pickedAt[1] + 0.5, 34); tag(ctx, H.ghost.label || "Camp fire here", X, Y, "#ffd166", Math.max(10, 3.6 * S)); } // label: a camp inside a POI on its raid map, its setup or "safe" countdown (ui/poicamp.js) // the camp's spot picked (sim/basemap.js siteGhostAt)
   if (H.ghost && H.ghost.gameAt) { const [X, Y] = project(H.ghost.gameAt[0] + 0.5, H.ghost.gameAt[1] + 0.5, 24); tag(ctx, "The game's pick", X, Y, "#9fd3c7", Math.max(9, 3.2 * S)); } // the game's own spot (sim/siteinfo.js bestSite) while another is picked
   if (H.ghost && H.ghost.from) for (const [x, y] of H.ghost.from) { ctx.fillStyle = "rgba(12,14,18,0.42)"; ctx.beginPath(); diamond(ctx, x, y, 14); ctx.fill(); }
   // The stores on a base map (sim/basemap.js): a crate marker over each building that holds goods, with its weight.

@@ -387,7 +387,8 @@ section("Fetch water: a plan to a river or lake shore fills the containers and b
 {
   const state = mk();
   const h = hub(state);
-  const shore = tileNear(state, 2, 9, (t) => besideWater(state, t.id));
+  // Up to 18 tiles out: since the map sizes (1370d1c, 2026-10-24) seed 42's nearest shore is 15 from the hub.
+  const shore = tileNear(state, 2, 18, (t) => besideWater(state, t.id));
   const dry = tileNear(state, 2, 6, (t) => !besideWater(state, t.id));
   check(shore != null && dry != null, "test setup: a shore and a dry tile in reach");
   const steps = [{ kind: "water" }, { kind: "home" }];

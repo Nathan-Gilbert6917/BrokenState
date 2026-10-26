@@ -251,7 +251,7 @@ export function takeDead(state, base, n) {
   const k = Math.min(g.dead, Math.round(n));
   g.dead -= k;
   g.killed = (g.killed || 0) + k;
-  killDead(state, base.tile, null, k); // deadpop.js: the grounds' dead are the tile's open ground
+  killDead(state, base.tile, base.poi != null ? base.poi : null, k); // deadpop.js: the grounds' dead are the tile's open ground; a POI camp's (poicamp.js, #70) its POI's (issue #69)
   if (!g.dead) {
     g.clearDay = Math.floor(state.hour / 24) + 1;
     log(state, `The grounds of ${base.name} are clear of the dead: no more of them will come out of ${groundsWord(state, base.tile)} at the camp.`, "good");

@@ -71,16 +71,20 @@ const leaders = (st) => st.survivors.filter((s) => s.alive && s.leader);
   const last = p2[0];
   last.leader = false;
   const f = st2.factions.find((x) => x.alive && x.bases.length);
+  // Yours by id: one who changes sides goes over as the very person (members.js joinFromYours, d3327702), a dead stub left
+  // in your list; the object itself lives on in the group's (this loop put it back in the cell again and again).
+  const lastId = last.id, mine = () => st2.survivors.find((x) => x.id === lastId);
   let guard = 0;
-  while (last.alive && guard++ < 5000) {
-    if (last.location.kind !== "captive") last.location = { kind: "captive", factionId: f.id, tile: f.bases[0], since: st2.hour - 24 * 30 };
+  while (mine().alive && guard++ < 5000) {
+    const c = mine();
+    if (c.location.kind !== "captive") c.location = { kind: "captive", factionId: f.id, tile: f.bases[0], since: st2.hour - 24 * 30 };
     f.alive = true; f.goodwill = -80;
-    last.health = 100;
+    c.health = 100;
     captivesDaily(st2);
     st2.cards.length = 0;
   }
-  check(!last.alive, "the captive was eventually lost (recruited or killed)");
-  check(st2.gameOver, `losing the last captive ends the run (${last.left ? "changed sides" : "died"})`);
+  check(!mine().alive, "the captive was eventually lost (recruited or killed)");
+  check(st2.gameOver, `losing the last captive ends the run (${mine().left ? "changed sides" : "died"})`);
 
   const st3 = W();
   for (const s of st3.survivors) { s.alive = false; s.left = true; }
@@ -462,6 +466,8 @@ const leaders = (st) => st.survivors.filter((s) => s.alive && s.leader);
     else if (d.slot === "backpack") check(/pack slots/.test(text) && /carry/.test(text) && !/power/.test(text), `${key}: a pack lists slots and carry space (${text})`);
     // The electronics recipes (2026-10-24): "armor\b", not a base's armory (the decoys and the radio are kept there).
     else if (d.listen) check(!/power|armor\b/.test(text) && /a receiver/.test(text) && /radio network/.test(text) && /cannot call/.test(text), `${key}: a receiver says what it hears and that it cannot call (${text})`); // sim/radio.js: the hand-crank radio
+    // Crashlanding's repaired military radio (2026-10-24): what it does as a station and with a team (crafting.js craftOutputText).
+    else if (r.gear === "milradio") check(!/power/.test(text) && /station reaching 24 tiles/.test(text) && /hears radio networks/.test(text), `${key}: the military radio says what it does (${text})`);
     else if (d.slot === "tool") check(!/power/.test(text) && /Medicine|Scavenging|water|at night/.test(text), `${key}: a tool lists what it does (${text})`);
     // The stealth kit (stealth.js): thrown things and the suppressor are carried, not worn.
     else if (d.throw) check(!/power|armor\b/.test(text) && /thrown/.test(text) && /one use/.test(text), `${key}: a throwable says it is thrown, once (${text})`);
@@ -544,7 +550,9 @@ const leaders = (st) => st.survivors.filter((s) => s.alive && s.leader);
   check(roles === "build,build,farm,farm,guard,scavenge", `starting roles: ${roles}`); // two builders: the hub starts bare (barestart)
   const best = (key) => st.survivors.reduce((x, s) => (skill(s, key) > skill(x, key) ? s : x));
   check(best("farming").role === "farm", "the best farmer farms");
-  st.survivors.forEach((s) => { s.skills.mechanics = 0; s.skills.farming = 0; });
+  // Every skill the starting roles read (world.js START_ROLES) zeroed, the sixth's mechanics alone edited: since the crew's own
+  // dice (6e03d47e, 2026-10-24) seed 42's sixth is a veteran, the best shot, who took the guard's place before the builders'.
+  st.survivors.forEach((s) => { s.skills.mechanics = 0; s.skills.farming = 0; s.skills.scavenging = 0; s.skills.shooting = 0; });
   st.survivors[5].skills.mechanics = 15;
   assignStartingRoles(st);
   check(st.survivors[5].role === "build", "roles follow skills edited before the run begins");

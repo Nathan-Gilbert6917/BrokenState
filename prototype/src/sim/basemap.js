@@ -129,7 +129,8 @@ import { isChopTool, bestChop } from "./woodcutting.js"; // felling a tree goes 
 import { layMines } from "./mines.js"; // the main base's minefield, buried in the open ground round the yard (call-time only)
 import { tunnelAt, queueFill } from "./tunnels.js"; // the tunnels the dead dug: a hole's card, Fill tunnel (call-time only)
 import { FORT } from "./fort.js"; // the wire rings' and the mines' distances from the wall (call-time only: the modules load in a circle)
-import { knownMask } from "./campscout.js"; // a camp set up blind: the view's known ground (call-time only)
+import { knownMask } from "./campscout.js";
+import { poiPlaceWhy, poiKnownMask, poiCellAt } from "./poicamp.js"; // a camp inside a POI (issue #70): its map is the POI's (call-time only) // a camp set up blind: the view's known ground (call-time only)
 import { cfgOf } from "./worldcfg.js"; // the run's dials: Base yard to start / at most
 import { terraBusy, terraJobs, terraLeft, terraPct, terraModeOf, terraPlan, terraLevels, queueTerra, cancelTerra, dirtProblem, shovelCrew, unEdit, TERRA, TERRA_PICK, TERRA_NAME, TERRA_VERB } from "./terraform.js"; // terraforming: hollows dug, hills raised (call-time only)
 import { storageOf, coreStoreKg, vehicleStoreKg, woodpileOf } from "./basestorage.js"; // the base's room and what lies outside (call-time only)
@@ -209,6 +210,7 @@ export function gridOf(base) {
 export const originOf = (base) => (base && base.plan && Array.isArray(base.plan.origin) ? base.plan.origin : [0, 0]);
 // The map's extent in grid coordinates (relative to the base itself), half-open: { x0, y0, x1, y1 }.
 export function gridBox(base) {
+  if (base && base.poiCamp) { const P = base.poiCamp; return { x0: -P.at[0], y0: -P.at[1], x1: P.w - P.at[0], y1: P.h - P.at[1] }; } // poicamp.js: a camp inside a POI: the POI's own map, never more
   const [ox, oy] = originOf(base);
   return { x0: -GRID_MAX - ox, y0: -GRID_MAX - oy, x1: GRID_MAX - ox, y1: GRID_MAX - oy };
 }
@@ -649,7 +651,9 @@ export function placeProblemAt(base, it, x, y, r, occ, dims = null) {
   const rect = rectOf(it, at);
   const B = dims && dims.B ? dims.B : gridBox(base), R = dims ? dims.R : ringHalf(base), wallish = WALL_KINDS.has(it.kind);
   if (rect.x0 < B.x0 || rect.y0 < B.y0 || rect.x0 + rect.w > B.x1 || rect.y0 + rect.h > B.y1) return "Off the map";
-  if (rect.x0 < B.x0 + NO_BUILD || rect.y0 < B.y0 + NO_BUILD || rect.x0 + rect.w > B.x1 - NO_BUILD || rect.y0 + rect.h > B.y1 - NO_BUILD) return NO_BUILD_WHY;
+  const poi = !!base.poiCamp; // poicamp.js: a camp inside a POI: the POI's map to its edge (no margin, no wall band), its building's rooms
+  if (poi) { const why = poiPlaceWhy(base, it, at, occ); if (why) return why; }
+  else if (rect.x0 < B.x0 + NO_BUILD || rect.y0 < B.y0 + NO_BUILD || rect.x0 + rect.w > B.x1 - NO_BUILD || rect.y0 + rect.h > B.y1 - NO_BUILD) return NO_BUILD_WHY;
   const inner = !!(it.fit || it.indoor);
   let host = null, mounted = false;
   for (let yy = rect.y0; yy < rect.y0 + rect.h; yy++) for (let xx = rect.x0; xx < rect.x0 + rect.w; xx++) {
@@ -657,7 +661,7 @@ export function placeProblemAt(base, it, x, y, r, occ, dims = null) {
     // A spotlight (FOOT mount) on a wall stand's cell: up on the stand, the ring's band too; never two on one cell.
     if (it.mount && occ.mount && occ.mount.has(k)) return "There is a spotlight there already";
     if (it.mount && occ.stand && occ.stand.has(k)) { mounted = true; continue; }
-    if (!wallish && onBand(xx, yy, R)) return "That is where the wall stands";
+    if (!wallish && !poi && onBand(xx, yy, R)) return "That is where the wall stands";
     if (occ.foot.has(k)) return `On top of ${nameOf(occ, occ.foot.get(k))}`;
     if (occ.door.has(k)) return `In the doorway of ${nameOf(occ, occ.door.get(k))}`;
     if (occ.work && occ.work.has(k)) return `On ground being ${occ.work.get(k).mode === "raise" ? "raised" : "dug"} (${occ.work.get(k).label.toLowerCase()}): wait for it, or cancel it`; // terraform.js
@@ -666,14 +670,14 @@ export function placeProblemAt(base, it, x, y, r, occ, dims = null) {
       if (!inner) return `On top of ${nameOf(occ, fl)}`;
       if (host != null && host !== fl) return "Only inside one building";
       host = fl;
-    } else if (it.fit) return "Only inside a building";
+    } else if (it.fit && !poi) return "Only inside a building";
   }
-  if (it.fit && host == null) return "Only inside a building";
+  if (it.fit && host == null && !poi) return "Only inside a building";
   for (const [ox, oy] of doorCellsOf(it, at)) {
     const k = K(ox, oy);
     if (occ.foot.has(k)) return `Its door would open onto ${nameOf(occ, occ.foot.get(k))}`;
     if (occ.floor && occ.floor.has(k)) return `Its door would open onto ${nameOf(occ, occ.floor.get(k))}`;
-    if (!wallish && onBand(ox, oy, R)) return "Its door would open onto the wall";
+    if (!wallish && !poi && onBand(ox, oy, R)) return "Its door would open onto the wall";
   }
   // The land (basescatter.js): every piece on its cells (and on the cells outside its doors) cleared first. Not inside a
   // standing building (a fitting, a bench on its floor): its ground was cleared when it went up.
@@ -707,6 +711,8 @@ export function fittingRoom(state, base, type) {
   const auto = autoLayout(state, base);
   const occ = occupancy(state, base, null, auto);
   const probe = { ...f, type, key: null, label: BUILDINGS[type] ? BUILDINGS[type].name : type };
+  // poicamp.js: a camp inside a POI: the building's own rooms are where fittings stand (key "poi:room").
+  if (base.poiCamp) { const P = base.poiCamp; for (const a of P.rooms || []) for (let y = a.y0 + 1; y < a.y0 + a.h - 1; y++) for (let x = a.x0 + 1; x < a.x0 + a.w - 1; x++) for (const r of [0, 1]) if (!placeProblemAt(base, probe, x - P.at[0], y - P.at[1], r, occ)) return "poi:room"; }
   for (const it of itemsOf(state, base)) {
     if (!hostOf(it) || (it.rec && it.rec.broken)) continue;
     const at = it.at || auto.get(it.key);
@@ -1666,6 +1672,13 @@ export function reachProblem(state, base, it, at, occ, opts = {}) {
 // hordeAttackBase keeps their spots so they show in the fight). Returns the fort record fort.js works with:
 // W × H cells, the yard's origin and size, the wall rect, the ring, walkway, gates, towers, ladders, the masks, the
 // buildings, plus ox/oy (grid → map), stores (where the goods are), vehicles (the cars and their cells), lights.
+// A camp inside a POI (poicamp.js base.poiCamp): the POI map's cells as the base map's ground, map (x, y) at grid
+// (x − ox, y − oy), the camp fire's cell at grid (0, 0).
+function poiCells(P, W, H, ox, oy) {
+  const out = new Array(W * H);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) out[y * W + x] = poiCellAt(P, x - ox + P.at[0], y - oy + P.at[1]) || { k: "open", f: "grass" };
+  return out;
+}
 export function buildBaseMap(state, base, rng, opts = {}) {
   stampGrid(state, base);
   const site = !!opts.site; // the camp's spot (openSiteView): the tile's whole map, its land and nothing built
@@ -1694,9 +1707,9 @@ export function buildBaseMap(state, base, rng, opts = {}) {
     [x0, x1] = fit(x0, x1, GB.x0, GB.x1); [y0, y1] = fit(y0, y1, GB.y0, GB.y1);
   }
   x0 = Math.max(GB.x0, x0); y0 = Math.max(GB.y0, y0); x1 = Math.min(GB.x1, x1); y1 = Math.min(GB.y1, y1);
-  if (site) ({ x0, y0, x1, y1 } = GB);
+  if (site || base.poiCamp) ({ x0, y0, x1, y1 } = GB); // poicamp.js: a camp inside a POI: the POI's whole map, nothing past its edge
   const W = x1 - x0, H = y1 - y0, ox = -x0, oy = -y0; // grid (gx, gy) → map (gx + ox, gy + oy)
-  const cells = Array.from({ length: W * H }, () => ({ k: "open", f: "grass" }));
+  const cells = base.poiCamp ? poiCells(base.poiCamp, W, H, ox, oy) : Array.from({ length: W * H }, () => ({ k: "open", f: "grass" })); // poicamp.js: the POI's own cells, its building's walls, doors and furniture as the raid left them
   const inside = (x, y) => x >= 0 && y >= 0 && x < W && y < H;
   const at = (x, y) => (inside(x, y) ? cells[y * W + x] : null);
   const used = new Uint8Array(W * H), indoor = new Uint8Array(W * H), keep = new Uint8Array(W * H);
@@ -1716,7 +1729,7 @@ export function buildBaseMap(state, base, rng, opts = {}) {
   // The tint: the no-build margins (the tile map's NO_BUILD, the build map's own VIEW_EDGE); on the camp's spot (site)
   // the ground too near the edge for the camp (SITE_RANGE).
   const reach = SITE_RANGE - SITE.LO, E = site ? 0 : VIEW_EDGE;
-  if (view) for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const gx = x - ox, gy = y - oy; if (site ? Math.abs(gx) > reach || Math.abs(gy) > reach : gx < GB.x0 + NO_BUILD || gy < GB.y0 + NO_BUILD || gx >= GB.x1 - NO_BUILD || gy >= GB.y1 - NO_BUILD || x < E || y < E || x >= W - E || y >= H - E) cells[y * W + x].nb = 1; }
+  if (view && !base.poiCamp) for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const gx = x - ox, gy = y - oy; if (site ? Math.abs(gx) > reach || Math.abs(gy) > reach : gx < GB.x0 + NO_BUILD || gy < GB.y0 + NO_BUILD || gx >= GB.x1 - NO_BUILD || gy >= GB.y1 - NO_BUILD || x < E || y < E || x >= W - E || y >= H - E) cells[y * W + x].nb = 1; }
   // A container of the stores (makeStores), with its container's key (containers.js: "core", b:<id>, v:<id>). The
   // armory (ARMORY_LOCK): two locked containers inside it in place of one, the gun cage (holds "gear") and the ammo
   // lockers (holds "ammo"), each over its own cells (boxes: the map cells armoryCells tagged, turned with the
@@ -2536,7 +2549,7 @@ function viewBattle(state, base, prev = null, site = false) {
   b.phase = "deploy";
   b.acted = true;
   if (prev) { b.keepCam = true; b.layout = prev.layout; } // the same layout record: the pick and the last message carry over; keepCam: the view stays where it was (ui/isoview.js)
-  const known = site ? null : knownMask(b, base); // campscout.js: a camp set up blind, its map known only round the fire until surveyed (combat.js playerVision)
+  const known = site ? null : base.poiCamp ? poiKnownMask(b, base) : knownMask(b, base); // poicamp.js: a camp inside a POI keeps the raid's fog; campscout.js: a camp set up blind, its map known only round the fire until surveyed (combat.js playerVision)
   if (known) b.knownMask = known;
   return b;
 }

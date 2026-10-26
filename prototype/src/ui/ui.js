@@ -1,5 +1,6 @@
 // DOM panels and modals. Every user action goes through the action dispatcher in main.js.
 // Any element with data-tip="..." shows a hover description.
+import { poiRoomLeft, roomWords } from "../sim/poicamp.js"; // a camp inside a POI: the room left on its map (issue #70)
 import { haulPanel } from "./hauling.js"; // the Supply runs tab's Hauling panel (sim/hauling.js)
 import { baseFoodHtml } from "./food.js"; // food by type: the base window's Food section (the top bar's Food row: ui/needsbar.js)
 import { foodChainTab } from "./foodchain.js"; // the base window's Food tab: the food chain (sources, stores, kitchen, eating, losses)
@@ -1779,6 +1780,7 @@ function campTab(state, b) {
       <h3>Around the camp</h3>
       <div class="card small"><div class="kv small">
         <div${tip("A camp has no well: beside a river or lake its people haul water into the stores; anywhere else only what is carried in.")}>Water</div><div class="${v.riverside ? "good" : "warn"}">${esc(v.water)}</div>
+        ${b.poiCamp ? `<div${tip("A camp inside a POI (sim/poicamp.js): its map is the place's own and never grows. Fittings go in the building's rooms, crop plots and small builds in the yard; unknown (fogged) ground opens as your people see it, or with a survey.")}>Map</div><div>${esc(roomWords(poiRoomLeft(state, b)))}</div>` : ""}
         <div${tip("The camp's Heat (what draws the dead and raiders): its fire (most at night), vehicles parked here and shooting nearby lately; its people count as at any base.")}>Heat from</div><div>${esc(v.heat.text || "nothing but its people")}</div>
         <div${tip("The camp fire: warmth, hot food and boiled water, better spirits. Its light and smoke add to the Heat, most at night.")}>Fire</div><div>${v.fire ? "Lit" : "Out"} ${fireButton(v.fire, `data-base="${b.id}"`)}</div>
         ${away}
