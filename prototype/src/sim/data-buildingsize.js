@@ -73,6 +73,23 @@ export const REAL_SIZE = {
   dealer:      { w: [30, 50], d: [20, 35], storeys: [1, 2], set: "town", planned: true },
   library:     { w: [9, 56], d: [10, 44], storeys: [1, 8], set: "town", planned: true }, // #34: thirteen variants drawn at their real size (librarylayout.js LIBRARY.SIZE), a rural reading room to an 8-storey central library
   vet:         { w: [15, 20], d: [12, 18], storeys: [1, 2], set: "town" },
+  // #58: thirteen variants drawn at their real size (museumlayout.js reads these rows: a variant's footprint and storeys),
+  // a local history museum in an old house to a natural history museum of three storeys by a city's centre.
+  museum:      { w: [14, 72], d: [11, 54], storeys: [1, 4], set: "city", planned: true, sizes: {
+    art:          { w: [60, 68], d: [44, 50], storeys: [3, 4] }, // huge: galleries round an atrium or a sculpture court
+    natural:      { w: [64, 72], d: [48, 54], storeys: [3, 3] }, // huge: the dinosaur hall and its halls
+    science:      { w: [40, 48], d: [30, 36], storeys: [2, 2] },
+    military:     { w: [40, 48], d: [30, 36], storeys: [1, 2] },
+    localhist:    { w: [14, 17], d: [11, 13], storeys: [2, 2] }, // small: an old house
+    county:       { w: [16, 20], d: [14, 17], storeys: [1, 1] },
+    children:     { w: [26, 32], d: [20, 24], storeys: [1, 2] },
+    aviation:     { w: [50, 58], d: [38, 44], storeys: [1, 1] }, // a hangar's height, one floor
+    car:          { w: [32, 40], d: [24, 30], storeys: [1, 2] },
+    railway:      { w: [40, 48], d: [22, 28], storeys: [1, 1] },
+    maritime:     { w: [30, 36], d: [22, 26], storeys: [2, 2] },
+    presidential: { w: [44, 52], d: [34, 40], storeys: [2, 3] },
+    wax:          { w: [20, 26], d: [16, 20], storeys: [1, 2] },
+  } },
   // #56's gyms and bowling alleys: thirteen variants each drawn at their real size (reclayout.js GYM.SIZE, BOWL.SIZE: a
   // bowling alley's width is its lanes', laneWidth), a variant's row by its id (tools/rectest.js holds them equal).
   gym:         { w: [10, 48], d: [10, 40], storeys: [1, 2], set: "town", planned: true,
@@ -98,6 +115,17 @@ export const REAL_SIZE = {
   regionalmall: { set: "city", own: true }, stripmall: { set: "town", own: true }, outlet: { set: "town", own: true },
   cinema: { set: "city", own: true }, arcade: { set: "city", own: true }, mallservices: { set: "city", own: true },
   mallrestrooms: { set: "city", own: true }, vacantunit: { set: "city", own: true },
+  // #60's amusement parks (amusement.js): the whole park on one map, a row a variant: its grounds' width and depth in
+  // metres (the map's, within battlesize.js MAP_CAP.amusement) and the storeys of its tallest buildings
+  amusement: { set: "city", planned: true, w: [120, 500], d: [110, 500], storeys: [1, 2], sizes: {
+    themepark: { w: [440, 500], d: [420, 500], storeys: [2, 2] }, regional: { w: [300, 360], d: [280, 340], storeys: [1, 2] },
+    fairground: { w: [260, 320], d: [220, 280], storeys: [1, 1] }, pier: { w: [110, 130], d: [320, 400], storeys: [1, 2] },
+    waterpark: { w: [240, 300], d: [220, 280], storeys: [1, 2] }, carnival: { w: [150, 180], d: [130, 160], storeys: [1, 1] },
+    funcentre: { w: [150, 180], d: [140, 170], storeys: [1, 1] }, family: { w: [190, 230], d: [170, 210], storeys: [1, 1] },
+    abandoned: { w: [300, 360], d: [260, 320], storeys: [1, 2] }, funfair: { w: [220, 260], d: [180, 220], storeys: [1, 1] },
+    lights: { w: [220, 280], d: [200, 260], storeys: [1, 1] }, trampoline: { w: [120, 140], d: [110, 130], storeys: [1, 2] },
+    western: { w: [260, 320], d: [240, 300], storeys: [1, 2] },
+  } },
   // Institutions
   clinic:      { w: [15, 25], d: [12, 20], storeys: [1, 2], set: "town" },
   infirmary:   { w: [15, 25], d: [12, 20], storeys: [1, 2], set: "rural" },

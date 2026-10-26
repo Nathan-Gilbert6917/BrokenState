@@ -27,6 +27,7 @@
 // ROWS: the new kinds' rows in the find tables, by table (each module merges its own: loot.js SITE_FINDS …).
 
 import { OFFICE_KINDS, OFFICE_AREAS, OFFICE_W, OFFICE_FIRMS, OFFICE_ROWS } from "./data-offices.js"; // the office buildings of every kind, with their firms (issue #27)
+import { PARK_KINDS, PARK_AREA_DEFS } from "./data-parks.js"; // amusement parks, fairgrounds and water parks (issue #60): pure data too
 import { TOWER_AREAS } from "./data-radiotower.js"; // a radio tower compound's rooms (issue #54)
 
 /** @typedef {{ wall: string, trim: string, sign: string, text: string, accent: string, roof?: string, style: number }} Look */
@@ -34,6 +35,7 @@ import { TOWER_AREAS } from "./data-radiotower.js"; // a radio tower compound's 
 /** @typedef {{ id: string, name: string, w: { city: number, suburb: number, town: number, scenic?: number }, look: Look, plan?: Plan, eat?: { cuisine: string, format: string, size: string, brew?: boolean, truck?: boolean } }} Franchise */
 
 import { VARIANTS } from "./data-eateries.js"; // the restaurant variants (issue #33): pure data too
+import { MUSEUM_AREAS } from "./data-museums.js"; // a museum's raid rooms (issue #58): pure data too
 
 const G = (city, suburb, town) => ({ city, suburb, town });
 const L = (wall, trim, sign, text, accent, style = 0, roof = undefined) => ({ wall, trim, sign, text, accent, style, ...(roof ? { roof } : {}) });
@@ -165,6 +167,7 @@ export const NEW_KINDS = {
     areas: ["lanes", "bowlbar", "shoecounter", "pinsetter", "kitchen"], size: 1, storeys: [1, 2],
   },
   ...OFFICE_KINDS, // the office buildings (data-offices.js)
+  ...PARK_KINDS, // the amusement parks (data-parks.js, issue #60)
 };
 
 // ---------- their raid rooms (combat.js AREAS; tags: loot.js AREA_TAGS) ----------
@@ -263,7 +266,9 @@ export const AREA_DEFS = {
   proshop: { tags: ["sport", "shop", "travel"], def: { name: "Pro shop", boxes: ["displaycase", "shelf", "counter"],
     loot: { scrap: [0.4, 1, 3], water: [0.15, 1, 1] }, gear: [["slingbag", 0.05], ["duffle", 0.06], ["backpack", 0.03], ["kneeguards", 0.02]] } },
   ...OFFICE_AREAS,
+  ...PARK_AREA_DEFS, // a park's rooms (data-parks.js, issue #60)
   ...TOWER_AREAS, // radio towers (issue #54, data-radiotower.js)
+  ...MUSEUM_AREAS, // a museum's galleries, gift shop, café, labs, stores, dock and security (issue #58, museumlayout.js)
 };
 
 // ---------- where each stands (shops.js) ----------

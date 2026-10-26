@@ -128,6 +128,7 @@ export const LOOT_SENSE = {
   deptstore:      S({ clothing: 0.6, gadgets: 0.3, food: 0.9 }, ARMY),
   bank:           S({ valuables: 0.8, gadgets: 0.5 }, ARMY, { note: "a revolver in a safe-deposit box (the vault)" }),
   library:        S({ books: 0.9 }, NO_GUNS),
+  museum:         S({ valuables: 0.75, food: 0.9, treats: 0.8, tools: 0.75, books: 0.65 }, [...ARMY, "ammo", "gunmods"], { note: "a military museum's arms vault holds a working antique now and then (its locked cases: locks.js relic); its galleries the odd helmet" }),
   gym:            S({ drink: 0.9, food: 0.8, medgear: 0.3, clothing: 0.4 }, NO_GUNS, { note: "issue #56: water, protein and bars at the desk and the smoothie bar, first aid, gym bags in the lockers" }),
   bowling:        S({ drink: 0.9, food: 0.9, liquor: 0.3, tools: 0.6, parts: 0.8 }, [...ARMY, "armour"], { note: "issue #56: the bar's beer and liquor (a small-town alley's lunch counter has none), the snack counter, the pinsetter room's tools and parts" }),
   // Medical.
@@ -197,6 +198,7 @@ export const LOOT_SENSE = {
   regionalmall:   S({ clothing: 0.95, food: 0.95, gadgets: 0.95 }),
   stripmall:      S({ clothing: 0.9, food: 0.9 }),
   outlet:         S({ clothing: 0.9, food: 0.9 }),
+  amusement:      S({ food: 0.9, drink: 0.9, treats: 0.8, drugs: 0.6, medgear: 0.4, tools: 0.5, parts: 0.8, fuel: 0.8 }, NO_GUNS, { note: "issue #60: a park's snacks and prizes, the first-aid station's, the maintenance shop's tools and parts, the fuel for the generators and the karts; no guns anywhere on it" }),
   arcade:         S({ parts: 0.8, food: 0.5 }, NO_GUNS),
   mallservices:   S({ drugs: 0.5, gadgets: 0.5 }, ["explosive"], { note: "mall security's gun rack" }),
   mallrestrooms:  S({ drink: 0.25, food: 0.25 }, NO_GUNS),
