@@ -269,6 +269,10 @@ export const REAL_SIZE = {
     xmas: { w: [10, 12], d: [6, 7] }, market: { w: [20, 26], d: [9, 11] }, egg: { w: [8, 10], d: [6, 7] }, cider: { w: [12, 14], d: [9, 10] }, berry: { w: [9, 11], d: [8, 9] },
     flower: { w: [12, 14], d: [8, 9] }, maple: { w: [11, 13], d: [8, 9] }, creamery: { w: [12, 15], d: [10, 11] },
   } },
+  // A farm and a ranch (farmstead.js): one map of many buildings; their rows are their farmhouse's (BUILDINGS make: the
+  // hint, the archetype tests), each building on the map its own type's row.
+  farm:  { w: [12, 18], d: [10, 14], storeys: [1, 2], set: "rural" },
+  ranch: { w: [12, 18], d: [10, 14], storeys: [1, 2], set: "rural" },
   farmbldg: { w: [9, 44], d: [7, 24], storeys: [1, 1], set: "rural", planned: true, sizes: {
     milkhouse: { w: [9, 11], d: [7, 8] }, greenhouse: { w: [22, 30], d: [9, 11] }, packshed: { w: [22, 28], d: [14, 17] }, coldstore: { w: [18, 22], d: [13, 15] }, winery: { w: [22, 28], d: [16, 19] },
     bunkhouse: { w: [15, 18], d: [9, 11] }, arena: { w: [36, 44], d: [20, 24] }, stable: { w: [24, 30], d: [13, 15] }, sugarhouse: { w: [10, 12], d: [8, 9] }, processing: { w: [14, 16], d: [10, 12] },
