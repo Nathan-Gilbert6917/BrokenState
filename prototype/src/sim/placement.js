@@ -24,7 +24,7 @@ import { LOCATIONS } from "./data.js";
 import { hash01 } from "./skills.js";
 import { useSizeClassOf } from "./variantpick.js"; // the shared picker (#41): its plans' size classes by sizeClassOf
 import { settingAt } from "./settings.js"; // the six settings (issue #40): this module adds coast and scenic land
-import { legacyPlace, legacyShopsR2, legacyDc, legacySaw, legacyMines, legacyStadium } from "./worldcfg.js";
+import { legacyPlace, legacyShopsR2, legacyDc, legacySaw, legacyMines, legacyZoo, legacyStadium } from "./worldcfg.js";
 import { maxLevel } from "./citygrid.js";
 
 export { TILE_CLASSES, SIZE_CLASSES, PLACE };
@@ -125,7 +125,7 @@ export const standsOn = (state, key, tile) => placeMult(state, key, tileClass(st
 // The kinds placeExtra adds where the old pools had none: [kind, { class: chance a tile }]. A city centre's medical
 // centre (and the city blocks'), a town's county hospital, big-box store and high school, the country's clinic, chapel
 // and feed store, a farm stand by the road; museums (#58), the big ones by a city's heart; issue #55's country bakery and butcher; a sawmill in the forest and the hills (#53), now and then in a town;
-// issue #52's mines and quarries in the hills; issue #57's stadiums and arenas, the pro venues by a city's heart.
+// issue #52's mines and quarries in the hills; zoos (#59) and issue #57's stadiums and arenas, the big ones by a city's heart.
 export const PLACE_EXTRA = [
   ["hospital", { centre: 0.06, city: 0.03, town: 0.0015 }],
   ["supermarket", { town: 0.006 }],
@@ -146,7 +146,12 @@ export const PLACE_EXTRA = [
   ["mine", { scenic: 0.004, rural: 0.0005 }],
   ["quarry", { scenic: 0.002, rural: 0.0008 }],
   ["sawmill", { scenic: 0.0025, rural: 0.0005, coast: 0.0015, highway: 0.0005, town: 0.006 }], // issue #53 (last: the kinds before keep their picks; none in a save from before them, legacySaw): forest and hills most, some by the water, the roads and in towns
-  ["stadium", { centre: 0.04, city: 0.012, suburb: 0.003, town: 0.003, highway: 0.0015, scenic: 0.0003, rural: 0.0006 }], // issue #57 (after the sawmill, last: the kinds before keep their picks; none in a save from before them, legacyStadium): a pro stadium by the centre, a town's ballpark, a rodeo out in the country
+  // Issue #59: a zoo (zoo.js), its variant by the placement table's size class: about one big zoo for every two or three
+  // cities by their centres, a few in the suburbs and the towns, a handful out in the country (a world of 17 cities
+  // has some 98 centre tiles, 370 suburb, 2,300 town, 2,500 highway, 2,400 coast, 10,000 rural and 18,000 scenic). After
+  // the sawmill: none in a save from before them (legacyZoo skips it), so an older world's picks stay as they were.
+  ["zoo", { centre: 0.1, city: 0.05, suburb: 0.008, town: 0.002, highway: 0.001, coast: 0.0008, scenic: 0.00015, rural: 0.0004 }],
+  ["stadium", { centre: 0.04, city: 0.012, suburb: 0.003, town: 0.003, highway: 0.0015, scenic: 0.0003, rural: 0.0006 }], // issue #57 (after the zoo, last: the kinds before keep their picks; none in a save from before them, legacyStadium): a pro stadium by the centre, a town's ballpark, a rodeo out in the country
 ];
 const R2_EXTRA = new Set(["bakery", "butcher"]); // issue #55's: none in a save from before them
 const MINE_EXTRA = new Set(["mine", "quarry"]); // issue #52's: none in a save from before them
@@ -169,6 +174,7 @@ export function placeExtraKind(state, t, list, max) {
     if (kind === "stadium" && legacyStadium(state)) continue; // issue #57: none in a save from before them
     if (kind === "sawmill" && legacySaw(state)) continue; // issue #53: none in a save from before them
     if (MINE_EXTRA.has(/** @type {string} */ (kind)) && legacyMines(state)) continue;
+    if (kind === "zoo" && legacyZoo(state)) continue; // issue #59: none in a save from before them
     if (hash01(state.seed, "placepoi", t.id, kind) < p) return /** @type {string} */ (kind);
   }
   return null;

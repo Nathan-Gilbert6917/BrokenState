@@ -73,9 +73,10 @@ export const SCENES = {
     garage: 0.35, gasstation: 0.45, diner: 0.45,
     // a campus's buildings (issue #28: campuslayout.js; each rolls its own on a campus)
     dorm: 0.7, lecturehall: 0.55, sciencehall: 0.6, dininghall: 0.65, studentunion: 0.55, univlibrary: 0.5, athletics: 0.5, admin: 0.45, security: 0.6,
+    zoo: 0.95, // a zoo (issue #59): its scenes rolled over the whole site (zoolayout.js: empty cages, the keepers' last stand, an escaped enclosure)
   },
   COUNT: [0.35, 0.12],   // a second scene, a third (of a building with scenes)
-  COUNT_BY: { prison: [0.95, 0.75], jail: [0.6, 0.3] }, // a complex of many buildings (prison.js, issue #31): more of them
+  COUNT_BY: { prison: [0.95, 0.75], jail: [0.6, 0.3], zoo: [0.8, 0.5] }, // a complex of many buildings (prison.js, issue #31): more of them
   ALIVE: 0.3,            // an upper floor's barricaded room: nobody died there (floorfolk.js's survivors may hold it)
   DEAD: [3, 6],          // the dead an overrun survivor took with them
   STAND_DEAD: [2, 4],    // the dead on the stairs of a last stand (part of them on the floor below)
@@ -109,6 +110,7 @@ export const BY_KIND = {
   house: { barricade: 1.5, quiet: 1.5 }, apartments: { barricade: 2, stand: 1.5 }, motel: { barricade: 2 },
   supermarket: { choke: 1.5, overrun: 1.5 }, offices: { stand: 1.5, choke: 1.5 },
   prison: { opened: 2, lockdown: 2, guardstand: 2, takeover: 2, bus: 2, quiet: 0.5, barricade: 0.5 }, jail: { opened: 2, lockdown: 2, guardstand: 2, takeover: 2, quiet: 0.5 }, // prisonlayout.js's own come first (issue #31)
+  zoo: { emptycages: 2, keepersstand: 2, escaped: 2.5, quiet: 0.5 }, // zoolayout.js's own come first (issue #59)
 };
 // A scene of another module's (the special buildings' layouts): def { w, place(ctx, room?) → scene | null, kinds?, when?
 // (ctx → whether the map can have it: kept out of the weighted draw otherwise) }.

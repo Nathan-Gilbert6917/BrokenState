@@ -26,6 +26,7 @@
 //   (shops.js franchiseFor): poi.v, place.v, a site's by its tile.
 // ROWS: the new kinds' rows in the find tables, by table (each module merges its own: loot.js SITE_FINDS …).
 
+import { ZOO_AREAS } from "./data-zoo.js"; // a zoo's keepers' rooms, food prep, animal houses and gift shop (issue #59)
 import { OFFICE_KINDS, OFFICE_AREAS, OFFICE_W, OFFICE_FIRMS, OFFICE_ROWS } from "./data-offices.js"; // the office buildings of every kind, with their firms (issue #27)
 import { PARK_KINDS, PARK_AREA_DEFS } from "./data-parks.js"; // amusement parks, fairgrounds and water parks (issue #60): pure data too
 import { NEWSHOP_KINDS, NEWSHOP_AREAS, NEWSHOP_W, NEWSHOP_FRANCHISES, NEWSHOP_ROWS } from "./data-newshops.js"; // six more shops (issue #55): pure data too
@@ -233,6 +234,7 @@ export const AREA_DEFS = {
   ...TOWER_AREAS, // radio towers (issue #54, data-radiotower.js)
   ...MINE_AREAS, // a mine's workings below, its dry, its lamp room, an explosives magazine (issue #52, minelayout.js)
   ...MUSEUM_AREAS, // a museum's galleries, gift shop, café, labs, stores, dock and security (issue #58, museumlayout.js)
+  ...ZOO_AREAS, // a zoo's own rooms (issue #59, data-zoo.js)
   ...STADIUM_AREAS, // a venue's concessions, suites, team store, security, press box, groundskeeping (issue #57)
 };
 

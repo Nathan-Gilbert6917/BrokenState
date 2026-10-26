@@ -1902,6 +1902,22 @@ function paintFarmstand() {
   return p;
 }
 
+function paintZoo() {
+  const p = painter(18, 15);
+  // A zoo (sim/zoo.js, issue #59): the entrance arch over the gate with its sign, a fence either side, a giraffe's
+  // neck over the fence behind, a tree and the gravel path in.
+  pine(p, 16, 12, 8, "#4a7a3a");
+  p.rect(10, 1, 10, 6, "#c9973c"); p.rect(10, 0, 11, 1, "#c9973c"); p.set(11, 0, OUTLINE); // the giraffe's neck and head
+  for (const [x, y] of [[10, 3], [10, 5]]) p.set(x, y, "#7a5230");
+  p.rect(8, 6, 12, 8, "#c9973c"); p.set(9, 7, "#7a5230"); p.set(11, 7, "#7a5230");   // its back over the fence
+  p.rect(0, 9, 17, 9, WOOD_LIT); p.rect(0, 11, 17, 11, WOOD_LIT); for (let x = 0; x <= 17; x += 3) p.rect(x, 9, x, 13, WOOD); // the fence
+  p.rect(2, 3, 2, 13, BOARDS); p.rect(7, 3, 7, 13, BOARDS);                          // the arch's posts
+  p.rect(1, 2, 8, 4, CROP); p.rect(2, 3, 7, 3, GOLD);                                // the sign
+  p.rect(3, 9, 6, 13, shade(DIRT, 0.25));                                           // the gate open, the path through
+  p.rect(0, 14, 17, 14, shade(GRASS, -0.15)); p.rect(3, 14, 6, 14, shade(DIRT, 0.25));
+  return p;
+}
+
 function paintShed() {
   const p = painter(18, 15);
   // Small tin-roofed shed with a padlocked door, a wheelbarrow and a jerrycan beside it, a tree behind.
@@ -2740,6 +2756,7 @@ const POI_PAINT = {
   stripmall: paintMall, outlet: paintMall, // sim/mall.js (issue #30): the mall's own sprite for now
   amusement: paintAmusement, // sim/amusement.js (issue #60): a park, a fairground, a water park
   jail: paintPolice, // sim/pois.js jailExtra: a county jail, a station's look
+  zoo: paintZoo, // sim/zoo.js (issue #59): a zoo's entrance arch
   stadium: paintStadium, // sim/stadium.js (issue #57): every venue the bowl for now
   // The shops and services (sim/data-shops.js NEW_KINDS), each painted in its franchise's look.
   sportshop: paintSportShop, electronics: paintElectronics, radioshop: paintRadioShop, bookstore: paintBookstore, library: paintLibrary,
