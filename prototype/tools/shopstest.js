@@ -177,13 +177,14 @@ section("The city and town crawls: shops and services on the blocks, as franchis
         const blk = CC.genBlock(st, c, key);
         // The same block with no shops on the dice: the places before the shops, as the block's own dice make them.
         const c2 = { ...c, blocks: {} };
-        const saved = SHOP.CRAWL, savedH = HOTELS.CRAWL, savedM = CC.CRAWL.STRIPMALL;
+        const saved = SHOP.CRAWL, savedH = HOTELS.CRAWL, savedM = CC.CRAWL.STRIPMALL, savedMu = CC.CRAWL.MUSEUM;
         SHOP.CRAWL = { city: [], town: [] };
         HOTELS.CRAWL = { city: 0, town: 0, deep: 0, max: 0 }; // a hotel (issue #29, hotels.js) rolls after the shops: off too
         CC.CRAWL.STRIPMALL = { city: 0, town: 0 }; // a strip mall (issue #30, citycrawl.js) rolls after the hotel: off too
+        CC.CRAWL.MUSEUM = {}; // a museum (issue #58, citycrawl.js) rolls after the strip mall: off too
         const b2 = CC.genBlock(st, c2, key);
-        SHOP.CRAWL = saved; HOTELS.CRAWL = savedH; CC.CRAWL.STRIPMALL = savedM;
-        const shops = blk.places.slice(b2.places.length).filter((pl) => pl.key !== "hotel" && pl.key !== "stripmall");
+        SHOP.CRAWL = saved; HOTELS.CRAWL = savedH; CC.CRAWL.STRIPMALL = savedM; CC.CRAWL.MUSEUM = savedMu;
+        const shops = blk.places.slice(b2.places.length).filter((pl) => pl.key !== "hotel" && pl.key !== "stripmall" && pl.key !== "museum");
         extras += shops.length;
         for (const pl of shops) {
           byKind[type][pl.key] = (byKind[type][pl.key] || 0) + 1;
