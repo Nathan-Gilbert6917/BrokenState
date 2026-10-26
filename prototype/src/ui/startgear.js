@@ -223,8 +223,8 @@ export function fleetSection(state, ui) {
     const remove = `<button class="mini" data-action="fleet-remove" data-i="${i}"${ui.started ? " disabled" : ""}${tip(`Take this vehicle out of its slot (the slot stays, empty: add one to it again). ${car ? "The car is left behind; the dice are cast all the same. " : ""}The world is built again on the same seed`)}>✕ Remove</button>`;
     // Hardcore (the user's request 2026-10-25): a look at what the dice put in its back, and the dice again.
     const look = hasDice(state, i) ? `<button class="mini" data-action="fleet-view" data-i="${i}"${ui.started ? " disabled" : ""}${tip(`What is in its back: ${loadWords(V)}${rolled ? " (as the dice rolled it)" : ""}`)}>👁 Back</button>` : "";
-    const reroll = hasDice(state, i) ? `<button class="mini" data-action="fleet-reroll" data-i="${i}"${ui.started ? " disabled" : ""}${tip(`Roll this vehicle again: a new kind, its tank and condition, and what is in its back, by whose ${car ? "car" : "vehicle"} it is (who they were)${rolled && !chosen ? "" : ". A kind or back you set goes back to the dice"}. Nothing else changes: the crew, the map and the other vehicles stay as they are`)}>🎲 Reroll vehicle</button>` : "";
-    const rerollBack = hasDice(state, i) ? `<button class="mini" data-action="fleet-reroll-back" data-i="${i}"${ui.started ? " disabled" : ""}${tip(`Roll what is in its back again: new things and supplies, by whose ${car ? "car" : "vehicle"} it is (who they were). Its kind, tank and condition stay as they are${rolled ? "" : "; the back you set goes back to the dice"}`)}>🎲 Reroll back</button>` : "";
+    const reroll = hasDice(state, i) ? `<button class="mini" data-action="fleet-reroll" data-i="${i}"${ui.started ? " disabled" : ""}${tip(`Roll this vehicle again: a new kind, its tank and condition, by whose ${car ? "car" : "vehicle"} it is (who they were), and its back filled with up to ${START_FLEET.REROLL} points of things, supplies, materials and rounds${rolled && !chosen ? "" : ". A kind or back you set goes back to the dice"}. Nothing else changes: the crew, the map and the other vehicles stay as they are`)}>🎲 Reroll vehicle</button>` : "";
+    const rerollBack = hasDice(state, i) ? `<button class="mini" data-action="fleet-reroll-back" data-i="${i}"${ui.started ? " disabled" : ""}${tip(`Roll what is in its back again: up to ${START_FLEET.REROLL} points of new things, supplies, materials and rounds. Its kind, tank and condition stay as they are${rolled ? "" : "; the back you set goes back to the dice"}`)}>🎲 Reroll back</button>` : "";
     if (!free) { // Customize off: no point limit, points or gear buttons; the back as rolled (the dice's, said in a few words)
       const dice = hasDice(state, i) ? `<span class="small muted"${tip(`As rolled: ${loadWords(shownLoad(state, i))}. Tick Customize to set its back`)}>as rolled</span>` : "";
       return `<div class="row nrveh" style="gap:0.35rem;align-items:center;margin-top:0.25rem">
@@ -288,8 +288,8 @@ export function fleetViewer(state, ui) {
     <h3 style="margin-top:0.6rem">Things</h3><div>${things}</div>
     <h3 style="margin-top:0.6rem">Supplies</h3>${sups ? `<div class="kv small">${sups}</div>` : `<div class="small muted">No supplies.</div>`}
     <div class="row" style="margin-top:0.8rem;gap:0.4rem;justify-content:flex-end">
-      <button data-action="fleet-reroll-back" data-i="${i}"${tip(`Roll what is in its back again: new things and supplies; its kind, tank and condition stay${rolled ? "" : " (the back you set goes back to the dice)"}`)}>🎲 Reroll back</button>
-      <button data-action="fleet-reroll" data-i="${i}"${tip(`Roll this vehicle again: a new kind, its tank and condition, and what is in its back${rolled ? "" : " (the back you set goes back to the dice)"}. Nothing else changes`)}>🎲 Reroll vehicle</button>
+      <button data-action="fleet-reroll-back" data-i="${i}"${tip(`Roll what is in its back again: up to ${START_FLEET.REROLL} points of new things, supplies, materials and rounds; its kind, tank and condition stay${rolled ? "" : " (the back you set goes back to the dice)"}`)}>🎲 Reroll back</button>
+      <button data-action="fleet-reroll" data-i="${i}"${tip(`Roll this vehicle again: a new kind, its tank and condition, and up to ${START_FLEET.REROLL} points of new things, supplies, materials and rounds in its back${rolled ? "" : " (the back you set goes back to the dice)"}. Nothing else changes`)}>🎲 Reroll vehicle</button>
       ${freeEdit(ui) && !ui.ironman ? `<button data-action="fleet-edit" data-i="${i}"${tip("Put things and supplies in its back by hand, priced against its point limit")}>Edit…</button>` : ""}
       <button class="primary" data-action="fleet-view-close">Done</button>
     </div></div>`;
@@ -747,12 +747,13 @@ export const SG_ACTIONS = {
   "fleet-reroll": (state, ui, d) => {
     const i = Number(d.i), F = uiFleet(state, ui), live = fleetEntry(state, i);
     if (ui.started || !hasDice(state, i) || !F[i] || !live) return false;
-    F[i] = { ...F[i], roll: newRoll(), backRoll: null, load: null, type: null }; // the whole vehicle again: a kind picked goes back to the dice too (the user's request 2026-10-25)
-    Object.assign(live, { roll: F[i].roll, backRoll: null, load: null });
+    F[i] = { ...F[i], roll: newRoll(), backRoll: newRoll(), load: null, type: null }; // the whole vehicle again: a kind picked goes back to the dice too (the user's request 2026-10-25); its back filled up to START_FLEET.REROLL points (2026-10-26)
+    Object.assign(live, { roll: F[i].roll, backRoll: F[i].backRoll, load: null });
     return "fleet";
   },
   // 🎲 Reroll back (the user's request 2026-10-25: "ADD A BUTTON TO REROLL WHAT IS IN THE BACK PER VEHICLE"): new dice
-  // for the back alone (its slot's backRoll), the vehicle's kind, tank and owner as they were; a back set goes back to the dice.
+  // for the back alone (its slot's backRoll), the vehicle's kind, tank and owner as they were; a back set goes back to the
+  // dice. Rolled again, it is filled up to START_FLEET.REROLL points (the user's request 2026-10-26: hardcore-start.js rerolledBack).
   "fleet-reroll-back": (state, ui, d) => {
     const i = Number(d.i), F = uiFleet(state, ui), live = fleetEntry(state, i);
     if (ui.started || !hasDice(state, i) || !F[i] || !live) return false;

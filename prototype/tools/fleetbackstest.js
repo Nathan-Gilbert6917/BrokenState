@@ -15,7 +15,10 @@
 //      window lists the back; Reroll gives the slot new dice and the world again changes that back.
 // Usage: node tools/fleetbackstest.js
 import { createWorld } from "../src/sim/world.js";
-import { cleanFleet, fleetVehicle, fleetDriver, fleetName } from "../src/sim/startfleet.js";
+import { cleanFleet, fleetVehicle, fleetDriver, fleetName, fleetRoom, START_FLEET } from "../src/sim/startfleet.js";
+import { vehiclePoints } from "../src/sim/custompoints.js";
+import { trunkKg } from "../src/sim/startgear.js";
+import { ROUND_SUPPLIES } from "../src/sim/data-ammo.js";
 import { SEATS, VEHICLE_TYPES } from "../src/sim/vehicles.js";
 import { newRunScreen } from "../src/ui/newgame.js";
 import { SG_ACTIONS, SG_CHANGE, fleetViewer } from "../src/ui/startgear.js";
@@ -175,7 +178,7 @@ section("7. 🎲 Reroll back: the back alone");
   const st = HC(FLEET), ui = UI({ mode: "hardcore", fleet: cleanFleet(st.fleet.map((f) => ({ ...f, type: f.rolledType ? null : f.type })), "hardcore") }); // the screen's list: a slot a survivor
   ui.fleet[1].type = "van"; ui.fleet[1].roll = 77;
   check(SG_ACTIONS["fleet-reroll-back"](st, ui, { i: "1" }) === "fleet" && Number.isInteger(ui.fleet[1].backRoll) && ui.fleet[1].type === "van" && ui.fleet[1].roll === 77 && ui.fleet[1].load === null && st.fleet[1].backRoll === ui.fleet[1].backRoll, "the button: new dice for the back alone (the kind picked and the vehicle's dice kept)");
-  check(SG_ACTIONS["fleet-reroll"](st, ui, { i: "1" }) === "fleet" && ui.fleet[1].backRoll === null, "🎲 Reroll vehicle: a new vehicle, its back from its own dice again");
+  check(SG_ACTIONS["fleet-reroll"](st, ui, { i: "1" }) === "fleet" && Number.isInteger(ui.fleet[1].backRoll) && st.fleet[1].backRoll === ui.fleet[1].backRoll, "🎲 Reroll vehicle: a new vehicle, its back rolled again too (filled to its points, section 10)");
   const h = newRunScreen(st, UI({ mode: "hardcore" }));
   check((h.match(/data-action="fleet-reroll-back"/g) || []).length === 3 && /🎲 Reroll vehicle/.test(h) && /🎲 Reroll back/.test(h), "every row: 🎲 Reroll vehicle and 🎲 Reroll back");
   ui.fleetView = { i: 2 };
@@ -218,6 +221,41 @@ section("9. Fuel and condition rolled with each vehicle, shown on the screen");
   }
   const h1 = HC([{ type: null }], { startPeople: 3 }), h2 = HC([{ type: null }], { startPeople: 3 });
   check(fleetVehicle(h1, 0).condition === fleetVehicle(h2, 0).condition, "Hardcore's car as rolled: the same seed, the same tank and condition");
+}
+
+section("10. A back rolled again: filled up to 80 points");
+{
+  // The user's request 2026-10-26: "Set it to fill up to 80 points of materials, gear and ammo on a reroll".
+  const isRound = (k) => !!ROUND_SUPPLIES[k];
+  for (const [tag, mk, fleet, slots] of [
+    ["Hardcore", (fl) => HC(fl), FLEET, [0, 1, 2]],
+    ["Normal", (fl) => createWorld({ seed: 7, factionCount: 5, startPeople: 4, fleet: fl }), [{}, {}], [0, 1]],
+    ["Custom", (fl) => createWorld({ seed: 7, factionCount: 5, custom: { people: 4, groups: 3, hives: 3, cities: 1, towns: 6, military: 1 }, fleet: fl }), [{}, {}], [0, 1]],
+  ]) {
+    const pts = [], kinds = { things: 0, mats: 0, rounds: 0 };
+    let ok = true, same = true;
+    for (const i of slots) {
+      for (const r of [5150, 31337, 777, 90001, 4242]) {
+        const fl = fleet.map((f, j) => (j === i ? { ...f, backRoll: r } : f));
+        const st = mk(fl);
+        const back = tag === "Hardcore" && i === 0 ? owner(st).diceTrunk : st.fleet[i].diceTrunk;
+        const p = vehiclePoints(back);
+        pts.push(p);
+        if (p > START_FLEET.REROLL || trunkKg(back) > fleetRoom(st, i) + 1e-9) ok = false;
+        if (back.items.length) kinds.things++;
+        if (Object.keys(back.supplies).some((k) => !isRound(k))) kinds.mats++;
+        if (Object.keys(back.supplies).some(isRound)) kinds.rounds++;
+        const again = mk(fl);
+        if (J(back) !== J(tag === "Hardcore" && i === 0 ? owner(again).diceTrunk : again.fleet[i].diceTrunk)) same = false;
+      }
+    }
+    check(START_FLEET.REROLL === 80 && ok && pts.every((p) => p >= START_FLEET.REROLL - 8), `${tag}: each rerolled back near 80 points, never over, in its room (${pts.join(", ")})`);
+    check(kinds.things >= pts.length * 0.8 && kinds.mats >= pts.length * 0.8 && kinds.rounds >= pts.length * 0.3, `${tag}: things, supplies and materials, and rounds in them (${kinds.things}, ${kinds.mats}, ${kinds.rounds} of ${pts.length})`);
+    check(same, `${tag}: the same dice, the same back`);
+  }
+  const a = HC(FLEET), b = HC(FLEET.map((f, j) => (j === 1 ? { ...f, backRoll: 5150 } : f)));
+  const extra = b.fleet[1].diceTrunk.items.map((e) => (typeof e === "string" ? e : e.key));
+  check(extra.every((k) => team(b).cargo.gear.some((g) => g.key === k)) && a.survivors.map((s) => s.name).join() === b.survivors.map((s) => s.name).join(), "Hardcore: the rerolled back is the team's cargo, the world's dice untouched");
 }
 
 console.log(`\n${passes} passed, ${fails} failed`);
