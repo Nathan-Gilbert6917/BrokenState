@@ -22,7 +22,7 @@ import { inHollow } from "../src/sim/highground.js";
 import { SITE, siteBox, CLEAR, clearOf, siteLevel } from "../src/sim/basescatter.js";
 const clearOfFor = (q) => (clearOf(q, true, "clear") || { get: {} }).get;
 import { renderRight } from "../src/ui/ui.js";
-import { CS_ACTIONS, siteViewDue, sitePanel, siteHoverText, setupWords } from "../src/ui/campsite.js";
+import { CS_ACTIONS, siteViewDue, sitePanel, siteHoverText, setupWords, siteGenWhat } from "../src/ui/campsite.js";
 import { siteInfo, siteScore, bestSite, bestSiteOn, landFacts, pickWords, pickReasons, SITE_SCORE } from "../src/sim/siteinfo.js";
 
 const SEED = Number(process.argv[2] || 42);
@@ -103,9 +103,18 @@ const spot = [-20, 14];
   const s0 = siteSetup(st, p, tile);
   check(p.task && p.task.type === "pitch" && p.task.hours === s0.hours && s0.work === Math.round((CAMP.fireHours + s0.clear) * 10) / 10 && s0.hours === Math.max(0.25, Math.ceil((s0.work / s0.workers) * 4 - 1e-9) / 4), `the setup takes the camp fire (${CAMP.fireHours}) and the default spot's clearing (${s0.clear}) work-hours shared by ${s0.workers}: ${p.task && p.task.hours} hours`);
   check(pendingSite(st) === p, "the team asks where the camp goes");
-  // The isometric view of the tile's whole map (sim/basemap.js openSiteView; main.js tidyUi opens it).
+  // The isometric view of the tile's whole map (sim/basemap.js openSiteView; main.js tidyUi opens it), built under the
+  // "Generating map…" box (main.js passes ui/newgame.js generating as the wrap; the user's request 2026-10-26): the open
+  // waits for the box, asked again meanwhile nothing more is queued.
+  const held = [];
   globalThis.window = {};
-  try { siteViewDue(st, ui()); } finally { delete globalThis.window; }
+  try {
+    siteViewDue(st, ui(), (fn) => held.push(fn));
+    siteViewDue(st, ui(), (fn) => held.push(fn));
+    check(held.length === 1 && !st.combat, `the view's build waits for the box (${held.length} queued, nothing open yet)`);
+    held[0]();
+  } finally { delete globalThis.window; }
+  check(/^The camp's spot at .+: its tile's map, 500 × 500 cells$/.test(siteGenWhat(st)), `the box says what is built: ${siteGenWhat(st)}`);
   const b = st.combat, F = b && b.deployPlan && b.deployPlan.fort;
   check(!!b && !!b.site && b.site.partyId === p.id && b.w === BM.BASE_GRID && b.h === BM.BASE_GRID && !b.units.length && F, `the tile's whole map opens in the isometric view, nobody on it, the clock held (${b && b.w} × ${b && b.h})`);
   check(!st.bases.some((x) => x.name === "The camp's spot") && b.cells.some((c) => ["tree", "bush", "rock", "fence", "boulder", "stump", "log"].includes(c.k)), "its land on it; the stand-in camp gone from the books");

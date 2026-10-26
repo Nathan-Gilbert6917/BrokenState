@@ -932,10 +932,12 @@ export const LOOK_CHANGE_ACTIONS = {
 // with no box, then after() on the next task; behind a build still waiting for its frames it waits its turn as any other.
 let genPending = null; // the fns waiting for the box to paint, in order
 let genRunning = false; // a fn is running under the box
-export function generatingHtml(size) {
+// text (2026-10-26, a camp's spot: ui/campsite.js siteGenWhat): the line under the title in place of the world's size,
+// and no word on big maps.
+export function generatingHtml(size, text = "") {
   const n = size && size.w > 0 && size.h > 0 ? size.w * size.h : 0;
-  const what = n ? `${size.w} × ${size.h} hexes${size.label ? ` (${esc(size.label)})` : ""}, ${n.toLocaleString("en-US")} in all` : "";
-  return `<div class="box genbox" role="status" aria-live="polite"><div class="genspin" aria-hidden="true"></div><div class="genmain"><b>Generating map…</b>${what ? `<div class="small genwhat">${what}</div>` : ""}<div class="small muted">Big maps take a while (Huge: up to a minute).</div></div></div>`;
+  const what = text ? esc(text) : n ? `${size.w} × ${size.h} hexes${size.label ? ` (${esc(size.label)})` : ""}, ${n.toLocaleString("en-US")} in all` : "";
+  return `<div class="box genbox" role="status" aria-live="polite"><div class="genspin" aria-hidden="true"></div><div class="genmain"><b>Generating map…</b>${what ? `<div class="small genwhat">${what}</div>` : ""}${text ? "" : `<div class="small muted">Big maps take a while (Huge: up to a minute).</div>`}</div></div>`;
 }
 function genBox() {
   let el = document.getElementById("generating");
@@ -943,12 +945,12 @@ function genBox() {
   return el;
 }
 export const generatingUp = () => !!(genPending || genRunning);
-export function generating(fn, { size = null, after = null, quick = false } = {}) {
+export function generating(fn, { size = null, after = null, quick = false, text = "" } = {}) {
   if (typeof document === "undefined" || typeof requestAnimationFrame === "undefined") { fn(); return; }
   if (genRunning) { fn(); return; } // a build inside a build: the box is up already
   if (quick && !genPending) { fn(); if (after) setTimeout(after, 0); return; } // the map is kept: no box (after() on the next task: a redraw inside the change event that called it would swap the focused box's node mid-blur)
   const box = genBox();
-  box.innerHTML = generatingHtml(size);
+  box.innerHTML = generatingHtml(size, text);
   box.classList.remove("hidden");
   if (genPending) { genPending.push(fn); return; } // waits for the one on its way, then runs after it
   genPending = [fn];
