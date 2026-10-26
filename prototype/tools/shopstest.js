@@ -56,6 +56,7 @@ import { NEW_KINDS, AREA_DEFS, PLACE_W, FRANCHISES } from "../src/sim/data-shops
 import { rollShopShelves, rollShopSupplies } from "../src/sim/shopshelves.js";
 import { setPoiReveal, poiName } from "../src/sim/pois.js";
 import { poiPlace } from "../src/sim/poiraid.js";
+import { NEWSHOP_KEYS } from "../src/sim/data-newshops.js"; // issue #55's six: no older save holds one
 
 const seed = Number(process.argv[2] || 42);
 let fails = 0, passes = 0;
@@ -177,13 +178,14 @@ section("The city and town crawls: shops and services on the blocks, as franchis
         const blk = CC.genBlock(st, c, key);
         // The same block with no shops on the dice: the places before the shops, as the block's own dice make them.
         const c2 = { ...c, blocks: {} };
-        const saved = SHOP.CRAWL, savedH = HOTELS.CRAWL, savedM = CC.CRAWL.STRIPMALL;
+        const saved = SHOP.CRAWL, savedH = HOTELS.CRAWL, savedM = CC.CRAWL.STRIPMALL, savedMu = CC.CRAWL.MUSEUM;
         SHOP.CRAWL = { city: [], town: [] };
         HOTELS.CRAWL = { city: 0, town: 0, deep: 0, max: 0 }; // a hotel (issue #29, hotels.js) rolls after the shops: off too
         CC.CRAWL.STRIPMALL = { city: 0, town: 0 }; // a strip mall (issue #30, citycrawl.js) rolls after the hotel: off too
+        CC.CRAWL.MUSEUM = {}; // a museum (issue #58, citycrawl.js) rolls after the strip mall: off too
         const b2 = CC.genBlock(st, c2, key);
-        SHOP.CRAWL = saved; HOTELS.CRAWL = savedH; CC.CRAWL.STRIPMALL = savedM;
-        const shops = blk.places.slice(b2.places.length).filter((pl) => pl.key !== "hotel" && pl.key !== "stripmall");
+        SHOP.CRAWL = saved; HOTELS.CRAWL = savedH; CC.CRAWL.STRIPMALL = savedM; CC.CRAWL.MUSEUM = savedMu;
+        const shops = blk.places.slice(b2.places.length).filter((pl) => pl.key !== "hotel" && pl.key !== "stripmall" && pl.key !== "museum");
         extras += shops.length;
         for (const pl of shops) {
           byKind[type][pl.key] = (byKind[type][pl.key] || 0) + 1;
@@ -474,13 +476,16 @@ section("Laid out for their kind (shoplayout.js, issue #16)");
   // within ±10% per area"): by the area, a 100 cells of all its floors (tools/shopvarianttest.js holds them to today's
   // too); #22's corner store and grocery keep #22's footprints, by the building as before.
   const byArea = (k) => hasVariants(k) && !["corner", "grocery"].includes(k);
-  for (const key of KEYS.filter((k) => !["supermarket", "deptstore", "restaurant", "pizza", "diner", "bar", "warehouse", "factory", "hotel", "library"].includes(k))) { const B = tally(key, true), A = tally(key, false), area = byArea(key), b = area ? B.dens : B.v, a = area ? A.dens : A.v, r = a / b - 1; rows.push(`${key} ${(r * 100).toFixed(0)}%${area ? " a cell" : ""}`); if (Math.abs(r) > 0.1) off.push(`${key} ${a.toFixed(0)} against ${b.toFixed(0)}${area ? " a 100 cells" : ""}`); }
+  // Issue #55's six shops never had an old layout either (no older save holds one: buildingmaps.js NEW_KEYS): their loot by
+  // the area in tools/shopvarianttest.js (TODAY) and tools/lootsensetest.js (BASELINE).
+  for (const key of KEYS.filter((k) => !["supermarket", "deptstore", "restaurant", "pizza", "diner", "bar", "warehouse", "factory", "hotel", "library", ...NEWSHOP_KEYS].includes(k))) { const B = tally(key, true), A = tally(key, false), area = byArea(key), b = area ? B.dens : B.v, a = area ? A.dens : A.v, r = a / b - 1; rows.push(`${key} ${(r * 100).toFixed(0)}%${area ? " a cell" : ""}`); if (Math.abs(r) > 0.1) off.push(`${key} ${a.toFixed(0)} against ${b.toFixed(0)}${area ? " a 100 cells" : ""}`); }
   check(!off.length, `every kind holds what it did within ±10% (200 seeds each: ${off.join("; ") || rows.join(", ")})`);
   // An older save: furnished the old way (none of the new pieces, no style's marks).
   const NEWK = new Set(["freezercase", "islandfreezer", "meatcase", "freezershelf", "producebin", "breadrack", "selfcheckout", "cartcorral", "baler", "aislesign", "range", "fryer", "pizzaoven", "coldshelf", "jukebox", "pooltable", "clothesrack", "gunrack", "tank", "pottingbench", "palletrack", "tirerack", "compressor", "carlift", "machine", "forklift", "saddlerack", "cubicle", "whiteboard", "watercooler", "secdesk", "keyrack", "icemachine", "teller", "deposit", "atm", "stanchion", "checkout", "displaycase", "coldcase", "barcounter", "barstool", "desk", "filing", "bookshelf"]);
   let newer = 0;
   // (a hotel has no older save's plan: buildingmaps.js NEW_KEYS lays it out new in an older save, issue #29)
-  for (const key of KEYS.filter((k) => k !== "hotel")) for (let s = 0; s < 3; s++) { const m = make(key, s, true, true); for (const F of m.floors || [{ cells: m.cells }]) for (const c of F.cells) if (NEWK.has(c.k)) newer++; if (m.rooms.some((a) => /Walk-in cold|ATM lobby|Safe-deposit|Pharmacy counter|Greenhouse/.test(a.name) && !/^Walk-in$/.test(a.name))) newer++; }
+  // (issue #55's six shops likewise: buildingmaps.js NEW_KEYS)
+  for (const key of KEYS.filter((k) => k !== "hotel" && !NEWSHOP_KEYS.includes(k))) for (let s = 0; s < 3; s++) { const m = make(key, s, true, true); for (const F of m.floors || [{ cells: m.cells }]) for (const c of F.cells) if (NEWK.has(c.k)) newer++; if (m.rooms.some((a) => /Walk-in cold|ATM lobby|Safe-deposit|Pharmacy counter|Greenhouse/.test(a.name) && !/^Walk-in$/.test(a.name))) newer++; }
   check(!newer, `an older save's shops are furnished and planned the old way (${newer} new pieces or rooms)`);
   // Their signs of survival (interiorscenes.js registerScene): a motel room held, a stockroom shelter, a counter stand,
   // a walk-in hiding place; only on a map laid out by these styles.

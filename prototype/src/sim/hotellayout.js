@@ -15,7 +15,8 @@
 //             shop, the kitchen and its walk-in, the luggage room, the restrooms, the manager's office, the staff
 //             lockers, the loading bay when 48 wide; the conference floor above (conference rooms, the business centre,
 //             the gym, a ballroom when 50 wide, the laundry, the maintenance shop); guest floors over it.
-//   resort    64–90 × 21–23, 2–4 storeys (a long block: #23's L and U wings are not on dev yet): guest wings either
+//   resort    64–90 × 21–23, 2–4 storeys (a long block; since #50 a new save's family, golf and beach resorts stand in a
+//             U, an E and a crescent: THE SHAPES below): guest wings either
 //             side of the core on the ground floor (the grand lobby, the restaurant, the bar, the gift shop; the wings'
 //             housekeeping closet and ice nook at their ends), behind it
 //             the ballroom, the spa, the gym, the kitchen; the back of house upstairs; the pool deck (an empty pool),
@@ -66,6 +67,7 @@ import { HOME_STYLES } from "./roomlayout.js";
 import { mapCap } from "./battlesize.js";
 import { REAL_SIZE } from "./data-buildingsize.js"; // the sizes (issue #24 took over HOTEL.SIZE)
 import { hotelVariantById, hotelVariantFor, CLASSIC } from "./data-hotels.js"; // a dozen variants a kind (issue #38)
+import { shapeOf } from "./buildingmaps.js"; // #23's footprints: a shaped variant's parts (issue #50; called only when a plan is laid out)
 
 export const HOTEL = {
   KINDS: ["inn", "business", "resort", "tower"],
@@ -144,7 +146,8 @@ const clampN = (v, a, b) => Math.max(a, Math.min(b, v));
  * A hotel's spec (buildingmaps.js assemble). o: { plan (the franchise's: planOf), vid (one of data-hotels.js
  * HOTEL_VARIANTS: the variant, pinned), maxStoreys, legacy, storeyBonus }. The variant: o.vid; else the chain's kind's
  * classic plan (#29's: a hotel made before the variants); a hotel with no chain and no variant, a kind and a variant by
- * the dice. A caller with only a kind (#30's mall) passes { plan: { hotel: kind } } or { vid }.
+ * the dice. A caller with only a kind (#30's mall) passes { plan: { hotel: kind } } or { vid }. o.shapes (a save since #23's
+ * footprints): a shaped variant's plan (SHAPES, issue #50), its box by its REAL_SIZE sizes row; else the rectangle.
  * @param {any} rng @param {any} [o]
  */
 export function hotelSpec(rng, o = {}) {
@@ -153,17 +156,18 @@ export function hotelSpec(rng, o = {}) {
   const kind = pinned ? pinned.kind : HOTEL.KINDS.includes(plan.hotel) ? plan.hotel : pickKind(rng);
   const v = pinned || (HOTEL.KINDS.includes(plan.hotel) ? hotelVariantById(CLASSIC[kind]) : hotelVariantById(hotelVariantFor(kind, null, null, rng.next())));
   const S0 = HOTEL.SIZE[kind], vs = (v && v.size) || {};
-  const S = { w: vs.w || S0.w, d: vs.d || S0.d, storeys: vs.storeys || S0.storeys };
+  const shaped = !!(o.shapes && !o.legacy && SHAPES[v.id]), SR = shaped ? REAL_SIZE[`hotel${kind}`].sizes[v.id] : null; // a new save's shaped variant (issue #50): its box by its sizes row
+  const S = SR ? { w: SR.w, d: SR.d, storeys: SR.storeys || vs.storeys || S0.storeys } : { w: vs.w || S0.w, d: vs.d || S0.d, storeys: vs.storeys || S0.storeys };
   const maxS = o.maxStoreys || 8;
   const bw = pick(rng, S.w), bh = pick(rng, S.d);
   const fl = plan.fl || "carpet", wallc = plan.look ? plan.look.wall : undefined;
   const C = { rng, kind, bw, bh, S, maxS, fl, wallc, o, R: rooms(kind, fl, wallc) };
   /** @type {any} */
-  const spec = (PLANS[v.id] || PLANS[CLASSIC[kind]])(C);
-  if (v.boxK) spec.boxScale = v.boxK; // its loot a floor cell near its kind's (tools/hotelvarianttest.js)
+  const spec = (shaped ? SHAPES[v.id] : PLANS[v.id] || PLANS[CLASSIC[kind]])(C);
+  if (v.boxK || spec.boxScale) spec.boxScale = (v.boxK || 1) * (spec.boxScale || 1); // its loot a floor cell near its kind's (tools/hotelvarianttest.js); a shape's own share (its halls and lift lobbies hold little: tools/hotelshapetest.js)
   spec.vid = v.id; spec.vname = v.name; // the plan's name (the map, the raid's opening line, the POI)
   const G = { ...KIND_GROUNDS[kind], ...(spec.grounds || {}) };
-  spec.margins = groundsFor(kind, bw, bh);
+  spec.margins = groundsFor(kind, spec.bw, spec.bh); // a shape's: its bounding box
   spec.yard = (Y) => dressGrounds(Y, kind, G);
   return spec;
 }
@@ -704,6 +708,245 @@ const PLANS = {
   },
 };
 
+// ---------- the shapes (issue #50, the user's request 2026-10-26: "Hotel shape variants") ----------
+// A new save's hotel of eight of the variants (o.shapes: buildingmaps.js makeSpec, worldcfg.js legacyShapes) stands in
+// a footprint of its own: #23's shapeOf, a union of rectangles sharing their walls. An older save's keeps the rectangle
+// PLANS gives it, cell for cell. Each keeps its name and its rooms (some moved into its wings); the shape is the other
+// difference:
+//   biz-highway     L: a motor inn, the main block along the front and a wing of rooms back from one end, rooms on its
+//                   ground floor too;
+//   biz-conference  T: the grand ballroom a wing of one tall storey back from the middle, its kitchen and loading bay
+//                   at the wing's far end, the ballroom gallery where it meets the main block;
+//   res-family      U: two wings of rooms back from the ends, of different lengths, round a courtyard with the pool;
+//   res-golf        E: the wings at both ends and a shorter spine off the middle, the cart barn between two of them;
+//   res-beach       crescent: five blocks each stepped back from the last toward the ends, the pool decks behind;
+//   tow-podium      podium-and-tower: two storeys of shops along the street, the tower behind on one side;
+//   tow-twin        twin towers on a podium: the lobby's podium, two towers behind it, the sky bridge joining them at
+//                   the back on every floor round a light well (its garden passage's door onto it);
+//   tow-grand       courtyard block: a ring of four blocks round the Palm Court, its glass roof one storey up (a light
+//                   well above it).
+// The blocks: a corridor block DEEP deep (its front band, the corridor, its back band) along the front, or turned (tr:
+// a wing back from a block, its corridor down its middle). Where a wing meets a block, the block's band has a junction
+// across the wing (junction: the wing's corridor ends on its lift lobby, a stairwell beside it); a wing's far end has a
+// stairwell. So the stairs and the lifts stand at the wing ends and the junctions (spec.stairs.n: assemble picks up to
+// that many runs, each the farthest from the others).
+const DEEP = 2 * HOTEL.FRONT.big + 6, WIN = DEEP - 2; // 22 a block's depth (walls included), 20 a wing's inside across
+const tr = (node) => (!node || node.role ? node : { ...node, split: node.split === "x" ? "y" : "x", parts: node.parts.map(([s, c]) => [s, tr(c)]) });
+const LOUNGE = { role: "dayroom", name: "Guest lounge", type: "house", lay: "parlour", hub: false };
+const LOBBYJ = (name = "Lift lobby") => ({ role: "hall", name, lay: "liftlobby", fl: "carpet", nextTo: ["corridor"] }); // its door onto the wing's corridor
+const HALL = (name, fl = "carpet", more = {}) => ({ role: "hall", name, lay: "atrium", hub: true, label: true, fl, ...more });
+// A junction across a wing's inside (WIN wide, a band deep): a (8 wide: the ice nook and housekeeping on a guest floor,
+// a room of the ground floor's), the lift lobby on the wing's corridor (its 9th to 12th cells), a stairwell.
+const junction = (a) => ({ split: "x", parts: [[8, a || { split: "x", parts: [ICE(4), HK()] }], [4, LOBBYJ()], [6, { role: "stairwell", lay: "stairwell" }]] });
+const J = (at, a) => ({ at, w: WIN, node: junction(a) });
+// A band len long cut by pieces at fixed offsets (js: { at, w, node } in order; at: the piece's first cell inside the
+// band), the gaps filled by gap(i, len) (leaves; i counts every gap, an empty one too).
+function cutBand(len, js, gap) {
+  const out = [];
+  let at = 0, i = 0;
+  const fill = (gl) => { const k = i++; if (gl < 1) return; const list = gap(k, gl); out.push([gl, { split: "x", parts: list && list.length ? list : [["*", LOUNGE]] }]); };
+  for (const j of js) { fill(j.at > at ? j.at - at - 1 : 0); out.push([j.w, j.node]); at = j.at + j.w + 1; }
+  fill(len - at);
+  out[out.length - 1] = ["*", out[out.length - 1][1]];
+  return out;
+}
+// A band of guest rooms (band's), their numbers running on from no.n (one counter a part and floor).
+function gb(C, len, head, tail, f, side, no, uw = HOTEL.UNIT.big, ro) {
+  const b = band(len, head, tail, uw, f, side, no.n, C.fl, ro);
+  no.n += b.rooms;
+  return b.parts;
+}
+// A wing's floor (len its inside length): rooms down both sides of its corridor, the ice nook and a stairwell at its far
+// end (a: its first side's ends, b: the other's).
+function wingFloor(C, f, len, n0, o = {}) {
+  const no = { n: n0 };
+  return tr(BIG(gb(C, len, o.aHead || [], o.aTail || [ICE(), SW], f, "front", no), gb(C, len, o.bHead || [], o.bTail || [HK()], f, "back", no)));
+}
+const ofShape = (C, kind, parts, n, more) => ({ ...bigOf(C), ...shapeOf(kind, parts), storeys: n, program: null, upper: null, ...more });
+
+/** The shaped plans by variant id (a new save's: hotelSpec with o.shapes). @type {Record<string, (C: any) => any>} */
+const SHAPES = {
+  "biz-highway"(C) { // L: the main block along the front, the guest wing back from one end
+    const { rng, R, bw: W, bh: H } = C, n = storeysOf(C), L = W - 2, left = rng.chance(0.5);
+    const wl = H - DEEP + 1, wx = left ? 0 : W - DEEP, js = (a) => [J(wx, a)];
+    const main = (f) => {
+      const no = { n: 1 };
+      if (!f) {
+        const front = [ICE(), ["*", R.lobbyOf("Lobby")], [6, R.breakfast("Waffle bar")], ["*", R.pool()], SW];
+        return BIG(left ? front : front.slice().reverse(), cutBand(L, js(R.luggage), () => [[5, R.gym], ["*", { ...R.kitchen, fry: false }], [3, R.walkin], [5, R.laundry], [4, R.maint]]));
+      }
+      return BIG(gb(C, L, left ? [] : [SW], left ? [SW] : [], f, "front", no), cutBand(L, js(), (i, gl) => gb(C, gl, [], [], f, "back", no)));
+    };
+    const wing = (f) => wingFloor(C, f, wl - 2, 40);
+    return ofShape(C, "L", [
+      { x: 0, y: wl - 1, w: W, h: DEEP, name: "Main block", main: true, program: main(0), upper: (g) => main(g) },
+      { x: wx, y: 0, w: DEEP, h: wl, name: "Guest wing", wing: true, program: wing(0), upper: (g) => wing(g) },
+    ], n, {
+      ground: "lot", stairs: { roles: ["stairwell"], n: 3, len: 3 },
+      exits: [{ side: left ? "right" : "left", roles: ["gym"], chance: 0.8, lock: 0.5, name: "Pool door" }, { side: "back", roles: ["kitchen", "pantry"], chance: 0.6, lock: 0.4 }, { side: "back", roles: ["corridor"], chance: 0.85, lock: 0.4, name: "Fire exit" }, ...fire(0.4)],
+      grounds: { yard: false, cars: [10, 16] },
+    });
+  },
+  "biz-conference"(C) { // T: the grand ballroom a wing of one tall storey back from the middle of the main block
+    const { rng, R, bw: W, bh: H } = C, n = storeysOf(C), L = W - 2;
+    const ww = rng.int(24, 30), wl = H - DEEP + 1, wx = rng.int(12, W - ww - 8);
+    const gallery = { at: wx, w: ww - 2, node: HALL("Ballroom gallery") };
+    const ground = BIG([SW, ["*", R.lobbyOf("Lobby")], [9, R.foyer("Pre-function foyer")], ["*", { ...R.ballroom, name: "Ballroom B" }], SW],
+      cutBand(L, [gallery], (i) => (i === 0 ? [LIFT, [4, R.luggage], ["*", R.restrooms]] : [["*", R.lecture("Breakout room D")], [5, R.lockers]])));
+    const wing = { split: "y", parts: [["*", { ...R.ballroom, name: "Grand ballroom" }], [7, { split: "x", parts: [["*", R.kitchen], [3, R.walkin], [6, R.loading]] }]] };
+    return ofShape(C, "T", [
+      { x: 0, y: wl - 1, w: W, h: DEEP, name: "Main block", main: true, program: ground,
+        upper: (f, r, ctx) => (f === 1 ? conferenceFloor(C, false) : f === 2 && !(ctx && ctx.top) ? BIG([SW, ["*", R.lecture("Breakout room A")], ["*", R.lecture("Breakout room B")], ["*", R.restaurant()], SW], [LIFT, [5, R.manager], ["*", R.lecture("Breakout room C")], [5, R.lockers], HK()]) : bizGuest(C, f, ctx)) },
+      { x: wx, y: 0, w: ww, h: wl, storeys: 1, tall: true, name: "Ballroom wing", wing: true, program: wing },
+    ], n, {
+      ground: "lot",
+      exits: [{ side: "back", roles: ["bays"], chance: 1, roller: true, width: 2, lock: 0.3, name: "Loading bay" }, { side: "front", roles: ["foyer", "dining"], chance: 1, width: 2, lock: 0.2, name: "Ballroom doors" }, ...fire(0.4)],
+    });
+  },
+  "res-family"(C) { // U: two guest wings back from the ends round the pool's courtyard, one shorter
+    const { rng, R, bw: W, bh: H } = C, n = storeysOf(C), L = W - 2, my = H - DEEP;
+    const short = rng.int(3, 8), sl = rng.chance(0.5), ya = sl ? short : 0, yb = sl ? 0 : short;
+    const js = (a, b) => [J(0, a), J(W - DEEP, b)];
+    const main = (f) => {
+      const no = { n: 1 };
+      if (!f) return BIG([HK(), [5, R.gift], ["*", R.lobbyOf("Lobby")], [8, R.kidsclub], ["*", R.restaurant()], ICE()],
+        cutBand(L, js(R.luggage, R.arcade("Games room")), () => [[6, R.gym], [3, R.restrooms], ["*", R.kitchen], [3, R.walkin], ["*", R.buffet()]]));
+      return BIG(gb(C, L, [HK()], [ICE()], f, "front", no), cutBand(L, js(), (i, gl) => gb(C, gl, f === 1 ? BOH(R) : [], [], f, "back", no)));
+    };
+    const wa = (f) => wingFloor(C, f, my - ya - 1, 40), wb = (f) => wingFloor(C, f, my - yb - 1, 70);
+    return ofShape(C, "U", [
+      { x: 0, y: my, w: W, h: DEEP, name: "Main block", main: true, program: main(0), upper: (g) => main(g) },
+      { x: 0, y: ya, w: DEEP, h: my - ya + 1, name: "West wing", wing: true, program: wa(0), upper: (g) => wa(g) },
+      { x: W - DEEP, y: yb, w: DEEP, h: my - yb + 1, name: "East wing", wing: true, program: wb(0), upper: (g) => wb(g) },
+    ], n, {
+      ground: "rural", stairs: { roles: ["stairwell"], n: 4, len: 3 },
+      exits: [{ side: "back", roles: ["dining", "gym", "cafeteria", "lockerroom", "corridor"], chance: 1, width: 2, lock: 0.2, name: "Doors to the pool deck" }, { side: "back", roles: ["kitchen", "pantry"], chance: 0.7, lock: 0.4 }, { side: "back", roles: ["corridor"], chance: 0.85, lock: 0.3, name: "Fire exit" }, ...fire(0.3)],
+      grounds: { pools: 1, court: { cx: Math.round(W / 2), y1: my - 1 }, courts: true, trees: 10 },
+    });
+  },
+  "res-golf"(C) { // E: guest wings at both ends and a shorter spine off the middle, the cart barn between two of them
+    const { rng, R, bw: W, bh: H } = C, n = storeysOf(C), L = W - 2, my = H - DEEP;
+    const sx = rng.int(32, W - 54), sy = rng.int(6, my - 12), ey = rng.int(0, 4), left = rng.chance(0.5);
+    const ya = left ? ey : 0, yb = left ? 0 : ey;
+    const js = (a, b, c) => [J(0, a), J(sx, b), J(W - DEEP, c)];
+    const main = (f) => {
+      const no = { n: 1 };
+      if (!f) return BIG([HK(), [5, R.shop("Pro shop")], ["*", R.lobbyOf("Clubhouse lobby")], ["*", R.bar("Clubhouse grill")], ["*", R.restaurant()], ICE()],
+        cutBand(L, js(R.bootroom("Golfers' locker room"), R.luggage, R.restrooms), (i) => (i === 1 ? [["*", R.cartbarn]] : [["*", R.kitchen], [3, R.walkin]])));
+      return BIG(gb(C, L, [HK()], [ICE()], f, "front", no), cutBand(L, js(), (i, gl) => (f === 1 ? (i === 1 ? [[5, R.laundry], ["*", R.lockers]] : [[4, R.manager], ["*", R.maint]]) : gb(C, gl, [], [], f, "back", no))));
+    };
+    const w = (y, n0) => (f) => wingFloor(C, f, my - y - 1, n0);
+    const wa = w(ya, 40), ws = w(sy, 60), wb = w(yb, 80);
+    return ofShape(C, "E", [
+      { x: 0, y: my, w: W, h: DEEP, name: "Clubhouse block", main: true, program: main(0), upper: (g) => main(g) },
+      { x: 0, y: ya, w: DEEP, h: my - ya + 1, name: "West wing", wing: true, program: wa(0), upper: (g) => wa(g) },
+      { x: sx, y: sy, w: DEEP, h: my - sy + 1, name: "Middle wing", wing: true, program: ws(0), upper: (g) => ws(g) },
+      { x: W - DEEP, y: yb, w: DEEP, h: my - yb + 1, name: "East wing", wing: true, program: wb(0), upper: (g) => wb(g) },
+    ], n, {
+      ground: "rural", stairs: { roles: ["stairwell"], n: 6, len: 3 },
+      exits: [{ side: "back", roles: ["bays"], chance: 1, roller: true, width: 2, lock: 0.3, name: "Cart barn doors" }, { side: "back", roles: ["dining", "lockerroom", "corridor"], chance: 1, width: 2, lock: 0.2, name: "Doors to the first tee" }, ...fire(0.3)],
+      grounds: { pools: 1, courts: false, trees: 22 },
+    });
+  },
+  "res-beach"(C) { // crescent: five blocks, each stepped back from the last toward the ends, their joints' lift lobbies
+    const { rng, R } = C, n = storeysOf(C);
+    const s1 = rng.int(2, 3), s2 = s1 + rng.int(2, 4); // the steps back: the terraces, the wings
+    const wc = rng.int(22, 24), we = rng.int(18, 20), wm = Math.max(16, Math.floor((C.bw + 4 - wc - 2 * we) / 2));
+    const xs = [0, we - 1, we + wm - 2, we + wm + wc - 3, we + 2 * wm + wc - 4], ws = [we, wm, wc, wm, we], ys = [0, s2 - s1, s2, s2 - s1, 0];
+    // A block of the crescent (k: 0–4, the centre 2): its corridor block, the lift lobby at its centre-facing end.
+    const block = (k, front, back) => { const cp = BIG(front, back); return k === 2 ? cp : { split: "x", parts: k < 2 ? [["*", cp], [4, LOBBYJ()]] : [[4, LOBBYJ()], ["*", cp]] }; };
+    const cpw = (k) => ws[k] - 2 - (k === 2 ? 0 : 5); // its corridor block's inside width
+    const plan = (k) => (f) => {
+      const no = { n: 1 + 20 * k }, len = cpw(k);
+      if (k === 2) return !f ? BIG([SW, ["*", R.lobbyOf("Open-air lobby")], [6, R.bar("Cabana bar")], SW], [LIFT, ["*", R.kitchen], [3, R.walkin], [3, R.restrooms]])
+        : f === 1 ? BIG(gb(C, len, [SW], [SW], f, "front", no), [LIFT, [5, R.laundry], [4, R.lockers], ["*", R.manager]])
+          : BIG(gb(C, len, [SW], [SW], f, "front", no), gb(C, len, [LIFT], [HK()], f, "back", no));
+      if (k === 1 && !f) return block(k, [[5, R.shop("Beach shop")], ["*", R.restaurant()]], [["*", R.buffet()]]);
+      if (k === 3 && !f) return block(k, [["*", R.spa]], [[6, R.gym], ["*", R.beachstore("Towel hut")]]);
+      if (k === 1 || k === 3) return block(k, gb(C, len, [], [ICE()], f, "front", no), gb(C, len, [HK()], k === 3 && f === 1 ? [[5, R.maint]] : [], f, "back", no));
+      return block(k, gb(C, len, k ? [] : [SW], k ? [SW] : [], f, "front", no), gb(C, len, k ? [] : [HK()], k ? [HK()] : [], f, "back", no));
+    };
+    const names = ["West wing", "West terrace", "Main block", "East terrace", "East wing"];
+    return ofShape(C, "crescent", xs.map((x, k) => { const p = plan(k); return { x, y: ys[k], w: ws[k], h: DEEP, name: names[k], ...(k === 2 ? { main: true } : { wing: true }), program: p(0), upper: (g) => p(g) }; }), n, {
+      ground: "rural", stairs: { roles: ["stairwell"], n: 4, len: 3 },
+      exits: [{ side: "back", roles: ["dining", "gym", "cafeteria", "lockerroom"], chance: 1, width: 2, lock: 0.2, name: "Doors to the pool deck" }, { side: "back", roles: ["kitchen", "pantry"], chance: 0.7, lock: 0.4 }, ...fire(0.3)],
+      grounds: { pools: 2, courts: false, trees: 10 }, boxScale: 1.45,
+    });
+  },
+  "tow-podium"(C) { // podium-and-tower: two storeys of shops along the street, the tower behind on one side
+    const { rng, R, bw: W, bh: H } = C, PD = 14, th = H - PD + 1, tw = rng.int(36, 40), tx = rng.int(0, W - tw);
+    const T = { ...C, bw: tw, bh: th };
+    const tower = towerPlan(T, BIG([SW, ["*", R.buffet("Food court")], LIFT, [5, R.luggage], SW], [["*", R.kitchen], [3, R.walkin], ["*", R.garage]]),
+      { 1: () => towerBoh(T, [["*", R.ballroom], ["*", R.conf()]]), 2: (f) => towerAmen(T, f) });
+    const podium = (row, hall) => ({ split: "y", parts: [[7, { split: "x", parts: row }], ["*", hall]] });
+    return ofShape(C, "podium", [
+      { x: tx, y: 0, w: tw, h: th, name: "Tower", main: true, program: tower.program, upper: tower.upper },
+      { x: 0, y: th - 1, w: W, h: PD, storeys: 2, name: "Podium",
+        program: podium([[5, R.shop("Boutique")], [5, R.shop("Newsagent")], ["*", R.lobbyOf("Hotel lobby", { lifts: true })], [5, R.chemist("Pharmacy")]], HALL("Shopping arcade", "tile")),
+        upper: () => podium([["*", R.restaurant()], [6, { ...R.barber, name: "Salon" }], ["*", R.shop("Podium boutique")]], HALL("Podium gallery")) },
+    ], tower.storeys, {
+      ground: "city", boxScale: 1.4,
+      exits: [{ side: "back", roles: ["bays"], chance: 1, roller: true, width: 2, lock: 0.25, name: "Garage ramp" }, { side: "left", roles: ["sales", "corridor"], chance: 1, lock: 0.2, name: "Arcade entrance" }, ...fire(0.5)],
+    });
+  },
+  "tow-twin"(C) { // twin towers on a podium, the sky bridge between them at the back on every floor
+    const { rng, R, bw: W, bh: H } = C, PD = 14, th = H - PD + 1, ta = rng.int(24, 26), tb = rng.int(24, 26), ax = rng.int(0, 1), bx = W - tb - rng.int(0, 1);
+    const A = { ...C, bw: ta, bh: th }, B = { ...C, bw: tb, bh: th }, east = LOBBYJ("East lift lobby"), ELIFT = [4, east];
+    const towerFloor = (T, lift, k) => (f, r, ctx) => {
+      if (ctx && (ctx.top || f === ctx.storeys - 1)) return towerTop(T, f, k ? "Sky lounge" : "Rooftop bar");
+      if (f === 1) return k ? BIG([SW, ["*", R.conf()], SW], [lift, ["*", R.bizc], HK()]) : BIG([SW, ["*", R.ballroom], SW], [lift, [5, R.manager], ["*", R.maint], HK()]);
+      if (f === 2) return BIG([SW, ["*", k ? R.spa : R.gym], SW], band(T.bw - 2, [lift], [HK()], HOTEL.UNIT.big, f, "back", 1 + 30 * k, C.fl).parts);
+      const fr = band(T.bw - 2, [SW, HK()], [ICE(), SW], HOTEL.UNIT.big, f, "front", 1 + 30 * k, C.fl);
+      return BIG(fr.parts, band(T.bw - 2, [lift], [], HOTEL.UNIT.big, f, "back", 1 + 30 * k + fr.rooms, C.fl).parts);
+    };
+    const n = storeysOf(C, C.o.storeyBonus || 0);
+    const podium = (row, hall) => ({ split: "y", parts: [[7, { split: "x", parts: row }], ["*", hall]] });
+    return ofShape(C, "twin", [
+      { x: 0, y: th - 1, w: W, h: PD, storeys: 2, name: "Podium", main: true,
+        program: podium([[5, R.gift], ["*", R.lobbyOf("Grand lobby", { lifts: true })], ["*", R.restaurant()]], HALL("Podium concourse", "tile")),
+        upper: () => podium([["*", R.conf("Conference room B")], [6, R.bizc]], HALL("Sky lounge")) },
+      { x: ax, y: 0, w: ta, h: th, name: "West tower", program: BIG([SW, LIFT, ["*", R.kitchen], [3, R.walkin], SW], [["*", R.garage], [5, R.laundry]]), upper: towerFloor(A, LIFT, 0) },
+      { x: bx, y: 0, w: tb, h: th, name: "East tower", program: BIG([SW, [4, R.luggage], [3, R.restrooms], ELIFT, SW], [["*", R.garage], [5, R.lockers]]), upper: towerFloor(B, ELIFT, 1) },
+      { x: ax + ta - 1, y: 0, w: bx - ax - ta + 2, h: 13, name: "Sky bridge", program: HALL("Garden passage", "tile", { ownDoor: "front" }), upper: () => HALL("Sky bridge", "tile") },
+    ], n, {
+      ground: "city", stairs: { roles: ["stairwell"], n: 4, len: 3 }, boxScale: 1.8,
+      exits: [{ side: "back", roles: ["bays"], chance: 1, roller: true, width: 2, lock: 0.25, name: "Garage ramp" }, { side: "back", roles: ["kitchen", "pantry"], chance: 0.6, lock: 0.4 }, ...fire(0.5)],
+    });
+  },
+  "tow-grand"(C) { // courtyard block: a ring of four blocks round the Palm Court (its glass roof one storey up)
+    const { R, bw: W, bh: H } = C, n = storeysOf(C, C.o.storeyBonus || 0), L = W - 2, wl = H - 2 * DEEP + 2;
+    const js = (a, b) => [J(0, a), J(W - DEEP, b)];
+    const top = (f, ctx) => ctx && (ctx.top || f === ctx.storeys - 1);
+    const units = (f, no) => (i, gl) => gb(C, gl, [], [], f, "back", no);
+    const front = (f, r, ctx) => {
+      const no = { n: 1 };
+      if (!f) return BIG([SW, ["*", R.lobbyOf("Marble lobby", { lifts: true, fl: "marble" })], [6, R.barber], ["*", R.library("Writing room")], SW], cutBand(L, js(R.luggage, R.restrooms), () => [["*", HALL("Promenade", "marble")]]));
+      if (top(f, ctx)) return BIG([SW, ["*", R.penthouse], ["*", R.bar("Sky lounge")], SW], cutBand(L, js(), units(f, no)));
+      if (f === 1) return BIG([SW, ["*", { ...R.ballroom, name: "Grand ballroom" }], SW], cutBand(L, js(), () => [["*", R.manager]]));
+      if (f === 2) return BIG([SW, ["*", { ...R.spa, name: "Turkish baths" }], ["*", R.arcade("Billiard room")], SW], cutBand(L, js(), units(f, no)));
+      return BIG(gb(C, L, [SW], [SW], f, "front", no), cutBand(L, js(), units(f, no)));
+    };
+    const back = (f) => { // its front band on the court, its back band on the street behind
+      const no = { n: 30 };
+      if (!f) return BIG(cutBand(L, js(R.lockers, R.laundry), () => [["*", R.dayroom("Ladies' lounge")]]), [SW, ["*", R.kitchen], [3, R.walkin], [5, R.maint], SW]);
+      return BIG(cutBand(L, js(), (i, gl) => gb(C, gl, [], [], f, "front", no)), gb(C, L, [SW], [SW], f, "back", no));
+    };
+    const side = (n0) => (f) => wingFloor(C, f, wl - 2, n0, { aTail: [ICE()] });
+    const sw = side(60), se = side(80);
+    return ofShape(C, "courtyard", [
+      { x: 0, y: H - DEEP, w: W, h: DEEP, name: "Front block", main: true, program: front(0), upper: front },
+      { x: 0, y: 0, w: W, h: DEEP, name: "Back block", program: back(0), upper: (g) => back(g) },
+      { x: 0, y: DEEP - 1, w: DEEP, h: wl, name: "West wing", wing: true, program: sw(0), upper: (g) => sw(g) },
+      { x: W - DEEP, y: DEEP - 1, w: DEEP, h: wl, name: "East wing", wing: true, program: se(0), upper: (g) => se(g) },
+      { x: DEEP - 1, y: DEEP - 1, w: W - 2 * DEEP + 2, h: wl, storeys: 1, tall: true, name: "Palm Court", program: { ...R.restaurant("Palm Court"), hub: true } },
+    ], n, {
+      ground: "city", stairs: { roles: ["stairwell"], n: 4, len: 3 }, boxScale: 1.5,
+      exits: [{ side: "back", roles: ["kitchen", "pantry"], chance: 0.9, lock: 0.4, name: "Tradesmen's entrance" }, ...fire(0.5)],
+      grounds: { yard: true, plaza: true, cars: [0, 0] },
+    });
+  },
+};
+
 // ---------- the grounds (assemble's spec.yard) ----------
 // Y: { rng, W, H, b: { x0, y0, x1, y1 } (the walls), front (the front door: x, y, ox, oy, cells), exits, cell(x, y),
 // outside(x, y) (the ground round the building), free(x, y) (outside, clear, off the zones and the paths), block(x, y,
@@ -735,7 +978,7 @@ function dressGrounds(Y, kind, G = KIND_GROUNDS[kind]) {
     for (let y = b.y1 + 2; y <= Math.min(H - 1, b.y1 + 4); y++) for (let x = b.x0; x <= b.x1; x++) if (Math.abs(x - fx) > 1) paint(x, y, "paving");
     for (let x = b.x0 + 2; x <= b.x1 - 2; x += 5) if (Math.abs(x - fx) > 2 && Y.free(x, b.y1 + 3)) Y.block(x, b.y1 + 3, "plant");
   }
-  if (G.pools === 1) poolDeck(Y);
+  if (G.pools === 1) poolDeck(Y, 0, G.court || null); // court: a U's pool in its courtyard (issue #50)
   else if (G.pools >= 2) { const q = Math.round((b.x1 - b.x0) / 4); poolDeck(Y, -q); poolDeck(Y, q); } // a pool deck behind each wing
   if (G.courts) courts(Y);
   if (G.corral) corral(Y);
@@ -754,10 +997,11 @@ function corral(Y) {
   Y.area({ name: "Corral", x0: x0 - 1, y0: y0 - 1, w: w + 2, h: h + 2 });
 }
 // The resort's pool deck behind the building: paving round an empty pool (its deep end), loungers, a fence with a gate.
-function poolDeck(Y, dx = 0) {
+// at: a courtyard's (the box's cx and its last row y1): the deck in it, a row clear before the building.
+function poolDeck(Y, dx = 0, at = null) {
   const { rng, b } = Y, [pw, ph] = HOTEL.POOL;
   const dw = pw + 6, dh = ph + 6;
-  const cx = Math.round((b.x0 + b.x1) / 2) + dx + rng.int(-6, 6), y1 = b.y0 - 3, y0 = y1 - dh + 1, x0 = cx - (dw >> 1), x1 = x0 + dw - 1;
+  const cx = at ? b.x0 + at.cx + rng.int(-3, 3) : Math.round((b.x0 + b.x1) / 2) + dx + rng.int(-6, 6), y1 = at ? b.y0 + at.y1 - 2 : b.y0 - 3, y0 = y1 - dh + 1, x0 = cx - (dw >> 1), x1 = x0 + dw - 1;
   if (y0 < 2 || x0 < 2 || x1 > Y.W - 3) return;
   for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (Y.outside(x, y)) Object.assign(Y.cell(x, y), { f: "paving" });
   const px0 = x0 + 3, py0 = y0 + 3;

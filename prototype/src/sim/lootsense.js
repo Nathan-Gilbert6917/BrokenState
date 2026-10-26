@@ -83,6 +83,7 @@ export function groupsOf(sup, keys, cat) {
 const ARMY = ["military", "explosive"];
 const NO_GUNS = ["guns", "ammo", "military", "explosive", "gunmods", "armour"];
 const S = (sig, never = [], o = {}) => ({ sig, never, ...o });
+const MINE_NEVER = ["guns", "ammo", "military", "gunmods", "armour"]; // issue #52: a mine or a quarry keeps explosives (its magazine), never a gun
 
 /** @type {Record<string, Sense>} */
 export const LOOT_SENSE = {
@@ -128,6 +129,16 @@ export const LOOT_SENSE = {
   deptstore:      S({ clothing: 0.6, gadgets: 0.3, food: 0.9 }, ARMY),
   bank:           S({ valuables: 0.8, gadgets: 0.5 }, ARMY, { note: "a revolver in a safe-deposit box (the vault)" }),
   library:        S({ books: 0.9 }, NO_GUNS),
+  museum:         S({ valuables: 0.75, food: 0.9, treats: 0.8, tools: 0.75, books: 0.65 }, [...ARMY, "ammo", "gunmods"], { note: "a military museum's arms vault holds a working antique now and then (its locked cases: locks.js relic); its galleries the odd helmet" }),
+  // Issue #55's six shops (data-newshops.js): a showroom's stock is its furniture (lifted, not looted); its warehouse's
+  // packing, straps and timber; a laundromat's soap, coins and vending snacks; a thrift store's clothes, books and
+  // collectibles; a bakery's flour, sugar and bread; a butcher's meat; a deli's cheese, cured meats and drinks.
+  furnstore:      S({ parts: 0.9, build: 0.85, tools: 0.5 }, NO_GUNS),
+  laundromat:     S({ drink: 0.75, food: 0.6, valuables: 0.3 }, NO_GUNS, { note: "food: the vending machine's snacks" }),
+  thrift:         S({ clothing: 0.8, books: 0.6, valuables: 0.5, sports: 0.25 }, NO_GUNS),
+  bakery:         S({ food: 0.95, drink: 0.75, treats: 0.3 }, NO_GUNS),
+  butcher:        S({ food: 0.95, drink: 0.55 }, NO_GUNS),
+  deli:           S({ food: 0.9, drink: 0.9, treats: 0.45 }, NO_GUNS),
   // Medical.
   vet:            S({ drugs: 0.9, vetmeds: 0.6, medgear: 0.7, surgical: 0.25 }, NO_GUNS),
   clinic:         S({ drugs: 0.9, medgear: 0.9, surgical: 0.4 }, NO_GUNS),
@@ -159,11 +170,15 @@ export const LOOT_SENSE = {
   terminal:       S({ food: 0.9, drink: 0.9, treats: 0.5, gadgets: 0.5 }, ARMY),
   warehouse:      S({ food: 0.8, tools: 0.8, parts: 0.8, build: 0.8 }, ARMY),
   factory:        S({ tools: 0.8, parts: 0.8, build: 0.6 }, NO_GUNS),
+  mine:           S({ tools: 0.8, parts: 0.8 }, MINE_NEVER, { note: "issue #52: ore and scrap in the cars, lamps and hard hats in the lamp room and the dry; explosives allowed (a magazine's locked boxes), never a gun" }),
+  quarry:         S({ tools: 0.8, parts: 0.8, fuel: 0.5 }, MINE_NEVER, { note: "issue #52: the shops' tools and parts, the lube room's fuel; explosives allowed (the magazine's locked boxes), never a gun", site: "quarry" }),
+  sawmill:        S({ build: 0.95, tools: 0.9, parts: 0.8, fuel: 0.8 }, NO_GUNS, { note: "issue #53: lumber in its sheds and stacks, saws in the filing room's blade racks" }),
   autoshop:       S({ tools: 0.9, parts: 0.9, fuel: 0.9 }, ARMY),
   garage:         S({ tools: 0.9, parts: 0.9, fuel: 0.7 }, ARMY),
   workshop:       S({ tools: 0.9, parts: 0.9, build: 0.7 }, ARMY),
   control:        S({ parts: 0.9, gadgets: 0.7 }, ARMY),
   radio:          S({ parts: 0.9, gadgets: 0.6 }, ["explosive"], { note: "the relay's guard post and its gun rack (milplans.js; #54 reworks radio towers)" }),
+  radiotower:     S({ parts: 0.95, fuel: 0.8, tools: 0.5, gadgets: 0.4 }, ARMY, { site: "radiotower", note: "the tower compound (#54, radiotowerlayout.js): electronics and radio parts, batteries and radios, the generator shed's fuel and tools, the cable store's cable (scrap); a military relay's compound has its guard post" }),
   // Offices and civic.
   offices:        S({ gadgets: 0.6, parts: 0.8, drink: 0.9 }, ARMY, { note: "a pistol in an executive's desk now and then" }),
   storefront:     S({ parts: 0.5, drink: 0.8 }, NO_GUNS),
@@ -194,6 +209,7 @@ export const LOOT_SENSE = {
   regionalmall:   S({ clothing: 0.95, food: 0.95, gadgets: 0.95 }),
   stripmall:      S({ clothing: 0.9, food: 0.9 }),
   outlet:         S({ clothing: 0.9, food: 0.9 }),
+  amusement:      S({ food: 0.9, drink: 0.9, treats: 0.8, drugs: 0.6, medgear: 0.4, tools: 0.5, parts: 0.8, fuel: 0.8 }, NO_GUNS, { note: "issue #60: a park's snacks and prizes, the first-aid station's, the maintenance shop's tools and parts, the fuel for the generators and the karts; no guns anywhere on it" }),
   arcade:         S({ parts: 0.8, food: 0.5 }, NO_GUNS),
   mallservices:   S({ drugs: 0.5, gadgets: 0.5 }, ["explosive"], { note: "mall security's gun rack" }),
   mallrestrooms:  S({ drink: 0.25, food: 0.25 }, NO_GUNS),
@@ -202,4 +218,6 @@ export const LOOT_SENSE = {
   golfcourse:     S({ sports: 0.95, liquor: 0.4, fuel: 0.85, food: 0.95 }, [...ARMY, "armour"], { note: "a ranger lodge's or a clubhouse's bar shotgun now and then; a cabin's hunting rifle (a lodge's rooms)" }),
   campground:     S({ camp: 0.75, food: 0.95, fuel: 0.6, medgear: 0.35 }, ARMY, { note: "a ranger's patrol rifle in the office, a hunting lodge's gun room at a hunters' camp" }),
   rvpark:         S({ food: 0.95, fuel: 0.9, drugs: 0.6, clothing: 0.5 }, ARMY, { note: "an RV is its owner's home (PERSONAL): a revolver or a shotgun in one now and then" }),
+  // Data centres (issue #51).
+  datacenter:     S({ parts: 0.95, gadgets: 0.8, tools: 0.9, fuel: 0.8 }, NO_GUNS, { note: "electronics, batteries, cable and fuel; a break room's lunch and no more" }),
 };

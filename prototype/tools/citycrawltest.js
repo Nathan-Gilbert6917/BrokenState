@@ -15,6 +15,7 @@ import { newItem, stow, ensureInv } from "../src/sim/inventory.js";
 import { BUILDINGS, buildingMap, buildingPlan } from "../src/sim/buildingmaps.js";
 import { setFloor, boxFinds, boxLoot, FLOOR_RICH } from "../src/sim/combat.js";
 import { raidLootShare } from "../src/sim/battlesize.js";
+import { campusLootShare } from "../src/sim/campus.js";
 import { liftDef, setTargets } from "../src/sim/furnicarry.js";
 import { sceneBias, SCENES } from "../src/sim/interiorscenes.js";
 import { boardCell } from "../src/sim/barricade.js";
@@ -927,10 +928,12 @@ const outAndBack = (state, p, c, pl) => { const b = state.combat; walkOut(state)
       // (combat.js boxFinds: the table's loot; the extras searchBox rolls on dice of their own are the map's alone).
       CC.enterPlace(state, p, pl.id, { map: true });
       const b = state.combat, R = b.raid, site = state.tiles[b.tileId].loc.type;
-      const reward = (R.reward ?? 1) * (R.big ? (R.natMap ? raidLootShare(R.natMap[0], R.natMap[1]) : raidLootShare(b.w, b.h)) : 1); // as searchBox: a building at real size by its plan's map (R.natMap, issue #24)
+      // As searchBox: a building at real size by its plan's map (R.natMap, issue #24); a civic site's container by its own
+      // building's (campusLootShare, issue #49); a civic plan at real scale × its containers' worth (box.lootK, issue #49).
+      const rewardOf = (box) => (R.reward ?? 1) * (R.big ? (R.plan && (R.plan.campus || R.plan.civicSite) ? campusLootShare(b, box) : R.natMap ? raidLootShare(R.natMap[0], R.natMap[1]) : raidLootShare(b.w, b.h)) : 1);
       for (let k = 0; k < REPS; k++) for (const box of R.containers.filter((x) => x.kind !== "body" && x.kind !== "ground" && !x.stash)) {
         const type = R.areas[box.area].type;
-        const got = boxFinds(state, state.rng, { def: boxLoot(type, box.kind), type, rich: R.richness * Math.min(FLOOR_RICH.cap, Math.pow(FLOOR_RICH.perFloor, box.f || 0)) * (box.rich || 1), scav: 3, reward, site, gunSite: b.setup.raid.gunSite, deep: R.deep, tileId: b.tileId, bid: box.id });
+        const got = boxFinds(state, state.rng, { def: boxLoot(type, box.kind), type, rich: R.richness * Math.min(FLOOR_RICH.cap, Math.pow(FLOOR_RICH.perFloor, box.f || 0)) * (box.rich || 1) * (box.lootK || 1), scav: 3, reward: rewardOf(box), site, gunSite: b.setup.raid.gunSite, deep: R.deep, tileId: b.tileId, bid: box.id });
         mapSup += Object.values(got.sup).reduce((x, v) => x + v, 0); mapBoxes++;
       }
       state.combat = null; c.inside = null;

@@ -54,6 +54,7 @@ import { poiAt, poiLedger, poiPool, poiTake, poiFull, poiBand, isSitePoi, addTil
 import { siteBuildings, SITES, BUILDINGS, streetHouses, outdoorHouses } from "./buildingmaps.js"; // outdoorHouses: outdoors.js (issue #61)
 import { mallUnits } from "./mall.js"; // a mall's buildings (issue #30)
 import { campusBuildings } from "./campus.js"; // a college campus's buildings (issue #28)
+import { parkBuildings } from "./amusement.js"; // an amusement park's buildings (issue #60)
 import { hash01 } from "./skills.js";
 import { Rng } from "./rng.js";
 import { localId } from "./world.js"; // dice keyed by a group's world-local id (two worlds in one process roll the same)
@@ -96,6 +97,7 @@ export function poiHouses(state, tile, i) {
   if (isSitePoi(t, i)) { const sb = siteBuildings(t, state); const o = sb && sb.single ? sb.options[0] : null; return o && BUILDINGS[o.key] && BUILDINGS[o.key].compound ? mallHouses(state, t.id, o) : o && BUILDINGS[o.key] && BUILDINGS[o.key].campus ? campusBuildings(state, t, o) : o && BUILDINGS[o.key] && BUILDINGS[o.key].outdoors ? outdoorHouses(state, t.id, o) : 1; } // state: an older save's campground keeps its street map (buildingmaps.js OUTDOOR_SITES)
   const entry = SITES[poi.kind], first = entry ? (Array.isArray(entry) ? entry : entry.list)[0] : null;
   const key = Array.isArray(first) ? first[0] : first;
+  if (key && BUILDINGS[key] && BUILDINGS[key].park) return parkHouses(state, t.id, { id: `poi${i}:${key}`, key, name: BUILDINGS[key].name });
   if (key && BUILDINGS[key] && BUILDINGS[key].compound) return mallHouses(state, t.id, { id: `poi${i}:${key}`, key, name: BUILDINGS[key].name });
   if (key && BUILDINGS[key] && BUILDINGS[key].outdoors) return outdoorHouses(state, t.id, { id: `poi${i}:${key}`, key, name: BUILDINGS[key].name }); // a golf course's or an RV park's POI (outdoors.js)
   return key && BUILDINGS[key] && BUILDINGS[key].street ? streetHouses(state, t.id, { id: `poi${i}:${key}`, key, ...(poi.lay ? { layout: poi.lay } : {}) }) : 1;
@@ -106,6 +108,14 @@ function mallHouses(state, tileId, option) {
   const k = `${state.seed}:${tileId}:${option.id}`;
   if (!mallCount.has(k)) { if (mallCount.size > 1024) mallCount.clear(); mallCount.set(k, mallUnits(state, tileId, option)); }
   return mallCount.get(k);
+}
+
+// A park's buildings likewise (amusement.js: its own dice), cached.
+const parkCount = new Map();
+function parkHouses(state, tileId, option) {
+  const k = `${state.seed}:${tileId}:${option.id}`;
+  if (!parkCount.has(k)) { if (parkCount.size > 1024) parkCount.clear(); parkCount.set(k, parkBuildings(state, tileId, option)); }
+  return parkCount.get(k);
 }
 
 /** How many maps POI i opens: a site with several buildings has each and its street; any other one. @param {Tile} t @param {number} i */

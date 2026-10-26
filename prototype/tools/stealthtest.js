@@ -8,6 +8,8 @@
 //   BS_QUICK=1 (npm run test:quick): the same checks with the soak cut to 20 days a style (and the two-run note to
 //   15 days): 90 autopilot days, not 440; the escape rates on 160 prisoners a setup (not 400) and the rescue raids
 //   over 150 days (not 300), their bands a little wider (see there).
+//   The escapes' and the rescue raids' Monte Carlo build each run's world on the original 64 × 42 map (prisonWorld
+//   small, issue #63): about 3 minutes quick and 9–10 full on 4 shared cores (2026-10-26; 11 and 17 before).
 import { darkSight } from "../src/sim/vision.js"; // night sight by the hour (2026-10-12)
 import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { foodIn } from "../src/sim/foods.js";
@@ -189,8 +191,13 @@ function clearMap(b) { for (const c of b.cells) c.k = "open"; b.losCache.fill(0)
 }
 
 // Helper: a hub with cells and n prisoners of one group.
-function prisonWorld(s, n = 2, cells = 1) {
-  const st = world(s);
+// small: on the original 64 × 42 State of Calder (a custom size), for the Monte Carlo runs below that build a world a
+// run (the escapes, the rescue raids' days). Since 1370d1c (the map sizes of 2026-10-24) a Normal 250 × 150 world
+// takes about 1.2 s to build and a 64 × 42 one about 0.1 s: the escapes' 3 × ESC_RUNS worlds were 6.5 of the quick
+// run's 11 minutes. Nothing they read is the map's: the cells, the guard, the rolls, a group's base set by hand.
+function prisonWorld(s, n = 2, cells = 1, small = false) {
+  const st = small ? createWorld({ seed: s, factionCount: 8, size: "custom", customW: 64, customH: 42 }) : world(s);
+  if (small) st.started = true;
   const h = hub(st);
   for (let i = 0; i < cells; i++) addBuilding(h, "cells");
   const f = st.factions.find((x) => x.alive && x.pop >= 10);
@@ -215,7 +222,7 @@ function prisonWorld(s, n = 2, cells = 1) {
   const rate = (setup) => {
     let esc = 0, days = 0;
     for (let i = 0; i < ESC_RUNS; i++) {
-      const w = prisonWorld(seed + 100 + i, 1, setup.cells);
+      const w = prisonWorld(seed + 100 + i, 1, setup.cells, true);
       for (const s of atBase(w.st, w.h.id)) s.role = "farm";
       if (setup.guard) { const gd = atBase(w.st, w.h.id)[0]; gd.role = "guard"; w.h.jailGuards = [gd.id]; } // named on the jail (prisoners.js jailGuards: a guard on the walls no longer watches the cells)
       for (let d = 0; d < 5 && w.st.prisoners.length; d++) { prisonersDaily(w.st); days++; }
@@ -329,6 +336,10 @@ function prisonWorld(s, n = 2, cells = 1) {
   const { st, h, f, list } = prisonWorld(seed + 9, 2);
   f.bases = [st.grid.within(h.tile, 10).find((t) => st.grid.distance(t, h.tile) >= 6)];
   f.pop = 20;
+  // Neutral to start with: since 1370d1c (the map sizes of 2026-10-24) the first group of 10 or more on this seed is
+  // a traders' group at goodwill 39, already Friendly (factions.js attitude: 20–69), so the friendly chance below was
+  // the same as this one.
+  f.goodwill = 0;
   const c = rescueChance(st, f, h);
   check(c > 0 && c <= PRISON.RESCUE.chance * 2 * PRISON.RESCUE.aggressive * PRISON.RESCUE.angry + 1e-9, `chance a day for 2 prisoners: ${pct(c)}`);
   f.goodwill = 40;
@@ -337,7 +348,7 @@ function prisonWorld(s, n = 2, cells = 1) {
   let started = 0;
   // Quick: 150 days, and the slack 4 raids (not 6): with about 5 expected, 6 either way would let none at all pass.
   const RESCUE_DAYS = QUICK ? 150 : 300;
-  for (let i = 0; i < RESCUE_DAYS; i++) { const w = prisonWorld(seed + 400 + i, 2); w.f.bases = [w.st.grid.within(w.h.tile, 10).find((t) => w.st.grid.distance(t, w.h.tile) >= 6)]; w.f.pop = 20; w.st.hour = 24; prisonersDaily(w.st); if ((w.st.rescues || []).length) started++; }
+  for (let i = 0; i < RESCUE_DAYS; i++) { const w = prisonWorld(seed + 400 + i, 2, 1, true); w.f.bases = [w.st.grid.within(w.h.tile, 10).find((t) => w.st.grid.distance(t, w.h.tile) >= 6)]; w.f.pop = 20; w.st.hour = 24; prisonersDaily(w.st); if ((w.st.rescues || []).length) started++; }
   const expect = RESCUE_DAYS * rescueChance(st, f, h);
   check(Math.abs(started - expect) <= Math.max(QUICK ? 4 : 6, expect * 0.6), `over ${RESCUE_DAYS} days with 2 prisoners: ${started} rescue raids (about ${expect.toFixed(1)} expected)`);
   // Man the walls against a weak rescue: beaten off; against a strong one: they free their people.
@@ -364,6 +375,10 @@ function prisonWorld(s, n = 2, cells = 1) {
   clearMap(b);
   const u = b.units.find((x) => x.side === "player");
   const s = st.survivors.find((x) => x.id === u.sid);
+  // Room for both: since 1370d1c (the map sizes of 2026-10-24: other dice for the run's people) this one starts with
+  // two pistol magazines and a box of rounds in three of their four pockets and no rig or pack, so the noisemaker had
+  // nowhere to go (siegetest's grenades, the same). Their pockets are emptied first.
+  s.pockets = s.pockets.map(() => null);
   stow(s, newItem("bottle"));
   stow(s, newItem("noisemaker"));
   const have = throwablesOf(st, b, u);

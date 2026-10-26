@@ -68,7 +68,8 @@ export const SHOP = {
   },
 };
 // The buildings whose rooms take these styles (buildingmaps.js BUILDINGS keys).
-const SHOPS = ["grocery", "corner", "pharmacy", "gunstore", "pawnshop", "sportshop", "electronics", "radioshop", "bookstore", "petstore", "garden", "clothing", "liquor", "restaurant", "pizza", "bar", "hardware", "feedstore", "diner", "gasstation", "truckstop"];
+const SHOPS = ["grocery", "corner", "pharmacy", "gunstore", "pawnshop", "sportshop", "electronics", "radioshop", "bookstore", "petstore", "garden", "clothing", "liquor", "restaurant", "pizza", "bar", "hardware", "feedstore", "diner", "gasstation", "truckstop",
+  "furnstore", "laundromat", "thrift", "bakery", "butcher", "deli"]; // issue #55's six
 export const COMMERCIAL_KEYS = new Set([...SHOPS, "supermarket", "deptstore", "offices", "motel", "dealer", "bank", "library", "warehouse", "factory", "autoshop", "garage", "workshop", "machineshed", "barn"]);
 const SHOP_SET = new Set(SHOPS);
 
@@ -784,6 +785,228 @@ export const COMMERCIAL_STYLES = {
   tack(L) { fill(L, ["saddlerack", "shelf"]); },
 };
 
+// ======================================================================================
+// Issue #55's six shops (data-newshops.js, the plans shopvariants.js's): the furniture store's showroom of pieces to lift
+// (the carry system's best target), its warehouse and dock; the laundromat's rows of washers and dryers, folding
+// tables and change machine; the thrift store's racks and bins, its sorting room and donation dock; the bakery's cases,
+// bakehouse (deck ovens, floor mixers) and flour store; the butcher's cases, cutting room (the band saw) and smokehouse;
+// the deli's cases and slicer (its prep kitchen is #33's eatkitchen, its dry store #33's eatdry: eaterylayout.js). A
+// room's mark picks the variant of its style: show (a showroom's: mixed, bedroom, mattress, appliance, antique,
+// rustic, used), mode (a laundromat's fold or press; a thrift floor's books, toys, cases, vintage or junk; a
+// bakehouse's decor; a cutting room's sausage or game; a bakery front's donut).
+// ======================================================================================
+// A showroom's vignettes: a set of pieces round the first (a living room set, a dining set, a bedroom set...).
+/** @type {Record<string, (L: Lay) => any>} */
+const VIGNETTE = {
+  living: (L) => { const s = L.centre("sofa"); if (!s) return null; L.facing(s, "tvstand"); L.around(s, "armchair", 1); return s; },
+  dining: (L) => { const t = L.centre("table"); if (!t) return null; L.around(t, "chair", 4); return t; },
+  bedroom: (L) => { const b = L.centre("bed", { size: [2, 2] }) || L.centre("bed"); if (!b) return null; L.around(b, "nightstand", 1); return b; },
+  study: (L) => { const d = L.centre("desk"); if (!d) return null; L.around(d, "chair", 1); return d; },
+  lounge: (L) => { const a = L.centre("armchair"); if (!a) return null; L.around(a, "floorlamp", 1); return a; },
+  piano: (L) => L.wall("piano", { prefer: "middle" }),
+  single: (L) => L.centre("bed"),
+};
+const SHOW_SETS = {
+  mixed: ["living", "dining", "bedroom", "study", "living", "lounge"], bedroom: ["bedroom", "bedroom", "lounge"], mattress: ["bedroom", "single", "bedroom"],
+  antique: ["piano", "dining", "lounge", "study", "bedroom"], rustic: ["dining", "dining", "bedroom", "lounge"], used: ["living", "lounge", "dining", "study"],
+};
+const SHOW_FILL = {
+  mixed: ["dresser", "wardrobe", "bookshelf", "tvstand"], bedroom: ["wardrobe", "dresser", "nightstand"], mattress: ["nightstand", "dresser"],
+  antique: ["wardrobe", "dresser", "bookshelf", "displaycase"], rustic: ["wardrobe", "dresser", "bookshelf"], used: ["dresser", "bookshelf", "wardrobe", "tvstand"],
+};
+// A floor mixer and the rest of a bakehouse, a cutting room's band saw: pieces a room must have (the plan's signature).
+const must = (L, k, opts = {}) => L.has(k) || L.wall(k, opts) || L.need(k, opts);
+Object.assign(COMMERCIAL_STYLES, {
+  // ---------- the furniture store ----------
+  // A showroom: the till by the door (the main floor's), then vignettes of pieces over the floor by its show, the cases
+  // pieces (chests of drawers, wardrobes, bookshelves) round the walls; an appliance floor's rows of washers with the
+  // fridges at their ends, the stoves, ovens and dryers along its walls.
+  furnfloor(L) {
+    share(L, "furnfloor");
+    const c = L.c, show = L.room.show || "mixed";
+    if (L.room.entry) checkout(L);
+    if (show === "appliance") {
+      const ws = L.walls();
+      L.run(["stove", "oven", "dryer", "dishwasher", "washer", "microwave", "stove", "dryer"], ws.slice(0, 2).map((w) => w.side), { plain: () => full(L) });
+      if (c.h >= 6) aisles(L, { k: "washer", box: "fridge", cap: "fridge", every: 3, front: 2, fallback: false });
+      fill(L, ["fridge", "freezer"]);
+      if (!L.has("fridge")) L.need("fridge", P(L));
+      return;
+    }
+    const sets = SHOW_SETS[show] || SHOW_SETS.mixed, n = Math.max(1, Math.floor((c.w * c.h) / 14)), at = L.variant(sets.length, "show");
+    for (let i = 0, miss = 0; i < n && miss < sets.length; i++) { if (VIGNETTE[sets[(i + at) % sets.length]](L)) miss = 0; else miss++; }
+    fill(L, SHOW_FILL[show] || SHOW_FILL.mixed);
+    if (!L.has("bed") && !L.has("sofa") && !L.has("table") && !L.has("piano")) L.need(show === "mattress" || show === "bedroom" ? "bed" : "sofa");
+  },
+  // A furniture warehouse (a thrift store's yard too): pallet racks of boxed stock in rows, the pieces waiting to go out
+  // along a wall (a sofa, a wardrobe, a chest of drawers), the forklift in a big one.
+  furnwh(L) {
+    share(L, "pallets");
+    const c = L.c;
+    if (c.w * c.h >= 60) L.centre("forklift", { near: [c.x0 + 1, c.y1 - 1] });
+    aisles(L, { box: "palletrack", every: 3, step: 3, front: 2, cap: "crate" });
+    for (const k of ["sofa", "wardrobe", "dresser", "armchair"]) L.wall(k, P(L));
+    fill(L, ["crate", "palletrack"]);
+  },
+  // A delivery or dispatch dock (a furniture store's, a bakery's, a caterer's): kept clear for the trucks' loads, crates
+  // and shelving along the walls, a load or two waiting (a sofa wrapped for the truck).
+  furndock(L) {
+    const c = L.c;
+    some(L, "crate", 2, { prefer: "corner" });
+    if (L.c.key === "furnstore" || L.c.key === "thrift") L.wall("sofa", { prefer: "corner" });
+    if (c.w * c.h >= 40) L.wall("forklift", { prefer: "corner" });
+    fill(L, ["shelf", "crate"]);
+  },
+  // ---------- the laundromat ----------
+  // The floor: the change machine by the door, dryers stacked along one side wall, rows of washers back to back down the
+  // middle (a walk between), folding tables, chairs along the front, a vending machine; a wash-and-fold counter (fold:
+  // the counter, shelves of bagged laundry, folding tables, a washer and a dryer); a dry cleaner's press room (press: the
+  // counter, rails of cleaned clothes, pressing tables, shelves).
+  laundromat(L) {
+    const c = L.c, mode = L.room.mode, side = L.variant(2, "dryers") ? "e" : "w";
+    if (mode === "fold") {
+      L.wall("counter", P(L, { prefer: "middle" }));
+      L.run(["washer", "dryer"], [side]);
+      L.centre("foldtable"); L.centre("foldtable");
+      fill(L, ["shelf", "cabinet"]);
+      return;
+    }
+    if (mode === "press") {
+      L.wall("counter", P(L, { prefer: "middle" }));
+      L.centre("foldtable"); L.centre("table");
+      fill(L, ["clothesrack", "shelf", "clothesrack"]);
+      return;
+    }
+    L.wall("changer", P(L, { near: frontDoor(L), sides: ["s", "w", "e"] })) || L.need("changer", P(L));
+    along(L, "dryer", Math.max(2, c.h - 3), [side]);
+    along(L, "washer", Math.max(2, c.h - 4), [side === "e" ? "w" : "e"]);
+    if (c.w >= 7 && c.h >= 6) aisles(L, { k: "washer", box: "washer", cap: "washer", every: 99, start: 1, front: 3, side: 2, fallback: false });
+    for (let i = 0; i < Math.max(1, Math.floor((c.w * c.h) / 40)); i++) L.centre("foldtable");
+    L.wall("vending", P(L, { sides: ["s"] }));
+    for (let i = 0; i < 3; i++) L.wall("chair", { sides: ["s"] });
+    fill(L, ["shelf", "cabinet"]);
+    if (!L.has("washer")) L.need("washer");
+    if (!L.has("dryer")) L.need("dryer");
+  },
+  // ---------- the thrift store ----------
+  // The floor: the till by the door, racks of clothes in rows (some searched), shelves of housewares round the walls,
+  // bins (crates) of odds and ends, a corner of used furniture; a book room's shelves in rows (books), the toys and games
+  // (shelves, bins, a table), a collectibles room's cases (cases), a vintage boutique's racks and mannequins (vintage),
+  // a junk barn's or a flea market's rows of shelving, bins and furniture (junk).
+  thriftfloor(L) {
+    const c = L.c, mode = L.room.mode;
+    if (L.room.entry) checkout(L);
+    if (mode === "books") { aisles(L, { k: "bookshelf", box: "bookshelf", every: 3 }); fill(L, ["bookshelf", "crate"]); return; }
+    if (mode === "toys") { tables(L, 1, 2); some(L, "crate", 2, { prefer: "corner" }); fill(L, ["shelf", "crate"]); return; }
+    if (mode === "cases") { counterRow(L, rowFrom(L, c.y0 + 2), "displaycase", { box: "displaycase", every: 2, from: 1, to: 1 }); fill(L, ["displaycase", "shelf"]); return; }
+    if (mode === "vintage") { aisles(L, { k: "clothesrack", box: "clothesrack", every: 3 }); some(L, "mannequin", 2, { sides: ["s"] }); fill(L, ["clothesrack", "displaycase"]); return; }
+    if (mode === "junk") {
+      aisles(L, { k: "rack", box: "crate", every: 3, step: 3 });
+      for (const k of ["sofa", "armchair", "dresser", "wardrobe", "table"]) L.centre(k, P(L));
+      fill(L, ["crate", "shelf", "dresser"]);
+      return;
+    }
+    aisles(L, { k: "clothesrack", box: "clothesrack", every: 3, front: Math.max(3, Math.floor(c.h / 3)) });
+    for (let i = 0; i < Math.max(1, Math.floor((c.w * c.h) / 60)); i++) L.centre("crate", P(L));
+    L.wall("armchair"); L.wall("dresser", P(L));
+    fill(L, ["shelf", "clothesrack", "crate"]);
+  },
+  // The sorting room: folding tables down the middle with the donation bags (crates) round them, shelves of sorted stock.
+  sorting(L) {
+    const c = L.c;
+    for (let i = 0; i < Math.max(1, Math.floor((c.w * c.h) / 24)); i++) { const t = L.centre("foldtable"); if (t) L.around(t, "crate", 1); }
+    fill(L, ["shelf", "crate", "shelf"]);
+  },
+  // The donation dock: the bins by the door (crates), a donated sofa and chair waiting to be sorted, shelves.
+  donation(L) {
+    some(L, "crate", 3, { prefer: "corner" });
+    L.wall("sofa"); L.centre("armchair");
+    fill(L, ["crate", "shelf"]);
+  },
+  // ---------- the bakery ----------
+  // The shop front: the till by the door, the counter of display and pastry cases across the room, the bread racks along
+  // the wall behind it, a drinks fridge, a table or two where it is deep enough; a donut shop's espresso machine.
+  bakefront(L) {
+    const c = L.c, y = Math.max(c.y0 + 1, Math.min(c.y1 - 2, c.y0 + 2));
+    checkout(L);
+    counterRow(L, y, "displaycase", { box: "pastrycase", every: 2, from: 1, to: 2 });
+    if (!L.has("pastrycase")) L.wall("pastrycase", P(L, { prefer: "middle" })) || L.need("pastrycase", P(L));
+    if (L.room.mode === "donut") L.wall("espresso", { sides: ["n"] });
+    L.wall("coldcase", P(L, { sides: ["e", "w"] }));
+    if (c.h >= 7) tables(L, Math.floor((c.w * (c.h - 4)) / 20), 2);
+    fill(L, ["breadrack", "pastrycase"]);
+  },
+  // The bakehouse: the deck ovens along the back wall, an oven, the floor mixers, the proofing racks (bread racks), the
+  // bench down the middle (a counter), a sink; a decorating room's counters, a fridge, a table, shelves (decor).
+  bakehouse(L) {
+    const c = L.c, ws = L.walls();
+    if (L.room.mode === "decor") {
+      L.run(["counter", "sink", "counter", "fridge"], [ws[0] ? ws[0].side : "n"], { plain: () => full(L) });
+      L.centre("table");
+      fill(L, ["shelf", "counter"]);
+      return;
+    }
+    must(L, "deckoven", { sides: ws[0] ? [ws[0].side] : undefined }); // the bakehouse's signature first: a small one fills up
+    must(L, "mixer", { prefer: "corner" });
+    L.run(["deckoven", "oven", "sink"], [ws[0] ? ws[0].side : "n"], { plain: () => full(L) });
+    if (c.w * c.h >= 20) L.wall("mixer", { prefer: "corner" });
+    if (c.w * c.h >= 16) L.centre("counter", P(L));
+    some(L, "breadrack", 2);
+    fill(L, ["dryshelf", "breadrack", "counter"]);
+  },
+  // The flour store: dry-goods shelving round the walls (sacks of flour and sugar), a barrel, sacks stacked between.
+  flourstore(L) {
+    fill(L, ["dryshelf", "shelf"]);
+    if (!L.has("dryshelf")) L.need("dryshelf", P(L));
+    L.wall("barrel", { prefer: "corner" });
+    for (const [x, y] of L.c.innerSpots().slice(0, 2)) shelving(L, x, y, "crate");
+  },
+  // ---------- the butcher ----------
+  // The shop front: the till, the run of butcher's cases across the room (the meat, the sausages), a cold case and a chest
+  // freezer along a side wall, shelves of sauces and spices.
+  butcherfront(L) {
+    const c = L.c, y = Math.max(c.y0 + 1, Math.min(c.y1 - 2, c.y0 + 2));
+    checkout(L);
+    counterRow(L, y, "meatcase", { box: "meatcase", every: 1, from: 1, to: 2 });
+    if (!L.has("meatcase")) L.wall("meatcase", P(L, { prefer: "middle" })) || L.need("meatcase", P(L));
+    L.wall("coldcase", P(L, { sides: ["e", "w"] }));
+    L.wall("freezer", P(L, { sides: ["e", "w", "s"] }));
+    fill(L, ["shelf", "meatcase"]);
+  },
+  // The cutting room: the band saw, the blocks (counters) and the slicer, a sink, shelves of knives and wrap; a sausage
+  // kitchen's stockpot and counters (sausage); a game bay's saw, a chest freezer and crates (game).
+  cutroom(L) {
+    const ws = L.walls(), mode = L.room.mode;
+    const line = mode === "sausage" ? ["counter", "stockpot", "counter", "slicer", "sink"] : mode === "game" ? ["meatsaw", "counter", "sink", "counter"] : ["meatsaw", "counter", "slicer", "counter", "sink"];
+    L.run(line, ws.slice(0, 2).map((w) => w.side), { plain: () => full(L) });
+    if (mode !== "sausage") must(L, "meatsaw");
+    if (L.c.w * L.c.h >= 16) L.centre("counter", P(L));
+    if (mode === "game") L.wall("freezer", P(L));
+    fill(L, mode === "game" ? ["crate", "shelf"] : ["shelf", "counter"]);
+  },
+  // A smokehouse: the smokers, racks of hanging meat (shelves), a counter.
+  smokehouse(L) {
+    some(L, "smoker", 2, { prefer: "corner" });
+    if (!L.has("smoker")) L.need("smoker");
+    L.wall("counter", P(L));
+    fill(L, ["shelf", "counter"]);
+  },
+  // ---------- the deli ----------
+  // The deli counter: the cases across the room (butcher's cases of cold cuts, display cases of cheese and salads), the
+  // slicer on the back wall behind them, the drinks fridges along a side wall, the till, a table or two.
+  delifront(L) {
+    const c = L.c, y = Math.max(c.y0 + 2, Math.min(c.y1 - 2, c.y0 + 2));
+    if (L.room.entry) checkout(L);
+    L.wall("slicer", { sides: ["n"], prefer: "middle" }) || L.wall("slicer", { prefer: "corner" });
+    counterRow(L, y, "displaycase", { box: "meatcase", every: 2, from: 1, to: 2 });
+    if (!L.has("meatcase")) L.wall("meatcase", P(L, { prefer: "middle" })) || L.need("meatcase", P(L));
+    if (!L.has("slicer")) L.need("slicer");
+    along(L, "coldcase", Math.max(1, Math.floor(c.h / 3)), [L.variant(2, "cold") ? "e" : "w"]);
+    if (c.h >= 8) tables(L, Math.floor((c.w * (c.h - 5)) / 22), 2);
+    fill(L, ["shelf", "coldcase"]);
+  },
+});
+
 // The style for a room of a commercial building (buildingmaps.js assemble), or null: a home style or FURNISH instead.
 // room: its plan leaf with ROLES' defaults (role, name, type, marks: lay, pizza, fry, flat); key: the building's key.
 /** @param {any} room @param {string | undefined} key @returns {string | null} */
@@ -798,7 +1021,8 @@ export function styleName(room, key) {
       if (key === "deptstore") return room.type === "lockers" ? "aislefront" : "deptfloor";
       if (key === "offices") return room.type === "kitchen" ? "cafe" : "minimart";
       if (key === "dealer") return "showroom";
-      return ({ grocery: "minimart", corner: "minimart", gasstation: "minimart", truckstop: "minimart", liquor: "minimart", hardware: "hardware", gunstore: "guncounter", pawnshop: "pawncounter", electronics: "techcounter", radioshop: "techcounter", bookstore: "bookfront", clothing: "clothesfront" })[key] || "aislefront";
+      return ({ grocery: "minimart", corner: "minimart", gasstation: "minimart", truckstop: "minimart", liquor: "minimart", hardware: "hardware", gunstore: "guncounter", pawnshop: "pawncounter", electronics: "techcounter", radioshop: "techcounter", bookstore: "bookfront", clothing: "clothesfront",
+        furnstore: "furnfloor", laundromat: "laundromat", thrift: "thriftfloor", bakery: "bakefront", butcher: "butcherfront", deli: "delifront" })[key] || "aislefront"; // issue #55's six: an upper sales floor's too
     case "dining": return key === "bar" ? "barroom" : key === "library" ? "reading" : key === "diner" || key === "pizza" || key === "truckstop" ? "diner" : "dining";
     case "kitchen": return key === "supermarket" ? "deli" : "galley";
     case "pantry": return room.cold ? "walkin" : room.type === "bar" ? "kegroom" : "stock";
@@ -990,10 +1214,45 @@ function frontDoors(ctx) {
   }
   return null;
 }
+function laundryCamp(ctx) {
+  const { rng } = ctx;
+  for (const r of shopRooms(ctx, ["laundromat"])) {
+    const f = r.f || 0, free = ctx.freeIn(r).filter(([x, y]) => (x + y) % 2 === 0);
+    if (free.length < 4) continue;
+    const cots = rng.shuffle(free).slice(0, rng.int(2, 4));
+    for (const [x, y] of cots) ctx.piece(f, x, y, "cot");
+    const left = ctx.freeIn(r);
+    if (!left.length) continue;
+    const [px, py] = rng.pick(left);
+    ctx.pile(f, px, py, "A jug of water, soap and the last of the vending machine's snacks", { water: rng.int(1, 2), food: 1 }, r.id);
+    const quiet = rng.chance(0.5), [bx, by] = rng.pick(cots);
+    if (rng.chance(0.5)) ctx.body(f, bx, by, { human: true, quiet });
+    return ctx.done("laundrycamp", r, px, py, `Someone lived in the ${lower(r)}: cots between the machines, a jug of water and the last of the snacks.`);
+  }
+  return null;
+}
+function showroomWall(ctx) {
+  const { rng } = ctx;
+  for (const r of shopRooms(ctx, ["furnfloor", "thriftfloor"])) {
+    const f = r.f || 0, doors = (r.doors || []).filter((d) => ctx.exit(d[0], d[1], f));
+    if (!doors.length) continue;
+    const d = rng.pick(doors), cells = nearest(ctx.freeIn(r), d[0], d[1]).filter(([x, y]) => Math.abs(x - d[0]) + Math.abs(y - d[1]) <= 3).slice(0, rng.int(2, 4));
+    if (cells.length < 2) continue;
+    for (const [x, y] of cells) ctx.piece(f, x, y, rng.pick(["wardrobe", "dresser", "armchair", "table", "bookshelf"]));
+    const out = nearest(ctx.freeIn(r).filter(([x, y]) => Math.abs(x - d[0]) + Math.abs(y - d[1]) >= 5), d[0], d[1]).slice(0, 3);
+    for (const [x, y] of out) { const c = ctx.at(f, x, y); c.brass = rng.int(SCENES.BRASS[0], SCENES.BRASS[1]); }
+    return ctx.done("showroomwall", r, cells[0][0], cells[0][1], `The ${lower(r)}'s own stock is shoved across the doors: wardrobes, chests of drawers and chairs, spent brass behind them.`);
+  }
+  return null;
+}
 registerScene("checkoutline", { w: 3, place: checkoutLine, kinds: ["supermarket", "grocery"], when: styled });
 registerScene("freezershut", { w: 2, place: freezerShut, kinds: ["supermarket"], when: styled });
 registerScene("frontdoors", { w: 3, place: frontDoors, kinds: ["supermarket", "grocery"], when: styled });
 registerScene("motelhold", { w: 4, place: motelHold, kinds: ["motel"], when: styled });
 registerScene("stockshelter", { w: 3, place: stockShelter, kinds: ["supermarket", "grocery", "deptstore", "hardware", "warehouse"], when: styled });
+// Issue #55's shops: a laundromat lived in (cots between the folding tables, a jug of water, soap and the last snacks),
+// a furniture store's showroom barricaded with its own stock (sofas and wardrobes shoved across the front doors).
+registerScene("laundrycamp", { w: 3, place: laundryCamp, kinds: ["laundromat"], when: styled });
+registerScene("showroomwall", { w: 3, place: showroomWall, kinds: ["furnstore", "thrift"], when: styled });
 registerScene("counterstand", { w: 3, place: counterStand, kinds: ["gunstore", "pawnshop", "liquor", "corner", "gasstation"], when: styled });
-registerScene("walkin", { w: 2, place: walkIn, kinds: ["restaurant", "diner", "pizza"], when: styled });
+registerScene("walkin", { w: 2, place: walkIn, kinds: ["restaurant", "diner", "pizza", "bakery", "butcher", "deli"], when: styled }); // issue #55: a bakery's, a butcher's, a deli's walk-in too

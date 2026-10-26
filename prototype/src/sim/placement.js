@@ -24,7 +24,7 @@ import { LOCATIONS } from "./data.js";
 import { hash01 } from "./skills.js";
 import { useSizeClassOf } from "./variantpick.js"; // the shared picker (#41): its plans' size classes by sizeClassOf
 import { settingAt } from "./settings.js"; // the six settings (issue #40): this module adds coast and scenic land
-import { legacyPlace, legacyOutdoors } from "./worldcfg.js";
+import { legacyPlace, legacyShopsR2, legacyDc, legacySaw, legacyMines, legacyOutdoors } from "./worldcfg.js";
 import { maxLevel } from "./citygrid.js";
 
 export { TILE_CLASSES, SIZE_CLASSES, PLACE };
@@ -124,7 +124,8 @@ export const standsOn = (state, key, tile) => placeMult(state, key, tileClass(st
 
 // The kinds placeExtra adds where the old pools had none: [kind, { class: chance a tile }]. A city centre's medical
 // centre (and the city blocks'), a town's county hospital, big-box store and high school, the country's clinic, chapel
-// and feed store, a farm stand by the road.
+// and feed store, a farm stand by the road; museums (#58), the big ones by a city's heart; issue #55's country bakery and butcher; a sawmill in the forest and the hills (#53), now and then in a town;
+// issue #52's mines and quarries in the hills.
 export const PLACE_EXTRA = [
   ["hospital", { centre: 0.06, city: 0.03, town: 0.0015 }],
   ["supermarket", { town: 0.006 }],
@@ -133,12 +134,26 @@ export const PLACE_EXTRA = [
   ["church", { rural: 0.006, highway: 0.004 }],
   ["feedstore", { rural: 0.004, highway: 0.006 }],
   ["farmstand", { highway: 0.01 }],
-  // Issue #61 (outdoors.js), a world made since (worldcfg.js legacyOutdoors): golf near the towns and the cities, RV
+  ["radiotower", { centre: 0.008, city: 0.006, suburb: 0.003, town: 0.004, highway: 0.01, scenic: 0.004 }], // issue #54: a radio tower (radiotowerlayout.js), the hills' sites aside
+  ["museum", { centre: 0.05, city: 0.02, suburb: 0.006, town: 0.012, highway: 0.002, coast: 0.002 }], // issue #58: by and next to a city's heart most, a town's own
+  ["amusement", { centre: 0.06, city: 0.02, suburb: 0.006, town: 0.004, highway: 0.001, coast: 0.0012, scenic: 0.00012, rural: 0.0001 }], // issue #60: a theme park by a city's centre, a fairground in a town, a pier on the coast
+  // Issue #55: a small bakery or butcher in the country (a new world from since them: legacyShopsR2 skips these).
+  ["bakery", { rural: 0.0015, highway: 0.0015, coast: 0.0005 }],
+  ["butcher", { rural: 0.0015, highway: 0.001 }],
+  ["datacenter", { centre: 0.03, city: 0.012, suburb: 0.006, town: 0.004, highway: 0.004 }], // data centres (issue #51): by the power and the fibre; last, so the kinds before keep their picks
+  // Issue #52: a mine or a quarry in the hills and mountains, now and then in the country; never a town's (a new world
+  // from since them: legacyMines skips these). Before the sawmill (#53), which stays last.
+  ["mine", { scenic: 0.004, rural: 0.0005 }],
+  ["quarry", { scenic: 0.002, rural: 0.0008 }],
+  ["sawmill", { scenic: 0.0025, rural: 0.0005, coast: 0.0015, highway: 0.0005, town: 0.006 }], // issue #53 (last: the kinds before keep their picks; none in a save from before them, legacySaw): forest and hills most, some by the water, the roads and in towns
+  // Issue #61 (outdoors.js), after the sawmill so the kinds before keep their picks; a world made since (worldcfg.js legacyOutdoors): golf near the towns and the cities, RV
   // parks by the highways, the lakes and in scenic land, a lake's or a river's campground.
   ["golfcourse", { suburb: 0.02, town: 0.012, city: 0.004, highway: 0.002, coast: 0.003, scenic: 0.0015, rural: 0.0015 }],
   ["rvpark", { highway: 0.012, coast: 0.006, scenic: 0.004, rural: 0.002, town: 0.002 }],
   ["campground", { coast: 0.004, scenic: 0.002 }],
 ];
+const R2_EXTRA = new Set(["bakery", "butcher"]); // issue #55's: none in a save from before them
+const MINE_EXTRA = new Set(["mine", "quarry"]); // issue #52's: none in a save from before them
 const OUTDOOR_EXTRA = new Set(["golfcourse", "rvpark", "campground"]); // a save from before issue #61 draws none of them
 export const PLACE_KNOWN = 0.7; // the share of them known from the start in the known zone (shops.js SHOP.KNOWN)
 /**
@@ -154,6 +169,10 @@ export function placeExtraKind(state, t, list, max) {
   for (const [kind, at] of PLACE_EXTRA) {
     const p = /** @type {Record<string, number>} */ (at)[cls] || 0;
     if (!p || !LOCATIONS[kind] || LOCATIONS[kind].richness > cap || list.some((q) => q.kind === kind) || (t.loc && t.loc.type === kind)) continue;
+    if (R2_EXTRA.has(/** @type {string} */ (kind)) && legacyShopsR2(state)) continue;
+    if (kind === "datacenter" && legacyDc(state)) continue; // issue #51: none in a save from before them
+    if (kind === "sawmill" && legacySaw(state)) continue; // issue #53: none in a save from before them
+    if (MINE_EXTRA.has(/** @type {string} */ (kind)) && legacyMines(state)) continue;
     if (OUTDOOR_EXTRA.has(/** @type {string} */ (kind)) && legacyOutdoors(state)) continue;
     if (hash01(state.seed, "placepoi", t.id, kind) < p) return /** @type {string} */ (kind);
   }

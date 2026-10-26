@@ -490,6 +490,19 @@ function f_softserve(p) { // a soft-serve machine: a tall steel box, two hoppers
 function f_slicer(p) { // a meat slicer: a round steel blade over its carriage, a white base
   box(p, 1, 11, 14, 15, "#e4e6e8"); disc(p, 7, 7, 5, "#c9ced3"); ring(p, 7, 7, 5, "#8a949c"); disc(p, 7, 7, 1, "#5e666d"); R(p, 11, 8, 14, 10, "#9aa1a8");
 }
+function f_mixer(p) { // a bakery's floor mixer: a white column and head, the hook down into a steel bowl, the steel base
+  box(p, 10, 1, 13, 14, "#e4e6e8"); R(p, 4, 1, 13, 3, "#eef0f2"); V(p, 7, 4, 7, "#9aa1a8"); oval(p, 3, 7, 11, 12, "#c9ced3"); H(p, 4, 10, 8, "#8a949c");
+  box(p, 2, 13, 14, 15, STEELD);
+}
+function f_meatsaw(p) { // a butcher's band saw: the tall white wheel housing, the blade's gap, the steel table, the cabinet under it
+  box(p, 4, 0, 11, 8, "#e4e6e8"); V(p, 7, 8, 9, "#9aa1a8"); H(p, 1, 14, 9, STEEL); box(p, 3, 10, 12, 15, "#d8dadc"); R(p, 9, 11, 11, 12, "#c8402f");
+}
+function f_changer(p) { // a change machine: a steel box, the lit panel, the bill slot, the coin cup
+  box(p, 3, 0, 12, 15, "#8a949c"); R(p, 5, 2, 10, 4, "#7fc6e6"); H(p, 5, 10, 7, "#26272a"); R(p, 6, 11, 9, 13, "#3a3a3e"); p.set(7, 12, "#d9b13b");
+}
+function f_foldtable(p) { // a folding table: a pale laminate top, the folding steel legs crossed under it
+  R(p, 0, 5, 15, 7, "#ece6da"); H(p, 0, 15, 5, "#f6f2ea"); line(p, 2, 8, 6, 15, "#9aa1a8"); line(p, 6, 8, 2, 15, "#9aa1a8"); line(p, 9, 8, 13, 15, "#9aa1a8"); line(p, 13, 8, 9, 15, "#9aa1a8");
+}
 function f_tortillapress(p) { // a cast-iron tortilla press: two black plates, the lever arm, a pale tortilla between
   oval(p, 2, 9, 13, 13, "#26272a"); H(p, 3, 12, 8, "#f0e0b0"); oval(p, 2, 5, 13, 8, "#3a3a3e"); line(p, 13, 6, 15, 1, "#26272a"); box(p, 3, 14, 12, 15, "#26272a");
 }
@@ -654,8 +667,33 @@ function f_labfreezer(p) { // an upright lab freezer: white enamel, a full-heigh
   R(p, 5, 1, 8, 2, "#1c2a30"); p.set(6, 1, "#5ad06a"); p.set(7, 1, "#5ad06a"); legs(p, 4, 11, 15, 15, STEELD);
 }
 
+// ---------- mines (issue #52) ----------
+function f_orecart(p) { // a small steel ore car on its wheels, broken ore heaped in the tub
+  box(p, 1, 4, 14, 12, "#5a6068"); H(p, 1, 14, 8, "#3c4046"); R(p, 2, 2, 13, 4, "#7a7468"); p.set(5, 2, "#8e887c"); p.set(10, 3, "#625c52");
+  disc(p, 4, 13, 2, "#26272a"); disc(p, 11, 13, 2, "#26272a");
+}
+function f_lamprack(p) { // a lamp room's charging rack: a board of cap lamps, their cords looped down to the battery shelf
+  box(p, 1, 0, 14, 15, "#6e7378"); for (const y of [2, 7]) for (const x of [3, 7, 11]) { disc(p, x, y, 1, "#e8b84a"); V(p, x, y + 2, y + 4, "#26272a"); } H(p, 2, 13, 12, "#3c4046"); R(p, 2, 13, 13, 14, "#2c2e30");
+}
+function f_powderbox(p) { // an explosives day box: a red wooden chest with its yellow warning band and hasp
+  box(p, 1, 4, 14, 14, "#a03228"); H(p, 1, 14, 8, "#e8b84a"); H(p, 1, 14, 9, "#e8b84a"); R(p, 1, 3, 14, 4, "#7a241c"); p.set(7, 10, "#26272a"); p.set(8, 10, "#26272a");
+}
+// ---------- sawmills (issue #53) ----------
+function f_lumberstack(p) { // a lift of boards on its stickers: pale ends in rows, the dark sticker strips between the courses
+  for (const y of [3, 7, 11]) { R(p, 1, y, 14, y + 2, "#c9a46a"); H(p, 1, 14, y + 3, "#5a3a20"); for (let x = 3; x <= 13; x += 4) V(p, x, y, y + 2, "#a07a48"); }
+  H(p, 0, 15, 15, "#3a2a1e"); p.set(1, 15, "#5a3a20"); p.set(14, 15, "#5a3a20");
+}
+function f_bladerack(p) { // a filing room's board of saw blades: two round blades, a band blade looped on its peg
+  box(p, 1, 0, 14, 15, "#7a5230"); disc(p, 5, 5, 3, "#c9ced3"); p.set(5, 5, "#5e666d"); disc(p, 10, 10, 3, "#b8bec4"); p.set(10, 10, "#5e666d");
+  ring(p, 10, 4, 2, "#9aa1a8"); V(p, 4, 10, 14, "#9aa1a8"); V(p, 6, 10, 14, "#9aa1a8"); H(p, 4, 6, 14, "#9aa1a8");
+}
 function f_drum(p) { // a red 200-litre steel drum: two rolling hoops, the bung on its lid
   box(p, 3, 1, 12, 15, "#8e3028"); H(p, 3, 12, 5, "#6a241e"); H(p, 3, 12, 10, "#6a241e"); R(p, 4, 0, 11, 1, "#a8483c"); p.set(9, 0, "#26272a");
+}
+// ---------- amusement parks (issue #60) ----------
+function f_gokart(p) { // a red go-kart from the side: four fat tyres, the low tub, the seat back and the wheel
+  R(p, 2, 8, 13, 10, "#8e3028"); H(p, 2, 13, 8, "#b04a3e"); R(p, 9, 5, 10, 8, "#26272a"); line(p, 4, 7, 6, 5, "#9aa1a8");
+  for (const x of [1, 11]) { R(p, x, 10, x + 3, 13, "#26272a"); p.set(x + 1, 11, "#5a5c60"); }
 }
 // ---------- military bases, air bases, airports and prisons (issue #25) ----------
 function f_ammocrate(p) { // a green ammo crate: rope handles, yellow stencil band, latches
@@ -745,13 +783,67 @@ function f_mannequin(p) { // a shop mannequin: a white head and torso, arms down
   V(p, 7, 11, 13, "#9aa1a8"); H(p, 5, 10, 14, "#5e666d");
 }
 
+// ---------- data centres (issue #51, sim/datacenter.js) ----------
+function f_upscab(p) { // a UPS cabinet: a dark grey cabinet, a lit status panel, vents along the foot
+  box(p, 3, 0, 12, 15, "#3a3d42"); R(p, 5, 2, 10, 4, "#1c2a30"); p.set(6, 3, "#6fe08a"); p.set(8, 3, "#e6c23a");
+  for (const y of [11, 13]) H(p, 4, 11, y, "#26272a"); V(p, 7, 6, 9, "#4a5056");
+}
+function f_batterystring(p) { // a battery string: a steel rack of black jars, red and black terminals on top
+  legs(p, 1, 14, 2, 15, STEELD); for (const y of [8, 15]) H(p, 1, 14, y, STEEL);
+  for (const x of [2, 6, 10]) { R(p, x, 3, x + 2, 7, "#26272a"); p.set(x, 2, "#c8402f"); p.set(x + 2, 2, "#1f1f22"); R(p, x, 10, x + 2, 14, "#26272a"); }
+}
+function f_cablereel(p) { // a drum of cable: two wooden flanges, the black cable wound between, its end hanging
+  oval(p, 1, 1, 5, 14, WOOD); oval(p, 10, 1, 14, 14, WOOD); R(p, 4, 3, 11, 12, "#26272a");
+  for (const y of [4, 7, 10]) H(p, 5, 10, y, "#3a3b40"); line(p, 11, 12, 14, 15, "#26272a"); disc(p, 3, 7, 1, WOODD);
+}
+function f_miningrig(p) { // a mining rig: an open chrome frame, a row of graphics cards on it, their fans
+  legs(p, 1, 14, 0, 15, "#c9ced3"); H(p, 1, 14, 0, "#c9ced3"); H(p, 1, 14, 9, "#c9ced3");
+  for (const x of [2, 6, 10]) { R(p, x, 2, x + 2, 8, "#202226"); disc(p, x + 1, 5, 1, "#5e666d"); }
+  R(p, 3, 11, 12, 14, "#2f6a3a"); p.set(5, 12, "#6fe08a");
+}
+// ---------- museums (issue #58) ----------
+function f_sculpture(p) { // a white marble figure on its grey plinth
+  box(p, 4, 11, 11, 15, "#8d8a82"); R(p, 6, 4, 9, 10, "#e8e4dc"); disc(p, 7, 2, 2, "#f2efe8"); V(p, 5, 5, 8, "#d8d2c6"); V(p, 10, 5, 8, "#d8d2c6");
+  V(p, 9, 4, 10, "#c9c3b6"); H(p, 4, 11, 11, "#a8a49c");
+}
+function f_artwork(p) { // a gilt-framed painting: a landscape in oils
+  box(p, 1, 2, 14, 13, "#d9b23a"); R(p, 2, 3, 13, 7, "#6a90b8"); R(p, 2, 8, 13, 12, "#5f8a3c"); line(p, 2, 9, 7, 6, "#7a6a4a"); line(p, 7, 6, 13, 9, "#7a6a4a");
+  disc(p, 11, 4, 1, "#f0d070"); H(p, 1, 14, 14, "#8a6a20");
+}
+function f_bust(p) { // a marble bust on a short column
+  disc(p, 7, 3, 3, "#ece8e0"); R(p, 6, 6, 9, 7, "#ddd8ce"); R(p, 3, 7, 12, 9, "#e2ddd2"); p.set(6, 3, "#9a968c"); p.set(9, 3, "#9a968c");
+  R(p, 6, 10, 9, 13, "#a8a49c"); H(p, 4, 11, 14, "#8d8a82"); H(p, 4, 11, 15, "#6a6760");
+}
+function f_vase(p) { // a blue-and-white urn
+  R(p, 6, 1, 9, 2, "#2d4a8a"); R(p, 5, 3, 10, 4, "#e8e6dc"); R(p, 3, 5, 12, 11, "#e8e6dc"); H(p, 3, 12, 7, "#2d4a8a"); H(p, 4, 11, 10, "#2d4a8a");
+  p.set(6, 8, "#2d4a8a"); p.set(9, 8, "#2d4a8a"); R(p, 5, 12, 10, 13, "#d8d6cc"); R(p, 5, 14, 10, 15, "#2d4a8a");
+}
+function f_armourstand(p) { // a suit of plate armour: the helm's visor, the breastplate, the tassets, greaves
+  disc(p, 7, 2, 2, "#b8bec4"); H(p, 6, 9, 2, "#26272a"); box(p, 4, 5, 11, 9, "#a8b0b6"); V(p, 7, 5, 9, "#d8dde0");
+  R(p, 2, 5, 3, 9, "#8c9298"); R(p, 12, 5, 13, 9, "#8c9298"); R(p, 5, 10, 10, 11, "#8c9298"); R(p, 5, 12, 6, 15, "#a8b0b6"); R(p, 9, 12, 10, 15, "#a8b0b6");
+}
+function f_shipmodel(p) { // a sailing ship model on its stand: the hull, three masts, the sails
+  R(p, 2, 10, 13, 11, "#5a3424"); R(p, 3, 12, 12, 12, "#3e2418"); for (const x of [4, 7, 10]) V(p, x, 1, 9, "#5f3c20");
+  R(p, 3, 2, 5, 5, "#e2ddcc"); R(p, 6, 1, 8, 6, "#e2ddcc"); R(p, 9, 3, 11, 6, "#e2ddcc"); R(p, 6, 13, 9, 14, "#8a5a30"); H(p, 4, 11, 15, "#5f3c20");
+}
+function f_waxfigure(p) { // a wax figure: a lifelike face, a dark suit, a red tie
+  disc(p, 7, 2, 2, "#e8c8a8"); H(p, 6, 8, 0, "#4a3020"); p.set(6, 2, "#26272a"); p.set(8, 2, "#26272a");
+  box(p, 4, 5, 10, 10, "#2a3a5a"); V(p, 7, 5, 8, "#a8241c"); R(p, 2, 5, 3, 10, "#2a3a5a"); R(p, 11, 5, 12, 10, "#2a3a5a"); R(p, 5, 11, 6, 15, "#26272a"); R(p, 8, 11, 9, 15, "#26272a");
+}
+function f_boat(p) { // a rowing boat's clinker hull, a blue band, an oar inside
+  line(p, 0, 7, 3, 12, "#2d5a8a"); line(p, 15, 7, 12, 12, "#2d5a8a"); R(p, 3, 9, 12, 12, "#2d5a8a"); H(p, 0, 15, 7, "#e8e4dc"); H(p, 1, 14, 8, "#a06a3a");
+  H(p, 4, 11, 13, "#1f3d5e"); line(p, 2, 4, 13, 8, "#a2713f");
+}
+
 export const GEAR_ART = {
+  f_upscab, f_batterystring, f_cablereel, f_miningrig,
   f_kiosk, f_concession, f_arcadecab, f_projector, f_mannequin,
   f_dormdesk, f_mailboxes, f_campusbench,
   f_bookstack, f_lowshelf, f_mobileshelf, f_cardcat, f_mapcase, f_booktruck, f_bookreturn, f_computer, f_printer, f_microfilm, f_selfcheck, f_readtable, f_carrel, f_globe, f_lectern, f_woodstove,
-  f_drum, f_labfreezer,
+  f_drum, f_labfreezer, f_gokart, f_orecart, f_lamprack, f_powderbox, f_lumberstack, f_bladerack,
   f_frontdesk, f_suitcase, f_minifridge, f_luggagecart, f_banquet, f_loungechair, f_lounger,
   f_flattop, f_deckoven, f_conveyoroven, f_wokrange, f_smoker, f_chargrill, f_gyrospit, f_stockpot, f_steamtable, f_espresso, f_softserve, f_slicer, f_tortillapress,
+  f_mixer, f_meatsaw, f_changer, f_foldtable,
   f_extinguisher, f_saladbar, f_menuboard, f_patiotable, f_hoststand, f_clothtable, f_kbbqtable, f_beertower, f_lobstertank, f_pastrycase, f_dipcabinet, f_winerack, f_dryshelf,
   f_freezercase, f_islandfreezer, f_meatcase, f_freezershelf, f_producebin, f_breadrack, f_selfcheckout, f_aislesign,
   f_hazmatrack, f_rationshelf, f_handfilter, f_screens, f_maptable, f_radioconsole, f_footlocker, f_batteries,
@@ -766,4 +858,5 @@ export const GEAR_ART = {
   f_shelf, f_locker, f_cabinet, f_counter, f_crate, f_rack, f_filing, f_bookshelf, f_wardrobe, f_dresser, f_nightstand, f_tvstand, f_medcab,
   f_vending, f_checkout, f_displaycase, f_toolchest, f_gunrack, f_schooldesk, f_sofa, f_armchair, f_chair, f_barstool, f_piano, f_pew,
   f_table, f_desk, f_teacherdesk, f_workbench, f_optable, f_plant, f_floorlamp, f_painting, f_wallclock,
+  f_sculpture, f_artwork, f_bust, f_vase, f_armourstand, f_shipmodel, f_waxfigure, f_boat, // museums (issue #58)
 };
