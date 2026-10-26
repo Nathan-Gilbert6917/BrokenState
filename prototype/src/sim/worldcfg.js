@@ -144,6 +144,9 @@ export const legacyRooms = (state) => !!(state && state.roomsLegacy);
 // A save from before the prison complexes (issue #31, save.js prisonLegacy: no state.prisonV): a prison keeps its pick
 // of one building (buildingmaps.js SITES.prison) and no town has a county jail (pois.js jailExtra).
 export const legacyPrisons = (state) => !!(state && (state.prisonLegacy || state.roomsLegacy));
+// A save from before the farms were renovated (issue #62, save.js farmLegacy: no state.farmV): a farm and a ranch keep
+// their pick of buildings (buildingmaps.js SITES), its shed and farm stand POIs a machine shed's and a corner shop's.
+export const legacyFarms = (state) => !!(state && (state.farmLegacy || state.roomsLegacy));
 // A save from before buildings had footprint shapes (save.js shapesLegacy, issue #23): every building the rectangle it was.
 export const legacyShapes = (state) => legacyRooms(state) || !!(state && state.shapesLegacy);
 // A save from before buildings at real size (issue #24, save.js scaleLegacy; an older one still, roomsLegacy): every
