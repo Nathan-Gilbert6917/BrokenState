@@ -18,7 +18,7 @@ import { day, log, alive, hub } from "./world.js";
 import { seasonOfDay } from "./weather.js";
 import { isShelter, isCamp, hasWall, piecesOf } from "./buildings.js";
 import { birthsTotal } from "./family.js";
-import { MILESTONES } from "./skills.js";
+import { MILESTONES } from "./skillmilestones.js"; // not skills.js: the two are in an import cycle and MASTER_LEVEL is read as this module loads
 import { SKILLS } from "./data.js";
 import { allianceMembers } from "./alliance.js";
 import { firstHubPending } from "./hardcore-start.js";

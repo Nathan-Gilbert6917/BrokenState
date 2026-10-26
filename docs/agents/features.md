@@ -146,6 +146,7 @@ Detail: [travel.md](../features/travel.md).
 - **Travel event cards**: rolled tile by tile by ground, season, weather and the dead nearby (the dead ahead, wolves, a lonely farmhouse, an overrun convoy…) [events] `tools/roadeventstest.js`. [details](../features/travel.md#travel-event-cards)
 - **Discovery and hidden sites**, the Sweep area mission (the old radius Survey), rumours, map markers with last-seen times [discovery, survey, markers].
 - **Points of interest (POIs)**: 0–4 small places per land tile with their own loot pools [pois, mapgen, ui/poiview]. [details](../features/travel.md#points-of-interest-pois)
+- **Where buildings stand**: tile classes (city centre to rural) and a placement table of weight and size class per kind; new worlds' POIs and crawls follow it [placement, data-placement, pois, shops, citycrawl] `tools/placementtest.js`. [details](../features/travel.md#where-buildings-stand-the-placement-table-by-setting)
 - **Gun stores, pawn shops and hardware stores**: shops with richer gun, gear and building-material finds [shops, shopshelves]. [details](../features/travel.md#gun-stores-pawn-shops-and-hardware-stores)
 - **Shops and services as franchises**: 14 more site types, each place one of 4–10 chains with its own look and layout [shops, data-shops, buildingmaps]. [details](../features/travel.md#shops-and-services-as-places-as-franchises)
 - **POI surveys and the per-POI raid flow**: Survey and Quick look, per-POI threat, raids into one POI at a time [survey, pois, poiraid, ui/poipick]. [details](../features/travel.md#poi-surveys-and-the-per-poi-raid-flow)
@@ -195,6 +196,7 @@ Detail: [combat.md](../features/combat.md).
 - **Office buildings by kind**: storefronts, parks, towers, city hall, courts, call centers, stations, firms [officeplans, officelayout, data-offices] `tools/officestest.js`. [details](../features/travel.md#shops-and-services-as-places-as-franchises)
 - **A dozen layouts per shop and service**: 12 named plans for each of 23 types, by dice, franchise and setting [shopvariants, buildingmaps, data-shops] `tools/shopvarianttest.js`. [details](../features/travel.md#a-dozen-layout-variants-per-type)
 - **One plan id and name**: named plans as spec.vid / spec.vname, map.vid / map.vname; one setting vocabulary [planname, settings, buildingmaps] `tools/plannametest.js`. [details](../features/combat.md#plan-ids-names-and-settings)
+- **The shared variant picker (base tool)**: every type registers its plans; one pick by pin, franchise, setting, tile, size, older save [variantpick] `tools/varianttest.js`. [details](../features/combat.md#the-shared-variant-picker)
 - **Stealth**: takedowns, facing and view cones, sneaking, lights and darkness, indoor light switches [stealth, vision, indoorlight, ailights].
 - **Loot that makes sense**: every building type's signature finds and what is never there, checked over 100 buildings a kind, loot ±10% [lootsense, combat, loot] `tools/lootsensetest.js`. [details](../features/combat.md#loot-that-makes-sense)
 - **Vaulting half cover**: over waist-high cells at extra cost, landing winded [combat]. [details](../features/combat.md#vaulting-half-cover)

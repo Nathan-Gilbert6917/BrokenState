@@ -419,6 +419,8 @@ export interface State {
   roomsLegacy?: boolean; // save.js: a save from before (buildingmaps.js keeps every building's old furnishing and container ids)
   officesV?: number; // world.js: the office buildings of every kind and their firms (data-offices.js, issue #27)
   officesLegacy?: boolean; // save.js: a save from before them (shops.js: none of the new places, its office towers without firms)
+  placeV?: number; // world.js: where buildings stand by the placement table (data-placement.js, issue #42)
+  placeLegacy?: boolean; // save.js: a save from before it (placement.js: its POIs, crawl blocks and buildings as they were)
   groupJails?: number; // jailhouse: the AI groups keep prisoners in jails, work and trade them (groupjails.js); absent in older saves
   machinesV?: number; // machines-2: generators with no operator, the pressure canner fitted to a kitchen (save.js migrateGenerators / migrateCanners for older saves)
   grid: HexGrid;

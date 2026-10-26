@@ -76,8 +76,10 @@ import { variantSpec } from "./civicvariants.js"; // a dozen plans each for the 
 import { settingOf as shopSetting } from "./shops.js"; // a site's setting with its suburbs (city, suburb, town) picks among a kind's plans (issue #36)
 import { libraryPlan, libraryStyle } from "./librarylayout.js"; // libraries: thirteen variants and their plans, their rooms (issue #34)
 import { pickLayout, settingOfTile, LAYOUTS } from "./buildvariants.js"; // the homes' and the motel's layout variants (issue #32): which plan a building takes, its name
+import { placing, tileClass } from "./placement.js"; // a new world's tile class for the variant picker (issue #42)
 export { libraryPlan }; // mall.js: the civic strip's library (#30)
 import { planId, planName } from "./planname.js"; // every plan's id and name, one field (spec.vid / spec.vname: issue #40)
+import { registerVariants, pickVariant } from "./variantpick.js"; // the shared picker (issue #41): the schools' plans
 import { whereOf } from "./settings.js"; // the one setting vocabulary (centre, city, suburb, town, rural, highway: issue #40, #42)
 export { planId, planName }; // the readers' one way to a plan's id and name (pois.js, citycrawl.js placeHint, the gallery, the tests)
 
@@ -1924,10 +1926,12 @@ export const SCHOOL_VARIANTS = [
   { id: "middle", name: "Middle school", w: { rural: 1, town: 2, city: 1 } },
   { id: "elementary", name: "Elementary school", w: { rural: 2, town: 3, city: 1 } },
 ];
+// The registry's view (variantpick.js, issue #41): "school", a zero weight 0.01 (a school never quite ruled out), the
+// walk Rng.weighted's (le), one draw only when not pinned, as before.
+registerVariants("school", SCHOOL_VARIANTS.map((v) => ({ id: v.id, name: v.name, w: Object.fromEntries(Object.entries(v.w).map(([k, n]) => [k, n || 0.01])), src: v })), { le: true });
 function schoolVariant(rng, o = {}) {
-  const pinned = o.plan ? SCHOOL_VARIANTS.find((v) => v.id === o.plan) : null;
   const set = o.setting === "city" || o.setting === "rural" ? o.setting : "town";
-  const v = pinned || rng.weighted(SCHOOL_VARIANTS, (q) => q.w[set] || 0.01);
+  const v = /** @type {any} */ (pickVariant("school", rng, { plan: typeof o.plan === "string" ? o.plan : null, setting: set, r: () => rng.next() })).src;
   const spec = SCHOOL_PLANS[v.id](rng);
   return { ...spec, vid: v.id, vname: v.name };
 }
@@ -3520,7 +3524,7 @@ export function settingOf(tile) {
 export function siteWhere(state, tileId) {
   const t = state && state.tiles ? state.tiles[tileId] : null;
   if (!t) return null;
-  return { setting: shopSetting(state, t) || settingOf(t), site: t.loc ? t.loc.type : null, where: whereOf(state, t) }; // where: the canonical setting (settings.js, issue #40) a new picker reads (o.where); setting stays #36's word
+  return { setting: shopSetting(state, t) || settingOf(t), site: t.loc ? t.loc.type : null, where: whereOf(state, t), ...(placing(state) ? { tileClass: tileClass(state, t) } : {}) }; // where: the canonical setting (settings.js, issue #40) a new picker reads (o.where); setting stays #36's word; tileClass: a new world's (placement.js, issue #42): the variant picker's size by the placement table (sizeFor)
 }
 const scaleOf = (state, tileId) => (legacyScale(state) ? null : { setting: settingOf(state.tiles[tileId]) });
 // The archetype's spec for a building at a site (its storeys and footprint) without building the map: the same dice
@@ -3640,10 +3644,21 @@ function parkOffice(rng) {
     exits: [{ side: "back", roles: ["storage", "laundry"], chance: 0.6, lock: 0.3 }],
   };
 }
-// How many houses stand on a neighbourhood's street (option: the POI's place, poiraid.js poiPlace: id "poi<i>:neighbourhood").
+// How many houses stand on a neighbourhood's street (option: the POI's place, poiraid.js poiPlace: id "poi<i>:neighbourhood",
+// its layout): a layout with a count of its own (#32's duplexes, an estate) that count, as streetMap lays it out (it
+// was the street's dice whatever the layout, so poicont.js poiHouses' count and the map's could differ: issue #42).
 export function streetHouses(state, tileId, option) {
+  const def = streetLayout(state, tileId, option).def;
+  if (def && def.count) return def.count;
   const [lo, hi] = STREET.HOUSES;
   return lo + Math.min(hi - lo, Math.floor(hash01(state.seed, "streethouses", tileId, option.id) * (hi - lo + 1)));
+}
+// A neighbourhood's layout (issue #32): { variant, def } (NEIGHBOURHOODS' row; both null in an older save, or for no layout).
+/** @param {any} state @param {number} tileId @param {any} option */
+function streetLayout(state, tileId, option) {
+  if (legacyRooms(state) || (option.key && !(BUILDINGS[option.key] && BUILDINGS[option.key].street))) return { variant: null, def: null };
+  const variant = pickLayout("neighbourhood", specSeed(state, tileId, option), { layout: option.layout || null, setting: option.setting || settingOfTile(state.tiles[tileId]) });
+  return { variant, def: variant ? NEIGHBOURHOODS[variant.id] || null : null };
 }
 // def (issue #32): another layout of several buildings on one map, laid out the same way (rows facing a road), its
 // fields over STREET's: count (the buildings), make(k, rng) (building k's spec), name(k), key (the archetype whose
@@ -3652,10 +3667,7 @@ export function streetHouses(state, tileId, option) {
 // No def: the neighbourhood, by its layout (new saves: NEIGHBOURHOODS, buildvariants.js; the grid street is the plan
 // as it always was, its houses each of the house's layouts that fit a street); variant: the layout's { id, name }.
 export function streetMap(state, tileId, option, withVehicle, def = null, variant = null) {
-  if (!def && !legacyRooms(state) && BUILDINGS[option.key] && BUILDINGS[option.key].street) {
-    variant = pickLayout("neighbourhood", specSeed(state, tileId, option), { layout: option.layout || null, setting: option.setting || settingOfTile(state.tiles[tileId]) });
-    def = variant ? NEIGHBOURHOODS[variant.id] || null : null;
-  }
+  if (!def && BUILDINGS[option.key] && BUILDINGS[option.key].street) ({ variant, def } = streetLayout(state, tileId, option));
   const S = def ? { ...STREET, ...def } : STREET, legacy = legacyRaids(state);
   // The run's largest raid map (World… Raid map, largest): a neighbourhood's street fills it, as a city's or a town's map
   // does. An older save (worldcfg.js legacyRaids): as it always was, at most Extra-large wide, at least Medium.

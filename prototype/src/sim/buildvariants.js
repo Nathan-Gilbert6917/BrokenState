@@ -26,6 +26,7 @@
 // NAMES: a variant's name is what a building with no franchise is called where the game shows one (pois.js poiName: a
 // POI's poi.lay; buildingmaps.js buildingOptions: a site's choice of buildings; the raid's intro), as a franchise's is.
 import { hash01 } from "./skills.js";
+import { registerVariants, pickVariant } from "./variantpick.js"; // the shared picker (issue #41)
 
 /** @typedef {"rural" | "town" | "city"} Setting */
 /** @typedef {{ id: string, name: string, w: Record<Setting, number> }} Layout */
@@ -195,13 +196,11 @@ export function layoutFor(key, setting, r, allow = null) {
   const list = layoutsOf(key);
   if (!list.length) return null;
   const s = setting || "town";
-  const ws = list.map((l) => (allow && !allow.includes(l.id) ? 0 : Math.max(0, l.w[s] || 0)));
-  const tot = ws.reduce((a, b) => a + b, 0);
-  if (!(tot > 0)) return list[0].id;
-  let x = r * tot;
-  for (let i = 0; i < list.length; i++) { x -= ws[i]; if (x < 0 && ws[i] > 0) return list[i].id; }
-  return list[list.length - 1].id;
+  if (!list.some((l) => (!allow || allow.includes(l.id)) && (l.w[s] || 0) > 0)) return list[0].id; // none can stand here: the classic
+  // variantpick.js (issue #41): "layout:<key>", the layouts allowed (a street's: ctx.only), weighted by the setting.
+  return /** @type {any} */ (pickVariant(`layout:${key}`, null, { setting: s, only: allow ? (l) => allow.includes(l.id) : undefined, r })).id;
 }
+for (const key of Object.keys(LAYOUTS)) registerVariants(`layout:${key}`, LAYOUTS[key]); // the registry (variantpick.js): each type's layouts as they are ({ id, name, w })
 
 // A POI's kind as the building type its layout is of: a kind with layouts of its own (a house, a barn, a motel...); a
 // kind on another's building under its own name (a shed on a machine shed's, a mine shack on a cabin's: buildingmaps.js

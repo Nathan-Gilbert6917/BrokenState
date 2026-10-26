@@ -29,6 +29,7 @@ const CORE = [
   ["citycrawltest", false], ["scenestest", true], ["basefurnituretest", false], ["malltest", true],
   ["neighbourhoodtest", false], ["shopvarianttest", false],
   ["carryplaytest", true], // #48: the carry playthrough (raid, crawl, base; one and two survivors, with and without a vehicle); quick: seeds 42 and 5
+  ["loottest", false], ["gunmodtest", false], // #45: they run again since the skills import cycle broke (skillmilestones.js)
   // #63: red tests made green, kept so (each under 5 minutes alone on 2026-10-26: seasonground 6 s, puddle 7 s,
   // zombiesfx 14 s, siege 28 s, allyorders 25 s, hivebirth 60 s, sizetest 160 s, rescue 220 s, hiveplus 300 s); hivetest
   // (47 minutes) is left out

@@ -63,7 +63,8 @@ import { hasKitchen, cookedLately, jobShare } from "./kitchen.js"; // the Kitche
 import { lessonBond } from "./bonds.js"; // a friend learns faster from a friend, a rival hardly listens (call-time only)
 import { ROWS, mergeRows } from "./data-shops.js";
 
-export const MILESTONES = [5, 10, 15];
+import { MILESTONES } from "./skillmilestones.js"; // a leaf: achievements.js reads them while it loads
+export { MILESTONES };
 export const SKILL_MAX = 20;
 export const CAP_USE = 20;        // use XP per skill per day
 export const CAP_STUDY = 25;      // teaching + reading XP per skill per day

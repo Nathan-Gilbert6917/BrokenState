@@ -259,7 +259,11 @@ section("Looted containers, the pool and the band");
   // The rest of the pool: what you left is at risk.
   const left0 = ledgerSummary(st, t, i).left;
   const got2 = lootPoiAbstract(st, 7, t, i, 1);
-  check(got2.boxes > 0 && got2.left.gear.some((g) => g.key === "flashlight"), `taking everything takes what you left too (${got2.boxes} containers, ${got2.left.gear.length} things, ${left0} left before)`);
+  // The five flashlights go with group 7 on one of its two takes: the first (half the pool) goes through each of your
+  // containers on the hour's hash dice, the second (everything) through all that is left. Issue #45: on seed 42 since
+  // the map sizes of 2026-10-24 the first took them, and the check asked the second for them.
+  const lights = [...got.left.gear, ...got2.left.gear].filter((g) => g.key === "flashlight").length;
+  check((left0 === 0 || got2.boxes > 0) && lights === (opened ? 5 : 0) && opened, `taking everything takes what you left too (${got2.boxes} containers now, ${got2.left.gear.length} things, ${left0} left before; the five flashlights: ${got.left.gear.filter((g) => g.key === "flashlight").length} on the first take, ${got2.left.gear.filter((g) => g.key === "flashlight").length} on the second)`);
   check(ledgerSummary(st, t, i).left === 0 && Object.keys(L.mine).filter((k) => L.looted[k] === 7).length >= got2.boxes, "your containers are emptied and marked looted by them");
   check(/looted by others since your visit/.test(poiContainerNote(st, t, i)), `the dialogue says so: "${poiContainerNote(st, t, i)}"`);
   check(poiBand(t, i) === 3 && freshNow() === 0, `picked clean: no fresh container left (band ${poiBand(t, i)})`);
