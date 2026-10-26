@@ -2174,12 +2174,38 @@ function soloGait(p, s) {
 // sent out to do gathering orders"): its people, up to GATHER_FIGS, in the job's kit at work on the tile (ui/mapfigures.js
 // mapWorkerCanvas work): an axe or a pick swung (Cut wood, Gather stone), a rod worked at the water's edge (Fish), buckets
 // filled there (Fetch water), hunters and foragers roaming round the spot. The task's type is the job.
-const GATHER = { wood: "wood", stone: "stone", hunt: "hunt", fish: "fish", forage: "forage", water: "water" };
+// The orders they go out on from the spot and back (the user's request 2026-10-26: "Add survivor sprites that go out for
+// survey, quick look and any other order that makes sense to have a sprite go out with a progress bar like how it is for
+// gathering orders"): a Quick look and a Survey (the glasses up out there, turned slowly round), Snares (set or checked
+// out there), Gather materials on the shore (picked up at the water's edge), Claim this tile (the tile paced out, the
+// marker post driven in at the spot); Dig a well works on the spot like Gather stone. The same ring over them.
+const GATHER = { wood: "wood", stone: "stone", hunt: "hunt", fish: "fish", forage: "forage", water: "water", survey: "survey", fullsurvey: "fullsurvey", snare: "snare", gather: "gather", claim: "claim", well: "well" };
 export const gatherJob = (p) => (p && p.phase === "task" && p.task ? GATHER[p.task.type] || null : null);
 const GATHER_FIGS = 3;
-const GATHER_MS = { wood: 420, stone: 480, fish: 900, water: 700 }; // half a cycle: a swing, the rod worked, a bucket filled
+const GATHER_MS = { wood: 420, stone: 480, fish: 900, water: 700, well: 520, claim: 560, snare: 650, gather: 600 }; // half a cycle: a swing, the rod worked, a bucket filled, a bend down
 const GATHER_AT = [[[0, 0]], [[-7, 0], [7, 1.5]], [[0, -3], [-11, 2], [11, 2.5]]]; // world px (× size) round the spot, by how many
 const ROAMS = new Set(["hunt", "forage"]);
+// An outing: r how far out (world px × size, the hex is HEX), ms a trip's length, stay how many stay at the spot (a
+// claim's post). A trip: out (OUTING.out of it), there at the job (.at), back (.back), a breath at the spot; each one
+// its own way round the spot, a new way each trip.
+const OUTINGS = { survey: { r: 14, ms: 5200 }, fullsurvey: { r: 20, ms: 8000 }, snare: { r: 12, ms: 6400 }, gather: { r: 10, ms: 5600 }, claim: { r: 16, ms: 7000, stay: 1 } };
+const OUTING = { out: 0.3, at: 0.3, back: 0.3, pan: 50 }; // pan: the glasses turned this many degrees either way
+const LOOKOUTS = new Set(["survey", "fullsurvey"]);
+// Where one of them is on its trip, which way it faces and its frame; work: at the job (out there).
+function outingAt(job, o, cx, fy, s, k, i, n) {
+  const on = animOn();
+  if (on) wantFrames();
+  const T = on ? animNow / o.ms + phaseOf(k + i * 5) : OUTING.out + OUTING.at / 2, c = Math.floor(T), u = T - c; // animations off: held out there
+  const a = phaseOf(k) * Math.PI * 2 + (i * Math.PI * 2) / n + c * 2.4, dx = Math.cos(a), dy = Math.sin(a) * 0.5;
+  const t1 = OUTING.out, t2 = t1 + OUTING.at, t3 = t2 + OUTING.back;
+  const d = u < t1 ? u / t1 : u < t2 ? 1 : u < t3 ? 1 - (u - t2) / OUTING.back : 0;
+  const x = cx + dx * o.r * s * d, y = fy + dy * o.r * s * d, out = yawOf(dx, dy);
+  if (u >= t1 && u < t2) {
+    const pan = LOOKOUTS.has(job) && on ? Math.sin(((u - t1) / OUTING.at) * Math.PI * 2) * OUTING.pan : 0;
+    return { x, y, yaw: out + pan, frame: LOOKOUTS.has(job) ? 0 : cycleFrame(k + i * 5, true, GATHER_MS[job] || 600), work: true };
+  }
+  return { x, y, yaw: u >= t2 && u < t3 ? yawOf(-dx, -dy) : out, frame: cycleFrame(k + i * 5, u < t3, 380), work: false };
+}
 // The way to the water from a tile (a neighbour that is water), as a unit screen direction, or null.
 function waterWay(state, tile) {
   const g = state.grid, [x, y] = g.toPixel(tile, HEX);
@@ -2193,23 +2219,25 @@ function waterWay(state, tile) {
 }
 // Draws them round (cx, fy), s the size; returns where the work ring goes: { x, top } (world px).
 function drawGatherers(state, p, color, job, cx, fy, s, count) {
-  const n = Math.max(1, Math.min(GATHER_FIGS, count || 1)), k = p.id * 11 + 3;
-  const ww = job === "fish" || job === "water" ? waterWay(state, partyTile(p)) : null;
+  const n = Math.max(1, Math.min(GATHER_FIGS, count || 1)), k = p.id * 11 + 3, o = OUTINGS[job];
+  const ww = job === "fish" || job === "water" || job === "gather" ? waterWay(state, partyTile(p)) : null;
   if (ww) { cx += ww[0] * HEX * 0.3; fy += ww[1] * HEX * 0.3; } // at the water's edge
   const figs = GATHER_AT[n - 1].map(([ox, oy], i) => {
+    if (o && i < (o.stay || 0)) return { x: cx, y: fy, yaw: 315, frame: cycleFrame(k + i * 5, true, GATHER_MS[job] || 500), work: true }; // at the spot (a claim's post)
+    if (o) return outingAt(job, o, cx, fy, s, k, i - (o.stay || 0), n - (o.stay || 0));
     if (ROAMS.has(job)) { // round the spot, each its own way along an oval
       const a = (animOn() ? animNow / 5200 : 0.1) * Math.PI * 2 + i * 2.09 + phaseOf(k) * Math.PI * 2, rx = (7 + n) * s, ry = 3.5 * s;
-      return { x: cx + Math.cos(a) * rx, y: fy + Math.sin(a) * ry, yaw: yawOf(-Math.sin(a) * rx, Math.cos(a) * ry), frame: cycleFrame(k + i * 5, true, 380) };
+      return { x: cx + Math.cos(a) * rx, y: fy + Math.sin(a) * ry, yaw: yawOf(-Math.sin(a) * rx, Math.cos(a) * ry), frame: cycleFrame(k + i * 5, true, 380), work: true };
     }
-    return { x: cx + ox * s, y: fy + oy * s, yaw: ww ? yawOf(ww[0], ww[1]) : ox > 0 ? 135 : 345, frame: cycleFrame(k + i * 5, true, GATHER_MS[job] || 500) }; // side on (the swing reads), the two outer ones facing each other
+    return { x: cx + ox * s, y: fy + oy * s, yaw: ww ? yawOf(ww[0], ww[1]) : ox > 0 ? 135 : 345, frame: cycleFrame(k + i * 5, true, GATHER_MS[job] || 500), work: true }; // side on (the swing reads), the two outer ones facing each other
   }).sort((a, b) => a.y - b.y);
   let top = Infinity;
   for (const f of figs) {
-    const cv = mapWorkerCanvas(job, color, f.yaw, f.frame, "", true), u = SOLO_PX * s;
+    const cv = mapWorkerCanvas(job, color, f.yaw, f.frame, "", f.work), u = SOLO_PX * s;
     ctx.beginPath(); ctx.ellipse(f.x, f.y + 1 * s, 4.5 * s, 1.8 * s, 0, 0, Math.PI * 2); ctx.fillStyle = "rgba(0,0,0,0.3)"; ctx.fill();
     piece(cv, f.x, f.y, u);
     notePiece(cv, f.x, f.y, u);
-    top = Math.min(top, pieceBox(cv, f.x, f.y, u)[1]);
+    top = Math.min(top, pieceBox(cv, o ? cx : f.x, o ? fy : f.y, u)[1]); // an outing's ring stays over the spot, not on whoever is out
   }
   return { x: cx, top };
 }
