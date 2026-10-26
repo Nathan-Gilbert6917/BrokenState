@@ -466,6 +466,10 @@ export const FURNITURE_KINDS = {
   meatsaw:      P("Band saw",             HALF, 30, 120, "two", S1, false, ["kitchen", "bay"], "none", true),
   changer:      P("Change machine",       FULL, 40, 90, "two", S1, true, ["laundry", "shop"], "storage:10", true),
   foldtable:    P("Folding table",        HALF, 12, 14, "one", S1, false, ["laundry", "shop", "kitchen"], "work:table"),
+  // ---------- zoos (issue #59: zoo.js lays them) ----------
+  // The vet hospital's dart cabinet: a steel wall cabinet of the sedatives and the tranquilliser darts (its own table:
+  // combat.js BOX_LOOT, data-zoo.js ZOO_BOX).
+  dartcab:      P("Dart cabinet",         HALF, 30, 28, "one", S1, true, ["ward"], "storage:20", true),
   // ---------- lootable decor (issue #13: decor.js places them; light comfort pieces for the base) ----------
   // The plant and the floor lamp stand on a room's floor cell; the painting and the wall clock hang on a wall (decor.js:
   // c.wart = { k, d, piece: true } on the wall cell, the wall's own kind unchanged) and stand on a cell only once set down.
