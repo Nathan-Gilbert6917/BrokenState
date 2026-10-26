@@ -14,7 +14,7 @@
 // Usage: node tools/scaletest.js [seeds=200] [--quick]
 import { createWorld } from "../src/sim/world.js";
 import { BUILDINGS, assemble, realScale, MAX_STOREYS, OPEN_STOREYS, openStoreys, buildingMap, buildingSpec, settingOf, BMAP } from "../src/sim/buildingmaps.js";
-import { REAL_SIZE, CELL_M, storeyRange } from "../src/sim/data-buildingsize.js";
+import { REAL_SIZE, CELL_M, storeyRange, realFoot, sizeOf } from "../src/sim/data-buildingsize.js";
 import { CELL, RAID_W, RAID_H } from "../src/sim/combat.js";
 import { cleanCfg } from "../src/sim/worldcfg.js";
 import { fitMargins, buildingDeadScale, BIG } from "../src/sim/battlesize.js";
@@ -152,6 +152,19 @@ console.log("\nAn older save keeps its buildings exactly; a new world's city tow
   delete st.scaleLegacy;
   const big = buildingMap(st, tile.id, { id: "hospital", key: "hospital", name: "Hospital" }, false);
   check(big.w <= 300 && big.h <= 300 && big.w >= 290 && big.building.w >= 60, `a city hospital at the largest raid map dial: map ${big.w} × ${big.h}, the building ${big.building.w} × ${big.building.h}`);
+}
+
+console.log("\nSizes by variant (REAL_SIZE sizes, spec.realSize: #35, #36, #37's variants)");
+{
+  const keep = REAL_SIZE.hospital.sizes;
+  REAL_SIZE.hospital.sizes = { rural: { w: [20, 30], d: [16, 22], storeys: [1, 1], city: [1, 1] } };
+  try {
+    const feet = [], kind = [];
+    for (let s = 0; s < 40; s++) { feet.push(realFoot(new Rng(s), "hospital", "rural")); kind.push(realFoot(new Rng(s), "hospital")); }
+    check(feet.every((f) => f.bw >= 20 && f.bw <= 30 && f.bh >= 16 && f.bh <= 22) && kind.every((f) => f.bw >= 60) && sizeOf("hospital", "nope") === REAL_SIZE.hospital, "a variant's size is its own (a rural hospital 20–30 × 16–22 m), the kind's for no variant or an unknown one");
+    const base = BUILDINGS.hospital.make(new Rng(5), {}), sp = realScale(new Rng(5), { ...base, realSize: "rural" }, "hospital", { setting: "city" });
+    check(sp.bw >= 20 && sp.bw <= 30 && sp.height === 1 && sp.storeys === 1, `realScale reads spec.realSize: a rural hospital in a city ${sp.bw} × ${sp.bh}, ${sp.height} storey`);
+  } finally { if (keep) REAL_SIZE.hospital.sizes = keep; else delete REAL_SIZE.hospital.sizes; }
 }
 
 console.log(`\n${pass} passed, ${fail} failed (${((Date.now() - t0) / 1000).toFixed(1)} s)`);

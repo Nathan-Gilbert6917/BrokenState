@@ -15,6 +15,10 @@
 //   storeys  [min, max] storeys (a town's, or anywhere for the kinds that do not grow);
 //   city     [min, max] storeys in a city (a city's tiles and the city crawl);
 //   set      the setting it is usually found in (rural | town | city): the tests' and the docs' only;
+//   sizes    sizes by variant ({ small: { w, d, storeys, city }, medium: {...}, ... }, any names): a variant's row, the
+//            fields it gives over the kind's (realFoot / realStoreys / storeyRange with the variant's name; sizeOf). A
+//            rural critical-access hospital and a city medical centre are one kind at two sizes (#35, #36, #37: a dozen
+//            variants a type, the user's request 2026-10-25);
 //   own      the size belongs to another ticket (#22: the corner store, grocery, supermarket and department store;
 //            #23: the school; #26: the bunkers): its archetype's own dice are kept (only the storeys rule applies);
 //   planned  the archetype's own plan is drawn at this size (#25's military buildings: militarylayout.js MIL_SIZE is these
@@ -30,7 +34,7 @@
 // density per area).
 export const CELL_M = 1;
 
-/** @typedef {{ w?: [number, number], d?: [number, number], small?: [number, [number, number], [number, number]], storeys?: [number, number], city?: [number, number], set: string, own?: boolean, planned?: boolean, wings?: string }} RealSize */
+/** @typedef {{ w?: [number, number], d?: [number, number], small?: [number, [number, number], [number, number]], storeys?: [number, number], city?: [number, number], set: string, own?: boolean, planned?: boolean, wings?: string, sizes?: Record<string, { w?: [number, number], d?: [number, number], storeys?: [number, number], city?: [number, number] }> }} RealSize */
 /** @type {Record<string, RealSize>} */
 export const REAL_SIZE = {
   // Homes
@@ -139,12 +143,22 @@ export const REAL_SIZE = {
 
 const pick = (rng, [lo, hi]) => rng.int(Math.round(lo / CELL_M), Math.round(hi / CELL_M));
 /**
+ * A kind's row, or one of its variants' (R.sizes[size]: its fields over the kind's; an unknown variant: the kind's own).
+ * @param {string} key @param {string} [size] @returns {RealSize | null}
+ */
+export function sizeOf(key, size) {
+  const R = REAL_SIZE[key];
+  if (!R) return null;
+  const V = size && R.sizes && R.sizes[size];
+  return V ? { ...R, small: undefined, ...V } : R;
+}
+/**
  * A building's footprint in cells, bw × bh (outer walls included), from its row: null for a kind with no row or one
  * whose size another ticket owns (its archetype's own dice stand).
- * @param {any} rng @param {string} key @returns {{ bw: number, bh: number } | null}
+ * @param {any} rng @param {string} key @param {string} [size] a variant's size (R.sizes) @returns {{ bw: number, bh: number } | null}
  */
-export function realFoot(rng, key) {
-  const R = REAL_SIZE[key];
+export function realFoot(rng, key, size) {
+  const R = sizeOf(key, size);
   if (!R || R.own || !R.w || !R.d) return null;
   if (R.small && rng.chance(R.small[0])) return { bw: pick(rng, R.small[1]), bh: pick(rng, R.small[2]) };
   return { bw: pick(rng, R.w), bh: pick(rng, R.d) };
@@ -152,13 +166,13 @@ export function realFoot(rng, key) {
 /**
  * A building's storeys (its height) by its row and setting ("city": a city's tiles and the city crawl), null for a
  * kind with no row or no storeys given.
- * @param {any} rng @param {string} key @param {string} [setting] @returns {number | null}
+ * @param {any} rng @param {string} key @param {string} [setting] @param {string} [size] a variant's size (R.sizes) @returns {number | null}
  */
-export function realStoreys(rng, key, setting = "town") {
-  const R = REAL_SIZE[key];
+export function realStoreys(rng, key, setting = "town", size) {
+  const R = sizeOf(key, size);
   if (!R) return null;
   const range = setting === "city" && R.city ? R.city : R.storeys;
   return range ? rng.int(range[0], range[1]) : null;
 }
-/** The range of storeys a kind stands in a setting (the tests'). @param {string} key @param {string} [setting] @returns {[number, number] | null} */
-export const storeyRange = (key, setting = "town") => { const R = REAL_SIZE[key]; return R ? (setting === "city" && R.city ? R.city : R.storeys || null) : null; };
+/** The range of storeys a kind (or its variant) stands in a setting (the tests'). @param {string} key @param {string} [setting] @param {string} [size] @returns {[number, number] | null} */
+export const storeyRange = (key, setting = "town", size) => { const R = sizeOf(key, size); return R ? (setting === "city" && R.city ? R.city : R.storeys || null) : null; };

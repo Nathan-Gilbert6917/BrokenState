@@ -58,7 +58,7 @@ import { militaryStyle, militaryOutside, MIL_SIZE } from "./militarylayout.js"; 
 import { decorate, flipDecoY, placeDecorPieces } from "./decor.js"; // rugs, clutter, wall art, wall colours, light fixtures (cosmetic)
 import { rollWin, winMixOf, windowOpen } from "./windows.js"; // the windows' states (open, locked, fixed), a throw through an open one
 import { rollScenes, sceneRng } from "./interiorscenes.js"; // signs of survival: barricades, blood, bodies (dice of their own)
-import { realFoot, realStoreys, storeyRange, REAL_SIZE } from "./data-buildingsize.js"; // buildings at real size (issue #24)
+import { realFoot, realStoreys, storeyRange, sizeOf, REAL_SIZE } from "./data-buildingsize.js"; // buildings at real size (issue #24)
 import { BUNKER_PLANS, bunkerStyle, levelName } from "./bunkerlayout.js"; // bunkers: the plans, their rooms, their levels below ground (issue #26)
 import { eateryPlan, eateryOf } from "./eaterylayout.js"; // restaurants by kind of food, format and size (issue #33)
 import { industryPlan, industryStyle, INDUSTRY_ROLES, INDUSTRY_KEYS } from "./industrylayout.js"; // warehouses, factories and labs: a dozen plans each (issue #37)
@@ -1278,7 +1278,7 @@ function twinOf(leaf) {
 const OFFICE_ORDER = ["cubicles", "open", "meeting", "cubicles", "open", "canteen"];
 /** @param {any} rng @param {any} spec @param {string} key @param {{ setting?: string, storeyBonus?: number }} [o] */
 export function realScale(rng, spec, key, o = {}) {
-  const R = REAL_SIZE[key];
+  const v = spec && spec.realSize, R = sizeOf(key, v); // spec.realSize: a variant's size in its kind's row (REAL_SIZE sizes: a rural hospital, a city medical centre)
   if (!R || !spec) return spec;
   if (spec.real) return { ...spec, height: Math.max(1, spec.storeys || 1) }; // planned at its real size by its archetype (#25's military plans): as it is, every floor built
   const out = { ...spec, natW: spec.bw, natH: spec.bh, natStoreys: Math.max(1, spec.storeys || 1) };
@@ -1292,13 +1292,13 @@ export function realScale(rng, spec, key, o = {}) {
   }
   // Storeys: the height it stands, the floors built.
   let height = out.natStoreys;
-  if (R.city) height = clampN((realStoreys(rng, key, o.setting) || height) + bonus, 1, MAX_STOREYS);
-  else { const r = storeyRange(key, o.setting); if (r) height = clampN(height, r[0], r[1]); }
+  if (R.city) height = clampN((realStoreys(rng, key, o.setting, v) || height) + bonus, 1, MAX_STOREYS);
+  else { const r = storeyRange(key, o.setting, v); if (r) height = clampN(height, r[0], r[1]); }
   const built = openStoreys(height, bonus);
   out.height = height; out.storeys = built;
   if (height >= SCALE.TWO_STAIRS) out.stairs = { ...(spec.stairs || {}), n: 2 };
   // The footprint, and the plan over it (realFoot; a kind with no size of its own here: the archetype's footprint and plan).
-  const foot = R.own || spec.shape ? null : realFoot(rng, key);
+  const foot = R.own || spec.shape ? null : realFoot(rng, key, v);
   const flips = Array.from({ length: 64 }, () => !R.wings && rng.chance(0.5)); // each wing turned left for right
   let lay = (prog) => prog, fill = (prog) => prog;
   if (foot) {

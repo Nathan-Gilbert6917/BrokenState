@@ -2917,10 +2917,12 @@ export function distField(b, sources, walker = null) {
   return d;
 }
 // distField's cache for a battle: emptied whenever any cell's kind, hit points, height or bar changed (a door broken,
-// a wall breached, a lock opened, the map turned or swapped), checked against a copy of those on every call.
+// a wall breached, a lock opened, the map turned or swapped), checked against a copy of those on every call. One for each
+// floor's cells (a building with storeys: the AI moves from floor to floor and back each step, issue #24).
 function fieldCache(b) {
-  let fc = b._fields;
+  if (!b._fields) Object.defineProperty(b, "_fields", { value: new WeakMap(), writable: true, configurable: true, enumerable: false }); // not saved with the battle
   const cells = b.cells, n = cells.length;
+  let fc = b._fields.get(cells);
   let same = !!fc && fc.cells === cells && fc.k.length === n;
   if (same) {
     const k = fc.k, hp = fc.hp, h = fc.h, bar = fc.bar;
@@ -2928,7 +2930,7 @@ function fieldCache(b) {
   }
   if (!same) {
     fc = { cells, k: cells.map((c) => c.k), hp: cells.map((c) => c.hp), h: cells.map((c) => c.h), bar: cells.map((c) => c.bar), map: new Map() };
-    Object.defineProperty(b, "_fields", { value: fc, writable: true, configurable: true, enumerable: false }); // not saved with the battle
+    b._fields.set(cells, fc);
   }
   return fc.map;
 }
@@ -3576,11 +3578,22 @@ function sightBound(b, e) {
 function trackGhosts(b) {
   if (!b || !b.units || !b.losCache) return;
   const g = b.ghosts || (b.ghosts = {});
+  let eyes = null; // your people's furthest sight, asked once (sightBound): an enemy beyond every eye's on its floor is seen only through a peek or a window
   for (const e of b.units) {
     if (e.side !== "enemy") continue;
     if (e.dead || e.fled || e.left || e.off) { if (g[e.id] && (e.fled || e.left || e.off || playerSeesCell(b, e.x, e.y))) delete g[e.id]; continue; }
-    if (playerSees(b, e)) g[e.id] = [e.x, e.y, b.turn, e.f || 0]; // [x, y, turn, floor]
+    if (!eyes) { bindDims(b); eyes = b.units.filter((u) => u.side === "player" && active(u)).map((u) => { const r = Math.ceil(sightBound(b, u)) + (u.size > 1 ? u.size : 1); return { f: u.f || 0, x: u.x, y: u.y, r: r >= 0 ? r : Infinity }; }); eyes.floors = b.floors ? b.units.filter((u) => u.side === "player" && activeAny(u) && !isTied(u)).map((u) => { const c = b.floors[0].cells[u.y * W + u.x]; return { f: u.f || 0, hill: c && c.ter ? c.h || 0 : 0 }; }) : []; }
+    if (playerSeesFrom(b, e, eyes)) g[e.id] = [e.x, e.y, b.turn, e.f || 0]; // [x, y, turn, floor]
   }
+}
+// playerSees, with the eyes too far to see or touch the target skipped: the same answer (a big building's dead, most far
+// from your people, cost a sight bound each instead of a line of sight from every eye after every step).
+function playerSeesFrom(b, t, eyes) {
+  const s = t.size > 1 ? t.size - 1 : 0, f = t.f || 0;
+  const throughWindow = () => eyes.floors.some((g) => (f === 0 ? g.f !== 0 : g.f === 0 && g.hill >= f)); // anyone who could see t through a window: between the ground floor and one above, from a hill that reaches it (highground.js windowSees)
+  if (b.floors && f !== (b.floor || 0)) return throughWindow() && playerSees(b, t); // another storey: only through a window
+  const near = eyes.some((o) => o.f !== f || Math.max(Math.max(t.x - o.x, o.x - t.x - s, 0), Math.max(t.y - o.y, o.y - t.y - s, 0)) <= o.r);
+  return near ? playerSees(b, t) : (!!b.peeks && peekSees(b, t.x, t.y)) || (throughWindow() && windowSeen(b, "player", t));
 }
 export const playerSeesCell = (b, x, y) => b.units.some((u) => u.side === "player" && active(u) && canSeeAt(b, u, x, y));
 // The ghosts to draw: enemies not seen now with a last-seen spot.
@@ -7568,13 +7581,14 @@ function patrol(b, u) {
   if (u.kind === "zombie" && !rng.chance(0.5)) { u.ap = 0; return; }
   const home = u.home || [u.x, u.y];
   if (!u.wp || (u.x === u.wp[0] && u.y === u.wp[1]) || rng.chance(0.15)) {
-    const opts = [];
-    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (b.reach[idx(x, y)] && cellAt(b, x, y).walk && dist(x, y, home[0], home[1]) <= (u.kind === "zombie" ? 4 : 6)) opts.push([x, y]);
+    const opts = [], R = u.kind === "zombie" ? 4 : 6; // only the cells round home can be in range: the same cells, in the same order, as the whole map's
+    const x0 = Math.max(0, Math.floor(home[0] - R)), x1 = Math.min(W - 1, Math.ceil(home[0] + R)), y0 = Math.max(0, Math.floor(home[1] - R)), y1 = Math.min(H - 1, Math.ceil(home[1] + R));
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (b.reach[idx(x, y)] && cellAt(b, x, y).walk && dist(x, y, home[0], home[1]) <= R) opts.push([x, y]);
     u.wp = rng.pick(opts) || home;
   }
   const r = reachable(b, u, u.kind === "zombie" ? 2 : u.mob * 0.6);
   let best = null;
-  for (let i = 0; i < W * H; i++) {
+  for (const i of reachedInOrder(r)) { // the cells it reached, in map order: the same first nearest as a scan of the whole map
     if (!isFinite(r.dist[i]) || r.dist[i] === 0) continue;
     const d = dist(i % W, (i / W) | 0, u.wp[0], u.wp[1]);
     if (!best || d < best.d) best = { i, d };
