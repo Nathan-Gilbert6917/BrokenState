@@ -1130,6 +1130,34 @@ The user's request 2026-10-18. Test `tools/barricadetest.js`.
 - **Carrying a piece off** (issue #12, 2026-10-25): next to Shove, Lift (Alt+U, both actions; a helper's both too), Set down (Alt+G, 1 action each) and Load into vehicle (Alt+W, 1 action) carry furniture and appliances: alone very slow (past 40 kg the pace is crushed), two tethered at half the weight each, set down on a seen cell next to the carrier (a pair: left or right of the two, parallel; a door frame too, as a barricade). The cells involved go through barricade `pieceOff` / `setPiece` / `freeForPiece` (shared with the shove's `movePiece`). The rules, numbers and kinds: [travel.md, Carrying furniture and appliances](travel.md#carrying-furniture-and-appliances).
 - Modules: [barricade; combat CELL boarded, reachable, distField, moveAlong, breakCell, structureName, combatAct; windows insideOf; data GEAR.boards; crafting CRAFTS.boards; ui/combat barricadeButtons / shoveChooser / shoveCbAct / shoveClick, ui/battlebar, ui/keymap, ui/isoview (boarded cells drawn as planks), ui/codex "Barricades"].
 
+## The carry playthrough (issue #48)
+The user's request (2026-10-26): "Add a scripted play though of testing taking different pieces with one, two survivors and using vehicles and no vehicles".
+
+`prototype/tools/carryplaytest.js` plays the carrying, extraction and base systems of issues #12, #17, #18, #19, #20 and #21 end to end through the sim's own orders (`combatAct`: `move`, `liftPiece`, `setPiece`, `stowPiece`, `goup` / `godown`, `extract`; the turns ended with `endPlayerTurn` / `runEnemyPhase`), on a real house POI's raid map and a real city crawl, no browser. It prints a transcript, one line a step ("Turn 5: Ivy and Theo lift the refrigerator (2 actions each: 0 and 0 left).") with the `ok` / `FAIL` checks between, and each FAIL names the seed and the scene. Default seeds 42, 7, 1 and 5 (1 and 5 have a two-storey house, for the stairs); `BS_QUICK` plays 42 and 5. About 3 s a seed.
+
+| Scene | Who | What it plays |
+|---|---|---|
+| A | two survivors and the van | one refused the fridge alone; the two lift it (2 actions each), tethered at 30 kg each, carry it out of the house (the tether checked after every move) and load it; the range the same; the sofa (2 cells) set down to the left, parallel, and lifted again; one of the two downed: the sofa drops, the tether ends; a piece upstairs carried down the stairs (both actions each); the van filled up: the sofa stays by the door, in the house's ledger; the pieces loaded in the raid's loot |
+| B | one survivor and the van | refused the fridge; the microwave lifted (2 actions; one action left is refused), its 15 kg on the load; the shelves (25 kg: 4 tiles an action from 5) set in the front doorway, a barricade (the frame kept under it) a walker cannot get through, lifted out again; carried out at extraction: into the van by itself |
+| C | one survivor on foot | a chair carried out: "Exhausted, the team dropped what it was carrying: a chair. It stands by the door…", in the ledger |
+| D | two survivors on foot | the oven between them dropped from exhaustion; the next raid finds the oven and C's chair by the door and lifts the oven again |
+| E | two survivors and a van, a city crawl | a piece lifted in a place, out still in the arms (`it.crawl`), the card's line, a block away and back at `carryPace`'s hours, out at the entry block: into the van |
+| F | at the hub | the pieces in the armory as items (`fridge`, `f_stove`, `f_microwave`, `f_shelf`); the fridge set (`setPlaced`) is a cupboard without power and a fridge room on a generator; the range cooks on the grid; the microwave runs; the shelves add 40 kg of storage |
+
+What the script does for itself, and says in the transcript: nobody else on the map (the dead, the house's folk and the bodies taken off, no Heat waves: `R.spawnCap` 0), so the carrying is all that happens; a piece the house has no copy of is stood on an open cell ("no microwave here to carry out: the script stands one at 20,9"); only pieces with a way out for someone with full hands are chosen (no vault over half cover, `canVault`), and the closed doors on that way are opened first by walking onto them (`noDoors`); the end of a pair nearer the cell leads (the other steps along); a new generator's tank is filled (the refuel chore runs by day); the drive home is skipped (`startReturn` from the home tile: the real `returnHome`, `unloadAt`). A scene that stops sends its team home, so the next scenes still run.
+
+**Bugs it found, fixed with a check each** (2026-10-26):
+- A piece with a plural name ("Shelves", "Lockers", "Crates") read "The shelves goes into the work van", "a shelves". `furnicarry.js pluralName` / `agree` make the lift, set-down, extraction and exhaustion lines agree ("The shelves go into…", "some shelves", "two lots of shelves", "They stand by the door").
+- A piece the ledger put by the door stood on a survivor who arrived there: `poiRaidStart` applies the ledger after the units are placed. `furnihome.js applyPieceLedger` now steps anyone on a cell nobody can stand on to the nearest free one.
+- `furnihome.js crawlMoveHours` weighed each carrier with the whole piece, so it said 2 h for a table between two where the crawl walked it in 1 h. It now scales `citycrawl.js carryPace` (the one rule, by pairs).
+- A piece loaded into the vehicle during a raid (Load into vehicle) went home but the summary said "Loot: nothing". `stowAct` keeps it in `b.raid.stowed`; `endRaid` lists it in the loot when the vehicle goes home.
+
+**Decisions:**
+- The issue says the extras a full vehicle cannot take are dropped "with the exhaustion message". #18 gives them their own line ("The work van is full: the sofa stays by the door."), which the test checks; the exhaustion message is for no vehicle. Left as #18 built it.
+- A pair standing diagonally has no side to set a 2-cell piece down on, parallel to them (`setTargets` offers nothing); the script steps one of them straight beside the other first.
+
+**The browser version** (`prototype/tools/carryplaysmoke.cjs`, by hand, outside the gate): a house raid with two survivors and the vehicle, the Lift order and its "With <name>" chooser clicked in the battle panel, the fridge carried to the vehicle with move orders, Load into vehicle, extraction and the summary, a screenshot at each step (`node tools/carryplaysmoke.cjs <outdir>`).
+
 ## Signs of survival
 Pre-placed barricades, blood and bodies inside a raid's building: signs that people held out there, and how it ended.
 
