@@ -288,7 +288,8 @@ function SLOTS(plan) {
     exam: (name = "Exam room") => O("exam", "exam", { name, type: "clinic" }),
     drugs: () => O("pharmroom", "drugroom", { name: "Drug cupboard", lock: ["door", 0.5], boxLock: ["drugs", 0.5] }),
     secure: (name = "Security office") => O("office", "security", { name }),
-    vault: (name = "Vault") => O("armory", "vault", { name, type: "bankvault", lock: ["vault", 0.8], boxLock: ["safe", 0.5], windows: false, fl: "conc" }),
+    vault: (name = "Vault") => O("armory", "vault", { name, type: "office", // records and tapes since issue #43 (a bank vault's were its pistols)
+      lock: ["vault", 0.8], boxLock: ["safe", 0.5], windows: false, fl: "conc" }),
     bank: (name = "Banking hall") => O("lobby", "bankhall", { name, type: "office", hub: true, maxBoxes: 2 }),
     cells: (name = "Holding cell") => ({ role: "cells", name, civic: "cells", maxBoxes: 1 }),
     exec: (name = "Executive office") => O("office", "execoffice", { name, type: "execsuite" }),
