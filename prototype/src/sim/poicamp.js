@@ -739,8 +739,8 @@ export function bestSquare(state, b) {
   const cand = [];
   for (let y = POICAMP.HALF; y < b.h - POICAMP.HALF; y++) for (let x = POICAMP.HALF; x < b.w - POICAMP.HALF; x++) cand.push([Math.hypot(x - mx, y - my), x, y]);
   cand.sort((a, c) => a[0] - c[0] || a[2] - c[2] || a[1] - c[1]);
+  const cells = cellsOn(b, floorOf(b)), seen = seenOf(b);
   for (const [, x, y] of cand.slice(0, 400)) {
-    const cells = cellsOn(b, floorOf(b)), seen = seenOf(b);
     if (squareCells(x, y).every(([cx, cy]) => seen[cy * b.w + cx] && groundOk(cells[cy * b.w + cx])) && !hostilesIn(b, [x, y], floorOf(b)).length) return [x, y];
   }
   return null;
