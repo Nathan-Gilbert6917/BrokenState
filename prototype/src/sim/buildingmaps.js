@@ -1917,6 +1917,8 @@ export function siteSizeK(state, tile) {
 
 // The buildings: key → { name, make(rng, opts) }. Location types use these through SITES. opts.storeyBonus: extra
 // storeys for offices and apartments (the city crawl's deeper blocks).
+// A complex's building as a building of its own map: its spec without the complex's tight margins and bare ground.
+const alone = (sp) => { const { margins, ground, ...rest } = sp; void margins; void ground; return rest; };
 export const BUILDINGS = {
   house:       { name: "House", make: (r, o) => house(r, "house", o) },
   farmhouse:   { name: "Farmhouse", make: (r, o) => house(r, "farmhouse", o) },
@@ -1997,9 +1999,10 @@ export const BUILDINGS = {
   // its houses (the hint, the archetype tests).
   neighbourhood: { name: "Neighbourhood", make: (r, o) => house(r, "house", o), street: true },
   // A prison and a county jail (issue #31): buildingMap builds a complex of buildings (prison.js prisonMap); make gives
-  // one of its buildings (the hint, the archetype tests): the chow hall.
-  prison: { name: "State prison", make: (r) => chowHall(r), complex: true },
-  jail:   { name: "County jail", make: (r) => chowHall(r), complex: true },
+  // one of its buildings (the hint, the archetype tests): the chow hall, standing alone (alone: the default margins and
+  // ground round it, not the complex's one-cell ring).
+  prison: { name: "State prison", make: (r) => alone(chowHall(r)), complex: true },
+  jail:   { name: "County jail", make: (r) => alone(chowHall(r)), complex: true },
   // A college campus (issue #28, campus.js campusMap): many buildings on one map round quads and courtyards; make gives
   // one of its residence halls (the hint, the archetype tests). The campus's buildings, each a raid of its own too
   // (setup.raid.place): campuslayout.js's plans, the chapel the church's, the health centre the clinic's.
