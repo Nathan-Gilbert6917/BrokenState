@@ -192,7 +192,9 @@ export const TOOL_FINDS = {
   factory: { p: 0.05, items: { toolkit: 2, welder: 1, handdrill: 1, pipewrench: 1 } },
   warehouse: { p: 0.04, items: { toolkit: 2, handsaw: 1, shovel: 1, handdrill: 0.6, welder: 0.3 } },
   quarry: { p: 0.05, items: { shovel: 2, toolkit: 1, pickaxe: 1, welder: 0.3 } },
+  sawmill: { p: 0.14, items: { handsaw: 3, bowsaw: 3, axe: 2, hatchet: 1.5, toolkit: 1, hammer: 1 } }, // issue #53: the filing room's saws, the mill's axes
   mineshack: { p: 0.05, items: { shovel: 2, toolkit: 1, pickaxe: 1, handdrill: 0.5 } },
+  mine: { p: 0.08, items: { pickaxe: 3, shovel: 2, toolkit: 1, handdrill: 1, sledge: 1 } }, // issue #52: the mine's shops and the workings
   dam: { p: 0.03, items: { toolkit: 2, welder: 0.4, pipewrench: 1 } },
   radiotower: { p: 0.03, items: { toolkit: 2, handdrill: 1 } },
   cabin: { p: 0.05, items: { axe: 3, bowsaw: 2, handsaw: 1, shovel: 1, sewingkit: 1 } },

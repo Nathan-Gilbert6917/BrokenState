@@ -1899,6 +1899,21 @@ function paintShed() {
   return p;
 }
 
+function paintSawmill() {
+  const p = painter(18, 15);
+  // Sawmill (issue #53): a long open-sided saw shed under a tin roof, the log deck beside it, stacked lumber in front
+  // and the rusty cone of a wigwam burner smoking behind; a pine at the yard's edge.
+  pine(p, 16, 9, 7, "#4a7a3a");
+  p.rect(13, 1, 14, 1, "#5a3424"); p.rect(12, 2, 15, 3, "#8a4a2c"); p.rect(11, 4, 16, 6, "#7a4026"); p.set(13, 0, "#9a9a9a"); // the burner
+  p.rect(1, 4, 11, 4, shade(METAL, 0.3)); p.rect(0, 5, 12, 5, METAL); p.rect(0, 6, 12, 6, shade(METAL, -0.3)); // the shed's roof
+  for (const x of [1, 6, 11]) p.rect(x, 7, x, 11, WOOD);                          // its posts
+  p.rect(2, 9, 9, 10, "#4a5a6a"); p.set(5, 8, "#c9ced3"); p.set(5, 9, "#c9ced3");   // the headsaw and its carriage
+  for (const [x, y] of [[13, 9], [15, 9], [14, 8], [13, 11], [15, 11], [14, 10]]) { p.set(x, y, "#5a4030"); p.set(x + 1, y, "#c9a46a"); } // the log deck
+  p.rect(1, 12, 5, 13, "#c9a46a"); p.rect(1, 12, 5, 12, "#a07a48"); p.rect(7, 12, 10, 13, "#c9a46a"); p.rect(7, 12, 10, 12, "#a07a48"); // lumber stacks
+  p.rect(0, 14, 17, 14, shade(DIRT, 0.15));
+  return p;
+}
+
 function paintBlind() {
   const p = painter(18, 15);
   // Hunting blind: a camouflaged box stand on stilts with a ladder, among the pines, its shooting slot dark.
@@ -1950,6 +1965,22 @@ function paintMineshack() {
   p.rect(12, 9, 16, 9, shade(METAL, 0.3)); p.rect(12, 10, 17, 13, METAL); p.rect(12, 13, 17, 13, shade(METAL, -0.3)); // the shack
   p.rect(14, 11, 15, 13, shade(METAL, -0.55)); p.set(12, 11, LIT_WIN);
   p.rect(1, 12, 4, 13, "#4a4a4e"); p.rect(2, 11, 3, 11, "#7a6a4a"); p.set(1, 14, TIRE); p.set(4, 14, TIRE); // the ore cart
+  p.rect(0, 14, 17, 14, shade(DIRT, 0.1)); for (let x = 0; x <= 17; x += 2) p.set(x, 14, shade(METAL, -0.3));
+  return p;
+}
+
+function paintMine() {
+  const p = painter(18, 15);
+  // Mine (issue #52): a steel headframe over the shaft on the hillside, its sheave wheel at the top, the hoist house's
+  // tin roof beside it, a waste dump of grey rock and an ore car on its rails.
+  for (let y = 4; y <= 13; y++) p.rect(0, y, Math.min(17, 2 + y), y, y % 3 ? "#6e6a60" : "#7a766c"); // the hillside
+  p.rect(9, 1, 9, 10, OUTLINE); p.rect(13, 1, 13, 10, OUTLINE); p.rect(9, 1, 13, 1, OUTLINE); // the headframe's legs and top
+  for (let y = 3; y <= 9; y += 3) p.rect(10, y, 12, y, shade(METAL, -0.2));        // its braces
+  p.set(10, 0, METAL); p.set(11, 0, shade(METAL, 0.3)); p.set(12, 0, METAL);         // the sheave wheel
+  p.rect(10, 10, 12, 12, "#111214");                                                 // the shaft's collar
+  p.rect(13, 8, 17, 8, shade(METAL, 0.3)); p.rect(13, 9, 17, 12, METAL); p.set(15, 10, LIT_WIN); // the hoist house
+  for (const [x, y] of [[1, 11], [2, 10], [3, 11], [2, 12], [4, 12], [3, 12]]) p.set(x, y, "#8e887c"); // the waste dump
+  p.rect(5, 12, 7, 13, "#4a4a4e"); p.set(6, 11, "#7a6a4a"); p.set(5, 14, TIRE); p.set(7, 14, TIRE); // the ore car
   p.rect(0, 14, 17, 14, shade(DIRT, 0.1)); for (let x = 0; x <= 17; x += 2) p.set(x, 14, shade(METAL, -0.3));
   return p;
 }
@@ -2686,7 +2717,7 @@ const POI_PAINT = {
   military_hive: paintInfestedBase, bunker_mil: () => paintMilitarySite(true), // sim/crashstart.js: Crashlanding's overrun Guard base (loc.look "hivebase", ui/render.js siteLook) and the unit's mountain bunker
   // Points of interest (sim/pois.js): the small places a tile holds besides its site.
   house: paintHouse, neighbourhood: paintNeighbourhood, garage: paintGarage, corner: paintCorner, pizza: paintPizza,
-  farmstand: paintFarmstand, shed: paintShed, blind: paintBlind, campsite: paintCampsite, hikercamp: paintHikercamp, mineshack: paintMineshack, bunker: () => paintBunkerPortal(false), govbunker: () => paintBunkerPortal(true), shelter: paintFalloutShelter, prepper: paintPrepper, // bunkers (issue #26)
+  farmstand: paintFarmstand, shed: paintShed, blind: paintBlind, campsite: paintCampsite, hikercamp: paintHikercamp, mineshack: paintMineshack, mine: paintMine, sawmill: paintSawmill, bunker: () => paintBunkerPortal(false), govbunker: () => paintBunkerPortal(true), shelter: paintFalloutShelter, prepper: paintPrepper, // bunkers (issue #26)
   datacenter: paintDatacenter, // data centres (issue #51)
   pawnshop: paintPawnShop, // sim/shops.js
   stripmall: paintMall, outlet: paintMall, // sim/mall.js (issue #30): the mall's own sprite for now

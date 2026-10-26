@@ -399,6 +399,7 @@ export const HEAD_FINDS = {
   factory: { p: 0.05, items: { hardhat: 3, earmuffs: 2, earplugs: 2 } },
   dam: { p: 0.04, items: { hardhat: 3, earmuffs: 1, earplugs: 1 } },
   quarry: { p: 0.05, items: { hardhat: 3, earmuffs: 2, earplugs: 1 } },
+  mine: { p: 0.08, items: { hardhat: 4, earmuffs: 1, earplugs: 1 } }, // issue #52: a mine's hard hats
   warehouse: { p: 0.03, items: { hardhat: 2, earplugs: 1 } },
   gunstore: { p: 0.08, items: { earmuffs: 3, eardef: 2, earplugs: 3 } },
   pawnshop: { p: 0.04, items: { earmuffs: 2, eardef: 1 } }, // shops.js
