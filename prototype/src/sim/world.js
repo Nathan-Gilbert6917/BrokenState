@@ -265,6 +265,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
     placeV: 1, // where buildings stand by the placement table (data-placement.js, issue #42; save.js: an older save keeps its places)
     officesV: 1, // the office buildings of every kind and their firms (data-offices.js; save.js: an older save gets none)
     civicV: 1, // civic and medical buildings at real scale, their big plans and sites (civicvariants.js, civicsite.js, issue #49; save.js: an older save keeps its plans)
+    stadV: 1, // sports stadiums and arenas (stadium.js, issue #57; save.js: an older save's tiles get none)
     dcV: 1, // data centres (datacenter.js, issue #51; save.js: an older save's tiles get none)
     sawV: 1, // sawmills (sawmilllayout.js, issue #53; save.js: an older save's tiles get none)
     minesV: 1, // mines and quarries (minelayout.js, issue #52): a quarry site and a mine shack are the new building types (save.js: an older save keeps its workshop and its cabin)

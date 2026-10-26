@@ -1099,6 +1099,23 @@ function paintAmusement() {
   return p;
 }
 
+// A stadium or an arena (sim/stadium.js, issue #57): the bowl's concrete ring of stands round a green field with its
+// white lines, the light towers at the corners, the lot in front.
+function paintStadium() {
+  const p = painter(28, 20);
+  const conc = "#b8b2a6", seat = "#3d6a9a", grass = "#4f8a3a";
+  for (let y = 3; y <= 17; y++) {
+    const t = (y - 10) / 7.5, half = Math.round(13 * Math.sqrt(Math.max(0, 1 - t * t)));
+    p.rect(14 - half, y, 13 + half, y, y < 6 ? shade(conc, 0.15) : y > 14 ? shade(conc, -0.2) : conc);
+  }
+  for (let y = 5; y <= 15; y++) { const t = (y - 10) / 5.5, half = Math.round(10 * Math.sqrt(Math.max(0, 1 - t * t))); p.rect(14 - half, y, 13 + half, y, seat); }
+  p.rect(7, 7, 20, 13, grass);
+  p.rect(13, 7, 13, 13, WHITE); p.rect(7, 10, 20, 10, shade(grass, 0.2));
+  for (const x of [1, 26]) { p.rect(x, 0, x, 6, "#7d848c"); p.rect(x - 1, 0, x + 1, 0, "#f0e6a0"); } // light towers
+  p.rect(0, 19, 27, 19, ASPHALT); for (let x = 1; x <= 26; x += 4) p.set(x, 19, "#d8d4c8");
+  return p;
+}
+
 function paintUniversity() {
   const p = painter(22, 20);
   const stone = "#cbc2aa";
@@ -2740,6 +2757,7 @@ const POI_PAINT = {
   amusement: paintAmusement, // sim/amusement.js (issue #60): a park, a fairground, a water park
   jail: paintPolice, // sim/pois.js jailExtra: a county jail, a station's look
   zoo: paintZoo, // sim/zoo.js (issue #59): a zoo's entrance arch
+  stadium: paintStadium, // sim/stadium.js (issue #57): every venue the bowl for now
   // The shops and services (sim/data-shops.js NEW_KINDS), each painted in its franchise's look.
   sportshop: paintSportShop, electronics: paintElectronics, radioshop: paintRadioShop, bookstore: paintBookstore, library: paintLibrary,
   petstore: paintPetStore, garden: paintGarden, clothing: paintClothing, vet: paintVet, dealer: paintDealer, restaurant: paintRestaurant,
