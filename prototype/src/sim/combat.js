@@ -7063,6 +7063,12 @@ export const BOX_LOOT = {
   // aid the lab kept in it; a few vials still good.
   labfreezer:   { rest: 0.4, loot: { meds: [0.35, 1, 2] }, gear: [["bandagekit", 0.03]] },
   drum:         { rest: 0.2, loot: { fuel: [0.6, 2, 6] }, gear: [] }, // a fuel depot's drum: what is left in it
+  // Data centres (issue #51, datacenter.js): a UPS cabinet's and a battery string's batteries and boards, a drum of cable
+  // (copper: scrap), a mining rig's cards and boards. Nothing to eat.
+  upscab:       { rest: 0, loot: { electronics: [0.5, 1, 2], parts: [0.4, 1, 2], scrap: [0.4, 1, 3] }, gear: [["batteries", 0.25]] },
+  batterystring: { rest: 0, loot: { scrap: [0.6, 2, 5], electronics: [0.2, 1, 1] }, gear: [["batteries", 0.35]] },
+  cablereel:    { rest: 0, loot: { scrap: [0.8, 3, 8], electronics: [0.25, 1, 2] }, gear: [] },
+  miningrig:    { rest: 0, loot: { electronics: [0.6, 1, 3], parts: [0.2, 1, 1] }, gear: [] },
   rationshelf:  { rest: 0, loot: { preserved: [0.95, 3, 7], water: [0.55, 2, 5] }, gear: [["puritabs", 0.1]] },
   "rationshelf@cabin": { rest: 0, loot: { preserved: [1, 6, 12], food: [0.7, 3, 6], water: [0.8, 4, 9], meds: [0.3, 1, 2] }, gear: [["puritabs", 0.25]] },
   radioconsole: { rest: 0.3, loot: { electronics: [0.7, 1, 3], parts: [0.4, 1, 2] }, gear: [["milradio", 0.2], ["handradio", 0.15]] },

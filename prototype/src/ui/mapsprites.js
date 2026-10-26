@@ -1974,6 +1974,20 @@ function paintPrepper() {
   return p;
 }
 
+function paintDatacenter() {
+  const p = painter(20, 15);
+  // A data centre (issue #51, sim/datacenter.js): a long windowless grey box, louvres down its side, the cooling units on
+  // its roof, a generator in its yard with the exhaust stack, the fence.
+  p.rect(0, 12, 19, 14, "#5d7a3e");
+  p.rect(1, 4, 14, 12, OUTLINE); p.rect(2, 5, 13, 12, "#8a9096"); p.rect(2, 5, 13, 5, "#a6acb2"); // the hall
+  for (let x = 3; x <= 12; x += 2) p.rect(x, 7, x, 10, "#6a7076"); // the louvres
+  p.rect(3, 2, 5, 4, "#c9c7bd"); p.rect(8, 2, 10, 4, "#c9c7bd"); p.set(4, 3, "#4b4b50"); p.set(9, 3, "#4b4b50"); // the roof units
+  p.rect(7, 10, 8, 12, "#1c1c1e"); p.set(12, 6, "#5ad06a"); // the door, a status light
+  p.rect(15, 8, 18, 12, OUTLINE); p.rect(16, 9, 18, 12, "#c9c7bd"); p.rect(17, 6, 17, 8, "#26272a"); // the generator, its stack
+  for (let x = 0; x <= 19; x += 3) p.set(x, 13, "#9aa1a8"); // the fence posts
+  return p;
+}
+
 // ---- shops and services by franchise (sim/data-shops.js FRANCHISES) ----
 // A kind with franchises is painted in its franchise's look (poiSpriteCanvas: the place's own by its variant, else the
 // kind's first): { wall, trim, sign, text, accent, style }. The wall; the trim (the footing, the sills, the mullions);
@@ -2570,6 +2584,7 @@ const POI_PAINT = {
   // Points of interest (sim/pois.js): the small places a tile holds besides its site.
   house: paintHouse, neighbourhood: paintNeighbourhood, garage: paintGarage, corner: paintCorner, pizza: paintPizza,
   farmstand: paintFarmstand, shed: paintShed, blind: paintBlind, campsite: paintCampsite, hikercamp: paintHikercamp, mineshack: paintMineshack, bunker: () => paintBunkerPortal(false), govbunker: () => paintBunkerPortal(true), shelter: paintFalloutShelter, prepper: paintPrepper, // bunkers (issue #26)
+  datacenter: paintDatacenter, // data centres (issue #51)
   pawnshop: paintPawnShop, // sim/shops.js
   stripmall: paintMall, outlet: paintMall, // sim/mall.js (issue #30): the mall's own sprite for now
   jail: paintPolice, // sim/pois.js jailExtra: a county jail, a station's look

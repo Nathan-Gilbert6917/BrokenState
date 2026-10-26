@@ -8,6 +8,7 @@
 // battlesize.js MAP_CAP, or --side): wave 2's stadiums, zoos, data centres and hospitals at their new caps.
 // Slow (a minute or two in all), so not in the gate; BS_QUICK=1 plays 2 turns a run instead of 4.
 // Usage: node tools/perfbudgettest.js [--sites 300,400,campus,mall] [--key stadium,zoo] [--side 500] [--dead 100,200]
+//   --key <key>/<plan>: that plan of the kind pinned (datacenter/hyperscale: a data centre's campus, issue #51).
 //                                     [--turns 4] [--seed 42] [--budget 1500] [--storeys 3]
 //   --budget: the mean turn allowed a hundred of the dead, in ms. --sites none with --key: only those buildings.
 import { spawnSync } from "node:child_process";
@@ -46,11 +47,12 @@ async function one(site, dead, turns, seed) {
     const rs = poiRaidSetup(st, t, 0);
     setup = { mode: "raid", tile: t.id, partyId: party(t).id, canRetreat: true, ambush: null, handler: "perfbudget", enemy: { kind: "zombies", count: 0, power: 3, name: "the dead", groups: zombies }, raid: { heat0: 5, poi: 0, kind: rs.kind || null, place: { id: "regionalmall", key: "regionalmall", name: "Mall", variant: "mega" } }, context: {} };
   } else { // a city's building by its key (buildingmaps.js BUILDINGS), its map `side` across: "300" a hospital, "400" a prison, "key:side"
-    const [key, s] = site === "300" ? ["hospital", 300] : site === "400" ? ["prison", 400] : site.split(":");
+    const [kp, s] = site === "300" ? ["hospital", 300] : site === "400" ? ["prison", 400] : site.split(":");
+    const [key, plan] = String(kp).split("/"); // key/plan: one of the kind's named plans pinned (a data centre's hyperscale campus: datacenter/hyperscale)
     const side = Number(s) || mapCap(key) || 300, storeys = Number(opt("storeys", 3));
     st.worldCfg = cleanCfg({ raidMin: Math.min(side, 80), raidMax: side });
     const t = st.tiles.find((x) => x.loc && x.loc.type === "city" && x.id !== h.tile) || st.tiles.find((x) => x.terrain === "city" && x.id !== h.tile);
-    setup = { mode: "raid", tile: t.id, partyId: party(t).id, canRetreat: true, ambush: null, handler: "perfbudget", enemy: { kind: "zombies", count: 20, power: 3, groups: zombies }, raid: { heat0: 5, place: { id: `${key}:b`, key, name: key, storeyBonus: Math.max(0, storeys - 3) } }, context: {} };
+    setup = { mode: "raid", tile: t.id, partyId: party(t).id, canRetreat: true, ambush: null, handler: "perfbudget", enemy: { kind: "zombies", count: 20, power: 3, groups: zombies }, raid: { heat0: 5, place: { id: `${key}:b`, key, name: key, storeyBonus: Math.max(0, storeys - 3), ...(plan ? { plan } : {}) } }, context: {} };
   }
   let t0 = performance.now();
   const b = createBattle(st, setup);

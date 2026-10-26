@@ -198,4 +198,6 @@ export const LOOT_SENSE = {
   mallservices:   S({ drugs: 0.5, gadgets: 0.5 }, ["explosive"], { note: "mall security's gun rack" }),
   mallrestrooms:  S({ drink: 0.25, food: 0.25 }, NO_GUNS),
   vacantunit:     S({ food: 0.1 }, NO_GUNS),
+  // Data centres (issue #51).
+  datacenter:     S({ parts: 0.95, gadgets: 0.8, tools: 0.9, fuel: 0.8 }, NO_GUNS, { note: "electronics, batteries, cable and fuel; a break room's lunch and no more" }),
 };

@@ -745,7 +745,27 @@ function f_mannequin(p) { // a shop mannequin: a white head and torso, arms down
   V(p, 7, 11, 13, "#9aa1a8"); H(p, 5, 10, 14, "#5e666d");
 }
 
+// ---------- data centres (issue #51, sim/datacenter.js) ----------
+function f_upscab(p) { // a UPS cabinet: a dark grey cabinet, a lit status panel, vents along the foot
+  box(p, 3, 0, 12, 15, "#3a3d42"); R(p, 5, 2, 10, 4, "#1c2a30"); p.set(6, 3, "#6fe08a"); p.set(8, 3, "#e6c23a");
+  for (const y of [11, 13]) H(p, 4, 11, y, "#26272a"); V(p, 7, 6, 9, "#4a5056");
+}
+function f_batterystring(p) { // a battery string: a steel rack of black jars, red and black terminals on top
+  legs(p, 1, 14, 2, 15, STEELD); for (const y of [8, 15]) H(p, 1, 14, y, STEEL);
+  for (const x of [2, 6, 10]) { R(p, x, 3, x + 2, 7, "#26272a"); p.set(x, 2, "#c8402f"); p.set(x + 2, 2, "#1f1f22"); R(p, x, 10, x + 2, 14, "#26272a"); }
+}
+function f_cablereel(p) { // a drum of cable: two wooden flanges, the black cable wound between, its end hanging
+  oval(p, 1, 1, 5, 14, WOOD); oval(p, 10, 1, 14, 14, WOOD); R(p, 4, 3, 11, 12, "#26272a");
+  for (const y of [4, 7, 10]) H(p, 5, 10, y, "#3a3b40"); line(p, 11, 12, 14, 15, "#26272a"); disc(p, 3, 7, 1, WOODD);
+}
+function f_miningrig(p) { // a mining rig: an open chrome frame, a row of graphics cards on it, their fans
+  legs(p, 1, 14, 0, 15, "#c9ced3"); H(p, 1, 14, 0, "#c9ced3"); H(p, 1, 14, 9, "#c9ced3");
+  for (const x of [2, 6, 10]) { R(p, x, 2, x + 2, 8, "#202226"); disc(p, x + 1, 5, 1, "#5e666d"); }
+  R(p, 3, 11, 12, 14, "#2f6a3a"); p.set(5, 12, "#6fe08a");
+}
+
 export const GEAR_ART = {
+  f_upscab, f_batterystring, f_cablereel, f_miningrig,
   f_kiosk, f_concession, f_arcadecab, f_projector, f_mannequin,
   f_dormdesk, f_mailboxes, f_campusbench,
   f_bookstack, f_lowshelf, f_mobileshelf, f_cardcat, f_mapcase, f_booktruck, f_bookreturn, f_computer, f_printer, f_microfilm, f_selfcheck, f_readtable, f_carrel, f_globe, f_lectern, f_woodstove,

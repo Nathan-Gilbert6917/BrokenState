@@ -390,6 +390,22 @@ export const FURNITURE_KINDS = {
   screener:     P("Walk-through scanner", POLE, 30, 120, "fixed", S1, false, ["office"], "none"),
   liquorcab:    P("Liquor cabinet",       HALF, 25, 30, "one", S1, true, ["office", "living", "bar"], "storage:30", true),
   phonebooth:   P("Phone booth",          C(false, 1, false), 30, 200, "fixed", S1, false, ["office"], "none", true),
+  // ---------- data centres (issue #51: datacenter.js lays them) ----------
+  // Fixed: a CRAC unit (a computer-room air conditioner, plumbed to the chillers), a hall's 2 MW diesel set on its skid,
+  // a cable tray riser, a substation's transformer and a cooling tower out in the yard. Liftable: a UPS cabinet and a
+  // battery string (their batteries are the loot: combat.js BOX_LOOT), a drum of cable (copper: scrap), an open-frame
+  // mining rig (a crypto shed's) and the standby generator, which is data-power.js's Home standby generator item
+  // (FURNITURE_ITEM_KEY), set at a base like any found set. A rack is #15's serverrack, the monitor wall #26's screens.
+  crac:         P("CRAC unit",          FULL, 60, 450, "fixed", S1, false, ["datacenter"], "none", true),
+  dcgen:        P("Diesel generator",   STEEL, 150, 15000, "fixed", S1, false, ["datacenter", "yard"], "none"),
+  cabletray:    P("Cable tray riser",   POLE, 20, 40, "fixed", S1, false, ["datacenter"], "none", true),
+  transformer:  P("Transformer",        STEEL, 150, 9000, "fixed", S1, false, ["yard"], "none"),
+  coolingtower: P("Cooling tower",      FULL, 120, 5000, "fixed", S1, false, ["yard"], "none"),
+  upscab:       P("UPS cabinet",        FULL, 50, 260, "two", S1, true, ["datacenter"], "storage:20", true),
+  batterystring: P("Battery string",    HALF, 40, 180, "two", S1, true, ["datacenter"], "storage:10"),
+  cablereel:    P("Cable drum",         HALF, 25, 60, "two", S1, true, ["datacenter", "bay"], "storage:10"),
+  miningrig:    P("Mining rig",         HALF, 15, 28, "one", S1, true, ["datacenter"], "storage:10"),
+  standbyset:   P("Standby generator",  STEEL, 60, 95, "two", S1, false, ["datacenter", "bay"], "none"),
   // ---------- lootable decor (issue #13: decor.js places them; light comfort pieces for the base) ----------
   // The plant and the floor lamp stand on a room's floor cell; the painting and the wall clock hang on a wall (decor.js:
   // c.wart = { k, d, piece: true } on the wall cell, the wall's own kind unchanged) and stand on a cell only once set down.
@@ -430,7 +446,7 @@ export const pieceDef = (k) => FURNITURE_KINDS[k] || null;
 // POWER_GEAR.fridge (key "fridge"), so it has no f_fridge; the cot is data-beds.js's BED_GEAR.cot (a base's camp bed),
 // so it has no f_cot; a bunker's generator is data-power.js's genset_military, so it has no f_genset. Merged into GEAR by data.js (marked piece: kept out of the starting kits and trunks, whose dice
 // would change). itemKey(k): the item key for a cell kind (null when fixed).
-export const FURNITURE_ITEM_KEY = { fridge: "fridge", cot: "cot", genset: "genset_military" }; // a bunker's generator is the found Military tactical generator (data-power.js GENSETS, issue #26)
+export const FURNITURE_ITEM_KEY = { fridge: "fridge", cot: "cot", genset: "genset_military", standbyset: "genset_standby" }; // a data centre's standby set is the found Home standby generator (data-power.js GENSETS, issue #51) // a bunker's generator is the found Military tactical generator (data-power.js GENSETS, issue #26)
 export const itemKey = (k) => (!FURNITURE_KINDS[k] || FURNITURE_KINDS[k].carry === "fixed" ? null : FURNITURE_ITEM_KEY[k] || `f_${k}`);
 /** @type {Record<string, { name: string, slot: string, skill: null, power: number, req: number, value: number, noise: number, weight: number, cat: string, bulky: boolean, twoHands: boolean, furniture: string, desc: string }>} */
 export const FURNITURE_GEAR = {};
