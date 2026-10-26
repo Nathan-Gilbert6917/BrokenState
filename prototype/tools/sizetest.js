@@ -96,7 +96,7 @@ function baseFight(st, list, enemy, walls = true, type = "hub") {
 const CONTEXTS = [
   { name: "raid: gas station (its building)", cls: "M", make: (st) => raid(st, "gas", [{ kind: "zombies", count: 5, power: 2 }]) },
   { name: "raid: pharmacy (its building)", cls: "M|L", make: (st) => raid(st, "pharmacy", [{ kind: "zombies", count: 6, power: 2 }]) }, // M|L: a pharmacy at real size (issue #24: 12–20 × 14–24 m) makes its map deeper
-  { name: "raid: supermarket (its building)", cls: "L", make: (st) => raid(st, "supermarket", [{ kind: "zombies", count: 7, power: 2 }]) },
+  { name: "raid: supermarket (its building)", cls: "XL", make: (st) => raid(st, "supermarket", [{ kind: "zombies", count: 7, power: 2 }]) }, // XL since 94d5db6 (issue #22, the grocery tiers: a supermarket twice the old size each way: its map 63 × 54); L before
   { name: "raid: farm", cls: "L", make: (st) => raid(st, "farm", [{ kind: "zombies", count: 4, power: 2 }]) },
   { name: "raid: hospital (its building)", cls: "XL", make: (st) => raid(st, "hospital", [{ kind: "zombies", count: 9, power: 2.5 }]) },
   { name: "raid: city center", cls: "XL", make: (st) => raid(st, "city", [{ kind: "zombies", count: 8, power: 2.5 }, { kind: "raiders", count: 3, power: 4 }]) },
@@ -129,7 +129,7 @@ const pcOf = (b) => { const P = b.units.filter((u) => u.side === "player" && !u.
 // ---------- the measurement's matchups (section 5), each one a job for a worker ----------
 const MATCH = [
   { cls: "M", name: "raid: gas station (3, 5 of the dead)", raid: "gas", groups: [{ kind: "zombies", count: 5, power: 2 }] },
-  { cls: "L", name: "raid: supermarket (3, 7 of the dead)", raid: "supermarket", groups: [{ kind: "zombies", count: 7, power: 2 }] },
+  { cls: "XL", name: "raid: supermarket (3, 7 of the dead)", raid: "supermarket", groups: [{ kind: "zombies", count: 7, power: 2 }] },
   { cls: "XL", name: "raid: hospital (3, 9 of the dead)", raid: "hospital", groups: [{ kind: "zombies", count: 9, power: 2.5 }] },
   { cls: "M", name: "field: 3 vs 4 raiders", players: 3, terrain: "plains", enemy: { kind: "raiders", count: 4, power: 5 } },
   { cls: "M", name: "field: 3 vs 12 dead", players: 3, terrain: "forest", enemy: { kind: "zombies", count: 12, power: 2 } },

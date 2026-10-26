@@ -914,8 +914,10 @@ export function listener(state, p) {
 export function listenOdds(state, p, c, to) {
   const L = HCRAWL.LISTEN, { v } = listener(state, p);
   const dc = L.dc + L.perLayer * (to ? to.layer : 0);
-  const atLeast = (m) => clamp(Math.floor(v + 10 - dc - m + 1e-9) / 10, 0, 1); // P(v + d10 − dc ≥ m), d10 = 1..10
-  return { dc: Math.round(dc * 10) / 10, skill: v, exact: atLeast(L.exact), rough: atLeast(L.rough), fumble: 1 - atLeast(L.fumble + 0.001) };
+  // The faces of the d10 (1..10) that give each result, by listenAt's own comparisons (the old floor(v + 10 − dc − m)
+  // counted one face short when dc was not a whole number: 50% for an exact listen that is 60%).
+  const faces = (ok) => { let n = 0; for (let d = 1; d <= 10; d++) if (ok(v + d - dc)) n++; return n / 10; };
+  return { dc: Math.round(dc * 10) / 10, skill: v, exact: faces((m) => m >= L.exact), rough: faces((m) => m >= L.rough), fumble: faces((m) => m <= L.fumble) };
 }
 const KIND_GUESS = ["tunnel", "gallery", "nursery", "eggs", "bones", "pool"];
 // Listening at a passage (LISTEN.hours): the visit's own dice (the same listen every time this visit).

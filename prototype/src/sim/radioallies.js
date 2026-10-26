@@ -24,7 +24,7 @@ export const radioAlly = (state, f) => !!f && f.alive && isMember(state, f);
 export function yourRadioRings(state) {
   return radioNodes(state).filter((n) => !n.field).map((n) => ({ ...n, label: yourLabel(n) }));
 }
-export const yourLabel = (n) => `Your ${n.kind === "relay" ? "relay" : "radio"}: ${n.range} tiles${n.linked ? "" : n.offline ? " (off the air)" : " (not linked)"}`;
+export const yourLabel = (n) => `Your ${n.kind === "relay" ? "relay" : n.kind === "tower" ? "radio tower" : "radio"}: ${n.range} tiles${n.linked ? "" : n.offline ? " (off the air)" : " (not linked)"}`; // a tower: radiotower.js (issue #54)
 
 // Each ally's network as the map draws it: { faction, id, name, color, linked, nodes: [{ tile, range, kind, label }] }.
 // kind: "station" at one of its bases, "relay" for a mast out on its land. Allies with no network are left out.

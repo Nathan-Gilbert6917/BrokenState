@@ -123,6 +123,14 @@ export const REAL_SIZE = {
   messhall:    { w: [26, 32], d: [17, 20], storeys: [1, 1], set: "rural", planned: true },
   control:     { w: [15, 25], d: [12, 18], storeys: [1, 4], set: "rural" },
   radio:       { w: [8, 12], d: [6, 9], storeys: [1, 1], set: "rural" }, // a transmitter hut
+  // A radio tower compound (issue #54, radiotowerlayout.js): its transmitter building by plan (a row a plan); the yard,
+  // the fence and the mast outside it. planned: each plan drawn at its row's size.
+  radiotower:  { w: [7, 24], d: [4, 18], storeys: [1, 4], set: "rural", planned: true, sizes: {
+    am: { w: [14, 18], d: [10, 13], storeys: [1, 1] }, fmtv: { w: [20, 26], d: [12, 15], storeys: [1, 1] }, cell: { w: [12, 14], d: [5, 7], storeys: [1, 1] },
+    microwave: { w: [14, 17], d: [9, 11], storeys: [1, 1] }, firerep: { w: [10, 12], d: [8, 10], storeys: [1, 1] }, ham: { w: [14, 18], d: [11, 14], storeys: [1, 1] },
+    military: { w: [16, 20], d: [11, 14], storeys: [1, 1] }, ebs: { w: [16, 20], d: [12, 15], storeys: [2, 2] }, radar: { w: [12, 15], d: [10, 12], storeys: [1, 1] },
+    rooftop: { w: [16, 22], d: [14, 18], storeys: [3, 4] }, broadcast: { w: [18, 24], d: [13, 16], storeys: [2, 2] }, utility: { w: [10, 13], d: [9, 11], storeys: [1, 1] },
+  } },
   terminal:    { w: [80, 90], d: [40, 44], storeys: [1, 2], set: "rural", planned: true },
   // #25's military bases, air bases, airports and prisons (militarylayout.js): planned at these sizes by their own plans
   hq:          { w: [26, 32], d: [17, 20], storeys: [1, 3], set: "rural", planned: true },
