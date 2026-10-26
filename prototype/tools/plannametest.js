@@ -84,10 +84,11 @@ const GOLDEN = {
   regionalmall: "oi0i0e.9jy7uk", stripmall: "d84s7v.ihjhex", outlet: "yjmtk6.9xi056", cinema: "bjwb7c.sk046q",
   arcade: "4fx8nr.y9hjfs", mallservices: "bs9jxr.dewn7z", mallrestrooms: "1ipqw3.h4grrs",
   vacantunit: "35skdb.ugnhfp",
-  // The types added after #40 (#49, #51, #54, #55, #60), taken on dev 2026-10-26 (issue #72) with --golden; the
-  // ones above unchanged.
+  // The types added after #40 (#49, #51, #52, #53, #54, #55, #60), taken on dev 2026-10-26 (issue #72) with --golden;
+  // the ones above unchanged.
   museum: "ke8s5b.pz59ra", furnstore: "wssqkg.nxwpsq", laundromat: "mo1wwg.wq8gck", thrift: "ywi6w1.1rwe60", bakery: "20n5w4.8fd645",
-  butcher: "3n9nu1.949674", deli: "ucjk23.45xld2", radiotower: "28y5ut.mslivu", datacenter: "3g8k4u.50550s", amusement: "7qyzj9.ru5nqy"
+  butcher: "3n9nu1.949674", deli: "ucjk23.45xld2", radiotower: "28y5ut.mslivu", datacenter: "3g8k4u.50550s", amusement: "7qyzj9.ru5nqy",
+  sawmill: "we63nu.voe1ga", mine: "8o2xr6.1zgwnf", quarry: "f0d0fs.n05gci"
 };
 
 // ---------- every type ----------
