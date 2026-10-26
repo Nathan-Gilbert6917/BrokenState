@@ -31,7 +31,7 @@
 //     room) and restrooms on every level. Service corridors behind both rows on every level (the units' service
 //     doors, the service stairs at their ends, the loading docks' roller doors on the ground floor) run to the docks;
 //     entrance vestibules cross the rows to the surface lots round the mall; a parking garage of 2–3 levels stands on
-//     the north lot. 300 × 160–300 (the map's cap: MALL.CAP, raised to 500 with #24's big-map engine).
+//     the north lot (#28's parking garage, BUILDINGS.parkgarage). Up to 500 × 500 (MALL.CAP).
 //   - outlet: an open-air village of separate shop buildings facing a pedestrian street (two in a big one) widening to
 //     a plaza with a fountain and benches at the middle, neighbours here and there joined by covered walkways
 //     (compound.js link), service lanes behind the rows, food pads, parking lots north and south, the road.
@@ -46,10 +46,9 @@
 // map every visit (its dice from the seed, the tile, the option; every unit's its own).
 import { Rng } from "./rng.js";
 import { hash01 } from "./skills.js";
-import { BUILDINGS, assemble, DOOR_KINDS, BMAP } from "./buildingmaps.js";
+import { BUILDINGS, assemble, DOOR_KINDS, BMAP, libraryPlan } from "./buildingmaps.js"; // libraryPlan: #34's (librarylayout.js), through buildingmaps so the modules load in their order
 import { FRANCHISES } from "./data-shops.js";
 import { legacyRooms } from "./worldcfg.js";
-import { libraryPlan } from "./librarylayout.js"; // #34: the strip-mall library (a civic strip's)
 import { compoundGrid, placeBuilding, link, guard, parkingLot, compoundResult, compoundVehicle, orient, SIDE_NAME } from "./compound.js";
 
 export const MALL = {
@@ -114,11 +113,6 @@ export function mallArchetype(kind, rng, o = {}) {
       const front = { role: "sales", name: half ? "Unfinished unit" : o.state === "boarded" ? "Boarded-up unit" : "Vacant unit", type: null, furnish: "none", entry: true, hub: true, fl: half ? "conc" : "tile", lay: half ? "halfbuilt" : "vacant", vacant: true };
       return base(bw, bh, half ? front : { split: "y", parts: [["*", front], [rng.int(4, 5), { role: "stock", name: "Back room", type: "store", maxBoxes: 1, lay: "vacant" }]] });
     }
-    case "parkgarage": { // decks of parked cars (containers), the ramps between them as stair runs (#9)
-      const bw = o.w || rng.int(40, 54), bh = o.d || rng.int(30, 36), storeys = clamp(o.levels || rng.int(2, 3), 1, 4); // o.levels: a mall's (its own levels), a campus's (#28: up to 4)
-      const deck = (f) => ({ role: "deck", name: f ? `Parking deck, level ${f + 1}` : "Parking deck, ground", entry: !f, lay: "deck" });
-      return { bw, bh, program: deck(0), upper: (f) => deck(f), storeys, foot: "wide", ground: "lot", front: { width: 4 }, openDoors: 1, exits: [{ side: "back", roles: null, chance: 1, lock: 0, width: 2, name: "Pedestrian exit" }, { side: "left", roles: null, chance: 0.8, lock: 0.2, name: "Stair door" }], stairs: { roles: ["deck"], n: 2, len: 4 } };
-    }
     default: throw new Error(`mallArchetype: ${kind}`);
   }
 }
@@ -182,7 +176,7 @@ function buildUnit(ctx, u) {
   const rng = new Rng(seedOf(ctx.state.seed, "mallunit", ctx.tileId, ctx.option.id, u.k));
   const legacy = legacyRooms(ctx.state);
   let key = u.kind, spec, name;
-  if (BUILDINGS[u.kind] && ["cinema", "arcade", "mallservices", "mallrestrooms", "vacantunit", "parkgarage"].includes(u.kind)) {
+  if (BUILDINGS[u.kind] && ["cinema", "arcade", "mallservices", "mallrestrooms", "vacantunit"].includes(u.kind)) {
     spec = mallArchetype(u.kind, rng, { w: u.w, d: u.d, state: u.state, levels: u.levels });
     name = u.name || (u.kind === "vacantunit" ? `${u.state === "boarded" ? "Boarded-up unit" : u.state === "halfbuilt" ? "Unfinished unit" : "Vacant unit"} ${u.no}` : BUILDINGS[u.kind].name);
   } else if (u.kind === "library") { // #34's strip-mall library at the unit's size
@@ -190,7 +184,7 @@ function buildUnit(ctx, u) {
     name = u.name || "Library";
   } else {
     const fr = u.variant ? (FRANCHISES[u.frKind || u.kind] || []).find((f) => f.id === u.variant) : null;
-    spec = BUILDINGS[u.kind].make(rng, { variant: u.variant || null, kind: u.frKind || null, legacy });
+    spec = BUILDINGS[u.kind].make(rng, { variant: u.variant || null, kind: u.frKind || null, legacy, ...(u.levels ? { storeys: u.levels, maxStoreys: u.maxStoreys || u.levels } : {}) }); // levels: #28's parking garage (campuslayout.js: storeys, maxStoreys)
     name = u.name || (fr ? fr.name : BUILDINGS[u.kind].name);
   }
   fitSpec(spec, u);

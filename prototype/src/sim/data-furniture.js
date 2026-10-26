@@ -184,7 +184,6 @@ export const FURNITURE_KINDS = {
   kiosk:       P("Kiosk cart",         HALF, 30, 90, "two", S21, true, ["shop", "mall"], "storage:60"),
   mallbench:   P("Mall bench",         HALF, 25, 60, "fixed", S21, false, ["mall", "yard"], "none"),
   planter:     P("Planter",            HALF, 45, 300, "fixed", S22, false, ["mall", "yard"], "none"),
-  fountain:    P("Fountain",           HALF, 80, 900, "fixed", S22, false, ["mall", "yard"], "none"),
   directory:   P("Mall directory",     C(false, 1, false), 25, 80, "fixed", S1, false, ["mall"], "none"),
   escalator:   P("Escalator",          HALF, 120, 2000, "fixed", S1, false, ["mall"], "none"),
   cinemaseat:  P("Cinema seats",       HALF, 20, 60, "fixed", S21, false, ["mall"], "none"),
@@ -263,6 +262,16 @@ export const FURNITURE_KINDS = {
   compressor:  P("Air compressor",    HALF, 30, 45, "two", S1, false, ["bay"], "none", true),
   cot:         P("Cot",               HALF, 8, 7, "one", S12, false, ["school", "church", "ward"], "bed:cot"),
   candles:     P("Candlesticks",      POLE, 5, 6, "one", S1, true, ["church"], "comfort:0.1"),
+  // ---------- college campuses (issue #28: campuslayout.js lays them; campus.js the grounds) ----------
+  // A dorm room's desk with its hutch (its mini fridge is #29's minibar piece, `minifridge`), a lecture hall's bolted
+  // row of seats (its lectern, a library's study carrel: #34's; a teaching lab's fume hood: #37's `fumehood`), a residence hall's
+  // wall of mailboxes; outdoors a bench, a statue on its plinth and a fountain on the quads and in the courtyards.
+  dormdesk:    P("Dorm desk",        HALF, 20, 25, "one", S1, true, ["bedroom", "school"], "work:desk", true),
+  lectureseat: P("Lecture seating",  HALF, 40, 120, "fixed", S21, false, ["school"], "none"),
+  mailboxes:   P("Mailbox wall",     FULL, 50, 90, "two", S1, true, ["office", "school"], "storage:20", true),
+  campusbench: P("Bench",            HALF, 20, 40, "two", S21, false, ["yard"], "comfort:0.3"),
+  statue:      P("Statue",           STEEL, 120, 900, "fixed", S1, false, ["yard"], "none"),
+  fountain:    P("Fountain",         HALF, 80, 1500, "fixed", S22, false, ["yard", "mall"], "none"), // a campus's quad and a mall's centre court (#28, #30)
   // ---------- bunkers (issue #26: bunkerlayout.js lays them) ----------
   // The fixed fittings: the steel frame round a blast door, the air filtration plant, the water and fuel tanks, a
   // decontamination shower, the escape shaft's ladder and the vent stack up on the hillside. The hazmat suit rack and the

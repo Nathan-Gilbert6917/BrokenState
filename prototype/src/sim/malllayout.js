@@ -13,8 +13,6 @@
 //   - seclocker: its locker room (lockers, the gun rack: the few weapons it keeps);
 //   - vacant: an empty unit (a mannequin or two left behind; the back room's shelf); halfbuilt: bare concrete, crates and
 //     drums where the fit-out stopped;
-//   - deck: a parking deck, cars in bays along its walls (each a container: a car's glovebox and boot), the ramps (the
-//     stair runs) kept clear by their lanes.
 // The rest of a mall's rooms (the offices, the restrooms) take shoplayout.js's styles by their lay; the shops inside a
 // mall are their own kind's buildings and take their own styles.
 //
@@ -25,7 +23,7 @@ import { registerScene, SCENES } from "./interiorscenes.js";
 import { COMMERCIAL_STYLES } from "./shoplayout.js";
 
 // The mall's own buildings (buildingmaps.js BUILDINGS): their rooms carry a lay mark.
-export const MALL_KEYS = new Set(["cinema", "arcade", "mallservices", "mallrestrooms", "vacantunit", "parkgarage"]);
+export const MALL_KEYS = new Set(["cinema", "arcade", "mallservices", "mallrestrooms", "vacantunit"]); // the parking garage is #28's (campuslayout.js)
 // The mall's own room styles' tuning.
 export const MALL_LAY = {
   SEAT_FRONT: 3,     // a screen's rows kept clear before the screen wall
@@ -81,15 +79,6 @@ export const MALL_STYLES = {
     const c = L.c, n = MALL_LAY.HALFBUILT[0] + L.variant(MALL_LAY.HALFBUILT[1] - MALL_LAY.HALFBUILT[0] + 1, "fitout");
     const spots = c.innerSpots();
     for (let i = 0; i < n && i < spots.length; i++) block(L, spots[i][0], spots[i][1], i % 3 === 2 ? "barrel" : "crate");
-  },
-  // Cars in bays along the north and the south walls (a car 2 wide, 4 long, nose to the wall), the middle the drive.
-  deck(L) {
-    const c = L.c;
-    for (const [y, ax] of [[c.y0, "y"], [c.y1 - 3, "y"]]) for (let x = c.x0 + 1; x + 1 <= c.x1 - 1; x += 3) {
-      if (L.variant(10, `bay${x},${y}`) < 4) continue; // an empty bay
-      const box = !full(L);
-      c.vehicle(x, y, { ax, len: 4, kind: "car", body: "car", ...(box ? { box: "car" } : {}) });
-    }
   },
   manager: (L) => COMMERCIAL_STYLES.manager(L),
   restroom: (L) => COMMERCIAL_STYLES.restroom(L),

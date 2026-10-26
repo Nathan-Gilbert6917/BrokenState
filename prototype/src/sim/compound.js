@@ -29,7 +29,6 @@
 //     with its rooms; plan.compound: true; zones, exits, the vehicle), which combat.js createRaid loads as it does a
 //     street of houses (each upper floor's reach flooded from every stair run).
 import { CELL, AREAS, placeCar, removeCar, placeVehicle } from "./combat.js";
-import { DOOR_KINDS } from "./buildingmaps.js"; // a connector's doors: their hit points by kind
 
 /** @typedef {{ k: string, f?: string, [key: string]: any }} Cell */
 /** @typedef {"s" | "n" | "e" | "w"} Face */
@@ -41,6 +40,9 @@ export const COMPOUND = {
   PARKED: 0.45,  // the share of the bays with a car in them
 };
 
+// The kinds of door (buildingmaps.js DOOR_KINDS, handed over at its load: no import back, the modules' order stays as
+// it was): a connector's doors take their hit points from it.
+export const DOOR_HP = {};
 const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]]; // buildingmaps.js STAIR_DIRS; ui/isoview.js VD (wall art's d)
 const FACING = { e: [1, 0], w: [-1, 0], s: [0, 1], n: [0, -1] }; // a piece's c.fc
 const dirOf = (dx, dy) => DIRS.findIndex(([a, b]) => a === dx && b === dy);
@@ -210,7 +212,7 @@ export function connect(C, from, to, o = {}) {
   for (const [ex, ey] of [from, to]) for (let j = 0; j < wd; j++) {
     const x = horiz ? ex : ex + j, y = horiz ? ey + j : ey, c = cells[I(x, y)];
     if (!c) continue;
-    if (c.k === "wall" || c.k === "window" || c.k === "smashed") { const dk = o.dk || (kind === "walkway" ? "glass" : "wood"), hp = (DOOR_KINDS[dk] || DOOR_KINDS.wood).hp; cells[I(x, y)] = { ...c, k: kind === "walkway" ? "odoor" : "idoor", dk, hp, mhp: hp }; delete cells[I(x, y)].win; } // its hit points by its kind (buildingmaps.js DOOR_KINDS)
+    if (c.k === "wall" || c.k === "window" || c.k === "smashed") { const dk = o.dk || (kind === "walkway" ? "glass" : "wood"), hp = DOOR_HP[dk] || DOOR_HP.wood || 30; cells[I(x, y)] = { ...c, k: kind === "walkway" ? "odoor" : "idoor", dk, hp, mhp: hp }; delete cells[I(x, y)].win; } // its hit points by its kind (DOOR_HP)
     doors.push([x, y]);
   }
   const xs = [x0, x1, horiz ? x0 : x0 + wd - 1], ys = [y0, y1, horiz ? y0 + wd - 1 : y0];

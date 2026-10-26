@@ -24,7 +24,7 @@ import { SITES, BUILDINGS, STOREYS_BY_TYPE, MAX_STOREYS, assemble } from "../src
 import { FRANCHISES, PLACE_W } from "../src/sim/data-shops.js";
 import { OFFICE_KINDS as KINDS, OFFICE_FIRMS, OFFICE_W, COUNTY_SEAT } from "../src/sim/data-offices.js";
 import { SHOP, OFFICE_KINDS, settingOf, shopExtras, shopPlaces, civicPlaces, franchiseById } from "../src/sim/shops.js";
-import { OFFICE_STYLES } from "../src/sim/officelayout.js";
+import { OFFICE_VARIANTS } from "../src/sim/officeplans.js";
 import { FURNITURE_KINDS, itemKey } from "../src/sim/data-furniture.js";
 import { GEAR, supValue } from "../src/sim/data.js";
 import { rollScenes } from "../src/sim/interiorscenes.js";
@@ -45,7 +45,7 @@ const NEW_PIECES = ["dentalchair", "turnstile", "liftdoor", "judgebench", "juryb
 const make = (key, s, o = {}) => {
   const fr = FRANCHISES[FIRM_OF(key)], rng = new Rng(7000 + s * 104729 + key.length * 31);
   const variant = o.variant === undefined ? fr[s % fr.length].id : o.variant;
-  const spec = BUILDINGS[key].make(rng, { variant, kind: key === "offices" ? "office" : null, legacy: !!o.legacy, storeyBonus: o.bonus || 0 });
+  const spec = BUILDINGS[key].make(rng, { variant, kind: key === "offices" ? "office" : null, legacy: !!o.legacy, storeyBonus: o.bonus || 0, ...(o.plan != null ? { plan: o.plan } : {}), ...(o.officesLegacy ? { officesLegacy: true } : {}) });
   return { spec, m: assemble(rng, spec, { key, name: key, legacy: !!o.legacy, noDecor: !!o.noDecor }) };
 };
 const grid = (m, f) => (m.floors ? m.floors[f].cells : m.cells);
@@ -77,19 +77,31 @@ section("The kinds, their firms and their pieces");
 }
 
 // ---------- 2. laid out for their kind ----------
-section("Laid out for their kind");
-const N = QUICK ? 8 : 24;
+section("Laid out for their kind: every plan of every kind");
+const N = QUICK ? 24 : 72; // s % 12 picks the plan (every one of the twelve), s % firms the firm
+// The pieces a room of each style must have (where the plan has one), and the rooms a kind has in every plan.
+const STYLE_SIG = {
+  operatory: ["dentalchair"], exam: ["exambed"], council: ["dais", "podium"], clerk: ["counter"], courtroom: ["judgebench", "jurybox", "witnessstand"],
+  screening: ["screener", "scanner"], evidence: ["evlocker"], lawlibrary: ["bookshelf"], callfloor: ["headsetdesk"], bigbreak: ["vending"],
+  benches: ["desk"], phonebooths: ["phonebooth"], serverroom: ["serverrack"], booth: ["secdesk"], press: ["machine"], mailroom: ["sorter"],
+  training: ["podium"], towerlobby: ["turnstile", "liftdoor"], liftlobby: ["liftdoor"], execsuite: ["liquorcab"], kitchenette: ["fridge"],
+  techkitchen: ["fridge"], labroom: ["labbench"], fitness: ["weightbench"], studio: ["camera", "newsdesk", "studiolight"],
+};
+const CORE = {
+  storefront: [["reception", "waiting"], ["privoffice", "operatory", "exam"]], bizpark: [["glasslobby", "reception"]], offices: [["towerlobby"], ["liftlobby"], ["execsuite"]],
+  cityhall: [["council"], ["mayor"], ["clerk"]], courthouse: [["courtroom"], ["screening"]], callcenter: [["callfloor"]], techoffice: [["benches"]],
+  station: [["studio", "booth", "press"], ["newsroom", "control", "transmitter"]],
+};
 const errs = {}, seen = {};
 const err = (k, msg) => { (errs[k] = errs[k] || []).push(msg); };
 const saw = (k, n = 1) => { seen[k] = (seen[k] || 0) + n; };
 let built = 0;
-const floorKindsSeen = new Set();
+const floorKindsSeen = new Set(), plansSeen = {};
 for (const key of KEYS) for (let s = 0; s < N; s++) {
-  const { spec, m } = make(key, s), tag = `${key} ${s}`, fr = FRANCHISES[FIRM_OF(key)][s % FRANCHISES[FIRM_OF(key)].length];
+  const { spec, m } = make(key, s, { plan: s % 12 }), tag = `${key} ${s} (${spec.variant})`;
   built++;
+  (plansSeen[key] = plansSeen[key] || new Set()).add(spec.variant);
   const R = m.rooms.filter((a) => !a.outdoor);
-  const byName = (re) => R.filter((a) => re.test(a.name));
-  const has = (re, k) => byName(re).some((a) => kinds(m, a).has(k));
   // Every floor one walk from the stairs (or the front door), every container reachable.
   const floors = m.floors ? m.floors.length : 1;
   for (let f = 0; f < floors; f++) {
@@ -104,99 +116,57 @@ for (const key of KEYS) for (let s = 0; s < N; s++) {
     }
     for (const c of m.containers.filter((q) => (q.f || 0) === f)) if (![[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => w[(c.y + dy) * m.w + c.x + dx])) err("reach", `${tag} ${c.label}`);
   }
-  if (key === "storefront") {
-    const o = fr.plan.office;
-    if (o === "dentist") { const ops = byName(/^Operatory/); if (!ops.length || !ops.every((a) => kinds(m, a).has("dentalchair"))) err("dentist", tag); else saw("operatories", ops.length); }
-    else if (o === "doctor") { if (!byName(/^Exam room/).some((a) => kinds(m, a).has("exambed"))) err("doctor", tag); }
-    else {
-      if (byName(/office/i).filter((a) => a.role === "office" && kinds(m, a).has("desk")).length < 2) err("privoffices", tag);
-      if (!has(/^File room/, "filing")) err("fileroom", tag);
-    }
-    if (!R.some((a) => a.entry && (kinds(m, a).has("counter") || kinds(m, a).has("chair")))) err("frontdesk", tag);
-    if (!has(/^Kitchenette/, "fridge")) err("kitchenette", tag);
+  // Every room of a style has its pieces; the kind's rooms in every plan.
+  for (const a of R) {
+    const want = STYLE_SIG[a.office];
+    if (!want) continue;
+    const ks = kinds(m, a), miss = want.filter((k) => !ks.has(k));
+    if (miss.length) err("pieces", `${tag} ${a.name}: no ${miss.join(", ")}`); else saw(a.office);
+    if (a.office === "courtroom" && !ks.has("pew") && count(m, a, "chair") < 6) err("gallery", `${tag} ${a.name}`);
+    if (a.office === "council") { const seats = inner(m, a).filter(([, y, c]) => c.k === "chair" && y > a.y0 + 4); if (seats.length < 4 || !seats.every(([, , c]) => c.fc === "n")) err("councilfacing", `${tag}: ${seats.length}`); else saw("council seats", seats.length); }
   }
-  if (key === "bizpark") {
-    for (const [re, k, e] of [[/^Lobby/, "counter", "glasslobby"], [/^Open-plan/, "desk", "openplan"], [/^Meeting/, "table", "meeting"], [/^Training/, "podium", "training"], [/^Mail room/, "sorter", "mailroom"], [/^Break room/, "fridge", "breakroom"], [/^IT closet/, "serverrack", "itcloset"]]) if (!has(re, k)) err(e, tag);
-  }
+  for (const alts of CORE[key]) if (!R.some((a) => alts.includes(a.office))) err("core", `${tag}: no ${alts.join("/")}`);
+  for (const a of R.filter((q) => q.civic === "cells")) if (!kinds(m, a).has("bars")) err("cells", `${tag} ${a.name}`);
+  if (key === "callcenter") { const hd = R.reduce((n, a) => n + count(m, a, "headsetdesk"), 0); if (hd < 6) err("headsetdesks", `${tag}: ${hd}`); else saw("headset desks", hd); }
   if (key === "offices") {
-    const lobby = R.find((a) => a.f === 0 && a.entry);
-    if (!lobby || !kinds(m, lobby).has("turnstile")) err("turnstiles", tag); else saw("turnstile", count(m, lobby, "turnstile"));
-    if (!lobby || !kinds(m, lobby).has("liftdoor")) err("liftbank", tag);
-    if (!byName(/^Lift lobby/).length || !byName(/^Lift lobby/).every((a) => kinds(m, a).has("liftdoor"))) err("liftlobbies", tag);
-    if (!has(/^Loading bay/, "crate") && !has(/^Loading bay/, "palletrack")) err("loadingbay", tag);
     if (spec.storeys >= 6) {
       if ((m.runs || []).length !== 2) err("tworuns", `${tag}: ${(m.runs || []).length} runs`);
       for (let f = 0; f < spec.storeys - 1; f++) { const st = (m.runs || []).filter((r) => grid(m, f)[r.y * m.w + r.x].k === "stairs").length; if (st < 2) { err("tworuns", `${tag} floor ${f}: ${st}`); break; } }
       saw("tall");
+      if (new Set((spec.floorKinds || []).slice(1, -1)).size < 2) err("floorsvary", tag);
     }
     const top = R.filter((a) => a.f === spec.storeys - 1);
-    const suite = top.find((a) => /^Executive suite/.test(a.name));
-    if (!suite || !kinds(m, suite).has("liquorcab") || !m.containers.some((c) => c.area === suite.id && c.kind === "safe" && c.lockKind === "safe")) err("execsuite", tag);
-    if (!top.some((a) => /^Roof plant/.test(a.name))) err("roofplant", tag);
+    const suite = top.find((a) => a.office === "execsuite");
+    if (!suite || !m.containers.some((c) => c.area === suite.id && c.kind === "safe" && c.lockKind === "safe")) err("execsuite", tag);
+    if (!top.some((a) => a.office === "plant")) err("roofplant", tag);
     for (const k of spec.floorKinds || []) floorKindsSeen.add(k);
-    if (spec.storeys >= 6 && new Set((spec.floorKinds || []).slice(1, -1)).size < 2) err("floorsvary", tag);
-    for (const k of ["boardroom", "canteen", "fitness", "serverroom"]) if (R.some((a) => a.office === k)) saw(`tower ${k}`);
-  }
-  if (key === "cityhall") {
-    const ch = byName(/^Council chambers/)[0];
-    if (!ch || !kinds(m, ch).has("dais") || !kinds(m, ch).has("podium") || count(m, ch, "chair") < 8) err("council", `${tag}: ${ch ? [...kinds(m, ch)].join("/") + " " + count(m, ch, "chair") : "none"}`);
-    else { // the seats face the dais (north)
-      const seats = inner(m, ch).filter(([, y, c]) => c.k === "chair" && y > ch.y0 + 4);
-      if (!seats.every(([, , c]) => c.fc === "n")) err("councilfacing", tag); else saw("council seats", seats.length);
-    }
-    if (!has(/^Clerk's office/, "counter") || !has(/^Clerk's office/, "stanchion")) err("clerk", tag);
-    if (!has(/^Mayor's office/, "desk")) err("mayor", tag);
-    if (!has(/Records|Archives/, "filing")) err("records", tag);
-  }
-  if (key === "courthouse") {
-    const cts = byName(/^Courtroom/);
-    if (!cts.length || !cts.every((a) => ["judgebench", "jurybox", "witnessstand"].every((k) => kinds(m, a).has(k)) && (kinds(m, a).has("pew") || count(m, a, "chair") >= 6))) err("courtroom", `${tag}: ${cts.map((a) => [...kinds(m, a)].join("/")).join(" | ")}`);
-    else saw("courtrooms", cts.length);
-    if (!has(/^Holding cell/, "bars")) err("holdingcell", tag);
-    const scr = R.find((a) => a.entry);
-    if (!scr || !kinds(m, scr).has("screener") || !kinds(m, scr).has("scanner")) err("screening", tag);
-    if (!has(/^Evidence room/, "evlocker")) err("evidence", tag);
-    if (!has(/^Law library/, "bookshelf")) err("lawlibrary", tag);
-  }
-  if (key === "callcenter") {
-    const hd = R.reduce((n, a) => n + count(m, a, "headsetdesk"), 0);
-    if (hd < 8) err("headsetdesks", `${tag}: ${hd}`); else saw("headset desks", hd);
-    if (!has(/^Break room/, "vending")) err("bigbreak", tag);
-    if (!has(/^Main call floor/, "secdesk")) err("supervisors", tag);
-  }
-  if (key === "techoffice") {
-    if (!has(/^Open-plan floor/, "desk")) err("benches", tag);
-    if (!R.some((a) => kinds(m, a).has("beanbag"))) err("beanbags", tag);
-    if (!has(/^Games corner/, "pooltable")) err("pooltable", tag);
-    if (!has(/^Phone booths/, "phonebooth")) err("phonebooths", tag);
-    if (!has(/^Server room/, "serverrack")) err("serverroom", tag);
-    if (!byName(/^Kitchen/).some((a) => count(m, a, "fridge") >= 2)) err("drinks", tag);
-  }
-  if (key === "station") {
-    const media = fr.plan.media;
-    if (media === "tv" && !(has(/^Studio/, "camera") && has(/^Studio/, "newsdesk") && has(/^Studio/, "studiolight"))) err("tvstudio", tag);
-    if (media === "radio" && !has(/^Broadcast booth/, "secdesk")) err("radiobooth", tag);
-    if (media === "paper" && !has(/^Press room/, "machine")) err("press", tag);
-    if (!has(/^Newsroom/, "desk")) err("newsroom", tag);
-    if (!byName(/^(Control room|Layout room)/).length) err("control", tag);
   }
 }
 const LABEL = {
-  walk: "every floor one walk", reach: "every container reachable", dentist: "a dentist's operatories each with a dental chair", doctor: "a doctor's exam rooms with exam beds",
-  privoffices: "a front office's 2+ private offices", fileroom: "its file room", frontdesk: "a storefront's front desk and chairs", kitchenette: "its kitchenette",
-  glasslobby: "a business park's lobby", openplan: "open plan", meeting: "a meeting room", training: "a training room with a podium", mailroom: "a mail room with a sorter", breakroom: "a break room", itcloset: "an IT closet",
-  turnstiles: "a tower's lobby turnstiles", liftbank: "its lift bank", liftlobbies: "every floor's lift lobby", loadingbay: "its loading bay", tworuns: "two stair runs on every floor of a tower of 6+",
-  execsuite: "the executive suite's safe and liquor cabinet", roofplant: "the roof plant", floorsvary: "a tall tower's floors vary",
-  council: "city hall's council chambers: the dais, the podium, the seats", councilfacing: "the seats face the dais", clerk: "the clerk's counter and queue posts", mayor: "the mayor's office", records: "records",
-  courtroom: "every courtroom: the bench, the jury box, the witness stand, the gallery", holdingcell: "the holding cell's bars", screening: "the screening entrance's walk-through scanner and X-ray tunnel", evidence: "the evidence room's lockers", lawlibrary: "the law library",
-  headsetdesks: "a call center's headset desks", bigbreak: "its break room's vending machines", supervisors: "its supervisors' platform",
-  benches: "a tech office's benches", beanbags: "beanbags", pooltable: "the games corner's pool table", phonebooths: "phone booths", serverroom: "a server room", drinks: "a kitchen of fridges",
-  tvstudio: "a TV studio's cameras, news desk and lights", radiobooth: "a radio booth's console", press: "a paper's press", newsroom: "a newsroom", control: "a control room",
+  walk: "every floor one walk", reach: "every container reachable", pieces: "every room of a style has its pieces (a dental chair, an exam bed, the dais and podium, the bench, jury box and witness stand, the scanners, evidence lockers, headset desks, a TV studio's cameras, news desk and lights...)",
+  gallery: "every courtroom's gallery", councilfacing: "the council chambers' seats face the dais", core: "each kind's rooms in every plan", cells: "every holding cell's bars",
+  headsetdesks: "a call center's headset desks", tworuns: "two stair runs on every floor of a tower of 6+", floorsvary: "a tall tower's floors vary",
+  execsuite: "the executive suite's locked safe", roofplant: "the roof plant",
 };
 for (const [k, msg] of Object.entries(LABEL)) check(!errs[k], `${msg} (${built} buildings)${errs[k] ? `: ${errs[k].length} bad, e.g. ${errs[k].slice(0, 3).join("; ")}` : ""}`);
 console.log(`  seen: ${Object.entries(seen).map(([k, n]) => `${k} ${n}`).join(", ")}; tower floors: ${[...floorKindsSeen].join(", ")}`);
-check(["canteen", "fitness", "it", "exec", "open", "top"].every((k) => floorKindsSeen.has(k)), "the tower's floors: open plan, executive, canteen, fitness, IT, the top floor");
-check(KEYS.every((k) => (seen.tall || 0) > 0 && OFFICE_STYLES), "towers of 6+ storeys built");
+check(["canteen", "fitness", "it", "exec", "open", "top", "medical", "law", "claims", "media", "gov", "tech", "cells"].every((k) => floorKindsSeen.has(k)), "the tower's floors: open plan, executive, canteen, fitness, IT, medical, law, claims, media, government, tech, offices, the top floor");
+check((seen.tall || 0) > 0, "towers of 6+ storeys built");
+
+// ---------- 2b. the variants: a dozen named plans a kind ----------
+section("A dozen named plans a kind (the user's request 2026-10-25, issue #32's rule)");
+{
+  const roleSets = {};
+  for (const key of KEYS) {
+    const names = OFFICE_VARIANTS[key === "offices" ? "tower" : key].map((v) => v.name);
+    check(names.length >= 12 && new Set(names).size === names.length, `${key}: ${names.length} named plans (${names.join(", ")})`);
+    check(names.every((n) => plansSeen[key].has(n)), `${key}: every plan built by its dice and its name on the spec (${plansSeen[key].size})`);
+    const sets = new Set();
+    for (let p = 0; p < names.length; p++) { const { m } = make(key, p, { plan: p }); sets.add([...new Set(m.rooms.filter((a) => !a.outdoor).map((a) => a.role))].sort().join(",")); }
+    roleSets[key] = sets.size;
+  }
+  check(KEYS.every((k) => roleSets[k] >= 12), `every plan of a kind its own room list (${KEYS.map((k) => `${k} ${roleSets[k]}`).join(", ")})`);
+}
 {
   const sig = (m) => (m.floors || [{ cells: m.cells }]).map((F) => F.cells.map((c) => c.k).join(",")).join("|");
   check(KEYS.every((k) => sig(make(k, 3).m) === sig(make(k, 3).m)), "the same building lays out the same every visit");
@@ -218,7 +188,7 @@ section("Loot per cell of floor against the old office tower");
     }
     return v / cells;
   };
-  const base = perCell("offices", { variant: null });
+  const base = perCell("offices", { variant: null, officesLegacy: true }); // the old tower (a save from before the office variants)
   const rows = [], off = [];
   for (const key of KEYS) { const v = perCell(key, {}), r = v / base - 1; rows.push(`${key} ${(r * 100).toFixed(0)}%`); if (Math.abs(r) > 0.1) off.push(`${key} ${v.toFixed(2)} against ${base.toFixed(2)}`); }
   console.log(`  the old tower: ${base.toFixed(2)} a cell; ${rows.join(", ")}`);
@@ -229,12 +199,14 @@ section("Loot per cell of floor against the old office tower");
 section("An older save, a tower without a firm");
 {
   let newer = 0;
-  for (let s = 0; s < 6; s++) for (const o of [{ legacy: true }, { variant: null }]) {
+  for (let s = 0; s < 6; s++) for (const o of [{ legacy: true }, { variant: null, officesLegacy: true }]) {
     const { m } = make("offices", s, { ...o, noDecor: true });
     for (const F of m.floors || [{ cells: m.cells }]) for (const c of F.cells) if (NEW_PIECES.includes(c.k)) newer++;
     if (m.rooms.some((a) => a.office)) newer++;
   }
-  check(!newer, `an older save's tower, and a tower with no firm, keep the old plan (${newer} new pieces or styled rooms)`);
+  check(!newer, `an older save's tower (from before the room layouts, or from before the office variants) keeps the old plan (${newer} new pieces or styled rooms)`);
+  const nofirm = make("offices", 1, { variant: null });
+  check(!!nofirm.spec.variant && nofirm.spec.storeys >= 3 && nofirm.spec.storeys <= 6, `a new save's tower with no firm (a city's, a factory's offices) takes a plan too, 3–6 storeys (${nofirm.spec.variant}, ${nofirm.spec.storeys})`);
   const st = createWorld({ seed, factionCount: 3 });
   st.officesLegacy = true;
   const t = st.tiles.find((x) => settingOf(st, x) === "city");

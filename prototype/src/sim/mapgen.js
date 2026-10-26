@@ -29,6 +29,7 @@ import { LOCATIONS, TOWN_NAMES } from "./data.js";
 import { HIVE } from "./hiveconst.js";
 import { sizeDef, areaScale, BASE_W, BASE_H } from "./worldsize.js";
 import { hash01 } from "./skills.js"; // the town rings' radius: hash dice, so the map's own dice are untouched
+import { COLLEGE_NAMES } from "./campus.js"; // a town's college's name (issue #28)
 
 // The Normal map (worldsize.js has every size; a world's own size is state.grid.width × height).
 export const MAP_W = BASE_W;
@@ -139,6 +140,8 @@ const COUNTRYSIDE = [
 ];
 // City blocks are richer than the same shop in a small town (town centers keep their richness).
 export const ZONE_RICHNESS = { urban: 1.15, town: 0.85 }; // aiscav.js siteFull: the loot bands
+// A town's college (issue #28): the share of the towns with one, and of those a community college (else a liberal arts one).
+export const COLLEGE = { P: 0.12, COMMUNITY: 0.55 };
 // Chance that a countryside site gets a dirt road to the nearest road (the rest stay off-road).
 const SPUR_CHANCE = { farm: 0.6, ranch: 0.6, church: 0.7, lodge: 0.5, campground: 0.6, ranger: 0.6, quarry: 0.7, feedstore: 1, gas: 1, diner: 1, motel: 1, clinic: 1 };
 
@@ -687,6 +690,28 @@ function hivesOnMap({ grid, tiles, mainId, originId, seeds, spotIds, cityIds, to
       t.infection = Math.min(1, t.infection + 0.06);
       if (!t.loc) t.loot = Math.max(t.loot, 0.3);
     }
+  }
+
+  // ---------- colleges (issue #28: a campus map, campus.js) ----------
+  // COLLEGE.P of the towns have a college two or three tiles out: a community college or a liberal arts one, named
+  // after the town or from the list (campus.js COLLEGE_NAMES), never a name another site has. Hash dice of the town (the
+  // map's own dice untouched, so every draw above is as it was), laid after the rings on land with no site or hive.
+  const taken = new Set(tiles.filter((t) => t.loc).map((t) => t.loc.name));
+  for (const town of townIds.map((id) => tiles[id])) {
+    const h = (k, ...more) => hash01(seed == null ? `${town.id}:${town.loc.name}` : seed, k, town.id, ...more);
+    if (h("college") >= COLLEGE.P) continue;
+    const cands = grid.within(town.id, 3).map((id) => tiles[id]).filter((t) => grid.distance(town.id, t.id) >= 2 && !t.loc && !t.hive && !t.river && t.terrain !== "water" && t.terrain !== "mountain")
+      .sort((a, b) => h("collegetile", a.id) - h("collegetile", b.id));
+    const t = cands[0];
+    if (!t) continue;
+    const community = h("collegekind") < COLLEGE.COMMUNITY, list = COLLEGE_NAMES[community ? "community" : "liberal"];
+    const first = Math.floor(h("collegename") * list.length);
+    const name = list.map((_, k) => list[(first + k) % list.length].replace("{town}", town.loc.name)).find((n) => !taken.has(n));
+    if (!name) continue;
+    taken.add(name);
+    t.loc = { type: "college", name, zone: "town", settlement: town.id, campus: community ? "community" : "liberal" };
+    t.loot = LOCATIONS.college.richness * (ZONE_RICHNESS.town || 1) * (0.7 + 0.5 * h("collegeloot"));
+    t.hidden = null;
   }
 
   pondsOnMap(tiles, seed);
