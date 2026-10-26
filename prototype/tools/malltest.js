@@ -20,7 +20,9 @@ import { poisOf, isSitePoi } from "../src/sim/pois.js";
 import { poiRaidSetup, poiPlace } from "../src/sim/poiraid.js";
 import { contKey, ledgerBox, poiHouses } from "../src/sim/poicont.js";
 import { buildingMap, siteBuildings, BUILDINGS, SITES } from "../src/sim/buildingmaps.js";
-import { MALL } from "../src/sim/mall.js";
+import { MALL, STRIP_VARIANTS, REGIONAL_VARIANTS, OUTLET_VARIANTS, DEPT_VARIANTS, deptstorePlan } from "../src/sim/mall.js";
+import { Rng } from "../src/sim/rng.js";
+import { assemble } from "../src/sim/buildingmaps.js";
 import { MALL_SCENES } from "../src/sim/malllayout.js";
 import { SCENE_KINDS } from "../src/sim/interiorscenes.js";
 import { FURNITURE_KINDS } from "../src/sim/data-furniture.js";
@@ -47,7 +49,7 @@ function floodFrom(cells, w, h, starts) {
 const ring = (c) => { const w = c.w || 1, h = c.h || 1, out = []; for (let y = c.y - 1; y <= c.y + h; y++) for (let x = c.x - 1; x <= c.x + w; x++) if (x < c.x || x >= c.x + w || y < c.y || y >= c.y + h) out.push([x, y]); return out; };
 const sigMap = (m) => m.floors.map((F) => F.cells.map((c) => c.k[0] + (c.k === "stairs" ? c.step : "")).join("")).join("/") + "|" + m.containers.map((c) => `${c.id}:${c.kind}:${c.x},${c.y},${c.f || 0}:${c.area}:${c.house ?? "-"}`).join(" ");
 const RANGE = { stripmall: [5, 12], regionalmall: [40, 120], outlet: [12, 30] };
-const ANCHORS = { stripmall: [1, 1], regionalmall: [2, 4], outlet: [0, 0] };
+const ANCHORS = { stripmall: [0, 2], regionalmall: [1, 4], outlet: [0, 0] }; // by the variant (STRIP_VARIANTS: none to two; a dead mall's second anchor dark)
 const kindsSeen = new Set(), storeLog = {}, lootLog = {};
 const LOOT_VALUE = { food: 1, water: 1, meds: 3, ammo: 0.2, scrap: 0.5, parts: 1, fuel: 1 };
 
@@ -145,6 +147,36 @@ check(MALL_SCENES.every((k) => SCENE_KINDS[k] && typeof SCENE_KINDS[k].when === 
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
+section("A dozen plans a type (issue #32's rule): each mall kind's variants and the department store's");
+{
+  const sigOf = (m) => { const P = m.plan, roles = {}; for (const h of P.houses) roles[h.role] = (roles[h.role] || 0) + 1; return JSON.stringify({ lv: m.storeys, an: P.anchors.length, roles, food: !!P.foodCourt, cin: !!P.cinema, gar: !!P.garage, ww: P.walkways || 0, shape: Math.round(m.w / 40) + "x" + Math.round(m.h / 40), faces: [...new Set(P.houses.filter((h) => h.role === "shop" || h.role === "vacant").map((h) => h.face))].sort().join(""), top: (() => { const n = {}; for (const h of P.houses) if (h.role === "shop") n[h.key] = (n[h.key] || 0) + 1; return Object.entries(n).sort((a, b) => b[1] - a[1])[0]?.[0] || ""; })(), pads: P.houses.filter((h) => h.role === "pad").map((h) => h.key).join(","), lib: P.houses.some((h) => h.key === "library"), anchors: P.anchors.map((a) => a.kind).sort().join(","), plaza: (() => { const pz = m.rooms.find((a) => a.role === "plaza"); return pz ? Math.round(((pz.x0 + pz.w / 2) / m.w) * 3) : -1; })(), fcAt: (m.rooms.find((a) => a.role === "foodcourt") || {}).f ?? -1, cinAt: (P.houses.find((h) => h.key === "cinema") || {}).f0 ?? -1, cinW: Math.round(((P.houses.find((h) => h.key === "cinema") || {}).w || 0) / 10), vac: Math.round((P.vacant / Math.max(1, P.storefronts)) * 5) }); };
+  for (const [key, list] of [["stripmall", STRIP_VARIANTS], ["regionalmall", REGIONAL_VARIANTS], ["outlet", OUTLET_VARIANTS]]) {
+    check(list.length >= 12 && new Set(list.map((v) => v.id)).size === list.length && new Set(list.map((v) => v.name)).size === list.length, `${key}: ${list.length} named variants (${list.map((v) => v.name).join(", ")})`);
+    const sigs = new Set(), bad = [];
+    for (const V of list) {
+      const m = buildingMap(st0, 77, { id: key, key, name: BUILDINGS[key].name, variant: V.id }, false);
+      if (m.plan.vid !== V.id || m.plan.variant !== V.name) bad.push(`${V.id}: plan says ${m.plan.vid}`);
+      const [lo, hi] = RANGE[key];
+      if (m.plan.storefronts < lo || m.plan.storefronts > hi || m.w > MALL.CAP || m.h > MALL.CAP) bad.push(`${V.id}: ${m.plan.storefronts} storefronts, ${m.w} × ${m.h}`);
+      sigs.add(sigOf(m));
+    }
+    check(!bad.length, `${key}: every variant built, named on its plan, in range (${bad.slice(0, 3).join("; ") || "all"})`);
+    check(sigs.size >= 12, `${key}: ${sigs.size} distinct plans (levels, anchors, the buildings by role, the food court, the cinema, the garage, walkways, shape, vacancy)`);
+  }
+  check(DEPT_VARIANTS.length >= 12 && new Set(DEPT_VARIANTS.map((v) => v.name)).size === DEPT_VARIANTS.length, `deptstore: ${DEPT_VARIANTS.length} named variants`);
+  const dsigs = new Set(), dbad = [];
+  for (const V of DEPT_VARIANTS) {
+    const r = new Rng(31), spec = deptstorePlan(r, { variant: V.id }), m = assemble(r, spec, { key: "deptstore", name: "Department store" });
+    if (spec.vid !== V.id || spec.vname !== V.name) dbad.push(`${V.id}: unnamed`);
+    const rooms = m.rooms.filter((a) => !a.outdoor);
+    if (!rooms.some((a) => a.role === "sales" && a.entry) || !m.containers.length) dbad.push(`${V.id}: no sales floor or nothing to search`);
+    dsigs.add(JSON.stringify({ st: m.storeys, rooms: [...new Set(rooms.map((a) => `${a.role}:${a.name.replace(/[ ,]*floor \d+$/, "")}`))].sort(), big: Math.round((spec.bw * spec.bh) / 150) }));
+  }
+  check(!dbad.length, `deptstore: every variant a sales floor at its front and containers (${dbad.join("; ") || "all"})`);
+  check(dsigs.size >= 12, `deptstore: ${dsigs.size} distinct plans (rooms, storeys, footprint)`);
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
 section("Sites and places");
 check(SITES.mall.length === 1 && SITES.mall[0] === "regionalmall" && BUILDINGS.regionalmall.compound && SITES.stripmall && SITES.outlet, "the mall site is a regional mall; strip malls and outlets have their sites");
 {
@@ -205,7 +237,7 @@ const me = (b) => b.units.find((u) => u.side === "player" && !u.dead);
     check(fc > rest, `the dead thicker at the food court and the cinema (${(fc * 100).toFixed(2)} vs ${(rest * 100).toFixed(2)} a hundred cells)`);
     check(poiHouses(st, t, 0) === b.raid.plan.houses.length && poiHouses(st, t, 0) > 30, `poiHouses: the mall's ${b.raid.plan.houses.length} buildings`);
     // Open a box in one shop, leave the rest.
-    const boxes = b.raid.containers.filter(ledgerBox);
+    const boxes = b.raid.containers.filter((c) => ledgerBox(c) && !c.contents && !c.searched); // fresh ones (the pool has others marked ransacked)
     const shopA = b.raid.plan.houses.find((h) => h.role === "shop" && boxes.some((c) => c.house === h.k && !c.lockKind && (c.f || 0) === 0));
     const shopB = b.raid.plan.houses.find((h) => h !== shopA && h.role === "shop" && boxes.some((c) => c.house === h.k));
     const boxA = boxes.find((c) => c.house === shopA.k && !c.lockKind && (c.f || 0) === 0);

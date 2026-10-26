@@ -49,10 +49,11 @@ import { hash01 } from "./skills.js";
 import { BUILDINGS, assemble, DOOR_KINDS, BMAP } from "./buildingmaps.js";
 import { FRANCHISES } from "./data-shops.js";
 import { legacyRooms } from "./worldcfg.js";
+import { libraryPlan } from "./librarylayout.js"; // #34: the strip-mall library (a civic strip's)
 import { compoundGrid, placeBuilding, link, guard, parkingLot, compoundResult, compoundVehicle, orient, SIDE_NAME } from "./compound.js";
 
 export const MALL = {
-  CAP: 300,          // a mall's map is at most this many cells a side (raised to 500 once #24's big-map engine is on dev)
+  CAP: 500,          // a mall's map is at most this many cells a side (500 × 500: #24's big-map engine is on dev)
   // The inline units' kinds (buildingmaps.js BUILDINGS, each with its franchises), weighted.
   INLINE: { clothing: 22, electronics: 6, sportshop: 5, bookstore: 4, petstore: 3, pharmacy: 3, restaurant: 4, bar: 1, liquor: 1.2, radioshop: 1, pawnshop: 1, corner: 2, gunstore: 0.5, garden: 0.4 },
   OUTLETS: { clothing: 30, sportshop: 7, electronics: 4, petstore: 1.5, bookstore: 2, liquor: 1, garden: 1 },
@@ -114,12 +115,48 @@ export function mallArchetype(kind, rng, o = {}) {
       return base(bw, bh, half ? front : { split: "y", parts: [["*", front], [rng.int(4, 5), { role: "stock", name: "Back room", type: "store", maxBoxes: 1, lay: "vacant" }]] });
     }
     case "parkgarage": { // decks of parked cars (containers), the ramps between them as stair runs (#9)
-      const bw = o.w || rng.int(40, 54), bh = o.d || rng.int(30, 36), storeys = clamp(o.levels || rng.int(2, 3), 2, 3);
+      const bw = o.w || rng.int(40, 54), bh = o.d || rng.int(30, 36), storeys = clamp(o.levels || rng.int(2, 3), 1, 4); // o.levels: a mall's (its own levels), a campus's (#28: up to 4)
       const deck = (f) => ({ role: "deck", name: f ? `Parking deck, level ${f + 1}` : "Parking deck, ground", entry: !f, lay: "deck" });
       return { bw, bh, program: deck(0), upper: (f) => deck(f), storeys, foot: "wide", ground: "lot", front: { width: 4 }, openDoors: 1, exits: [{ side: "back", roles: null, chance: 1, lock: 0, width: 2, name: "Pedestrian exit" }, { side: "left", roles: null, chance: 0.8, lock: 0.2, name: "Stair door" }], stairs: { roles: ["deck"], n: 2, len: 4 } };
     }
     default: throw new Error(`mallArchetype: ${kind}`);
   }
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// The department store (buildingmaps.js BUILDINGS.deptstore, a mall's anchor; issue #32's rule: a dozen plans a type).
+// Each variant a plan of its own: its rooms, their order, its storeys, its footprint (a cell a metre). A new save's;
+// an older save's department store is buildingmaps.js bigstore as it always was. The spec carries vid and vname.
+// ---------------------------------------------------------------------------------------------------------------------
+const S = (name, o = {}) => ({ role: "sales", name, type: "store", ...o });
+const W_ = (name, o = {}) => ({ role: "warefloor", name, hub: true, maxBoxes: 5, ...o });
+export const DEPT_VARIANTS = [
+  { id: "classic", name: "Classic two-floor store", w: [26, 30], h: [18, 21], storeys: [1, 2], front: () => [["*", S("Department floor", { entry: true })], [8, S("Sporting goods", { type: "lockers", hub: false, maxBoxes: 4 })]], back: () => [["*", W_("Stockroom")], [4, { role: "office", boxLock: ["safe", 0.4] }], [3, "restroom"]], up: () => [S("Upper sales floor", { maxBoxes: 8 })] },
+  { id: "flagship", name: "Three-floor flagship", w: [30, 34], h: [21, 24], storeys: [3, 3], front: () => [[7, S("Cosmetics and jewellery", { type: "store", hub: false, maxBoxes: 4 })], ["*", S("Department floor", { entry: true })]], back: () => [["*", W_("Stockroom")], [4, { role: "office", name: "Cash office", lock: ["door", 0.5], boxLock: ["safe", 0.6] }], [3, "restroom"]], up: (f) => [f === 1 ? S("Fashion floor", { maxBoxes: 8 }) : S("Home floor", { type: "house", maxBoxes: 7 })] },
+  { id: "discount", name: "Discount department store", w: [32, 36], h: [19, 22], storeys: [1, 1], front: () => [["*", S("Discount floor", { entry: true, maxBoxes: 12 })], [7, S("Garden and seasonal", { type: "garden", hub: false, maxBoxes: 4 })]], back: () => [["*", W_("Receiving")], [4, "office"], [3, "restroom"], [4, "breakroom"]] },
+  { id: "home", name: "Home and furniture store", w: [28, 32], h: [20, 23], storeys: [1, 2], front: () => [["*", S("Furniture showroom", { entry: true, type: "house" })], [8, S("Mattress gallery", { type: "house", hub: false, maxBoxes: 3 })]], back: () => [["*", W_("Furniture warehouse", { maxBoxes: 6 })], [4, "office"]], up: () => [S("Housewares floor", { maxBoxes: 7 })] },
+  { id: "autocentre", name: "Store with an auto centre", w: [30, 34], h: [19, 21], storeys: [1, 1], front: () => [["*", S("Department floor", { entry: true })], [9, { role: "bays", name: "Auto centre", maxBoxes: 4 }]], back: () => [["*", W_("Stockroom")], [5, { role: "parts", name: "Tyre room", type: "garage" }], [4, "office"]], exits: [{ side: "front", roles: ["bays"], chance: 1, roller: true, width: 2, lock: 0.3, name: "Auto centre door" }] },
+  { id: "catalogue", name: "Catalogue showroom", w: [26, 30], h: [21, 24], storeys: [1, 1], front: () => [["*", S("Showroom", { entry: true, maxBoxes: 6 })]], back: () => [["*", W_("Catalogue warehouse", { maxBoxes: 9 })], [4, { role: "office", boxLock: ["safe", 0.4] }], [3, "restroom"]], backD: [9, 11] },
+  { id: "junior", name: "Junior anchor", w: [22, 25], h: [16, 18], storeys: [1, 1], front: () => [["*", S("Department floor", { entry: true })]], back: () => [["*", W_("Stockroom")], [4, "office"]] },
+  { id: "restaurant", name: "Store with a tearoom", w: [28, 32], h: [19, 22], storeys: [1, 2], front: () => [["*", S("Department floor", { entry: true })], [8, { role: "dining", name: "Tearoom", type: "kitchen", hub: false, maxBoxes: 2 }]], back: () => [[6, { role: "kitchen", name: "Tearoom kitchen" }], ["*", W_("Stockroom")], [4, "office"]], up: () => [S("Upper sales floor", { maxBoxes: 8 })] },
+  { id: "offprice", name: "Off-price warehouse store", w: [32, 36], h: [20, 23], storeys: [1, 1], front: () => [["*", S("Racks floor", { entry: true, type: "clothes", maxBoxes: 12 })]], back: () => [["*", W_("Racked stock", { maxBoxes: 8 })], [4, "office"], [3, "restroom"]], backD: [8, 9] },
+  { id: "downtown", name: "Old downtown department store", w: [22, 25], h: [22, 26], storeys: [4, 4], front: () => [["*", S("Ground floor", { entry: true })], [6, S("Gloves and hats", { type: "clothes", hub: false, maxBoxes: 3 })]], back: () => [["*", W_("Stockroom")], [5, { role: "office", name: "Credit office", boxLock: ["safe", 0.5] }]], up: (f, top) => [top ? { role: "office", name: "Store offices", maxBoxes: 4 } : S(f === 1 ? "Ladies' floor" : "Men's floor", { type: "clothes", maxBoxes: 7 })] },
+  { id: "garden", name: "Store with a garden centre", w: [30, 34], h: [19, 22], storeys: [1, 1], front: () => [["*", S("Department floor", { entry: true })], [9, { role: "stock", name: "Garden centre", type: "garden", lay: "greenhouse", glass: true, hub: false }]], back: () => [["*", W_("Stockroom")], [7, { role: "warefloor", name: "Garden yard", type: "garden", hub: false, maxBoxes: 4 }], [4, "office"]] },
+  { id: "electronics", name: "Electronics and appliances anchor", w: [26, 30], h: [19, 21], storeys: [1, 2], front: () => [["*", S("Department floor", { entry: true })], [8, S("Electronics", { type: "electronics", hub: false, maxBoxes: 4 })]], back: () => [["*", W_("Stockroom")], [5, { role: "workshop", name: "Repair bench", type: "electronics" }], [4, "office"]], up: () => [S("Appliance floor", { type: "store", maxBoxes: 7 })] },
+];
+/** A department store's spec by a variant (o.variant: its id; else the dice's). */
+export function deptstorePlan(rng, o = {}) {
+  const V = DEPT_VARIANTS.find((v) => v.id === o.variant) || DEPT_VARIANTS[rng.int(0, DEPT_VARIANTS.length - 1)];
+  const bw = rng.int(V.w[0], V.w[1]), bh = rng.int(V.h[0], V.h[1]);
+  const storeys = rng.int(V.storeys[0], V.storeys[1]), backD = rng.int(...(V.backD || [5, 6]));
+  const fr = V.front(), bk = V.back();
+  const program = { split: "y", parts: [["*", fr.length > 1 ? { split: "x", parts: leaves(fr) } : fr[0][1]], [backD, { split: "x", parts: leaves(bk) }]] };
+  const upper = storeys > 1 ? (f, r, ctx) => { const u = V.up(f, f === storeys - 1); return { split: "y", parts: [["*", u[0]], [5, { split: "x", parts: leaves([["*", W_(`Stockroom, floor ${f + 1}`, { maxBoxes: 4 })], [4, "office"], [3, "restroom"]]) }]] }; } : null;
+  return {
+    bw, bh, front: { width: 2 }, openDoors: 0.3, ground: "lot", storeys, upper, foot: "wide", stairs: { roles: ["warefloor", "stock", "office", "breakroom"], n: storeys >= 3 ? 2 : undefined }, program,
+    exits: [{ side: "back", roles: ["warefloor"], chance: 1, roller: true, width: 3, lock: 0.2, name: "Loading dock" }, { side: rng.chance(0.5) ? "left" : "right", roles: ["sales"], chance: 0.7, lock: 0.4, name: "Fire exit" }, ...(V.exits || [])],
+    vid: V.id, vname: V.name,
+  };
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -134,7 +171,8 @@ function fitSpec(spec, u) {
   spec.margins = { front: 1, back: 1, left: 1, right: 1 };
   spec.ground = "none";
   spec.pumps = 0;
-  if (!u.keepStoreys) { spec.storeys = 1; spec.upper = null; }
+  if (u.flats) { spec.storeys = 2; spec.upper = () => ({ split: "x", parts: leaves([["*", { role: "office", name: "Upstairs office" }], ["*", { role: "office", name: "Upstairs office", boxLock: ["safe", 0.2] }]]) }); } // a two-storey strip: offices over the shops
+  else if (!u.keepStoreys) { spec.storeys = 1; spec.upper = null; }
   else spec.storeys = Math.min(spec.storeys || 1, u.maxStoreys || 3);
   if (u.inline) spec.exits = [{ side: "back", roles: null, chance: 1, lock: MALL.BACK_LOCK, name: "Service door" }];
   return spec;
@@ -147,6 +185,9 @@ function buildUnit(ctx, u) {
   if (BUILDINGS[u.kind] && ["cinema", "arcade", "mallservices", "mallrestrooms", "vacantunit", "parkgarage"].includes(u.kind)) {
     spec = mallArchetype(u.kind, rng, { w: u.w, d: u.d, state: u.state, levels: u.levels });
     name = u.name || (u.kind === "vacantunit" ? `${u.state === "boarded" ? "Boarded-up unit" : u.state === "halfbuilt" ? "Unfinished unit" : "Vacant unit"} ${u.no}` : BUILDINGS[u.kind].name);
+  } else if (u.kind === "library") { // #34's strip-mall library at the unit's size
+    spec = libraryPlan(rng, { variant: "strip", w: u.w, h: u.d });
+    name = u.name || "Library";
   } else {
     const fr = u.variant ? (FRANCHISES[u.frKind || u.kind] || []).find((f) => f.id === u.variant) : null;
     spec = BUILDINGS[u.kind].make(rng, { variant: u.variant || null, kind: u.frKind || null, legacy });
@@ -301,7 +342,7 @@ function finish(ctx, zones, withVehicle, extra = {}) {
   const storefronts = ctx.units.filter((u) => ["shop", "vacant", "food", "cinema", "arcade"].includes(u.role)).length;
   return compoundResult(C, {
     key: ctx.option.key, id: ctx.option.id, name: ctx.option.name, zones, vehicle, kind: ctx.kind,
-    extra: { mall: true, storefronts, shops: shops.length, vacant: ctx.units.filter((u) => u.role === "vacant").length, anchors: anchors.map((u) => ({ name: u.name, kind: u.kind, k: u.part.k })), levels: C.storeys, wings: ctx.wings || [], ...extra },
+    extra: { mall: true, vid: ctx.variant ? ctx.variant.id : null, vname: ctx.variant ? ctx.variant.name : null, variant: ctx.variant ? ctx.variant.name : null, storefronts, shops: shops.length, vacant: ctx.units.filter((u) => u.role === "vacant").length, anchors: anchors.map((u) => ({ name: u.name, kind: u.kind, k: u.part.k })), levels: C.storeys, wings: ctx.wings || [], ...extra },
   });
 }
 
@@ -309,80 +350,130 @@ function finish(ctx, zones, withVehicle, extra = {}) {
 const zone = (x0, y0, side, name) => ({ x0, y0, w: 3, h: 3, side, exit: side, name, vehicle: false });
 
 // Pick an inline unit: a shop of a weighted kind with its franchise, or vacant, or a grille down.
-function inlineUnit(ctx, k, w, d, table = MALL.INLINE) {
+function inlineUnit(ctx, k, w, d, table = ctx.table || MALL.INLINE) {
   const { rng } = ctx;
-  if (rng.chance(MALL.VACANT)) { const st = rng.chance(MALL.BOARDED) ? "boarded" : rng.chance(MALL.HALFBUILT / (1 - MALL.BOARDED)) ? "halfbuilt" : "empty"; ctx.vacantNo = (ctx.vacantNo || 0) + 1; return { kind: "vacantunit", state: st, role: "vacant", w, d, inline: true, k, no: ctx.vacantNo }; }
+  if (rng.chance(ctx.vacant ?? MALL.VACANT)) { const st = rng.chance(MALL.BOARDED) ? "boarded" : rng.chance(MALL.HALFBUILT / (1 - MALL.BOARDED)) ? "halfbuilt" : "empty"; ctx.vacantNo = (ctx.vacantNo || 0) + 1; return { kind: "vacantunit", state: st, role: "vacant", w, d, inline: true, k, no: ctx.vacantNo }; }
   const kind = pickW(rng, table), fr = franchiseOf(kind, rng);
-  return { kind, variant: fr ? fr.id : null, role: "shop", w, d, inline: true, k, shutter: rng.chance(MALL.SHUTTER) };
+  return { kind, variant: fr ? fr.id : null, role: "shop", w, d, inline: true, k, shutter: rng.chance(MALL.SHUTTER), ...(ctx.flats ? { flats: true } : {}) };
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
 // The strip mall.
 // ---------------------------------------------------------------------------------------------------------------------
+// The strip mall's dozen plans (issue #32's rule; mall.js MALL.STRIP the common numbers): the shape of the row (a
+// straight row, an L with a leg facing east at the west end, a U with legs at both ends, two rows facing each other
+// across the lot), its anchors (none, one at the east end, two: the second at the west end), the pad on the lot, what
+// its units are (MALL.INLINE, or a table of its own), how many stand empty, offices upstairs, a library (#34's
+// strip-mall library).
+export const STRIP_VARIANTS = [
+  { id: "neighbourhood", name: "Neighbourhood centre", shape: "row", anchors: ["supermarket"], pad: "gasstation" },
+  { id: "hardware", name: "Hardware strip", shape: "row", anchors: ["hardware"], pad: "restaurant" },
+  { id: "lcentre", name: "L-shaped centre", shape: "L", anchors: ["supermarket"], pad: "restaurant", units: [8, 12] },
+  { id: "uplaza", name: "U-shaped plaza", shape: "U", anchors: [], pad: null, units: [9, 12] },
+  { id: "twin", name: "Facing rows", shape: "twin", anchors: ["hardware"], pad: null, units: [8, 12] },
+  { id: "power", name: "Power centre", shape: "row", anchors: ["supermarket", "hardware"], pad: "gasstation", units: [5, 8] },
+  { id: "twostorey", name: "Two-storey strip", shape: "row", anchors: [], pad: "gasstation", flats: true, units: [6, 10] },
+  { id: "corner", name: "Corner strip", shape: "row", anchors: [], pad: "gasstation", units: [5, 6], w: [9, 12] },
+  { id: "dead", name: "Dead strip", shape: "row", anchors: ["supermarket"], pad: null, vacant: 0.65 },
+  { id: "medical", name: "Medical plaza", shape: "L", anchors: [], pad: null, units: [8, 11], table: { pharmacy: 6, petstore: 2, corner: 1, bookstore: 1, garden: 0.5 } },
+  { id: "food", name: "Restaurant row", shape: "row", anchors: [], pad: "restaurant", table: { restaurant: 8, bar: 2, liquor: 1, corner: 1 } },
+  { id: "civic", name: "Civic strip", shape: "row", anchors: ["hardware"], pad: null, library: true, units: [5, 11], table: { corner: 2, pharmacy: 2, bookstore: 1, radioshop: 1, clothing: 2, liquor: 1 } },
+];
+const pickVariant = (rng, list, want) => list.find((v) => v.id === want) || list[rng.int(0, list.length - 1)];
 function stripMall(ctx, withVehicle) {
   const { rng } = ctx, S = MALL.STRIP;
-  const n = rng.int(S.UNITS[0], S.UNITS[1]), D = rng.int(S.D[0], S.D[1]);
-  const L = n >= 8 && rng.chance(S.L), n2 = L ? Math.floor(n / 3) : 0, n1 = n - n2;
-  const widths = Array.from({ length: n }, () => rng.int(S.W[0], S.W[1]));
-  const anchorKind = rng.chance(0.55) ? "supermarket" : "hardware";
-  const padKind = rng.chance(0.5) ? "gasstation" : "restaurant";
-  // The anchor and the pad first (their sizes set the map's).
+  const V = (ctx.variant = pickVariant(rng, STRIP_VARIANTS, ctx.option.variant));
+  ctx.vacant = V.vacant ?? MALL.VACANT; ctx.table = V.table || MALL.INLINE; ctx.flats = !!V.flats;
+  const U = V.units || S.UNITS, n = rng.int(U[0], U[1]), D = rng.int(S.D[0], S.D[1]);
+  const legN = V.shape === "L" ? Math.floor(n / 3) : V.shape === "U" ? Math.floor(n / 4) : 0, legs = V.shape === "U" ? 2 : V.shape === "L" ? 1 : 0;
+  const twinN = V.shape === "twin" ? Math.floor(n / 2) : 0, n1 = n - legN * legs - twinN;
+  const WW = V.w || S.W, widths = Array.from({ length: n }, () => rng.int(WW[0], WW[1]));
   let k = 0;
-  const aU = { kind: anchorKind, variant: anchorKind === "hardware" ? (franchiseOf("hardware", rng) || {}).id || null : null, role: "anchor", anchor: true, k: k++, w: 0, d: 0 };
-  const anchorB = buildUnit(ctx, aU);
-  const aw = anchorB.m.building.w, ah = anchorB.m.building.h;
-  const pU = padKind === "gasstation" ? { kind: "gasstation", variant: (franchiseOf("gas", rng) || {}).id || null, frKind: "gas", role: "pad", k: k++ } : { kind: "restaurant", variant: (FRANCHISES.restaurant.filter((f) => f.plan && f.plan.back === "fastfood")[rng.int(0, 2)] || {}).id || null, role: "pad", k: k++ };
-  const legW = L ? D + S.WALK + 2 : 0;
-  const rowW = widths.slice(0, n1).reduce((a, b) => a + b, 0);
-  const W = clamp(S.XM * 2 + legW + rowW + aw, 120, MALL.CAP);
-  const yF = Math.max(S.ALLEY + D, ah + 2) - 1; // the storefronts' line (the anchor's too)
-  const leg2H = L ? widths.slice(n1).reduce((a, b) => a + b, 0) : 0;
-  const H = clamp(Math.max(yF + 1 + S.WALK + S.LOT + S.ROAD, yF + S.WALK + 4 + leg2H + 14), 90, MALL.CAP);
+  // The anchors and the pad first (their sizes set the map's).
+  const anchorU = (kind) => ({ kind, variant: kind === "hardware" ? (franchiseOf("hardware", rng) || {}).id || null : null, role: "anchor", anchor: true, k: k++, w: 0, d: 0 });
+  const anchors = V.anchors.map((kind) => { const u = anchorU(kind); return { u, b: buildUnit(ctx, u) }; });
+  const pU = V.pad === "gasstation" ? { kind: "gasstation", variant: (franchiseOf("gas", rng) || {}).id || null, frKind: "gas", role: "pad", k: k++ } : V.pad === "restaurant" ? { kind: "restaurant", variant: (FRANCHISES.restaurant.filter((f) => f.plan && f.plan.back === "fastfood")[rng.int(0, 2)] || {}).id || null, role: "pad", k: k++ } : null;
+  const aw = anchors.reduce((t, a) => t + a.b.m.building.w, 0), ah = Math.max(0, ...anchors.map((a) => a.b.m.building.h));
+  const legW = legs ? D + S.WALK + 2 : 0;
+  const rowW = widths.slice(0, n1).reduce((a, b) => a + b, 0) + (V.library ? 12 : 0);
+  const W = clamp(S.XM * 2 + legW * legs + rowW + aw, 120, MALL.CAP);
+  const yF = Math.max(S.ALLEY + D, ah + 2) - 1; // the storefronts' line (the anchors' too)
+  const legH = legN ? widths.slice(n1, n1 + legN).reduce((a, b) => a + b, 0) : 0;
+  const H = clamp(Math.max(yF + 1 + S.WALK + S.LOT + S.ROAD + (twinN ? D + S.ALLEY : 0), yF + S.WALK + 4 + legH + 14), 90, MALL.CAP);
   const roadY = H - S.ROAD;
-  const C = (ctx.C = compoundGrid(W, H, 1, (x, y) => (y >= roadY + 1 && y < H - 1 ? "road" : y === roadY || y === H - 1 ? "gravel" : y <= yF ? "gravel" : "road")));
-  ctx.keep = [new Set()];
-  // The main row: west to east (after the L's leg), the anchor at the east end.
-  let x = S.XM + legW;
-  for (let i = 0; i < n1; i++) { const u = inlineUnit(ctx, k++, widths[i], D); putUnit(ctx, u, x, yF - D + 1, "s", 0, ["w", "e"]); x += widths[i]; }
-  const anchorPart = placeBuilding(C, anchorB.m, { x0: x, y0: yF - ah + 1, face: "s", k: C.parts.length, name: anchorB.name, key: anchorKind, solid: ["w"], keepRing: false, tag: { part: { role: "anchor", anchor: true, kind: anchorKind } } });
-  anchorPart.role = "anchor"; anchorPart.anchor = true;
-  ctx.units.push({ ...aU, part: anchorPart, name: anchorB.name });
-  keepDoors(ctx, anchorPart, 0);
-  // The L's leg: units facing east at the west end, their backs to the west alley.
-  if (L) {
+  const C = (ctx.C = compoundGrid(W, H, ctx.flats ? 2 : 1, (x, y) => (y >= roadY + 1 && y < H - 1 ? "road" : y === roadY || y === H - 1 ? "gravel" : y <= yF ? "gravel" : "road")));
+  ctx.keep = Array.from({ length: C.storeys }, () => new Set());
+  const placeAnchor = (a, x0) => {
+    const part = placeBuilding(C, a.b.m, { x0, y0: yF - a.b.m.building.h + 1, face: "s", k: C.parts.length, name: a.b.name, key: a.u.kind, solid: ["w", "e"], keepRing: false, tag: { part: { role: "anchor", anchor: true, kind: a.u.kind } } });
+    part.role = "anchor"; part.anchor = true;
+    ctx.units.push({ ...a.u, part, name: a.b.name });
+    keepDoors(ctx, part, 0);
+    return part;
+  };
+  // The main row: the second anchor at the west end, the units, a library among them, the first anchor at the east end.
+  let x = S.XM + (legs ? legW : 0);
+  if (anchors[1]) { placeAnchor(anchors[1], x); x += anchors[1].b.m.building.w; }
+  const libAt = V.library ? Math.floor(n1 / 2) : -1;
+  for (let i = 0; i < n1; i++) {
+    if (i === libAt) { putUnit(ctx, { kind: "library", role: "shop", name: "Strip Library", w: 12, d: D, inline: true, k: k++ }, x, yF - D + 1, "s", 0, ["w", "e"]); x += 12; }
+    const u = inlineUnit(ctx, k++, widths[i], D); putUnit(ctx, u, x, yF - D + 1, "s", 0, ["w", "e"]); x += widths[i];
+  }
+  const rowEnd = x + (anchors[0] ? anchors[0].b.m.building.w : 0);
+  if (anchors[0]) placeAnchor(anchors[0], x);
+  // The legs: units facing east at the west end (and west at the east end of a U), their backs to the side alleys.
+  let iw = n1;
+  for (let L = 0; L < legs; L++) {
     let y = yF + S.WALK + 2;
-    for (let i = n1; i < n; i++) { const u = inlineUnit(ctx, k++, widths[i], D); putUnit(ctx, u, S.XM, y, "e", 0, ["n", "s"]); y += widths[i]; }
-    for (let yy = yF + S.WALK + 2; yy < y; yy++) for (let xx = S.XM + D; xx < S.XM + D + S.WALK; xx++) Object.assign(C.cells[yy * W + xx], { f: "floor", fl: "conc", canopy: true });
+    const east = L === 1, lx = east ? rowEnd - D : S.XM;
+    for (let i = 0; i < legN; i++, iw++) { const u = inlineUnit(ctx, k++, widths[iw], D); putUnit(ctx, u, lx, y, east ? "w" : "e", 0, ["n", "s"]); y += widths[iw]; }
+    const wx0 = east ? lx - S.WALK : lx + D;
+    for (let yy = yF + S.WALK + 2; yy < y; yy++) for (let xx = wx0; xx < wx0 + S.WALK; xx++) Object.assign(C.cells[yy * W + xx], { f: "floor", fl: "conc", canopy: true });
+  }
+  // Facing rows: a second row across the lot facing north, its back to the road.
+  if (twinN) {
+    let tx = S.XM + 4;
+    const ty = roadY - S.ALLEY + 2 - D;
+    for (let i = 0; i < twinN; i++, iw++) { const u = inlineUnit(ctx, k++, widths[iw], D); putUnit(ctx, u, tx, ty, "n", 0, ["w", "e"]); tx += widths[iw]; }
+    for (let yy = ty - S.WALK; yy < ty; yy++) for (let xx = S.XM + 4; xx < tx; xx++) Object.assign(C.cells[yy * W + xx], { f: "floor", fl: "conc", canopy: true });
+    ctx.twinTop = ty - S.WALK;
   }
   // The covered walk along the storefronts.
-  for (let yy = yF + 1; yy <= yF + S.WALK; yy++) for (let xx = S.XM; xx < x + aw; xx++) Object.assign(C.cells[yy * W + xx], { f: "floor", fl: "conc", canopy: true });
-  const walk = rectArea(C, { role: "walk", name: "Covered walk", x0: S.XM, y0: yF, w: x + aw - S.XM, h: S.WALK + 2, mall: "walk" });
+  for (let yy = yF + 1; yy <= yF + S.WALK; yy++) for (let xx = S.XM; xx < rowEnd; xx++) Object.assign(C.cells[yy * W + xx], { f: "floor", fl: "conc", canopy: true });
+  const walk = rectArea(C, { role: "walk", name: "Covered walk", x0: S.XM, y0: yF, w: rowEnd - S.XM, h: S.WALK + 2, mall: "walk" });
   walk.type = null;
   // The pad on the lot by the road, its pumps in front.
-  const pad = buildUnit(ctx, pU);
-  const pw = pad.m.building.w, ph = pad.m.building.h;
-  const px = clamp(W - S.XM - pw - 4 - Math.floor(rng.next() * 10), S.XM + legW + 2, W - pw - 2), py = roadY - ph - (padKind === "gasstation" ? 7 : 3);
-  const padPart = placeBuilding(C, pad.m, { x0: px, y0: py, face: "s", k: C.parts.length, name: pad.name, key: pU.kind, tag: { part: { role: "pad", kind: pU.kind } } });
-  padPart.role = "pad";
-  ctx.units.push({ ...pU, part: padPart, name: pad.name });
-  keepDoors(ctx, padPart, 0);
+  let px = W - S.XM;
+  if (pU) {
+    const pad = buildUnit(ctx, pU);
+    const pw = pad.m.building.w, ph = pad.m.building.h;
+    px = clamp(W - S.XM - pw - 4 - Math.floor(rng.next() * 10), S.XM + legW * legs + 2, W - pw - 2);
+    const py = roadY - ph - (V.pad === "gasstation" ? 7 : 3);
+    const padPart = placeBuilding(C, pad.m, { x0: px, y0: py, face: "s", k: C.parts.length, name: pad.name, key: pU.kind, tag: { part: { role: "pad", kind: pU.kind } } });
+    padPart.role = "pad";
+    ctx.units.push({ ...pU, part: padPart, name: pad.name });
+    keepDoors(ctx, padPart, 0);
+    ctx.pumpsAt = V.pad === "gasstation" ? { px, py, pw, ph } : null;
+  }
   // The ways out: the road at both ends of the lot, the alley behind, the side.
-  const zones = [zone(Math.floor(W / 2) - 1, H - 3, "south", "The road (front)"), zone(0, roadY + 1, "west", "The road west"), zone(W - 3, roadY + 1, "east", "The road east"), zone(Math.floor(W / 3), 0, "north", "Service alley"), zone(W - 3, Math.max(1, Math.floor(yF / 2)), "east", "Behind the anchor")];
+  const zones = [zone(Math.floor(W / 2) - 1, H - 3, "south", "The road (front)"), zone(0, roadY + 1, "west", "The road west"), zone(W - 3, roadY + 1, "east", "The road east"), zone(Math.floor(W / 3), 0, "north", "Service alley"), zone(W - 3, Math.max(1, Math.floor(yF / 2)), "east", "Behind the row")];
   const G = guard(C, zones[0].x0 + 1, zones[0].y0 + 1, { free: freeOf(ctx, 0, zones) });
   // The pumps (a gas station): an outdoor area of their own.
-  if (padKind === "gasstation") {
-    const a = { id: C.areas.length, type: "pumps", name: "Fuel pumps", outdoor: true, f: 0, x0: px, y0: py + ph, w: pw, h: 6, house: null };
+  if (ctx.pumpsAt) {
+    const { px: qx, py: qy, pw, ph } = ctx.pumpsAt;
+    const a = { id: C.areas.length, type: "pumps", name: "Fuel pumps", outdoor: true, f: 0, x0: qx, y0: qy + ph, w: pw, h: 6, house: null };
     let placed = 0;
-    for (let xx = px + 1; xx < px + pw - 1 && placed < 3; xx += 4) if (G.block(xx, py + ph + 3, "pump")) { C.containers.push({ id: C.cid++, x: xx, y: py + ph + 3, f: 0, area: a.id, kind: "pump", searched: false, label: "Fuel pumps: fuel pump" }); placed++; }
+    for (let xx = qx + 1; xx < qx + pw - 1 && placed < 3; xx += 4) if (G.block(xx, qy + ph + 3, "pump")) { C.containers.push({ id: C.cid++, x: xx, y: qy + ph + 3, f: 0, area: a.id, kind: "pump", searched: false, label: "Fuel pumps: fuel pump" }); placed++; }
     if (placed) C.areas.push(a);
   }
-  // The lot: bays between the walk and the road.
-  const lotX0 = S.XM + legW + 1, lotY0 = yF + S.WALK + 2;
-  parkingLot(C, G, { x0: lotX0, y0: lotY0, w: Math.max(10, (padKind ? px - 3 : W - S.XM) - lotX0), h: roadY - 1 - lotY0 }, rng, { name: "Parking lot" });
+  // The lot: bays between the walk and the road (or the facing row), between the legs.
+  const lotX0 = S.XM + legW + 1, lotY0 = yF + S.WALK + 2, lotX1 = Math.min(pU ? px - 3 : W - S.XM, legs === 2 ? rowEnd - legW - 1 : W - S.XM);
+  const lotY1 = (ctx.twinTop ?? roadY) - 1;
+  parkingLot(C, G, { x0: lotX0, y0: lotY0, w: Math.max(10, lotX1 - lotX0), h: Math.max(10, lotY1 - lotY0) }, rng, { name: "Parking lot" });
+  for (let t = 0, put = 0; t < 30 && put < 2; t++) if (place2(G, rng.int(lotX0 + 2, Math.max(lotX0 + 3, lotX1 - 4)), rng.int(lotY0 + 2, Math.max(lotY0 + 3, lotY1 - 3)), "cartcorral", "e")) put++; // #22's cart corrals out on the lot
   // The alley: dumpsters and the odd crate.
-  for (let t = 0, put = 0; t < 40 && put < 5; t++) { const xx = rng.int(S.XM, x + aw - 1), yy = rng.int(1, Math.max(1, yF - D - 1)); if (G.block(xx, yy, rng.chance(0.6) ? "dumpster" : "crate")) put++; }
+  for (let t = 0, put = 0; t < 40 && put < 5; t++) { const xx = rng.int(S.XM, rowEnd - 1), yy = rng.int(1, Math.max(1, yF - D - 1)); if (G.block(xx, yy, rng.chance(0.6) ? "dumpster" : "crate")) put++; }
   dressWalk(ctx, G, walk, 0, rng);
-  ctx.wings = [L ? "the L's west leg" : null, "the covered walk"].filter(Boolean);
+  ctx.wings = [legs ? (legs === 2 ? "the two side legs" : "the west leg") : null, twinN ? "the row across the lot" : null, "the covered walk"].filter(Boolean);
   return finish(ctx, zones, withVehicle);
 }
 
@@ -394,6 +485,7 @@ function freeOf(ctx, f, zones) {
     const i = y * C.W + x, c = cells[i];
     if (!c || c.k !== "open" || c.landing || keep.has(i)) return false;
     if (f === 0 && C.keep[i]) return false;
+    if (C.built[i] && c.f !== "floor") return false; // the ground under a building's footprint (never the floors inside: those are the carved concourse's)
     return !(zones || []).some((z) => x >= z.x0 - 1 && x <= z.x0 + z.w && y >= z.y0 - 1 && y <= z.y0 + z.h);
   };
 }
@@ -408,24 +500,54 @@ function dressWalk(ctx, G, a, f, rng) {
 // ---------------------------------------------------------------------------------------------------------------------
 // The enclosed regional mall.
 // ---------------------------------------------------------------------------------------------------------------------
+// The regional mall's dozen plans (issue #32's rule): its anchors (2–4: their places, a supermarket among them, one
+// gone dark), its levels, how long it is (by the storefronts it is to hold: STORES), the width of its concourse and its
+// units, where the food court and the cinema are (the top level or the ground; a big cinema; two arcades), its garages,
+// how many units stand empty and what its shops are.
+export const REGIONAL_VARIANTS = [
+  { id: "dumbbell", name: "Dumbbell mall", anchors: 2, levels: [2, 2] },
+  { id: "cross", name: "Cross mall", anchors: 4, levels: [2, 3], stores: [60, 90] },
+  { id: "tee", name: "T-plan mall", anchors: 3, levels: [2, 2] },
+  { id: "single", name: "Single-level mall", anchors: 3, levels: [1, 1], stores: [45, 70], food: "ground", cinema: "ground" },
+  { id: "galleria", name: "Three-level galleria", anchors: 2, levels: [3, 3], cw: [15, 17], walk: 5 },
+  { id: "dead", name: "Dead mall", anchors: 2, levels: [2, 2], stores: [50, 80], vacant: 0.55, deadAnchor: true, garage: 0 },
+  { id: "grocery", name: "Grocery-anchored mall", anchors: 3, levels: [2, 2], stores: [45, 75], superEnd: true, food: "ground" },
+  { id: "upscale", name: "Upscale mall", anchors: 2, levels: [2, 3], stores: [45, 70], slot: [18, 24], vacant: 0.03, garage: 1, table: { clothing: 30, electronics: 6, sportshop: 4, bookstore: 3, restaurant: 4, liquor: 1, petstore: 1 } },
+  { id: "groundfood", name: "Ground-floor food court", anchors: 3, levels: [2, 2], food: "ground", cinema: "ground" },
+  { id: "entertainment", name: "Entertainment mall", anchors: 2, levels: [2, 2], cinemaW: [50, 58], arcades: 2 },
+  { id: "community", name: "Community mall", anchors: 2, levels: [1, 2], stores: [40, 55] },
+  { id: "mega", name: "Mega mall", anchors: 4, levels: [3, 3], stores: [92, 108], slot: [16, 22], garage: 1, garages: 2 },
+];
 function regionalMall(ctx, withVehicle) {
   const { rng } = ctx, R = MALL.REGIONAL, cap = MALL.CAP;
-  const levels = rng.weighted((cap >= 500 ? R.LEVELS500 : R.LEVELS), ([, w]) => w)[0];
-  const nA = rng.int(R.ANCHORS[0], R.ANCHORS[1]);
-  const D = rng.int(R.D[0], R.D[1]), CW = rng.int(R.CW[0], R.CW[1]), WK = R.WALK;
+  const V = (ctx.variant = pickVariant(rng, REGIONAL_VARIANTS, ctx.option.variant));
+  ctx.vacant = V.vacant ?? MALL.VACANT; ctx.table = V.table || MALL.INLINE;
+  const levels = cap >= 500 ? rng.int(V.levels[0], V.levels[1]) : Math.max(2, rng.int(V.levels[0], V.levels[1])); // a capped map holds its storefronts on 2+ levels
+  const nA = V.anchors;
+  const slotR = V.slot || R.SLOT;
+  const CWr = V.cw || R.CW, D = rng.int(R.D[0], R.D[1]), CW = rng.int(CWr[0], CWr[1]), WK = V.walk || R.WALK;
   let k = 0;
-  // The anchors: a department store at each end (facing the concourse), one at the centre court north and south.
+  // The anchors: a department store at each end (facing the concourse), one at the centre court north and south; a
+  // supermarket (#22's) at the east end of a grocery-anchored mall, now and then at the centre; one end gone dark in a
+  // dead mall (its store boarded up: a vacant box).
   const anchorU = (i) => {
-    const sup = i >= 2 && rng.chance(R.SUPER);
+    if (i === 1 && V.deadAnchor) return { kind: "vacantunit", state: "boarded", role: "darkanchor", name: "Former department store", k: k++, w: rng.int(26, 30), d: rng.int(18, 21) };
+    const sup = (i === 1 && V.superEnd) || (i >= 2 && rng.chance(R.SUPER));
     return { kind: sup ? "supermarket" : "deptstore", role: "anchor", anchor: true, k: k++, keepStoreys: true, maxStoreys: levels };
   };
   const anchors = Array.from({ length: nA }, (_, i) => { const u = anchorU(i); return { u, b: buildUnit(ctx, u) }; });
   const [aW, aE, aN, aS] = anchors;
   const depthOf = (a) => (a ? a.b.m.building.h : 0), spanOf = (a) => (a ? a.b.m.building.w : 0);
-  const W = cap >= 500 ? rng.int(400, cap) : cap;
+  // How long: the storefronts it is to hold over its two rows and its levels, at the units' mean width, with the room the
+  // specials take (the food court, the cinema, the vestibules, the centre anchors).
+  const T = rng.int(...(V.stores || [60, 100])), perRow = Math.ceil(T / (2 * levels)), mean = (slotR[0] + slotR[1]) / 2;
+  const specials = 70 + Math.max(spanOf(aN), spanOf(aS));
+  const W = clamp(Math.round(perRow * mean * 0.85 + specials + 2 * R.XM + depthOf(aW) + depthOf(aE)), 300, cap); // × 0.85: the narrow end pieces and the services' slots hold storefronts' room too
+  const nG = rng.chance(V.garage ?? R.GARAGE) ? V.garages || 1 : 0; // the parking garages on the north lot (it is made deep enough)
   const cx0 = R.XM + depthOf(aW), cx1 = W - 1 - R.XM - depthOf(aE);
   const Hb = 2 * (3 + D) + CW; // the service band, a row, the concourse, a row, the band
-  const north = Math.max(R.LOT, depthOf(aN) - D - 3 + 14), south = Math.max(R.LOT, depthOf(aS) - D - 3 + 14);
+  const lot = Math.max(R.LOT, Math.round(W * 0.12)); // the surface lots deeper round a bigger mall
+  const north = Math.max(lot, depthOf(aN) - D - 3 + 14, nG && levels > 1 ? 58 : 0), south = Math.max(lot, depthOf(aS) - D - 3 + 14);
   const H = clamp(north + Hb + south, 120, cap);
   const yb0 = Math.floor((H - Hb) * (north / (north + south))); // the north band's outer wall
   const yN0 = yb0 + 3, yc0 = yN0 + D, yc1 = yc0 + CW - 1, yS0 = yc1 + 1, yS1 = yS0 + D - 1, ybS = yS1 + 3;
@@ -435,7 +557,7 @@ function regionalMall(ctx, withVehicle) {
   // ---- the anchors placed ----
   const placeAnchor = (a, x0, y0, face) => {
     const part = placeBuilding(C, a.b.m, { x0, y0, face, k: C.parts.length, name: a.b.name, key: a.u.kind, keepRing: false, tag: { part: { role: "anchor", anchor: true, kind: a.u.kind } } });
-    part.role = "anchor"; part.anchor = true;
+    part.role = a.u.role; part.anchor = !!a.u.anchor; // a dead mall's dark anchor: a vacant box
     ctx.units.push({ ...a.u, part, name: a.b.name });
     keepDoors(ctx, part, 0);
     return part;
@@ -447,7 +569,8 @@ function regionalMall(ctx, withVehicle) {
   const pS = aS ? placeAnchor(aS, clamp(cxm - Math.floor(spanOf(aS) / 2), cx0 + 20, cx1 - 20 - spanOf(aS)), yS0, "n") : null;
   // ---- the spans reserved in each row, by level ----
   const top = levels - 1;
-  const foodW = rng.int(MALL.FOOD.W[0], MALL.FOOD.W[1]), cineW = rng.int(MALL.CINEMA.W[0], MALL.CINEMA.W[1]);
+  const foodW = rng.int(MALL.FOOD.W[0], MALL.FOOD.W[1]), cineW = rng.int(...(V.cinemaW || MALL.CINEMA.W));
+  const foodF = V.food === "ground" ? 0 : top, cineF = V.cinema === "ground" ? 0 : top;
   const quarter = (q) => cx0 + Math.floor(L * q);
   const foodX = clamp((pS ? quarter(0.27) : cxm) - Math.floor(foodW / 2), cx0 + 2, cx1 - foodW - 2);
   const cineX = clamp((pN ? quarter(0.73) : quarter(0.3)) - Math.floor(cineW / 2), cx0 + 2, cx1 - cineW - 2);
@@ -456,8 +579,8 @@ function regionalMall(ctx, withVehicle) {
     const out = [];
     const anchorP = row === "n" ? pN : pS;
     if (anchorP) out.push({ x0: anchorP.x0, w: anchorP.w, what: "anchor" });
-    if (f === top && row === "s") out.push({ x0: foodX, w: foodW, what: "food" });
-    if (f === top && row === "n") out.push({ x0: cineX, w: cineW, what: "cinema" });
+    if (f === foodF && row === "s") out.push({ x0: foodX, w: foodW, what: "food" });
+    if (f === cineF && row === "n") out.push({ x0: cineX, w: cineW, what: "cinema" });
     if (f === 0) for (const vx of vests) if (!out.some((r) => vx + vestW > r.x0 - 2 && vx < r.x0 + r.w + 2)) out.push({ x0: vx, w: vestW, what: "vestibule" });
     return out.filter((r) => r.x0 >= cx0 && r.x0 + r.w - 1 <= cx1);
   };
@@ -491,11 +614,11 @@ function regionalMall(ctx, withVehicle) {
   for (let f = 0; f < levels; f++) for (const row of ["n", "s"]) {
     const y0 = row === "n" ? yN0 : yS0, face = row === "n" ? "s" : "n";
     const rs = res(row, f);
-    const slots = rowSlots(rng, cx0, cx1, rs, R.SLOT[0], R.SLOT[1]);
+    const slots = rowSlots(rng, cx0, cx1, rs, slotR[0], slotR[1]);
     // The specials among the slots: the services and the arcade on the ground floor, the restrooms on every level.
     const pickSlot = (want, pref) => { const c = slots.filter((s) => !s.use && s.w >= 12).sort((a, b) => Math.abs(a.x0 - pref) - Math.abs(b.x0 - pref))[0]; if (c) c.use = want; };
     if (row === "s") pickSlot("mallrestrooms", quarter(0.15 + 0.1 * f));
-    if (f === 0 && row === "n") { pickSlot("mallservices", quarter(0.12)); pickSlot("arcade", quarter(0.85)); }
+    if (f === 0 && row === "n") { pickSlot("mallservices", quarter(0.12)); pickSlot("arcade", quarter(0.85)); if ((V.arcades || 1) > 1) pickSlot("arcade", quarter(0.55)); }
     for (const s of slots) {
       if (s.w < 6) { for (let y = y0; y < y0 + D; y++) for (let x = s.x0; x < s.x0 + s.w; x++) C.floors[f].cells[y * W + x] = wallCell(); continue; } // a sliver: solid wall (a duct, a pillar)
       if (s.w < 10) { putUnit(ctx, { kind: "mallrestrooms", role: "service", name: "Utility room", w: s.w, d: D, inline: true, k: k++ }, s.x0, y0, face, f, ["w", "e"]); continue; }
@@ -536,11 +659,11 @@ function regionalMall(ctx, withVehicle) {
   }
   // ---- the loading docks: a roller door in each ground-floor band's outer wall ----
   const zones = [zone(cxm - 1, H - 3, "south", "South lot (front)"), zone(quarter(0.25), H - 3, "south", "South lot, west"), zone(quarter(0.75), 0, "north", "North lot, east"), zone(quarter(0.25), 0, "north", "North lot, west"), zone(0, ymid - 1, "west", "West lot"), zone(W - 3, ymid - 1, "east", "East lot")];
-  for (const bd of bands.filter((b) => b.f === 0 && b.s1 - b.s0 >= 6)) {
-    const x = rng.int(bd.s0 + 2, bd.s1 - 3), cells = C.cells, out = bd.row === "n" ? -1 : 1;
-    for (const xx of [x, x + 1]) { cells[bd.yWall * W + xx] = { k: "idoor", f: "floor", roll: true, dk: "roller", hp: DOOR_KINDS.roller.hp, mhp: DOOR_KINDS.roller.hp }; ctx.keep[0].add((bd.yWall + out) * W + xx); ctx.keep[0].add((bd.yWall - out) * W + xx); C.keep[(bd.yWall + out) * W + xx] = 1; C.keep[(bd.yWall + 2 * out) * W + xx] = 1; }
-    if (rng.chance(MALL.DOCK_LOCK)) for (const xx of [x, x + 1]) lockDoor(C, 0, xx, bd.yWall, "roller", bd.band.id);
-    bd.band.doors.push([x, bd.yWall], [x + 1, bd.yWall]);
+  for (const bd of bands.filter((b) => b.f === 0 && b.s1 >= b.s0)) { // every segment its dock (a stub between a vestibule and an anchor too: else it is sealed)
+    const x = bd.s1 - bd.s0 >= 6 ? rng.int(bd.s0 + 2, bd.s1 - 3) : bd.s0, cells = C.cells, out = bd.row === "n" ? -1 : 1;
+    for (const xx of bd.s1 > bd.s0 ? [x, x + 1] : [x]) { cells[bd.yWall * W + xx] = { k: "idoor", f: "floor", roll: true, dk: "roller", hp: DOOR_KINDS.roller.hp, mhp: DOOR_KINDS.roller.hp }; ctx.keep[0].add((bd.yWall + out) * W + xx); ctx.keep[0].add((bd.yWall - out) * W + xx); C.keep[(bd.yWall + out) * W + xx] = 1; C.keep[(bd.yWall + 2 * out) * W + xx] = 1; }
+    if (rng.chance(MALL.DOCK_LOCK)) for (const xx of bd.s1 > bd.s0 ? [x, x + 1] : [x]) lockDoor(C, 0, xx, bd.yWall, "roller", bd.band.id);
+    bd.band.doors.push(...(bd.s1 > bd.s0 ? [[x, bd.yWall], [x + 1, bd.yWall]] : [[x, bd.yWall]]));
   }
   // ---- the outside: the garage on the north lot, the surface lots ----
   const G = guard(C, zones[0].x0 + 1, zones[0].y0 + 1, { free: freeOf(ctx, 0, zones) });
@@ -548,23 +671,26 @@ function regionalMall(ctx, withVehicle) {
   const nTop = 6, nBot = yb0 - 7, sTop = ybS + 7, sBot = H - 6;
   const avoid = [pW, pE, pN, pS].filter(Boolean);
   const clear = (r) => !avoid.some((p) => r.x0 < p.x0 + p.w + 3 && p.x0 - 3 < r.x0 + r.w && r.y0 < p.y0 + p.h + 3 && p.y0 - 3 < r.y0 + r.h);
-  let garage = null;
-  if (rng.chance(R.GARAGE) && nBot - nTop >= 34) {
+  const garages = [];
+  for (let g = 0; g < nG && nBot - nTop >= 34; g++) { // on the north lot: the west end, then the east
     const gu = { kind: "parkgarage", role: "garage", k: k++, keepStoreys: true, maxStoreys: levels, levels: clamp(levels, 2, 3) };
     const gb = buildUnit(ctx, gu);
     const gw = gb.m.building.w, gh = gb.m.building.h;
-    const gx = clamp(cx0 + 4, 4, W - gw - 4), gy = clamp(nBot - gh - 2, nTop, nBot - gh);
-    if (clear({ x0: gx, y0: gy, w: gw, h: gh }) && gb.m.storeys <= levels) {
-      garage = placeBuilding(C, gb.m, { x0: gx, y0: gy, face: "s", k: C.parts.length, name: gb.name, key: "parkgarage", tag: { part: { role: "garage", kind: "parkgarage" } } });
+    const gx = g ? clamp(cx1 - gw - 4, 4, W - gw - 4) : clamp(cx0 + 4, 4, W - gw - 4), gy = clamp(nBot - gh - 2, nTop, nBot - gh);
+    const r = { x0: gx, y0: gy, w: gw, h: gh };
+    if (clear(r) && !garages.some((q) => r.x0 < q.x0 + q.w + 4 && q.x0 - 4 < r.x0 + r.w) && gb.m.storeys <= levels) {
+      const garage = placeBuilding(C, gb.m, { x0: gx, y0: gy, face: "s", k: C.parts.length, name: gb.name, key: "parkgarage", tag: { part: { role: "garage", kind: "parkgarage" } } });
       garage.role = "garage";
       ctx.units.push({ ...gu, part: garage, name: gb.name });
       keepDoors(ctx, garage, 0);
+      garages.push(garage);
     }
   }
+  const garage = garages[0] || null;
   const lotRects = [];
   const cut = (y0, y1, side) => { // the strip from y0 to y1 cut round the anchors and the garage
     let xs = 4;
-    const blocks = [...avoid, ...(garage ? [garage] : [])].filter((p) => p.y0 <= y1 + 3 && p.y0 + p.h >= y0 - 3).sort((a, b) => a.x0 - b.x0);
+    const blocks = [...avoid, ...garages].filter((p) => p.y0 <= y1 + 3 && p.y0 + p.h >= y0 - 3).sort((a, b) => a.x0 - b.x0);
     for (const p of blocks) { if (p.x0 - 4 - xs >= 20) lotRects.push({ x0: xs, y0, w: p.x0 - 4 - xs, h: y1 - y0, side }); xs = Math.max(xs, p.x0 + p.w + 4); }
     if (W - 4 - xs >= 20) lotRects.push({ x0: xs, y0, w: W - 4 - xs, h: y1 - y0, side });
   };
@@ -610,7 +736,8 @@ function foodCourt(ctx, r, f, y0, D, k0) {
   for (let i = 0; i < n; i++) {
     const w = i === n - 1 ? r.x0 + r.w - x : cw;
     const fr = fast.length ? fast[(i + rng.int(0, fast.length - 1)) % fast.length] : null;
-    putUnit(ctx, { kind: "restaurant", variant: fr ? fr.id : null, role: "food", w, d: FD, inline: true, k: k0 + i }, x, sy1 + 1, "n", f, ["w", "e"]);
+    const dark = (ctx.vacant ?? 0) > 0.3 && rng.chance(ctx.vacant); // a dead mall: counters gone dark
+    putUnit(ctx, dark ? { kind: "vacantunit", state: "empty", role: "vacant", w, d: FD, inline: true, k: k0 + i, no: `counter ${i + 1}` } : { kind: "restaurant", variant: fr ? fr.id : null, role: "food", w, d: FD, inline: true, k: k0 + i }, x, sy1 + 1, "n", f, ["w", "e"]);
     x += w;
   }
   // Tables with chairs (fixed seating: not searched).
@@ -661,40 +788,63 @@ function place2(G, x, y, k, fc, n = 1) {
 // ---------------------------------------------------------------------------------------------------------------------
 // The outlet centre.
 // ---------------------------------------------------------------------------------------------------------------------
+// The outlet centre's dozen plans (issue #32's rule): one street or two, rows on both sides or one, where the plaza is,
+// how many neighbours are joined by covered walkways, the stores' size (factory barns), a second storey, what they
+// sell, how many stand empty, the food pads.
+export const OUTLET_VARIANTS = [
+  { id: "village", name: "Outlet village", streets: 1 },
+  { id: "twin", name: "Twin-street outlets", streets: 2, units: [20, 28] },
+  { id: "covered", name: "Covered-walk outlets", walkway: 1, gap: [3, 4] },
+  { id: "gate", name: "Plaza-gate outlets", plaza: "west", pads: [0, 1] },
+  { id: "barns", name: "Factory outlet barns", units: [12, 18], wide: [20, 26], d: [20, 23], walkway: 0 },
+  { id: "highway", name: "Highway outlet row", sides: 1, units: [12, 16] },
+  { id: "sports", name: "Sports outlets", plaza: "west", wide: [17, 21], walkway: 0.5, table: { sportshop: 12, clothing: 8, electronics: 2, petstore: 1 } },
+  { id: "garden", name: "Home and garden outlets", plaza: "east", pads: [3, 3], table: { garden: 6, clothing: 8, electronics: 3, bookstore: 2, petstore: 2 } },
+  { id: "dead", name: "Dying outlet mall", vacant: 0.5, pads: [0, 1] },
+  { id: "twostorey", name: "Two-storey outlets", flats: true, units: [14, 22] },
+  { id: "compact", name: "Compact outlets", units: [12, 14], pads: [0, 0], streets: 1 },
+  { id: "premium", name: "Premium outlets", walkway: 0.7, vacant: 0, gap: [3, 3], table: { clothing: 30, sportshop: 4, electronics: 3, liquor: 1 } },
+];
 function outletCentre(ctx, withVehicle) {
   const { rng } = ctx, O = MALL.OUTLET;
-  const n = rng.int(O.UNITS[0], O.UNITS[1]);
-  const streets = n > 18 ? 2 : 1;
+  const V = (ctx.variant = pickVariant(rng, OUTLET_VARIANTS, ctx.option.variant));
+  ctx.flats = !!V.flats;
+  const n = rng.int(...(V.units || O.UNITS));
+  const streets = V.streets || (n > 18 ? 2 : 1), sides = V.sides || 2;
   let k = 0;
-  // Each building at its own size (an outlet store is a stand-alone shop), its depth the row's.
-  const D = rng.int(O.D[0], O.D[1]);
-  const units = Array.from({ length: n }, () => { const kind = pickW(rng, MALL.OUTLETS), fr = franchiseOf(kind, rng); return { kind, variant: fr ? fr.id : null, role: "shop", d: D, inline: true, k: k++ }; });
+  // Each building at its own size (an outlet store is a stand-alone shop), its depth the row's; some empty.
+  const D = rng.int(...(V.d || O.D)), vac = V.vacant ?? 0.05;
+  const units = Array.from({ length: n }, () => {
+    if (rng.chance(vac)) { ctx.vacantNo = (ctx.vacantNo || 0) + 1; return { kind: "vacantunit", state: rng.chance(0.5) ? "boarded" : "empty", role: "vacant", w: rng.int(14, 20), d: D, inline: true, k: k++, no: ctx.vacantNo }; }
+    const kind = pickW(rng, V.table || MALL.OUTLETS), fr = franchiseOf(kind, rng);
+    return { kind, variant: fr ? fr.id : null, role: "shop", d: D, inline: true, k: k++, ...(V.wide ? { w: rng.int(V.wide[0], V.wide[1]) } : {}), ...(ctx.flats ? { flats: true } : {}) };
+  });
   const builds = units.map((u) => ({ u, b: buildUnit(ctx, u) }));
-  const rows = streets * 2, perRow = Math.ceil(n / rows);
-  const gaps = builds.map(() => rng.int(O.GAP[0], O.GAP[1]));
+  const rows = streets * sides, perRow = Math.ceil(n / rows);
+  const gaps = builds.map(() => rng.int(...(V.gap || O.GAP)));
   const rowOf = (i) => Math.floor(i / perRow);
   const rowW = (r) => builds.reduce((a, x, i) => a + (rowOf(i) === r ? x.b.m.building.w + gaps[i] : 0), 0);
   const plaza = rng.int(24, 32);
   const W = clamp(Math.max(...Array.from({ length: rows }, (_, r) => rowW(r))) + plaza + 2 * O.LOT, 160, MALL.CAP);
   const blockH = 2 * (D + O.LANE) + O.STREET; // a lane, a row, the street, a row, a lane
   const H = clamp(O.LOT + streets * blockH + 56, 120, MALL.CAP); // the north lot, the streets, the south lot, the pads, the road
-  const C = (ctx.C = compoundGrid(W, H, 1, (x, y) => (y >= H - 5 ? "road" : "gravel")));
-  ctx.keep = [new Set()];
-  const plazaX = Math.floor(W / 2) - Math.floor(plaza / 2);
+  const C = (ctx.C = compoundGrid(W, H, ctx.flats ? 2 : 1, (x, y) => (y >= H - 5 ? "road" : "gravel")));
+  ctx.keep = Array.from({ length: C.storeys }, () => new Set());
+  const plazaX = V.plaza === "west" ? O.LOT : V.plaza === "east" ? W - O.LOT - plaza : Math.floor(W / 2) - Math.floor(plaza / 2);
   const parts = [];
   for (let st = 0; st < streets; st++) {
     const yTop = O.LOT + st * blockH, yStreet = yTop + O.LANE + D;
     for (let y = yStreet; y < yStreet + O.STREET; y++) for (let x = O.LOT - 6; x < W - O.LOT + 6; x++) Object.assign(C.cells[y * W + x], { f: "floor", fl: "tile" });
-    for (const side of [0, 1]) {
-      const r = st * 2 + side, list = builds.map((x, i) => ({ ...x, i })).filter((x) => rowOf(x.i) === r);
+    for (const side of sides === 1 ? [0] : [0, 1]) {
+      const r = st * sides + side, list = builds.map((x, i) => ({ ...x, i })).filter((x) => rowOf(x.i) === r);
       let x = O.LOT;
       for (const it of list) {
         const bw = it.b.m.building.w;
         if (x < plazaX + plaza && x + bw > plazaX) x = plazaX + plaza; // the plaza kept open
         if (x + bw > W - 4) break;
         const face = side === 0 ? "s" : "n", y0 = side === 0 ? yStreet - D : yStreet + O.STREET;
-        const part = placeBuilding(C, it.b.m, { x0: x, y0, face, k: C.parts.length, name: it.b.name, key: it.u.kind, tag: { part: { role: "shop", kind: it.u.kind, variant: it.u.variant } } });
-        part.role = "shop";
+        const part = placeBuilding(C, it.b.m, { x0: x, y0, face, k: C.parts.length, name: it.b.name, key: it.u.kind, tag: { part: { role: it.u.role, kind: it.u.kind, variant: it.u.variant } } });
+        part.role = it.u.role;
         ctx.units.push({ ...it.u, part, name: it.b.name });
         parts.push({ part, row: r });
         backDoorOf(C, part, 0);
@@ -708,7 +858,7 @@ function outletCentre(ctx, withVehicle) {
   let walkways = 0;
   for (let i = 0; i + 1 < parts.length; i++) {
     const a = parts[i], b = parts[i + 1];
-    if (a.row !== b.row || b.part.x0 - (a.part.x0 + a.part.w) > 6 || !rng.chance(O.WALKWAY)) continue;
+    if (a.row !== b.row || b.part.x0 - (a.part.x0 + a.part.w) > 6 || !rng.chance(V.walkway ?? O.WALKWAY)) continue;
     if (link(C, a.part, b.part, { kind: "walkway", width: 2, name: `Covered walkway (${a.part.name} – ${b.part.name})` })) walkways++;
   }
   // The plaza.
@@ -717,12 +867,13 @@ function outletCentre(ctx, withVehicle) {
   for (let y = plazaA.y0; y < plazaA.y0 + plazaA.h; y++) for (let x = plazaX; x < plazaX + plaza; x++) Object.assign(C.cells[y * W + x], { f: "floor", fl: "tile" });
   const zones = [zone(Math.floor(W / 2) - 1, H - 3, "south", "The road (front)"), zone(2, H - 3, "south", "South lot, west"), zone(W - 5, H - 3, "south", "South lot, east"), zone(Math.floor(W / 2) - 1, 0, "north", "North lot"), zone(0, Math.floor(H / 2), "west", "West side"), zone(W - 3, Math.floor(H / 2), "east", "East side")];
   const G = guard(C, zones[0].x0 + 1, zones[0].y0 + 1, { free: freeOf(ctx, 0, zones) });
-  place2(G, Math.floor(W / 2) - 1, y0p + Math.floor(O.STREET / 2) - 1, "fountain", "s", 2);
+  place2(G, plazaX + Math.floor(plaza / 2) - 1, y0p + Math.floor(O.STREET / 2) - 1, "fountain", "s", 2);
   for (let x = plazaX + 3; x < plazaX + plaza - 3; x += 5) { place2(G, x, y0p - 2, "mallbench", "s"); place2(G, x, y0p + O.STREET + 1, "mallbench", "n"); }
   // Food pads by the road.
-  const pads = rng.int(O.PADS[0], O.PADS[1]);
+  const pads = rng.int(...(V.pads || O.PADS));
   for (let i = 0; i < pads; i++) {
-    const fr = FRANCHISES.restaurant[rng.int(0, FRANCHISES.restaurant.length - 1)];
+    const quick = FRANCHISES.restaurant.filter((f) => f.plan && ["fastfood", "takeout", "cafe"].includes(f.plan.back)); // a pad's: fast food, takeout, a café (never a banquet hall)
+    const fr = quick[rng.int(0, quick.length - 1)];
     const u = { kind: "restaurant", variant: fr.id, role: "pad", k: k++ };
     const b = buildUnit(ctx, u);
     const bw = b.m.building.w, bh = b.m.building.h, x = 8 + i * Math.floor((W - 16) / Math.max(1, pads)), y = H - 6 - bh - 2;
@@ -755,7 +906,7 @@ export function mallHint(key) {
 export function mallIntro(plan) {
   const an = (plan.anchors || []).map((a) => a.name);
   const what = plan.kind === "stripmall" ? "a strip mall" : plan.kind === "outlet" ? "an outlet centre" : `an enclosed mall on ${plan.levels} level${plan.levels > 1 ? "s" : ""}`;
-  const parts = [`It is ${what}: ${plan.storefronts} storefronts, ${plan.shops} of them shops, ${plan.vacant} empty.`];
+  const parts = [`It is ${what}${plan.vname ? ` (${plan.vname.toLowerCase()})` : ""}: ${plan.storefronts} storefronts, ${plan.shops} of them shops, ${plan.vacant} empty.`];
   if (an.length) parts.push(`Anchor${an.length > 1 ? "s" : ""}: ${an.join(", ")}.`);
   if (plan.foodCourt) parts.push("The food court is on the top level; the dead gather there and in the cinema.");
   if ((plan.wings || []).length) parts.push(`Head for ${plan.wings.join(", ")}.`);

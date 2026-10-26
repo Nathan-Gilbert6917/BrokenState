@@ -58,7 +58,7 @@ import { militaryStyle, militaryOutside, MIL_SIZE } from "./militarylayout.js"; 
 import { decorate, flipDecoY, placeDecorPieces } from "./decor.js"; // rugs, clutter, wall art, wall colours, light fixtures (cosmetic)
 import { rollWin, winMixOf, windowOpen } from "./windows.js"; // the windows' states (open, locked, fixed), a throw through an open one
 import { rollScenes, sceneRng } from "./interiorscenes.js"; // signs of survival: barricades, blood, bodies (dice of their own)
-import { mallMap, mallHint, mallArchetype, mallDead, mallIntro } from "./mall.js"; // shopping malls (issue #30): a strip mall, a regional mall, an outlet centre as one map (compound.js)
+import { mallMap, mallHint, mallArchetype, mallDead, mallIntro, deptstorePlan } from "./mall.js"; // shopping malls (issue #30): a strip mall, a regional mall, an outlet centre as one map (compound.js)
 import { mallStyle, MALL_KEYS } from "./malllayout.js"; // the malls' own rooms laid out (the cinema, the arcade, mall security, the parking deck)
 import { realFoot, realStoreys, storeyRange, REAL_SIZE } from "./data-buildingsize.js"; // buildings at real size (issue #24)
 import { BUNKER_PLANS, bunkerStyle, levelName } from "./bunkerlayout.js"; // bunkers: the plans, their rooms, their levels below ground (issue #26)
@@ -516,6 +516,7 @@ function shopBack(v, back, plan, o) {
 // Big stores: a wide sales floor of aisles, the deli or a sports section, a back room with racks and a loading dock.
 function bigstore(rng, v, o = {}) {
   if (v === "supermarket" && !o.legacy) return supermarket(rng); // issue #22: really big (an older save's and every department store's as below)
+  if (v === "dept" && !o.legacy) return deptstorePlan(rng, o); // issue #30 / #32: a dozen plans (mall.js DEPT_VARIANTS); an older save's as below
   const bw = rng.int(26, 30), bh = rng.int(18, 21);
   const dept = v === "dept";
   const salesFloor = dept
@@ -1546,7 +1547,7 @@ export const BUILDINGS = {
 export const STOREYS_BY_TYPE = {
   house: [2, 2], farmhouse: [2, 2], cabin: [1, 1], lodge: [2, 2], ranger: [1, 1],
   grocery: [1, 2], corner: [1, 2], pharmacy: [1, 1], gunstore: [1, 1], pawnshop: [1, 1], hardware: [1, 1], feedstore: [1, 1], diner: [1, 1], gasstation: [1, 1], truckstop: [1, 1],
-  supermarket: [1, 2], deptstore: [1, 2],
+  supermarket: [1, 2], deptstore: [1, 4], // deptstore: mall.js DEPT_VARIANTS (a flagship 3, an old downtown store 4)
   clinic: [1, 3], infirmary: [1, 3], hospital: [3, 5], police: [2, 3], school: [2, 3], offices: [3, MAX_STOREYS], lab: [1, 3], barracks: [2, 3], armorybldg: [1, 1],
   cellblock: [1, 2], messhall: [1, 2], control: [1, 3], radio: [1, 1], terminal: [1, 3], firestation: [2, 2], // issue #25: a new save's cell block two tiers, its mess hall one storey
   hq: [2, 2], aidstation: [1, 1], gatehouse: [1, 1], tower: [4, 5], flightops: [1, 2],

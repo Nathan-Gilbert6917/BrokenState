@@ -465,7 +465,7 @@ section("Laid out for their kind (shoplayout.js, issue #16)");
   // (issue #29) never had an old layout (no older save holds one): its loot by the area in tools/interiortest.js; the library is
   // thirteen variants from a one-room reading room to an 8-storey central library since issue #34: its loot by the area in
   // tools/librarytest.js.
-  for (const key of KEYS.filter((k) => !["supermarket", "restaurant", "pizza", "diner", "bar", "warehouse", "factory", "hotel", "library"].includes(k))) { const b = total(key, true), a = total(key, false), r = a / b - 1; rows.push(`${key} ${(r * 100).toFixed(0)}%`); if (Math.abs(r) > 0.1) off.push(`${key} ${a.toFixed(0)} against ${b.toFixed(0)}`); }
+  for (const key of KEYS.filter((k) => !["supermarket", "deptstore", "restaurant", "pizza", "diner", "bar", "warehouse", "factory", "hotel", "library"].includes(k))) { const b = total(key, true), a = total(key, false), r = a / b - 1; rows.push(`${key} ${(r * 100).toFixed(0)}%`); if (Math.abs(r) > 0.1) off.push(`${key} ${a.toFixed(0)} against ${b.toFixed(0)}`); }
   check(!off.length, `every kind holds what it did within ±10% (200 seeds each: ${off.join("; ") || rows.join(", ")})`);
   // An older save: furnished the old way (none of the new pieces, no style's marks).
   const NEWK = new Set(["freezercase", "islandfreezer", "meatcase", "freezershelf", "producebin", "breadrack", "selfcheckout", "cartcorral", "baler", "aislesign", "range", "fryer", "pizzaoven", "coldshelf", "jukebox", "pooltable", "clothesrack", "gunrack", "tank", "pottingbench", "palletrack", "tirerack", "compressor", "carlift", "machine", "forklift", "saddlerack", "cubicle", "whiteboard", "watercooler", "secdesk", "keyrack", "icemachine", "teller", "deposit", "atm", "stanchion", "checkout", "displaycase", "coldcase", "barcounter", "barstool", "desk", "filing", "bookshelf"]);
@@ -514,7 +514,7 @@ section("Grocery stores by size: a corner store, a neighbourhood grocery, a real
     if (c.bw < 10 || c.bw > 14 || c.bh < 10 || c.bh > 12) err("foot", `corner ${c.bw}x${c.bh}`);
     if (g.bw < 20 || g.bw > 26 || g.bh < 17 || g.bh > 20) err("foot", `grocery ${g.bw}x${g.bh}`);
     if (m.bw < 54 || m.bw > 58 || m.bh < 36 || m.bh > 40) err("foot", `supermarket ${m.bw}x${m.bh}`);
-    if (d.bw < 26 || d.bw > 30 || d.bh < 18 || d.bh > 21) err("dept", `${d.bw}x${d.bh}`);
+    if (d.bw < 22 || d.bw > 36 || d.bh < 16 || d.bh > 26) err("dept", `${d.bw}x${d.bh}`); // issue #30 / #32: the department store's dozen plans (mall.js DEPT_VARIANTS: a junior anchor 22 × 16 to a discount store 36 × 22); its own checks in tools/malltest.js
     for (const k of ["corner", "grocery"]) { const o = spec(k, s, true); if (o.bw < 14 || o.bw > 21 || o.bh < 11 || o.bh > 14) err("old", `${k} ${o.bw}x${o.bh}`); }
     const o = spec("supermarket", s, true); if (o.bw < 26 || o.bw > 30 || o.bh < 18 || o.bh > 21) err("old", `supermarket ${o.bw}x${o.bh}`);
   }

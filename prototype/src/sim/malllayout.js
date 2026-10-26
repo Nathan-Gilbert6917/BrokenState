@@ -209,7 +209,7 @@ function lootersTrail(ctx) {
 }
 registerScene("mallcamp", { w: 3, place: mallCamp, when: isMall });
 registerScene("foodcourtoverrun", { w: 3, place: foodCourtOverrun, when: isMall });
-registerScene("cinemasealed", { w: 2, place: cinemaSealed, when: isMall });
+registerScene("cinemasealed", { w: 3, place: cinemaSealed, when: isMall });
 registerScene("concoursebarricade", { w: 2, place: concourseBarricade, when: isMall });
 registerScene("looterstrail", { w: 3, place: lootersTrail, when: isMall });
 export const MALL_SCENES = ["mallcamp", "foodcourtoverrun", "cinemasealed", "concoursebarricade", "looterstrail"];
