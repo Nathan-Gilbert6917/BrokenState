@@ -40,6 +40,7 @@ import {
 import { registerCombatHandler, createBattle, startCombat, autoResolveCombat, finishCombat, byNumbersOdds, AREAS, floodReach, say, setFloor, makeLosCache, boxFinds, boxLoot, FLOOR_RICH } from "./combat.js";
 import { BUILDINGS, buildingHint, buildingSpec, buildingMap, rewardMult, buildingPlan } from "./buildingmaps.js";
 import { raidLootShare, raidBig } from "./battlesize.js"; // the quick search's containers hold what the laid-out map's do (issue #21)
+import { campusLootShare } from "./campus.js"; // a civic site's container by its own building (issue #49)
 import * as Weather from "./weather.js"; // the season: a chest freezer's food kept in winter (combat.js boxLoot)
 import { newItem } from "./inventory.js";
 import { breakBoarded, breakPiece } from "./barricade.js"; // a place picked over: a scene's barricade broken through (pickedOver)
@@ -1218,8 +1219,12 @@ export function placeProfile(state, c, place, n = c.block) {
   if (place.profile && place.profile.v === 1) return place.profile;
   const t = state.tiles[c.tile];
   const map = buildingMap(state, c.tile, placeOption(c, place, n), false);
-  const boxes = (map.containers || []).filter((x) => x.kind !== "body" && x.kind !== "ground" && map.rooms[x.area] && AREAS[map.rooms[x.area].type]).map((x) => [x.area, x.kind, x.f || 0, x.lootK || 1]); // lootK: a civic plan at real scale (issue #49)
-  const reward = rewardMult(t) * (raidBig(state, map.w, map.h) ? (map.natMap ? raidLootShare(map.natMap[0], map.natMap[1]) : raidLootShare(map.w, map.h)) : 1); // a building at real size: by its plan's map (combat.js searchBox)
+  const big = raidBig(state, map.w, map.h), share = big ? (map.natMap ? raidLootShare(map.natMap[0], map.natMap[1]) : raidLootShare(map.w, map.h)) : 1;
+  // A civic site's container (civicsite.js, issue #49) holds what searchBox gives it: its own building's share (campus.js
+  // campusLootShare), against the place's; and a civic plan's at real scale its worth (lootK).
+  const own = (x) => (big && map.civicSite ? campusLootShare({ raid: { plan: map.plan }, w: map.w, h: map.h }, x) / share : 1);
+  const boxes = (map.containers || []).filter((x) => x.kind !== "body" && x.kind !== "ground" && map.rooms[x.area] && AREAS[map.rooms[x.area].type]).map((x) => [x.area, x.kind, x.f || 0, (x.lootK || 1) * own(x)]);
+  const reward = rewardMult(t) * share; // a building at real size: by its plan's map (combat.js searchBox)
   let best = null, worth = 0;
   for (const F of map.floors && map.floors.length ? map.floors : [{ cells: map.cells }]) for (const cell of F.cells) {
     const d = cell && liftDef(cell.k);
