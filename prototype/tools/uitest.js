@@ -646,7 +646,12 @@ section("New-run screen: world size and AI groups (sim/worldsize.js)");
     const w = createWorld({ seed: seed + 9, factionCount: 9, size: "custom", customW: 120, customH: 80 });
     const html = newRunScreen(w, { worldSize: "custom", customW: 120, customH: 80, factionCount: 9, hiveCount: null, nrMsg: "" });
     htmlOk(html, "new-run screen (Custom)");
-    check(/value="custom" selected/.test(html) && /data-action="customw"[^>]*value="120"/.test(html) && /data-action="customh"[^>]*value="80"/.test(html) && html.includes("Experimental") && html.includes("× Huge"), "Custom: width, height and the warning (bigger than Huge)");
+    check(/value="custom" selected/.test(html) && /data-action="customw"[^>]*value="120"/.test(html) && /data-action="customh"[^>]*value="80"/.test(html) && html.includes("Experimental") && /class="small muted">⚠ Experimental/.test(html) && !html.includes("× Huge"), "Custom: width, height and the warning (120 × 80 is not bigger than Huge: muted, no × Huge)");
+    // Bigger than Huge: since 2026-10-24 Huge (500 × 300) is the custom maximum (worldsize.js CUSTOM), so only a grid
+    // of its own reaches it (a save's, read as custom); the same world with its grid's sides raised stands in for one.
+    const big = Object.assign(Object.create(Object.getPrototypeOf(w)), w, { grid: Object.assign(Object.create(w.grid), { width: 600, height: 400 }) });
+    const bigHtml = newRunScreen(big, { worldSize: "custom", customW: 600, customH: 400, factionCount: 9, hiveCount: null, nrMsg: "" });
+    check(/class="small danger">⚠ Experimental/.test(bigHtml) && bigHtml.includes("This one is 1.6× Huge."), "Custom: the warning bigger than Huge (600 × 400: in red, 1.6× Huge)");
   }
   // Starting people (sim/hardcore.js peopleRange): Normal 1–8 (six by default), Hardcore 1–4.
   {
@@ -1059,7 +1064,7 @@ section("Map terrain detail: decals and rippled water (ui/terraindeco.js, render
   const Db = T.placeDecor(createWorld({ seed: 77, factionCount: 6 }), R.HEX);
   check(rowsKey(Db) === ka, `the same seed places the same decals, whatever order the tiles are placed in (${T.decorRows(Da).length} decals)`);
   check(rowsKey(T.placeDecor(createWorld({ seed: 78, factionCount: 6 }), R.HEX)) !== ka, "another seed places them differently");
-  const far = Math.max(...T.decorRows(Da).map((r) => Math.max(-r[2], r[2] + r[4], -r[3], r[3] + r[5])));
+  const far = T.decorRows(Da).reduce((m, r) => Math.max(m, -r[2], r[2] + r[4], -r[3], r[3] + r[5]), -Infinity); // a reduce: a map's rows overflow Math.max(...rows)'s arguments
   check(far <= Da.reach && Da.reach <= 35, `decals stay within 35 px of their tile's center (render.js DECO_REACH; ${far.toFixed(1)})`);
   const perTerrain = {};
   for (let id = 0; id < a.tiles.length; id++) { const k = a.tiles[id].terrain; perTerrain[k] = perTerrain[k] || [0, 0]; perTerrain[k][0]++; perTerrain[k][1] += Da.len[id]; }
@@ -1086,9 +1091,16 @@ section("Map terrain detail: decals and rippled water (ui/terraindeco.js, render
     for (const t of st.tiles) for (const m of t.roadLinks || []) if (m > t.id) { const [x0, y0] = g.toPixel(t.id, R.HEX), [x1, y1] = g.toPixel(m, R.HEX); segs.push([x0, y0, x1, y1, t.bridge || st.tiles[m].bridge ? 6.5 : 2.6]); }
     // A pond tile's pond (sim/mapgen.js tile.pond, 2026-10-23) lies flat under a site's sprite and name: not over them.
     const flat = T.decorRows(D).filter((r) => T.flatDecal(r[1])).map((r) => { const [x, y] = g.toPixel(r[0], R.HEX); return [x + r[2], y + r[3]]; });
-    const hitZone = decals.filter(([x, y]) => !flat.some(([fx, fy]) => Math.abs(fx - x) < 0.01 && Math.abs(fy - y) < 0.01)).filter(([x, y, w, h]) => zones.some((z) => x < z[2] - 0.01 && z[0] < x + w - 0.01 && y < z[3] - 0.01 && z[1] < y + h - 0.01)).length;
+    // Each decal is tested only against the zones, flat decals and road links in the grid cells its box touches (binned):
+    // the same tests as against every one, which on the maps of 2026-10-24 (14 times the tiles) took most of an hour.
+    const B = 64, cellKey = (cx, cy) => cx * 1000003 + cy;
+    const bin = (list, box) => { const m = new Map(); for (const it of list) { const [x0, y0, x1, y1] = box(it); for (let cx = Math.floor(x0 / B); cx <= Math.floor(x1 / B); cx++) for (let cy = Math.floor(y0 / B); cy <= Math.floor(y1 / B); cy++) { const k = cellKey(cx, cy); if (!m.has(k)) m.set(k, []); m.get(k).push(it); } } return m; };
+    const near = (m, x0, y0, x1, y1) => { const out = new Set(); for (let cx = Math.floor(x0 / B); cx <= Math.floor(x1 / B); cx++) for (let cy = Math.floor(y0 / B); cy <= Math.floor(y1 / B); cy++) for (const it of m.get(cellKey(cx, cy)) || []) out.add(it); return out; };
+    const flatBins = bin(flat, ([fx, fy]) => [fx - 0.01, fy - 0.01, fx + 0.01, fy + 0.01]), zoneBins = bin(zones, (z) => z);
+    const hitZone = decals.filter(([x, y]) => ![...near(flatBins, x - 0.01, y - 0.01, x + 0.01, y + 0.01)].some(([fx, fy]) => Math.abs(fx - x) < 0.01 && Math.abs(fy - y) < 0.01)).filter(([x, y, w, h]) => [...near(zoneBins, x, y, x + w, y + h)].some((z) => x < z[2] - 0.01 && z[0] < x + w - 0.01 && y < z[3] - 0.01 && z[1] < y + h - 0.01)).length;
     const distSeg = (px, py, s) => { const dx = s[2] - s[0], dy = s[3] - s[1], l = dx * dx + dy * dy, t = Math.max(0, Math.min(1, ((px - s[0]) * dx + (py - s[1]) * dy) / l)); return Math.hypot(s[0] + dx * t - px, s[1] + dy * t - py); };
-    const onRoad = decals.filter(([x, y, w, h]) => segs.some((s) => { // sample the decal's box against the road's band
+    const segBins = bin(segs, (q) => [Math.min(q[0], q[2]) - q[4] / 2, Math.min(q[1], q[3]) - q[4] / 2, Math.max(q[0], q[2]) + q[4] / 2, Math.max(q[1], q[3]) + q[4] / 2]);
+    const onRoad = decals.filter(([x, y, w, h]) => [...near(segBins, x, y, x + w, y + h)].some((s) => { // sample the decal's box against the road's band
       for (let i = 0; i <= 4; i++) for (let j = 0; j <= 4; j++) if (distSeg(x + (w * i) / 4, y + (h * j) / 4, s) < s[4] / 2) return true;
       return false;
     })).length;
@@ -1368,7 +1380,7 @@ section("Battle view: the isometric renderer (ui/isoview.js), the view toggle, t
     // base, a base defence on the wall map at night and on the yard map after the fall back, a base without walls.
     const list = battles(seed);
     const sizes = Object.fromEntries(list.map(({ name, b }) => [name, `${b.w}×${b.h}`]));
-    check(list.length === 11 && ["field-town", "raid", "raid-building", "hive", "growth", "base-assault", "base-wall-night", "base-yard", "base-open"].every((n) => sizes[n]), `a battle of every layout (${Object.entries(sizes).map(([n, s]) => `${n} ${s}`).join(", ")})`);
+    check(list.length === 12 && ["field-town", "raid", "raid-building", "hive", "growth", "base-assault", "base-wall-night", "base-yard", "base-open", "furniture"].every((n) => sizes[n]) /* the furniture showroom since issue #8 (tools/isobattles.js) */, `a battle of every layout (${Object.entries(sizes).map(([n, s]) => `${n} ${s}`).join(", ")})`);
     const BS = await import("../src/sim/battlesize.js");
     const cls = (n) => BS.sizeClass(...sizes[n].split("×").map(Number));
     check(cls("field-town") === "M" && cls("field-forest") === "M" && sizes.hive === `${C.HIVE_W}×${C.HIVE_H}` && C.HIVE_W === 40 && sizes.raid === BS.raidMaxDims(list.find((x) => x.name === "raid").st).join("×") && Number(sizes["base-yard"].split("×")[0]) >= BS.BASE_TIER.hub[0] && cls("base-open") !== "S", // a town's raid: the run's largest raid map (raidMax); the hub's yard: by its tier (BASE_TIER), 64–100 square

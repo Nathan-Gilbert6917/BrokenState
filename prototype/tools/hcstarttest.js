@@ -40,6 +40,7 @@ import { newRunScreen } from "../src/ui/newgame.js";
 import { loadOptions } from "../src/ui/saves.js";
 import { isTentBag, TENTS } from "../src/sim/tents.js"; // the hardcore start's tent bags
 import { assignedRole } from "../src/sim/noidle.js"; // noidle: a job with no work, its people helping elsewhere
+import { gunsFrom } from "../src/sim/gundist.js"; // the prepper's gun: swapGun's pick of its kind
 
 // Setting up a camp takes an hour (staging.js STAGING.PITCH): skipped here, the camp (a base) stands at once.
 // Establish base at once, and the player places its shelter shack from the Build list (the user's request 2026-10-23:
@@ -49,6 +50,9 @@ const establishNow = (st, p) => { p.pitched = true; const r = giveOrder(st, p, "
 const apGames = Number(process.argv[2] || 8), apDays = Number(process.argv[3] || 40);
 let fails = 0, passes = 0;
 const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FAIL: ${msg}`); } return ok; };
+// Each section's block is a function of its own (await (async () => { ... })()): a world is about 40 MB since the maps
+// of 2026-10-24, and a plain top-level block keeps its locals alive to the module's end (they sit in the module
+// function's registers), so the run ran out of its 2 GB heap; a function's go when it returns.
 const section = (t) => console.log(t);
 const hc = (seed, extra = {}) => createWorld({ seed, factionCount: 7, mode: "hardcore", ...extra });
 
@@ -123,7 +127,7 @@ check(bagKinds.size >= 2 && itemKinds.size >= 8, `the rolls vary (${bagKinds.siz
 
 // ---------- the prepper ----------
 section("The prepper: when one of the three is a prepper, they fled with a duffle bag packed for five days (2026-10-06)");
-{
+await (async () => {
   const P = HC_START.PREPPER;
   // The backgrounds are drawn by seed: the worlds with a prepper among the three, topped up to six from further seeds.
   const prepWorlds = worlds.filter((st) => st.hardcore.start.prepper != null);
@@ -150,7 +154,8 @@ section("The prepper: when one of the three is a prepper, they fled with a duffl
     const extras = inBag.filter((it) => !P.KIT.includes(it.key)).length;
     check(extras >= P.EXTRA_N[0] && extras <= P.EXTRA_N[1] && inBag.every((it) => !packSize(it) && !GEAR[it.key].bulky), `seed ${st.seed}: ${extras} extras from the prepper's list, everything fits a pack`);
     const w = pr.gear.weapon;
-    check(!!w && (w.key === "knife" || P.GUNS[w.key]), `seed ${st.seed}: a knife or a gun (${w && w.key})`);
+    // A gun from GUNS, or one of its kind gundist.js swapGun gives for it from the prepper's own draws ("hc:prepper").
+    check(!!w && (w.key === "knife" || Object.keys(P.GUNS).some((k) => k === w.key || gunsFrom("hc:prepper", { near: k })[w.key] > 0)), `seed ${st.seed}: a knife or a gun (${w && w.key})`);
     if (w && P.GUNS[w.key]) { guns++; if (totalRounds(p.supplies) >= P.AMMO) ammoOk++; } else knives++;
     const traited = pr.traits.includes("prepper");
     if (traited) withTrait++;
@@ -177,10 +182,10 @@ section("The prepper: when one of the three is a prepper, they fled with a duffl
   check(!!prL && prL.name === prA.name && prL.traits.join() === prA.traits.join() && prL.gear.backpack.key === P.BAG && JSON.stringify(prL.gear.backpack.contents) === JSON.stringify(prA.gear.backpack.contents) && prL.gear.tool.key === "waterfilter", "a save brings the prepper, the trait and the bag's contents back");
   check(JSON.stringify(roadTeam(ld).supplies) === JSON.stringify(roadTeam(a).supplies), "and the pooled five days");
   check(ld.log.some((l) => /was a prepper/.test(l.text)), "and the log line");
-}
+})();
 // ---------- who they were, and the car ----------
 section("Who they were: three backgrounds, no two alike; one car between them with a tank at least half full");
-{
+await (async () => {
   const A = HC_START.ARCHETYPES;
   check(Object.keys(A).length >= 10 && ["prepper", "veteran", "student", "office", "bluecollar"].every((k) => A[k]) && Object.keys(BACKGROUNDS).join() === Object.keys(A).join(), `${Object.keys(A).length} backgrounds: ${Object.values(A).map((x) => x.name).join(", ")}`);
   for (const [k, a] of Object.entries(A)) {
@@ -219,6 +224,7 @@ section("Who they were: three backgrounds, no two alike; one car between them wi
     check(!p.burden || p.burden.band <= 2, `seed ${st.seed}: the car is not overloaded (load band ${p.burden && p.burden.band})`);
   }
   console.log(`  backgrounds over ${many.length} starts: ${JSON.stringify(seen)}; cars: ${JSON.stringify(carKinds)}; owners: ${JSON.stringify(owners)}`);
+  worlds.length = 0; // not read after this section: its 12 worlds go (see the note at section)
   check(Object.keys(A).every((k) => seen[k] > 0), "every background turns up");
   check(Object.keys(carKinds).length >= 4 && (carKinds.truck || 0) > (carKinds.sedan || 0) * 0.3, `several kinds of car (${Object.keys(carKinds).join(", ")})`);
   // A background bumps the skills it says, on a fresh survivor.
@@ -234,8 +240,8 @@ section("Who they were: three backgrounds, no two alike; one car between them wi
   a.cards.length = 0;
   const ld = loadFromString(saveToString(a));
   check(car(ld) === car(a) && ld.hardcore.start.car === a.hardcore.start.car && roadTeam(ld).vehicle === true, "a save brings the backgrounds, the car and its cargo back");
-}
-{
+})();
+await (async () => {
   const a = hc(4242), b = hc(4242);
   const sig = (st) => JSON.stringify(st.survivors.map((s) => [s.name, s.gear, s.pockets])) + JSON.stringify(roadTeam(st).supplies) + partyTile(roadTeam(st));
   check(sig(a) === sig(b), "same seed, same start (spawn, gear and supplies)");
@@ -247,7 +253,7 @@ section("Who they were: three backgrounds, no two alike; one car between them wi
   check(c.survivors.map((s) => s.name).join() === "Ada Vance,Bo Reyes,Cy Moss" && c.survivors[1].leader && c.survivors.filter((s) => s.leader).length === 1 && c.survivors[0].skills.scavenging === 12, "crew edits apply to the three (names, skills, leader)");
   const c2 = hc(4242, { crew: [{}, {}, {}, { leader: true }] });
   check(c2.survivors.filter((s) => s.leader).length === 1, "a leader from beyond the first three: someone still leads");
-}
+})();
 
 // ---------- founding the first hub: the staging camp ----------
 section("The first hub: Establish base sets up a camp (the barest base); its builders build it up into the shelter, then a base");
@@ -262,7 +268,7 @@ function run(st, hours, done = () => false, each = null) {
 }
 const landNear = (st, from, d) => st.tiles.find((t) => t.terrain !== "water" && t.terrain !== "mountain" && !t.hive && st.grid.distance(t.id, from) === d && planPath(st, from, t.id, false));
 const campOf = (st) => st.bases.find((b) => b.camp === true) || null;
-{
+await (async () => {
   const st = hc(77);
   st.noWanderers = true;
   const p = roadTeam(st);
@@ -346,9 +352,9 @@ const campOf = (st) => st.bases.find((b) => b.camp === true) || null;
     check(!isShelter(h) && tierName(h) === "Main hub" && baseWalls(h) === 0 && baseVision(h) === 3 && waterProduction(st, h).own > 0 && canBuild(st, h, "walls").ok && tierInfo(st).stage === 2, `the builders build it up into a base in ${((st.hour - t0) / 24).toFixed(1)} days: a well, vision, every building (walls from the Defenses tab)`);
     check(!canBuild(st, h, "hub_up").ok && st.log.some((l) => /is a real base now/.test(l.text)), "once only, and the log says so");
   }
-}
+})();
 section("Camp danger: the camp's Heat (its fire, vehicles parked, shooting lately); the toggle; a team resting in the field");
-{
+await (async () => {
   const st = hc(202);
   st.noWanderers = true;
   const p = roadTeam(st);
@@ -386,9 +392,9 @@ section("Camp danger: the camp's Heat (its fire, vehicles parked, shooting latel
   check(CAMP_HEAT.fireNight > CAMP_HEAT.fireDay, "a fire carries further at night");
   const xp = renderRight(s2, { ...freshUi(), expedition: q.id });
   check(/data-action="campfire"/.test(xp) && /Camp danger/.test(xp), "the team panel shows the camp danger and the fire toggle");
-}
+})();
 section("Water must be found: no spring; a river beside, water carried in, rain catchers");
-{
+await (async () => {
   const findSpot = (st, wet) => {
     const p = roadTeam(st);
     for (const id of st.grid.within(partyTile(p), 8)) {
@@ -434,9 +440,9 @@ section("Water must be found: no spring; a river beside, water carried in, rain 
   check(waterProduction(st, base).rain > 0, `a rain catcher fills on a wet day (${waterProduction(st, base).rain} on day ${wetDay + 1})`);
   st.hour = saveHour;
   st.bases.length = 0;
-}
+})();
 section("The camp's step up: days by builders, neglect, striking it, a team lost there");
-{
+await (async () => {
   // Build time: everything delivered at once, three builders.
   const st = hc(303);
   st.noWanderers = true;
@@ -491,7 +497,7 @@ section("The camp's step up: days by builders, neglect, striking it, a team lost
   for (const s of atBase(s4, c4.id)) hurt(s4, s, 500, c4.tile, "in a test");
   run(s4, 2);
   check(!atBase(s4, c4.id).length && s4.bases.includes(c4), "the people died there: the camp and its stores remain");
-}
+})();
 // ---------- hubless views ----------
 section("The views with no hub: render cleanly");
 const BAD = /\b(undefined|NaN|Infinity)\b|\[object [A-Za-z]+\]|\bnull\b/;
@@ -547,7 +553,7 @@ function views(st, label) {
   for (const tab of ["game", "about"]) { const ui = freshUi(); openSettings(ui, tab); add(`settings/${tab}`, () => settingsModal(st, ui, api)); }
   return out;
 }
-{
+await (async () => {
   const st = hc(42);
   st.started = true;
   let probs = [];
@@ -614,11 +620,11 @@ function views(st, label) {
     check(!scan(html, mode).length && /data-action="gamemode"/.test(html) && new RegExp(`value="${mode}" selected`).test(html), `new-run screen (${mode}): the Mode select, clean`);
     check((html.match(/nrcard/g) || []).length === (mode === "hardcore" ? 3 : 6), `new-run screen (${mode}): ${mode === "hardcore" ? 3 : 6} colonists to edit`);
   }
-}
+})();
 
 // ---------- starting people ----------
 section("Starting people (hardcore.js START_PEOPLE): 1, 2, 3 and 4 flee together; the default is the old start");
-{
+await (async () => {
   const { START_PEOPLE, clampStartPeople } = await import("../src/sim/hardcore.js");
   check(START_PEOPLE.MIN === 1 && START_PEOPLE.MAX === 4 && START_PEOPLE.DEF === 3 && HC_START.CREW === 3, "1–4, three by default");
   check(clampStartPeople(0) === 1 && clampStartPeople(9) === 4 && clampStartPeople("2") === 2 && clampStartPeople("x") === 3 && clampStartPeople(2.6) === 3, "counts are clamped and rounded (junk: three)");
@@ -682,11 +688,11 @@ section("Starting people (hardcore.js START_PEOPLE): 1, 2, 3 and 4 flee together
     const sel = /<select data-action="startpeople"([^>]*)>([\s\S]*?)<\/select>/.exec(html);
     check(!!sel && !/disabled/.test(sel[1]) && /value="6" selected/.test(sel[2]) && (sel[2].match(/<option/g) || []).length === 8, "new-run screen (normal): Starting people 1–8, the world's six selected");
   }
-}
+})();
 
 // ---------- food by background, small teams, the road by team size (2026-10-07) ----------
 section("Food by background; one or two get a skill bump and the empty seats loaded; armed strangers sized to the team (2026-10-07)");
-{
+await (async () => {
   const A = HC_START.ARCHETYPES, C = HC_START;
   // What each background grabbed to eat (rollGrab, ARCHETYPES food over the common FOOD): in its own ranges; against
   // the same background with the common FOOD (its own odds of a bag kept), the food backgrounds grab more and the
@@ -822,11 +828,11 @@ section("Food by background; one or two get a skill bump and the empty seats loa
   const nw = createWorld({ seed: 55, factionCount: 7 });
   const q = { id: 999, owner: "player", members: [atBase(nw, hub(nw).id)[0].id] };
   check(smallTeam(nw, q) === null && sized(nw, q, 3) === 2, "a normal game: no small-team rule (someone alone still meets two)");
-}
+})();
 
 // ---------- saves ----------
 section("Saves: hubless, mid-build and after founding; an old save's staging camp");
-{
+await (async () => {
   const st = hc(101);
   st.cards.length = 0;
   for (let i = 0; i < 30; i++) tickHour(st);
@@ -885,11 +891,11 @@ section("Saves: hubless, mid-build and after founding; an old save's staging cam
     check(!!hb && !hb.camp && isShelter(hb), "and is built up into the shelter");
   }
   check(createWorld({ seed: 9, factionCount: 7 }).mode === "normal" && loadFromString(saveToString(createWorld({ seed: 9, factionCount: 7 }))).mode === "normal", "a normal save stays normal");
-}
+})();
 
 // ---------- the autopilot ----------
 section(`Autopilot: a hubless start sets up a camp, builds it up into the shelter and on toward a base (${apGames} games, ${apDays} days)`);
-{
+await (async () => {
   const res = [];
   for (let i = 0; i < apGames; i++) {
     const st = hc(9000 + i * 13);
@@ -923,7 +929,7 @@ section(`Autopilot: a hubless start sets up a camp, builds it up into the shelte
   check(apDays < 30 || res.filter((r) => r.up != null).length >= 1, "some build it up into a base within the run (100 scrap, 5 building materials; a quarter of the games before 2026-10-24, when the camp had a cleared yard: the tile's own trees now wait to be felled for the sites)");
   check(living >= Math.ceil(apGames * 0.5), "most games are alive at the end");
   check(res.filter((r) => r.hub).every((r) => r.hub.type === "hub"), "what they found is a hub (a camp, then a shelter)");
-}
+})();
 
 console.log(`\n${passes} passed, ${fails} failed`);
 process.exit(fails ? 1 : 0);

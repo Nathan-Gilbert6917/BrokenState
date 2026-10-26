@@ -119,7 +119,7 @@ export function sowerRound(b) {
   if (b.sowBase == null) b.sowBase = b.infection || 0;
   const was = b.infection || 0;
   b.infection = Math.min(b.sowBase + SW.BATTLE_MAX, was + SW.BATTLE * n, 1);
-  if (!b.raid) b.reinfMax = Math.max(b.reinfMax || 0, Math.round(b.infection * 5));
+  if (!b.raid) b.reinfMax = Math.max(b.reinfMax || 0, Math.min(Math.round(b.infection * 5), b.reinfPool ?? Infinity)); // deadpop.js: never more than the tile's open ground within earshot (combat.js createBattle)
   if (b.infection > was && !b.sowSaid) {
     b.sowSaid = true;
     say(b, "The ground around the Sower crawls with the worm's eggs: the noise will draw more of the dead while it stands.", "danger");

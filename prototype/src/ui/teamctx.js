@@ -49,6 +49,8 @@ import { siteMissions } from "./ui.js";
 import { cartOf, cartRouteWear } from "../sim/carts.js"; // a cart pushed on foot: what the way wears it
 import { ask } from "./confirm.js";
 import { isLandJob, clampHours } from "../sim/landest.js"; // the land order box (ui/landorder.js): its hours and how much
+import { DEAD_HUNT, deadHuntProblem, deadHuntHours, huntStance } from "../sim/deadhunt.js"; // Hunt the dead (issue #68): asked in the same box
+const asksHours = (type) => isLandJob(type) || type === "deadhunt"; // ui/landorder.js asksHours (not imported: that module imports this one's callers)
 import { MOVES, detachments, detachProblem, detachText, subTeam, isSome, detach, splittable } from "../sim/detach.js"; // who does it: some of the team (the user's request 2026-10-24)
 import { standProblem } from "../sim/teammeet.js";
 
@@ -252,6 +254,8 @@ export function teamTileMenu(state, ui, p, tile, { append = false, who = null } 
     if (fs) add("Land", "fish", "Fish…", job("fish"), { custom: true, why: cap(fishProblem(state, p, tile)), hint: `Fish in ${fs.name}. Quiet. Needs a rod, a net or a spear.` });
     if (woodAbundance(state, tile) >= 0.1) add("Land", "wood", "Cut wood…", job("wood"), { custom: true, why: cap(woodProblem(state, p, tile)), hint: "Wood for the winter (daylight only). Loud: Heat; an axe makes it far quicker." });
     if (stoneAbundance(state, tile) >= 0.1) add("Land", "stone", "Gather stone…", job("stone"), { custom: true, why: cap(stoneProblem(state, p, tile)), hint: "Field stone for a camp's fire ring and the stone buildings (daylight only; 1 kg a stone, so mind the load). Mountains and hills are best; a pickaxe or a sledgehammer doubles it." });
+    // Hunt the dead (sim/deadhunt.js): on the team's own tile, its open ground swept for the dead (zombies only).
+    if (here) add("Land", "deadhunt", "Hunt the dead…", [{ type: "deadhunt", hours: DEAD_HUNT.HOURS.def, stance: "normal" }], { custom: true, move: false, why: cap(deadHuntProblem(state, p, tile)), hint: "Sweep the tile's open ground for the dead (2–24 h; Stealthy, Normal or Lure). Each group met: Attack on a small map of the tile's land, or Retreat. Every kill lowers the tile's count of the dead." });
     if (besideWater(state, tile)) {
       const room = Math.floor(cargoRoom(state, p));
       add("Land", "water", `Fetch water (${FETCH_WATER_HOURS}h)`, [{ type: "water" }], { why: room < 1 ? "No room left to carry any water." : "", hint: `Fill every free container from the river or lake (room for about ${room}): un-purified water to boil, filter or bring home.` });
@@ -458,7 +462,7 @@ export function landPick(state, ui, d) {
   if (!p) return null;
   const m = teamTileMenu(state, ui, p, Number(d.tile), { append: d.mode === "append", who: whoOf(d) });
   const it = m.items.find((x) => x.key === d.key);
-  const o = it && !it.disabled ? it.seq.find((x) => isLandJob(x.type)) : null;
+  const o = it && !it.disabled ? it.seq.find((x) => asksHours(x.type)) : null; // Hunt the dead too (its hours and stance)
   return o ? { type: o.type, hours: o.hours, tile: Number(d.tile), startHour: state.hour + (it.ahead || 0) + (it.travel || 0), who: m.who } : null;
 }
 // An order the people picked could do on their own (ui/whopick.js asks who when it is clicked): not a window or a
@@ -468,13 +472,17 @@ export function splitPick(state, ui, d) {
   if (!p) return null;
   const m = teamTileMenu(state, ui, p, Number(d.tile), { append: d.mode === "append" });
   const it = m.items.find((x) => x.key === d.key);
-  if (!it || it.disabled || it.special || !m.pick || it.seq.some((o) => isLandJob(o.type)) || !splittable(it.seq)) return null;
+  if (!it || it.disabled || it.special || !m.pick || it.seq.some((o) => asksHours(o.type)) || !splittable(it.seq)) return null;
   return { label: it.label.replace(/…$/, "") };
 }
 // The people picked to do it (d.who: "3,7"), or null.
 const whoOf = (d) => (d && d.who ? String(d.who).split(",").filter(Boolean).map(Number) : null);
 // The item with the box's hours and quantity (d.hours, d.qty) on its land job.
 function withLand(it, d) {
+  if (it.seq.some((o) => o.type === "deadhunt") && (d.hours || d.stance)) { // Hunt the dead: the box's hours and stance
+    const seq = it.seq.map((o) => (o.type === "deadhunt" ? { ...o, hours: deadHuntHours(d.hours ? d : o), stance: huntStance(d.stance ? d : o) } : o));
+    return { ...it, seq, label: `Hunt the dead ${deadHuntHours(seq.find((o) => o.type === "deadhunt"))}h` };
+  }
   if (!(d.hours || (d.qty != null && d.qty !== "")) || !it.seq.some((o) => isLandJob(o.type))) return it;
   const hours = d.hours ? clampHours(d.hours) : null;
   const seq = it.seq.map((o) => (isLandJob(o.type) ? { ...o, ...(hours ? { hours } : {}), ...(d.qty != null && d.qty !== "" ? { qty: Number(d.qty) } : {}) } : o));

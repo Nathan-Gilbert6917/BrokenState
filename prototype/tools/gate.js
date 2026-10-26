@@ -37,14 +37,17 @@ const CORE = [
   ["allyorderstest", false], ["hivebirthtest", false], ["sizetest", false], ["rescuetest", false], ["hiveplustest", false],
   ["stealthtest", true], // quick: 20-day soaks, 160 prisoners a setup; about 3 minutes
   // #63's later twelve made green (alone on 2026-10-26: basestorage 7 s, basestorageui 14 s, basestoragemap 12 s,
-  // ailocks 6 s, floorfolk 19 s, field 36 s, basebuildauto 50 s, bridge 83 s; deplete and explore quick); basetest (7 minutes)
-  // and medstest (25 minutes of CPU) are left out
+  // ailocks 6 s, floorfolk 19 s, field 36 s, basebuildauto 50 s, bridge 83 s); left out: basetest (7 minutes), medstest
+  // (25 minutes of CPU), and depletetest and exploretest (quick about 2 minutes each, but in child processes that crowd
+  // citycrawltest, at 1748 s of its 1800 in the gate)
   ["basestoragetest", false], ["basestorageuitest", false], ["basestoragemaptest", false], ["ailockstest", false],
   ["floorfolktest", false], ["fieldtest", false], ["basebuildautotest", false], ["bridgetest", false],
-  ["depletetest", true], ["exploretest", true], // quick: the loot curve 30 days on seed 1 (about 150 s); explore about 150-230 s
   // #72: red tests made green, kept so (officestest 80 s, plannametest 65 s in the gate on 2026-10-26); savetest is left out,
   // too long (quick: 8 minutes alone, 12 in the gate, where it pushed citycrawltest past the time limit; full: over 30)
   ["officestest", false], ["plannametest", false],
+  // #73: red tests made green, kept so (alone on 2026-10-26: occupytest 274 s, farmtest quick 323 s); left out, too long:
+  // custompointstest (12 minutes), hcstarttest (16), uitest (12) and farmtest at full length (17)
+  ["occupytest", false], ["farmtest", true],
 ];
 
 const args = process.argv.slice(2);

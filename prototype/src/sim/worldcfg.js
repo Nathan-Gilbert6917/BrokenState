@@ -171,6 +171,9 @@ export const legacyShopsR2 = (state) => !!(state && state.shopsR2Legacy);
 // A save from before the data centres (issue #51, save.js dcLegacy: no state.dcV): its tiles get none (placement.js
 // placeExtraKind), so its points of interest stay as they were.
 export const legacyDc = (state) => !!(state && state.dcLegacy);
+// A save from before the stadiums and arenas (issue #57, save.js stadLegacy: no state.stadV): its tiles get none
+// (placement.js placeExtraKind), so its points of interest stay as they were.
+export const legacyStadium = (state) => !!(state && state.stadLegacy);
 // A save from before the sawmills (issue #53, save.js sawLegacy: no state.sawV): its tiles get none (placement.js
 // placeExtraKind), so its points of interest stay as they were.
 export const legacySaw = (state) => !!(state && state.sawLegacy);

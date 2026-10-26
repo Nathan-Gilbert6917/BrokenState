@@ -36,6 +36,8 @@ import { forageInfo, forageProblem, landFoodOptions, FORAGE } from "../sim/forag
 import { woodInfo, woodProblem, WOOD } from "../sim/woodcutting.js";
 import { stoneAbundance, stoneProblem, stoneWord } from "../sim/stone.js"; // Gather stone (the user's request 2026-10-23)
 import { landEstimate } from "../sim/landest.js";
+import { DEAD_HUNT, deadHuntProblem, deadHuntEstimate } from "../sim/deadhunt.js"; // Hunt the dead (issue #68)
+import { deadBand } from "../sim/deadpop.js";
 import { detachments, detachText } from "../sim/detach.js"; // some of the team out on jobs of their own // the land order box's estimate (ui/landorder.js)
 import { canClaim, claimOwner, wellProblem, wellYield, CLAIM } from "../sim/claims.js"; // land claims and wells on them
 import { statusIcons } from "./status.js"; // low mood, starving, thirsty, low health, infected, sick
@@ -278,10 +280,15 @@ function landBlock(state, p, at, queueing) {
   const sp2 = queueing ? "" : stoneProblem(state, p, at);
   const se2 = sa >= 0.1 && members.length ? landEstimate(state, p, "stone", { tile: at }) : null;
   const stoneBtns = sa >= 0.1 ? ord("stone", "", "Gather stone…", sp2 ? `Gather stone: ${sp2}` : `Gather field stone here (daylight only): stone ${stoneWord(sa)}${se2 ? `; about ${Math.round(se2.amount)} stone expected in ${se2.hours}h (1 kg each)` : ""}. Mountains and hills are best; a pickaxe or a sledgehammer about doubles it.${ASK}`, !!sp2) : "";
+  // Hunt the dead (sim/deadhunt.js): the tile's open ground swept for the dead (zombies only), in the same box.
+  const dhp = queueing ? "" : deadHuntProblem(state, p, at);
+  const dhe = members.length ? deadHuntEstimate(state, p, { tile: at }) : null;
+  const band = deadBand(state, at);
+  const deadBtns = ord("deadhunt", "", "Hunt the dead…", dhp ? `Hunt the dead: ${dhp}` : `Sweep this tile's open ground for the dead (the dead here: ${band.word}${dhe ? `; about ${Math.round(dhe.encounters * 10) / 10} groups met and ${Math.round(dhe.kills)} killed in ${DEAD_HUNT.HOURS.def}h, Normal` : ""}). Stealthy, Normal or Lure (loud: more and bigger groups). Each group met: Attack on a small map of the tile's land, or Retreat (an escape check). Every kill lowers the tile's count of the dead. Opens a box to set the hours and the stance.`, !!dhp);
   return `<div style="margin-top:0.5rem"><b${tip("Food, wood and stone from the land: forage (anyone), hunt (a rifle or a bow), fish (a rod, a net or a spear, on a river or lake shore), set snares, cut wood (an axe helps) or gather stone (a pickaxe helps). Each asks how many hours first, with what they would bring. The land runs out of game when hunted hard and grows back over weeks; picked land grows back over a season, cut woods over seasons.")}>Land</b> <span class="muted">wild food ${fi.word} · game ${info.word} · wood ${wi.word}${sa >= 0.1 ? ` · stone ${stoneWord(sa)}` : ""}${fs ? ` · fish in ${fs.name}` : ""}${line ? " · your snares" : ""}${meat >= 1 ? ` · carrying ${Math.floor(meat)} fresh game` : ""}${woodWood >= 1 ? ` · carrying ${Math.floor(woodWood)} wood` : ""}</span></div>
     ${teamWormText(state, p) ? `<div class="small danger"${tip("The worm (Help: The dead and the worm): its eggs die in the heat. Camp with the fire lit to boil the water and cook the game; a water filter carried cleans the water as it is drunk. Eaten raw or drunk unboiled, each day is a chance of catching it.")}>The worm: ${esc(teamWormText(state, p))}.</div>` : ""}
     ${lowFoodBlock(state, p, at, queueing)}
-    <div class="row" style="margin-top:0.3rem;flex-wrap:wrap">${forageBtns}${hunts}${fishBtns}${snareBtns}${woodBtns}${stoneBtns}</div>`;
+    <div class="row" style="margin-top:0.3rem;flex-wrap:wrap">${forageBtns}${hunts}${fishBtns}${snareBtns}${woodBtns}${stoneBtns}${deadBtns}</div>`;
 }
 
 // Short of food (under 2 days): the best food from the land here and around (sim/foraging.js landFoodOptions), with

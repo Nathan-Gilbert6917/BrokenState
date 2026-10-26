@@ -197,16 +197,28 @@ const WALL_FURN = new Set(Object.keys(FURNITURE_KINDS).filter((k) => FURNITURE_K
 FLOORED.add("cart"); // sim/carts.js: a cart parked on a cell (drawn as its sprite, ui/ground.js) // sim/locks.js gun safes: a steel box standing on the floor
 // Buildings: 4-connected cells with floorboards (houses, shops, the base's buildings; flat-roofed blocks are solid).
 const GROUNDY = new Set(["water", "trench", "spikes", "hivewall"]);
+// A cell's kind and its floor's look (with its decor, sim/decor.js), in the scene's signatures.
+/** @param {any} c */
+const cellKc = (c) => c.k.charCodeAt(0) * 7 + c.k.length + (c.k.charCodeAt(2) || 0);
+/** @param {any} c */
+const cellFc = (c) => (c.f ? c.f.charCodeAt(0) + c.f.length : 0) + (c.fl ? c.fl.charCodeAt(0) * 3 + c.fl.length : 0) + (c.deco ? decoSig(c.deco) : 0) + (c.wc ? c.wc.charCodeAt(3) * 11 + c.wc.charCodeAt(5) : 0) + (c.wart ? c.wart.k.charCodeAt(1) * 17 + c.wart.d : 0) + (c.neon ? 131 : 0);
 function sceneFor(b) {
   let sig = 0, fsig = 0;
   for (let i = 0; i < b.cells.length; i++) {
-    const c = b.cells[i], kc = c.k.charCodeAt(0) * 7 + c.k.length + (c.k.charCodeAt(2) || 0), fc = (c.f ? c.f.charCodeAt(0) + c.f.length : 0) + (c.fl ? c.fl.charCodeAt(0) * 3 + c.fl.length : 0) + (c.deco ? decoSig(c.deco) : 0) + (c.wc ? c.wc.charCodeAt(3) * 11 + c.wc.charCodeAt(5) : 0) + (c.wart ? c.wart.k.charCodeAt(1) * 17 + c.wart.d : 0) + (c.neon ? 131 : 0); // decor (sim/decor.js) drawn in the ground and the walls
+    const c = b.cells[i], kc = cellKc(c), fc = cellFc(c); // decor (sim/decor.js) drawn in the ground and the walls
     sig = (Math.imul(sig, 31) + kc + fc + (c.hp > 0 ? (c.hp | 0) + 1 : 0)) | 0;
     fsig = (Math.imul(fsig, 31) + fc + (GROUNDY.has(c.k) ? kc : 0)) | 0;
   }
   // On an upper floor the ground outside the footprint is the ground floor's (floors change the key too).
   const fl = floorNo(b);
-  if (fl) for (const c of b.floors[0].cells) fsig = (Math.imul(fsig, 31) + (c.f ? c.f.charCodeAt(0) + c.f.length : 0)) | 0;
+  // The ground floor's own picture (flatGroundFor) is the same whichever floor is in view: under an upper floor it is
+  // the ground floor's, kept from floor 0 and for each floor above (its key without the floor, gsig).
+  let gsig = fsig;
+  if (fl) {
+    gsig = 0;
+    for (const c of b.floors[0].cells) gsig = (Math.imul(gsig, 31) + cellFc(c) + (GROUNDY.has(c.k) ? cellKc(c) : 0)) | 0;
+    for (const c of b.floors[0].cells) fsig = (Math.imul(fsig, 31) + (c.f ? c.f.charCodeAt(0) + c.f.length : 0)) | 0;
+  }
   const key = `${b.w}x${b.h}:${fl}:${sig}`;
   if (sceneCache && sceneCache.b === b && sceneCache.key === key) return sceneCache;
   const n = b.w * b.h, comp = new Int16Array(n).fill(-1), blds = [];
@@ -260,7 +272,7 @@ function sceneFor(b) {
   // Single wall cells (no floor: a raid's locked doors in the open) stand alone.
   const pits = []; // the fire pits: their flames, sparks, smoke and glow drawn each frame while lit (drawCampfireIso)
   for (let i = 0; i < n; i++) if (b.cells[i].k === "firepit") pits.push(i);
-  sceneCache = { b, key, comp, blds, members, low, ext, sig, pits, groundKey: `${b.w}x${b.h}:${fl}:${fsig}` };
+  sceneCache = { b, key, comp, blds, members, low, ext, sig, pits, groundKey: `${b.w}x${b.h}:${fl}:${fsig}`, groundFloorKey: `${b.w}x${b.h}:g:${gsig}` };
   iso.builds.scene++;
   return sceneCache;
 }
@@ -1955,6 +1967,27 @@ const FURN_DRAW = {
     const ax = along(o);
     return [run(ax, 0.38, 0.62, 0, 12, fappl(FURNC.steel, [11]), 0.3, 0.7), run(ax, 0.47, 0.53, 9, 10, flatM(FURNC.chrome), 0, 1), run(ax, 0.36, 0.64, 12, 14, flatM(FURNC.black), 0.28, 0.72)];
   } },
+  // ---------- sports stadiums and arenas (issue #57, sim/stadiumlayout.js) ----------
+  stadseat: { top: 10, p: (o) => {
+    const ax = along(o), shell = (f) => (f === "top" ? mul(FURNC.water, 1.05) : mul(FURNC.water, 0.8));
+    return [run(ax, 0.32, 0.66, 0, 4, flatM(FURNC.steel), 0.12, 0.88), run(ax, 0.3, 0.7, 4, 5, shell, 0.08, 0.92), run(ax, 0.64, 0.74, 4, 10, shell, 0.08, 0.92)];
+  } },
+  goalpost: { top: 40, p: (o) => {
+    const ax = along(o), y = flatM(FURNC.gold);
+    return [fcyl(ax, 0.5, 0.5, 0.06, 0, 14, y), run(ax, 0.47, 0.53, 14, 16, y, 0, 1), fcyl(ax, 0.5, 0.04, 0.04, 16, 40, y), fcyl(ax, 0.5, 0.96, 0.04, 16, 40, y)];
+  } },
+  soccergoal: { top: 16, p: (o) => {
+    const ax = along(o), net = (f, s, t, X) => (f === "top" ? FURNC.cloth : (Math.floor(X) + Math.floor(t)) % 2 ? FURNC.cloth : mul(FURNC.cloth, 0.7));
+    return [fcyl(ax, 0.3, 0.04, 0.04, 0, 16, flatM(FURNC.white)), fcyl(ax, 0.3, 0.96, 0.04, 0, 16, flatM(FURNC.white)), run(ax, 0.27, 0.33, 15, 16, flatM(FURNC.white), 0, 1), run(ax, 0.33, 0.8, 1, 14, net, 0.04, 0.96)];
+  } },
+  hoop: { top: 34, p: (o) => {
+    const ax = along(o);
+    return [run(ax, 0.2, 0.8, 0, 3, flatM(FURNC.black), 0.2, 0.8), fcyl(ax, 0.5, 0.5, 0.06, 3, 26, flatM(FURNC.steel)), run(ax, 0.45, 0.55, 24, 34, flatM(FURNC.white), 0.1, 0.9), run(ax, 0.55, 0.85, 25, 26, flatM(FURNC.amber), 0.35, 0.65)];
+  } },
+  scoreboard: { top: 34, p: (o) => {
+    const ax = along(o), face = (f, s, t, X) => (f === "top" ? FURNC.black : t < 14 ? flatM(FURNC.steel)(f) : n2(Math.floor(X), Math.floor(t), 571) > 0.8 ? FURNC.amber : FURNC.black);
+    return [run(ax, 0.4, 0.6, 0, 34, face, 0.05, 0.95)];
+  } },
   liftdoor: { top: 28, p: (o) => {
     const ax = along(o), face = (f, s, t, X, Y, sw) => { const w = sw || 16; if (f === "top" || t > 25 || s < 1 || s > w - 1) return t > 26 && Math.abs(s - w / 2) < 1 ? FURNC.amber : mul(FURNC.steel, 0.7); if (Math.abs(s - w / 2) < 0.35) return FURNC.black; return mul(FURNC.chrome, 0.88 + n2(Math.floor(X), Math.floor(t / 3), 121) * 0.08); };
     return [run(ax, 0.42, 0.5, 0, 28, face, 0.04, 0.96)];
@@ -3104,7 +3137,8 @@ const TILE_CELLS = 32;
 // floor's own (autumn's leaves and puddles on it).
 function flatGroundFor(b, scene, cells = b.cells, which = "act") {
   const ground = cells === groundCells(b);
-  const key = `${which}:${groundKeyOf(b, scene)}`;
+  // The ground floor's picture under one key from every floor (floor 0's own, "f0" under an upper floor's).
+  const key = ground ? `ground:${scene.groundFloorKey}:${groundLookKey(b, treeLook)}` : `${which}:${groundKeyOf(b, scene)}`;
   const hit = flatGroundCaches.get(key);
   if (hit && hit.b === b && hit.cells === cells) return hit;
   for (const [k, g] of flatGroundCaches) if (g.b !== b) flatGroundCaches.delete(k);

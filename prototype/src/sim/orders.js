@@ -34,6 +34,7 @@ import { capTask, holdName, COLLECT } from "./carry.js"; // a quantity to collec
 import { roadTentsHour } from "./tents.js"; // the tents on a night's rest on the road (call-time only)
 import { envoyLocked, ENVOY_LOCKED } from "./envoys.js"; // an envoy takes no orders (call-time only)
 import { poiWalkDone } from "./poiwalk.js"; // the walk to a place on the tile, then its raid (call-time only)
+import { deadHuntHours, deadHuntLabel, deadHuntProblem, deadHuntTask, deadHuntHour, deadHuntSummary } from "./deadhunt.js"; // Hunt the dead (issue #68)
 
 export const REPAIR_HOURS = 3;   // a roadside repair
 export const FETCH_WATER_HOURS = 2; // Fetch water: filling containers at a river or lake
@@ -69,6 +70,7 @@ export function describeOrder(state, o) {
     case "forage": return `Forage ${clockText(huntHours(o))}${qtyNote(o)}`; // foraging.js
     case "wood": return `Cut wood ${clockText(huntHours(o))}${qtyNote(o)}`; // woodcutting.js
     case "stone": return `Gather stone ${clockText(huntHours(o))}${qtyNote(o)}`; // stone.js
+    case "deadhunt": return deadHuntLabel(o); // deadhunt.js: Hunt the dead
     case "snare": return o.mode === "lift" ? "Check and lift the snares" : o.mode === "check" ? "Check the snares" : o.mode === "set" ? "Set snares" : "Snares: set, or check them";
     case "claim": return "Claim this tile"; // claims.js: a marker post, the land counts for the coalition
     case "pitch": return o.mission === "outpost" ? "Set up the outpost camp" : "Set up camp"; // staging.js pitchArrive (siteSetup: the fire and the clearing); then the camp stands (pitchDone)
@@ -184,6 +186,7 @@ export function queueEstimate(state, p) {
     else if (o.type === "gather") hours = GATHER_HOURS;
     else if (o.type === "water") hours = FETCH_WATER_HOURS;
     else if (o.type === "hunt" || o.type === "fish" || o.type === "forage" || o.type === "wood" || o.type === "stone") hours = huntHours(o);
+    else if (o.type === "deadhunt") hours = deadHuntHours(o); // deadhunt.js (a card's wait comes on top)
     else if (o.type === "snare") hours = snareHours(state, o.at ?? tile, o.mode);
     else if (o.type === "claim") hours = CLAIM.HOURS;
     else if (o.type === "well") hours = CLAIM.WELL_HOURS;
@@ -305,7 +308,7 @@ export function continueQueue(state, p, text) {
   return true;
 }
 
-const PLACED = ["mission", "survey", "fullsurvey", "gather", "water", "hunt", "fish", "forage", "wood", "stone", "snare", "claim", "well", "fwork"]; // order types tied to the tile they were queued for
+const PLACED = ["mission", "survey", "fullsurvey", "gather", "water", "hunt", "fish", "forage", "wood", "stone", "snare", "claim", "well", "fwork", "deadhunt"]; // order types tied to the tile they were queued for
 // Hours of a land order (hunt, fish, forage, cut wood, gather stone): as given, to the half hour, within 30 minutes to
 // 24 hours (8 if none; the user's request 2026-10-26: "Allow for doing gathering missions by 30 minutes instead of by
 // hours ... Minimum is 30 min orders and scalp yield based on this": its last half hour works half an hour, landWork).
@@ -451,6 +454,13 @@ export function startOrder(state, p, o) {
       startTask(state, p, { type: "stone", hours: huntHours(o), qty: o.qty });
       return `The team gathers stone (${clockText(huntHours(o))}).`;
     }
+    case "deadhunt": {
+      // Hunt the dead (deadhunt.js): the tile's open ground swept for the hours set; each group met asks Attack or Retreat.
+      const why = deadHuntProblem(state, p);
+      if (why) return fail(`Hunt the dead: ${why}`);
+      startTask(state, p, deadHuntTask(o));
+      return `The team goes hunting the dead (${deadHuntHours(o)}h).`;
+    }
     case "snare": {
       const mode = snareMode(state, partyTile(p), o.mode);
       const why = snareProblem(state, p, partyTile(p), mode);
@@ -552,6 +562,7 @@ export function taskHour(state, p) {
   t.done += 1;
   if (t.type === "camp") campHour(state, p);
   if (t.type === "sweep") sweepHour(state, p); // survey.js: move on, look, roll for finds
+  if (t.type === "deadhunt") deadHuntHour(state, p); // deadhunt.js: the encounter roll (a card up holds the clock)
   if (!state.parties.includes(p) || p.task !== t) return;
   // Hunting, fishing and foraging roll every hour (hunting.js, foraging.js); with nothing left to do it with, the job ends early.
   if (LAND_WORK[t.type] && !landWork(state, p, t, tickShare(t))) {
@@ -563,7 +574,7 @@ export function taskHour(state, p) {
     if (err) return awaitOrders(state, p, err, { failed: true });
   }
   if (!state.parties.includes(p)) return;
-  if (t.hours != null && t.done - (t.owed || 0) >= t.hours - 1e-9) finishTask(state, p);
+  if (t.hours != null && !t.enc && t.done - (t.owed || 0) >= t.hours - 1e-9) finishTask(state, p); // t.enc: a hunt's card still up (deadhunt.js)
 }
 
 // The land orders' work (the user's request 2026-10-26: by the half hour): each tick works the share of its hour the
@@ -585,7 +596,7 @@ export function tasksDue(state, frac) {
   for (const p of [...state.parties]) {
     const t = p.phase === "task" ? p.task : null;
     if (!t || (!t.owed && !(t.hours < 1) && Number.isInteger(t.hours)) || t.hours == null || t.afloat || p.owner !== "player" || !state.parties.includes(p)) continue; // a job under an hour (tents.js: a camp pitched with tent bags) or ending on a half hour ends at its minute too
-    if (t.done - (t.owed || 0) + frac < t.hours - 1e-9) continue; // owed is left off a job started on the hour
+    if (t.done - (t.owed || 0) + frac < t.hours - 1e-9 || t.enc) continue; // owed is left off a job started on the hour; t.enc: a hunt's card still up
     if (LAND_WORK[t.type]) landWork(state, p, t, (t.owed || 0) + t.hours - Math.max(t.done, t.owed || 0), t.done); // the part of this hour it works
     if (!state.parties.includes(p) || p.task !== t) continue;
     finishTask(state, p);
@@ -629,6 +640,7 @@ function finishTask(state, p) {
   else if (t.type === "forage") text = forageSummary(state, p, t);
   else if (t.type === "wood") text = woodSummary(state, p, t);
   else if (t.type === "stone") text = stoneSummary(state, p, t);
+  else if (t.type === "deadhunt") text = deadHuntSummary(state, p, t); // deadhunt.js
   else if (t.type === "snare") text = snareWork(state, p, t.mode);
   else if (t.type === "claim") text = claimTile(state, p, partyTile(p)); // claims.js (checked again now: it may have been taken meanwhile)
   else if (t.type === "well") text = digWell(state, p, partyTile(p));
