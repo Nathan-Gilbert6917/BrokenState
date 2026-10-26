@@ -171,7 +171,8 @@ export const PLACEMENT_ROWS = {
   sawmill: "suburb 0.2 M, town 0.6 M, highway 0.5 M, coast 1 M, scenic 2 L, rural 0.8 M", // issue #53: forest and hills (a big mill's yard there), some in towns
   machineshed: "farm",
   barn: "farm",
-  farm: "farm",
+  farm: "farm", // a farm site's layout by its terrain (issue #62, farmstead.js); mapgen.js puts the sites in the country
+  farmbldg: "of farm", // a farm's or a ranch's working buildings (issue #62, farmplans.js)
   ranch: "highway 0.4 L, scenic 0.6 L, rural 1.4 L",
   quarry: "scenic 1.6 L, rural 0.4 L", // issue #52: the quarry type (minelayout.js) at the quarry sites and as a point of interest (PLACE_EXTRA)
   mine: "scenic 1.5 M, rural 0.4 M", // issue #52: hills and mountains most, the country now and then; never a town's (PLACE_EXTRA; the mine shacks)

@@ -426,6 +426,16 @@ export const FURNITURE_KINDS = {
   screener:     P("Walk-through scanner", POLE, 30, 120, "fixed", S1, false, ["office"], "none"),
   liquorcab:    P("Liquor cabinet",       HALF, 25, 30, "one", S1, true, ["office", "living", "bar"], "storage:30", true),
   phonebooth:   P("Phone booth",          C(false, 1, false), 30, 200, "fixed", S1, false, ["office"], "none", true),
+  // ---------- farms and ranches (issue #62: farmplans.js's rooms, farmstead.js's yards) ----------
+  // All fixed (built on, set in concrete or too awkward to carry off): a concrete stave silo, a stock tank by the corral,
+  // the squeeze chute, a calf hutch, a beehive on its stand, a vineyard's trellis post and wire, a coop's nest boxes.
+  silo:       P("Silo",          FULL, 200, 20000, "fixed", S1, false, ["yard"], "none"),
+  stocktank:  P("Stock tank",    HALF, 60, 250, "fixed", S1, false, ["yard"], "none"),
+  chute:      P("Squeeze chute", HALF, 80, 600, "fixed", S1, false, ["yard", "barn"], "none"),
+  calfhutch:  P("Calf hutch",    HALF, 30, 90, "fixed", S1, false, ["yard"], "none"),
+  beehive:    P("Beehive",       HALF, 15, 60, "fixed", S1, false, ["yard", "shop"], "none"),
+  trellis:    P("Trellis",       C(false, 1, false), 15, 80, "fixed", S1, false, ["yard"], "none"),
+  nestbox:    P("Nest boxes",    HALF, 15, 40, "fixed", S1, false, ["barn"], "none", true),
   // ---------- data centres (issue #51: datacenter.js lays them) ----------
   // Fixed: a CRAC unit (a computer-room air conditioner, plumbed to the chillers), a hall's 2 MW diesel set on its skid,
   // a cable tray riser, a substation's transformer and a cooling tower out in the yard. Liftable: a UPS cabinet and a

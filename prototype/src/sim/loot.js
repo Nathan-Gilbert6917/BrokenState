@@ -856,6 +856,14 @@ addTags("pistol", "desk"); SITE_TAGS.cityhall = [...new Set([...(SITE_TAGS.cityh
 SITE_TAGS.museum = ["museum", "shop", "office", "kitchen"];
 for (const k of ["coins", "silverware", "pearls", "goldchain", "watch", "stamps", "telescope", "vinyl", "photos", "camera", "binoculars", "sabre", "cutlass", "bayonet", "tomahawk", "milhelmet", "etool", "armymanual", "cards", "backpack", "sewingkit", "bandagekit", "lantern", "diybook", "baton", "cuffs", "pepper", "taser", "harmonica", "bikehelmet"]) addTags(k, "museum");
 addTags("bandagekit", "school"); addTags("waterfilter", "mall", "sport"); addTags("knife", "medical"); // a nurse's office; the outlet's camping aisle; a dentist's tray
+// The farm's own finds and rooms (issue #62: data.js seeds, feedsack, rope; combat.js AREAS feedroom, rootcellar,
+// toolshed, vetroom, fuelstore, standshop): each room finds what the room it stands for finds (a feed room a barn's, a
+// root cellar a kitchen's, a tool shed a workshop's, the vet room a barn's, the fuel store a garage's, a farm stand's
+// shop a store's), its tags that room's and "farm" (the vet room "medical" too).
+addTags("seeds", "farm", "shop"); addTags("feedsack", "farm"); addTags("rope", "farm", "tools", "camp", "outdoor", "hunt");
+const FARM_AREAS = { feedroom: "barn", rootcellar: "kitchen", toolshed: "workshop", vetroom: "barn", fuelstore: "garage", standshop: "store" };
+for (const T of [AREA_TAGS, AREA_GUNMODS, AREA_MODS, AREA_GRENADES, AREA_LAUNCHERS, AREA_FINDS, AREA_WOOD, AREA_SHEETS, AREA_ARROWS, AREA_RELOAD]) for (const [k, v] of Object.entries(FARM_AREAS)) if (T[v] && !T[k]) T[k] = T[v];
+for (const [k, v] of Object.entries(FARM_AREAS)) AREA_TAGS[k] = [...new Set([...(AREA_TAGS[v] || []), "farm", ...(k === "vetroom" ? ["medical"] : [])])];
 // Prisons and county jails (issue #31, prison.js): a jail's finds are a prison's, and the prison's own rooms (combat.js
 // AREAS pcells, pcontrol, parmory, pkitchen...) find what the rooms they stand for find (the cell block's, the armory's).
 const PRISON_AREAS = { pcells: "cellblock", pcontrol: "cellblock", parmory: "armory", pkitchen: "kitchen", pstores: "warehouse", property: "pawnshop", plaundry: "house" };
