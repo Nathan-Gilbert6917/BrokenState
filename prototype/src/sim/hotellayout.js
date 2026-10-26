@@ -28,6 +28,14 @@
 // Every floor of the business hotel, the resort and the tower has two stairwells (one at each end of the front band:
 // two stair runs, #9) and a lift lobby (its lift doors on the wall: the shaft behind them is no way through).
 //
+// THE VARIANTS (issue #38, the user's requests 2026-10-25: "every building should have several varients"; "for
+// buildings with no to only a few varients create a dozen varients per building type"): twelve a kind, data-hotels.js
+// HOTEL_VARIANTS, each a plan of its own in PLANS below (its rooms, their order, its entrances, corridor or atrium or a
+// core, its size and storeys); the kinds above are each kind's classic plan (#29's, cell for cell). hotelSpec takes the
+// variant pinned (o.vid: a POI's hv, a crawl place's), else a chain's classic plan (a hotel made before the variants),
+// else one by the dice. The rooms the variants add (a tavern, a boot room, a casino floor, a stable...) take the styles
+// at the end of HOTEL_STYLES.
+//
 // THE GUEST FLOORS: a corridor down the middle, rooms either side. A room (HOTEL.UNIT wide inside) is a bedroom by the
 // corridor (a bed or two, a nightstand, a desk and its chair, a TV stand, a wardrobe, the minibar, a suitcase now and
 // then) and its en suite bathroom by the window (a toilet, a sink, a tub or a shower); the two share a unit, so the
