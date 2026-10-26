@@ -11,7 +11,6 @@ import { LOOT_BANDS } from "../sim/aiscav.js";
 import { campSeen } from "../sim/campsite.js"; // a campsite's state as last seen
 import { poiPlace } from "../sim/poiraid.js";
 import { buildingSpec, siteBuildings } from "../sim/buildingmaps.js";
-import { hasVariants, layoutName } from "../sim/shopvariants.js"; // a shop's or a service's layout variant (issue #35)
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
@@ -45,7 +44,7 @@ function poiLayout(state, t, i) {
   if (state.roomsLegacy) return "";
   const sb = isSitePoi(t, i) ? siteBuildings(t) : null;
   const o = sb ? (sb.single ? sb.options[0] : null) : poiPlace(t, i);
-  return o && hasVariants(o.key) ? layoutName(buildingSpec(state, t.id, o)) : "";
+  return o ? (buildingSpec(state, t.id, o).layout || {}).name || "" : ""; // only shopvariants.js's specs carry a layout
 }
 
 /** The top POI's name for the heading of a bare tile once it is known (a site tile keeps its site's name), else null. @param {any} state @param {number} id */

@@ -38,7 +38,6 @@ import {
 } from "./parties.js";
 import { registerCombatHandler, createBattle, startCombat, autoResolveCombat, finishCombat, byNumbersOdds, AREAS, floodReach, say, setFloor, makeLosCache, boxFinds, boxLoot, FLOOR_RICH } from "./combat.js";
 import { BUILDINGS, buildingHint, buildingSpec, buildingMap, rewardMult } from "./buildingmaps.js";
-import { layoutName } from "./shopvariants.js"; // a shop's or a service's layout variant on the block card (issue #35)
 import { raidLootShare, raidBig } from "./battlesize.js"; // the quick search's containers hold what the laid-out map's do (issue #21)
 import * as Weather from "./weather.js"; // the season: a chest freezer's food kept in winter (combat.js boxLoot)
 import { newItem } from "./inventory.js";
@@ -626,7 +625,7 @@ const HINT_PLAIN = new Set(["Corridor", "Restroom", "Bathroom", "Bath", "Storage
 const HINT_ROOMS = 2;
 const plural = (w) => (/s$/.test(w) ? w : /[^aeiou]y$/.test(w) ? `${w.slice(0, -1)}ies` : `${w}s`);
 export function placeHint(state, c, place, n = c.block) {
-  const st = placeStoreys(state, c, place, n), ht = placeHeight(state, c, place, n), lay = layoutName(buildingSpec(state, c.tile, placeOption(c, place, n))); // lay: a shop's or a service's variant (issue #35)
+  const st = placeStoreys(state, c, place, n), ht = placeHeight(state, c, place, n), lay = (buildingSpec(state, c.tile, placeOption(c, place, n)).layout || {}).name || ""; // lay: a shop's or a service's variant (shopvariants.js, issue #35)
   const sig = (buildingHint(place.key).sig || []).filter((r) => !HINT_PLAIN.has(r.name) || r.n >= 4); // a plain room the kind is made of counts (an office tower's offices)
   const many = sig.filter((r) => r.n > 1).sort((a, b) => b.n - a.n).slice(0, 1);
   const rest = sig.filter((r) => !many.includes(r));
