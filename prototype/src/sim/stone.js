@@ -18,7 +18,7 @@
 // Stone an hour = STONE.RATE × abundance × time × the gatherers (each one past the first 10% less, at least half).
 // Risks: a strained back now and then (STONE.injury a person-hour on a team order).
 import { log, atBase } from "./world.js";
-import { partyMembers, partyTile, tileLabel, teamName, cargoRoom } from "./parties.js";
+import { partyMembers, partyTile, tileLabel, teamName, cargoRoom, clockText } from "./parties.js";
 import { gainXp } from "./skills.js";
 import { addCondition, workFactor } from "./health.js";
 import { SUPPLIES, GEAR } from "./data.js";
@@ -76,11 +76,11 @@ export function quarryCrew(members, spare = []) {
 export const quarryPower = (crew) => crew.reduce((a, c, i) => a + c.mult * (STONE.weights[i] ?? STONE.weights[STONE.weights.length - 1]), 0);
 // Stone an hour on a tile for a crew of this power (no randomness).
 export const stoneRate = (state, tile, hour, power) => STONE.RATE * stoneAbundance(state, tile) * woodTime(hour) * power;
-// Expected haul of `hours` of gathering from startHour (stone never runs out); room = kg the team can still carry (the
-// haul is capped by it; all = what was gathered). ui/landorder.js: the order's hours box.
+// Expected haul of `hours` of gathering from startHour (stone never runs out; a half hour gives half an hour's); room =
+// kg the team can still carry (the haul is capped by it; all = what was gathered). ui/landorder.js: the order's hours box.
 export function expectStone(state, tile, hours, startHour = state.hour, room = Infinity, power = 1) {
   let all = 0;
-  for (let h = 1; h <= hours; h++) all += stoneRate(state, tile, startHour + h, power);
+  for (let h = 1; h - 1 < hours - 1e-9; h++) all += stoneRate(state, tile, startHour + h, power) * Math.min(1, hours - h + 1);
   const kept = Math.min(all, Math.max(0, Math.floor(room / SUPPLIES.stone.weight + 1e-9)));
   return { stone: Math.round(kept * 10) / 10, all: Math.round(all * 10) / 10, perHour: hours ? kept / hours : 0 };
 }
@@ -94,15 +94,15 @@ export function stoneProblem(state, p, tile = partyTile(p)) {
   if (stoneAbundance(state, tile) < 0.1) return "no stone to speak of here.";
   return "";
 }
-// One hour of it (orders.js taskHour): the stone goes into the cargo as far as there is room.
-export function stoneHour(state, p) {
+// One hour of it (orders.js taskHour), or share of one (a half hour): the stone goes into the cargo as far as there is room.
+export function stoneHour(state, p, share = 1) {
   const t = p.task;
   const got = t.got || (t.got = { stone: 0, left: 0 });
   const members = partyMembers(state, p);
   if (!members.length) { got.stopped = "nobody left to gather stone."; return false; }
   const tile = partyTile(p);
   const crew = quarryCrew(members, (p.cargo && p.cargo.gear) || []);
-  const rate = stoneRate(state, tile, state.hour, quarryPower(crew));
+  const rate = stoneRate(state, tile, state.hour, quarryPower(crew)) * share;
   if (rate > 0) {
     const amount = Math.round(rate * (0.5 + state.rng.next()));
     const fit = Math.max(0, Math.floor(cargoRoom(state, p) / SUPPLIES.stone.weight));
@@ -112,12 +112,12 @@ export function stoneHour(state, p) {
     got.stone += kept;
     got.left += amount - kept;
     for (const c of crew) {
-      if (state.rng.chance(STONE.injury * (c.tool ? 1 : 0.5))) {
+      if (state.rng.chance(STONE.injury * (c.tool ? 1 : 0.5) * share)) {
         addCondition(state, c.s, "sprain", `gathering stone near ${tileLabel(state, tile)}`);
         (got.hurt || (got.hurt = [])).push(c.s.id);
       }
     }
-    for (const s of members) gainXp(state, s, "farming", 0.3);
+    for (const s of members) gainXp(state, s, "farming", 0.3 * share);
   }
   return true;
 }
@@ -130,8 +130,8 @@ export function stoneSummary(state, p, t) {
   p.lastHaul = { kind: "stone", stone: got.stone, hour: state.hour };
   if (got.stone >= 10) log(state, `${teamName(state, p)} gathered stone near ${tileLabel(state, tile)}: ${got.stone} stone.`, "good");
   return got.stone >= 1
-    ? `Gathered stone ${t.done}h: ${got.stone} stone to carry home.${left}${hurt}${stop}`
-    : `Gathered stone ${t.done}h and found next to nothing${stoneAbundance(state, tile) < 0.2 ? " (little stone here)" : ""}.${hurt}${stop}`;
+    ? `Gathered stone ${clockText(t.worked ?? t.done)}: ${got.stone} stone to carry home.${left}${hurt}${stop}`
+    : `Gathered stone ${clockText(t.worked ?? t.done)} and found next to nothing${stoneAbundance(state, tile) < 0.2 ? " (little stone here)" : ""}.${hurt}${stop}`;
 }
 
 // ---------- the Gather stone job at a base (economy.js daily) ----------

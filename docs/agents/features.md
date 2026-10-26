@@ -91,7 +91,7 @@ Base detail: [bases.md](../features/bases.md). Economy detail: [economy.md](../f
 - **Hunting, snares, fishing and foraging** [hunting, foraging].
 - **Winter's lean months**: frost kills crops; forage, game, fish and wood yield less in winter [winter, weather, farming]. [details](../features/economy.md#winters-lean-months)
 - **Stone**: field stone cleared on the build map, the Gather stone job and team order; a camp's fire takes 5 wood and 8 stone [stone, work, orders, buildings, staging] `tools/stonetest.js`. [details](../features/economy.md#stone)
-- **Land order box**: Forage, Hunt, Fish, Cut wood, Gather stone ask the hours (2–24), with the expected yield [landest, ui/landorder, ui/teamctx] `tools/landordertest.js`. [details](../features/economy.md#the-land-order-box-hours-and-expected-yield)
+- **Land order box**: the five land jobs ask the time (30m–24h, half-hour steps) with the yield [landest, ui/landorder, ui/teamctx] `tools/landordertest.js`. [details](../features/economy.md#the-land-order-box-hours-and-expected-yield)
 - **Teams gathering on the map**: axes and picks swung, rods worked, buckets filled, a ring filling over them [ui/render, ui/mapfigures, ui/workermap] `tools/mapfigurestest.js`. [details](../features/economy.md#a-team-at-a-gathering-order-on-the-map)
 - **Woodcutting and heating**: wood is fuel and a building material; wooden builds cost wood; felling on the base map [woodcutting, woodwork, upkeep, needs] `tools/woodworktest.js`. [details](../features/economy.md#woodcutting-and-heating)
 - **Job trips**: outdoor workers walk out to the base's land, with events and trip gear [jobtrips, tripland, tripevents, tripgear].

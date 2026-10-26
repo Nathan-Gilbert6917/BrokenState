@@ -370,7 +370,7 @@ function resupplyWants(state, p, base) {
 // ---------- the menu ----------
 // The hours of an item: travel + the job ("on site" when the job has no fixed time), after the queue when queueing.
 export function itemHours(it) {
-  const job = it.open ? "until told" : it.custom ? `${HUNT.minHours}–${HUNT.maxHours}h` : it.task == null ? "on site" : it.task ? hrsText(it.task) : ""; // custom: the land order box sets the hours
+  const job = it.open ? "until told" : it.custom ? `${hrsText(HUNT.minHours)}–${hrsText(HUNT.maxHours)}` : it.task == null ? "on site" : it.task ? hrsText(it.task) : ""; // custom: the land order box sets the hours
   const parts = [it.move && it.travel != null ? `${hrsText(it.travel)} travel` : "", job].filter(Boolean);
   if (!parts.length) return "";
   return `${it.ahead ? `after ${hrsText(it.ahead)}: ` : ""}${parts.join(" + ")}`;

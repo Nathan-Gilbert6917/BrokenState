@@ -7,7 +7,7 @@ import { keyWord } from "./water.js"; // supplies as words: "9mm FMJ", "rounds"
 import { log, survivorById, baseById, hub } from "./world.js";
 import {
   MISSIONS, partyMembers, partyTile, tileLabel, teamName, bestSkill, orderMove, giveOrder, startReturn, awaitOrders,
-  survey, orderOptions, planPath, travelHours, hoursLeft, partySpeed, clockFrac, byMinute, carried, takeSupply, starving, paceOpts, modeSpeed, cargoRoom, pitchHoursFor, pitchDone, stuckText,
+  survey, orderOptions, planPath, travelHours, hoursLeft, partySpeed, clockFrac, byMinute, carried, takeSupply, starving, paceOpts, modeSpeed, cargoRoom, pitchHoursFor, pitchDone, stuckText, clockText,
 } from "./parties.js";
 import { SUPPLIES } from "./data.js";
 import { partyVehicle, partyVehicles, partyFuel } from "./vehicles.js";
@@ -64,11 +64,11 @@ export function describeOrder(state, o) {
     case "searcharea": return "Search the area for the wreck";
     case "crewsearch": return "Scavenge"; // a crew's own search (crews.js)
     case "poiwalk": return o.exit ? `Walk to the tile's edge (${o.mins} min), then on to ${o.name}` : `Walk to ${String(o.name || "the place").toLowerCase()} (${o.mins} min), then raid it`; // poiwalk.js
-    case "hunt": return `Hunt ${huntHours(o)}h${qtyNote(o)}`;
-    case "fish": return `Fish ${huntHours(o)}h${qtyNote(o)}`;
-    case "forage": return `Forage ${huntHours(o)}h${qtyNote(o)}`; // foraging.js
-    case "wood": return `Cut wood ${huntHours(o)}h${qtyNote(o)}`; // woodcutting.js
-    case "stone": return `Gather stone ${huntHours(o)}h${qtyNote(o)}`; // stone.js
+    case "hunt": return `Hunt ${clockText(huntHours(o))}${qtyNote(o)}`;
+    case "fish": return `Fish ${clockText(huntHours(o))}${qtyNote(o)}`;
+    case "forage": return `Forage ${clockText(huntHours(o))}${qtyNote(o)}`; // foraging.js
+    case "wood": return `Cut wood ${clockText(huntHours(o))}${qtyNote(o)}`; // woodcutting.js
+    case "stone": return `Gather stone ${clockText(huntHours(o))}${qtyNote(o)}`; // stone.js
     case "snare": return o.mode === "lift" ? "Check and lift the snares" : o.mode === "check" ? "Check the snares" : o.mode === "set" ? "Set snares" : "Snares: set, or check them";
     case "claim": return "Claim this tile"; // claims.js: a marker post, the land counts for the coalition
     case "pitch": return o.mission === "outpost" ? "Set up the outpost camp" : "Set up camp"; // staging.js pitchArrive (siteSetup: the fire and the clearing); then the camp stands (pitchDone)
@@ -306,8 +306,10 @@ export function continueQueue(state, p, text) {
 }
 
 const PLACED = ["mission", "survey", "fullsurvey", "gather", "water", "hunt", "fish", "forage", "wood", "stone", "snare", "claim", "well", "fwork"]; // order types tied to the tile they were queued for
-// Hours of a hunt, fishing or foraging order: as given, within 2–24 (8 if none).
-export const huntHours = (o) => Math.max(HUNT.minHours, Math.min(HUNT.maxHours, Math.round(o.hours || HUNT.defHours)));
+// Hours of a land order (hunt, fish, forage, cut wood, gather stone): as given, to the half hour, within 30 minutes to
+// 24 hours (8 if none; the user's request 2026-10-26: "Allow for doing gathering missions by 30 minutes instead of by
+// hours ... Minimum is 30 min orders and scalp yield based on this": its last half hour works half an hour, landWork).
+export const huntHours = (o) => Math.max(HUNT.minHours, Math.min(HUNT.maxHours, Math.round(2 * (Number(o.hours) || HUNT.defHours)) / 2));
 
 // Starts an order right away. If it cannot start, the team reports back (and the queue moves on).
 export function startOrder(state, p, o) {
@@ -420,34 +422,34 @@ export function startOrder(state, p, o) {
       const why = huntProblem(state, p);
       if (why) return fail(`Hunt: ${why}`);
       startTask(state, p, { type: "hunt", hours: huntHours(o), qty: o.qty });
-      return `The team goes hunting (${huntHours(o)}h).`;
+      return `The team goes hunting (${clockText(huntHours(o))}).`;
     }
     case "fish": {
       const why = fishProblem(state, p);
       if (why) return fail(`Fish: ${why}`);
       startTask(state, p, { type: "fish", hours: huntHours(o), qty: o.qty });
-      return `The team goes fishing (${huntHours(o)}h).`;
+      return `The team goes fishing (${clockText(huntHours(o))}).`;
     }
     case "forage": {
       // Wild food off the land (foraging.js): berries, nuts, mushrooms, greens, roots, by the terrain and the season.
       const why = forageProblem(state, p);
       if (why) return fail(`Forage: ${why}`);
       startTask(state, p, { type: "forage", hours: huntHours(o), qty: o.qty });
-      return `The team goes foraging (${huntHours(o)}h).`;
+      return `The team goes foraging (${clockText(huntHours(o))}).`;
     }
     case "wood": {
       // Wood for the winter (woodcutting.js): by the land, the tools and the people.
       const why = woodProblem(state, p);
       if (why) return fail(`Cut wood: ${why}`);
       startTask(state, p, { type: "wood", hours: huntHours(o), qty: o.qty });
-      return `The team cuts wood (${huntHours(o)}h).`;
+      return `The team cuts wood (${clockText(huntHours(o))}).`;
     }
     case "stone": {
       // Field stone (stone.js): by the land, the tools and the people.
       const why = stoneProblem(state, p);
       if (why) return fail(`Gather stone: ${why}`);
       startTask(state, p, { type: "stone", hours: huntHours(o), qty: o.qty });
-      return `The team gathers stone (${huntHours(o)}h).`;
+      return `The team gathers stone (${clockText(huntHours(o))}).`;
     }
     case "snare": {
       const mode = snareMode(state, partyTile(p), o.mode);
@@ -552,7 +554,7 @@ export function taskHour(state, p) {
   if (t.type === "sweep") sweepHour(state, p); // survey.js: move on, look, roll for finds
   if (!state.parties.includes(p) || p.task !== t) return;
   // Hunting, fishing and foraging roll every hour (hunting.js, foraging.js); with nothing left to do it with, the job ends early.
-  if ((t.type === "hunt" && !huntHour(state, p)) || (t.type === "fish" && !fishHour(state, p)) || (t.type === "forage" && !forageHour(state, p)) || (t.type === "wood" && !woodHour(state, p)) || (t.type === "stone" && !stoneHour(state, p))) {
+  if (LAND_WORK[t.type] && !landWork(state, p, t, tickShare(t))) {
     if (state.parties.includes(p)) finishTask(state, p);
     return;
   }
@@ -564,6 +566,17 @@ export function taskHour(state, p) {
   if (t.hours != null && t.done - (t.owed || 0) >= t.hours - 1e-9) finishTask(state, p);
 }
 
+// The land orders' work (the user's request 2026-10-26: by the half hour): each tick works the share of its hour the
+// order covers (tickShare: the first one less the minutes gone when it started, task.owed; the last one what is left of
+// its hours), and one that ends at its minute works the rest first (tasksDue). t.worked: the hours worked, for its summary.
+const LAND_WORK = { hunt: huntHour, fish: fishHour, forage: forageHour, wood: woodHour, stone: stoneHour };
+const tickShare = (t) => Math.max(0, Math.min(t.done, (t.owed || 0) + t.hours) - Math.max(t.done - 1, t.owed || 0));
+function landWork(state, p, t, share, slot) {
+  if (!(share > 1e-9)) return true;
+  t.worked = Math.round(((t.worked || 0) + share) * 1e6) / 1e6;
+  return slot == null ? LAND_WORK[t.type](state, p, share) : LAND_WORK[t.type](state, p, share, slot);
+}
+
 // Timed jobs started part-way through an hour (task.owed) end at their minute, not at the tick after: the main loop
 // (parties.js arrivalsDue) calls this every frame with the minutes gone. Returns true if one ended.
 /** @param {State} state @param {number} frac */
@@ -571,8 +584,10 @@ export function tasksDue(state, frac) {
   let any = false;
   for (const p of [...state.parties]) {
     const t = p.phase === "task" ? p.task : null;
-    if (!t || (!t.owed && !(t.hours < 1)) || t.hours == null || t.afloat || p.owner !== "player" || !state.parties.includes(p)) continue; // a job under an hour (tents.js: a camp pitched with tent bags) ends at its minute too
+    if (!t || (!t.owed && !(t.hours < 1) && Number.isInteger(t.hours)) || t.hours == null || t.afloat || p.owner !== "player" || !state.parties.includes(p)) continue; // a job under an hour (tents.js: a camp pitched with tent bags) or ending on a half hour ends at its minute too
     if (t.done - (t.owed || 0) + frac < t.hours - 1e-9) continue; // owed is left off a job started on the hour
+    if (LAND_WORK[t.type]) landWork(state, p, t, (t.owed || 0) + t.hours - Math.max(t.done, t.owed || 0), t.done); // the part of this hour it works
+    if (!state.parties.includes(p) || p.task !== t) continue;
     finishTask(state, p);
     any = true;
   }

@@ -18,18 +18,22 @@ import { HUNT, MEAT_KG, partyHuntTeam, expectHunt, huntProblem, fishSpot, fishKi
 import { expectForage, forageProblem, foragerMult, forageKg, forageAbundance, forageLevel, forageWord, seasonForage } from "./foraging.js";
 import { chopCrew, chopPower, expectWood, woodProblem, woodTime, woodAbundance, woodLevel, woodWord } from "./woodcutting.js";
 import { quarryCrew, quarryPower, expectStone, stoneProblem, stoneAbundance, stoneWord } from "./stone.js";
+import { clockText } from "./parties.js";
 
 export const LAND_JOBS = ["forage", "hunt", "fish", "wood", "stone"];
 export const isLandJob = (type) => LAND_JOBS.includes(type);
 export const LAND_VERB = { forage: "Forage", hunt: "Hunt", fish: "Fish", wood: "Cut wood", stone: "Gather stone" };
-export const LAND_HOURS = { min: HUNT.minHours, max: HUNT.maxHours, def: HUNT.defHours, presets: [4, 8, 12, 24] }; // orders.js huntHours clamps to these
-export const clampHours = (h) => Math.max(LAND_HOURS.min, Math.min(LAND_HOURS.max, Math.round(Number(h) || LAND_HOURS.def)));
+// In half hours from 30 minutes (the user's request 2026-10-26: "Allow for doing gathering missions by 30 minutes instead
+// of by hours ... Minimum is 30 min orders"); orders.js huntHours clamps to these.
+export const LAND_HOURS = { min: HUNT.minHours, max: HUNT.maxHours, def: HUNT.defHours, step: 0.5, presets: [0.5, 1, 2, 4, 8, 12, 24] };
+export const clampHours = (h) => Math.max(LAND_HOURS.min, Math.min(LAND_HOURS.max, Math.round((Number(h) || LAND_HOURS.def) / LAND_HOURS.step) * LAND_HOURS.step));
+export const landHoursText = (h) => clockText(h); // "30m", "2h 30m", "8h"
 
 const r1 = (x) => Math.round(x * 10) / 10;
 const first = (s) => String(s.name).split(" ")[0];
 const skillsText = (s, keys) => keys.map(([k, w]) => `${w} ${skill(s, k)}`).join(", ");
-// Hours of daylight work in the span (woodTime 1: 7:00 to 18:00; dusk and night count for little).
-const daylightHours = (startHour, hours) => { let n = 0; for (let h = 1; h <= hours; h++) if (woodTime(startHour + h) >= 1) n++; return n; };
+// Hours of daylight work in the span (woodTime 1: 7:00 to 18:00; dusk and night count for little); a half hour at the end counts half.
+const daylightHours = (startHour, hours) => { let n = 0; for (let h = 1; h - 1 < hours - 1e-9; h++) if (woodTime(startHour + h) >= 1) n += Math.min(1, hours - h + 1); return n; };
 
 export function landEstimate(state, p, type, { tile = partyTile(p), hours = LAND_HOURS.def, startHour = state.hour, qty = null } = {}) {
   hours = clampHours(hours);
@@ -95,7 +99,7 @@ export function landEstimate(state, p, type, { tile = partyTile(p), hours = LAND
     cap(e.wood, SUPPLIES.wood.weight);
     out.crew = crew.map((c) => ({ name: first(c.s), gear: c.tool ? c.tool.name : "bare hands (deadfall)", mult: c.mult, skills: skillsText(c.s, [["farming", "Farming"], ["mechanics", "Mechanics"]]) }));
     out.daylight = daylightHours(startHour, hours);
-    out.notes.push(`Wood ${woodWord(woodAbundance(state, tile) * woodLevel(state, tile))} here. Daylight only: ${out.daylight} of the ${hours}h are in daylight. Loud (Heat); axes slip now and then.`);
+    out.notes.push(`Wood ${woodWord(woodAbundance(state, tile) * woodLevel(state, tile))} here. Daylight only: ${clockText(out.daylight)} of the ${clockText(hours)} in daylight. Loud (Heat); axes slip now and then.`);
   } else if (type === "stone") {
     out.why = stoneProblem(state, p, tile);
     out.unit = "stone"; out.key = "stone";
@@ -105,7 +109,7 @@ export function landEstimate(state, p, type, { tile = partyTile(p), hours = LAND
     cap(e.stone, SUPPLIES.stone.weight);
     out.crew = crew.map((c) => ({ name: first(c.s), gear: c.tool ? c.tool.name : "bare hands", mult: c.mult, skills: skillsText(c.s, [["farming", "Farming"], ["mechanics", "Mechanics"]]) }));
     out.daylight = daylightHours(startHour, hours);
-    out.notes.push(`Stone ${stoneWord(stoneAbundance(state, tile))} here (it never runs out). Daylight only: ${out.daylight} of the ${hours}h are in daylight. A pickaxe or a sledgehammer about doubles it.`);
+    out.notes.push(`Stone ${stoneWord(stoneAbundance(state, tile))} here (it never runs out). Daylight only: ${clockText(out.daylight)} of the ${clockText(hours)} in daylight. A pickaxe or a sledgehammer about doubles it.`);
   } else out.why = "not a land job.";
   return out;
 }
