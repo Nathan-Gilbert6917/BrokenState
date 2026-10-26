@@ -198,5 +198,17 @@ section("The windows' pictures");
   check((html.match(/<img class="sprite vehimg"/g) || []).length >= 1 && html.includes(suv.name), `the trip planner's vehicle buttons carry their pictures (${(html.match(/<img class="sprite vehimg"/g) || []).length} on the hub's)`);
 }
 
+section("The base map: the team's parked vehicles by type");
+{
+  const BM = await import("../src/sim/basemap.js");
+  const { Rng } = await import("../src/sim/rng.js");
+  const st = createWorld({ seed: SEED, factionCount: 6 }), h = hub(st);
+  const a = createVehicle(st, "truck", { kind: "base", baseId: h.id }, { fuel: 20, condition: 90 });
+  const s = createVehicle(st, "suv", { kind: "base", baseId: h.id }, { fuel: 20, condition: 90 });
+  const F = BM.buildBaseMap(st, h, new Rng(1), { view: true });
+  const modelAt = (v) => { const r = F.vehicles.find((q) => q.id === v.id); const c = r && F.cells[r.y0 * F.W + r.x0]; return c && c.car ? VM.modelOf(c.car) : null; };
+  check(modelAt(a) === "pickup" && modelAt(s) === "suv", `a pickup parked at the base drawn as a pickup, an SUV as an SUV, not box trucks or sedans (${modelAt(a)}, ${modelAt(s)})`);
+}
+
 console.log(`\n${pass} passed, ${fail} failed.`);
 process.exit(fail ? 1 : 0);

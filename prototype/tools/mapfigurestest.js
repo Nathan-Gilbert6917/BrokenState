@@ -113,6 +113,14 @@ console.log(`  ${built} canvases built in ${Math.round(performance.now() - t0)} 
     check(seen.size >= M.FRAMES / 2 && M.mapWorkerCanvas(j, BLUE, 315, 3, "", true).ops.join() !== M.mapWorkerCanvas(j, BLUE, 315, 3).ops.join(), `${j} at work: a pose of its own (not the walk), moving through its cycle (${seen.size} pictures)`);
   }
   check(M.mapWorkerCanvas("hunt", BLUE, 315, 3, "", true) === M.mapWorkerCanvas("hunt", BLUE, 315, 3), "a hunter at work walks (the roaming jobs keep the walk)");
+  // Out on an order (the user's request 2026-10-26): a pose of its own out there, the walk on the way
+  for (const j of ["survey", "fullsurvey", "snare", "gather", "claim", "well"]) check(M.mapWorkerCanvas(j, BLUE, 315, 3, "", true).ops.join() !== M.mapWorkerCanvas(j, BLUE, 315, 3).ops.join(), `${j}: at work out there, not the walk`);
+  for (const j of ["snare", "gather", "claim", "well"]) {
+    const seen = new Set();
+    for (let f = 1; f <= M.FRAMES; f++) seen.add(M.mapWorkerCanvas(j, BLUE, 315, f, "", true).ops.join());
+    check(seen.size >= M.FRAMES / 2, `${j} at work moves through its cycle (${seen.size} pictures)`);
+  }
+  check(M.mapWorkerCanvas("survey", BLUE, 315, 0, "", true).ops.join() !== M.mapWorkerCanvas("survey", BLUE, 45, 0, "", true).ops.join(), "a Quick look's glasses turn with the heading");
 }
 
 section("drawPiece puts the ground point where asked");
@@ -175,10 +183,30 @@ section("In the renderer: a team on the road and a horde are drawn as pieces");
   const ring = arcs.filter((a) => a.color === RING.wood && Math.abs(a.x - wx) < 30 && a.y < wy);
   const sweep = ring.length ? Math.max(...ring.map((a) => a.a1 - a.a0)) : 0;
   check(ring.length >= 1 && Math.abs(sweep - Math.PI) < 0.3, `a ring over them in the job's colour, half full at 4 of 8 hours (${ring.length} arcs, ${(sweep / Math.PI).toFixed(2)}π)`);
-  p.task.type = "survey"; p.task.hours = 2;
+  // Out on a Quick look, a Survey and the rest (the user's request 2026-10-26): its people out from the spot in the
+  // order's kit, at work out there (animations off: held there), the ring over the spot.
+  const pieceAt = (i) => [i.x + i.cv.grid.ox * (i.w / i.cv.grid.w), i.y + i.cv.grid.oy * (i.h / i.cv.grid.h)];
+  let spot = null; // where the team stands: the claim's post-driver
+  for (const [type, hours, job] of [["claim", 6, "claim"], ["survey", 2, "survey"], ["fullsurvey", 8, "fullsurvey"], ["snare", 4, "snare"], ["well", 24, "well"]]) {
+    p.task = { type, hours, done: hours / 4 };
+    arcs.length = 0;
+    frame(partyTile(p));
+    const mine = images.filter((i) => i.cv && i.cv.grid && Array.from({ length: 24 }, (_, j) => j * 15).some((y) => [0, 1, 2, 3, 4, 5, 6, 7, 8].some((f) => i.cv === M.mapWorkerCanvas(job, BLUE, y, f, "", true))));
+    check(mine.length === 2, `${type}: the team's two people drawn at it (${mine.length})`);
+    if (type === "claim") {
+      const by = mine.map((i) => Math.hypot(pieceAt(i)[0] - wx, pieceAt(i)[1] - wy)), k = by.indexOf(Math.min(...by));
+      spot = mine[k] && pieceAt(mine[k]);
+    }
+    const far = spot ? mine.map((i) => Math.hypot(pieceAt(i)[0] - spot[0], pieceAt(i)[1] - spot[1])) : [];
+    if (type === "claim") check(far.length === 2 && Math.min(...far) < 1 && Math.max(...far) > 10, `claim: one drives the post at the spot, one paces the tile out (${far.map((d) => d.toFixed(0)).join(", ")} px from the spot)`);
+    else if (type !== "well") check(far.length === 2 && far.every((d) => d > 6 && d < R.HEX), `${type}: out from the spot, still on the tile (${far.map((d) => d.toFixed(0)).join(", ")} px)`);
+    const r = arcs.filter((a) => a.color === RING[job] && Math.abs(a.x - wx) < 30 && a.y < wy), sw = r.length ? Math.max(...r.map((a) => a.a1 - a.a0)) : 0;
+    check(r.length >= 1 && Math.abs(sw - Math.PI / 2) < 0.3, `${type}: a ring in its own colour over the spot, a quarter full (${(sw / Math.PI).toFixed(2)}π)`);
+  }
+  p.task = { type: "repair", hours: 3, done: 1 };
   arcs.length = 0;
   frame(partyTile(p));
-  check(!arcs.some((a) => Object.values(RING).includes(a.color)), "a Quick look is no gathering order: no ring");
+  check(!arcs.some((a) => Object.values(RING).includes(a.color)), "a repair is done at the team: no ring");
 }
 
 console.log(`\n${passes} passed, ${fails} failed`);

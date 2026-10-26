@@ -19,7 +19,7 @@ import { ROLES } from "../sim/economy.js";
 import { mapWorkerCanvas, pieceBox, yawOf } from "./mapfigures.js";
 
 export const LOADS = { wood: "logs", hunt: "game", fish: "fish", forage: "basket", scavenge: "sack", water: "buckets" };
-export const RING = { wood: "#d8a860", hunt: "#e07a50", fish: "#5aa8e0", forage: "#9ad06a", scavenge: "#d8c890", water: "#7ac0f0", stone: "#b8b4aa" }; // the work ring's colour by job (a team at a gathering order too: ui/render.js)
+export const RING = { wood: "#d8a860", hunt: "#e07a50", fish: "#5aa8e0", forage: "#9ad06a", scavenge: "#d8c890", water: "#7ac0f0", stone: "#b8b4aa", survey: "#e8d27a", fullsurvey: "#f0b84a", snare: "#c89a6a", gather: "#8ab8a8", claim: "#e09090", well: "#6aa0c8" }; // the work ring's colour by job (a team at a gathering order or out on a Survey, a Quick look, snares, a claim, a well: ui/render.js)
 const MAX_FIGS = 5;        // figures a base at most; more workers are drawn in groups with a ×N tag
 const POP_LIFE = 0.45;     // game hours a deposit's "+18 food" rises over the base
 const SOLO_PX = 1.2;       // world px per grid px of a worker's figure (a lone team walker is 1.25: these a touch smaller)

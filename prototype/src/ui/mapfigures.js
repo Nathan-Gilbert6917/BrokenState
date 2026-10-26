@@ -336,7 +336,7 @@ function person(push, look, pose = {}) {
   } else if (a === "bar") { // a crowbar hanging from the right hand
     hang(right); swing(left, 0.8);
     pole(add(SH(right), [0.5, R * 0.5, -4.6]), add(SH(right), [0.9, R * 0.5, -8.0]), METAL, 0.28);
-  } else if ((a === "axe" || a === "pick") && pose.chop != null) { // at work (a team on Cut wood or Gather stone): both hands on the haft, raised over the head and brought down in front
+  } else if ((a === "axe" || a === "pick" || a === "mallet") && pose.chop != null) { // at work (a team on Cut wood, Gather stone, Dig a well, Claim): both hands on the haft, raised over the head and brought down in front
     const c = pose.chop, k = c < 0.7 ? c / 0.7 : 1 - (c - 0.7) / 0.3; // lifted slowly, swung down fast
     const ang = ((-35 + k * 140) * Math.PI) / 180, dir = [Math.cos(ang), 0, Math.sin(ang)], edge = [dir[2], 0, -dir[0]]; // the haft's way in the forward/up plane: ahead and down (struck) to up and back (raised)
     const grip = add(shP, [1.4 + dir[0] * 1.6, 0, -1.4 + dir[2] * 2.0]);
@@ -345,6 +345,7 @@ function person(push, look, pose = {}) {
     const top = add(grip, mul(dir, 3.4));
     pole(add(grip, mul(dir, -1.2)), top, WOOD, 0.3);
     if (a === "axe") push(boxL(top, add(top, mul(edge, 1.3)), 0.9, 0.3, STEEL, { u: [0, 1, 0], ...W1 }));
+    else if (a === "mallet") push(boxL(add(top, mul(edge, -0.9)), add(top, mul(edge, 0.9)), 0.75, 0.75, METAL, { u: [0, 1, 0], ...W1 })); // a sledge's block head
     else push(boxL(add(top, mul(edge, -1.6)), add(top, mul(edge, 1.6)), 0.35, 0.3, STEEL, { u: [0, 1, 0], ...W1 }));
   } else if (a === "rod" && pose.cast != null) { // at work (a team on Fish): the rod held out over the water, its tip dipping as the line is worked
     const dip = Math.sin(pose.cast * Math.PI * 2) * 0.8;
@@ -378,6 +379,7 @@ function person(push, look, pose = {}) {
   if (look.carry === "game") { const hide = "#8a6a48", C = { sides: 6, group: G.carry }; push(limb(add(shP, [-2.4, 0, 1.4]), add(shP, [2.6, 0, 1.6]), 1.0, 1.2, hide, { ...C, tex: (face) => (face === "top" ? shade(hide, 0.2) : null) })); push(limb(add(shP, [2.6, 0, 1.6]), add(shP, [3.6, 0, 0.2]), 0.5, 0.5, hide, { ...C, sides: 4 })); push(limb(add(shP, [-2.4, R * 0.8, 1.2]), add(shP, [-2.6, R * 0.8, -1.4]), 0.3, 0.3, shade(hide, -0.3), { ...C, sides: 4 })); push(limb(add(shP, [3.8, 0.3, 0.6]), add(shP, [4.6, 0.6, 1.8]), 0.2, 0.2, BONE, { ...C, sides: 4 })); }
   if (look.carry === "fish") for (let i = 0; i < 3; i++) push(limb(add(SH(right), [0.6, R * 0.5, -4.8 - i * 0.6]), add(SH(right), [1.6, R * 0.5, -5.4 - i * 0.6]), 0.35, 0.25, i % 2 ? "#aab8c0" : "#8a9aa4", { sides: 4, group: G.carry }));
   if (look.carry === "furniture") push(boxL(add(shP, [0.1, 0, 0.6]), add(shP, [0.1, 0, 3.8]), 1.7, 2.3, FURN, { u: [1, 0, 0], group: G.carry, tex: (face, s, tt) => (face === "top" ? shade(FURN, 0.25) : Math.abs(tt - 0.55) < 0.06 || s < 0.08 || s > 0.92 ? shade(FURN, -0.35) : null) })); // a stove, a dresser, a fridge carried home: a box on the shoulders
+  if (look.post) pole([5.6, 0, 0], [5.6, 0, 5.0], WOOD, 0.45); // a marker post being driven in ahead (a Claim)
   if (look.carry === "small") push(limb(add(SH(right), [0.5, R * 0.5, -4.6]), add(SH(right), [0.7, R * 0.5, -6.4]), 0.5, 0.4, "#8a6a48", { sides: 5, taper: 0.7, group: G.carry }));
   // the neck and the head: the face on the front; tipped forward on the dead
   const drop = dead ? 0.8 : 0, hz = shoulderZ + 0.6 - drop, hf = lf + (dead ? 0.8 : 0) + (pose.lean ? 0.3 : 0);
@@ -917,23 +919,31 @@ export function mapHerdCanvas(kind, n, yaw = 315, frame = 0) {
 // work: at the job on the spot (a team of yours on a gathering order, ui/render.js; the user's request 2026-10-25), the
 // frame its phase: an axe or a pick swung (wood, stone), the rod worked (fish), bending to the water to fill the
 // buckets (water); the jobs that roam (hunt, forage, scavenge) walk. "stone": a pick over the shoulder.
-export const WORK_JOBS = new Set(["wood", "stone", "fish", "water"]); // the jobs with a pose of their own at work
+// The orders a team goes out on from the spot (ui/render.js outings; the user's request 2026-10-26: "Add survivor sprites
+// that go out for survey, quick look and any other order that makes sense"), walking in their kit and at work out there:
+// "survey" (a Quick look) and "fullsurvey" (a Survey) a cap and the glasses up to the eyes, "snare" bending to set or
+// check a snare, "gather" (boat materials on the shore) bending to pick them up, a sack on the back, "claim" pacing the
+// tile with a stick, or at the spot driving the marker post in with a sledge; "well" digging with a pick, on the spot.
+export const WORK_JOBS = new Set(["wood", "stone", "fish", "water", "survey", "fullsurvey", "snare", "gather", "claim", "well"]); // the jobs with a pose of their own at work
+const LOOKOUT = new Set(["survey", "fullsurvey"]), STOOP = new Set(["snare", "gather"]);
 export function mapWorkerCanvas(job, color, yaw = 315, frame = 0, load = "", work = false) {
   const y = roundYaw(yaw), f = clampFrame(frame), w = work && WORK_JOBS.has(job) && !load;
   return cached(`worker:${job}:${color}:${y}:${f}:${load}${w ? ":work" : ""}`, GRIDS.solo, y, f, (g) => mapWorkerCanvas(job, color, y, g, load, w), () => {
     const F = [], heavy = load === "logs" || load === "game";
-    const look = { cloth: color, pack: job === "hunt" || job === "fish", hat: job === "hunt" ? "cap" : job === "forage" || job === "wood" ? "straw" : job === "stone" ? "cap" : "", hatColor: shade(color, -0.4), load: !!load, carry: load };
-    look.arm = heavy ? "none" : job === "hunt" ? "rifle" : job === "scavenge" ? "bar" : job === "wood" ? "axe" : job === "stone" ? "pick" : job === "fish" ? "rod" : job === "forage" ? "basket" : job === "water" ? "buckets" : "none";
+    const look = { cloth: color, pack: job === "hunt" || job === "fish" || LOOKOUT.has(job), hat: job === "hunt" || LOOKOUT.has(job) || job === "claim" ? "cap" : job === "forage" || job === "wood" || job === "snare" ? "straw" : job === "stone" || job === "well" ? "cap" : "", hatColor: shade(color, -0.4), load: !!load, carry: load };
+    look.arm = heavy ? "none" : job === "hunt" ? "rifle" : job === "scavenge" ? "bar" : job === "wood" ? "axe" : job === "stone" || job === "well" ? "pick" : job === "fish" ? "rod" : job === "forage" ? "basket" : job === "water" ? "buckets" : job === "claim" ? (w ? "mallet" : "staff") : LOOKOUT.has(job) && w ? "binoc" : "none";
+    if (job === "claim" && w) look.post = true;
     if (load === "basket") look.arm = "basket";
     if (load === "buckets") look.arm = "buckets";
     if (load === "sack") { look.sack = true; look.arm = "bar"; }
     if (load === "fish" || load === "small") look.arm = "none";
-    if ((job === "scavenge" || job === "stone") && !load) look.sack = true;
+    if ((job === "scavenge" || job === "stone" || job === "gather" || job === "well") && !load) look.sack = true;
     const ph = phaseOf(f); // null standing: the pose at rest
     const pose = !w ? walkPose(f, 0, heavy ? { lean: 0.3, stride: 0.7 } : {})
-      : job === "wood" || job === "stone" ? { t: null, near: curNear, chop: ph ?? 0 }
+      : job === "wood" || job === "stone" || job === "well" || job === "claim" ? { t: null, near: curNear, chop: ph ?? 0 }
       : job === "fish" ? { t: null, near: curNear, cast: ph ?? 0 }
-      : { t: null, near: curNear, lean: 0.55 * (0.5 - 0.5 * Math.cos((ph ?? 0) * Math.PI * 2)) }; // water: down to the water and up again
+      : LOOKOUT.has(job) ? { t: null, near: curNear } // the glasses held up (the turning is the heading's: ui/render.js)
+      : { t: null, near: curNear, lean: (STOOP.has(job) ? 0.85 : 0.55) * (0.5 - 0.5 * Math.cos((ph ?? 0) * Math.PI * 2)) }; // water: down to the water and up again; snares and the shore's finds: down to the ground
     place(F, [0, 0, 0], 0, (q) => person(q, look, pose));
     return F;
   });
