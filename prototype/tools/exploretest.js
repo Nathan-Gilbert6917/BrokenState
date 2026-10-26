@@ -2,6 +2,9 @@
 // manuals and blueprints (sim/blueprints.js), crash events with a search circle (sim/crashes.js), and buildings that
 // wear and break with their repair jobs (sim/breakdowns.js); then long runs with no NaN.
 // Usage: node tools/exploretest.js [seed] [days for the long runs]
+//   The three long runs play side by side, each a child process of its own (node tools/exploretest.js --long <seed>
+//   <style|none> <days>, one JSON line out): one after another they ran past the runner's 10-minute limit with the
+//   machine shared (issue #63, 2026-10-26).
 //   BS_QUICK=1 (npm run test:quick): the same checks with the long runs 45 days each (not 200) and the crash clock
 //   watched for 80 days (not 120: still room for the first crash and three gaps at their longest, 14 + 3 × 20).
 import { createWorld, hub, atBase, makeSurvivor, day, tickHour, skill } from "../src/sim/world.js";
@@ -24,7 +27,12 @@ import * as BP from "../src/sim/blueprints.js";
 import * as L from "../src/sim/locks.js";
 import * as C from "../src/sim/crashes.js";
 import * as BD from "../src/sim/breakdowns.js";
+import { turnToBox } from "../src/sim/vision.js";
+import { execFile } from "node:child_process";
+import { availableParallelism } from "node:os";
+import { fileURLToPath } from "node:url";
 
+const LONG = process.argv[2] === "--long"; // child process: one long run (below)
 const seed = Number(process.argv[2] || 42);
 const QUICK = !!process.env.BS_QUICK;
 const longDays = Number(process.argv[3] || (QUICK ? 45 : 200));
@@ -44,6 +52,40 @@ const addPerson = (st, base, role, skills = {}) => {
 registerCombatHandler("xtest", () => {});
 const pct = (v) => `${Math.round(v * 100)}%`;
 const dis = (st, c) => (typeof c.disabled === "function" ? c.disabled(st) : !!c.disabled);
+
+// ======================================================================================
+// Child: one long run (seed, the autopilot's style or none, days): no crash, no NaN or negative stock; one JSON line.
+if (LONG) {
+  const sd = Number(process.argv[3]), style = process.argv[4] === "none" ? null : process.argv[4], days = Number(process.argv[5]);
+  const bad = (v) => typeof v !== "number" || !Number.isFinite(v);
+  const st = createWorld({ seed: sd, factionCount: 7 });
+  st.started = true;
+  if (style) setAutopilot(st, true, style);
+  let nan = "", stack = "";
+  try {
+    for (let k = 0; k < days * 24 && !st.gameOver; k++) {
+      tickHour(st);
+      if (!style) {
+        while (st.cards.length) { const c = st.cards.shift(); const ch = (c.choices || []).find((x) => /Return home|Mark it/.test(x.label)) || (c.choices || []).find((x) => !x.uiAction && !dis(st, x)); if (ch) ch.resolve(st); }
+        st.engagement = null; st.trade = null;
+      }
+      if (k % 24 === 0) {
+        for (const b of st.bases) {
+          for (const kk of SUPPLY_KEYS) if (bad(b.stock[kk] || 0) || (b.stock[kk] || 0) < 0) nan = `${b.name} ${kk} ${b.stock[kk]}`;
+          for (const f of BD.fixtures(b)) if (bad(f.wear || 0)) nan = `${b.name} ${f.type} wear ${f.wear}`;
+          for (const j of b.repairs || []) if (bad(j.done) || bad(j.hours)) nan = `${b.name} repair job ${JSON.stringify(j)}`;
+        }
+        for (const c of st.crashes || []) if (bad(c.radius) || bad(c.expires) || st.tiles[c.tile] == null) nan = `crash ${JSON.stringify(c)}`;
+        for (const [id, h] of Object.entries((st.tech && st.tech.progress) || {})) if (bad(h)) nan = `study ${id} ${h}`;
+      }
+      if (nan) break;
+    }
+  } catch (e) { stack = e.stack || String(e); }
+  const t = st.tech || { known: [] };
+  const line = `    ${style || "hands-off"} seed ${sd}: day ${day(st)}, crashes ${st.crashSeq || 0} (found ${(st.crashes || []).filter((c) => c.found).length} of the last ${(st.crashes || []).length}), breakdowns ${st.stats.breakdowns || 0}, broken now ${st.bases.reduce((a, b) => a + BD.brokenAt(b).length, 0)}, keys ${(st.keys || []).length}, blueprints known ${t.known.length} (${t.known.join(", ") || "none"}), found ${Object.values(t.found || {}).reduce((a, v) => a + v, 0)}`;
+  process.stdout.write(JSON.stringify({ nan, stack, day: day(st), crashSeq: st.crashSeq || 0, line }));
+  process.exit(0);
+}
 
 // A raid on a site of one of these types (a crew of 3 from the hub), started on its map. opts.picks: lockpicks
 // for the first member; opts.want(b): keep trying seeds until the map has it.
@@ -143,6 +185,10 @@ console.log("Locks: odds, Heat and noise");
   box.lock = { kind: "cage", open: false, tries: 0 };
   box.searched = false; box.contents = null;
   u.ap = 2;
+  // Facing it (vision.js turnToBox, the free Face): a search needs the unit next to the box and facing it, checked
+  // before the lock. standNext only places it; since the map sizes (67fe4c3, 2026-10-24) moved seed 42's raid the unit
+  // no longer happened to face the box, and the refusal was the facing one, not the lock's.
+  turnToBox(u, box);
   const err = combatAct(st, { type: "search", unit: u.id, box: box.id });
   check(/locked/i.test(err) && !searchableNear(b, u).includes(box), `a locked container cannot be searched until it is open ("${err}")`);
   // Picking: Stealth XP, the picks wear and snap.
@@ -574,36 +620,22 @@ console.log("Breakdowns and repairs");
 // ======================================================================================
 console.log(`Long runs (${longDays} days)`);
 {
-  const bad = (v) => typeof v !== "number" || !Number.isFinite(v);
-  for (const [sd, style] of [[seed, "balanced"], [seed + 1, "cautious"], [seed + 2, null]]) {
-    const st = createWorld({ seed: sd, factionCount: 7 });
-    st.started = true;
-    if (style) setAutopilot(st, true, style);
-    let nan = "", crashCount = 0;
-    try {
-      for (let k = 0; k < longDays * 24 && !st.gameOver; k++) {
-        tickHour(st);
-        if (!style) {
-          while (st.cards.length) { const c = st.cards.shift(); const ch = (c.choices || []).find((x) => /Return home|Mark it/.test(x.label)) || (c.choices || []).find((x) => !x.uiAction && !dis(st, x)); if (ch) ch.resolve(st); }
-          st.engagement = null; st.trade = null;
-        }
-        if (k % 24 === 0) {
-          for (const b of st.bases) {
-            for (const kk of SUPPLY_KEYS) if (bad(b.stock[kk] || 0) || (b.stock[kk] || 0) < 0) nan = `${b.name} ${kk} ${b.stock[kk]}`;
-            for (const f of BD.fixtures(b)) if (bad(f.wear || 0)) nan = `${b.name} ${f.type} wear ${f.wear}`;
-            for (const j of b.repairs || []) if (bad(j.done) || bad(j.hours)) nan = `${b.name} repair job ${JSON.stringify(j)}`;
-          }
-          for (const c of st.crashes || []) if (bad(c.radius) || bad(c.expires) || st.tiles[c.tile] == null) nan = `crash ${JSON.stringify(c)}`;
-          for (const [id, h] of Object.entries((st.tech && st.tech.progress) || {})) if (bad(h)) nan = `study ${id} ${h}`;
-        }
-        if (nan) break;
-      }
-    } catch (e) { crashCount++; console.log(e.stack); }
-    const t = st.tech || { known: [] };
-    check(!crashCount && !nan, `${style || "hands-off"} seed ${sd}: no crash and no NaN or negative stock over ${day(st)} days${nan ? ` (${nan})` : ""}`);
-    console.log(`    ${style || "hands-off"} seed ${sd}: day ${day(st)}, crashes ${st.crashSeq || 0} (found ${(st.crashes || []).filter((c) => c.found).length} of the last ${(st.crashes || []).length}), breakdowns ${st.stats.breakdowns || 0}, broken now ${st.bases.reduce((a, b) => a + BD.brokenAt(b).length, 0)}, keys ${(st.keys || []).length}, blueprints known ${t.known.length} (${t.known.join(", ") || "none"}), found ${Object.values(t.found || {}).reduce((a, v) => a + v, 0)}`);
-    if (style === "balanced") check((st.crashSeq || 0) >= Math.floor(day(st) / 25), `crashes keep coming (${st.crashSeq || 0} in ${day(st)} days)`);
-  }
+  const me = fileURLToPath(import.meta.url);
+  const runs = [[seed, "balanced"], [seed + 1, "cautious"], [seed + 2, null]];
+  const one = ([sd, style]) => new Promise((res) => execFile(process.execPath, [me, "--long", String(sd), style || "none", String(longDays)], { maxBuffer: 1 << 26 },
+    (e, out) => { try { res(JSON.parse(out)); } catch { res({ nan: "", stack: (e && e.stack) || `no result: ${String(out).slice(-300)}`, day: 0, crashSeq: 0, line: `    ${style || "hands-off"} seed ${sd}: the child failed` }); } }));
+  // At most one world a core (as depletetest's years): each child holds a whole world.
+  const out = new Array(runs.length);
+  let next = 0;
+  const lane = async () => { while (next < runs.length) { const i = next++; out[i] = await one(runs[i]); } };
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(runs.length, availableParallelism())) }, lane));
+  runs.forEach(([sd, style], i) => {
+    const r = out[i];
+    if (r.stack) console.log(r.stack);
+    check(!r.stack && !r.nan, `${style || "hands-off"} seed ${sd}: no crash and no NaN or negative stock over ${r.day} days${r.nan ? ` (${r.nan})` : ""}`);
+    console.log(r.line);
+    if (style === "balanced") check(r.crashSeq >= Math.floor(r.day / 25), `crashes keep coming (${r.crashSeq} in ${r.day} days)`);
+  });
 }
 
 console.log(`\n${passes} passed, ${fails} failed.`);
