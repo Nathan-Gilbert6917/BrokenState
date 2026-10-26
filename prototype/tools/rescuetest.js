@@ -29,8 +29,11 @@ const isOff = (st, ch) => (typeof ch.disabled === "function" ? ch.disabled(st) :
 // The sim opens tactical battles only "in a browser" (it checks typeof window). Tests that need one stub it.
 const browser = (on) => { if (on) globalThis.window = {}; else delete globalThis.window; };
 
-function raiders(st) {
-  const f = st.factions.find((x) => x.alive && x.type === "raider" && x.bases.length) || st.factions.find((x) => x.alive && x.bases.length);
+// near: the raider group whose base is nearest the hub (else the first).
+function raiders(st, near = false) {
+  const far = (x) => (near ? st.grid.distance(hub(st).tile, x.bases[0]) : 0);
+  const by = (ok) => st.factions.filter((x) => x.alive && x.bases.length && ok(x)).sort((a, b) => far(a) - far(b))[0];
+  const f = by((x) => x.type === "raider") || by(() => true);
   f.type = "raider"; f.known = true; f.pop = Math.max(f.pop, 12);
   return f;
 }
@@ -633,7 +636,10 @@ section("The betrayal ambush at the handover: about 15% with an even team, less 
 section("The autopilot: a ransom first when it can afford it, a rescue raid when strong and the captive is worth it");
 {
   const st = world(seed + 140);
-  const f = raiders(st);
+  // The raiders nearest the hub. Since 1370d1c (the map sizes of 2026-10-24: Normal 250 × 150) the first raider group
+  // on this seed has its base 174 tiles out, and the governor's envoy (no radio reaches them) took 351 hours to
+  // agree the deal (the check below waited 96); on the old 64 × 42 map every group was within a few days.
+  const f = raiders(st, true);
   f.jails = { [f.bases[0]]: 3 }; // jailhouse: a cell for them (with none they would be sold on, freed by a military buyer, or killed), and a tight one (the ransom under test, not an escape)
   f.goodwill = 0; // neutral: their price is the captive's worth to them, not a hostile one's ×1.5
   const a = captive(st, f, { skill: 8, health: 100 });
@@ -718,7 +724,9 @@ section("The autopilot: a ransom first when it can afford it, a rescue raid when
   // The governor's day: the ransom is agreed and the handover team sent.
   autopilotDaily(st);
   const viaEnvoy = RS.talksOf(st).some((t) => t.factionId === f.id);
-  for (let h = 0; h < 96 && !st.parties.some((q) => q.mission === "handover"); h++) { tickHour(st); autopilotResolve(st); }
+  // Up to 10 days (96 hours before 1370d1c): the envoy walks to the nearest raiders, 59 tiles out on this seed, and
+  // back with the deal (the handover team went out after 121 hours).
+  for (let h = 0; h < 240 && !st.parties.some((q) => q.mission === "handover"); h++) { tickHour(st); autopilotResolve(st); }
   check(st.parties.some((q) => q.mission === "handover" && q.dealId != null), `the governor agrees the ransom${viaEnvoy ? " (by envoy: no radio reaches them)" : ""} and sends the handover team`);
 }
 
