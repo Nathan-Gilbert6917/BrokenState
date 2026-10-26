@@ -28,6 +28,7 @@
 
 import { OFFICE_KINDS, OFFICE_AREAS, OFFICE_W, OFFICE_FIRMS, OFFICE_ROWS } from "./data-offices.js"; // the office buildings of every kind, with their firms (issue #27)
 import { PARK_KINDS, PARK_AREA_DEFS } from "./data-parks.js"; // amusement parks, fairgrounds and water parks (issue #60): pure data too
+import { NEWSHOP_KINDS, NEWSHOP_AREAS, NEWSHOP_W, NEWSHOP_FRANCHISES, NEWSHOP_ROWS } from "./data-newshops.js"; // six more shops (issue #55): pure data too
 import { TOWER_AREAS } from "./data-radiotower.js"; // a radio tower compound's rooms (issue #54)
 import { STADIUM_KINDS, STADIUM_AREAS, STADIUM_ROWS } from "./data-stadiums.js"; // sports stadiums and arenas (issue #57)
 
@@ -36,6 +37,7 @@ import { STADIUM_KINDS, STADIUM_AREAS, STADIUM_ROWS } from "./data-stadiums.js";
 /** @typedef {{ id: string, name: string, w: { city: number, suburb: number, town: number, scenic?: number }, look: Look, plan?: Plan, eat?: { cuisine: string, format: string, size: string, brew?: boolean, truck?: boolean } }} Franchise */
 
 import { VARIANTS } from "./data-eateries.js"; // the restaurant variants (issue #33): pure data too
+import { MINE_AREAS } from "./data-mines.js"; // a mine's raid rooms: the workings, the dry, the lamp room, the magazines (issue #52)
 import { MUSEUM_AREAS } from "./data-museums.js"; // a museum's raid rooms (issue #58): pure data too
 
 const G = (city, suburb, town) => ({ city, suburb, town });
@@ -154,6 +156,7 @@ export const NEW_KINDS = {
   },
   ...OFFICE_KINDS, // the office buildings (data-offices.js)
   ...PARK_KINDS, // the amusement parks (data-parks.js, issue #60)
+  ...NEWSHOP_KINDS, // the furniture store, laundromat, thrift store, bakery, butcher and deli (data-newshops.js, issue #55)
   ...STADIUM_KINDS, // the stadiums and arenas (data-stadiums.js, issue #57)
 };
 
@@ -226,7 +229,9 @@ export const AREA_DEFS = {
     loot: { electronics: [0.2, 1, 1], parts: [0.2, 1, 1], scrap: [0.3, 1, 2] }, gear: [["laptop", 0.01], ["phone", 0.01], ["camera", 0.005], ["handradio", 0.005]] } },
   ...OFFICE_AREAS,
   ...PARK_AREA_DEFS, // a park's rooms (data-parks.js, issue #60)
+  ...NEWSHOP_AREAS, // issue #55's rooms (data-newshops.js)
   ...TOWER_AREAS, // radio towers (issue #54, data-radiotower.js)
+  ...MINE_AREAS, // a mine's workings below, its dry, its lamp room, an explosives magazine (issue #52, minelayout.js)
   ...MUSEUM_AREAS, // a museum's galleries, gift shop, café, labs, stores, dock and security (issue #58, museumlayout.js)
   ...STADIUM_AREAS, // a venue's concessions, suites, team store, security, press box, groundskeeping (issue #57)
 };
@@ -268,6 +273,8 @@ export const PLACE_W = {
   police:      { ...G(0.15, 0.2, 0.2),  crawl: C(0.15, 0.2, 0.05, 1, 1.2, 1.3, true) },
   // the office buildings (data-offices.js): their own dice place them (shops.js officeExtras, officePlaces), not the shops'
   ...OFFICE_W,
+  // issue #55's six shops (data-newshops.js): a new world's only (shops.js: worldcfg.js legacyShopsR2)
+  ...NEWSHOP_W,
 };
 
 // ---------- the franchises ----------
@@ -517,6 +524,8 @@ export const FRANCHISES = {
   // the office buildings' firms (data-offices.js); the tower's are the site type "office"'s (the crawl's "offices" reads
   // them: shops.js franchisesOf)
   ...OFFICE_FIRMS,
+  // issue #55's six shops' chains and local names (data-newshops.js)
+  ...NEWSHOP_FRANCHISES,
 };
 // Restaurants by kind of food, format and size (issue #33, data-eateries.js VARIANTS): every food kind's franchise has
 // its cuisine, format and size (eat); the variants new with it join the lists, with their own look and plan.
@@ -642,6 +651,8 @@ export const ROWS = {
 
 // The office buildings' rows (data-offices.js), each table's own rows first.
 for (const [t, rows] of Object.entries(OFFICE_ROWS)) ROWS[t] = { ...rows, ...(ROWS[t] || {}) };
+// Issue #55's six shops' rows (data-newshops.js), the same way.
+for (const [t, rows] of Object.entries(NEWSHOP_ROWS)) ROWS[t] = { ...rows, ...(ROWS[t] || {}) };
 for (const [t, rows] of Object.entries(STADIUM_ROWS)) ROWS[t] = { ...rows, ...(ROWS[t] || {}) }; // the stadiums' (data-stadiums.js, issue #57)
 
 /** Merges rows into a table, never over a row it has (a module's own rows win). @param {Record<string, any>} into @param {Record<string, any>} [rows] */

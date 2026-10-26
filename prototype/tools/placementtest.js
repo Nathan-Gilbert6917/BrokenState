@@ -8,6 +8,7 @@
 //     stands;
 //   - the crawl: a city crawl's heart holds more hospitals than its rim;
 //   - older worlds: their POI lists and crawl blocks hash exactly as before the table (placeLegacy), a save from before
+//     the data centres gets none (dcLegacy, issue #51), nor one from before the sawmills (sawLegacy, issue #53) or the stadiums (stadLegacy, issue #57); a save from before
 //     loads as one; a new world's are the table's.
 // Usage: node tools/placementtest.js [worlds]
 import { createHash } from "node:crypto";
@@ -146,7 +147,7 @@ console.log("\nOlder worlds");
   const BASE = { 4242: ["9fe2456855e99de6", "1d818c3569a06463"], 4243: ["2de2a78738056c6b", "960da84ac7d53f41"] };
   const run = (seed, legacy) => {
     const st = createWorld({ seed, factionCount: 3, size: "small" });
-    if (legacy) st.placeLegacy = true;
+    if (legacy) { st.placeLegacy = true; st.shopsR2Legacy = true; st.civicLegacy = true; st.minesLegacy = true; } // a save from before the table is from before #55's shops #49's civic real scale and #52's mines too (save.js marks them all)
     for (const t of st.tiles) delete t.pois;
     ensurePois(st);
     const blocks = [];
@@ -168,6 +169,32 @@ console.log("\nOlder worlds");
   delete st.placeV;
   const back = deserializeState(serializeState(st));
   check(!!back.placeLegacy, "a save from before the table loads as an older world (placeLegacy)");
+  // Data centres (issue #51): a new world carries dcV; a save from before them loads with none on its tiles (dcLegacy).
+  const dc = createWorld({ seed: 4242, factionCount: 3, size: "small" });
+  check(dc.dcV === 1 && !dc.dcLegacy, "a new world carries dcV (issue #51)");
+  delete dc.dcV;
+  const dcBack = deserializeState(serializeState(dc));
+  for (const t of dcBack.tiles) delete t.pois;
+  ensurePois(dcBack);
+  check(!!dcBack.dcLegacy && !dcBack.tiles.some((t) => (t.pois || []).some((p) => p.kind === "datacenter")), "a save from before the data centres loads as one (dcLegacy): none on its tiles");
+  // Sawmills (issue #53): a new world carries sawV; a save from before them loads with none on its tiles (sawLegacy).
+  const sw = createWorld({ seed: 4242, factionCount: 3, size: "small" });
+  check(sw.sawV === 1 && !sw.sawLegacy, "a new world carries sawV (issue #53)");
+  delete sw.sawV;
+  const swBack = deserializeState(serializeState(sw));
+  for (const t of swBack.tiles) delete t.pois;
+  ensurePois(swBack);
+  check(!!swBack.sawLegacy && !swBack.tiles.some((t) => (t.pois || []).some((p) => p.kind === "sawmill")), "a save from before the sawmills loads as one (sawLegacy): none on its tiles");
+  // Stadiums and arenas (issue #57): a new world carries stadV and has some; a save from before them loads with none
+  // on its tiles (stadLegacy).
+  const sd = createWorld({ seed: 4242, factionCount: 3, size: "small" });
+  check(sd.stadV === 1 && !sd.stadLegacy, "a new world carries stadV (issue #57)");
+  check(sd.tiles.some((t) => (t.pois || []).some((p) => p.kind === "stadium")), "a new world has stadiums (issue #57)");
+  delete sd.stadV;
+  const sdBack = deserializeState(serializeState(sd));
+  for (const t of sdBack.tiles) delete t.pois;
+  ensurePois(sdBack);
+  check(!!sdBack.stadLegacy && !sdBack.tiles.some((t) => (t.pois || []).some((p) => p.kind === "stadium")), "a save from before the stadiums loads as one (stadLegacy): none on its tiles");
 }
 
 console.log(`\n${passed} passed, ${failed} failed (${((performance.now() - t0) / 1000).toFixed(1)} s)`);

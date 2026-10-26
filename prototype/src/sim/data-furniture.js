@@ -283,6 +283,9 @@ export const FURNITURE_KINDS = {
   campusbench: P("Bench",            HALF, 20, 40, "two", S21, false, ["yard"], "comfort:0.3"),
   statue:      P("Statue",           STEEL, 120, 900, "fixed", S1, false, ["yard"], "none"),
   fountain:    P("Fountain",         HALF, 80, 1500, "fixed", S22, false, ["yard", "mall"], "none"), // a campus's quad and a mall's centre court (#28, #30)
+  // ---------- churchyards (issue #49: civicsite.js lays them) ----------
+  // A headstone in a churchyard's rows: a low slab of stone, half cover, never lifted.
+  headstone:   P("Headstone",        HALF, 60, 300, "fixed", S1, false, ["yard"], "none"),
   // ---------- bunkers (issue #26: bunkerlayout.js lays them) ----------
   // The fixed fittings: the steel frame round a blast door, the air filtration plant, the water and fuel tanks, a
   // decontamination shower, the escape shaft's ladder and the vent stack up on the hillside. The hazmat suit rack and the
@@ -348,6 +351,39 @@ export const FURNITURE_KINDS = {
   grainbin:   P("Grain bin",     STEEL, 150, 4000, "fixed", S1, false, ["yard"], "none"),
   labfreezer: P("Lab freezer",   FULL, 40, 120, "two", S1, true, ["lab"], "storage:40", true),
   drum:       P("Fuel drum",     HALF, 25, 40, "two", S1, true, ["bay", "yard"], "storage:60"),
+  // ---------- mines and quarries (issue #52: minelayout.js lays them) ----------
+  // Fixed: the headframe's shaft and cage (the collar of the shaft, the cage in its guides under the sheave wheels), the
+  // hoist drum, the ore chute (an ore pass's or a tipple's bin and its gate), a cave-in (a rock fall across a drift: no
+  // way through), a timber set (the posts and cap holding a drift's back), a rock pillar (coal or salt left standing),
+  // the jaw crusher, the screen deck, a stockpile (gravel, ore, spoil: a heap in a yard, on a dump, in a stope).
+  // Liftable: an ore car (two people: ore as stone and scrap, combat.js BOX_LOOT orecart), a cap-lamp rack (a lamp room's
+  // charging rack: lamps, batteries, hard hats; BOX_LOOT lamprack) and an explosives box (a magazine's day box, locked:
+  // the explosives, rare; BOX_LOOT powderbox).
+  headframe:  P("Shaft and cage",   STEEL, 200, 6000, "fixed", S22, false, ["bay"], "none"),
+  hoist:      P("Hoist drum",       STEEL, 150, 4000, "fixed", S21, false, ["bay"], "none"),
+  orechute:   P("Ore chute",        FULL, 120, 1500, "fixed", S1, false, ["bay"], "none", true),
+  cavein:     P("Cave-in",          FULL, 300, 9000, "fixed", S1, false, ["bay"], "none"),
+  timberset:  P("Timber set",       POLE, 60, 120, "fixed", S1, false, ["bay"], "none", true),
+  pillar:     P("Rock pillar",      FULL, 400, 20000, "fixed", S22, false, ["bay"], "none"),
+  jawcrusher: P("Jaw crusher",      STEEL, 200, 8000, "fixed", S22, false, ["bay"], "none"),
+  screendeck: P("Screen deck",      HALF, 120, 3000, "fixed", S21, false, ["bay"], "none"),
+  gravelpile: P("Stockpile",        HALF, 200, 9000, "fixed", S1, false, ["yard", "bay"], "none"),
+  orecart:    P("Ore car",          HALF, 80, 300, "two", S1, true, ["bay", "yard"], "storage:120"),
+  lamprack:   P("Cap-lamp rack",    HALF, 30, 28, "one", S1, true, ["bay"], "storage:20", true),
+  powderbox:  P("Explosives box",   HALF, 60, 45, "two", S1, true, ["bay"], "storage:30"),
+  // ---------- sawmills and lumber yards (issue #53: sawmilllayout.js lays them) ----------
+  // Fixed: the headsaw (a band head rig on its frame, bolted to the floor), the edger, a log pile (tonnes of logs on the
+  // deck), a dry kiln's door (insulated steel on its track, on the kiln's wall) and the wigwam burner (a steel cone in
+  // the yard). Liftable: stacked lumber (a lift of boards on its stickers, two people: wood and building materials,
+  // combat.js BOX_LOOT lumberstack; at a base a stack to keep things on) and a saw-blade rack (a filing room's wall rack
+  // of blades: the saws, BOX_LOOT bladerack).
+  headsaw:     P("Headsaw",          STEEL, 80, 2500, "fixed", S21, false, ["bay"], "none"),
+  edger:       P("Edger",            HALF, 60, 1200, "fixed", S21, false, ["bay"], "none"),
+  logpile:     P("Log pile",         HALF, 120, 4000, "fixed", S1, false, ["yard"], "none"),
+  kilndoor:    P("Kiln door",        FULL, 90, 600, "fixed", S1, false, ["bay"], "none", true),
+  burner:      P("Wigwam burner",    STEEL, 150, 9000, "fixed", S1, false, ["yard"], "none"),
+  lumberstack: P("Stacked lumber",   HALF, 40, 140, "two", S1, true, ["bay", "yard", "shop"], "storage:150"),
+  bladerack:   P("Saw-blade rack",   HALF, 20, 24, "one", S1, true, ["bay"], "storage:20", true),
   // ---------- military bases, air bases, airports and prisons laid out like the real thing (issue #25: militarylayout.js) ----------
   // A suitcase in an airport's baggage hall, an ammo crate (rounds and grenades), a fuel bladder (fuel) and an inmate's
   // property locker (what was taken off them at intake) hold their own tables (combat.js BOX_LOOT). The barrier gate, the
@@ -397,6 +433,22 @@ export const FURNITURE_KINDS = {
   screener:     P("Walk-through scanner", POLE, 30, 120, "fixed", S1, false, ["office"], "none"),
   liquorcab:    P("Liquor cabinet",       HALF, 25, 30, "one", S1, true, ["office", "living", "bar"], "storage:30", true),
   phonebooth:   P("Phone booth",          C(false, 1, false), 30, 200, "fixed", S1, false, ["office"], "none", true),
+  // ---------- data centres (issue #51: datacenter.js lays them) ----------
+  // Fixed: a CRAC unit (a computer-room air conditioner, plumbed to the chillers), a hall's 2 MW diesel set on its skid,
+  // a cable tray riser, a substation's transformer and a cooling tower out in the yard. Liftable: a UPS cabinet and a
+  // battery string (their batteries are the loot: combat.js BOX_LOOT), a drum of cable (copper: scrap), an open-frame
+  // mining rig (a crypto shed's) and the standby generator, which is data-power.js's Home standby generator item
+  // (FURNITURE_ITEM_KEY), set at a base like any found set. A rack is #15's serverrack, the monitor wall #26's screens.
+  crac:         P("CRAC unit",          FULL, 60, 450, "fixed", S1, false, ["datacenter"], "none", true),
+  dcgen:        P("Diesel generator",   STEEL, 150, 15000, "fixed", S1, false, ["datacenter", "yard"], "none"),
+  cabletray:    P("Cable tray riser",   POLE, 20, 40, "fixed", S1, false, ["datacenter"], "none", true),
+  transformer:  P("Transformer",        STEEL, 150, 9000, "fixed", S1, false, ["yard"], "none"),
+  coolingtower: P("Cooling tower",      FULL, 120, 5000, "fixed", S1, false, ["yard"], "none"),
+  upscab:       P("UPS cabinet",        FULL, 50, 260, "two", S1, true, ["datacenter"], "storage:20", true),
+  batterystring: P("Battery string",    HALF, 40, 180, "two", S1, true, ["datacenter"], "storage:10"),
+  cablereel:    P("Cable drum",         HALF, 25, 60, "two", S1, true, ["datacenter", "bay"], "storage:10"),
+  miningrig:    P("Mining rig",         HALF, 15, 28, "one", S1, true, ["datacenter"], "storage:10"),
+  standbyset:   P("Standby generator",  STEEL, 60, 95, "two", S1, false, ["datacenter", "bay"], "none"),
   // ---------- museums (issue #58: museumlayout.js lays them) ----------
   // The art worth carrying home (FURNITURE_VALUE, below): a sculpture on its plinth (two people), a framed gallery
   // painting on its stand, a marble bust, an antique vase, a suit of armour, a ship model on its stand; a wax figure (not
@@ -415,6 +467,12 @@ export const FURNITURE_KINDS = {
   fossil:      P("Dinosaur skeleton",     C(false, 1, false), 60, 1200, "fixed", S22, false, ["museum"], "none"),
   cannon:      P("Field gun",             STEEL, 90, 1100, "fixed", S21, false, ["museum"], "none"),
   railcar:     P("Railway handcar",       HALF, 60, 400, "fixed", S21, false, ["museum"], "none"),
+  // ---------- issue #55's shops (shoplayout.js): a bakery's floor mixer, a butcher's band saw, a laundromat's change
+  // machine (its quarters: combat.js BOX_LOOT changer) and folding table ----------
+  mixer:        P("Floor mixer",          STEEL, 40, 110, "two", S1, false, ["kitchen"], "none", true),
+  meatsaw:      P("Band saw",             HALF, 30, 120, "two", S1, false, ["kitchen", "bay"], "none", true),
+  changer:      P("Change machine",       FULL, 40, 90, "two", S1, true, ["laundry", "shop"], "storage:10", true),
+  foldtable:    P("Folding table",        HALF, 12, 14, "one", S1, false, ["laundry", "shop", "kitchen"], "work:table"),
   // ---------- lootable decor (issue #13: decor.js places them; light comfort pieces for the base) ----------
   // The plant and the floor lamp stand on a room's floor cell; the painting and the wall clock hang on a wall (decor.js:
   // c.wart = { k, d, piece: true } on the wall cell, the wall's own kind unchanged) and stand on a cell only once set down.
@@ -471,7 +529,7 @@ export const pieceDef = (k) => FURNITURE_KINDS[k] || null;
 // POWER_GEAR.fridge (key "fridge"), so it has no f_fridge; the cot is data-beds.js's BED_GEAR.cot (a base's camp bed),
 // so it has no f_cot; a bunker's generator is data-power.js's genset_military, so it has no f_genset. Merged into GEAR by data.js (marked piece: kept out of the starting kits and trunks, whose dice
 // would change). itemKey(k): the item key for a cell kind (null when fixed).
-export const FURNITURE_ITEM_KEY = { fridge: "fridge", cot: "cot", genset: "genset_military" };
+export const FURNITURE_ITEM_KEY = { fridge: "fridge", cot: "cot", genset: "genset_military", standbyset: "genset_standby" }; // a data centre's standby set is the found Home standby generator (data-power.js GENSETS, issue #51) // a bunker's generator is the found Military tactical generator (data-power.js GENSETS, issue #26)
 // What a piece is worth as an item where its weight says too little (value: kg / 4 otherwise): a museum's art (issue #58).
 export const FURNITURE_VALUE = { sculpture: 70, artwork: 50, bust: 35, vase: 30, armourstand: 40, shipmodel: 25 }; // a bunker's generator is the found Military tactical generator (data-power.js GENSETS, issue #26)
 export const itemKey = (k) => (!FURNITURE_KINDS[k] || FURNITURE_KINDS[k].carry === "fixed" ? null : FURNITURE_ITEM_KEY[k] || `f_${k}`);
