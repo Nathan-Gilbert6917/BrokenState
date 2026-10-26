@@ -188,6 +188,8 @@ export function deserializeState(save) {
   // Rooms laid out room by room (roomlayout.js, 2026-10-25): a save from before keeps every building's old furnishing,
   // so its places' containers keep their ids (poicont.js poi.cont, citycrawl.js restoreBuilding).
   if (!state.roomsV) { state.roomsLegacy = true; state.roomsV = 1; }
+  // Prison complexes (prison.js, issue #31): a save from before keeps its prison's one-building pick and no jails.
+  if (!state.prisonV) { state.prisonLegacy = true; state.prisonV = 1; }
   // Footprint shapes (buildingmaps.js spec.shape, issue #23, 2026-10-25): a save from before keeps every building a
   // rectangle as it was (the big school too), its containers' ids with it.
   if (!state.shapesV) { state.shapesLegacy = true; state.shapesV = 1; }

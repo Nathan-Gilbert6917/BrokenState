@@ -141,6 +141,9 @@ export const RAID_MAPS = 1;
 export const legacyRaids = (state) => !!(state && state.raidLegacy);
 // A save from before homes were furnished room by room (save.js roomsLegacy): buildingmaps.js furnishes as it did.
 export const legacyRooms = (state) => !!(state && state.roomsLegacy);
+// A save from before the prison complexes (issue #31, save.js prisonLegacy: no state.prisonV): a prison keeps its pick
+// of one building (buildingmaps.js SITES.prison) and no town has a county jail (pois.js jailExtra).
+export const legacyPrisons = (state) => !!(state && (state.prisonLegacy || state.roomsLegacy));
 // A save from before buildings had footprint shapes (save.js shapesLegacy, issue #23): every building the rectangle it was.
 export const legacyShapes = (state) => legacyRooms(state) || !!(state && state.shapesLegacy);
 // A save from before buildings at real size (issue #24, save.js scaleLegacy; an older one still, roomsLegacy): every
