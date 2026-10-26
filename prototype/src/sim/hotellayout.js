@@ -156,7 +156,7 @@ export function hotelSpec(rng, o = {}) {
   const kind = pinned ? pinned.kind : HOTEL.KINDS.includes(plan.hotel) ? plan.hotel : pickKind(rng);
   const v = pinned || (HOTEL.KINDS.includes(plan.hotel) ? hotelVariantById(CLASSIC[kind]) : hotelVariantById(hotelVariantFor(kind, null, null, rng.next())));
   const S0 = HOTEL.SIZE[kind], vs = (v && v.size) || {};
-  const shaped = !!(o.shapes && SHAPES[v.id]), SR = shaped ? REAL_SIZE[`hotel${kind}`].sizes[v.id] : null; // a new save's shaped variant (issue #50): its box by its sizes row
+  const shaped = !!(o.shapes && !o.legacy && SHAPES[v.id]), SR = shaped ? REAL_SIZE[`hotel${kind}`].sizes[v.id] : null; // a new save's shaped variant (issue #50): its box by its sizes row
   const S = SR ? { w: SR.w, d: SR.d, storeys: SR.storeys || vs.storeys || S0.storeys } : { w: vs.w || S0.w, d: vs.d || S0.d, storeys: vs.storeys || S0.storeys };
   const maxS = o.maxStoreys || 8;
   const bw = pick(rng, S.w), bh = pick(rng, S.d);
