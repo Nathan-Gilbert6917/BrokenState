@@ -1241,6 +1241,118 @@ The user's requests (2026-10-25, issue #34 of the interiors epic #7): "add libra
 - **Scenes** (interiorscenes.js `registerScene`, `kinds: ["library"]`, `when`: a map whose rooms carry a lib mark, so an older save's library rolls as it did): `readers` (book carts and shelving shoved across the aisles at a stacks room's door, the readers behind it dead or, upstairs, alive), `libshelter` (cots in rows in a reading room, a soup kitchen of a stove, a water barrel and tins in the meeting room or the café), `archivesealed` (the closed stacks', the genealogy archive's or the rare-books room's door locked steel, the archivist inside), `lastnotice` (the librarian's last notice on the circulation desk, papers by it).
 - **Older saves** (worldcfg.js `legacyRooms`): the old plan, its dice as before (no lib marks; the containers' ids line up). The `library` key, `SITES.library` and the five old franchise ids keep working.
 - **For other buildings**: `libraryPlan(rng, { variant, plan, w, h, storeys })` returns a spec (and `spec.lib`); `"variant/plan"` picks a plan. #30's strip mall can place `strip` at its unit's size, #28's university and #27's courthouse a library of their size.
+
+## Farms and ranches
+
+The user's request (2026-10-26, issue #62 of the round-2 epic #39): "renovations to Farms Farm houses ranches farm stands sheds". New saves only (`state.farmV`; save.js marks an older save `farmLegacy`, worldcfg.js `legacyFarms`).
+
+- **A farm and a ranch are one map** (`farmstead.js farmsteadMap`, through `compound.js`): `buildingmaps.js FARM_SITES` makes a farm site and a ranch site one option (`BUILDINGS.farm`, `BUILDINGS.ranch`, flag `farmstead`) that opens the whole place, as a prison or a campus does. South to north: the county road along the south edge (its two ends the ways in and out; the team's vehicle at the west end), the front row (the farmhouse, a farm stand by the road, some of the small sheds) facing it, the farmyard (gravel, the lane up from the road, the yard's pieces, 1–3 farm vehicles to search: an outdoor `wreck` area), the back row(s) (barns, sheds, working buildings) facing the yard, and the back land to the north edge: plots side by side, each fenced (wire, a board fence round a corral or an arena) with a gate. Five ways out: the road's two ends, the north edge on the lane, the yard's west and east edges.
+- **The pick** (`farmLayout`): the shared picker's `farm:layouts` / `ranch:layouts` (`variantpick.js`), the site's hash dice, weighed by the tile's terrain (`w.plains`, `w.hills`; `w.any` 0.5 elsewhere: a town satellite's farm) with #42's `placementCtx`; `option.layout` (or `tile.loc.farm`, a render's) pins one.
+- **Each building** is its own plan from its own dice (`<option id>#<n>`): its type's layout pinned by the site layout (a list of ids: the building's dice pick one), drawn at its real size (`realScale`), its scenes rolled on it before it is copied in (`placeBuilding`: its rooms named "<room>, <building>", its containers `c.house`, so the site's ledger keeps each building apart, `poicont.js poiHouses` counts them: `farmBuildingCount`). A second of a name is numbered ("Poultry house 2").
+- **The dead**: `map.deadScale` = 1.4 × the map's area / 150², at least 1. The raid's line: "You reach X: N buildings round the yard", then `farmIntro` (the layout's name, the plots out back).
+- **Map caps**: `battlesize.js MAP_CAP` farm 300, ranch 300 (the default; the largest layout, the ranch with an airstrip, is about 210 × 170), so no perf budget run is needed.
+- **The farm's own types** (`farmplans.js FARM_PLANS`, `buildvariants.js LAYOUTS` shed, farmstand, farmbldg: the registry's `layout:<key>`; sizes `data-buildingsize.js REAL_SIZE` rows with a `sizes` row per plan, `planned`, one storey each): a shed or a farm stand POI in a new save opens its own type (`pois.js` gives it a `poi.lay` of its type, `poiraid.js poiPlace` the type's key, named by the layout); an older save's (no layout: `legacyFarms` in `makePoi`) keeps the machine shed's and the corner shop's building. The farm buildings stand only on farms and ranches (`data-placement.js` "of farm").
+- **Rooms**: a leaf's `farm` mark picks its style (`FARM_STYLES`: a tool bench, nest boxes, the smoker, the evaporator, produce bins, brewing tanks and wine racks, saddle racks...; `buildingmaps.js` styleOf: `farmStyle` after #37's `industryStyle`); a leaf's `ind` mark takes #37's (cold rooms, greenhouses, packing, bunks, the dock).
+- **Pieces** (`data-furniture.js`, all fixed, each with its iso drawing in `ui/isoview.js`): silo, stock tank, squeeze chute, calf hutch, beehive, trellis, nest boxes. The ground: crop fields (`field`), pastures, the range (bushes, scattered trees), corrals (a squeeze chute by the gate), riding arenas (bleachers), a manure lagoon (water cells, `c.lagoon`), an orchard and a sugarbush (trees in rows), a vineyard (trellis rows), a pumpkin patch, Christmas trees, an airstrip (a graded gravel strip, its lamp, fuel drums).
+- **Loot** (combat.js `AREAS`, new rooms only): `feedroom` (feed sacks 30%, seed packets 12%, the wormer 8%, rope, barbed wire, food), `rootcellar` (food 85%, preserved 60%, jars 40%), `toolshed` (scrap, parts, fuel; rope, barbed wire, seed, a pry bar, a sledge, a pick, a hatchet, a machete, a bear trap; `data-tools.js AREA_TOOLS` 16%: shovels, axes, saws, a tool kit), `vetroom` (the wormer 30%, meds 15%), `fuelstore` (fuel 70%, propane 20%), `standshop` (food 85%, jars, honey, seed). Each finds what the room it stands for finds in the small-finds tables (`loot.js FARM_AREAS`: a barn's, a kitchen's, a workshop's, a garage's, a store's), its tags that room's plus "farm". New items (`data.js`): seed packets (`seeds`), a sack of feed (`feedsack`, bulky, 20 kg), a coil of rope (`rope`), trade goods for now, each with its icon (`ui/itemart/tools.js`). The farmhouse keeps its guns (hunting rifles, lever rifles, shotguns, the .22: `AREAS.farmhouse`) and its gun cabinet; the barns theirs. `lootsense.js` rows: shed (tools, food; no guns), farmstand (food; no guns), farmbldg, farm, ranch (food, long guns, tools, fuel, the wormer); `tools/lootsensetest.js BASELINE` shed 23.9, farmstand 35.8, farmbldg 89.9, farm 635.6, ranch 628.4.
+- **Scenes** (`interiorscenes.js registerScene`, only on these plans' rooms): `cellarhide` (a family hid in a root cellar, a springhouse or a cold store, still there) and `bunkstand` (the hands' stand in a bunk room: a footlocker against the door, the ones who held it).
+- **Placement** (#42): a farm site and a ranch stand where mapgen.js puts them (farms on the plains and as a town's satellite out in its countryside, ranches on the plains and the hills; no town or city tile), and the layout follows the terrain; `data-placement.js` keeps farm (the `farm` profile: rural 2, highway 0.8, coast 0.6, scenic 0.5, town 0.2 for a farm POI at a town's edge), ranch, shed and farmstand as they were (rural most) and adds farmbldg "of farm". Dropping farm's town weight was tried and left out: it changed which POIs a world regenerates after a save is loaded (tools/savetest.js: seed 42's played-on digest differed), a tile-class reading at load that is #42's to look at.
+- **Decisions**: a farm POI that is not a site (`pois.js` plains and hills lists) keeps the farmhouse it opened (only the sites became whole places); the new items have no use yet beyond trade (a feed and seed economy would be its own ticket); every plan of the three new types is one storey; the yard's pieces are fixed, so none needs an item drawing. On the world map a bare tile's POI is labelled by its name as the panel heads it (`ui/render.js siteLocOf`: `poiName`, its layout's, "Honey stand", not the kind's "Farm stand"), and a POI label that would overlap one already drawn tries a line and two lines lower before it gives way (farm country's POIs stand side by side).
+- **Tests**: `tools/farmsteadtest.js` (the 14 farm and 13 ranch layouts built pinned: buildings, plots, cars, the ground and every front door reached from the way in, within 300 × 300, the same map twice; the pick by terrain; a new save's farm one map, an older save's its farmhouse and barn; the sheds' and farm stands' POIs; the farm loot; the new types' plans), `tools/varianttest.js` (12+ distinct plans for shed, farmstand, farmbldg, farm, ranch; every layout pair two differences apart; the registry), `tools/lootsensetest.js`, `tools/farmshot.cjs` (renders: the whole place from above, the yard, three buildings with the roofs off, the yard's pieces, a plot).
+
+### The variants
+
+#### Sheds (`shed`)
+
+| Plan | Rooms | Size (m) | Storeys |
+|---|---|---|---|
+| Tool shed | Tool shed, Lean-to | 7–9 × 5–6 | 1 |
+| Potting shed | Potting shed, Seed store | 8–10 × 6–7 | 1 |
+| Pump house | Pump room, Pressure tank | 7–8 × 5–6 | 1 |
+| Smokehouse | Smoke room, Butchering bench | 6–7 × 7–8 | 1 |
+| Root cellar | Root cellar, Cellar steps | 7–9 × 8–9 | 1 |
+| Springhouse | Spring trough, Cold shelf | 7–9 × 6–7 | 1 |
+| Chicken coop | Roost, Feed bin | 9–11 × 6–7 | 1 |
+| Woodshed | Woodshed | 7–9 × 5–6 | 1 |
+| Corn crib | Corn crib, Drive-through | 9–11 × 6–7 | 1 |
+| Outhouse | Two-holer, Lime bin | 8–9 × 6–7 | 1 |
+| Well house | Well room, Pump bench | 7–8 × 6–6 | 1 |
+| Generator shed | Generator shed, Fuel cans | 7–9 × 6–7 | 1 |
+| Icehouse | Ice room, Sawdust bin | 8–9 × 6–7 | 1 |
+
+#### Farm stands (`farmstand`)
+
+| Plan | Rooms | Size (m) | Storeys |
+|---|---|---|---|
+| Roadside stand | Stand, Back room | 8–10 × 7–8 | 1 |
+| Produce barn | Produce barn, Cooler, Farm office | 16–20 × 12–14 | 1 |
+| Pick-your-own stand | Weigh station, Basket store | 10–12 × 7–8 | 1 |
+| Honey stand | Honey stand, Extracting room | 10–12 × 7–8 | 1 |
+| Pumpkin patch stand | Hay barn, Pumpkin stand | 14–18 × 10–12 | 1 |
+| Christmas tree lot | Lot trailer, Netting shed | 10–12 × 6–7 | 1 |
+| Farmers' market shed | Market shed | 20–26 × 9–11 | 1 |
+| Egg stand | Egg stand, Egg cooler | 8–10 × 6–7 | 1 |
+| Cider mill stand | Cider stand, Cider press | 12–14 × 9–10 | 1 |
+| Berry stand | Berry stand, Jam kitchen | 9–11 × 8–9 | 1 |
+| Flower stand | Flower house, Flower stand | 12–14 × 8–9 | 1 |
+| Maple sugar store | Maple store, Evaporator room | 11–13 × 8–9 | 1 |
+| Farm creamery | Creamery shop, Cheese room, Milk cooler | 12–15 × 10–11 | 1 |
+
+#### Farm buildings (`farmbldg`)
+
+| Plan | Rooms | Size (m) | Storeys |
+|---|---|---|---|
+| Milk house | Bulk tank room, Wash-up | 9–11 × 7–8 | 1 |
+| Greenhouse | Greenhouse, Head house | 22–30 × 9–11 | 1 |
+| Packing shed | Packing line, Cold storage, Packing office | 22–28 × 14–17 | 1 |
+| Cold storage | Loading dock, Apple store, Potato store | 18–22 × 13–15 | 1 |
+| Winery | Crush pad and tanks, Barrel cellar, Tasting room | 22–28 × 16–19 | 1 |
+| Bunkhouse | Bunk room, Cook room, Wash room | 15–18 × 9–11 | 1 |
+| Indoor riding arena | Riding arena, Tack room, Viewing room | 36–44 × 20–24 | 1 |
+| Show stable | Stable office, Stall, Tack room, Aisle, Wash stall | 24–30 × 13–15 | 1 |
+| Sugarhouse | Evaporator, Wood room | 10–12 × 8–9 | 1 |
+| Meat processing shed | Cutting room, Hanging cooler | 14–16 × 10–12 | 1 |
+| Ranch cookhouse | Mess hall, Cookhouse kitchen | 15–18 × 10–12 | 1 |
+| Feed mill | Mixer room, Bagged feed | 14–16 × 12–14 | 1 |
+| Scale house | Farm office, Scale room | 10–12 × 7–8 | 1 |
+
+#### Farms (`farm:layouts`)
+
+| Layout | Buildings (their plans) | Farmyard | Out back | Map (cells) | Terrain weight (plains / hills / else) |
+|---|---|---|---|---|---|
+| Dairy farm | Foursquare farmhouse, Dairy barn, Milk house, Machine shed, Hay barn, Chicken coop | silo 2–3, calfhutch 6–10, hay 4–8 | pasture, manure lagoon, crop field | 145 × 116 | 2 / 1.2 / 0.5 |
+| Grain farm | Farmhouse, Grain dryer shed, Pole shed, Fuel shed, Generator shed | grainbin 4–6, fueltank 1–2, drum 2–4 | crop field | 153 × 122 | 3 / 0.4 / 0.5 |
+| Hog farm | Ranch farmhouse, Hog barn 1, Hog barn 2, Feed mill, Tool shed | grainbin 2–3, fueltank 1–1 | corral, manure lagoon, crop field | 140 × 112 | 1.5 / 0.6 / 0.5 |
+| Poultry farm | Tenant house, Poultry house 1, Poultry house 2, Poultry house 3, Generator shed, Machine shed | grainbin 2–4, drum 2–3 | crop field, pasture | 153 × 122 | 1.2 / 0.8 / 0.5 |
+| Orchard | Old farmhouse, Cider mill stand, Packing shed, Cold storage, Tool shed | crate 3–6, beehive 2–4 | orchard, pasture | 145 × 116 | 0.6 / 1.6 / 0.5 |
+| Vegetable farm | Farmhouse, Produce barn, Greenhouse 1, Greenhouse 2, Potting shed, Tractor garage | crate 4–8, barrel 2–4 | crop field | 145 × 116 | 1.5 / 0.6 / 0.5 |
+| Horse farm | Big farmhouse, Horse barn, Show stable, Indoor riding arena, Woodshed | hay 4–8, stocktank 1–2 | riding arena, pasture | 161 × 129 | 1 / 1 / 0.5 |
+| Homestead | Homestead, Chicken coop, Smokehouse, Root cellar, Outhouse, Woodshed, Springhouse | hay 2–4, barrel 2–3 | crop field, pasture, orchard | 123 × 98 | 0.6 / 1.4 / 0.5 |
+| Amish farm | I-house, Bank barn, Corn crib and granary, Outhouse, Icehouse, Smokehouse, Egg stand | hay 4–8, barrel 2–4 | crop field, pasture | 140 × 112 | 1 / 1 / 0.5 |
+| Vineyard and winery | Modern farmhouse, Winery, Equipment shed with a shop, Tool shed | drum 2–4, crate 3–5 | vineyard, orchard | 145 × 116 | 0.5 / 1.6 / 0.5 |
+| Hobby farm | Modern farmhouse, Sheep barn, Chicken coop, Potting shed, Honey stand | beehive 3–6, hay 2–3 | pasture, crop field | 123 × 111 | 1 / 1 / 0.5 |
+| Tobacco farm | I-house, Tobacco barn 1, Tobacco barn 2, Tobacco barn 3, Tractor garage, Well house | drum 1–3, hay 2–4 | crop field | 153 × 122 | 1 / 1 / 0.5 |
+| Pumpkin and tree farm | Farmhouse with a summer kitchen, Pumpkin patch stand, Christmas tree lot, Tool shed | hay 6–10, crate 2–4 | pumpkin patch, christmas trees | 140 × 112 | 0.8 / 0.8 / 0.5 |
+| Sugarbush farm | Old farmhouse, Sugarhouse, Maple sugar store, Woodshed, Springhouse | barrel 3–6, drum 1–2 | sugarbush, pasture | 131 × 108 | 0.2 / 1.2 / 0.5 |
+
+#### Ranches (`ranch:layouts`)
+
+| Layout | Buildings (their plans) | Farmyard | Out back | Map (cells) | Terrain weight (plains / hills / else) |
+|---|---|---|---|---|---|
+| Cattle ranch | Ranch farmhouse, Bunkhouse, Horse barn, Hay barn, Machine shed | stocktank 2–3, hay 4–8, fueltank 1–1 | corral, pasture | 162 × 130 | 2 / 1 / 0.5 |
+| Guest ranch | Big farmhouse, Ranch cookhouse, Bunkhouse 1, Bunkhouse 2, Horse barn, Outhouse | hay 3–6, stocktank 1–2 | riding arena, corral, pasture | 159 × 127 | 1 / 1.4 / 0.5 |
+| Sheep station | Homestead, Sheep barn 1, Sheep barn 2, Bunkhouse, Tool shed | hay 4–8, stocktank 1–3 | corral, pasture | 150 × 120 | 0.8 / 2 / 0.5 |
+| Bison ranch | Ranch farmhouse, Cattle barn, Meat processing shed, Truck shed | stocktank 2–3, hay 6–10 | corral, pasture | 170 × 136 | 1.5 / 0.8 / 0.5 |
+| Desert ranch | Ranch farmhouse, Well house, Pump house, Generator shed, Pole barn, Bunkhouse | stocktank 3–5, fueltank 1–2, drum 2–4 | corral, range | 150 × 120 | 1 / 0.6 / 0.5 |
+| Ranch with an airstrip | Modern farmhouse, Quonset hut, Fuel shed, Horse barn, Bunkhouse | fueltank 1–2, drum 3–5, stocktank 1–2 | airstrip | 181 × 145 | 1.2 / 0.3 / 0.5 |
+| Horse ranch | Big farmhouse, Show stable, Indoor riding arena, Hay barn, Tool shed | hay 4–8, stocktank 1–2 | riding arena, pasture | 159 × 127 | 1 / 1 / 0.5 |
+| Feedlot | Modern farmhouse, Feed mill, Scale house, Cattle barn, Truck shed | silo 2–3, grainbin 2–4, fueltank 1–1 | corral, manure lagoon | 170 × 136 | 1.5 / 0.3 / 0.5 |
+| Cow camp | Homestead, Ranch cookhouse, Bunkhouse, Hay barn, Outhouse | hay 3–6, stocktank 1–2, barrel 2–3 | corral, range | 142 × 114 | 0.6 / 1.5 / 0.5 |
+| Rodeo ranch | Ranch farmhouse, Horse barn, Indoor riding arena, Bunkhouse, Tool shed | hay 4–8, stocktank 1–2 | riding arena, corral | 159 × 127 | 1 / 0.8 / 0.5 |
+| Goat ranch | Tenant house, Sheep barn, Farm creamery, Milk house, Chicken coop | hay 3–6, stocktank 1–2 | corral, pasture | 134 × 107 | 0.8 / 1.5 / 0.5 |
+| Family ranch | Foursquare farmhouse, Cattle barn, Horse barn, Equipment shed with a shop, Chicken coop, Root cellar | hay 4–8, stocktank 1–2, fueltank 1–1 | corral, pasture, crop field | 159 × 127 | 1.2 / 1 / 0.5 |
+| Hunting ranch | Modern farmhouse, Bunkhouse, Meat processing shed, Equipment shed with a shop, Generator shed | drum 2–3, hay 2–4 | range, pasture | 150 × 120 | 0.5 / 1.6 / 0.5 |
+
 ## Civic and medical buildings at real scale
 The user's request (2026-10-26, round-2 epic #39, issue #49): "updating the map size of civic and medical buildings to be max size of 350x350". #36 drew its plans at the old map sizes (at most 36 × 25 m). In a world made since #49 every plan of the hospital, infirmary, clinic, vet, church, police station, fire station, city hall and courthouse is laid out at its real size, the big ones on maps up to 350 × 350, and four new plans are sites of several buildings.
 - **Real scale.** Every plan has a sizes row (`data-buildingsize.js CIVIC_REAL`: `[w0, w1, d0, d1, storeys0, storeys1, city0, city1]` in metres, turned into `REAL_SIZE[kind].sizes[id]`; a `general` plan's row is `{}`, its kind's own row, so #14's and #15's plans scale as before). `civicvariants.js variantSpec` stamps `realSize` (the row) and `vscale` on a named plan; the plan draws its storeys from the row (`sized` while `REAL` is set: a city's range in a city) so its floors' plans are its own; `buildingmaps.js realScale` lays the plan out at the row's footprint in wings of the plan (its rooms split, its containers to the square metre as at its own size: `boxK`), never smaller than drawn, keeping the plan's storeys. City hall and the courthouse (#27's 12 plans each) go through `civicScaled` the same way (their rows override `planned`). Sizes, a few: a rural health post 12–16 × 10–12 m, a cottage hospital 24–30 × 16–20, a county hospital 44–56 × 30–38 on 2–4 storeys, a teaching hospital 80–110 × 46–60 on 4–5 (a city's 6–9), a regional medical tower 40–50 × 30–36 on 5–7 (a city's 7–10), a cathedral 40–50 × 70–90, a police headquarters 40–54 × 28–36 on 4–5 (a city's 6–10). The tall rule (`OPEN_STOREYS`) still builds 4 floors of a taller building.
