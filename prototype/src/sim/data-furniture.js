@@ -348,6 +348,26 @@ export const FURNITURE_KINDS = {
   grainbin:   P("Grain bin",     STEEL, 150, 4000, "fixed", S1, false, ["yard"], "none"),
   labfreezer: P("Lab freezer",   FULL, 40, 120, "two", S1, true, ["lab"], "storage:40", true),
   drum:       P("Fuel drum",     HALF, 25, 40, "two", S1, true, ["bay", "yard"], "storage:60"),
+  // ---------- mines and quarries (issue #52: minelayout.js lays them) ----------
+  // Fixed: the headframe's shaft and cage (the collar of the shaft, the cage in its guides under the sheave wheels), the
+  // hoist drum, the ore chute (an ore pass's or a tipple's bin and its gate), a cave-in (a rock fall across a drift: no
+  // way through), a timber set (the posts and cap holding a drift's back), a rock pillar (coal or salt left standing),
+  // the jaw crusher, the screen deck, a stockpile (gravel, ore, spoil: a heap in a yard, on a dump, in a stope).
+  // Liftable: an ore car (two people: ore as stone and scrap, combat.js BOX_LOOT orecart), a cap-lamp rack (a lamp room's
+  // charging rack: lamps, batteries, hard hats; BOX_LOOT lamprack) and an explosives box (a magazine's day box, locked:
+  // the explosives, rare; BOX_LOOT powderbox).
+  headframe:  P("Shaft and cage",   STEEL, 200, 6000, "fixed", S22, false, ["bay"], "none"),
+  hoist:      P("Hoist drum",       STEEL, 150, 4000, "fixed", S21, false, ["bay"], "none"),
+  orechute:   P("Ore chute",        FULL, 120, 1500, "fixed", S1, false, ["bay"], "none", true),
+  cavein:     P("Cave-in",          FULL, 300, 9000, "fixed", S1, false, ["bay"], "none"),
+  timberset:  P("Timber set",       POLE, 60, 120, "fixed", S1, false, ["bay"], "none", true),
+  pillar:     P("Rock pillar",      FULL, 400, 20000, "fixed", S22, false, ["bay"], "none"),
+  jawcrusher: P("Jaw crusher",      STEEL, 200, 8000, "fixed", S22, false, ["bay"], "none"),
+  screendeck: P("Screen deck",      HALF, 120, 3000, "fixed", S21, false, ["bay"], "none"),
+  gravelpile: P("Stockpile",        HALF, 200, 9000, "fixed", S1, false, ["yard", "bay"], "none"),
+  orecart:    P("Ore car",          HALF, 80, 300, "two", S1, true, ["bay", "yard"], "storage:120"),
+  lamprack:   P("Cap-lamp rack",    HALF, 30, 28, "one", S1, true, ["bay"], "storage:20", true),
+  powderbox:  P("Explosives box",   HALF, 60, 45, "two", S1, true, ["bay"], "storage:30"),
   // ---------- military bases, air bases, airports and prisons laid out like the real thing (issue #25: militarylayout.js) ----------
   // A suitcase in an airport's baggage hall, an ammo crate (rounds and grenades), a fuel bladder (fuel) and an inmate's
   // property locker (what was taken off them at intake) hold their own tables (combat.js BOX_LOOT). The barrier gate, the

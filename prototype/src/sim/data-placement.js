@@ -170,7 +170,8 @@ export const PLACEMENT_ROWS = {
   barn: "farm",
   farm: "farm",
   ranch: "highway 0.4 L, scenic 0.6 L, rural 1.4 L",
-  quarry: "scenic 1.6 L, rural 0.4 L",
+  quarry: "scenic 1.6 L, rural 0.4 L", // issue #52: the quarry type (minelayout.js) at the quarry sites and as a point of interest (PLACE_EXTRA)
+  mine: "scenic 1.5 M, rural 0.4 M", // issue #52: hills and mountains most, the country now and then; never a town's (PLACE_EXTRA; the mine shacks)
   radiotower: "centre 0.4 M, city 0.6 M, suburb 0.4 S, town 0.6 S, highway 1.2 S, scenic 1.4 S, rural 0.4 S", // issue #54: masts on the hills, cell sites and relays by the highways, rooftop repeaters and broadcast studios in the cities (PLACE_EXTRA)
   radio: "of radiotower",
   dam: "coast 1 L, scenic 0.4 L",

@@ -210,6 +210,9 @@ export function deserializeState(save) {
   // butcher, the deli): a save from before gets none of them on its tiles or its crawls' blocks (shops.js, placement.js
   // placeExtraKind), so its points of interest regenerate as they were.
   if (!state.shopsR2V) { state.shopsR2Legacy = true; state.shopsR2V = 1; }
+  // Mines and quarries (minelayout.js, issue #52): a save from before keeps its quarry sites' workshop and its mine
+  // shacks' cabin (their maps and containers as they were) and gets no new mines or quarries (worldcfg.js legacyMines).
+  if (!state.minesV) { state.minesLegacy = true; state.minesV = 1; }
   if (!state.woodcutting) {
     for (const b of state.bases || []) if (b.stock && !Number.isFinite(b.stock.wood)) b.stock.wood = 0;
     for (const r of (state.work && state.work.roles) || []) if (r.pri && r.pri.wood == null && r.pri.forage > 0) r.pri.wood = r.pri.forage;

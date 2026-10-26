@@ -262,6 +262,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
     towerV: 1, // radio towers: a radio tower site is the tower compound a base can power (radiotower.js, issue #54; save.js: an older save keeps its transmitter hut)
     placeV: 1, // where buildings stand by the placement table (data-placement.js, issue #42; save.js: an older save keeps its places)
     officesV: 1, // the office buildings of every kind and their firms (data-offices.js; save.js: an older save gets none)
+    minesV: 1, // mines and quarries (minelayout.js, issue #52): a quarry site and a mine shack are the new building types (save.js: an older save keeps its workshop and its cabin)
     shopsR2V: 1, // issue #55's six shops: furniture, laundromat, thrift, bakery, butcher, deli (data-newshops.js; save.js: an older save gets none)
     groupJails: 1, // jailhouse: the AI groups keep prisoners in jails they build, work them and trade them (groupjails.js); older saves: no limit
     grid: map.grid, tiles: map.tiles, cityId: map.cityId, originId: map.originId,

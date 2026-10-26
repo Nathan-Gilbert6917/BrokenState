@@ -146,7 +146,7 @@ console.log("\nOlder worlds");
   const BASE = { 4242: ["9fe2456855e99de6", "1d818c3569a06463"], 4243: ["2de2a78738056c6b", "960da84ac7d53f41"] };
   const run = (seed, legacy) => {
     const st = createWorld({ seed, factionCount: 3, size: "small" });
-    if (legacy) { st.placeLegacy = true; st.shopsR2Legacy = true; } // a save from before the table is from before #55's shops too (save.js marks both)
+    if (legacy) { st.placeLegacy = true; st.shopsR2Legacy = true; st.minesLegacy = true; } // a save from before the table is from before #55's shops and #52's mines too (save.js marks them all)
     for (const t of st.tiles) delete t.pois;
     ensurePois(st);
     const blocks = [];

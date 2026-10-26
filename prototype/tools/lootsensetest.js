@@ -51,6 +51,7 @@ const BASELINE = {
   cinema: 52.7, arcade: 53.4, mallservices: 89.9, mallrestrooms: 18.5, vacantunit: 5.9,
   museum: 404.8, // issue #58 (a new type: its own line, measured on its branch)
   amusement: 1996.8, // issue #60 (a new type: its own line, taken on its branch)
+  mine: 1627.3, quarry: 350.6, // issue #52, new types (taken on its branch with --baseline: the mean over their plans, the mine complex and the open pit among them)
   // issue #55's six shops, new (--baseline, 2026-10-26)
   furnstore: 150.9, laundromat: 35.8, thrift: 60.5, bakery: 42.8, butcher: 60.7, deli: 73.6,
 };

@@ -667,6 +667,17 @@ function f_labfreezer(p) { // an upright lab freezer: white enamel, a full-heigh
   R(p, 5, 1, 8, 2, "#1c2a30"); p.set(6, 1, "#5ad06a"); p.set(7, 1, "#5ad06a"); legs(p, 4, 11, 15, 15, STEELD);
 }
 
+// ---------- mines (issue #52) ----------
+function f_orecart(p) { // a small steel ore car on its wheels, broken ore heaped in the tub
+  box(p, 1, 4, 14, 12, "#5a6068"); H(p, 1, 14, 8, "#3c4046"); R(p, 2, 2, 13, 4, "#7a7468"); p.set(5, 2, "#8e887c"); p.set(10, 3, "#625c52");
+  disc(p, 4, 13, 2, "#26272a"); disc(p, 11, 13, 2, "#26272a");
+}
+function f_lamprack(p) { // a lamp room's charging rack: a board of cap lamps, their cords looped down to the battery shelf
+  box(p, 1, 0, 14, 15, "#6e7378"); for (const y of [2, 7]) for (const x of [3, 7, 11]) { disc(p, x, y, 1, "#e8b84a"); V(p, x, y + 2, y + 4, "#26272a"); } H(p, 2, 13, 12, "#3c4046"); R(p, 2, 13, 13, 14, "#2c2e30");
+}
+function f_powderbox(p) { // an explosives day box: a red wooden chest with its yellow warning band and hasp
+  box(p, 1, 4, 14, 14, "#a03228"); H(p, 1, 14, 8, "#e8b84a"); H(p, 1, 14, 9, "#e8b84a"); R(p, 1, 3, 14, 4, "#7a241c"); p.set(7, 10, "#26272a"); p.set(8, 10, "#26272a");
+}
 function f_drum(p) { // a red 200-litre steel drum: two rolling hoops, the bung on its lid
   box(p, 3, 1, 12, 15, "#8e3028"); H(p, 3, 12, 5, "#6a241e"); H(p, 3, 12, 10, "#6a241e"); R(p, 4, 0, 11, 1, "#a8483c"); p.set(9, 0, "#26272a");
 }
@@ -801,7 +812,7 @@ export const GEAR_ART = {
   f_kiosk, f_concession, f_arcadecab, f_projector, f_mannequin,
   f_dormdesk, f_mailboxes, f_campusbench,
   f_bookstack, f_lowshelf, f_mobileshelf, f_cardcat, f_mapcase, f_booktruck, f_bookreturn, f_computer, f_printer, f_microfilm, f_selfcheck, f_readtable, f_carrel, f_globe, f_lectern, f_woodstove,
-  f_drum, f_labfreezer, f_gokart,
+  f_drum, f_labfreezer, f_gokart, f_orecart, f_lamprack, f_powderbox,
   f_frontdesk, f_suitcase, f_minifridge, f_luggagecart, f_banquet, f_loungechair, f_lounger,
   f_flattop, f_deckoven, f_conveyoroven, f_wokrange, f_smoker, f_chargrill, f_gyrospit, f_stockpot, f_steamtable, f_espresso, f_softserve, f_slicer, f_tortillapress,
   f_mixer, f_meatsaw, f_changer, f_foldtable,

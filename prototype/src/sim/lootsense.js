@@ -83,6 +83,7 @@ export function groupsOf(sup, keys, cat) {
 const ARMY = ["military", "explosive"];
 const NO_GUNS = ["guns", "ammo", "military", "explosive", "gunmods", "armour"];
 const S = (sig, never = [], o = {}) => ({ sig, never, ...o });
+const MINE_NEVER = ["guns", "ammo", "military", "gunmods", "armour"]; // issue #52: a mine or a quarry keeps explosives (its magazine), never a gun
 
 /** @type {Record<string, Sense>} */
 export const LOOT_SENSE = {
@@ -169,6 +170,8 @@ export const LOOT_SENSE = {
   terminal:       S({ food: 0.9, drink: 0.9, treats: 0.5, gadgets: 0.5 }, ARMY),
   warehouse:      S({ food: 0.8, tools: 0.8, parts: 0.8, build: 0.8 }, ARMY),
   factory:        S({ tools: 0.8, parts: 0.8, build: 0.6 }, NO_GUNS),
+  mine:           S({ tools: 0.8, parts: 0.8 }, MINE_NEVER, { note: "issue #52: ore and scrap in the cars, lamps and hard hats in the lamp room and the dry; explosives allowed (a magazine's locked boxes), never a gun" }),
+  quarry:         S({ tools: 0.8, parts: 0.8, fuel: 0.5 }, MINE_NEVER, { note: "issue #52: the shops' tools and parts, the lube room's fuel; explosives allowed (the magazine's locked boxes), never a gun", site: "quarry" }),
   autoshop:       S({ tools: 0.9, parts: 0.9, fuel: 0.9 }, ARMY),
   garage:         S({ tools: 0.9, parts: 0.9, fuel: 0.7 }, ARMY),
   workshop:       S({ tools: 0.9, parts: 0.9, build: 0.7 }, ARMY),
