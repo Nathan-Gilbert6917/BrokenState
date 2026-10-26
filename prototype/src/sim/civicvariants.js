@@ -71,7 +71,7 @@ const vx = (o = {}) => vexam({ boxTarget: 3, ...o }); // a busier practice's: a 
 const vd = (o = {}) => vdrugs({ boxTarget: 3, ...o });
 const vfood = (o = {}) => ({ role: "storage", name: "Food store", type: "vet", food: true, ...o });
 const vwait = (o = {}) => ({ role: "lobby", entry: true, name: "Waiting room", type: "vet", ...o });
-const stalls = (o = {}) => ({ role: "barnfloor", name: "Large-animal stalls", type: "barn", hub: false, ...o }); // a barn's floor (buildingmaps.js FURNISH barn: stalls of hay and fences)
+const stalls = (o = {}) => ({ role: "barnfloor", name: "Large-animal stalls", type: "vet", hub: false, ...o }); // a barn's floor (buildingmaps.js FURNISH barn: stalls of hay and fences); a vet's room since issue #43 (a barn's were its hunting rifles)
 
 // Police (civiclayout.js CIVIC_STYLES by the civic mark, #15).
 const desk = (o = {}) => ({ role: "lobby", entry: true, name: "Front desk", type: "office", civic: "frontdesk", ...o });

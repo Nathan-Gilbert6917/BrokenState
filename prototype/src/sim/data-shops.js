@@ -160,7 +160,7 @@ export const AREA_DEFS = {
   arcade: { tags: ["tech", "shop", "mall"], def: { name: "Arcade", boxes: ["counter", "shelf", "cabinet"],
     loot: { scrap: [0.55, 1, 3], parts: [0.45, 1, 2], food: [0.15, 1, 2] }, gear: [["flashlight", 0.03], ["slingbag", 0.02]] } },
   cinema: { tags: ["shop", "kitchen", "mall"], def: { name: "Cinema", boxes: ["counter", "shelf", "cabinet"],
-    loot: { food: [0.7, 2, 6], water: [0.65, 2, 6], scrap: [0.2, 1, 2] }, gear: [["flashlight", 0.04], ["slingbag", 0.02]] } },
+    loot: { food: [0.7, 2, 6], water: [0.65, 2, 6], scrap: [0.2, 1, 2] }, gear: [["candy", 0.08], ["chocolate", 0.06], ["flashlight", 0.04], ["slingbag", 0.02]] } }, // candy: the concession stand's (issue #43)
   sportshop: { tags: ["sport", "outdoor", "camp", "hunt", "shop"], def: { name: "Sporting goods", boxes: ["shelf", "shelf", "locker"],
     loot: { water: [0.3, 1, 3], food: [0.25, 1, 3], ammo: [0.15, 4, 12] },
     gear: [["bat", 0.08], ["golfclub", 0.06], ["hockeystick", 0.06], ["compbow", 0.04], ["xbow", 0.02], ["footballhelmet", 0.06], ["sportspads", 0.06], ["goaliemask", 0.04], ["kneeguards", 0.05], ["bikehelmet", 0.04], ["hikingpack", 0.05], ["backpack", 0.04], ["duffle", 0.03], ["stove", 0.04], ["waterfilter", 0.04], ["headlamp", 0.04], ["binoculars", 0.03], ["machete", 0.03], ["hatchet", 0.03], ["rifle22", 0.015], ["fishrod", 0.03], ["bicycle", 0.02]] } },
@@ -169,7 +169,8 @@ export const AREA_DEFS = {
   radioshop: { tags: ["tech", "shop", "travel", "tools"], def: { name: "Radio counter", boxes: ["counter", "shelf", "cabinet"],
     loot: { parts: [0.7, 1, 3], scrap: [0.4, 1, 3] }, gear: [["handradio", 0.12], ["flashlight", 0.05], ["windlight", 0.04], ["headlamp", 0.03], ["spotlight", 0.02], ["repairkit", 0.02]] } },
   books: { tags: ["books", "shop", "school", "office", "home"], def: { name: "Bookshelves", boxes: ["shelf", "shelf", "counter"],
-    loot: { scrap: [0.3, 1, 2], water: [0.12, 1, 2] }, gear: [["slingbag", 0.02], ["windlight", 0.01]] } },
+    loot: { scrap: [0.3, 1, 2], water: [0.12, 1, 2] }, // its books since issue #43 (a bookstore's shelves held none of their own)
+    gear: [["novel", 0.08], ["comic", 0.05], ["magazines", 0.05], ["puzzlebook", 0.03], ["cookbook", 0.01], ["gardenbook", 0.008], ["survivalbook", 0.006], ["diybook", 0.006], ["slingbag", 0.02], ["windlight", 0.01]] } },
   petstore: { tags: ["shop", "farm", "medical", "home"], def: { name: "Pet supplies", boxes: ["shelf", "shelf", "crate"],
     loot: { food: [0.7, 3, 8], water: [0.3, 1, 3], meds: [0.12, 1, 1] }, gear: [["dewormer", 0.06], ["bandagekit", 0.03], ["flashlight", 0.02]] } },
   garden: { tags: ["farm", "tools", "shop", "outdoor"], def: { name: "Garden aisles", boxes: ["shelf", "crate", "crate"],
@@ -200,7 +201,7 @@ export const AREA_DEFS = {
   pitroom: { tags: ["kitchen", "shop", "travel"], def: { name: "Pit room", boxes: ["shelf", "counter", "shelf"], // a BBQ's smokers (issue #33)
     loot: { food: [0.6, 2, 6], preserved: [0.4, 1, 3], wood: [0.5, 10, 30] }, gear: [["knife", 0.06], ["cleaver", 0.04]] } },
   liquor: { tags: ["shop", "crime", "travel", "kitchen", "home"], def: { name: "Liquor shelves", boxes: ["shelf", "shelf", "counter"],
-    loot: { water: [0.6, 2, 6], food: [0.25, 1, 3] }, gear: [["bottle", 0.15], ["revolver", 0.02], ["pistol", 0.02], ["bat", 0.02]] } },
+    loot: { water: [0.6, 2, 6], food: [0.25, 1, 3] }, gear: [["bottle", 0.15], ["whiskey", 0.03], ["vodka", 0.03], ["wine", 0.03], ["bat", 0.02]] } }, // its bottles since issue #43, in place of a pistol and a revolver on every shelf (a supermarket's beer and wine aisle is a liquor room too)
   // A library's rooms by what they hold (issue #34, librarylayout.js): the reference and technical rooms (and a
   // genealogy archive) manuals and skill books; the map room maps (no map item in the game: the survival books, "maps,
   // tracks, reading the land", and a compass's worth of kit); the rare-books room valuables; the staff room snacks and
