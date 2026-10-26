@@ -321,6 +321,25 @@ export const REAL_SIZE = {
   garage:      { w: [10, 16], d: [8, 12], storeys: [1, 1], set: "town", planned: true },
   workshop:    { w: [12, 20], d: [10, 14], storeys: [1, 1], set: "rural", planned: true },
   machineshed: { w: [12, 20], d: [8, 14], storeys: [1, 1], set: "rural" },
+  // #52's mines and quarries (minelayout.js MINE_PLANS, QUARRY_PLANS): planned at these sizes by their plans, storeys
+  // counting a mine's levels below (the surface and one to three levels); the mine complex's headframe building is the
+  // shaft mine's, the open pit's main building the crusher plant's (their other buildings: minelayout.js PARTS).
+  mine:        { w: [13, 54], d: [7, 34], storeys: [1, 4], set: "rural", planned: true,
+    sizes: {
+      shaft: { w: [40, 46], d: [26, 30], storeys: [3, 4] }, hardrock: { w: [48, 54], d: [30, 34], storeys: [4, 4] }, drift: { w: [34, 40], d: [24, 28], storeys: [1, 1] },
+      gold: { w: [20, 24], d: [12, 14], storeys: [2, 2] }, coal: { w: [40, 46], d: [24, 28], storeys: [2, 2] }, dry: { w: [27, 32], d: [14, 18], storeys: [1, 2] },
+      magazine: { w: [13, 15], d: [7, 9], storeys: [1, 1] }, slope: { w: [30, 36], d: [18, 22], storeys: [2, 3] }, salt: { w: [44, 50], d: [30, 34], storeys: [2, 2] },
+      showmine: { w: [26, 30], d: [16, 20], storeys: [2, 2] }, rescue: { w: [22, 26], d: [14, 16], storeys: [2, 2] }, mill: { w: [34, 40], d: [22, 26], storeys: [2, 2] },
+      complex: { w: [40, 46], d: [26, 30], storeys: [3, 4] },
+    } },
+  quarry:      { w: [9, 38], d: [6, 22], storeys: [1, 2], set: "rural", planned: true,
+    sizes: {
+      pit: { w: [26, 32], d: [16, 20], storeys: [2, 2] }, crusher: { w: [26, 32], d: [16, 20], storeys: [2, 2] }, scale: { w: [9, 11], d: [6, 8], storeys: [1, 1] },
+      shop: { w: [32, 38], d: [18, 22], storeys: [1, 1] }, magazine: { w: [9, 12], d: [7, 9], storeys: [1, 1] }, gravel: { w: [16, 20], d: [9, 11], storeys: [1, 1] },
+      granite: { w: [30, 36], d: [16, 20], storeys: [1, 1] }, lime: { w: [22, 26], d: [14, 16], storeys: [2, 2] }, slate: { w: [28, 32], d: [10, 12], storeys: [1, 1] },
+      sand: { w: [24, 28], d: [12, 14], storeys: [1, 1] }, asphalt: { w: [26, 30], d: [14, 16], storeys: [1, 1] }, concrete: { w: [26, 30], d: [16, 18], storeys: [1, 1] },
+      flooded: { w: [14, 18], d: [8, 10], storeys: [1, 1] },
+    } },
   // #53's sawmills and lumber yards (sawmilllayout.js SAWMILL_PLANS): planned at these sizes by their plans, a portable
   // bandsaw mill's lean-to to the industrial mill's saw house (its yard's other buildings: sawmilllayout.js YARD_BUILDINGS)
   sawmill:     { w: [9, 46], d: [7, 26], storeys: [1, 3], set: "rural", planned: true,
