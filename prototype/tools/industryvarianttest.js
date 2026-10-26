@@ -12,6 +12,7 @@
 // - older saves (legacy): today's plan, no plan name, no industrial room; the same map every time
 // - the building's name before the raid (buildingOptions) is its plan's; the scenes roll only on the new plans
 // Usage: node tools/industryvarianttest.js [seed]
+import { planSignature } from "./plansig.js"; // #32's plan signature, shared with tools/varianttest.js
 import { createWorld } from "../src/sim/world.js";
 import { Rng } from "../src/sim/rng.js";
 import { BUILDINGS, assemble, buildingOptions, interiorIntro, STOREYS_BY_TYPE } from "../src/sim/buildingmaps.js";
@@ -36,17 +37,9 @@ const make = (key, s, o = {}) => {
   const m = assemble(rng, spec, { key, name: BUILDINGS[key].name, legacy: !!o.legacy, withVehicle: s % 2 === 1 });
   return { spec, m };
 };
-// #32's plan signature: the room roles, the pairs of roles with a door between them, the entrances, the footprint class.
-function signature(spec, m) {
-  const rooms = m.rooms.filter((a) => !a.outdoor);
-  const roles = [...new Set(rooms.map((a) => a.role))].sort();
-  const byDoor = new Map();
-  for (const a of rooms) for (const d of a.doors || []) { const k = `${a.f || 0}:${d[0]},${d[1]}`; const l = byDoor.get(k) || []; l.push(a.role); byDoor.set(k, l); }
-  const adj = new Set();
-  for (const l of byDoor.values()) if (l.length >= 2) adj.add([...l].sort().join("-"));
-  const ways = 1 + (m.exits || []).filter((e) => e.zone >= 0).length;
-  return `${roles.join(",")}|${[...adj].sort().join(",")}|${ways}|${spec.foot}`;
-}
+// #32's plan signature (tools/plansig.js): the room roles, the pairs of roles with a door between them, the entrances,
+// the footprint class.
+const signature = (spec, m) => planSignature(m, spec.foot).key;
 function walkFrom(m, sx, sy, cells) {
   const W = m.w, H = m.h, seen = new Uint8Array(W * H), q = [sy * W + sx];
   const pass = (c) => CELL[c.k].walk || c.k === "door";

@@ -59,7 +59,8 @@ import { campsiteExtra, campDanger, noteCampSeen } from "./campsite.js"; // call
 import { shopExtras, franchiseFor, franchisesOf, franchiseName, settingOf, noFirm } from "./shops.js"; // call-time only: the shops a suburb or city block may hold, a place's franchise
 import { hotelVariantName } from "./data-hotels.js"; // a hotel's variant's name (issue #38)
 import { hotelExtra } from "./hotels.js"; // call-time only: a hotel a tile may hold (issue #29)
-import { legacyPrisons } from "./worldcfg.js"; // an older save: no county jails
+import { layoutFor, layoutName, poiLayoutKey, settingOfTile } from "./buildvariants.js"; // a POI's building layout (issue #32): its name and its plan
+import { legacyRooms, legacyPrisons } from "./worldcfg.js"; // an older save: no layouts, no county jails
 
 export const POI = {
   MAX: 4,                 // POIs a tile can hold, the site among them
@@ -136,7 +137,10 @@ function makePoi(state, t, kind, site, slot, before = []) {
     const onTile = new Set(before.filter((p) => p.kind === kind && p.v).map((p) => p.v));
     if (onTile.has(v)) { const ids = franchisesOf(kind).map((f) => f.id), at = ids.indexOf(v); v = ids.map((_, i) => ids[(at + 1 + i) % ids.length]).find((id) => !onTile.has(id)) || v; }
   }
-  return { kind, hidden: false, pool: pool == null ? null : Math.min(1, pool), visits: 0, lastDay: null, cont: null, threatStamp: null, stripped: false, ...(site ? { site: true } : {}), ...(v ? { v } : {}) };
+  // A kind with no franchise takes one of its building's layouts (buildvariants.js, issue #32): its plan and its name
+  // ("Ranch house", "Dairy barn"); not in an older save (its buildings keep their plans: worldcfg.js legacyRooms).
+  const lay = v || legacyRooms(state) ? null : layoutFor(poiLayoutKey(kind), settingOfTile(t), hash01(state.seed, "poilay", t.id, slot));
+  return { kind, hidden: false, pool: pool == null ? null : Math.min(1, pool), visits: 0, lastDay: null, cont: null, threatStamp: null, stripped: false, ...(site ? { site: true } : {}), ...(v ? { v } : {}), ...(lay ? { lay } : {}) };
 }
 // The tile's list from the world seed and the tile (no state.rng: the same for a world made before POIs existed).
 /** @param {State} state @param {Tile} t */
@@ -325,7 +329,7 @@ export function poiName(t, i) {
   const p = poiAt(t, i);
   if (!p) return "";
   if (!isSitePoi(t, i) && p.hv && hotelVariantName(p.hv)) return `${franchiseName(p.kind, p.v)} (${hotelVariantName(p.hv)})`; // a hotel's variant (issue #38): "Willow Creek Inn (Victorian B&B)"
-  return isSitePoi(t, i) ? t.loc.name : p.v ? franchiseName(p.kind, p.v) : LOCATIONS[p.kind].name; // shops.js: a franchise's name
+  return isSitePoi(t, i) ? t.loc.name : p.v ? franchiseName(p.kind, p.v) : p.lay ? layoutName(poiLayoutKey(p.kind), p.lay) || LOCATIONS[p.kind].name : LOCATIONS[p.kind].name; // shops.js: a franchise's name; buildvariants.js: a layout's
 }
 
 // ---------- pools ----------

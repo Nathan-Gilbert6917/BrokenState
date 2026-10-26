@@ -659,7 +659,7 @@ console.log("\nHomes room by room (roomlayout.js)");
     let v = 0, n = 0;
     for (let s = 0; s < 200; s++) {
       const rng = new Rng(9000 + s * 104729 + 5);
-      const m = assemble(rng, BUILDINGS.house.make(rng, { legacy }), { key: "house", name: "House", legacy });
+      const m = assemble(rng, BUILDINGS.house.make(rng, { legacy, layout: "twostorey" }), { key: "house", name: "House", legacy }); // the classic two-storey house, furnished old and new (its other layouts' loot: tools/varianttest.js, issue #32)
       for (const c of m.containers) { const a = m.rooms.find((r) => r.id === c.area); if (a && a.type) { v += value(boxLoot(a.type, c.kind)); n++; } }
     }
     return { v: v / 200, n: n / 200 };
@@ -1085,9 +1085,10 @@ console.log("\nFootprint shapes: buildings that are not boxes (issue #23)");
   // schools, hospitals, churches and motels are not plain rectangles, and an L, a T or a U turns up for each.
   const share = {};
   const CLASSIC = new Set(["police", "firestation", "hospital", "church"]); // issue #36's dozen plans a kind: the classic plan ("general") is the shaped one
+  const LAYOUT = { house: "twostorey", motel: "court" }; // issue #32's dozen layouts a kind: the classic layout is the shaped one
   for (const key of ["house", "school", "hospital", "church", "motel", "police", "firestation", "offices", "apartments", "grocery", "gasstation"]) {
     const t = { n: 0, shaped: 0, kinds: {} };
-    for (let s = 0; s < 200; s++) { const sp = BUILDINGS[key].make(new Rng(31000 + s * 7919), { shapes: true, ...(CLASSIC.has(key) ? { plan: "general" } : {}) }); t.n++; if (sp.shape) { t.shaped++; t.kinds[sp.shape.kind] = (t.kinds[sp.shape.kind] || 0) + 1; } }
+    for (let s = 0; s < 200; s++) { const sp = BUILDINGS[key].make(new Rng(31000 + s * 7919), { shapes: true, ...(CLASSIC.has(key) ? { plan: "general" } : {}), ...(LAYOUT[key] ? { layout: LAYOUT[key] } : {}) }); t.n++; if (sp.shape) { t.shaped++; t.kinds[sp.shape.kind] = (t.kinds[sp.shape.kind] || 0) + 1; } }
     share[key] = t;
   }
   const line = (k) => `${k} ${share[k].shaped}/${share[k].n} (${Object.entries(share[k].kinds).map(([q, n]) => `${q} ${n}`).join(", ")})`;
