@@ -268,6 +268,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
     sawV: 1, // sawmills (sawmilllayout.js, issue #53; save.js: an older save's tiles get none)
     minesV: 1, // mines and quarries (minelayout.js, issue #52): a quarry site and a mine shack are the new building types (save.js: an older save keeps its workshop and its cabin)
     zooV: 1, // zoos (zoo.js, issue #59; save.js: an older save's tiles get none)
+    recV: 1, // gyms and bowling alleys (reclayout.js, issue #56; save.js: an older save gets none)
     shopsR2V: 1, // issue #55's six shops: furniture, laundromat, thrift, bakery, butcher, deli (data-newshops.js; save.js: an older save gets none)
     groupJails: 1, // jailhouse: the AI groups keep prisoners in jails they build, work them and trade them (groupjails.js); older saves: no limit
     grid: map.grid, tiles: map.tiles, cityId: map.cityId, originId: map.originId,

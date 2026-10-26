@@ -1326,6 +1326,72 @@ const FURN_DRAW = {
     const ax = along(o), s0 = flatM(FURNC.black);
     return [run(ax, 0.44, 0.56, 0, 6, flatM(FURNC.steel), 0.1, 0.9), run(ax, 0.38, 0.62, 6, 8, flatM(FURNC.leather), 0.06, 0.94), run(ax, 0.06, 0.94, 12, 13, flatM(FURNC.chrome), 0.18, 0.22), run(ax, 0.04, 0.14, 9, 16, s0, 0.14, 0.26), run(ax, 0.86, 0.96, 9, 16, s0, 0.14, 0.26)];
   } },
+  // ---------- gyms and bowling alleys (issue #56, sim/reclayout.js) ----------
+  // A treadmill's black belt between its rails, the console on its uprights; an exercise bike's frame, saddle and bars;
+  // a rowing machine's rail and seat, its flywheel; a squat rack's four steel uprights with a bar across; a dumbbell
+  // rack's two tiers of black weights; a heavy bag hanging from its stand; a ring post padded red; a climbing wall's
+  // grey panel dotted with coloured holds; a hot tub's tiled rim round its water; a bin of rolled mats. The pins white on
+  // their deck, a ball return's hood with balls in it, a pinsetter's tall steel frame, a rack of house balls, the shoe
+  // cubbies, a scoring console's screen on its stand.
+  treadmill: { top: 14, p: (o) => {
+    const ax = along(o), s0 = flatM(FURNC.steel);
+    return [run(ax, 0.2, 0.8, 0, 3, flatM(mul(FURNC.black, 1.3)), 0.02, 0.98), run(ax, 0.26, 0.74, 3, 4, flatM(FURNC.black), 0.04, 0.96), run(ax, 0.2, 0.26, 3, 14, s0, 0.04, 0.12), run(ax, 0.74, 0.8, 3, 14, s0, 0.04, 0.12), run(ax, 0.2, 0.8, 12, 14, flatM(FURNC.screen), 0.02, 0.14)];
+  } },
+  exbike: { top: 14, p: (o) => {
+    const ax = along(o), s0 = flatM(FURNC.black);
+    return [run(ax, 0.3, 0.7, 0, 2, flatM(FURNC.steel), 0.2, 0.8), fcyl(ax, 0.5, 0.3, 0.16, 2, 8, flatM(FURNC.chrome)), run(ax, 0.46, 0.54, 2, 10, s0, 0.6, 0.68), run(ax, 0.4, 0.6, 10, 11, flatM(FURNC.leather), 0.56, 0.76), run(ax, 0.46, 0.54, 2, 13, s0, 0.2, 0.26), run(ax, 0.32, 0.68, 13, 14, flatM(FURNC.chrome), 0.18, 0.28)];
+  } },
+  rower: { top: 8, p: (o) => {
+    const ax = along(o);
+    return [run(ax, 0.44, 0.56, 0, 3, flatM(FURNC.chrome), 0.02, 0.98), fcyl(ax, 0.5, 0.12, 0.18, 0, 8, flatM(FURNC.black)), run(ax, 0.38, 0.62, 3, 5, flatM(FURNC.black), 0.5, 0.64)];
+  } },
+  squatrack: { top: 26, p: (o) => {
+    const ax = along(o), s0 = flatM(FURNC.black);
+    return [...flegs(0.12, 0.82, 0.12, 0.82, 26, s0, 0.06), run(ax, 0.1, 0.9, 25, 26, s0, 0.1, 0.18), run(ax, 0.04, 0.96, 16, 17, flatM(FURNC.chrome), 0.4, 0.46), fcyl(ax, 0.06, 0.43, 0.08, 14, 19, flatM(FURNC.black)), fcyl(ax, 0.94, 0.43, 0.08, 14, 19, flatM(FURNC.black))];
+  } },
+  dumbbells: { top: 12, p: (o) => {
+    const ax = along(o), bells = (f, s, t, X) => (f === "top" ? FURNC.black : Math.floor(X) % 3 < 1 ? FURNC.chrome : FURNC.black);
+    return [run(ax, 0.3, 0.7, 0, 9, flatM(FURNC.steel), 0.04, 0.96), run(ax, 0.2, 0.5, 9, 12, bells, 0.04, 0.96), run(ax, 0.5, 0.8, 5, 8, bells, 0.04, 0.96)];
+  } },
+  punchbag: { top: 28, p: (o) => {
+    const ax = along(o);
+    return [run(ax, 0.16, 0.84, 0, 1, flatM(FURNC.black), 0.16, 0.84), run(ax, 0.16, 0.22, 0, 28, flatM(FURNC.black), 0.16, 0.22), run(ax, 0.16, 0.6, 27, 28, flatM(FURNC.black), 0.16, 0.22), fcyl(ax, 0.55, 0.5, 0.2, 8, 25, (f) => (f === "top" ? mul(FURNC.red, 0.9) : FURNC.red))];
+  } },
+  ringpost: { top: 18, p: () => [{ cyl: [0.5, 0.5, 0.1], z0: 0, z1: 18, m: flatM(FURNC.chrome) }, { cyl: [0.5, 0.5, 0.15], z0: 6, z1: 16, m: flatM(FURNC.red) }] },
+  climbwall: { top: 30, p: (o) => {
+    const ax = along(o), holds = [FURNC.red, FURNC.amber, FURNC.led, hex("#3a6fb0"), hex("#c84fa0")];
+    const face = (f, s, t, X, Y) => { if (f === "top") return mul(FURNC.beige, 0.8); const q = n2(Math.floor(X / 2), Math.floor(t / 2), 190); return q > 0.86 ? holds[Math.floor(q * 100) % holds.length] : mul(hex("#8a8a84"), 0.92 + n2(X, Y, 191) * 0.1); };
+    return [run(ax, 0.02, 0.22, 0, 30, face, 0, 1)];
+  } },
+  hottub: { top: 7, p: (o) => {
+    const ax = along(o), rim = (f) => (f === "top" ? mul(FURNC.cream, 1.05) : FURNC.cream);
+    return [run(ax, 0, 1, 0, 7, rim, 0, 1), run(ax, 0.08, 0.92, 6, 7, flatM(FURNC.water), 0.08, 0.92)];
+  } },
+  yogamats: { top: 12, p: (o) => {
+    const ax = along(o), cols = [hex("#7a4fa0"), hex("#3a8a8a"), hex("#c8602a"), hex("#4f7a3a")];
+    return [run(ax, 0.2, 0.8, 0, 6, flatM(FURNC.steel), 0.2, 0.8), ...cols.map((c, i) => fcyl(ax, 0.32 + (i % 2) * 0.36, 0.34 + (i >> 1) * 0.32, 0.1, 4, 12, flatM(c)))];
+  } },
+  pins: { top: 8, p: () => [[0.5, 0.25], [0.35, 0.5], [0.65, 0.5], [0.2, 0.75], [0.5, 0.75], [0.8, 0.75]].map(([u, v]) => ({ cyl: [u, v, 0.06], z0: 0, z1: 8, m: (f) => (f === "top" ? FURNC.white : mul(FURNC.white, 1.1)) })) },
+  ballreturn: { top: 9, p: (o) => {
+    const ax = along(o), balls = [hex("#2a4a8a"), FURNC.red, hex("#2a6a3a")];
+    return [run(ax, 0.2, 0.8, 0, 6, flatM(mul(FURNC.black, 1.4)), 0.04, 0.96), run(ax, 0.16, 0.84, 6, 7, flatM(FURNC.chrome), 0.02, 0.98), ...balls.map((c, i) => fcyl(ax, 0.5, 0.22 + i * 0.28, 0.13, 6, 9, flatM(c)))];
+  } },
+  pinsetter: { top: 30, p: (o) => {
+    const ax = along(o), frame = (f, s, t, X) => (f === "top" ? mul(FURNC.steel, 0.7) : Math.floor(t) % 7 < 1 || Math.floor(X) % 6 < 1 ? FURNC.black : mul(hex("#6a7a5a"), 0.9 + n2(X, t, 192) * 0.1));
+    return [run(ax, 0.1, 0.9, 0, 30, frame, 0.04, 0.96), fcyl(ax, 0.5, 0.5, 0.3, 18, 22, flatM(FURNC.chrome))];
+  } },
+  ballrack: { top: 12, p: (o) => {
+    const ax = along(o), balls = [hex("#2a4a8a"), FURNC.red, hex("#2a6a3a"), FURNC.amber, hex("#5a2a7a"), FURNC.black];
+    return [run(ax, 0.3, 0.7, 0, 8, flatM(FURNC.steel), 0.02, 0.98), ...balls.map((c, i) => fcyl(ax, 0.5, 0.1 + i * 0.16, 0.08, 8 - (i & 1) * 4, 12 - (i & 1) * 4, flatM(c)))];
+  } },
+  shoecubby: { top: 24, p: (o) => {
+    const ax = along(o), face = (f, s, t, X) => (f === "top" ? PAL.woodLt : Math.floor(X) % 4 < 1 || Math.floor(t) % 4 < 1 ? PAL.woodDk : (Math.floor(X / 4) + Math.floor(t / 4)) % 3 ? mul(FURNC.red, 0.8) : mul(hex("#2a4a8a"), 0.9));
+    return [run(ax, 0.24, 0.76, 0, 24, face, 0.04, 0.96)];
+  } },
+  scorer: { top: 16, p: (o) => {
+    const ax = along(o);
+    return [run(ax, 0.4, 0.6, 0, 10, flatM(FURNC.steel), 0.4, 0.6), run(ax, 0.24, 0.76, 10, 16, (f) => (f === "top" ? FURNC.black : FURNC.screen), 0.2, 0.8), run(ax, 0.26, 0.74, 11, 15, flatM(mul(FURNC.led, 0.6)), 0.18, 0.2)];
+  } },
   compressor: { top: 14, p: (o) => {
     const ax = along(o);
     return [fcyl(ax, 0.5, 0.5, 0.26, 0, 10, (f) => (f === "top" ? mul(FURNC.red, 1.1) : FURNC.red)), run(ax, 0.4, 0.6, 10, 14, flatM(FURNC.black), 0.32, 0.62)];
@@ -2813,6 +2879,9 @@ const FLOORC = {
   paving: hex("#8a8478"), pool: hex("#7aa8b8"), court: hex("#3e6a4e"),
   // A tower's, a city hall's and a courthouse's lobby (issue #27, sim/officeplans.js): pale polished marble in big slabs, grey veins.
   marble: hex("#b4b0a6"),
+  // A bowling alley's lanes (issue #56, sim/reclayout.js): pale maple boards along the lane, the gutter's dark channel;
+  // a gym's mats (a dojo, a ring's canvas, a climbing gym's crash pads): blue foam in squares.
+  lane: hex("#c8a874"), gutter: hex("#3c3e42"), mat: hex("#3a5a8a"),
 };
 // Which way the roads run on a map (the user's request 2026-10-22: "In base view and raids fix road tiles to look
 // better"): every road cell painted a lane dash of its own laid a hatching of dashes over the whole asphalt. Now each
@@ -2915,6 +2984,9 @@ function floorColor(c, k, x, y, lx, ly, mud, R = null, lf = 0, pd = 0, pe = 0) {
       else if (c.fl === "hardwood") { const row = ty >> 2, off = hash3(x, y * 4 + row, 8) * 16; col = ty % 4 === 0 ? mul(FLOORC.hardwood, 0.7) : (tx + off) % 16 < 1 ? mul(FLOORC.hardwood, 0.76) : mul(FLOORC.hardwood, 0.9 + hash3(x * 2 + Math.floor((tx + off) / 16), y * 4 + row, 3) * 0.18 + q * 0.04); } // narrow boards, joints staggered
       else if (c.fl === "marble") { const vein = Math.abs(((tx + ty * 0.6 + hash3(x, y, 11) * 9) % 7) - 3.5) < 0.35; col = tx % 16 === 0 || ty % 16 === 0 ? mul(FLOORC.marble, 0.78) : vein ? mul(FLOORC.marble, 0.8 + q * 0.06) : mul(FLOORC.marble, 1 + q * 0.05); } // slabs a cell each, a vein across
       else if (c.fl === "raised") col = tx % 10 === 0 || ty % 10 === 0 ? mul(FLOORC.raised, 0.7) : ((x + y) % 3 === 0 && tx % 2 === 1 && ty % 2 === 1) ? mul(FLOORC.raised, 0.8) : mul(FLOORC.raised, 0.95 + q * 0.06); // a data hall's raised floor: grey panels on their pedestals, a perforated one now and then (sim/datacenter.js)
+      else if (c.fl === "lane") col = tx % 4 === 0 ? mul(FLOORC.lane, 0.82) : mul(FLOORC.lane, 0.95 + hash3(x * 4 + (tx >> 2), y, 12) * 0.08); // maple boards along the lane
+      else if (c.fl === "gutter") col = tx < 2 || tx > 13 ? mul(FLOORC.gutter, 1.4) : mul(FLOORC.gutter, 0.9 + q * 0.08); // the gutter's channel between its capping
+      else if (c.fl === "mat") col = tx % 8 === 0 || ty % 8 === 0 ? mul(FLOORC.mat, 0.7) : mul(FLOORC.mat, 0.92 + q * 0.08); // foam mats in squares
       else if (c.fl === "rubber") col = (tx % 4 === 1 && ty % 4 === 1) ? mul(FLOORC.rubber, 1.25) : mul(FLOORC.rubber, 0.92 + q * 0.08); // studded mats
       else if (c.fl === "pool") col = tx % 6 === 0 || ty % 6 === 0 ? mul(FLOORC.pool, 0.78) : mul(FLOORC.pool, 0.94 + q * 0.08); // a drained pool's blue tiles (sim/campuslayout.js)
       else if (c.fl === "steel") col = ((tx + ty) % 6 === 0 && (tx >> 1) % 2 === 0) || ((tx - ty + 16) % 6 === 3 && (tx >> 1) % 2 === 1) ? mul(FLOORC.steel, 1.22) : tx === 0 || ty === 0 ? mul(FLOORC.steel, 0.7) : mul(FLOORC.steel, 0.9 + q * 0.08); // diamond plate

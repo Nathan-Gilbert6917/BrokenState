@@ -228,6 +228,9 @@ export function deserializeState(save) {
   // Zoos (zoo.js, issue #59): a save from before gets none on its tiles (placement.js placeExtraKind, worldcfg.js
   // legacyZoo), so its points of interest regenerate as they were.
   if (!state.zooV) { state.zooLegacy = true; state.zooV = 1; }
+  // Gyms and bowling alleys (reclayout.js, issue #56): a save from before gets none on its tiles or its crawls' blocks
+  // (placement.js placeExtraKind, crawlExtraKind), so its points of interest and blocks regenerate as they were.
+  if (!state.recV) { state.recLegacy = true; state.recV = 1; }
   if (!state.woodcutting) {
     for (const b of state.bases || []) if (b.stock && !Number.isFinite(b.stock.wood)) b.stock.wood = 0;
     for (const r of (state.work && state.work.roles) || []) if (r.pri && r.pri.wood == null && r.pri.forage > 0) r.pri.wood = r.pri.forage;
