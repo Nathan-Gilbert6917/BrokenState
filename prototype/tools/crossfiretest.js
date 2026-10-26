@@ -11,6 +11,7 @@
 //      markers fade after CROSS.LINGER turns; the log says it once a shooter a turn with the direction;
 //   4. third-partying: a bottle you throw next to the raiders pulls the unaware dead there, and they fall on the raiders;
 //   5. a whole raid plays out without a crash and the raiders and the dead trade blows somewhere in it.
+// Section 3 turns the run's Failures dial off (b.failures = 0): a dud makes no bang to hear (issue #44, 2026-10-26).
 // Usage: node tools/crossfiretest.js [seed]
 import { createWorld, hub, atBase } from "../src/sim/world.js";
 import { launchExpedition } from "../src/sim/parties.js";
@@ -143,6 +144,10 @@ section("3. heard, not seen: the marker and its guess");
 
   const state = raid(seed + 2);
   const b = state.combat;
+  // The run's Failures dial off for this battle (gunfire.js jamChance × b.failures): the checks below count the shots
+  // heard, and a dud makes no bang (combat.js fire: a misfire returns before noteShot). The pump shotgun's first pull
+  // misfired on seed 11 + 2 since 1370d1c (map sizes: new worlds, new battle dice); jams and misfires have their own tests.
+  b.failures = 0;
   const team = quiet(b);
   const run = openRun(b, 8, team, 16);
   const r = raiders(b)[0], z = dead(b)[0];

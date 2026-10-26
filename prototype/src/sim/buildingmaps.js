@@ -2046,7 +2046,7 @@ const SCHOOL_PLANS = {
     const W = rng.int(48, 54), cw = rng.int(12, 14), cl = rng.int(14, 18), dw = rng.int(13, 15), dl = rng.int(11, 13), lw = rng.int(10, 12), ll = rng.int(9, 11);
     const side = Math.max(dw, lw), cx = rng.int(side + 2, W - side - cw - 2), left = rng.chance(0.5); // the chapel clear of both side wings
     const parts = [
-      { x: 0, y: cl - 1, w: W, h: 12, storeys: 3, name: "Main hall", main: true, program: sFront([["*", sC()], [5, sOffice], [7, sLobby({ name: "Entrance hall" })], [5, sPrinc("Headmaster's study")], ["*", sC()]]), upper: (g) => sFront(g === 1 ? [["*", sC()], [7, { role: "dayroom", name: "Common room", type: "house" }], ["*", sC()]] : [["*", sC()], [5, sStaff], ["*", sC()]]) },
+      { x: 0, y: cl - 1, w: W, h: 12, storeys: 3, name: "Main hall", main: true, program: sFront([["*", sC()], [5, sOffice], [7, sLobby({ name: "Entrance hall" })], [5, sPrinc("Headmaster's study")], ["*", sC()]]), upper: (g) => sFront(g === 1 ? [["*", sC()], [7, { role: "dayroom", name: "Common room", type: "dormroom" }], ["*", sC()]] : [["*", sC()], [5, sStaff], ["*", sC()]]) },
       { x: cx, y: 0, w: cw, h: cl, storeys: 1, tall: true, name: "Chapel", program: { role: "nave", name: "Chapel", civic: "nave", maxBoxes: 2 } },
       { x: left ? 0 : W - dw, y: cl - dl, w: dw, h: dl, storeys: 1, wing: true, name: "Dining hall", program: sCaf(rng, "Dining hall") },
       { x: left ? W - lw : 0, y: cl - ll, w: lw, h: ll, storeys: 1, wing: true, name: "Library", program: sLib() },

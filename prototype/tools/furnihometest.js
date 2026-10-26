@@ -172,7 +172,8 @@ console.log("on foot: a real piece lifted, dropped from exhaustion at the door; 
     extractAll(st, b, false);
     check(!survivorById(st, u.sid).gear.carry, "the arms are empty");
     check(ledgerPieces(t, i, from.k).length === 1, `the ${name} is in the POI's ledger, standing at the door`);
-    check(b.summary.some((l) => new RegExp(`Exhausted, the team dropped what it was carrying: an? ${name}\\. It stands by the door`).test(l)), `the message in the raid's summary: "${b.summary.find((l) => /Exhausted/.test(l)) || "none"}"`);
+    // a plural name ("crates"): "some crates. They stand" (issue #48)
+    check(b.summary.some((l) => new RegExp(`Exhausted, the team dropped what it was carrying: ${F.pluralName(name) ? `some ${name}\\. They stand` : `an? ${name}\\. It stands`} by the door`).test(l)), `the message in the raid's summary: "${b.summary.find((l) => /Exhausted/.test(l)) || "none"}"`);
     check(b.result.raid.pieces && b.result.raid.pieces.dropped[0] === name, "and in the result (b.result.raid.pieces)");
     check(logHas(st, /: Exhausted, the team dropped what it was carrying/), "the log line");
     const al = computeAlerts(st).find((a) => a.kind === "exhausted");

@@ -184,7 +184,7 @@ console.log("a pair sets it down to the side they choose, parallel to them");
   const [u, v] = us;
   const cx = x0 + 6, cy = y0 + 6;
   stand(b, u, cx, cy); stand(b, v, cx + 1, cy); put(b, cx, cy - 1, "locker");
-  check(/takes two/.test(combatAct(st, { type: "liftPiece", unit: u.id, x: cx, y: cy - 1, helper: -1 })), "a locker (a \"two\" piece) alone: refused");
+  check(/(Lockers|lockers) \(\d+ kg\) take two/.test(combatAct(st, { type: "liftPiece", unit: u.id, x: cx, y: cy - 1, helper: -1 })), "a locker (a \"two\" piece) alone: refused (\"The lockers … take two\": the name a plural, issue #48)");
   check(combatAct(st, { type: "liftPiece", unit: u.id, x: cx, y: cy - 1 }) === "" && u.tether === v.id, "two lift it (the helper next to them taken)");
   fresh(b);
   const sides = F.setTargets(b, u).map((t) => t.side).sort().join(",");

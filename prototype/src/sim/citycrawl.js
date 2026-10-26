@@ -43,7 +43,7 @@ import { raidLootShare, raidBig } from "./battlesize.js"; // the quick search's 
 import * as Weather from "./weather.js"; // the season: a chest freezer's food kept in winter (combat.js boxLoot)
 import { newItem } from "./inventory.js";
 import { breakBoarded, breakPiece } from "./barricade.js"; // a place picked over: a scene's barricade broken through (pickedOver)
-import { LIFT, liftDef, pieceKindOf, dropPiece, reweigh, partnerOf } from "./furnicarry.js"; // a piece of furniture carried block to block (issue #21)
+import { LIFT, liftDef, pieceKindOf, dropPiece, reweigh, partnerOf, pluralName, agree } from "./furnicarry.js"; // a piece of furniture carried block to block (issue #21)
 import { weighPlayer, CARRY as KIT } from "./carrykit.js"; // its pace: the carrier's band
 import { raidEnemies } from "./scavenge.js";
 import { applyZType, battleTypes, eraKinds } from "./zombietypes.js";
@@ -819,7 +819,7 @@ function leavePiece(state, p, s, why = "") {
   (mem.left = mem.left || {})[cell] = [...(mem.left[cell] || []), { key: item.key, kind: def.kind, item, day: day(state) }];
   const blk = c.blocks[cell];
   if (blk) blk.left = mem.left[cell];
-  return `${why ? `${why} ` : ""}the ${def.name.toLowerCase()} is left on ${blk ? blk.street : "the street"}.`.replace(/^the/, "The");
+  return `${why ? `${why} ` : ""}the ${def.name.toLowerCase()} ${agree(def.name, "is", "are")} left on ${blk ? blk.street : "the street"}.`.replace(/^the/, "The");
 }
 // Take up a piece left on this block (the block card's pieces: mem.left): the first of the team with free arms (and
 // a second for a "two" piece, the other end). Returns "" or why not.
@@ -912,7 +912,7 @@ function rimExitPieces(state, p) {
   if (c.cell === c.entry && p.vehicleId) return piecesOut(state, p);
   const names = list.map((P) => P.def.name.toLowerCase());
   for (const P of list) leavePiece(state, p, P.s);
-  const one = names.length === 1, street = (c.blocks[c.cell] || {}).street || "the street";
+  const one = names.length === 1 && !pluralName(names[0]), street = (c.blocks[c.cell] || {}).street || "the street"; // furnicarry.js pluralName: "some shelves. They stand" (issue #48)
   const text = `Exhausted, the team dropped what it was carrying: ${piecesText(names)}. ${one ? "It stands" : "They stand"} on ${street} at the edge of the city${c.cell !== c.entry && p.vehicleId ? ", far from the vehicle" : ""}: a later crawl can take ${one ? "it" : "them"} up again.`;
   say2(c, text, "info", state.hour);
   log(state, `${teamName(state, p)}: ${text}`, "warn");

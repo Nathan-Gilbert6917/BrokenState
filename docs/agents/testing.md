@@ -33,6 +33,7 @@ Run `node tools/gate.js` from `prototype/` before every merge to dev. **A merge 
 - Without `--quick`, the tests in the `SLOW` table at the top of `tools/runtests.js` get a multiple of the time limit. The table's comment says how long each takes.
 - A failing test's output is kept in `tools/.testlogs/<name>.log`.
 - Only `*test*.js` files run; `.cjs` tools (`padnavtest.cjs`, `raidshot.cjs`) run by hand with `node`.
+- Scripted playthroughs (`carryplaytest.js`, issue #48) play a whole flow through the sim's orders and print a transcript, a line a step, between the `ok` / `FAIL` checks; each FAIL ends with `[seed …, scene …]`. Read the transcript lines just above the first FAIL to see where the flow broke. Their browser versions (`carryplaysmoke.cjs`) are `.cjs`, run by hand.
 
 ## A red test
 
