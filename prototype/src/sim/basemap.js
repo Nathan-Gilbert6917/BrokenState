@@ -140,6 +140,7 @@ import { setFurnitureAt, furnitureInStores } from "./beds.js"; // beds as furnit
 import { POWER_FOOT, SPOT } from "./data-power.js"; // the power grid: found generators, spotlights (on a wall stand or the ground), fridges, the panel, the press, the pump, the charger
 import { isSetPiece, setPlacedAt, placedInStores, spotOn, fenceCharged } from "./electric.js"; // set from the stores; a spotlight lit, the wire charged (call-time only)
 import { pondsOn, pondWhy, pondWaits } from "./ponds.js"; // the hollows' ponds and mud: nothing built on them or filled in until dry
+import { markNotCleared } from "./poirooms.js"; // a camp inside a POI: its Not cleared rooms on the base map (issue #71; call-time only)
 
 // The grid by tier: core = the half-size of the middle structure's own ground, yard = the yard's half-size to start
 // with, per = yard growth a building with a footprint, cap = the yard's largest half-size (never past the map's edge,
@@ -2551,6 +2552,7 @@ function viewBattle(state, base, prev = null, site = false) {
   if (prev) { b.keepCam = true; b.layout = prev.layout; } // the same layout record: the pick and the last message carry over; keepCam: the view stays where it was (ui/isoview.js)
   const known = site ? null : base.poiCamp ? poiKnownMask(b, base) : knownMask(b, base); // poicamp.js: a camp inside a POI keeps the raid's fog; campscout.js: a camp set up blind, its map known only round the fire until surveyed (combat.js playerVision)
   if (known) b.knownMask = known;
+  if (base.poiCamp) markNotCleared(b, base); // poirooms.js (#71): the Not cleared rooms and the yard with the dead tinted (c.nb, c.nc: why)
   return b;
 }
 // The camp's spot picked on the tile's own map, in the same isometric view (the user's request 2026-10-22: "For the

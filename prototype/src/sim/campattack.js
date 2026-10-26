@@ -31,7 +31,8 @@
 // soft targets: a small camp is theirs, a strong hub hardly ever); its stance and kit: running silent (hiding.js base.silent) × SILENT, camouflage netting standing × CAMO.
 // No attack comes within COOLDOWN hours of the last at that base (no raider band within RAID_COOLDOWN of the last band), to an empty base (nobody home), during a fight or
 // while the last card is unanswered.
-// THE WAVE (waveSource: where a wave comes from, one function #71 replaces with the POI camp's Not cleared rooms):
+// THE WAVE (waveSource: where a wave comes from; at a POI camp the grounds' part comes out of its Not cleared rooms,
+// #71 poirooms.js roomWave, w.rooms):
 // the grounds' part first (GROUNDS_WAVE, + GROUNDS_BIG over GROUNDS_BIG_AT left, at most what is left), then the
 // trickle's part (TRICKLE_MIN + trickleFree × TRICKLE_SHARE, × up to TRICKLE_LOUD on a loud tile, at most TRICKLE_MAX,
 // ± a die), drawn OUT of the open ground (deadpop.js drawFromTile) as the wave forms: while it is at the camp, no other
@@ -70,6 +71,7 @@ import { baseDefense } from "./factions.js";
 import { tileThreatEstimate } from "./threatknow.js"; // #67: the levels as your people see them
 import { scaleFood } from "./foods.js";
 import { GROUNDS, groundsWord, takeDead } from "./campscout.js"; // call-time only (campscout.js groundsHour calls this module)
+import { roomWave, roomsKilled, refreshWay } from "./poirooms.js"; // #71: a POI camp's waves out of its Not cleared rooms (call-time only)
 
 export const CAMP_ATTACK = {
   GROUNDS_P: 1 / 30, GROUNDS_FULL: 10, GROUNDS_LO: 0.4,     // the grounds' dead: an hour's chance, full from this many left
@@ -236,11 +238,12 @@ export function nearbyView(state, base) {
  */
 export function waveSource(state, base, hit, list = basesOn(state, base.tile)) {
   const tile = base.tile, salt = [diceKey(base, base.fid != null ? { id: base.fid } : null), state.hour];
-  let g = 0, d = 0, r = 0, rp = 0;
+  let g = 0, d = 0, r = 0, rp = 0, rooms = null;
   if (hit.grounds) {
     const left = groundsLeft(state, base);
     const hi = C.GROUNDS_WAVE[1] + (left > C.GROUNDS_BIG_AT ? C.GROUNDS_BIG : 0);
     g = Math.min(left, C.WAVE_MAX, rollIn(state, [C.GROUNDS_WAVE[0], hi], ...salt, "gw"));
+    if (g && base.poiCamp && base.poi != null) { const rw = roomWave(state, base, g); g = rw.total; rooms = rw.rooms; } // poirooms.js (#71): out of the Not cleared rooms, open routes first, slowed by shut doors
   }
   if (hit.trickle) {
     const free = trickleFree(state, tile, list);
@@ -256,27 +259,31 @@ export function waveSource(state, base, hit, list = basesOn(state, base.tile)) {
     r = drawRaiders(state, tile, want - rp);
   }
   if (!(g + d + r + rp)) return null;
-  return { g, d, r, rp, poi: base.poi != null ? base.poi : null };
+  return { g, d, r, rp, poi: base.poi != null ? base.poi : null, ...(rooms ? { rooms } : {}) };
 }
 // The POI's raiders drawn out: killRaiders takes them off the POI (quietly: no noise, no kill memory for raiders), and
 // settleWave puts back the ones that got away into the POI.
 const takePoiRaiders = (state, tile, poi, n) => killRaiders(state, tile, poi, n);
 /**
  * A wave's end: kills off the pools (the grounds' first, then the drawn), the rest put back. Returns the kills
- * { dead, raiders }. @param {any} state @param {any} base @param {any} w the wave (waveSource) @param {number} killedDead
- * @param {number} killedRaiders @param {{ loud?: boolean }} [o]
+ * { dead, raiders }. o.brokeIn (#71, a fight lost at a POI camp): the trickle's survivors go into the place, not back
+ * out. @param {any} state @param {any} base @param {any} w the wave (waveSource) @param {number} killedDead
+ * @param {number} killedRaiders @param {{ loud?: boolean, brokeIn?: boolean }} [o]
  */
 export function settleWave(state, base, w, killedDead, killedRaiders, o = {}) {
   const tile = base.tile;
   let kg = Math.min(w.g, Math.max(0, Math.round(killedDead)));
+  if (kg && w.rooms) roomsKilled(base, w.rooms, kg); // poirooms.js (#71): off the rooms they came out of
   if (kg) kg = base.grounds ? takeDead(state, base, kg) : killDead(state, tile, base.poi != null ? base.poi : null, kg, o);
   const kd = Math.min(w.d, Math.max(0, Math.round(killedDead) - kg));
   if (w.d) { putBack(state, tile, null, w.d); if (kd) killDead(state, tile, null, kd, o); }
+  if (o.brokeIn && w.d > kd && base.poiCamp && base.poi != null) { const n = drawFromTile(state, tile, w.d - kd), got = n ? putBack(state, tile, base.poi, n) : 0; if (n > got) putBack(state, tile, null, n - got); } // #71: the trickle's survivors got into the place (its Not cleared rooms nearest the edge)
   const kr = Math.min(w.r + w.rp, Math.max(0, Math.round(killedRaiders)));
   if (w.rp) putBackRaiders(state, tile, w.poi, w.rp);
   if (w.r) putBackRaiders(state, tile, null, w.r);
   if (kr) killRaiders(state, tile, w.rp ? w.poi : null, kr, o);
   if (base.campAttack) { delete base.campAttack.wave; }
+  if (base.poiCamp && base.poi != null) refreshWay(state, base, "after the attack"); // poirooms.js (#71): the way out after every grounds attack
   return { dead: kg + kd, raiders: kr };
 }
 
@@ -405,7 +412,7 @@ export function defendWave(state, baseId) {
     : { kind: "zombies", count: dead, power: th.power || 2, mix: th.mix || null, name: `the dead from ${groundsWord(state, base.tile)}` };
   fightNow(state, {
     tile: base.tile, baseId: base.id, enemy, ambush: null, canRetreat: true, handler: "campAttack", layout: "baseDefence", downedLive: 0.4, deploy: true,
-    context: { baseId: base.id, dead, raiders, wave: dead + raiders, grounds: !!base.grounds, night: isNight(state) },
+    context: { baseId: base.id, dead, raiders, wave: dead + raiders, grounds: !!base.grounds, night: isNight(state), ...(w.rooms ? { rooms: w.rooms } : {}) }, // rooms: fort.js places those dead in their rooms (poirooms.js, #71)
   });
   return "";
 }
@@ -431,7 +438,7 @@ registerCombatHandler("campAttack", (state, result, setup) => {
   const won = result.outcome === "victory";
   const killed = won ? c.wave : Math.min(c.wave, result.enemiesKilled || 0);
   const kd = Math.min(c.dead, killed), kr = Math.min(c.raiders, killed - kd);
-  const k = settleWave(state, base, w, kd, kr, { loud: (result.ammoUsed || 0) > 0 });
+  const k = settleWave(state, base, w, kd, kr, { loud: (result.ammoUsed || 0) > 0, brokeIn: !won });
   if (won) { log(state, `${base.name} held: ${k.dead + k.raiders} attackers cut down.`, "good"); return; }
   base.stock.meds = Math.floor((base.stock.meds || 0) * 0.85);
   scaleFood(base, 0.85);

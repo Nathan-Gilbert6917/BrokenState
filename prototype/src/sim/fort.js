@@ -31,6 +31,7 @@ import { layMines } from "./mines.js"; // the main base's minefield in the margi
 import { preBoardBase } from "./barricade.js"; // their outer windows and doors boarded before your assault (the user's pick 2026-10-18)
 import { buildBaseMap, baseMapSize, makeStores, markThieves, FLOOD, faceOf, terrainOf } from "./basemap.js"; // the base map: every real base's own layout, walled or not
 import { layAssaultStores, stockAssaultStores } from "./assaultstores.js"; // their real stores on the map of an assault
+import { placeFromRooms } from "./poirooms.js"; // a POI camp's dead out of its Not cleared rooms (issue #71; call-time only)
 
 // Which map a base fights on: its own base map (basemap.js: the player's layout, walled or not, the attack from any
 // side) for every real base; the generated yard (interior.js) for a group's base you storm (assaultBase, id −1) and
@@ -288,6 +289,7 @@ export function fortDefence(b, ctx, base, c) {
     } else c0 = rng.pick(cells);
     u.x = c0[0]; u.y = c0[1];
   });
+  if (base.poiCamp && c.rooms) placeFromRooms(b, F, base, c.rooms, rng); // poirooms.js (#71): a POI camp's dead come out of their Not cleared rooms (the trickle at the edges)
   b.units = b.units.filter((u) => u.x >= 0);
   fortDefaults(b, F, side, okCell);
   const floodlit = c.floodlit ?? (count(base, "floodlights") > 0 && (poweredType(base, "floodlights") || (base.stock.fuel || 0) >= 2));
