@@ -3530,7 +3530,7 @@ const makeSpec = (rng, option, legacy = false, scale = null, officesOld = false,
   return scale ? realScale(rng, spec, option.key, { ...scale, storeyBonus: option.storeyBonus || 0 }) : spec;
 };
 // The archetypes issue #25 added (no older plan): laid out the new way in an older save too.
-const NEW_KEYS = new Set(["hq", "aidstation", "gatehouse", "tower", "flightops", "hotel"]); // hotel: issue #29, no older save had one
+const NEW_KEYS = new Set(["hq", "aidstation", "gatehouse", "tower", "flightops", "hotel", "furnstore", "laundromat", "thrift", "bakery", "butcher", "deli"]); // hotel: issue #29, no older save had one; issue #55's six shops likewise
 // The setting a site's buildings stand in (data-buildingsize.js REAL_SIZE city: a city's towers): "city" on a city's
 // tile (its crawl too) or a site-less city tile, "town" on a town's, else "rural".
 export function settingOf(tile) {

@@ -240,7 +240,7 @@ section("#22's tiers: the fronts' pieces in every variant");
 // books of their own before (a bag and a lamp); novels, comics, magazines and a few skill books since.
 const TODAY = { pharmacy: 175.1, gasstation: 87.2, truckstop: 91.4, gunstore: 207.4, pawnshop: 193.9, sportshop: 76.4, electronics: 65.7, radioshop: 67.8, bookstore: 19.1, petstore: 58.4, garden: 43.7, clothing: 31.1, liquor: 29.8, hardware: 113.2, feedstore: 76.3, dealer: 36.2, bank: 16.5, autoshop: 62.8, garage: 75.1, workshop: 68.1, corner: 121.6, grocery: 40.8, supermarket: 57.5,
   // issue #55's six, new: their own density when they came (200 seeds), held as the rest are
-  furnstore: 20.1, laundromat: 12.6, thrift: 23.7, bakery: 28.5, butcher: 33.3, deli: 39.5,
+  furnstore: 20.1, laundromat: 12.6, thrift: 23.1, bakery: 27.9, butcher: 33.5, deli: 39.3,
 };
 const LN = QUICK ? 60 : 200;
 section(`Loot per kind by the area against today's (${LN} seeds)`);

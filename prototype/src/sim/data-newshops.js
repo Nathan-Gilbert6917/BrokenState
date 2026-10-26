@@ -82,7 +82,7 @@ export const NEWSHOP_KINDS = {
 //             packing, straps, a hand truck's tools, the forklift's propane);
 //   laundromat the laundry: soap and bleach, lost things in the dryers (a bag, a phone, coins), the change machine's
 //             quarters (a cashbox), the vending machine's snacks;
-//   thrift    racks and bins of everything people gave away: clothes and bags, books, games and toys, a camp stove,
+//   thrift    racks and bins of everything people gave away: clothes and bags, books, games and toys, a lantern,
 //             a bat, a golf club; thriftsort the sorting room's donation bags;
 //   bakery    the bakehouse and its stores: flour, sugar, oats and the baked goods that spoiled (foods.js: bread is
 //             gone in days); bakefront the shop's cases; butcher the cutting room, its cases and walk-ins (frozen meat,
@@ -99,7 +99,7 @@ export const NEWSHOP_AREAS = {
   thrift: { tags: ["shop", "home", "books", "travel"], def: { name: "Thrift racks", boxes: ["clothesrack", "shelf", "crate"],
     loot: { scrap: [0.55, 1, 4], water: [0.06, 1, 1] },
     gear: [["leatherjacket", 0.04], ["backpack", 0.03], ["slingbag", 0.035], ["duffle", 0.02], ["hikingpack", 0.012], ["novel", 0.05], ["comic", 0.02], ["magazines", 0.02], ["puzzlebook", 0.02], ["cards", 0.01],
-      ["bat", 0.01], ["golfclub", 0.01], ["lantern", 0.01], ["stove", 0.005], ["kneeguards", 0.008], ["bikehelmet", 0.008]] } },
+      ["bat", 0.01], ["golfclub", 0.01], ["lantern", 0.01], ["bikehelmet", 0.008]] } },
   thriftsort: { tags: ["shop", "home"], def: { name: "Donation bags", boxes: ["crate", "crate", "shelf"],
     loot: { scrap: [0.55, 1, 3], water: [0.05, 1, 1] }, gear: [["slingbag", 0.03], ["backpack", 0.02], ["leatherjacket", 0.02], ["novel", 0.02], ["flashlight", 0.01]] } },
   bakery: { tags: ["kitchen", "shop"], def: { name: "Bakehouse", boxes: ["dryshelf", "shelf", "counter"],
@@ -149,7 +149,7 @@ export const NEWSHOP_FRANCHISES = {
     { id: "junkbarn", name: "Hank's Junk Barn", w: G(0, 0.8, 0.3), look: L("#a2713f", "#5a3a20", "#e8e4d8", "#5a3a20", "#8b6a48", 2), plan: { fl: "conc", variants: ["barn", "flea", "dockside"] } },
   ],
   bakery: [
-    { id: "goldencrust", name: "Golden Crust Bakery", w: G(0.8, 1, 1), look: L("#e8c04a", "#8a4b32", "#8a4b32", "#ffffff", "#f0e6c8", 0), plan: { fl: "tile", variants: ["village", "corner", "artisan", "offices"] } },
+    { id: "hearthstone", name: "Hearthstone Bakery", w: G(0.8, 1, 1), look: L("#e8c04a", "#8a4b32", "#8a4b32", "#ffffff", "#f0e6c8", 0), plan: { fl: "tile", variants: ["village", "corner", "artisan", "offices"] } },
     { id: "boulangerie", name: "La Petite Boulangerie", w: G(1, 0.6, 0.1), look: L("#1f3550", "#0f1c2b", "#e8e4d8", "#1f3550", "#c8402f", 3), plan: { fl: "tile", variants: ["patisserie", "cafe", "cake"] } },
     { id: "dozen", name: "Dozen Donuts", w: G(1, 1, 0.8), look: L("#e88aa0", "#8a3a50", "#ffffff", "#e88aa0", "#7fc6e6", 2), plan: { fl: "tile", variants: ["donut", "corner"] } },
     { id: "breadbasket", name: "Bread Basket Wholesale", w: G(0.6, 1, 0.2), look: L("#c9a46a", "#5a3a20", "#3f6b3a", "#ffffff", "#e8e4d8", 1), plan: { fl: "conc", variants: ["wholesale", "bagel"] } },

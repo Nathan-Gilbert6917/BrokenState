@@ -50,7 +50,7 @@ const BASELINE = {
   govbunker: 1037.7, shelter: 151.4, prepper: 273.0, regionalmall: 17794.1, stripmall: 2735.9, outlet: 3947.1,
   cinema: 52.7, arcade: 53.4, mallservices: 89.9, mallrestrooms: 18.5, vacantunit: 5.9,
   // issue #55's six shops, new (--baseline, 2026-10-26)
-  furnstore: 150.9, laundromat: 35.8, thrift: 61.7, bakery: 42.8, butcher: 60.7, deli: 73.6,
+  furnstore: 150.9, laundromat: 35.8, thrift: 60.5, bakery: 42.8, butcher: 60.7, deli: 73.6,
 };
 // Kinds whose loot moved past ±10% because a row was clearly wrong: the reason.
 const SHIFTED = {
