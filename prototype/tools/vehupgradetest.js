@@ -14,6 +14,8 @@
 //     raids, their home base's defence and fights against them by the numbers
 //   - strip refunds (half the car parts, the glass whole: a spare set fitted again for free); value; save round-trip
 //   - drawing: the sprites with upgrades (stub canvases)
+// Since d0adaca the hub's starting vehicle is rolled by its owner's background (a sedan on seed 7): the worlds that fit
+// the starting pickup pin its kind with createWorld's fleet option (truckWorld; issue #44, 2026-10-26).
 // Usage: node tools/vehupgradetest.js [seed = 7]
 import { createWorld, hub, atBase } from "../src/sim/world.js";
 import { SUPPLIES } from "../src/sim/data.js";
@@ -63,6 +65,9 @@ function team(st, tile, n = 3, vehicleId = null) {
 const raidSetup = (st, tile, p) => ({ mode: "raid", tile, partyId: p.id, canRetreat: true, ambush: null, handler: "vut", enemy: { kind: "mixed", count: 1, power: 3, groups: raidEnemies(st, tile) }, raid: { heat0: 5 }, context: {} });
 const fieldSetup = (tile, p, extra = {}) => ({ tile, partyId: p.id, enemy: { kind: "zombies", count: 3, power: 3 }, ambush: null, canRetreat: true, handler: "vut", context: {}, ...extra });
 const isBuilt = (b) => b.buildings.find((x) => x.type === "garage");
+// The hub's starting vehicle is rolled by its owner's background since d0adaca (2026-10-25: "Normal and Custom starting
+// vehicles rolled by whose they are"), a sedan on seed 7; the checks below fit a pickup, so the fleet pins its kind.
+const truckWorld = (seed, factionCount = 3) => createWorld({ seed, factionCount, fleet: [{ type: "truck" }] });
 
 // ---------------------------------------------------------------------------------------------------------------
 section("Costs, skill gates, the shop, the garage job");
@@ -77,7 +82,7 @@ section("Costs, skill gates, the shop, the garage job");
   check(VEH_UPGRADES.glass.hours === 16 && VEH_UPGRADES.glass.mech === 5 && VEH_UPGRADES.glass.kg === 90 && VEH_UPGRADES.plating.hours === 24 && VEH_UPGRADES.plating.mech === 6 && VEH_UPGRADES.plating.kg === 180 && VEH_UPGRADES.mesh.kg === 30 && VEH_UPGRADES.scrapPlate.kg === 230, "section 11's hours and Mechanics; weights glass 90, plate 180 a level, grilles 30, scrap plating 230");
   check(VEH_UPGRADES.scrapPlate.mech === 3 && VEH_UPGRADES.scrapPlate.max === 1 && VEH_UPGRADES.scrapPlate.kg / VEH_UPGRADES.scrapPlate.armour > VEH_UPGRADES.plating.kg / VEH_UPGRADES.plating.armour, "scrap plating: one level, Mechanics 3, heavier per protection");
 
-  const st = createWorld({ seed: SEED, factionCount: 3 });
+  const st = truckWorld(SEED);
   const h = hub(st);
   const v = st.vehicles.find((x) => x.type === "truck" && x.loc.kind === "base");
   const people = atBase(st, h.id);
@@ -160,7 +165,7 @@ section("Riders, blasts, cover, ramming (combat.js)");
 {
   check(riderMult({ upgrades: { glass: 1 } }, 15) === 0.35 && riderMult({ upgrades: { glass: 1 } }, 30) === 0.35 && riderMult({ upgrades: { glass: 1 } }, 38) === 0.8 && riderMult({ upgrades: { glass: 1 } }, 45) === 0.8 && riderMult({ upgrades: { glass: 1 } }, 55) === 1 && riderMult({ upgrades: { glass: 1 } }, 70) === 1, "glass: ×0.35 to pen 30, ×0.8 to pen 45, full above");
   check(riderMult({ upgrades: { mesh: 1 } }, 15) === 1 && riderMult({}, 15) === 1, "grilles and bare windows stop no bullets");
-  const st = createWorld({ seed: SEED, factionCount: 3 });
+  const st = truckWorld(SEED);
   const h = hub(st);
   const v = st.vehicles.find((x) => x.type === "truck");
   const tile = st.tiles.find((t) => t.road && !t.loc && t.terrain === "plains" && !st.bases.some((b) => b.tile === t.id)) || st.tiles.find((t) => t.terrain === "plains" && !t.loc);
@@ -171,7 +176,7 @@ section("Riders, blasts, cover, ramming (combat.js)");
   check(riderHitMult(b, { weapon: "pistol" }) === 0.35 && riderHitMult(b, { weapon: "huntrifle" }) === 0.8 && riderHitMult(b, { cal: "308", ammo: "ap" }) === 1 && riderHitMult(b, { cal: "556", ammo: "fmj" }) === 0.35 && riderHitMult(b, {}) === 0.35, "riderHitMult: a 9mm ×0.35, a .308 ×0.8, .308 AP full, typed 5.56 ×0.35, unknown (pen 25) ×0.35");
   // A grenade next to the vehicle with people aboard.
   const blastRun = (ups) => {
-    const st2 = createWorld({ seed: SEED, factionCount: 3 });
+    const st2 = truckWorld(SEED);
     const v2 = st2.vehicles.find((x) => x.type === "truck");
     v2.upgrades = ups;
     const p2 = team(st2, tile.id, 3, v2.id);
@@ -208,7 +213,7 @@ section("Riders, blasts, cover, ramming (combat.js)");
   check(coverOk, "a car with plate on it is full cover (half without); platedCell says so");
   // Ramming: crates in the way, with and without plate.
   const ramRun = (ups, k = "crate") => {
-    const st2 = createWorld({ seed: SEED, factionCount: 3 });
+    const st2 = truckWorld(SEED);
     const v2 = st2.vehicles.find((x) => x.type === "truck");
     v2.upgrades = ups;
     const p2 = team(st2, tile.id, 3, v2.id);
@@ -233,7 +238,7 @@ section("Riders, blasts, cover, ramming (combat.js)");
 // ---------------------------------------------------------------------------------------------------------------
 section("By the numbers: ambushes and turrets (byNumbersOdds)");
 {
-  const st = createWorld({ seed: SEED, factionCount: 3 });
+  const st = truckWorld(SEED);
   const v = st.vehicles.find((x) => x.type === "truck");
   const tile = st.tiles.find((t) => t.road && !t.loc && !st.bases.some((b) => b.tile === t.id));
   const p = team(st, tile.id, 3, v.id);
@@ -651,7 +656,7 @@ section("Turrets: an LMG turret built round an LMG item; the M2 bolted to its mi
 // ---------------------------------------------------------------------------------------------------------------
 section("Strip, refunds, value, save");
 {
-  const st = createWorld({ seed: SEED, factionCount: 3 });
+  const st = truckWorld(SEED);
   const h = hub(st);
   const v = st.vehicles.find((x) => x.type === "truck");
   const value0 = vehicleValue(v);

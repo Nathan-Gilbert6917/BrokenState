@@ -210,7 +210,7 @@ Detail: [combat.md](../features/combat.md).
 - **Things on the ground** and searching bodies [ground]; the ground in a survivor's inventory window [ui/inventory, carry]. [details](../features/combat.md#the-ground-in-a-survivors-inventory)
 - **Retreat**: "Sound the retreat" and break-off policies for auto-resolved fights [combat, breakoff]. [details](../features/combat.md#retreat)
 - **Third side**: neutrals and soldiers who are neither your team nor its enemies [thirdside].
-- **Talking to other groups in a raid**: call out, truce, trade, recruit or ally for the battle; treachery and grudges [parley, thirdside]. [details](../features/combat.md#talking-to-other-groups-in-a-raid)
+- **Talking to other groups in a raid**: call out, truce, trade, recruit or ally for the battle; treachery and grudges [parley, thirdside] `tools/parleytest.js`. [details](../features/combat.md#talking-to-other-groups-in-a-raid)
 - **Orders to allies**: give an allied survivor an order for 1 action; they may ignore it [allyorders]. [details](../features/combat.md#orders-to-allies)
 - **Siege kit**: ladders, rams and frag grenades; groups and raiders bring only their own [siege, arsenal, visitors]. [details](../features/combat.md#siege-kit)
 - **Vehicles in battle**: Humvee gunners, ramming gates; every car and truck a low-poly model by its type [combat, ui/vehiclemodel, ui/isoview, ui/figures] `tools/vehiclemodeltest.js`. [details](../features/combat.md#vehicles-in-battle)
