@@ -40,6 +40,7 @@ import { typeFind, AREA_MIX } from "./foods.js"; // the food in a container as i
 import { survivorById, factionById, alive, atBase, homeAt, combatPower, hurt, log, skill, gearEffect, isNight, usesArrows, armedFactor, arrowsBack, meleeAimBonus, meleeDmgMult } from "./world.js";
 import { partyMembers, partyTile, partyCapacity, cargoLoad, cargoRoom, unitsThatFit, wipeParty, leaveVehicle } from "./parties.js";
 import { noteGunfire } from "./fieldheat.js";
+import { deadPopBattleEnd, earshot, DEADPOP } from "./deadpop.js"; // the dead on the land (issue #65): reinforcements drawn from the tile's open ground, the kills off the pools
 import { GEAR, SUPPLIES, TERRAIN } from "./data.js";
 import * as Weather from "./weather.js"; // the season: a chest freezer's food kept in winter (BOX_LOOT; call-time only)
 import { partyVehicle, partyVehicles, isBike, upgradesOf, armourOf, riderMult, vehicleOdds, UPGRADE_FX, technicalPlated, SEATS, teamDrivers, driversFor } from "./vehicles.js"; // the team's car or truck on the map (placeVehicle); its upgrades (glass, plating)
@@ -450,6 +451,7 @@ export function finishCombat(state, setup, result) {
     const armed = setup.enemy && setup.enemy.kind !== "zombies" ? Math.min(30, (setup.enemy.count || 0) * 2) : 0;
     noteGunfire(state, tile, battle ? battle.gunshots || 0 : ((result && result.ammoUsed) || 0) + armed);
   }
+  deadPopBattleEnd(state, setup, result, battle); // deadpop.js: the reinforcements killed off the open ground; a raid's own dead (setup.deadPop) off its POI and the tile
   // Makeshift gear loses durability with every fight (a raid only if someone was killed). A battle played on the
   // map has already worn what its units took the field with (wearFielded, when the battle ended); one resolved by
   // the numbers wears everyone who was counted in it.
@@ -4162,7 +4164,8 @@ export function createBattle(state, setup) {
   // The houses' locked doors (genMap FIELD_DOOR): opened like a raid's (locks.js openLock, combatAct "open").
   if (map.locked.length) b.doors = map.locked.map(([x, y], i) => ({ id: i + 1, x, y, lock: { kind: "door", open: false, tries: 0, ...(map.cells[idx(x, y)].dk ? { dk: map.cells[idx(x, y)].dk } : {}) } })); // dk: the door's kind (locks.js openOdds: its lock's difficulty, whether it can be kicked)
   if (shellLines.length) say(b, `Shells out of the stock: ${shellLines.join(", ")}.`, "info");
-  b.reinfMax = Math.round(b.infection * 5);
+  b.reinfPool = earshot(state, b.tileId ?? (base ? base.tile : null)); // deadpop.js: the tile's open ground within earshot (no more come than are there)
+  b.reinfMax = Math.min(DEADPOP.REINF_MAX, b.reinfPool);
   b.zmix = maxMix(armoredOf(setup.enemy && setup.enemy.mix), beastsOf(setup.enemy && setup.enemy.mix)); // the dead drawn in later: soldiers among them at a military site, the dead beasts of the land (deadbeasts.js)
   const layout = setup.layout && layouts ? layouts.get(setup.layout) : null;
   const layoutCtx = (phase) => ({
@@ -5626,7 +5629,8 @@ export function callClear(state, b = state.combat) {
   return "";
 }
 
-// Gunfire on infected ground draws more of the dead from the map edge.
+// Gunfire on infected ground draws more of the dead from the map edge: out of the tile's open ground within earshot
+// (b.reinfMax, deadpop.js earshot); the ones killed come off it when the battle ends (deadPopBattleEnd).
 function reinforcements(b) {
   const rng = b.rng;
   const noise = b.noise;
@@ -5651,6 +5655,7 @@ function reinforcements(b) {
     if (zk) applyZType(z, zk, false, 2 + b.infection * 3);
     z.x = cells[i][0]; z.y = cells[i][1];
     z.reinforcement = z.wild = true;
+    z.drawn = true; // deadpop.js: out of the tile's open ground (deadPopBattleEnd takes the killed off it)
     z.ap = 2;
     b.units.push(z);
   }
@@ -7582,7 +7587,7 @@ export function createRaid(state, setup) {
     raid: {
       areas: map.areas, containers: map.containers, zones: map.zones,
       ...(map.natMap ? { natMap: map.natMap.slice() } : {}), // buildingmaps.js realScale: the map its plan would have had at its own size (a container's find goes by it)
-      hasVehicle: !!withVehicle, vehicleZone: map.zones.findIndex((z) => z.vehicle), heat: setup.raid?.heat0 || 0, stage: 0, spawned: 0, spawnCap: Math.round(RAID_SIZE.SPAWN_CAP * raidDeadScale(W, H, big)), ...(big ? { big: true } : {}), // vehicleZone: the zone the vehicle touches now (syncVehicleZone), -1 when driven off
+      hasVehicle: !!withVehicle, vehicleZone: map.zones.findIndex((z) => z.vehicle), heat: setup.raid?.heat0 || 0, stage: 0, spawned: 0, spawnCap: Math.min(Math.round(RAID_SIZE.SPAWN_CAP * raidDeadScale(W, H, big)), earshot(state, party ? partyTile(party) : tileId)), ...(big ? { big: true } : {}), // vehicleZone: the zone the vehicle touches now (syncVehicleZone), -1 when driven off
       // Hardcore (hardcore-loot.js): sites hold about twice a normal start's loot, so the cap is higher there.
       // A point of interest's containers hold what they held untouched (pois.js poiFull: how picked over it is shows
       // as containers already ransacked, poicont.js), else the site's loot.
@@ -7788,7 +7793,8 @@ export function alertNear(b, x, y, radius, why, src = null) {
 }
 const FLOOR_DAMP = 5; // a storey between a noise and a listener counts as this many tiles more
 
-// Heat climbs every turn and with noise. Each new stage (every RAID_HEAT.stage) brings a wave of the dead.
+// Heat climbs every turn and with noise. Each new stage (every RAID_HEAT.stage) brings a wave of the dead, out of the
+// tile's open ground within earshot (R.spawnCap: deadpop.js earshot; the killed come off it when the raid ends).
 export const RAID_HEAT = { turn: 1.2, noise: 1, infection: 0.6, stage: 25 }; // a turn's Heat: turn + noise × b.noise + infection × b.infection (parley.js shoutCost reads it)
 function raidTurn(b) {
   const R = b.raid;
@@ -7830,6 +7836,7 @@ function spawnWave(b, n) {
     if (zk) applyZType(z, zk, false, 2 + b.infection * 3);
     z.x = cells[i][0]; z.y = cells[i][1];
     z.reinforcement = z.wild = true;
+    z.drawn = true; // deadpop.js: out of the tile's open ground (deadPopBattleEnd takes the killed off it)
     z.aware = true;
     b.units.push(z);
   }

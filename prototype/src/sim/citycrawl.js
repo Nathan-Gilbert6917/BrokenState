@@ -27,7 +27,7 @@
 // its map, ui/citycrawl.js).
 import { crashSiphon } from "./crashstart.js"; // Crashlanding (2026-10-24): limited fuel can be siphoned
 import { legacyRooms } from "./worldcfg.js"; // an older save: the checkpoint as it always was (issue #25)
-import { placeMult, crawlClass, placing } from "./placement.js"; // a new world's blocks weighted by the placement table (issue #42)
+import { placeMult, crawlClass, placing, crawlExtraKind } from "./placement.js"; // a new world's blocks weighted by the placement table (issue #42)
 import { typeFind } from "./foods.js"; // a crawl's food finds as items
 import { keyWord } from "./water.js"; // supplies as words: "9mm FMJ", "rounds"
 import { Rng } from "./rng.js";
@@ -80,6 +80,8 @@ import { piecesOut, piecesText, crawlPieces as homePieces } from "./furnihome.js
 import { gridOf, inGrid, isEdge, levelOf, ringOf, maxLevel, entryOf, headingToward, turn, rimOf, pathToRim, dirTo, keyOf, xyOf, DIRS, DIR_NAMES, cellsOf } from "./citygrid.js"; // the round grid of blocks (2026-10-13)
 
 // ---------- tuning ----------
+// A gym's or a bowling alley's crawl place (issue #56): a shop's dead and richness.
+const CRAWL_PLACE = { dead: 1, rich: 1, w: 0, deep: 0, from: 1 };
 export const CRAWL = {
   MAX_BLOCK: 8,                 // the heart of the city: no block beyond this one
   PLACES: [2, 4],               // places on a block (2–3 at the edge; a fourth more likely deeper)
@@ -518,6 +520,9 @@ export function genBlock(state, c, cell = c.cell) {
     addPlace(new Rng(seedOf(state.seed, "crawlmuseum", c.tile, cell)), "museum", { dead: 1.1, rich: 1.1, w: 0, deep: 0, from: 1, rare: true }, places.length);
     places[places.length - 1].mcls = cls;
   }
+  // placement.js (issue #56, a new world only): a gym or a bowling alley now and then, on its own dice after everything above.
+  const rec = crawlExtraKind(state, c.tile, cell, places, CRAWL.PLACES[1], cls);
+  if (rec && BUILDINGS[rec]) addPlace(new Rng(seedOf(state.seed, "crawlplace", c.tile, cell)), rec, CRAWL_PLACE, places.length);
   // This visit: a place may be shut.
   if (places.length > 2 && vr.chance(CRAWL.BLOCKED)) {
     const pl = vr.pick(places);
@@ -584,6 +589,10 @@ export function specialChance(state, n) {
   if (n < S.from) return 0;
   return Math.min(S.max, S.chance + S.perBlock * (n - S.from) + S.late * yearGone(state));
 }
+// The city's dead met in a place, the street or an encounter are its tile's (deadpop.js, issue #65): setup.deadPop, so the
+// kills come off the tile's pool when the fight ends (deadpop.js deadPopBattleEnd).
+/** @param {any} c @param {any[]} groups */
+const crawlPop = (c, groups) => ({ tile: c.tile, poi: null, roster: groups.filter((g) => g && g.kind === "zombies").reduce((a, g) => a + (g.count || 0), 0) });
 // Who is in a place: the site's own (scavenge.js raidEnemies: the dead, guards of a group that holds it, rival
 // scavengers) with more and tougher dead deeper, and raiders holed up in it.
 function placeGroups(state, c, place, n = c.block) {
@@ -953,6 +962,7 @@ export function enterPlace(state, p, placeId, opts = {}) {
     enemy: { kind: own.length > 1 ? "mixed" : own[0]?.kind || "zombies", count: total, power: 3, name: own.map((g) => g.name).join(" and ") || "nobody", groups },
     raid: { heat0, place: placeOption(c, place, n), gunSite: place.key }, // gundist.js: a police station's armoury draws police guns (as the quick search's)
     context: { factionIds: groups.filter((g) => g.factionId && !g.parley).map((g) => g.factionId), crawl: { kind: "place", place: place.id, block: n, heat0 } }, // parley.js: a party in the place is not their land
+    deadPop: crawlPop(c, own), // deadpop.js: the dead killed come off the city's tile
   };
   // The vehicle waits at the city's edge: not on the building's map. A piece of furniture carried in stays in the arms
   // (issue #21: kept out of the battle's staging, given back at the entry: piecesBack).
@@ -1025,6 +1035,7 @@ function enterStreet(state, p, ev, areas, groups, gunSite = "city") {
     enemy: { kind: groups.length > 1 ? "mixed" : groups[0]?.kind || "zombies", count: total, power: 3, name: groups.map((g) => g.name).join(" and ") || "nobody", groups },
     raid: { heat0, building: "street", areas, gunSite, ...(ev.key === "checkpoint" && !legacyRooms(state) ? { checkpoint: true } : {}) }, // checkpoint: its guard shack, arms store and truck get the military pieces (militarylayout.js dressCheckpoint, issue #25; an older save's as it was)
     context: { factionIds: [], crawl: { kind: "street", event: ev.id, block: n, heat0 } },
+    deadPop: crawlPop(c, groups), // deadpop.js
   };
   const veh = p.vehicle;
   let b;
@@ -1278,7 +1289,7 @@ export function quickSearch(state, p, place) {
     const enemy = mergeGroups(groups);
     const sp = enemy.kind === "zombies" ? specialChance(state, n) : 0;
     if (sp > 0) enemy.types = { [crawlKind(state, rng, c.tile)]: Math.max(1, Math.round(enemy.count * sp)) };
-    const setup = { tile: c.tile, partyId: p.id, enemy, ambush: null, canRetreat: true, handler: "crawlfight", context: { crawl: { kind: "quick", place: place.id, block: n } } };
+    const setup = { tile: c.tile, partyId: p.id, enemy, ambush: null, canRetreat: true, handler: "crawlfight", context: { crawl: { kind: "quick", place: place.id, block: n } }, deadPop: crawlPop(c, [enemy]) }; // deadpop.js
     const res = autoResolveCombat(state, setup);
     finishCombat(state, setup, res);
     if (!state.parties.includes(p) || !p.crawl) return "";
@@ -1647,6 +1658,7 @@ function encSetup(p, c, e) {
   return {
     tile: c.tile, partyId: p.id, enemy: { ...e.enemy }, ambush: e.spotted ? "enemy" : null, canRetreat: true, handler: "crawlfight",
     context: { crawl: { kind: "enc", block: e.block, cell: e.cell, heading: e.heading, move: e.move, exit: e.exit, event: e.event } },
+    deadPop: crawlPop(c, [e.enemy]), // deadpop.js
   };
 }
 // The odds and options an encounter offers (the window and the autopilot).

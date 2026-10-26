@@ -34,7 +34,8 @@
 // - Clear them yourself (groundsRaid): a team of yours on the tile, from the POI map (poiraid.js poiPickCard) or its
 //   orders (mission "grounds"): a fight on the tile's own map out on the grounds (layout "siteClear", handler
 //   "groundsClear") against GROUNDS.RAID_SHARE of what is left.
-// - Every kill comes off the pool (takeDead); at 0 the attacks stop and the log says the grounds are clear.
+// - Every kill comes off the pool (takeDead) and off the tile's open ground (deadpop.js killDead; the grounds' dead are
+//   never more than the open ground holds: mapDead); at 0 the attacks stop and the log says the grounds are clear.
 // - A survey of the tile (groundsSurveyed, survey.js fullSurveyDone) shows it all: the fog lifts and the count shows.
 // THE GOVERNOR (autopilot.js): an outpost's team scouts first unless the hub is crowded or the land push is on; a
 // first home's team (the exiles) scouts first with 3 days of food in hand; the attacks' cards take Defend the camp.
@@ -46,6 +47,7 @@ import { fightNow } from "./defences.js";
 import { siteLand, siteProblem, terrainOf, SITE_RANGE, defaultSite } from "./basemap.js";
 import { siteBox } from "./basescatter.js";
 import { siteThreat } from "./siteclear.js";
+import { openDead, killDead } from "./deadpop.js"; // the dead on the land (issue #65): the grounds' dead are the tile's
 import { poiKnowledge } from "./pois.js";
 import { LOOK } from "./survey.js";
 import { hash01 } from "./skills.js";
@@ -159,7 +161,7 @@ export function blindCamp(state, base) {
 }
 // The whole map's dead (siteThreat's rules for one spot, × GROUNDS.MAP): none on quiet land.
 /** @param {any} state @param {number} tile */
-export const mapDead = (state, tile) => Math.min(GROUNDS.MAX, Math.round(siteThreat(state, tile).count * GROUNDS.MAP));
+export const mapDead = (state, tile) => Math.min(GROUNDS.MAX, openDead(state, tile), Math.round(siteThreat(state, tile).count * GROUNDS.MAP)); // deadpop.js: no more than the tile's open ground holds
 
 // ---------- the base's grounds ----------
 /** Your base on the tile whose grounds still hold the dead, or null. @param {any} state @param {number} tile */
@@ -251,6 +253,7 @@ export function takeDead(state, base, n) {
   const k = Math.min(g.dead, Math.round(n));
   g.dead -= k;
   g.killed = (g.killed || 0) + k;
+  killDead(state, base.tile, null, k); // deadpop.js: the grounds' dead are the tile's open ground
   if (!g.dead) {
     g.clearDay = Math.floor(state.hour / 24) + 1;
     log(state, `The grounds of ${base.name} are clear of the dead: no more of them will come out of ${groundsWord(state, base.tile)} at the camp.`, "good");

@@ -154,6 +154,21 @@ export const NEW_KINDS = {
     tags: ["shop", "crime", "travel", "kitchen", "home"],
     areas: ["liquor", "liquor", "store", "office"], size: 0.5, storeys: [1, 1],
   },
+  // Gyms and bowling alleys (issue #56, reclayout.js): thirteen variants each. Not shops of PLACE_W: a new world places
+  // them by the placement table (placement.js PLACE_EXTRA: a POI on a tile; CRAWL_EXTRA: a place on a crawl block), so
+  // the shops' lists and an older world stay as they were.
+  gym: {
+    site: { name: "Gym", glyph: "Gy", cat: "town", danger: 1, loot: { water: 2, food: 1, meds: 0.5, scrap: 1 },
+      gear: ["backpack", "slingbag", "duffle", "kneeguards", "bikehelmet", "bandagekit", "flashlight"], richness: 0.45, known: "public" },
+    tags: ["sport", "shop", "medical", "home", "travel", "tech"],
+    areas: ["gymfloor", "gymfloor", "gymlocker", "gymdesk", "smoothie"], size: 0.5, storeys: [1, 2],
+  },
+  bowling: {
+    site: { name: "Bowling alley", glyph: "Bw", cat: "town", danger: 1, loot: { water: 2, food: 2, scrap: 2, parts: 1 },
+      gear: ["bottle", "bat", "toolbox", "hammer", "crowbar", "flashlight", "bandagekit", "slingbag"], richness: 0.5, known: "public" },
+    tags: ["shop", "kitchen", "tools", "crime", "medical", "home"],
+    areas: ["lanes", "bowlbar", "shoecounter", "pinsetter", "kitchen"], size: 1, storeys: [1, 2],
+  },
   ...OFFICE_KINDS, // the office buildings (data-offices.js)
   ...PARK_KINDS, // the amusement parks (data-parks.js, issue #60)
   ...NEWSHOP_KINDS, // the furniture store, laundromat, thrift store, bakery, butcher and deli (data-newshops.js, issue #55)
@@ -226,6 +241,34 @@ export const AREA_DEFS = {
     loot: { food: [0.45, 1, 3], water: [0.35, 1, 2], meds: [0.2, 1, 1] }, gear: [["bandagekit", 0.03], ["candy", 0.06], ["coffee", 0.04], ["tea", 0.04]] } },
   libtech: { tags: ["tech", "office", "school"], def: { name: "Computers", boxes: ["computer", "printer"],
     loot: { electronics: [0.2, 1, 1], parts: [0.2, 1, 1], scrap: [0.3, 1, 2] }, gear: [["laptop", 0.01], ["phone", 0.01], ["camera", 0.005], ["handradio", 0.005]] } },
+  // A gym's rooms (issue #56, reclayout.js): the weight and cardio floors and the studios (water bottles, a towel's
+  // worth, now and then a bag), the front desk (energy and protein bars, first aid), the smoothie bar (its drinks,
+  // protein powder: foods.js MIXES.gym), the locker rooms (bags and what people left in them), the spa (towels, first
+  // aid), the kit store (cleaning stock, a few tools). A bowling alley's: the lanes (little), the concourse and shoe
+  // counter (snacks, first aid), the bar (beer and liquor), the pinsetter room (the mechanics' tools and parts), the pro
+  // shop (bags).
+  gymfloor: { tags: ["sport", "shop", "medical", "travel"], def: { name: "Gym floor", boxes: ["shelf", "locker"],
+    loot: { water: [0.4, 1, 3], food: [0.12, 1, 1], scrap: [0.2, 1, 2] }, gear: [["kneeguards", 0.03], ["slingbag", 0.02], ["bandagekit", 0.02]] } },
+  gymdesk: { tags: ["shop", "medical", "office"], def: { name: "Front desk", boxes: ["counter", "cabinet"],
+    loot: { water: [0.45, 1, 3], food: [0.45, 1, 3], meds: [0.2, 1, 1], scrap: [0.25, 1, 2] }, gear: [["bandagekit", 0.07], ["flashlight", 0.04], ["handradio", 0.01]] } },
+  smoothie: { tags: ["kitchen", "shop"], def: { name: "Smoothie bar", boxes: ["counter", "coldcase", "shelf"],
+    loot: { food: [0.6, 1, 4], water: [0.65, 2, 5] }, gear: [["knife", 0.03]] } },
+  gymlocker: { tags: ["sport", "home", "travel"], def: { name: "Locker room", boxes: ["locker", "locker", "shelf"],
+    loot: { water: [0.35, 1, 2], food: [0.15, 1, 1], meds: [0.08, 1, 1], scrap: [0.3, 1, 2] }, gear: [["backpack", 0.04], ["slingbag", 0.05], ["duffle", 0.04], ["kneeguards", 0.03], ["bikehelmet", 0.02], ["bandagekit", 0.02]] } },
+  gymspa: { tags: ["medical", "home"], def: { name: "Spa", boxes: ["cabinet", "shelf"],
+    loot: { water: [0.3, 1, 2], meds: [0.15, 1, 1], scrap: [0.35, 1, 2] }, gear: [["bandagekit", 0.04]] } },
+  gymstore: { tags: ["tools", "shop"], def: { name: "Kit store", boxes: ["shelf", "crate", "cabinet"],
+    loot: { scrap: [0.5, 1, 4], parts: [0.2, 1, 2], water: [0.3, 1, 3], meds: [0.08, 1, 1] }, gear: [["hammer", 0.03], ["flashlight", 0.03], ["toolbox", 0.015]] } },
+  lanes: { tags: ["shop", "kitchen"], def: { name: "Lanes", boxes: ["shelf", "cabinet"],
+    loot: { scrap: [0.3, 1, 2], water: [0.2, 1, 2] }, gear: [["bottle", 0.02]] } },
+  shoecounter: { tags: ["shop", "kitchen", "medical"], def: { name: "Shoe counter", boxes: ["counter", "cabinet"],
+    loot: { food: [0.35, 1, 3], water: [0.35, 1, 3], meds: [0.12, 1, 1], scrap: [0.35, 1, 3] }, gear: [["bandagekit", 0.05], ["flashlight", 0.03]] } },
+  bowlbar: { tags: ["kitchen", "crime", "shop"], def: { name: "Bar", boxes: ["counter", "shelf", "cabinet"],
+    loot: { water: [0.55, 2, 6], food: [0.35, 1, 3] }, gear: [["bottle", 0.1], ["whiskey", 0.08], ["vodka", 0.05], ["wine", 0.03], ["bat", 0.02], ["knife", 0.02]] } },
+  pinsetter: { tags: ["tools", "garage"], def: { name: "Pinsetter room", boxes: ["toolchest", "shelf", "crate"],
+    loot: { scrap: [0.7, 2, 6], parts: [0.55, 1, 3], fuel: [0.1, 1, 1] }, gear: [["hammer", 0.06], ["crowbar", 0.04], ["prybar", 0.04], ["pipewrench", 0.03], ["toolbox", 0.03], ["flashlight", 0.05]] } },
+  proshop: { tags: ["sport", "shop", "travel"], def: { name: "Pro shop", boxes: ["displaycase", "shelf", "counter"],
+    loot: { scrap: [0.4, 1, 3], water: [0.15, 1, 1] }, gear: [["slingbag", 0.05], ["duffle", 0.06], ["backpack", 0.03], ["kneeguards", 0.02]] } },
   ...OFFICE_AREAS,
   ...PARK_AREA_DEFS, // a park's rooms (data-parks.js, issue #60)
   ...NEWSHOP_AREAS, // issue #55's rooms (data-newshops.js)
@@ -540,6 +583,8 @@ const P = (p, items) => ({ p, items });
 export const ROWS = {
   // loot.js: small finds a search hour and a raid container
   SITE_FINDS: {
+    gym: P(0.1, { deodorant: 2, shampoo: 2, soap: 1, chocolate: 1, phone: 0.5, batteries: 0.5 }),
+    bowling: P(0.1, { candy: 2, chocolate: 1, cards: 1.5, lighters: 1, batteries: 1, coffee: 0.5 }),
     sportshop: P(0.12, { lipbalm: 2, deodorant: 2, chocolate: 2, batteries: 2, lighters: 1, puritabs: 1, handwarmer: 2, gamecall: 0.5 }),
     electronics: P(0.2, { phone: 3, laptop: 2, camera: 2, console: 2, batteries: 3, pocketradio: 1.5, alarmclock: 1.5, vinyl: 0.5, solderiron: 1 }), // solderiron: the electronics recipes' iron (data-tools.js, 2026-10-24): the repair counter
     radioshop: P(0.16, { batteries: 4, pocketradio: 2, alarmclock: 1, phone: 1, lighters: 0.5, solderiron: 2 }),
@@ -621,7 +666,7 @@ export const ROWS = {
   AREA_TENTS: { sportshop: P(0.08, { tent1: 3, tent2: 2, tent4: 0.8 }) },
   // data-boxes.js: lockable boxes
   BOX_SITE: { bank: P(0.08, { cashbox: 3, firebox: 1 }), liquor: P(0.05, { cashbox: 3 }), bar: P(0.04, { cashbox: 3 }), dealer: P(0.04, { cashbox: 1, toolbox: 2 }), pawnshop: P(0.04, { cashbox: 2, gearcase: 1 }) },
-  BOX_AREA: { bankvault: P(0.2, { cashbox: 3, firebox: 1.5 }), bar: P(0.03, { cashbox: 2 }), liquor: P(0.04, { cashbox: 2 }), dealer: P(0.03, { toolbox: 2, cashbox: 1 }) },
+  BOX_AREA: { bowlbar: P(0.03, { cashbox: 2 }), shoecounter: P(0.03, { cashbox: 2 }), bankvault: P(0.2, { cashbox: 3, firebox: 1.5 }), bar: P(0.03, { cashbox: 2 }), liquor: P(0.04, { cashbox: 2 }), dealer: P(0.03, { toolbox: 2, cashbox: 1 }) },
   // gunsafes.js: a drill on the shelves (site), the cases (area)
   SEARCH_TOOLS: { dealer: { powerdrill: 0.03, anglegrinder: 0.015 }, garden: { powerdrill: 0.01 } },
   GUN_FINDS: { sportshop: { riflecase: 0.02, pistolcase: 0.01 }, dealer: { powerdrill: 0.02 } },
@@ -633,14 +678,14 @@ export const ROWS = {
   // loot.js PARTS_MIX: parts by kind
   PARTS_MIX: { electronics: { electronics: 0.85 }, radioshop: { electronics: 0.8 }, dealer: { carparts: 0.75 } },
   // foods.js: the food a place holds (its mix) and how much its shelves held (shop food)
-  SITE_MIX: { hotel: "diner", sportshop: "travel", electronics: "shop", radioshop: "shop", bookstore: "house", library: "house", petstore: "shop", garden: "farm", clothing: "shop",
+  SITE_MIX: { gym: "gym", bowling: "diner", hotel: "diner", sportshop: "travel", electronics: "shop", radioshop: "shop", bookstore: "house", library: "house", petstore: "shop", garden: "farm", clothing: "shop",
     vet: "house", dealer: "house", restaurant: "diner", bank: "house", bar: "diner", liquor: "shop" },
-  AREA_MIX: { sportshop: "travel", petstore: "shop", garden: "farm", bar: "diner", liquor: "shop", vet: "house", dealer: "house" },
-  SHOP_FOOD: { sportshop: 40, petstore: 60, restaurant: 70, bar: 50, liquor: 40, garden: 30 },
+  AREA_MIX: { gymfloor: "gym", gymdesk: "gym", smoothie: "gym", gymlocker: "gym", gymspa: "gym", shoecounter: "roadside", bowlbar: "diner", lanes: "roadside", sportshop: "travel", petstore: "shop", garden: "farm", bar: "diner", liquor: "shop", vet: "house", dealer: "house" },
+  SHOP_FOOD: { gym: 30, bowling: 40, sportshop: 40, petstore: 60, restaurant: 70, bar: 50, liquor: 40, garden: 30 },
   // itemcond.js: the condition finds come in
-  SITE_SOURCE: { hotel: "home", sportshop: "shop", electronics: "shop", radioshop: "shop", bookstore: "shop", library: "home", petstore: "shop", garden: "shop", clothing: "shop",
+  SITE_SOURCE: { gym: "shop", bowling: "shop", hotel: "home", sportshop: "shop", electronics: "shop", radioshop: "shop", bookstore: "shop", library: "home", petstore: "shop", garden: "shop", clothing: "shop",
     vet: "shop", dealer: "shop", restaurant: "shop", bank: "home", bar: "home", liquor: "shop" },
-  AREA_SOURCE: { hotelroom: "home", luggage: "home", hotelhk: "shop", hotelfront: "home", sportshop: "shop", electronics: "shop", radioshop: "shop", books: "shop", petstore: "shop", garden: "shop", clothes: "shop", vet: "shop", dealer: "shop", bankvault: "home", bar: "home", liquor: "shop" },
+  AREA_SOURCE: { gymlocker: "home", smoothie: "shop", gymdesk: "shop", bowlbar: "home", proshop: "shop", hotelroom: "home", luggage: "home", hotelhk: "shop", hotelfront: "home", sportshop: "shop", electronics: "shop", radioshop: "shop", books: "shop", petstore: "shop", garden: "shop", clothes: "shop", vet: "shop", dealer: "shop", bankvault: "home", bar: "home", liquor: "shop" },
   // locks.js: locked containers by area [box kinds, lock kind, chance]; a locked room at a site; a search hour's locked find
   LOCK_RULES: { bankvault: [["locker", "cabinet", "deposit"], "safe", 0.75], liquor: [["counter", "checkout"], "lockbox", 0.3], bar: [["counter", "cabinet", "checkout"], "lockbox", 0.2], electronics: [["counter", "displaycase"], "lockbox", 0.25], vet: [["cabinet"], "drugs", 0.3], radioshop: [["cabinet"], "lockbox", 0.2] }, // deposit, checkout, displaycase: the pieces buildingmaps.js lays since issue #16 (shoplayout.js)
   LOCK_ROOM: { bank: 0.7, vet: 0.3, electronics: 0.2, dealer: 0.2, liquor: 0.2 },
