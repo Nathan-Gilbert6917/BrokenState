@@ -167,6 +167,7 @@ import { nameModalUp, nameBaseModal, renameButton } from "./basename.js"; // nam
 import { winBar } from "./windows.js"; // the title bar the big windows share: the title, the window's buttons, a ✕, a row of tabs
 import { firstHubCard, fromTeamRow, stagingTileCard, fireButton, stageSteps } from "./hardcore.js";
 import { stagingView, needText, ESTABLISH_LABEL, STAGING, shelterView, STRIKE_LABEL } from "../sim/staging.js";
+import { nearbyView } from "../sim/campattack.js"; // issue #69: the attacks on a base by the dead and raiders nearby
 import { tileScouted, blindText, groundsFogged, deadText, GROUNDS_LABEL } from "../sim/campscout.js"; // an unscouted tile: a blind camp; the dead on its grounds (2026-10-23)
 import { campSleep, tentsText, TENT_TYPES } from "../sim/tents.js"; // the camp's tents: beds under cover, storage out of the weather
 import { BED_MOOD, ROUGH_WEATHER } from "../sim/data-beds.js"; // the one rough-sleeping rule (sim/beds.js bedLine)
@@ -1955,6 +1956,12 @@ function groundsRow(b) {
   if (!g || (!g.dead && (g.known || g.clearDay))) return ""; // none left, and you know it
   return `<div${tip(`The camp went up blind on a tile never scouted: the dead out on its grounds come at it now and then until all are killed. ${g.known ? "Surveyed: counted." : "How many: unknown until the tile is surveyed (Survey this tile on its menu)."} Or clear them yourself: a team on the tile, ${GROUNDS_LABEL} (its orders, or the POI map).`)}>The grounds</div><div class="${g.dead || !g.known ? "warn" : "good"}">${esc(g.dead || !g.known ? `The dead out there: ${deadText(b)}` : "clear")}</div>`;
 }
+// The dead and raiders round the base and how often they come at it (campattack.js, issue #69): "Nearby: the dead
+// medium, raiders low · an attack every ~30 h". The level is the band of the tile you live on (live: you are there).
+function nearbyRow(state, b) {
+  const v = nearbyView(state, b);
+  return `<div${tip(`The dead and raiders round ${b.name} and how often they come at it: the dead on its own grounds, the tile's open ground (a trickle drawn by the noise, the night and the base's own Heat; shared with any other base on this tile) and raider bands by the raider level. Kill them down (Hunt the dead, Clear the grounds) to make it quieter; running silent and camouflage netting help. ${v.why}`)}>Nearby</div><div class="${v.warn ? "warn" : ""}">${esc(v.text)}</div>`;
+}
 function shelterRows(state, b) {
   const v = shelterView(state, b);
   if (!v) return "";
@@ -2036,6 +2043,7 @@ function baseOverview(state, b) {
         <div>Defense</div><div>${Math.round(baseDefense(state, b))}</div>
         ${holdRow(state, b)}
         <div>Heat</div><div>${baseHeat(state, b)}</div>
+        ${nearbyRow(state, b)}
         ${shelterRows(state, b)}
         <div${tip("Days of food left at today's rate without harvests, and the next harvest (Farming tab)")}>Food</div>${foodCellHtml(state, b)}
         ${rationRow(state, b)}

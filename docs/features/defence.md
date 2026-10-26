@@ -65,6 +65,7 @@ The user's requests 2026-10-19. Modules: [buildings, defences, wire, fort, inter
 
 ## Raids on the base map
 A raid on your base is fought on its own map, with its stores as containers to steal from.
+- The dead and raiders nearby attack every camp and base by the tile's pools, its noise and the base's own Heat (campattack, issue #69): a camp gets the card and the base defence battle, a base whose defences hold cuts a small wave down at the walls. [bases.md](bases.md#attacks-on-a-camp-by-the-dead-nearby).
 - The attack from any side (N, E, S, W); the stores on the map as the base's containers holding the real stock and armory where it is kept (what lies outside on piles; look into any at any time); raiders stealing from them and from parked cars and getting away with it; the dead and raiders battering doors, windows, walls, barricades and parked cars; the wear afterwards [basemap, containers, fort]. Storage rules: [bases.md, Base storage limits](bases.md#base-storage-limits).
 
 ### The Armory

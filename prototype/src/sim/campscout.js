@@ -51,10 +51,11 @@ import { openDead, killDead } from "./deadpop.js"; // the dead on the land (issu
 import { poiKnowledge } from "./pois.js";
 import { LOOK } from "./survey.js";
 import { hash01 } from "./skills.js";
-import { log, addCard, homeAt, isNight } from "./world.js";
+import { log, isNight } from "./world.js";
 import { partyMembers, partyTile, tileLabel, teamName, awaitOrders, wipeIfEmpty } from "./parties.js";
 import { startTask } from "./orders.js";
 import { firstHubPending } from "./hardcore-start.js";
+import { campAttackHour } from "./campattack.js"; // issue #69: the attacks on a camp by the dead and raiders nearby
 import { scaleFood } from "./foods.js";
 
 export const GROUNDS = {
@@ -62,7 +63,7 @@ export const GROUNDS = {
   MAX: 60,
   KNOWN_R: 14,          // a blind camp's map is known this many cells round its fire until the tile is surveyed
   FIRST: [6, 18],       // hours after the camp stands before the first of them come out
-  EVERY: [18, 42],      // hours between attacks
+  EVERY: [18, 42],      // the old flat hours between attacks (issue #69: campattack.js CAMP_ATTACK's hourly chance now; kept for older readers)
   WAVE: [3, 8],         // the dead in an attack (at most what is left); WAVE_BIG more on a map with more than BIG left
   WAVE_BIG: 4, BIG: 30,
   WAVE_MAX: 20,         // a battle's most (combat.js MAX_ENEMIES)
@@ -193,19 +194,16 @@ const PLACE_WORD = { city: "the city's streets", suburb: "the town", farm: "the 
 /** @param {any} state @param {number} tile */
 export const groundsWord = (state, tile) => PLACE_WORD[terrainOf(state, { tile })] || "the land round it";
 
-// Every hour (staging.js campsHour): a base whose grounds hold the dead is attacked when their hour comes.
+// Every hour (staging.js campsHour): the attacks on every camp and base by the dead and raiders nearby (campattack.js,
+// issue #69: an hourly chance by the grounds' dead left, the tile's open ground, the noise, the night and the camp's
+// stance; the waves drawn out of the pools). The old flat GROUNDS.EVERY is gone; GROUNDS.FIRST still holds a blind
+// camp's first hours (g.next).
 /** @param {any} state */
 export function groundsHour(state) {
-  for (const base of state.bases || []) {
-    const g = base.grounds;
-    if (!g || !(g.dead > 0) || state.hour < (g.next || 0)) continue;
-    if (state.combat || (state.cards || []).some((c) => c.grounds === base.id) || !homeAt(state, base.id).length) { g.next = state.hour + 1; continue; } // later: a fight on, the last card unanswered, nobody home
-    const lo = GROUNDS.WAVE[0], hi = GROUNDS.WAVE[1] + (g.dead > GROUNDS.BIG ? GROUNDS.WAVE_BIG : 0);
-    const wave = Math.min(g.dead, GROUNDS.WAVE_MAX, roll(state, [lo, hi], base.id, state.hour, "wave"));
-    g.next = state.hour + roll(state, GROUNDS.EVERY, base.id, state.hour, "next");
-    addCard(state, groundsCard(state, base, wave));
-  }
+  campAttackHour(state);
 }
+// The old attack's card (an older save's battle in flight, the "groundsDead" handler below); new attacks use
+// campattack.js attackCard.
 // The attack's card: Defend the camp (the base defence battle) or keep out of their way.
 /** @param {any} state @param {any} base @param {number} wave */
 export function groundsCard(state, base, wave) {
@@ -253,7 +251,7 @@ export function takeDead(state, base, n) {
   const k = Math.min(g.dead, Math.round(n));
   g.dead -= k;
   g.killed = (g.killed || 0) + k;
-  killDead(state, base.tile, null, k); // deadpop.js: the grounds' dead are the tile's open ground
+  killDead(state, base.tile, base.poi != null ? base.poi : null, k); // deadpop.js: the grounds' dead are the tile's open ground; a POI camp's (poicamp.js, #70) its POI's (issue #69)
   if (!g.dead) {
     g.clearDay = Math.floor(state.hour / 24) + 1;
     log(state, `The grounds of ${base.name} are clear of the dead: no more of them will come out of ${groundsWord(state, base.tile)} at the camp.`, "good");
