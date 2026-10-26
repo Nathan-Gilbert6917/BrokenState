@@ -724,7 +724,7 @@ const outAndBack = (state, p, c, pl) => { const b = state.combat; walkOut(state)
   const C0 = cellsOfF(b, 0);
   for (let i = 0; i < C0.length && !lifted; i++) {
     const d = liftDef(C0[i].k);
-    if (!d || d.carry !== "one" || !d.item || !b.reach[i] || C0[i].pc != null) continue;
+    if (!d || d.carry !== "one" || !d.item || C0[i].pc != null) continue; // a piece one carries; the cell beside it in reach (spot): a piece's own cell is never walked (it was in b.reach only when a scene put it down after the flood)
     const x = i % b.w, y = (i / b.w) | 0;
     const spot = [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dy]) => [x + dx, y + dy]).find(([sx, sy]) => C0[sy * b.w + sx] && C0[sy * b.w + sx].k === "open" && b.reach[sy * b.w + sx] && !b.units.some((o) => !o.dead && (o.f || 0) === 0 && o.x === sx && o.y === sy));
     if (!spot) continue;
@@ -763,7 +763,8 @@ const outAndBack = (state, p, c, pl) => { const b = state.combat; walkOut(state)
   check(JSON.stringify(b2.raid.stairs) === stairs, "the stair cells (R.stairs) stay");
   check(JSON.stringify(b2.raid.scenes.list) === sceneText, "the same scenes (rolled once, kept)");
   C02[id].deco.k = "papers";
-  check(c.buildings[pl.id].cells[id].deco.k === "trash", "the snapshot shares nothing with the battle (a change in play leaves it as left)");
+  const kept = c.buildings[pl.id]; // its floors packed (citycrawl.js packCells, issue #24): the ground floor floors[0]
+  check(CC.unpackCells(kept.floors ? kept.floors[0].cells : kept.cells)[id].deco.k === "trash", "the snapshot shares nothing with the battle (a change in play leaves it as left)");
   walkOut(state); finishCombat(state, b2.setup, b2.result);
 }
 {
@@ -902,7 +903,7 @@ const outAndBack = (state, p, c, pl) => { const b = state.combat; walkOut(state)
   const { state, p, c } = crawlIn(2106);
   const hosp = testPlace(state, c, "hospital", 5);
   const hint = CC.placeHint(state, c, hosp);
-  check(/^Hospital: \d+ floors, wards/.test(hint) && hint.includes(String(CC.placeStoreys(state, c, hosp))), `the hint names the kind's signature rooms: "${hint}"`);
+  check(/^Hospital: \d+ floors( open of \d+)?, wards/.test(hint) && hint.includes(String(CC.placeStoreys(state, c, hosp))), `the hint names the kind's signature rooms: "${hint}"`);
   check(CC.placeHint(state, c, testPlace(state, c, "offices", 5)).includes("offices") && !/Corridor/i.test(CC.placeHint(state, c, testPlace(state, c, "offices", 5))), "an office tower's: offices (not its corridors)");
   // Per kind over QN buildings: every container opened both ways, the supplies found within ±10%.
   for (const s of partyMembers(state, p)) s.skills.scavenging = 3;
@@ -922,7 +923,7 @@ const outAndBack = (state, p, c, pl) => { const b = state.combat; walkOut(state)
       // (combat.js boxFinds: the table's loot; the extras searchBox rolls on dice of their own are the map's alone).
       CC.enterPlace(state, p, pl.id, { map: true });
       const b = state.combat, R = b.raid, site = state.tiles[b.tileId].loc.type;
-      const reward = (R.reward ?? 1) * (R.big ? raidLootShare(b.w, b.h) : 1);
+      const reward = (R.reward ?? 1) * (R.big ? (R.natMap ? raidLootShare(R.natMap[0], R.natMap[1]) : raidLootShare(b.w, b.h)) : 1); // as searchBox: a building at real size by its plan's map (R.natMap, issue #24)
       for (let k = 0; k < REPS; k++) for (const box of R.containers.filter((x) => x.kind !== "body" && x.kind !== "ground" && !x.stash)) {
         const type = R.areas[box.area].type;
         const got = boxFinds(state, state.rng, { def: boxLoot(type, box.kind), type, rich: R.richness * Math.min(FLOOR_RICH.cap, Math.pow(FLOOR_RICH.perFloor, box.f || 0)) * (box.rich || 1), scav: 3, reward, site, gunSite: b.setup.raid.gunSite, deep: R.deep, tileId: b.tileId, bid: box.id });

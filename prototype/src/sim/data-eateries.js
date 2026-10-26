@@ -27,17 +27,13 @@
 //   size), with its look (colours, sign, style 0–3 for the map painter, booth tint) and its plan (the floor, the front
 //   room's name), where it stands (w: city, suburb, town, as every franchise) and the places it suits (at: main street,
 //   strip mall pad, highway exit, city block, mall, hotel, truck stop: eateryVariant's setting).
+import { REAL_SIZE } from "./data-buildingsize.js"; // the sizes (issue #24 took over EAT_SIZE)
 
 /** @typedef {"tiny" | "small" | "medium" | "large" | "huge"} EatSize */
 /** @typedef {{ id: string, name: string, kind: string, cuisine: string, format: string, size: EatSize, w: { city: number, suburb: number, town: number }, at: string[], look?: any, plan?: any, tint?: string, brew?: boolean, old?: boolean }} EatVariant */
 
-export const EAT_SIZE = {
-  tiny:   { w: [8, 10],  h: [9, 10] },
-  small:  { w: [11, 14], h: [10, 12] },
-  medium: { w: [16, 22], h: [13, 16] },
-  large:  { w: [26, 34], h: [18, 22] },
-  huge:   { w: [40, 46], h: [26, 30] },
-};
+// #24's real-world size table holds these now (data-buildingsize.js REAL_SIZE eattiny…eathuge, planned; "h" its "d").
+export const EAT_SIZE = Object.fromEntries(["tiny", "small", "medium", "large", "huge"].map((k) => [k, { w: REAL_SIZE[`eat${k}`].w, h: REAL_SIZE[`eat${k}`].d }]));
 export const EAT_SIZES = Object.keys(EAT_SIZE);
 
 // The formats: name, the sizes they come in, the front room's default name.
@@ -175,6 +171,13 @@ export const VARIANTS = [
   V("piehole", "The Pie Hole", "pizza", "pizza", "ghost", "small", G(0.4, 0.8, 1), ["main", "strip"], null, null, O),
   V("pizzapronto", "Pizza Pronto", "pizza", "pizza", "fastfood", "medium", G(0.8, 1, 0.8), [...ROAD, "strip"], L("#3a6fb0", "#1f3550", "#e8c04a", "#1f3550", "#c8402f", 1), { room: "Dining room", fl: "tile" }),
   V("slicecart", "Slice Cart", "pizza", "pizza", "kiosk", "tiny", G(1, 0.6, 0.3), ["mall", "city"], L("#e8e4d8", "#c8402f", "#c8402f", "#ffffff", "#3f6b3a", 2), { room: "Slice counter", fl: "tile" }),
+  // The pizza places that make a dozen (the user's request 2026-10-25: "a dozen varients per building type").
+  V("nonnas", "Nonna's Wood-Fired Trattoria", "pizza", "pizza", "fine", "large", G(1, 0.7, 0.3), ["city", "main", "hotel"], L("#d9c9a8", "#8e4f3c", "#3f6b3a", "#f0e6c8", "#c8402f", 1), { room: "Trattoria", fl: "wood" }),
+  V("windycity", "Windy City Deep Dish", "pizza", "pizza", "family", "large", G(0.8, 1, 0.5), ["strip", "main", "city"], L("#2a2a2e", "#c8402f", "#c8402f", "#ffffff", "#3a6fb0", 3), { room: "Dining room", fl: "tile" }),
+  V("galaxypizza", "Galaxy Pizza & Arcade", "pizza", "pizza", "buffet", "huge", G(0.4, 1, 0.6), ["strip", "highway", "mall"], L("#3a1c5a", "#1a0c2a", "#e8c04a", "#3a1c5a", "#7fe6ff", 2), { room: "Arcade parlour", fl: "carpet" }),
+  V("roccos", "Rocco's Carry-Out", "pizza", "pizza", "ghost", "medium", G(0.8, 1, 0.8), ["strip", "main"], L("#e8e4d8", "#3f6b3a", "#3f6b3a", "#ffffff", "#c8402f", 0), { room: "Carry-out counter", fl: "tile" }),
+  V("joesslice", "Joe's Slice Window", "pizza", "pizza", "cafe", "small", G(1, 0.6, 0.4), ["city", "main"], L("#c8402f", "#2a2a2a", "#e8e4d8", "#c8402f", "#e8c04a", 0), { room: "Slice window", fl: "checker" }),
+  V("hopspies", "Hops & Pies Pizza Pub", "pizza", "pizza", "pub", "medium", G(0.8, 0.8, 0.6), ["main", "city"], L("#7a5230", "#3a2414", "#e8a020", "#3a2414", "#3f6b3a", 2), { room: "Pizza pub", fl: "wood" }),
   // ---------- diners (FRANCHISES.diner) ----------
   V("starlite", "Starlite Diner", "diner", "burgers", "diner", "medium", G(1, 1, 0.8), ["highway", "main", "truckstop"], null, null, O),
   V("route9", "Route 9 Diner", "diner", "breakfast", "diner", "medium", G(0.3, 0.8, 1), ["highway", "truckstop"], null, null, O),
@@ -182,6 +185,13 @@ export const VARIANTS = [
   V("silverspoon", "Silver Spoon Diner", "diner", "southern", "diner", "medium", G(0.8, 1, 0.6), ["highway", "main"], null, null, O),
   V("waffleshack", "Waffle Shack", "diner", "breakfast", "diner", "small", G(0.5, 1, 1), ["highway", "truckstop"], null, null, O),
   V("hwy40", "Highway 40 Truckers' Diner", "diner", "steak", "diner", "large", G(0, 0.5, 1), ["highway", "truckstop"], L("#c9ced3", "#3a5f8e", "#c8402f", "#ffffff", "#e8c04a", 1), { room: "Dining room", fl: "tile" }),
+  V("silverbullet", "Silver Bullet Railcar Diner", "diner", "burgers", "diner", "small", G(0.6, 0.8, 1), ["highway", "main"], L("#c9ced3", "#5d6168", "#c8402f", "#ffffff", "#c9ced3", 3), { room: "Railcar", fl: "checker" }),
+  V("bigrig", "Big Rig Truck Stop Diner", "diner", "steak", "family", "large", G(0, 0.4, 1), ["truckstop", "highway"], L("#8b6a48", "#3a2a20", "#e8a020", "#3a2a20", "#c8402f", 1), { room: "Truckers' dining room", fl: "tile" }),
+  V("allnite", "All-Nite Family Diner", "diner", "breakfast", "family", "medium", G(0.8, 1, 0.8), ["highway", "strip", "main"], L("#e8e4d8", "#c8402f", "#c8402f", "#ffffff", "#e8c04a", 2), { room: "Dining room", fl: "tile" }),
+  V("sweetsips", "Sweet Sips Soda Fountain", "diner", "icecream", "diner", "small", G(0.6, 0.8, 1), ["main"], L("#e88aa0", "#7fc6e6", "#7fc6e6", "#ffffff", "#e88aa0", 1), { room: "Soda fountain", fl: "checker" }),
+  V("deesdrivein", "Dee's Drive-In", "diner", "burgers", "fastfood", "medium", G(0.3, 0.8, 1), ["highway", "main"], L("#e8c04a", "#c8402f", "#c8402f", "#ffffff", "#3a6fb0", 2), { room: "Drive-in counter", fl: "tile" }),
+  V("mainstlunch", "Main Street Lunch Counter", "diner", "cafeteria", "diner", "medium", G(0.4, 0.6, 1), ["main"], L("#b9a98a", "#6b5434", "#3f6b3a", "#ffffff", "#c8402f", 0), { room: "Lunch counter", fl: "wood" }),
+  V("pancakejct", "Pancake Junction", "diner", "breakfast", "buffet", "large", G(0.4, 1, 0.8), ["highway", "strip", "truckstop"], L("#e8a020", "#5a3a20", "#5a3a20", "#f0e6c8", "#c8402f", 1), { room: "Breakfast buffet", fl: "tile" }),
   // ---------- bars (FRANCHISES.bar) ----------
   V("rustynail", "The Rusty Nail", "bar", "burgers", "pub", "small", G(0.3, 0.6, 1), ["main", "highway"], null, null, O),
   V("roadhouse61", "Roadhouse 61", "bar", "bbq", "pub", "large", G(0, 0.4, 1), ["highway"], null, null, O),
@@ -192,6 +202,13 @@ export const VARIANTS = [
   V("neonmoose", "Neon Moose Saloon", "bar", "steak", "pub", "medium", G(0, 0.3, 1), ["main", "highway"], null, null, O),
   V("copperkettle", "Copper Kettle Brewpub", "bar", "burgers", "pub", "large", G(1, 0.8, 0.4), ["city", "main"], L("#a2713f", "#5a3a20", "#d9a520", "#3a2414", "#c4562a", 2), { room: "Brewpub", fl: "wood" }, { brew: true }),
   V("ironhorse", "Iron Horse Brewing Co.", "bar", "bbq", "pub", "large", G(0.3, 0.8, 1), ["main", "highway"], L("#5d6168", "#2a2a2e", "#e8a020", "#2a2a2e", "#c8402f", 1), { room: "Taproom", fl: "conc" }, { brew: true }),
+  V("luckysdive", "Lucky's Dive", "bar", "hotdogs", "pub", "small", G(1, 0.5, 0.8), ["city", "main"], L("#3a3a3e", "#1a1a1e", "#c8402f", "#e8c04a", "#9cc46e", 0), { room: "Dive bar", fl: "conc" }),
+  V("bootscootin", "Boot Scootin' Honky-Tonk", "bar", "bbq", "banquet", "large", G(0, 0.4, 1), ["highway", "main"], L("#a2713f", "#5a3a20", "#e8c04a", "#5a3a20", "#c8402f", 2), { room: "Dance hall", fl: "wood" }),
+  V("gilded", "The Gilded Cocktail Lounge", "bar", "seafood", "fine", "large", G(1, 0.4, 0), ["city", "hotel"], L("#1c2026", "#0a0c10", "#d9a520", "#1c2026", "#d9a520", 3), { room: "Lounge", fl: "carpet" }),
+  V("ironriders", "Iron Riders Biker Bar", "bar", "wings", "pub", "small", G(0.2, 0.5, 1), ["highway"], L("#2a2a2a", "#111114", "#c8402f", "#e8e4d8", "#7d848c", 1), { room: "Biker bar", fl: "conc" }),
+  V("grandhotelbar", "The Grand Hotel Bar", "bar", "italian", "pub", "small", G(1, 0.5, 0.2), ["hotel", "city"], L("#5a3424", "#2a1810", "#d9a520", "#f0e6c8", "#3f6b3a", 3), { room: "Hotel bar", fl: "carpet" }),
+  V("alpinegarten", "Alpine Biergarten", "bar", "deli", "pub", "large", G(0.6, 0.8, 0.6), ["main", "city"], L("#3f6b3a", "#1c2a18", "#e8e4d8", "#1c2a18", "#c8402f", 0), { room: "Beer hall", fl: "wood" }),
+  V("clubpulse", "Club Pulse", "bar", "wings", "banquet", "huge", G(1, 0.4, 0), ["city"], L("#2a2a2e", "#111114", "#b06ae0", "#ffffff", "#7fe6ff", 3), { room: "Dance floor", fl: "tile" }),
 ];
 /** The variant of a franchise of a food kind, or null. @param {string} kind @param {string | null | undefined} id */
 export const variantById = (kind, id) => (id ? VARIANTS.find((v) => v.kind === kind && v.id === id) || null : null);

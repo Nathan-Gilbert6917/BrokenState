@@ -14,7 +14,7 @@
 //                place shows its franchise's name, the variant under it: layoutName; the map's plan.variant and vid, the
 //                raid's opening lines, as #37's plans);
 //   w            its weight by setting [rural, town, city, highway, strip] (SETTINGS; no setting: every variant alike);
-//   size         the footprint's class (SIZES by type: S, M, L, XL; one table, #24's real-world scale takes it over);
+//   size         the footprint's class (SIZES by type: S, M, L, XL, the quarters of #24's real-world size);
 //   lay          the arrangement (below), depth the front room's share of the depth (else the type's);
 //   front        the front band's rooms, left to right ("S" the sales floor; none: the sales floor alone);
 //   mid, back    the middle band's and the back strip's rooms, left to right; side the side column's, front to back
@@ -45,6 +45,7 @@ import { FRANCHISES } from "./data-shops.js";
 import { Rng } from "./rng.js";
 import { ROLES } from "./buildingmaps.js"; // the rooms' usual containers (read when a plan is made: no cycle at load)
 import { eateryVariant } from "./eaterylayout.js"; // a truck stop's diner is one of #33's diners (issue #33's table)
+import { REAL_SIZE, CELL_M } from "./data-buildingsize.js"; // #24's real-world sizes: the classes below are its rows' quarters
 
 export const SETTINGS = ["rural", "town", "city", "highway", "strip"];
 const W = (rural, town, city, highway, strip) => [rural, town, city, highway, strip];
@@ -52,20 +53,24 @@ const BACK_STAIRS = ["stock", "warefloor", "office", "storage", "breakroom", "ki
 export const VARIANT_LAYS = ["strip", "corridor", "deep", "side", "wrap"];
 
 // ---------- the footprints (cells, outer walls included: [w0, w1, h0, h1]) by type and class ----------
-const STD = { S: [11, 13, 9, 11], M: [14, 18, 11, 14], L: [19, 23, 13, 15], XL: [24, 28, 15, 17] };
-export const SIZES = {
-  pharmacy: STD, gunstore: STD, pawnshop: STD, sportshop: STD, electronics: STD, radioshop: STD, bookstore: STD, petstore: STD, garden: STD, clothing: STD, liquor: STD, hardware: STD, feedstore: STD,
-  gasstation: { S: [10, 12, 8, 9], M: [12, 14, 9, 10], L: [16, 19, 11, 13], XL: [20, 24, 12, 14] },
-  truckstop: { S: [16, 18, 11, 12], M: [19, 22, 12, 14], L: [23, 27, 14, 16], XL: [28, 33, 15, 18] },
-  dealer: { S: [12, 14, 9, 10], M: [19, 23, 12, 14], L: [24, 28, 14, 16], XL: [29, 33, 15, 18] },
-  bank: { S: [12, 14, 10, 12], M: [16, 19, 12, 14], L: [20, 24, 14, 16], XL: [25, 29, 15, 18] },
-  autoshop: { S: [12, 14, 9, 10], M: [14, 18, 10, 12], L: [19, 23, 12, 14], XL: [24, 28, 13, 16] },
-  garage: { S: [10, 12, 8, 9], M: [12, 15, 9, 11], L: [16, 19, 11, 13], XL: [20, 24, 12, 14] },
-  workshop: { S: [10, 12, 8, 9], M: [12, 15, 9, 11], L: [16, 19, 11, 13], XL: [20, 24, 12, 14] },
+// #24's real-world size of the type (data-buildingsize.js REAL_SIZE: metres across the front and front to back, CELL_M
+// a cell) cut into quarters: S the smallest quarter, M the next, L, XL the biggest; #22's tiers (REAL_SIZE own) keep
+// #22's footprints (TIER_SIZES). REAL_SIZE marks these rows planned: buildingmaps.js realScale leaves them as drawn.
+const TIER_SIZES = {
   corner: { S: [10, 11, 10, 11], M: [11, 13, 10, 12], L: [13, 14, 11, 12] },          // #22: 10–14 across
   grocery: { S: [20, 21, 17, 18], M: [20, 23, 17, 20], L: [23, 26, 18, 20] },         // #22: 20–26 × 17–20
   supermarket: { M: [54, 56, 36, 38], L: [56, 58, 37, 40] },                          // #22: 54–58 × 36–40
 };
+const quarters = ([a, b]) => [0, 1, 2, 3].map((i) => [Math.round((a + ((b - a) * i) / 4) / CELL_M), Math.round((a + ((b - a) * (i + 1)) / 4) / CELL_M)]);
+/** @param {string} key */
+function realSizes(key) {
+  const R = REAL_SIZE[key];
+  const w = quarters(R.w), d = quarters(R.d);
+  return Object.fromEntries(["S", "M", "L", "XL"].map((c, i) => [c, [w[i][0], w[i][1], d[i][0], d[i][1]]]));
+}
+const SIZED = ["pharmacy", "gunstore", "pawnshop", "sportshop", "electronics", "radioshop", "bookstore", "petstore", "garden", "clothing", "liquor", "hardware", "feedstore", "gasstation", "truckstop", "dealer", "bank", "autoshop", "garage", "workshop"];
+/** @type {Record<string, Record<string, number[]>>} */
+export const SIZES = { ...Object.fromEntries(SIZED.map((k) => [k, realSizes(k)])), ...TIER_SIZES };
 
 // ---------- rooms shared by every type ----------
 const COMMON = {
@@ -165,6 +170,7 @@ export const VARIANT_TYPES = {
   },
   // ---------- the gas station: its pumps in every plan ----------
   gasstation: {
+    boxes: 0.5,
     base: { name: "Shop", type: "store" }, depth: 0.6, pumps: 2, ground: "lot",
     rooms: {
       gstock: { role: "stock", name: "Storeroom" },
@@ -187,7 +193,7 @@ export const VARIANT_TYPES = {
   truckstop: {
     base: { name: "Shop", type: "store" }, depth: 0.55, pumps: 3, ground: "lot", fw: 2,
     eatery: { diner: "eatdiner", kit: "eatkitchen" }, // #33's styles for its diner and kitchen
-    boxes: 1.3, // the rest of the stop (its shop: shoplayout.js SHOP.BOXES "minimart:truckstop"): #33's diner and kitchen hold what its table sets by their area
+    boxes: 1.05, // the rest of the stop: #33's diner and kitchen hold what its table sets by their area
     rooms: {
       diner: { role: "dining", name: "Diner", type: "store", hub: true },
       kit: { role: "kitchen", fry: true },
@@ -269,7 +275,7 @@ export const VARIANT_TYPES = {
     variants: SHOP12({ main: "Radio shop", narrow: "Radio shop with a flat above", corner: "Corner radio and parts", strip: "Strip-mall radio counter", superstore: "Electronic parts supply", outlet: "Radio shop with a tower parts yard", twofloor: "Two-floor ham radio store", wrap: "Radio shop with an L of back rooms", counter: "Radio repair shop", twin: "CB and scanners, two shopfronts", roadside: "Truckers' CB shop", flagship: "Communications outfitter" }),
   },
   bookstore: {
-    boxes: 0.8,
+    boxes: 0.72,
     base: { name: "Bookshelves", type: "books", furnish: "shelves", maxBoxes: 8 }, depth: 0.62,
     rooms: {
       sig: { role: "storage", name: "Rare books room", type: "books", lock: ["door", 0.3] },
@@ -360,7 +366,7 @@ export const VARIANT_TYPES = {
   },
   // ---------- the car dealer ----------
   dealer: {
-    boxes: 1.08,
+    boxes: 0.98,
     base: { name: "Showroom", type: "dealer", furnish: "lobby", maxBoxes: 4 }, depth: 0.55, ground: "lot", fw: 2,
     rooms: {
       parts: { role: "parts", name: "Parts room", type: "garage" },
@@ -404,7 +410,7 @@ export const VARIANT_TYPES = {
     },
   },
   garage: {
-    boxes: 1.08,
+    boxes: 1.12,
     base: { role: "bays", name: "Service bays", maxBoxes: 5, hub: true, entry: false }, depth: 0.65, ground: "town", main: "bays",
     rooms: {
       off: { role: "office", entry: true, hub: true, name: "Office" },
@@ -665,10 +671,12 @@ const MIN_FRONT = 8; // the cells across a sales floor keeps beside a side colum
 const DEEP_MIN = 15; // a deep plan's depth at least (the front, the middle band and the back strip)
 const TIERS = new Set(["corner", "grocery", "supermarket"]); // #22's tiers: their footprints as #22 set them
 // The containers a room holds are its area's share up to its maxBoxes (buildingmaps.js assemble): a bigger plan's rooms
-// get maxBoxes × its area over the type's usual (its M size's middle), × the type's boxes (tuned with
+// get maxBoxes × its area over the type's usual (today's footprint, TODAY_AREA), × the type's boxes (tuned with
 // tools/shopvarianttest.js: every kind's loot a 100 cells within ±10% of today's), so a superstore holds as a shop
 // does by its area. Never below a room's own.
-const midArea = (key) => { const m = SIZES[key].M; return ((m[0] + m[1]) / 2) * ((m[2] + m[3]) / 2); };
+// Today's footprint in the middle (cells: dev's plan before the variants and #24's sizes), which a room's maxBoxes is for.
+const TODAY_AREA = { gasstation: 123, truckstop: 267, dealer: 273, bank: 227, autoshop: 176, garage: 135, workshop: 135 };
+const midArea = (key) => { if (TIER_SIZES[key]) { const m = SIZES[key].M; return ((m[0] + m[1]) / 2) * ((m[2] + m[3]) / 2); } return TODAY_AREA[key] || 200; }; // a shop's: 16 × 12.5
 /** @param {any} node @param {number} k */
 function scaleBoxes(node, k) {
   if (!node || k === 1) return node;
@@ -678,8 +686,8 @@ function scaleBoxes(node, k) {
   node.maxBoxes = Math.max(1, Math.round(was * k));
   return node;
 }
-/** The footprint class storeytest checks by the area (small, medium, large). */
-const footOf = (bw, bh) => { const a = bw * bh; return a <= 160 ? "small" : a <= 340 ? "medium" : "large"; };
+/** The footprint class storeytest checks by the area (small, medium, large; xl past the large maps: its map its footprint and margins). */
+const footOf = (bw, bh) => { const a = bw * bh; return a >= 700 && bw >= 30 ? "xl" : a <= 160 ? "small" : a <= 340 ? "medium" : "large"; };
 
 /**
  * A variant's spec for a type: its footprint, its plan, its ways out, its storeys and its layout's name.
