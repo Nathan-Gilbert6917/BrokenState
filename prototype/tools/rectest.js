@@ -14,6 +14,7 @@
 // - the scenes on their maps.
 // Usage: node tools/rectest.js [seeds]
 import { createWorld } from "../src/sim/world.js";
+import { serializeState, deserializeState } from "../src/sim/save.js";
 import { BUILDINGS, assemble } from "../src/sim/buildingmaps.js";
 import { GYM, BOWL, GYM_KEYS, BOWL_KEYS, laneWidth, gymPlan, bowlPlan } from "../src/sim/reclayout.js";
 import { variantsOf, variantSize } from "../src/sim/variantpick.js";
@@ -168,9 +169,10 @@ console.log("\nIn the world");
 {
   const tally = { gym: 0, bowling: 0, crawl: { gym: 0, bowling: 0 }, old: 0, oldCrawl: 0 };
   for (let w = 0; w < (QUICK ? 3 : 6); w++) {
-    for (const legacy of [false, true]) {
+    for (const legacy of [false, "place", "rec"]) {
       const st = createWorld({ seed: 56000 + w, factionCount: 3, size: "small" });
-      if (legacy) st.placeLegacy = true;
+      if (legacy === "place") st.placeLegacy = true;
+      if (legacy === "rec") st.recLegacy = true; // a save from after the placement table, before this ticket
       for (const t of st.tiles) delete t.pois;
       ensurePois(st);
       for (const t of st.tiles) for (const p of t.pois || []) if (p.kind === "gym" || p.kind === "bowling") { if (legacy) tally.old++; else tally[p.kind]++; }
@@ -185,7 +187,11 @@ console.log("\nIn the world");
   }
   check(tally.gym > 0 && tally.bowling > 0, `new worlds hold gyms and bowling alleys as POIs (${tally.gym} gyms, ${tally.bowling} bowling alleys)`);
   check(tally.crawl.gym > 0 && tally.crawl.bowling > 0, `and in their crawls (${tally.crawl.gym} gyms, ${tally.crawl.bowling} bowling alleys)`);
-  check(tally.old === 0 && tally.oldCrawl === 0, `an older world none (${tally.old} POIs, ${tally.oldCrawl} crawl places)`);
+  check(tally.old === 0 && tally.oldCrawl === 0, `an older world none, from before the table or before them (${tally.old} POIs, ${tally.oldCrawl} crawl places)`);
+  const st = createWorld({ seed: 56100, factionCount: 3, size: "small" });
+  check(st.recV === 1 && !st.recLegacy, "a new world carries recV");
+  delete st.recV;
+  check(!!deserializeState(serializeState(st)).recLegacy, "a save from before them loads as recLegacy");
 }
 
 console.log("\nThe scenes");

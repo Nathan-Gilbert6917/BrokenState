@@ -121,6 +121,15 @@ export const PLACEMENT_ROWS = {
   gym: "centre 1.4 L, city 1.4 M, suburb 1.4 M, town 1.2 S, highway 0.3 S, rural 0.3 S", // issue #56: a YMCA or a health club downtown, chain gyms, boxing gyms and climbing gyms in the city and suburbs, a dojo, a yoga studio or a strip-mall gym in a town, a powerlifting barn out of town
   bowling: "centre 0.4 M, city 1 M, suburb 1.4 L, town 1.2 M, highway 0.5 M, rural 0.4 M", // a bowling bar or a bowl upstairs downtown, the 24- to 40-lane centres in the suburbs, a small-town alley in the country
   hotel: "centre 2 H, city 1.6 L, suburb 1 M, town 0.8 S, highway 0.3 S, coast 0.3 M, scenic 0.2 M", // a convention hotel downtown, a town's inn
+  // Issue #55's six shops (data-newshops.js; a new world's only): the size class picks among each kind's plans (S a
+  // mattress store, a village bakery; M a family furniture store, an attended laundromat; L a big-box showroom, a thrift
+  // superstore). The country's bakeries and butchers stand on placement.js PLACE_EXTRA's dice.
+  furnstore: "centre 0.4 M, city 0.8 M, suburb 1.6 L, town 1 M, highway 0.6 L, rural 0.1 S",
+  laundromat: "centre 1 S, city 1.4 M, suburb 1 M, town 1 S, highway 0.2 S",
+  thrift: "centre 0.6 S, city 1 M, suburb 1.2 L, town 1.2 M, highway 0.4 L, rural 0.2 S",
+  bakery: "centre 1.2 S, city 1.2 M, suburb 1 M, town 1.4 S, highway 0.3 S, coast 0.2 S, scenic 0.1 S, rural 0.5 S",
+  butcher: "centre 0.6 S, city 0.8 M, suburb 0.8 M, town 1.4 S, highway 0.3 S, rural 0.6 S",
+  deli: "centre 1.6 S, city 1.4 M, suburb 0.8 S, town 0.8 S, highway 0.2 S",
   // ---- malls ----
   mall: "centre 0.6 H, city 1 H, suburb 1.4 L", // a regional mall: a city's own site
   regionalmall: "of mall",

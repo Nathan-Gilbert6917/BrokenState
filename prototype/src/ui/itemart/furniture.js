@@ -490,6 +490,19 @@ function f_softserve(p) { // a soft-serve machine: a tall steel box, two hoppers
 function f_slicer(p) { // a meat slicer: a round steel blade over its carriage, a white base
   box(p, 1, 11, 14, 15, "#e4e6e8"); disc(p, 7, 7, 5, "#c9ced3"); ring(p, 7, 7, 5, "#8a949c"); disc(p, 7, 7, 1, "#5e666d"); R(p, 11, 8, 14, 10, "#9aa1a8");
 }
+function f_mixer(p) { // a bakery's floor mixer: a white column and head, the hook down into a steel bowl, the steel base
+  box(p, 10, 1, 13, 14, "#e4e6e8"); R(p, 4, 1, 13, 3, "#eef0f2"); V(p, 7, 4, 7, "#9aa1a8"); oval(p, 3, 7, 11, 12, "#c9ced3"); H(p, 4, 10, 8, "#8a949c");
+  box(p, 2, 13, 14, 15, STEELD);
+}
+function f_meatsaw(p) { // a butcher's band saw: the tall white wheel housing, the blade's gap, the steel table, the cabinet under it
+  box(p, 4, 0, 11, 8, "#e4e6e8"); V(p, 7, 8, 9, "#9aa1a8"); H(p, 1, 14, 9, STEEL); box(p, 3, 10, 12, 15, "#d8dadc"); R(p, 9, 11, 11, 12, "#c8402f");
+}
+function f_changer(p) { // a change machine: a steel box, the lit panel, the bill slot, the coin cup
+  box(p, 3, 0, 12, 15, "#8a949c"); R(p, 5, 2, 10, 4, "#7fc6e6"); H(p, 5, 10, 7, "#26272a"); R(p, 6, 11, 9, 13, "#3a3a3e"); p.set(7, 12, "#d9b13b");
+}
+function f_foldtable(p) { // a folding table: a pale laminate top, the folding steel legs crossed under it
+  R(p, 0, 5, 15, 7, "#ece6da"); H(p, 0, 15, 5, "#f6f2ea"); line(p, 2, 8, 6, 15, "#9aa1a8"); line(p, 6, 8, 2, 15, "#9aa1a8"); line(p, 9, 8, 13, 15, "#9aa1a8"); line(p, 13, 8, 9, 15, "#9aa1a8");
+}
 function f_tortillapress(p) { // a cast-iron tortilla press: two black plates, the lever arm, a pale tortilla between
   oval(p, 2, 9, 13, 13, "#26272a"); H(p, 3, 12, 8, "#f0e0b0"); oval(p, 2, 5, 13, 8, "#3a3a3e"); line(p, 13, 6, 15, 1, "#26272a"); box(p, 3, 14, 12, 15, "#26272a");
 }
@@ -834,6 +847,7 @@ export const GEAR_ART = {
   f_drum, f_labfreezer, f_gokart,
   f_frontdesk, f_suitcase, f_minifridge, f_luggagecart, f_banquet, f_loungechair, f_lounger,
   f_flattop, f_deckoven, f_conveyoroven, f_wokrange, f_smoker, f_chargrill, f_gyrospit, f_stockpot, f_steamtable, f_espresso, f_softserve, f_slicer, f_tortillapress,
+  f_mixer, f_meatsaw, f_changer, f_foldtable,
   f_extinguisher, f_saladbar, f_menuboard, f_patiotable, f_hoststand, f_clothtable, f_kbbqtable, f_beertower, f_lobstertank, f_pastrycase, f_dipcabinet, f_winerack, f_dryshelf,
   f_freezercase, f_islandfreezer, f_meatcase, f_freezershelf, f_producebin, f_breadrack, f_selfcheckout, f_aislesign,
   f_hazmatrack, f_rationshelf, f_handfilter, f_screens, f_maptable, f_radioconsole, f_footlocker, f_batteries,

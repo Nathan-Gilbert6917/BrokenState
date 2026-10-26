@@ -1678,6 +1678,15 @@ const FURN_DRAW = {
     const ax = along(o);
     return [run(ax, 0.24, 0.76, 0, 24, fappl(FURNC.steel, [12], [[16, 18]]), 0.14, 0.86), fcyl(ax, 0.8, 0.35, 0.05, 13, 16, flatM(FURNC.white)), fcyl(ax, 0.8, 0.65, 0.05, 13, 16, flatM(mul(FURNC.leather, 1.6))), run(ax, 0.3, 0.7, 24, 26, flatM(FURNC.white), 0.3, 0.7)];
   } },
+  // Issue #55's shops: a bakery's floor mixer (a white column over a steel bowl), a butcher's band saw (the tall wheel
+  // housing over its table), a laundromat's change machine (a steel box, the bill slot and the coin cup) and folding table.
+  mixer: { top: 20, p: () => [fbox(0.22, 0.78, 0.22, 0.78, 0, 5, fappl(FURNC.steel, [2.5])), { cyl: [0.42, 0.5, 0.2], z0: 5, z1: 11, m: (f) => (f === "top" ? mul(FURNC.cream, 0.9) : FURNC.chrome) }, fbox(0.66, 0.8, 0.38, 0.62, 5, 20, flatM(mul(FURNC.white, 0.92))), fbox(0.3, 0.8, 0.4, 0.6, 16, 20, flatM(FURNC.white))] },
+  meatsaw: { top: 24, p: () => [fbox(0.24, 0.76, 0.24, 0.76, 0, 9, fappl(FURNC.white, [4.5])), fbox(0.18, 0.82, 0.2, 0.8, 9, 10, flatM(FURNC.steel)), fbox(0.32, 0.68, 0.3, 0.44, 10, 24, (f, s, t) => (f === "top" ? FURNC.white : t > 12 && t < 14 ? FURNC.steel : mul(FURNC.white, 0.94)))] },
+  changer: { top: 22, p: (o) => {
+    const ax = along(o), face = (f, s, t, X, Y, sw) => (f === "top" ? FURNC.steel : t > 14 && t < 16 && s > (sw || 12) * 0.3 && s < (sw || 12) * 0.7 ? FURNC.black : t > 4 && t < 7 && s > (sw || 12) * 0.35 && s < (sw || 12) * 0.65 ? FURNC.chrome : mul(FURNC.steel, 0.9 + n2(X, Y, 191) * 0.06));
+    return [run(ax, 0.24, 0.76, 0, 22, face, 0.16, 0.84)];
+  } },
+  foldtable: { top: 9, p: () => [...flegs(0.12, 0.83, 0.18, 0.77, 8, flatM(FURNC.chrome)), fbox(0.08, 0.92, 0.14, 0.86, 8, 9, flatM(mul(FURNC.cream, 0.95)))] },
   slicer: { top: 10, p: () => [fbox(0.25, 0.75, 0.3, 0.75, 0, 4, flatM(FURNC.steel)), { cyl: [0.45, 0.5, 0.22], z0: 4, z1: 9, m: (f) => (f === "top" ? FURNC.chrome : mul(FURNC.chrome, 0.85)) }, fbox(0.6, 0.72, 0.4, 0.6, 4, 10, flatM(FURNC.white))] },
   tortillapress: { top: 9, p: () => [fbox(0.3, 0.7, 0.3, 0.7, 0, 3, flatM(FURNC.black)), { cyl: [0.5, 0.5, 0.18], z0: 3, z1: 6, m: flatM(mul(FURNC.black, 1.3)) }, fbox(0.48, 0.52, 0.2, 0.8, 6, 9, flatM(FURNC.chrome))] },
   dishpit: { top: 22, p: (o) => {
