@@ -174,6 +174,8 @@ section("The base is official when the work finishes; the safe countdown; Settle
   check(people.every((id) => atBase(st, base.id).some((s) => s.id === id)) && !st.parties.includes(p), `everyone settled in as the camp's people (${atBase(st, base.id).length})`);
   check(st.campOpen === base.id && !!base.layoutAsk, "the camp's build map is asked for (Open the build map)");
   check(!poiAt(t, i).cont.camp, "the half-built camp is gone from the ledger");
+  const nd = poiDead(st, t.id, i);
+  check(nd > 0 ? !!base.grounds && base.grounds.dead === nd && base.grounds.poi === i && base.grounds.known : !base.grounds, `the POI's dead left are the camp's grounds (${nd}: base.grounds ${base.grounds ? JSON.stringify({ dead: base.grounds.dead, poi: base.grounds.poi }) : "none"})`);
 }
 
 section("The POI's map is the base map: its fog, no builds on fog, what fits");

@@ -468,6 +468,7 @@ export function poiCampAfterRaid(state, b, p) {
   if (!base) return null;
   if (base.poiCamp && R.seen[R.f]) base.poiCamp.seen = seenRle(orMasks(unseenRle(base.poiCamp.seen, b.w * b.h), unseenRle(R.seen[R.f], b.w * b.h)));
   sitesToQueue(state, b, base);
+  groundsFromPoi(state, base); // the dead still in the place are the camp's grounds, whoever stayed (nobody home: its attacks find it empty)
   if (!R.settled || !p || !state.parties.includes(p)) return null;
   const ids = new Set(b.units.filter((u) => u.settled && !u.dead).map((u) => u.sid));
   const members = partyMembers(state, p);
@@ -479,7 +480,6 @@ export function poiCampAfterRaid(state, b, p) {
     p.members = p.members.filter((id) => !ids.has(id));
   }
   base.lastPresent = state.hour;
-  groundsFromPoi(state, base);
   askLayout(state, base, "camp"); // Open the build map (ui/buildmap.js)
   if (p.owner === "player") state.campOpen = base.id;
   log(state, `${stay.map((s) => s.name.split(" ")[0]).join(", ")} settle${stay.length === 1 ? "s" : ""} into ${base.name}.`, "good");
