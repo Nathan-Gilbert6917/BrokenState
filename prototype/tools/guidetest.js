@@ -128,6 +128,8 @@ section("Normal start: the base list ticks off from the state");
   let fresh = guideCheck(st, ui);
   check(fresh.length === 1 && fresh[0].id === "stores" && g.done.stores === st.hour && ui.flash && /First week/.test(ui.flash.text) && new RegExp(`1 of ${GUIDE_LISTS.base.length}`).test(ui.flash.text), `stores ticks off with a toast (${ui.flash && ui.flash.text})`);
   ui.baseView = null;
+  // wood: nobody starts on Cut wood.
+  check(!g.done.wood && !alive(st).some((s) => s.role === "wood"), "nobody starts on Cut wood");
   // work: everyone on priorities.
   WORK_ACTIONS.weveryone(st, ui, { base: String(hub(st).id) });
   check(guideCheck(st, ui).some((x) => x.id === "work"), "work: everyone on priorities");
@@ -135,10 +137,20 @@ section("Normal start: the base list ticks off from the state");
   const type = Object.keys(BUILDINGS).find((k) => canBuild(st, hub(st), k).ok);
   check(!!type && /queued/.test(queueBuild(st, hub(st), type)), `a building queued (${type})`);
   check(guideCheck(st, ui).some((x) => x.id === "build"), "build: a building queued");
-  // wood: nobody cuts wood at the start; someone put on Cut wood (a fixed job) ticks it.
-  check(!g.done.wood && !alive(st).some((s) => s.role === "wood"), "nobody starts on Cut wood");
-  { const w = alive(st).find((s) => s.location.kind === "base"); w.role = "wood"; if (w.work) w.work.role = null; }
-  check(guideCheck(st, ui).some((x) => x.id === "wood"), "wood: someone on Cut wood");
+  // wood: on priorities, the hour's job picked may already be Cut wood (work.js sets s.role to it), and that ticks it
+  // (seed 42 since d0adaca, whose rolled vehicle backs fill the stores: two go on it). Else someone put on Cut wood
+  // (a fixed job) ticks it; that path is also played on a world of its own below, so it is checked on every seed.
+  const byWork = alive(st).some((s) => s.role === "wood" && s.location.kind === "base");
+  check(!!g.done.wood === byWork, `wood: ticked with everyone on priorities only when the hour's job is Cut wood (${byWork ? "someone is on it" : "nobody is"})`);
+  const fixedWood = (s0, ui0) => { const w = alive(s0).find((s) => s.location.kind === "base"); w.role = "wood"; if (w.work) w.work.role = null; return guideCheck(s0, ui0).some((x) => x.id === "wood"); };
+  if (!byWork) check(fixedWood(st, ui), "wood: someone on Cut wood");
+  {
+    const s2 = createWorld({ seed, factionCount: 5 });
+    s2.noWanderers = true;
+    const u2 = freshUi();
+    const g2 = startGuide(s2, true);
+    check(guideCheck(s2, u2).length === 0 && !g2.done.wood && fixedWood(s2, u2) && !!g2.done.wood, "wood: someone put on Cut wood (a fixed job) ticks it");
+  }
   // scavenge: a team out (any mission), then home.
   check(!g.done.scavenge && !g.done.home, "no team out yet");
   const h = hub(st);

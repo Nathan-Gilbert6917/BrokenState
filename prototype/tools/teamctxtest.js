@@ -94,7 +94,7 @@ section("A forest away from water: hunt, forage, wood, camp; no fishing, no wate
     check(!has(m, "drop") && !has(m, "mission:enter"), "forest: no base items");
     const hunt = item(m, "hunt");
     check(hunt.move && hunt.travel > 0 && hunt.task === 8, `hunt: travel ${hunt.travel}h + 8h`);
-    check(/travel \+ 2–24h/.test(itemHours(hunt)), `hunt shows travel + the hours the land order box sets (${itemHours(hunt)})`);
+    check(/travel \+ 30m–24h/.test(itemHours(hunt)), `hunt shows travel + the hours the land order box sets (${itemHours(hunt)})`);
     check(/Hunt/.test(m.head.name) || /team/i.test(m.head.name), `head names the team (${m.head.name})`);
     check(/on foot/.test(m.head.situation) && /away/.test(m.head.situation), `head: on foot, hours away (${m.head.situation})`);
     // No weapon: the hunt is there but disabled with the reason.

@@ -378,7 +378,12 @@ section("Your teams meet them");
   const crew = atBase(st, h.id).slice(0, 2).map((s) => s.id);
   const res = launchExpedition(st, { memberIds: crew, dest: away, mission: "move", stance: "normal", supplies: { food: 10, water: 10, ammo: 30 } });
   const p = res.party;
-  while (partyTile(p) !== away && st.parties.includes(p)) tick(st);
+  // Nobody met and no road fights on the way (since the 250 × 150 maps, 1370d1cf, seed 42's walk met "Armed strangers",
+  // wanderers.js, on its last step and the team was still engaged when the raiders came): the team arrives free.
+  const nw = st.noWanderers;
+  st.noWanderers = true;
+  while (partyTile(p) !== away && st.parties.includes(p)) { p.lastConflict = st.hour; tick(st); }
+  st.noWanderers = nw;
   clearCards(st);
   p.lastConflict = null;
   const r = V.spawnVisitor(st, "raiders", { size: 9, power: 5 });

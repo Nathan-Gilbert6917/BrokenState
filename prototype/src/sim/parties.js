@@ -298,6 +298,18 @@ export function weighTeam(state, p) {
   p.burden = burdenRecord(teamLoad(members, poolLoad(p), v, cartSupOf(state, p)), members, v); // carry.js cartSupOf: the supplies in the carts (carts.js)
   return p.burden;
 }
+// The team as it walks on after leaving its vehicle at a crossing, for the estimates (orders.js queueEstimate):
+// crossing.js launchBoat uses the boat's materials, then leaveVehicle weighs the team afresh on foot (the found cargo
+// people cannot carry left in the vehicle), so it walks at that pace, not the one weighed with the vehicle.
+/** @param {State} state @param {Party} p @param {Record<string, number>} [mats] */
+export function afterLeaving(state, p, mats = {}) {
+  const members = partyMembers(state, p);
+  const sup = { ...p.supplies };
+  for (const [k, q] of Object.entries(mats)) sup[k] = Math.max(0, (sup[k] || 0) - q);
+  const own = supplyLoad(sup);
+  const pool = Math.max(own, Math.min(own + cargoLoad(p.cargo), carryCapacity(state, members, null)));
+  return { ...p, vehicle: false, burden: burdenRecord(teamLoad(members, pool, null, cartSupOf(state, p)), members, null) };
+}
 /** @param {State} state @param {Party} p */
 function reweigh(state, p) {
   if (p.owner !== "player" || p.kind === "convoy") return;
