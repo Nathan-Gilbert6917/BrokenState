@@ -55,6 +55,7 @@ export const SIZES = {
     // Points of interest (pois.js): small places, the neighbourhood a street of houses.
     house: 0.5, garage: 0.5, corner: 0.5, pizza: 0.5, farmstand: 0.5, shed: 0.5, blind: 0.5, campsite: 0.5, hikercamp: 0.5, mineshack: 0.5, neighbourhood: M,
     mine: M, // issue #52: a mine (its plan's own map; the mine complex's its own: minelayout.js complexMap)
+    sawmill: M, // issue #53: a sawmill (its plan's own map; the industrial mill's yard its own: sawmilllayout.js millYardMap)
   },
   TERRAIN: { city: L, suburb: M, plains: M, forest: M, hills: M, mountain: M, water: M },
   // Fights in the open: BASE, plus PER a combatant over FROM (each of the dead counts ZOMBIE: they bunch up), at most

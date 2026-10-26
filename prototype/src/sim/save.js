@@ -216,6 +216,9 @@ export function deserializeState(save) {
   // Data centres (datacenter.js, issue #51): a save from before gets none on its tiles (placement.js placeExtraKind,
   // worldcfg.js legacyDc), so its points of interest regenerate as they were.
   if (!state.dcV) { state.dcLegacy = true; state.dcV = 1; }
+  // Sawmills (sawmilllayout.js, issue #53): a save from before gets none on its tiles (placement.js placeExtraKind,
+  // worldcfg.js legacySaw), so its points of interest regenerate as they were.
+  if (!state.sawV) { state.sawLegacy = true; state.sawV = 1; }
   // Mines and quarries (minelayout.js, issue #52): a save from before keeps its quarry sites' workshop and its mine
   // shacks' cabin (their maps and containers as they were) and gets no new mines or quarries (worldcfg.js legacyMines).
   if (!state.minesV) { state.minesLegacy = true; state.minesV = 1; }

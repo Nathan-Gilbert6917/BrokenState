@@ -1658,6 +1658,39 @@ const FURN_DRAW = {
   } },
   powderbox: { top: 11, p: () => [fbox(0.12, 0.88, 0.2, 0.8, 0, 11, (f, s, t) => (f === "top" ? mul(hex("#a03228"), 0.9) : t > 5 && t < 7 ? FURNC.amber : hex("#a03228")))] },
   drum: { top: 14, p: () => [{ cyl: [0.5, 0.5, 0.3], z0: 0, z1: 14, m: (f, s, t) => (f === "top" ? mul(FURNC.red, 0.8) : Math.floor(t) === 4 || Math.floor(t) === 9 ? mul(FURNC.red, 0.6) : FURNC.red) }] },
+  // ---------- sawmills and lumber yards (issue #53, sim/sawmilllayout.js) ----------
+  // The headsaw: a band head rig on its steel bed, the wheel housing up the middle in mill blue, the blade bright down
+  // its side; the edger a low yellow box with its feed rollers; a log pile three courses of bark-brown logs, their pale
+  // ends to the sides; a kiln door a tall ribbed aluminium panel; the wigwam burner a rusty steel cone and its mesh cap;
+  // stacked lumber pale boards in courses on dark stickers; a saw-blade rack a board of round blades.
+  headsaw: { top: 30, p: (o) => {
+    const ax = along(o), housing = (f, s, t) => (f === "top" ? mul(hex("#3f6f8a"), 1.1) : Math.floor(t) % 8 < 1 ? FURNC.black : hex("#3f6f8a"));
+    return [run(ax, 0.12, 0.88, 0, 8, flatM(FURNC.steel), 0.02, 0.98), run(ax, 0.3, 0.66, 8, 30, housing, 0.12, 0.88), run(ax, 0.66, 0.72, 8, 28, flatM(FURNC.chrome), 0.08, 0.92)];
+  } },
+  edger: { top: 14, p: (o) => {
+    const ax = along(o), body = (f, s, t, X) => (f === "top" ? mul(hex("#d0a12a"), 1.08) : Math.floor(X) % 4 < 1 ? mul(hex("#d0a12a"), 0.7) : hex("#d0a12a"));
+    return [...flegs(0.2, 0.75, 0.1, 0.85, 4, flatM(FURNC.black)), run(ax, 0.18, 0.82, 4, 12, body, 0.04, 0.96), run(ax, 0.3, 0.7, 12, 14, flatM(FURNC.chrome), 0.1, 0.9)];
+  } },
+  logpile: { top: 18, p: () => {
+    const bark = (f, s, t, X, Y) => (f === "top" ? mul(hex("#5a4030"), 0.95 + n2(X, Y, 531) * 0.12) : Math.floor(t) % 6 < 1 ? hex("#3a2a1e") : Math.floor(X) % 4 < 1 ? hex("#c9a46a") : mul(hex("#5a4030"), 0.9 + n2(X, Y, 532) * 0.15));
+    return [fbox(0.04, 0.96, 0.04, 0.96, 0, 6, bark), fbox(0.1, 0.9, 0.1, 0.9, 6, 12, bark), fbox(0.2, 0.8, 0.2, 0.8, 12, 18, bark)];
+  } },
+  kilndoor: { top: 30, p: (o) => {
+    const ax = along(o), panel = (f, s, t, X) => (f === "top" ? FURNC.steel : Math.floor(X) % 3 < 1 ? mul(FURNC.chrome, 0.8) : FURNC.chrome);
+    return [run(ax, 0.3, 0.7, 0, 28, panel, 0.02, 0.98), run(ax, 0.26, 0.74, 28, 30, flatM(PAL.metalDk), 0, 1)];
+  } },
+  burner: { top: 40, p: () => {
+    const rust = (f, s, t, X) => (f === "top" ? hex("#3a2a24") : Math.floor(t) % 5 < 1 ? hex("#5a3424") : mul(hex("#8a4a2c"), 0.9 + n2(Math.floor(X), 0, 533) * 0.15));
+    return [{ cyl: [0.5, 0.5, 0.46], z0: 0, z1: 14, m: rust }, { cyl: [0.5, 0.5, 0.36], z0: 14, z1: 26, m: rust }, { cyl: [0.5, 0.5, 0.24], z0: 26, z1: 35, m: rust }, { cyl: [0.5, 0.5, 0.14], z0: 35, z1: 40, m: flatM(PAL.metalDk) }];
+  } },
+  lumberstack: { top: 16, p: (o) => {
+    const ax = along(o), boards = (f, s, t, X) => (f === "top" ? mul(PAL.woodLt, 1.08) : Math.floor(t) % 4 < 1 ? mul(PAL.woodDk, 0.8) : mul(PAL.woodLt, Math.floor(X) % 5 < 1 ? 0.9 : 1));
+    return [run(ax, 0.12, 0.88, 0, 2, flatM(PAL.woodDk), 0.12, 0.26), run(ax, 0.12, 0.88, 0, 2, flatM(PAL.woodDk), 0.74, 0.88), run(ax, 0.1, 0.9, 2, 16, boards, 0.04, 0.96)];
+  } },
+  bladerack: { top: 24, p: (o) => {
+    const ax = along(o), blade = flatM(FURNC.chrome);
+    return [run(ax, 0.4, 0.6, 0, 24, fwood(PAL.woodDk), 0.06, 0.94), run(ax, 0.32, 0.4, 6, 13, blade, 0.12, 0.46), run(ax, 0.32, 0.4, 14, 21, blade, 0.54, 0.88), run(ax, 0.6, 0.68, 6, 13, blade, 0.54, 0.88), run(ax, 0.6, 0.68, 14, 21, blade, 0.12, 0.46)];
+  } },
   labfreezer: { top: 28, p: (o) => {
     const ax = along(o), front = (f, s, t, X) => (f === "top" ? mul(FURNC.white, 1.05) : t > 23 && t < 25 && Math.floor(X) % 6 < 2 ? FURNC.led : fappl(FURNC.white, [21], [[8, 18]])(f, s, t, X, 0));
     return [run(ax, 0.2, 0.8, 0, 28, front, 0.08, 0.92)];

@@ -340,6 +340,16 @@ export const REAL_SIZE = {
       sand: { w: [24, 28], d: [12, 14], storeys: [1, 1] }, asphalt: { w: [26, 30], d: [14, 16], storeys: [1, 1] }, concrete: { w: [26, 30], d: [16, 18], storeys: [1, 1] },
       flooded: { w: [14, 18], d: [8, 10], storeys: [1, 1] },
     } },
+  // #53's sawmills and lumber yards (sawmilllayout.js SAWMILL_PLANS): planned at these sizes by their plans, a portable
+  // bandsaw mill's lean-to to the industrial mill's saw house (its yard's other buildings: sawmilllayout.js YARD_BUILDINGS)
+  sawmill:     { w: [9, 46], d: [7, 26], storeys: [1, 3], set: "rural", planned: true,
+    sizes: {
+      family: { w: [20, 24], d: [12, 14], storeys: [1, 1] }, industrial: { w: [40, 46], d: [22, 26], storeys: [2, 2] }, planing: { w: [34, 38], d: [18, 22], storeys: [1, 1] },
+      lumberyard: { w: [32, 38], d: [14, 18], storeys: [1, 1] }, pallet: { w: [32, 36], d: [20, 24], storeys: [1, 1] }, shingle: { w: [18, 22], d: [12, 14], storeys: [1, 1] },
+      portable: { w: [9, 11], d: [7, 8], storeys: [1, 1] }, watermill: { w: [14, 17], d: [11, 13], storeys: [2, 3] }, treated: { w: [28, 34], d: [16, 20], storeys: [1, 1] },
+      logsort: { w: [14, 16], d: [9, 11], storeys: [1, 1] }, millwork: { w: [22, 26], d: [14, 16], storeys: [2, 2] }, framer: { w: [18, 22], d: [12, 14], storeys: [2, 2] },
+      kilnmill: { w: [36, 40], d: [20, 24], storeys: [1, 1] },
+    } },
   barn:        { w: [15, 30], d: [10, 20], storeys: [1, 1], set: "rural" }, // plus its hayloft (a raised room on one grid)
   // #28's college campus buildings: planned at their own real size (campuslayout.js CAMPUS_SIZE and campusplans.js's
   // named plans, a metre a cell; these rows their range over the plans); on a campus each is laid out as it is

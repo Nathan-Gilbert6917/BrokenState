@@ -172,6 +172,7 @@ export const LOOT_SENSE = {
   factory:        S({ tools: 0.8, parts: 0.8, build: 0.6 }, NO_GUNS),
   mine:           S({ tools: 0.8, parts: 0.8 }, MINE_NEVER, { note: "issue #52: ore and scrap in the cars, lamps and hard hats in the lamp room and the dry; explosives allowed (a magazine's locked boxes), never a gun" }),
   quarry:         S({ tools: 0.8, parts: 0.8, fuel: 0.5 }, MINE_NEVER, { note: "issue #52: the shops' tools and parts, the lube room's fuel; explosives allowed (the magazine's locked boxes), never a gun", site: "quarry" }),
+  sawmill:        S({ build: 0.95, tools: 0.9, parts: 0.8, fuel: 0.8 }, NO_GUNS, { note: "issue #53: lumber in its sheds and stacks, saws in the filing room's blade racks" }),
   autoshop:       S({ tools: 0.9, parts: 0.9, fuel: 0.9 }, ARMY),
   garage:         S({ tools: 0.9, parts: 0.9, fuel: 0.7 }, ARMY),
   workshop:       S({ tools: 0.9, parts: 0.9, build: 0.7 }, ARMY),
