@@ -52,6 +52,9 @@ const CORE = [
   // kind, every other kind in each; the shared setup in citycrawlkit.js), scenestest at full seeds (above; 141 s alone),
   // indoorlighttest (14 s alone)
   ["citycrawlgridtest", false], ["citycrawlquicktest", false], ["citycrawlquick2test", false], ["indoorlighttest", false],
+  // #75: red tests made green, kept so (alone on 2026-10-26: landorder 10 s, detach 11 s, claims 17 s, guide 30 s,
+  // teamctx 33 s)
+  ["landordertest", false], ["detachtest", false], ["claimstest", false], ["guidetest", false], ["teamctxtest", false],
 ];
 
 const args = process.argv.slice(2);

@@ -10,7 +10,7 @@ import { tickHour, day, factionById } from "../src/sim/world.js";
 import { roadTeam } from "../src/sim/hardcore-start.js";
 import { hardcoreEraOffset } from "../src/sim/hardcore-outbreak.js";
 import { hcMilitary } from "../src/sim/hardcore-groups.js";
-import { TRAVEL_EVENT_IDS, travelEventFits, travelEventCard, rollTravelEvent, CONVOY_KINDS, CONVOY_KIND_KEYS, CONVOY_GEAR, convoyCard } from "../src/sim/events.js";
+import { TRAVEL_EVENT_IDS, travelEventFits, travelEventCard, rollTravelEvent, CONVOY, CONVOY_KINDS, CONVOY_KIND_KEYS, CONVOY_GEAR, convoyCard } from "../src/sim/events.js";
 import { GEAR } from "../src/sim/data.js";
 import { fixableAt } from "../src/sim/foundcars.js";
 import { HUB_EVENT_IDS, hubEventCard, hubEventWeights, RATS, COLD, HC_DESERTER } from "../src/sim/hubevents.js";
@@ -137,7 +137,22 @@ section(`Road events: ${ROLLS} rolls on the road`);
   const show = Object.entries(counts).sort((a, b) => b[1] - a[1]);
   console.log(`  ${show.map(([t, n]) => `${t} ${n}`).join(", ")}`);
   for (const title of ["A swollen creek", "A lonely farmhouse", "A roadside gas station", "An overrun camp", "A stranger with the worm"]) check(counts[title] > 0, `"${title}" comes up in play`);
-  check(Object.values(CONVOY_KINDS).some((K) => counts[K.title] > 0), "an overrun convoy of some kind comes up in play");
+  // An overrun convoy fits only a bare road tile with the dead about (events.js CONVOY): 2% of the land on the 250 × 150
+  // maps since 1370d1cf (5% on the 64 × 42 map), so the rolls above, spread over all of it, may not land one. A quarter
+  // as many rolls on the tiles it fits, the same way.
+  const fits = ground.filter((id) => { const t = st.tiles[id]; return !t.loc && !!t.road && t.infection > CONVOY.INFECTION; });
+  let convoys = Object.values(CONVOY_KINDS).reduce((a, K) => a + (counts[K.title] || 0), 0), cards = 0;
+  for (let i = 0; i < ROLLS / 4 && fits.length; i++) {
+    st.hour = hours[i % 4] + (i % 24);
+    p.lastConflict = st.hour;
+    p.eventHour = -1;
+    const card = rollTravelEvent(st, p, fits[(i * 7919) % fits.length]);
+    if (!card) continue;
+    cards++;
+    if (card.convoyKind) convoys++;
+    for (const m of partyMembers(st, p)) { m.health = 100; m.mood = 50; }
+  }
+  check(convoys > 0, `an overrun convoy of some kind comes up in play (${convoys}: on ${fits.length} road tiles with the dead about, ${cards} cards in ${ROLLS / 4} rolls)`);
   check((counts.Wolves || 0) + (counts["Feral dogs"] || 0) > 0, "wolves or feral dogs come up in play");
   check((counts["A gone-wild orchard"] || 0) + (counts["Brambles in fruit"] || 0) > 0, "an orchard or brambles come up in play");
 }

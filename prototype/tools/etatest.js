@@ -11,7 +11,7 @@ import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from ".
 import { createWorld, tickHour, hub, atBase } from "../src/sim/world.js";
 import { launchExpedition, estimateTrip, planPath, hoursLeft, orderMove, partyTile, plannedTile, STANCES, cargoLoad, travelHours, paceOpts, partyMembers } from "../src/sim/parties.js";
 import { queueOrder, queueEstimate } from "../src/sim/orders.js";
-import { vehiclesAtBase, partyFuel } from "../src/sim/vehicles.js";
+import { vehiclesAtBase, partyFuel, tank } from "../src/sim/vehicles.js";
 import { crossingsFrom, boatPlan, boatOrder } from "../src/sim/crossing.js";
 
 const perSeed = Number(process.argv[2] || 12);
@@ -175,12 +175,18 @@ for (const seed of seeds) {
     const truck = vehiclesAtBase(state, h.id)[0];
     const byTruck = mode !== "foot" && truck;
     if (mode !== "foot" && !truck) continue;
-    if (byTruck) { truck.fuel = 30; truck.condition = 100; }
-    // A shore the team can reach whose far side has land it can move on from (and, with the raft, drive on).
-    const shores = state.tiles.filter((t) => t.terrain !== "water" && t.id !== h.tile && planPath(state, h.tile, t.id, !!byTruck) && crossingsFrom(state, t.id).length)
+    if (byTruck) { truck.fuel = Math.min(30, tank(truck)); truck.condition = 100; } // a full tank: since d0adaca the first vehicle may be an 18-litre sedan (seed 7)
+    const crew = atBase(state, h.id).slice(0, 3).map((s) => s.id);
+    const supplies = { food: 30, water: 30, meds: 2, parts: byTruck ? 4 : 0, scrap: 45, fuel: byTruck ? 10 : 0 };
+    // A shore the team can reach whose far side has land it can move on from (and, with the raft, drive on). The
+    // shores first, nearest first, then a path to each: a path to every land tile was 36,000 searches a world on the
+    // 250 × 150 maps (1370d1cf; about 280 s each, nine worlds).
+    const shores = state.tiles.filter((t) => t.terrain !== "water" && t.id !== h.tile && crossingsFrom(state, t.id).length)
       .sort((a, b) => state.grid.distance(a.id, h.tile) - state.grid.distance(b.id, h.tile));
+    const reach = (t) => !!planPath(state, h.tile, t.id, !!byTruck);
     let shore = null, far = null, onward = null;
     for (const t of shores) {
+      if (!reach(t)) continue;
       for (const c of crossingsFrom(state, t.id)) {
         const drive = mode === "raft";
         if (drive && state.tiles[c.tile].terrain === "mountain" && !state.tiles[c.tile].road) continue; // no raft onto a mountain
@@ -190,8 +196,11 @@ for (const seed of seeds) {
       if (shore != null) break;
     }
     if (shore == null) continue;
-    const crew = atBase(state, h.id).slice(0, 3).map((s) => s.id);
-    const supplies = { food: 30, water: 30, meds: 2, parts: byTruck ? 4 : 0, scrap: 45, fuel: byTruck ? 10 : 0 };
+    // By truck, cans for the drive with a quarter of the fuel to spare: on those maps the nearest shore is a 15-hour
+    // drive estimated at 39 fuel on seed 42 (57 on seed 7), and with a full tank and 10 in cans the fronts and cards met
+    // on the way (delays here, not estimate errors: see above) ran it dry short of the shore.
+    // (Twice: the cans' own weight burns fuel too.)
+    for (let i = 0; i < 2 && byTruck; i++) supplies.fuel = Math.max(supplies.fuel, Math.ceil(estimateTrip(state, { memberIds: crew, dest: shore, vehicle: true, v: truck, stance: "normal", fuel: Infinity, supplies }).fuelOut / 0.75 - truck.fuel));
     const res = launchExpedition(state, { memberIds: crew, dest: shore, mission: "move", stance: "normal", vehicleId: byTruck ? truck.id : null, supplies: byTruck ? supplies : { food: 6, water: 6 } });
     if (!check(!res.error, `crossing launch: ${res.error}`)) continue;
     const p = res.party;
@@ -213,14 +222,14 @@ for (const seed of seeds) {
     const curLeft = p.task.hours - p.task.done;
     const est = curLeft + queueEstimate(state, p).reduce((s, x) => s + (x.hours ?? 0), 0);
     const s2 = { cards: 0, delay: 0 };
-    let landed = false;
-    const leg = runUntil(state, p, (q) => { if (partyTile(q) === far) landed = true; return q.phase === "waiting" && !q.orders.length && !state.cards.length; }, s2, false);
+    let landed = false, across = false; // across: the vehicle with them on the far shore (it may still run dry on the move on)
+    const leg = runUntil(state, p, (q) => { if (partyTile(q) === far && !landed) { landed = true; across = !!q.vehicle; } return q.phase === "waiting" && !q.orders.length && !state.cards.length; }, s2, false);
     check(landed, `seed ${seed} ${mode}: never stood on the far shore`);
     check(partyTile(p) === onward || leg.gone, `seed ${seed} ${mode}: ended at ${partyTile(p)}, wanted ${onward}`);
     const used = scrapBefore - ((p.supplies.scrap || 0) + (p.cargo.supplies.scrap || 0));
     check(used >= order.mats.scrap - 1e-9, `seed ${seed} ${mode}: scrap used ${used}, plan ${order.mats.scrap}`);
     if (mode === "leave") check(!p.vehicle && truck.loc.kind === "abandoned" && truck.loc.tile === shore, `seed ${seed}: truck not left on the shore`);
-    if (mode === "raft") check(p.vehicle, `seed ${seed}: truck did not come along on the raft`);
+    if (mode === "raft") check(across, `seed ${seed}: truck did not come along on the raft`);
     rows.push({ seed: seed * 100 + 77, how: `boat ${mode} (${matsTextOf(order.mats)}) + move`, stance: "normal", tiles: null, est, old: null, actual: leg.hours, cards: s2.cards, delay: s2.delay });
     if (s2.delay === 0 && !leg.gone) check(leg.hours === est, `seed ${seed} boat ${mode}: estimate ${est}h, took ${leg.hours}h`);
   }
