@@ -149,7 +149,8 @@ section("A battle's end: a played raid's kills scaled to its roster, the reinfor
   const placed = ro.roster * 2;
   const units = [];
   for (let k = 0; k < placed; k++) units.push({ side: "enemy", kind: "zombie", dead: k < ro.roster });
-  for (let k = 0; k < 3; k++) units.push({ side: "enemy", kind: "zombie", reinforcement: true, dead: k < 2 });
+  for (let k = 0; k < 3; k++) units.push({ side: "enemy", kind: "zombie", reinforcement: true, drawn: true, dead: k < 2 });
+  units.push({ side: "enemy", kind: "zombie", reinforcement: true, dead: true }); // a risen one (carriers.js): not the tile's
   deadPopBattleEnd(st, { deadPop: { tile: t.id, poi: i, ...ro } }, null, { tileId: t.id, units, gunshots: 0 });
   check(poiDead(st, t, i) === p0 - Math.round(ro.roster / 2), `half the map's dead killed: half the roster off the POI (${p0} → ${poiDead(st, t, i)}, roster ${ro.roster})`);
   check(openDead(st, t) === o0 - 2, `the 2 reinforcements killed off the open ground (${o0} → ${openDead(st, t)}); the one alive stays there`);

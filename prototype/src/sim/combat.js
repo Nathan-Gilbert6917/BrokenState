@@ -5654,6 +5654,7 @@ function reinforcements(b) {
     if (zk) applyZType(z, zk, false, 2 + b.infection * 3);
     z.x = cells[i][0]; z.y = cells[i][1];
     z.reinforcement = z.wild = true;
+    z.drawn = true; // deadpop.js: out of the tile's open ground (deadPopBattleEnd takes the killed off it)
     z.ap = 2;
     b.units.push(z);
   }
@@ -7823,6 +7824,7 @@ function spawnWave(b, n) {
     if (zk) applyZType(z, zk, false, 2 + b.infection * 3);
     z.x = cells[i][0]; z.y = cells[i][1];
     z.reinforcement = z.wild = true;
+    z.drawn = true; // deadpop.js: out of the tile's open ground (deadPopBattleEnd takes the killed off it)
     z.aware = true;
     b.units.push(z);
   }

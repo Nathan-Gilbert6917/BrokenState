@@ -34,7 +34,7 @@
 // noise: LOUD_KILL a kill when loud (gunfire, explosives), QUIET_KILL when quiet (melee, bows, suppressed, takedowns).
 // DRAWS (drawFromTile / putBack): reinforcements, surges, a camp's trickle, a hunt's encounters come out of the open
 // ground; the ones that walk away alive go back. A battle on the map counts at its end (deadPopBattleEnd, combat.js
-// finishCombat): the reinforcements (b.reinfMax: the open ground within earshot, earshot()) killed come off the open
+// finishCombat): the reinforcements (u.drawn; b.reinfMax: the open ground within earshot, earshot()) killed come off the open
 // ground, the rest stay there; the map's own dead killed come off the POI, scaled to the roster it was given (a map
 // shows at most ROSTER_MAX of a POI's dead: kills × roster / placed).
 // BANDS (deadBand / raiderBand): none / low / medium / high / overrun of the count against the cap (a POI's against its
@@ -405,7 +405,8 @@ export function surgeDraw(state, tile, poiIndex) {
 }
 /**
  * A battle on the map is over (combat.js finishCombat): its kills come off the pools.
- * - The reinforcements (u.reinforcement: drawn from the open ground within earshot) killed come off the open ground.
+ * - The reinforcements (u.drawn: combat.js reinforcements and a raid's waves, out of the open ground within earshot)
+ *   killed come off the open ground. Other late dead (the risen, sleepers, a hive's brood, a crawl's old bodies) are not.
  * - With setup.deadPop ({ tile, poi, roster }: a raid on a POI or the tile's own dead: scavenge.js startScavenge, the
  *   crawl, a site clear), the map's own dead killed come off the POI (then the open ground), scaled to the roster
  *   (roster × killed / placed), and the POI's raiders (DEADPOP.RAIDER_NAME) killed off its raiders.
@@ -423,10 +424,10 @@ export function deadPopBattleEnd(state, setup, result, battle) {
   const loud = shots >= DEADPOP.LOUD_SHOTS;
   if (battle) {
     const zs = battle.units.filter((u) => u.side === "enemy" && u.kind === "zombie");
-    const reinf = zs.filter((u) => u.reinforcement && u.dead).length;
+    const reinf = zs.filter((u) => u.drawn && u.dead).length;
     if (reinf) killDead(state, t, null, reinf, { loud });
     if (dp) {
-      const own = zs.filter((u) => !u.reinforcement), placed = own.length, killed = own.filter((u) => u.dead).length;
+      const own = zs.filter((u) => !u.reinforcement && !u.restored), placed = own.length, killed = own.filter((u) => u.dead).length;
       const roster = dp.roster != null ? dp.roster : placed;
       if (killed && placed) killDead(state, t, poi, Math.min(roster, Math.round((roster * killed) / placed)), { loud });
       const rs = battle.units.filter((u) => u.side === "enemy" && u.kind !== "zombie" && u.gname === DEADPOP.RAIDER_NAME);

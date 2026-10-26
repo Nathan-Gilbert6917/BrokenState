@@ -35,6 +35,7 @@ import {
   mergePoiFinds, poiSnapshot, poiKnowledge, setPoiReveal, packPois, clearPois, permanentSite,
   BUNKER_POI, MALL_POI,
 } from "../src/sim/pois.js";
+import { DEADPOP, killDead, poiDead, poiDefault } from "../src/sim/deadpop.js";
 import { SHOP, SHOP_KINDS, settingOf } from "../src/sim/shops.js";
 import { hotelSetting } from "../src/sim/hotels.js";
 import { PLACE_EXTRA, placeWeight, tileClass } from "../src/sim/placement.js"; // a new world's extra by the placement table (issue #42)
@@ -171,7 +172,10 @@ section("The top POI and the pools");
     const led = poiLedger(s, 1);
     check(led && led.n === 0 && led === s.pois[1].cont && poiLedger(s, 1) === led, "the container ledger is made once, empty");
     const th0 = poiThreat(st, s, 1);
-    check(th0 === (def.danger || 0) + s.infection && tileHeat(st, s) === 0 && addTileHeat(st, s, 10) === 10 && Math.abs(poiThreat(st, s, 1) - th0 - 0.15) < 1e-9, "threat = danger + infection + heat (a cold tile 0; heat 10 → +0.15: tools/poiheattest.js)");
+    check(th0 === (def.danger || 0) + s.infection && tileHeat(st, s) === 0 && addTileHeat(st, s, 10) === 10 && Math.abs(poiThreat(st, s, 1) - th0) < 1e-9, "threat = danger + infection, its dead at their default add nothing; the tile's noise (tile heat) none (tools/poiheattest.js)");
+    const d1 = poiDefault(st, s, 1);
+    killDead(st, s, 1, poiDead(st, s, 1));
+    check(d1 === 0 || Math.abs(poiThreat(st, s, 1) - Math.max(0, th0 - DEADPOP.THREAT)) < 1e-9, `the POI's dead all killed: threat − ${DEADPOP.THREAT} (deadpop.js, tools/deadpoptest.js)`);
   }
   check(poiAt(st.tiles[0], 99) === null && poiPool(st.tiles[0], 99) === 0 && poiTake(st.tiles[0], 99, 1) === 0, "a missing index is harmless");
 }
