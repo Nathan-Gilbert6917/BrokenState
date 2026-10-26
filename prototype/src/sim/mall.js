@@ -77,43 +77,149 @@ const leaves = (list) => list.map(([s, r]) => [s, typeof r === "string" ? { role
 const pickW = (rng, table) => rng.weighted(Object.keys(table), (k) => table[k]);
 
 // ---------------------------------------------------------------------------------------------------------------------
-// The mall's own buildings (buildingmaps.js BUILDINGS cinema, arcade, mallservices, mallrestrooms, vacantunit,
-// parkgarage): specs for assemble, o.w × o.d when the slot sets them.
+// The mall's own buildings (buildingmaps.js BUILDINGS cinema, arcade, mallservices, mallrestrooms, vacantunit; the
+// parking garage is #28's): specs for assemble, o.w × o.d when the slot sets them. Each has a dozen named variants
+// (issue #32's rule, MIN_PLANS 12), each a plan of its own (its rooms and which open onto which): UNIT_VARIANTS[kind],
+// picked by the dice among those that fit the slot's width (min), or by o.variant; the spec carries vid and vname.
+// A cinema always has two screens or more and the projection booth; the mall offices always mall security (a
+// mallsec room) and the first-aid room (tools/malltest.js).
 // ---------------------------------------------------------------------------------------------------------------------
+const SCR = (i) => ({ role: "screen", name: `Screen ${i + 1}`, lay: "screen" });
+const PROJ = { role: "projection", name: "Projection booth", hub: true, lay: "projection" };
+const CLOBBY = (o = {}) => ({ role: "lobby", name: "Cinema lobby", type: "cinema", entry: true, lay: "concession", fl: "carpet", maxBoxes: 3, ...o });
+// A cinema: the front band (the lobby and what stands beside it), the screens across the middle (as many as the width
+// holds, 2 at least, up to max), the back band (the projection booth and what stands beside it); a corridor band
+// between the lobby and the screens when cor is set (its role: "corridor" or "hall").
+const cine = ({ front, back, max = 5, frontD = 6, backD = 3, cor = null, extra = null }) => (bw, bh) => {
+  const n = clamp(Math.floor((bw - 2 - (extra ? extra[0] : 0)) / MALL.CINEMA.SCREEN), 2, max);
+  const mid = Array.from({ length: n }, (_, i) => ["*", SCR(i)]);
+  if (extra) mid.push([extra[0], extra[1]]);
+  const parts = [[frontD, front.length > 1 ? { split: "x", parts: leaves(front) } : front[0][1]]];
+  if (cor) parts.push([3, { role: cor, name: cor === "hall" ? "Cinema hall" : "Screens corridor", hub: true, fl: "carpet" }]);
+  parts.push(["*", { split: "x", parts: mid }], [backD, back.length > 1 ? { split: "x", parts: leaves(back) } : back[0][1]]);
+  return { split: "y", parts };
+};
+const back2 = (rooms, d = 4) => (front) => ({ split: "y", parts: [["*", front], [d, { split: "x", parts: leaves(rooms) }]] });
+const ARC = (o = {}) => ({ role: "arcade", name: "Arcade", entry: true, lay: "arcade", ...o });
+const SEC = (o = {}) => ({ role: "office", name: "Mall security", type: "mallsec", lay: "security", maxBoxes: 2, ...o });
+const LOCK = (o = {}) => ({ role: "armory", name: "Security locker room", type: "mallsec", lay: "seclocker", lock: ["door", 0.6], boxLock: ["locker", 0.35], maxBoxes: 3, dk: "steel", ...o });
+const AID = (o = {}) => ({ role: "nurse", name: "First-aid room", ...o });
+const MGMT = (o = {}) => ({ role: "office", name: "Mall management", lay: "manager", boxLock: ["safe", 0.5], ...o });
+// The mall offices: a band along the front (a corridor, a hall, a lobby or none) and the rooms behind it.
+const offices = (rooms, band = "corridor", name = "Mall offices") => () => band
+  ? { split: "y", parts: [[3, { role: band, name, entry: true, hub: true }], ["*", { split: "x", parts: leaves(rooms) }]] }
+  : { split: "x", parts: leaves(rooms.map(([w, r], i) => [w, i === 0 ? { ...r, entry: true, hub: true } : r])) };
+const MEN = { role: "restroom", name: "Men's restroom" }, WOMEN = { role: "restroom", name: "Women's restroom" };
+const JAN = { role: "storage", name: "Janitor's closet", type: "warehouse", maxBoxes: 1 };
+const loos = (rooms, band = "corridor", name = "Restroom corridor") => () => band
+  ? { split: "y", parts: [[3, { role: band, name, entry: true, hub: true }], ["*", { split: "x", parts: leaves(rooms) }]] }
+  : { split: "x", parts: leaves(rooms.map(([w, r], i) => [w, i === 0 ? { ...r, entry: true, hub: true } : r])) };
+// A vacant unit: the front (the empty sales floor) and what is left behind it.
+const VBACK = (role, name, o = {}) => ({ role, name, type: "store", maxBoxes: 1, lay: "vacant", ...o });
+export const UNIT_VARIANTS = {
+  cinema: [
+    { id: "multiplex", name: "Multiplex", prog: cine({ front: [["*", CLOBBY()], [5, { role: "restroom", name: "Cinema restrooms" }]], back: [["*", PROJ]] }) },
+    { id: "twin", name: "Twin cinema", prog: cine({ max: 2, front: [["*", CLOBBY()]], back: [["*", PROJ], [5, { role: "storage", name: "Film store", type: "warehouse", maxBoxes: 2 }]] }) },
+    { id: "palace", name: "Old picture palace", prog: cine({ max: 3, frontD: 8, front: [[5, { role: "foyer", name: "Grand foyer", fl: "carpet" }], ["*", CLOBBY()], [5, { role: "restroom", name: "Cinema restrooms" }]], back: [["*", PROJ], [5, { role: "office", name: "Manager's office", lay: "manager", boxLock: ["safe", 0.5] }]] }) },
+    { id: "dinein", name: "Dine-in cinema", prog: cine({ max: 4, front: [["*", CLOBBY()], [6, { role: "kitchen", name: "Cinema kitchen", type: "restaurant" }], [4, { role: "restroom", name: "Cinema restrooms" }]], back: [["*", PROJ]] }) },
+    { id: "bigscreen", name: "Big-format cinema", prog: cine({ max: 3, front: [["*", CLOBBY()], [5, { role: "restroom", name: "Cinema restrooms" }]], back: [["*", PROJ], [6, { role: "stock", name: "Concession stockroom", type: "cinema", maxBoxes: 2 }]] }) },
+    { id: "arthouse", name: "Art-house cinema", prog: cine({ max: 3, front: [["*", CLOBBY()], [7, { role: "dining", name: "Cinema café", type: "restaurant" }]], back: [["*", PROJ]] }) },
+    { id: "megaplex", name: "Megaplex", prog: cine({ max: 6, cor: "corridor", front: [["*", CLOBBY()], [5, { role: "restroom", name: "Cinema restrooms" }]], back: [["*", PROJ]] }) },
+    { id: "budget", name: "Second-run cinema", prog: cine({ max: 4, front: [["*", CLOBBY()]], back: [["*", PROJ], [5, { role: "office", name: "Box office back room", boxLock: ["safe", 0.4] }]] }) },
+    { id: "lounge", name: "Cinema with a bar", prog: cine({ max: 4, front: [["*", CLOBBY()], [7, { role: "dining", name: "Cinema bar", type: "restaurant" }], [4, { role: "restroom", name: "Cinema restrooms" }]], back: [["*", PROJ], [5, { role: "breakroom", name: "Staff room" }]] }) },
+    { id: "party", name: "Cinema with party rooms", prog: cine({ max: 4, extra: [7, { role: "dining", name: "Party room", type: "restaurant" }], front: [["*", CLOBBY()], [5, { role: "restroom", name: "Cinema restrooms" }]], back: [["*", PROJ]] }) },
+    { id: "hallplan", name: "Cinema round a hall", prog: cine({ max: 5, cor: "hall", front: [["*", CLOBBY()]], back: [["*", PROJ], [5, { role: "storage", name: "Film store", type: "warehouse", maxBoxes: 2 }]] }) },
+    { id: "shut", name: "Closed cinema", prog: cine({ max: 3, front: [["*", CLOBBY({ maxBoxes: 1 })], [6, { role: "storage", name: "Stacked seating", type: "warehouse", maxBoxes: 1 }]], back: [["*", PROJ], [5, { role: "office", name: "Manager's office", lay: "manager" }]] }) },
+  ],
+  arcade: [
+    { id: "classic", name: "Video arcade", min: 10, prog: () => back2([["*", { role: "office", name: "Prize counter office", type: "arcade", lay: "manager" }], [3, "restroom"]])(ARC()) },
+    { id: "family", name: "Family fun centre", min: 12, prog: () => back2([["*", { role: "dining", name: "Snack bar", type: "restaurant" }], [4, { role: "office", name: "Party desk", type: "arcade" }], [3, "restroom"]], 5)(ARC({ name: "Fun centre floor" })) },
+    { id: "vr", name: "VR arcade", min: 10, prog: () => ({ split: "y", parts: [[4, { role: "lobby", name: "VR check-in", entry: true, type: "arcade" }], ["*", ARC({ name: "VR bays", entry: false })], [3, { role: "storage", name: "Headset store", type: "arcade", maxBoxes: 2 }]] }) },
+    { id: "lasertag", name: "Laser tag arena", min: 10, prog: () => ({ split: "y", parts: [[5, { split: "x", parts: leaves([["*", ARC({ name: "Arcade and briefing" })], [5, { role: "lockerroom", name: "Vest room", type: "arcade" }]]) }], ["*", { role: "gym", name: "Laser tag arena", lay: "vacant", furnish: "none" }]] }) },
+    { id: "bowling", name: "Bowling alley", min: 12, prog: () => ({ split: "y", parts: [[5, { split: "x", parts: leaves([["*", ARC({ name: "Bowling arcade" })], [5, { role: "dining", name: "Lanes snack bar", type: "restaurant" }]]) }], ["*", { role: "hall", name: "Bowling lanes", hub: true, lay: "vacant" }], [3, { role: "stock", name: "Pin-setter room", type: "warehouse", maxBoxes: 2 }]] }) },
+    { id: "minigolf", name: "Indoor mini-golf", min: 10, prog: () => back2([["*", { role: "sales", name: "Mini-golf course", lay: "vacant", furnish: "none" }], [4, { role: "office", name: "Course office", type: "arcade" }]], 7)(ARC({ name: "Arcade and putter desk" })) },
+    { id: "redemption", name: "Prize redemption arcade", min: 10, prog: () => back2([["*", { role: "sales", name: "Prize counter", type: "arcade" }], [4, { role: "stock", name: "Prize stockroom", type: "arcade", maxBoxes: 2 }]])(ARC()) },
+    { id: "pinball", name: "Pinball parlour", min: 10, prog: () => back2([["*", { role: "breakroom", name: "Back room" }], [3, "restroom"]])(ARC({ name: "Pinball parlour" })) },
+    { id: "playcentre", name: "Kids' play centre", min: 12, prog: () => ({ split: "y", parts: [[5, { split: "x", parts: leaves([["*", ARC({ name: "Kids' arcade" })], [5, { role: "dining", name: "Parents' café", type: "restaurant" }]]) }], ["*", { role: "gym", name: "Soft play", lay: "vacant", furnish: "none" }]] }) },
+    { id: "billiards", name: "Billiards and arcade", min: 12, prog: () => back2([["*", { role: "dining", name: "Pool hall", type: "restaurant" }], [4, { role: "storage", name: "Cue store", type: "arcade" }], [3, "restroom"]], 6)(ARC()) },
+    { id: "esports", name: "Gaming lounge", min: 10, prog: () => back2([["*", { role: "classroom", name: "Tournament room", lay: "arcade" }], [4, { role: "office", name: "Lounge office", type: "arcade" }]], 6)(ARC({ name: "Gaming lounge" })) },
+    { id: "shut", name: "Closed arcade", min: 10, prog: () => back2([["*", { role: "storage", name: "Cabinet store", type: "arcade", maxBoxes: 2 }]])(ARC({ name: "Closed arcade" })) },
+  ],
+  mallservices: [
+    { id: "standard", name: "Mall offices", min: 12, prog: offices([["*", SEC()], [4, LOCK()], ["*", AID()], ["*", MGMT()]]) },
+    { id: "control", name: "Security control room", min: 12, prog: offices([["*", { role: "control", name: "CCTV control room", type: "mallsec", lay: "security", maxBoxes: 2 }], ["*", AID()], ["*", MGMT()]]) },
+    { id: "lostfound", name: "Offices with lost property", min: 14, prog: offices([["*", SEC()], [4, LOCK()], ["*", AID()], [4, { role: "storage", name: "Lost property", type: "store", maxBoxes: 2 }], ["*", MGMT()]]) },
+    { id: "lounge", name: "Offices with a staff lounge", min: 14, prog: offices([["*", SEC()], [4, LOCK()], ["*", AID()], ["*", { role: "breakroom", name: "Staff lounge" }], ["*", MGMT()]]) },
+    { id: "open", name: "Open-plan mall office", min: 12, prog: offices([["*", SEC()], [4, LOCK()], ["*", AID()]], null) },
+    { id: "hall", name: "Offices round a hall", min: 12, prog: offices([["*", SEC()], [4, LOCK()], ["*", AID()], ["*", MGMT()]], "hall", "Office hall") },
+    { id: "lockers", name: "Offices with the guards' lockers", min: 12, prog: offices([["*", SEC()], [4, { role: "lockerroom", name: "Guards' locker room", type: "mallsec", lay: "seclocker", maxBoxes: 2 }], ["*", AID()], ["*", MGMT()]]) },
+    { id: "evidence", name: "Offices with a holding room", min: 14, prog: offices([["*", SEC()], [4, LOCK()], [4, { role: "evidence", name: "Holding room", lock: ["door", 0.5] }], ["*", AID()], ["*", MGMT()]]) },
+    { id: "reception", name: "Offices with a reception", min: 12, prog: offices([["*", { role: "reception", name: "Customer services" }], ["*", SEC()], ["*", AID()]]) },
+    { id: "maintenance", name: "Offices and maintenance", min: 14, prog: offices([["*", SEC()], [4, LOCK()], ["*", AID()], ["*", { role: "workshop", name: "Maintenance shop", type: "garage" }]]) },
+    { id: "training", name: "Offices with a training room", min: 12, prog: offices([["*", SEC()], ["*", AID()], ["*", { role: "classroom", name: "Training room" }], ["*", MGMT()]]) },
+    { id: "lobby", name: "Offices off a lobby", min: 12, prog: offices([["*", SEC()], [4, LOCK()], ["*", AID()], ["*", MGMT()]], "lobby", "Office lobby") },
+  ],
+  mallrestrooms: [
+    { id: "standard", name: "Restrooms", min: 10, prog: loos([["*", MEN], ["*", WOMEN], [3, JAN]]) },
+    { id: "family", name: "Restrooms with a family room", min: 12, prog: loos([["*", MEN], ["*", WOMEN], [3, { role: "bath", name: "Family room" }]]) },
+    { id: "closet", name: "Utility room", min: 0, prog: () => ({ ...JAN, name: "Utility room", entry: true, hub: true, maxBoxes: 2 }) },
+    { id: "nocorridor", name: "Restrooms off the walkway", min: 10, prog: loos([["*", MEN], ["*", WOMEN], [3, JAN]], null) },
+    { id: "staff", name: "Restrooms and a staff room", min: 12, prog: loos([["*", MEN], ["*", WOMEN], ["*", { role: "breakroom", name: "Staff room" }]]) },
+    { id: "lockers", name: "Restrooms and staff lockers", min: 12, prog: loos([["*", MEN], ["*", WOMEN], [4, { role: "lockerroom", name: "Staff lockers", type: "lockers", maxBoxes: 2 }]]) },
+    { id: "aid", name: "Restrooms and a first-aid post", min: 12, prog: loos([["*", MEN], ["*", WOMEN], [4, { role: "nurse", name: "First-aid post" }]]) },
+    { id: "workshop", name: "Restrooms and the janitors' shop", min: 12, prog: loos([["*", MEN], ["*", WOMEN], [4, { role: "workshop", name: "Janitors' shop", type: "garage" }]]) },
+    { id: "laundry", name: "Restrooms and a laundry", min: 12, prog: loos([["*", MEN], ["*", WOMEN], [4, { role: "laundry", name: "Mall laundry" }]]) },
+    { id: "hall", name: "Restrooms round a hall", min: 10, prog: loos([["*", MEN], ["*", WOMEN], [3, JAN]], "hall", "Restroom hall") },
+    { id: "lobby", name: "Restrooms off a phone lobby", min: 10, prog: loos([["*", MEN], ["*", WOMEN]], "lobby", "Phone lobby") },
+    { id: "stock", name: "Restrooms and a stockroom", min: 12, prog: loos([["*", MEN], ["*", WOMEN], [4, { role: "stock", name: "Mall stockroom", type: "store", maxBoxes: 2 }]]) },
+  ],
+  vacantunit: [
+    { id: "shell", name: "Bare shell", min: 0, prog: (F) => F },
+    { id: "backroom", name: "Unit with a back room", min: 0, prog: (F, rng) => ({ split: "y", parts: [["*", F], [rng.int(4, 5), VBACK("stock", "Back room")]] }) },
+    { id: "eatery", name: "Gutted eatery", min: 0, prog: (F) => ({ split: "y", parts: [["*", F], [5, VBACK("kitchen", "Stripped kitchen")]] }) },
+    { id: "popup", name: "Pop-up shop", min: 0, prog: (F) => ({ split: "y", parts: [["*", F], [4, VBACK("storage", "Pop-up store", { lay: null, maxBoxes: 2 })]] }) },
+    { id: "suite", name: "Former office suite", min: 0, prog: (F) => ({ split: "y", parts: [["*", F], [5, VBACK("office", "Empty office")]] }) },
+    { id: "squat", name: "Squatted unit", min: 0, prog: (F) => ({ split: "y", parts: [["*", F], [5, { role: "bedroom", name: "Squatters' room", type: "house", maxBoxes: 2 }]] }) },
+    { id: "salon", name: "Abandoned salon", min: 0, prog: (F) => ({ split: "y", parts: [["*", F], [4, VBACK("bath", "Wash room")]] }) },
+    { id: "bank", name: "Closed bank branch", min: 12, prog: (F) => ({ split: "y", parts: [["*", F], [5, { split: "x", parts: leaves([["*", VBACK("office", "Manager's office")], [5, VBACK("storage", "Vault room", { lock: ["door", 0.5] })]]) }]] }) },
+    { id: "clinic", name: "Former walk-in clinic", min: 0, prog: (F) => ({ split: "y", parts: [["*", F], [5, VBACK("exam", "Stripped exam room")]] }) },
+    { id: "gym", name: "Former fitness studio", min: 12, prog: (F) => ({ split: "y", parts: [["*", F], [5, { split: "x", parts: leaves([["*", VBACK("gym", "Empty studio")], [5, VBACK("lockerroom", "Changing room")]]) }]] }) },
+    { id: "corridor", name: "Unit with a service corridor", min: 0, prog: (F) => ({ split: "y", parts: [["*", F], [3, { role: "corridor", name: "Back corridor", hub: true }], [4, VBACK("stock", "Back room")]] }) },
+    { id: "diner", name: "Gutted diner", min: 12, prog: (F) => ({ split: "y", parts: [["*", F], [5, { split: "x", parts: leaves([["*", VBACK("kitchen", "Stripped kitchen")], [3, { role: "restroom", name: "Restroom" }]]) }]] }) },
+  ],
+};
+const unitVariant = (kind, rng, o) => {
+  const list = UNIT_VARIANTS[kind], fit = list.filter((v) => !o.w || o.w >= (v.min || 0));
+  return list.find((v) => v.id === o.variant) || rng.pick(fit.length ? fit : list);
+};
 export function mallArchetype(kind, rng, o = {}) {
+  if (!UNIT_VARIANTS[kind]) throw new Error(`mallArchetype: ${kind}`);
   const back = { side: "back", roles: null, chance: 1, lock: MALL.BACK_LOCK, name: "Service door" };
   const base = (bw, bh, program, extra = {}) => ({ bw, bh, program, exits: [back], front: { width: 2 }, openDoors: 0.5, storeys: 1, upper: null, foot: "medium", ground: "lot", stairs: { roles: ["corridor", "stock", "office"] }, ...extra });
+  const V = kind === "vacantunit" && o.state === "halfbuilt" ? UNIT_VARIANTS.vacantunit[0] : unitVariant(kind, rng, o); // a half-built unit: the bare shell
+  const tag = { vid: V.id, vname: V.name };
   switch (kind) {
-    case "cinema": { // a lobby with the concession stand and the restrooms, the screens behind it, the projection booth at the back
+    case "cinema": { // the lobby at the front, the screens behind it, the projection booth at the back (a real cinema's size: its map up to battlesize.js MAP_CAP.cinema)
       const bw = o.w || rng.int(MALL.CINEMA.W[0], MALL.CINEMA.W[1]), bh = o.d || rng.int(17, 20);
-      const n = clamp(Math.floor((bw - 2) / MALL.CINEMA.SCREEN), 2, 5);
-      const screens = Array.from({ length: n }, (_, i) => ["*", { role: "screen", name: `Screen ${i + 1}`, lay: "screen" }]);
-      return base(bw, bh, { split: "y", parts: [[6, { split: "x", parts: leaves([["*", { role: "lobby", name: "Cinema lobby", type: "cinema", entry: true, lay: "concession", fl: "carpet", maxBoxes: 3 }], [5, { role: "restroom", name: "Cinema restrooms" }]]) }], ["*", { split: "x", parts: screens }], [3, { role: "projection", name: "Projection booth", hub: true, lay: "projection" }]] }, { foot: "wide", windows: false }); // a real cinema's size: its map up to battlesize.js MAP_CAP.cinema
+      return base(bw, bh, V.prog(bw, bh, rng), { foot: "wide", windows: false, ...tag });
     }
     case "arcade": {
       const bw = o.w || rng.int(14, 18), bh = o.d || rng.int(16, 19);
-      return base(bw, bh, { split: "y", parts: [["*", { role: "arcade", name: "Arcade", entry: true, lay: "arcade" }], [4, { split: "x", parts: leaves([["*", { role: "office", name: "Prize counter office", type: "arcade", lay: "manager" }], [3, "restroom"]]) }]] }, { windows: false });
+      return base(bw, bh, V.prog(bw, bh, rng), { windows: false, ...tag });
     }
     case "mallservices": { // management, mall security (its locker room: a few weapons), the first-aid room
       const bw = o.w || rng.int(16, 20), bh = o.d || rng.int(16, 18);
-      const rooms = leaves([
-        ["*", { role: "office", name: "Mall security", type: "mallsec", lay: "security", maxBoxes: 2 }],
-        [4, { role: "armory", name: "Security locker room", type: "mallsec", lay: "seclocker", lock: ["door", 0.6], boxLock: ["locker", 0.35], maxBoxes: 3, dk: "steel" }],
-        ["*", { role: "nurse", name: "First-aid room" }],
-        ["*", { role: "office", name: "Mall management", lay: "manager", boxLock: ["safe", 0.5] }],
-      ]);
-      return base(bw, bh, { split: "y", parts: [[3, { role: "corridor", name: "Mall offices", entry: true, hub: true }], ["*", { split: "x", parts: rooms }]] }, { windows: false });
+      return base(bw, bh, V.prog(bw, bh, rng), { windows: false, ...tag });
     }
     case "mallrestrooms": {
       const bw = o.w || rng.int(12, 14), bh = o.d || rng.int(16, 19);
-      return base(bw, bh, { split: "y", parts: [[3, { role: "corridor", name: "Restroom corridor", entry: true, hub: true }], ["*", { split: "x", parts: leaves([["*", { role: "restroom", name: "Men's restroom" }], ["*", { role: "restroom", name: "Women's restroom" }], [3, { role: "storage", name: "Janitor's closet", type: "warehouse", maxBoxes: 1 }]]) }]] }, { windows: false });
+      return base(bw, bh, V.prog(bw, bh, rng), { windows: false, ...tag });
     }
-    case "vacantunit": { // o.state: "boarded" | "halfbuilt" | "empty"
+    default: { // vacantunit; o.state: "boarded" | "halfbuilt" | "empty"
       const bw = o.w || rng.int(12, 16), bh = o.d || rng.int(16, 19), half = o.state === "halfbuilt";
       const front = { role: "sales", name: half ? "Unfinished unit" : o.state === "boarded" ? "Boarded-up unit" : "Vacant unit", type: null, furnish: "none", entry: true, hub: true, fl: half ? "conc" : "tile", lay: half ? "halfbuilt" : "vacant", vacant: true };
-      return base(bw, bh, half ? front : { split: "y", parts: [["*", front], [rng.int(4, 5), { role: "stock", name: "Back room", type: "store", maxBoxes: 1, lay: "vacant" }]] });
+      return base(bw, bh, V.prog(front, rng), tag);
     }
-    default: throw new Error(`mallArchetype: ${kind}`);
   }
 }
 
