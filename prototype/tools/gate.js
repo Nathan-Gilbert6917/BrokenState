@@ -30,9 +30,10 @@ const CORE = [
   ["neighbourhoodtest", false], ["shopvarianttest", false],
   ["carryplaytest", true], // #48: the carry playthrough (raid, crawl, base; one and two survivors, with and without a vehicle); quick: seeds 42 and 5
   // #63: red tests made green, kept so (each under 5 minutes alone on 2026-10-26: seasonground 6 s, puddle 7 s,
-  // zombiesfx 14 s, siege 28 s, allyorders 25 s, hivebirth 60 s, sizetest 160 s, rescue 220 s)
+  // zombiesfx 14 s, siege 28 s, allyorders 25 s, hivebirth 60 s, sizetest 160 s, rescue 220 s, hiveplus 300 s); hivetest
+  // (47 minutes) is left out
   ["seasongroundtest", false], ["puddletest", false], ["zombiesfxtest", false], ["siegetest", false],
-  ["allyorderstest", false], ["hivebirthtest", false], ["sizetest", false], ["rescuetest", false],
+  ["allyorderstest", false], ["hivebirthtest", false], ["sizetest", false], ["rescuetest", false], ["hiveplustest", false],
   ["stealthtest", true], // quick: 20-day soaks, 160 prisoners a setup; about 3 minutes
 ];
 

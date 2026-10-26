@@ -607,8 +607,13 @@ const answer = (st, re) => { const c = st.cards.pop(); const ch = c && c.choices
     hub(s).stock.ammo = 200;
     s.combat = createBattle(s, setupFor(s, pl, types));
     const bb = s.combat;
+    // Every line of the battle: b.log keeps its last 80 (combat.js say). Since 1370d1c (the map sizes of 2026-10-24:
+    // another battle ground on seed 52) the fight lasts 32 turns and the spitters' acid, early on, had scrolled out
+    // of it. Lines are kept as they are pushed and read at the end (sayFirst fills its text in later).
+    const lines = [], push = bb.log.push;
+    bb.log.push = function (...xs) { lines.push(...xs); return push.apply(this, xs); };
     for (let i = 0; i < 60 && !bb.over; i++) { autoPlayerTurn(s); runEnemyPhase(s); }
-    const out = { over: bb.over, turns: bb.turn, called: bb.screamed || 0, units: bb.units.length, log: bb.log.map((l) => l.text).join("|") };
+    const out = { over: bb.over, turns: bb.turn, called: bb.screamed || 0, units: bb.units.length, log: lines.map((l) => l.text).join("|") };
     if (bb.over) closeCombat(s); else s.combat = null;
     return out;
   };
