@@ -33,6 +33,7 @@ import { OFFICE_KINDS, OFFICE_AREAS, OFFICE_W, OFFICE_FIRMS, OFFICE_ROWS } from 
 /** @typedef {{ id: string, name: string, w: { city: number, suburb: number, town: number, scenic?: number }, look: Look, plan?: Plan, eat?: { cuisine: string, format: string, size: string, brew?: boolean, truck?: boolean } }} Franchise */
 
 import { VARIANTS } from "./data-eateries.js"; // the restaurant variants (issue #33): pure data too
+import { MUSEUM_AREAS } from "./data-museums.js"; // a museum's raid rooms (issue #58): pure data too
 
 const G = (city, suburb, town) => ({ city, suburb, town });
 const L = (wall, trim, sign, text, accent, style = 0, roof = undefined) => ({ wall, trim, sign, text, accent, style, ...(roof ? { roof } : {}) });
@@ -219,6 +220,7 @@ export const AREA_DEFS = {
   libtech: { tags: ["tech", "office", "school"], def: { name: "Computers", boxes: ["computer", "printer"],
     loot: { electronics: [0.2, 1, 1], parts: [0.2, 1, 1], scrap: [0.3, 1, 2] }, gear: [["laptop", 0.01], ["phone", 0.01], ["camera", 0.005], ["handradio", 0.005]] } },
   ...OFFICE_AREAS,
+  ...MUSEUM_AREAS, // a museum's galleries, gift shop, café, labs, stores, dock and security (issue #58, museumlayout.js)
 };
 
 // ---------- where each stands (shops.js) ----------

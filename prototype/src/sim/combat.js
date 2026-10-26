@@ -172,6 +172,7 @@ import { concealHidden, concealAim, concealScore, softOn, softCost, markShot, te
 import { strikeAct, slashAct, settleTentsDown } from "./tentfight.js"; // tents taken down (and carried off) and slashed in a fight (the user's request 2026-10-20)
 import { campRaidMap, campRaidUnits, campSleeperTurn, tentBoxLoot, campAfter } from "./campsite.js"; // the campsite raid: its clearing, its tents and their loot, its campers (the user's request 2026-10-20)
 import { furnitureCells } from "./data-furniture.js"; // the furniture and appliance catalogue: its cells (merged into CELL below)
+import { MUSEUM_BOX } from "./data-museums.js"; // a museum's exhibit vehicles (issue #58)
 import { NEW_KINDS, AREA_DEFS } from "./data-shops.js"; // the shops and services new as places: their raid rooms
 import { OFFICE_BOX } from "./data-offices.js"; // the office buildings' new pieces: their own tables (issue #27)
 
@@ -7148,6 +7149,7 @@ export const BOX_LOOT = {
   cargoplane:   { rest: 0, loot: { food: [0.5, 3, 8], water: [0.4, 2, 6], parts: [0.5, 1, 3], fuel: [0.5, 3, 8], ammo: [0.3, 10, 25] }, gear: [["assaultpack", 0.06], ["rucksack", 0.04], ["sandbags", 0.1], ["flare", 0.3]] },
   airliner:     { rest: 0, loot: { food: [0.5, 2, 6], water: [0.5, 2, 6], fuel: [0.4, 2, 6] }, gear: [["slingbag", 0.15], ["duffle", 0.1], ["phone", 0.15], ["watch", 0.08], ["cigarettes", 0.15], ["flare", 0.2]] },
   firetruck:    { rest: 0, loot: { fuel: [0.5, 2, 6], parts: [0.3, 1, 2] }, gear: [["fireaxe", 0.5], ["prybar", 0.3], ["bandagekit", 0.2], ["flashlight", 0.2]] },
+  ...MUSEUM_BOX, // a museum's exhibit cars, trucks and aircraft (issue #58, data-museums.js)
 };
 const boxDefs = new Map();
 // The table a container rolls: its room's (AREAS[type]), or its kind's (BOX_LOOT) with the room's rows at `rest` times
