@@ -14,8 +14,8 @@ export const MINE_AREAS = {
     loot: { stone: [0.55, 4, 12], scrap: [0.7, 3, 8], parts: [0.35, 1, 2] }, gear: [["pickaxe", 0.04], ["shovel", 0.04], ["sledge", 0.03], ["headlamp", 0.04], ["hardhat", 0.04], ["handdrill", 0.02], ["prybar", 0.03]] } },
   minedry: { tags: ["industry", "home"], def: { name: "The dry", boxes: ["locker", "locker", "shelf"],
     loot: { water: [0.3, 1, 2], food: [0.2, 1, 2], scrap: [0.25, 1, 2] }, gear: [["hardhat", 0.12], ["headlamp", 0.06], ["flashlight", 0.05], ["earmuffs", 0.05], ["backpack", 0.03]] } },
-  minelamp: { tags: ["industry", "tools"], def: { name: "Lamp room", boxes: ["shelf", "locker", "counter"],
+  minelamp: { tags: ["industry", "tools", "outdoor"], def: { name: "Lamp room", boxes: ["shelf", "locker", "counter"],
     loot: { parts: [0.35, 1, 2], electronics: [0.25, 1, 1], scrap: [0.25, 1, 2] }, gear: [["headlamp", 0.15], ["flashlight", 0.1], ["batteries", 0.15], ["lantern", 0.05], ["hardhat", 0.08]] } },
-  minemag: { tags: ["industry"], def: { name: "Explosives magazine", boxes: ["crate", "shelf", "crate"],
+  minemag: { tags: ["industry", "outdoor"], def: { name: "Explosives magazine", boxes: ["crate", "shelf", "crate"],
     loot: { scrap: [0.4, 1, 3], parts: [0.3, 1, 2] }, gear: [["flare", 0.15]] } },
 };
