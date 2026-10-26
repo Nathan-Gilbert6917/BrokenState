@@ -60,7 +60,7 @@ export const OFFICE = {
   // The containers a room holds: one every this many cells of its floor (at least one), by the building (the old
   // tower's few big rooms held two at most; these keep a building's loot per cell where the old tower's was: tuned
   // with tools/officestest.js, ±10%).
-  CELLS: { storefront: 18, bizpark: 10.5, offices: 12.5, cityhall: 10.5, courthouse: 8, callcenter: 10.5, techoffice: 15, station: 20, default: 14 },
+  CELLS: { storefront: 20.5, bizpark: 15, offices: 12.5, cityhall: 10.5, courthouse: 8.5, callcenter: 12.5, techoffice: 15, station: 20.5, default: 14 },
 };
 
 /** @typedef {ReturnType<typeof roomLayout>} Lay */
@@ -381,7 +381,7 @@ export const OFFICE_STYLES = {
     L.wall("jurybox", { sides: [side], prefer: "middle" }) || L.wall("jurybox", { sides: [side === "e" ? "w" : "e"] }) || L.need("jurybox");
     L.wall("jurybox", { sides: [side] });
     for (const x of [mid - 3, mid + 2]) if (L.place("table", [[x, c.y0 + 3]], { face: "n" }) && L.ok(x, c.y0 + 4)) L.place("chair", [[x, c.y0 + 4]], { face: "n" });
-    if (seatRows(L, "pew", c.y0 + 6, c.y1 - 1, "n", 2) === 0) seatRows(L, "chair", c.y0 + 5, c.y1 - 1, "n", 1);
+    if (seatRows(L, "pew", c.y0 + 6, c.y1 - 1, "n", 2) < 2) seatRows(L, "chair", c.y0 + 4, c.y1, "n", 1); // a small courtroom: rows of chairs (beside its pews)
     fill(L, ["cabinet", "filing"]);
   },
   // The evidence room: evidence lockers round the walls (confiscated guns and knives), shelves.
@@ -399,7 +399,7 @@ export const OFFICE_STYLES = {
     const c = L.c;
     if (/^Main/.test(L.room.name || "")) { const s = L.centre("secdesk", P(L)) || L.wall("secdesk", P(L, { prefer: "middle" })) || L.need("secdesk", P(L)); if (s) L.around(s, "chair", 2); L.wall("whiteboard", { prefer: "middle" }); }
     L.wall("watercooler", { prefer: "corner" });
-    pods(L, "headsetdesk", { every: 3 });
+    if (pods(L, "headsetdesk", { every: 3 }) < 6) some(L, "headsetdesk", Math.max(4, Math.floor((c.w + c.h) / 2)), {}); // a floor the lanes cross: the desks along its walls
     fill(L, ["filing", "cabinet"]);
   },
   // The big break room: vending machines, the fridge, the sink and the microwave, tables.
@@ -412,7 +412,7 @@ export const OFFICE_STYLES = {
   // Long bench desks with chairs both sides, beanbags in a corner, a whiteboard.
   benches(L) {
     L.wall("whiteboard", { prefer: "middle" });
-    pods(L, "desk", { every: OFFICE.BENCH });
+    if (!pods(L, "desk", { every: OFFICE.BENCH })) { deskSet(L, {}); deskSet(L, {}); } // a floor too small for a bench: desks
     some(L, "beanbag", 2, { prefer: "corner" });
     fill(L, ["filing", "cabinet"]);
   },
@@ -473,6 +473,17 @@ export const OFFICE_STYLES = {
     L.wall("tvstand", P(L));
     fill(L, ["serverrack", "cabinet"]);
   },
+  // ---------- the variants' rooms (officeplans.js OFFICE_VARIANTS) ----------
+  // A lab: lab benches round the walls, a sink, shelves of kit.
+  labroom(L) { some(L, "labbench", 2, { prefer: "corner" }); L.wall("sink", { prefer: "corner" }); fill(L, ["labbench", "shelf", "cabinet"]); },
+  // An atrium: planters and benches round a big open floor (the way through kept clear).
+  atrium(L) { some(L, "pew", 2, {}); L.wall("watercooler", { prefer: "corner" }); fill(L, ["cabinet"]); },
+  // A bank tower's banking hall and its vault (#16's), a podium's shop unit, a warehouse floor, a workshop.
+  bankhall(L) { COMMERCIAL_STYLES.bankhall(L); },
+  vault(L) { COMMERCIAL_STYLES.vault(L); },
+  shopunit(L) { COMMERCIAL_STYLES.aislefront(L); },
+  pallets(L) { COMMERCIAL_STYLES.pallets(L); },
+  workshoproom(L) { COMMERCIAL_STYLES.workshop(L); },
   // The archive, the tape library: shelves and filing.
   archive(L) { fill(L, ["shelf", "filing", "bookshelf"]); },
   // The transmitter room: server racks of transmitter gear, a workbench and a tool chest.

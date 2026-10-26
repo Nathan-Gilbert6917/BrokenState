@@ -18,7 +18,7 @@
 //   own      the size belongs to another ticket (#22: the corner store, grocery, supermarket and department store;
 //            #23: the school; #26: the bunkers): its archetype's own dice are kept (only the storeys rule applies);
 //   planned  the archetype's own plan is drawn at this size (#25's military buildings: militarylayout.js MIL_SIZE is these
-//            rows, read through realFoot; #27's office buildings: officeplans.js SIZE): realScale leaves its footprint as
+//            rows, read through realFoot; #27's office buildings: officeplans.js SIZE; #34's libraries: librarylayout.js LIBRARY.SIZE): realScale leaves its footprint as
 //            it is (and #25's storeys; #27's tall towers keep only the floors the tall rule builds);
 //   wings    how a footprint much bigger than the plan is laid out (buildingmaps.js realScale), when not in whole copies:
 //            "along" side by side along the front only, wall to wall, never turned, the copies after the first without the
@@ -55,15 +55,15 @@ export const REAL_SIZE = {
   liquor:      { w: [10, 18], d: [12, 20], storeys: [1, 2], set: "town" },
   hardware:    { w: [18, 30], d: [16, 25], storeys: [1, 1], set: "town" },
   feedstore:   { w: [15, 25], d: [12, 20], storeys: [1, 1], set: "rural" },
-  restaurant:  { w: [8, 46], d: [9, 30], storeys: [1, 2], set: "town", planned: true }, // #33: by its format and size (the eat* rows)
-  pizza:       { w: [8, 46], d: [9, 30], storeys: [1, 1], set: "town", planned: true },
-  bar:         { w: [8, 46], d: [9, 30], storeys: [1, 2], set: "town", planned: true },
-  diner:       { w: [8, 46], d: [9, 30], storeys: [1, 1], set: "town", planned: true },
+  restaurant:  { w: [8, 54], d: [9, 40], storeys: [1, 2], set: "town", planned: true }, // #33: by its format and size (the eat* rows)
+  pizza:       { w: [8, 54], d: [9, 40], storeys: [1, 1], set: "town", planned: true },
+  bar:         { w: [8, 54], d: [9, 40], storeys: [1, 2], set: "town", planned: true },
+  diner:       { w: [8, 54], d: [9, 40], storeys: [1, 1], set: "town", planned: true },
   gasstation:  { w: [15, 25], d: [10, 15], storeys: [1, 1], set: "rural" }, // plus the forecourt and its canopy outside
   truckstop:   { w: [25, 40], d: [15, 25], storeys: [1, 1], set: "rural" },
   bank:        { w: [15, 30], d: [15, 25], storeys: [1, 2], set: "town" },
   dealer:      { w: [30, 50], d: [20, 35], storeys: [1, 2], set: "town" },
-  library:     { w: [25, 40], d: [20, 30], storeys: [1, 2], set: "town" },
+  library:     { w: [9, 56], d: [10, 44], storeys: [1, 8], set: "town", planned: true }, // #34: thirteen variants drawn at their real size (librarylayout.js LIBRARY.SIZE), a rural reading room to an 8-storey central library
   vet:         { w: [15, 20], d: [12, 18], storeys: [1, 2], set: "town" },
   motel:       { w: [40, 70], d: [10, 14], storeys: [2, 2], set: "rural", wings: "along" },
   church:      { w: [14, 24], d: [22, 36], storeys: [1, 1], set: "town", wings: "back" }, // a long nave (and a tower), a parish hall behind
@@ -87,18 +87,18 @@ export const REAL_SIZE = {
   firestation: { w: [20, 30], d: [14, 22], storeys: [1, 2], set: "town" },
   offices:     { w: [20, 40], d: [15, 30], storeys: [2, 4], city: [6, 10], set: "city" },
   lab:         { w: [20, 40], d: [15, 25], storeys: [1, 3], set: "town" },
-  barracks:    { w: [40, 50], d: [15, 17], storeys: [2, 3], set: "rural", planned: true },
+  barracks:    { w: [40, 50], d: [15, 17], storeys: [1, 3], set: "rural", planned: true },
   armorybldg:  { w: [17, 21], d: [12, 14], storeys: [1, 1], set: "rural", planned: true },
   cellblock:   { w: [40, 48], d: [24, 27], storeys: [2, 2], set: "rural", planned: true },
   messhall:    { w: [26, 32], d: [17, 20], storeys: [1, 1], set: "rural", planned: true },
-  control:     { w: [15, 25], d: [12, 18], storeys: [1, 3], set: "rural" },
+  control:     { w: [15, 25], d: [12, 18], storeys: [1, 4], set: "rural" },
   radio:       { w: [8, 12], d: [6, 9], storeys: [1, 1], set: "rural" }, // a transmitter hut
   terminal:    { w: [80, 90], d: [40, 44], storeys: [1, 2], set: "rural", planned: true },
   // #25's military bases, air bases, airports and prisons (militarylayout.js): planned at these sizes by their own plans
-  hq:          { w: [26, 32], d: [17, 20], storeys: [2, 2], set: "rural", planned: true },
+  hq:          { w: [26, 32], d: [17, 20], storeys: [1, 3], set: "rural", planned: true },
   aidstation:  { w: [17, 21], d: [13, 15], storeys: [1, 1], set: "rural", planned: true },
   gatehouse:   { w: [8, 10], d: [6, 7], storeys: [1, 1], set: "rural", planned: true },
-  tower:       { w: [9, 11], d: [9, 11], storeys: [4, 5], set: "rural", planned: true },
+  tower:       { w: [9, 11], d: [9, 11], storeys: [2, 6], set: "rural", planned: true },
   flightops:   { w: [24, 28], d: [15, 17], storeys: [1, 2], set: "rural", planned: true },
   supply:      { w: [40, 48], d: [25, 29], storeys: [1, 1], set: "rural", planned: true }, // a military base's warehouse (no archetype of its own: the warehouse's plan at a base)
   // #27's office buildings of every kind (officeplans.js: its SIZE is these rows; a firm's corporate tower the
@@ -124,7 +124,7 @@ export const REAL_SIZE = {
   eatsmall:    { w: [11, 14], d: [10, 12], set: "town", planned: true },
   eatmedium:   { w: [16, 22], d: [13, 16], set: "town", planned: true },
   eatlarge:    { w: [26, 34], d: [18, 22], set: "town", planned: true },
-  eathuge:     { w: [40, 46], d: [26, 30], set: "town", planned: true },
+  eathuge:     { w: [50, 54], d: [36, 40], set: "town", planned: true }, // a banquet hall, a buffet palace: the shared rule's huge footprint (≥ 50 wide, 1800 cells; storeytest), as the supermarket (#33)
   // Open floors
   warehouse:   { w: [40, 80], d: [25, 50], storeys: [1, 1], set: "town" }, // one tall storey
   factory:     { w: [50, 100], d: [30, 60], storeys: [1, 1], set: "town" },
