@@ -37,9 +37,11 @@ const CORE = [
   ["allyorderstest", false], ["hivebirthtest", false], ["sizetest", false], ["rescuetest", false], ["hiveplustest", false],
   ["stealthtest", true], // quick: 20-day soaks, 160 prisoners a setup; about 3 minutes
   // #63's later twelve made green (alone on 2026-10-26: basestorage 7 s, basestorageui 14 s, basestoragemap 12 s,
-  // ailocks 6 s, floorfolk 19 s, field 36 s, basebuildauto 50 s, bridge 83 s); basetest (7 minutes) is left out
+  // ailocks 6 s, floorfolk 19 s, field 36 s, basebuildauto 50 s, bridge 83 s; deplete and explore quick); basetest (7 minutes)
+  // and medstest (25 minutes of CPU) are left out
   ["basestoragetest", false], ["basestorageuitest", false], ["basestoragemaptest", false], ["ailockstest", false],
   ["floorfolktest", false], ["fieldtest", false], ["basebuildautotest", false], ["bridgetest", false],
+  ["depletetest", true], ["exploretest", true], // quick: the loot curve 30 days on seed 1 (about 150 s); explore about 150-230 s
 ];
 
 const args = process.argv.slice(2);
