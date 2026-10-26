@@ -57,7 +57,7 @@ import { officeStyle } from "./officelayout.js"; // their rooms' styles (a leaf'
 import { civicStyle } from "./civiclayout.js"; // police stations, fire stations, schools and churches laid out for their kind (issue #15)
 import { campusStyle, CAMPUS_PLANS, CAMPUS_NAMES } from "./campuslayout.js"; // the college campus buildings laid out for their kind (issue #28)
 import { campusMap, campusLegacy, campusDead, campusIntro, campusFolk } from "./campus.js"; // a college campus: many buildings on one map (issue #28)
-import { outdoorMap, outdoorHint, outdoorIntro, outdoorHouses, PLANS as OUTDOOR_PLANS } from "./outdoors.js"; // golf courses, campgrounds and RV parks: one map each (issue #61)
+import { outdoorMap, outdoorHint, outdoorIntro, outdoorHouses, outdoorVariant, PLANS as OUTDOOR_PLANS } from "./outdoors.js"; // golf courses, campgrounds and RV parks: one map each (issue #61)
 export { outdoorHouses }; // poicont.js: their buildings and grounds for the headless search (through here: outdoors.js loads after the scene registry)
 import { hotelSpec } from "./hotellayout.js"; // hotels: their plans, rooms, grounds and scenes (issue #29)
 import { militaryStyle, militaryOutside, MIL_SIZE } from "./militarylayout.js";
@@ -3548,11 +3548,13 @@ export function buildingSpec(state, tileId, option) {
 }
 // The plan a site's building is built as ({ vid, vname }: planname.js, issue #40), or null, without building its map:
 // what buildingOptions and the crawl's hint say. A street of houses its neighbourhood layout (streetMap's pick); a
-// cell block standing alone its housing unit's plan; a mall, a prison, a jail or a campus null: their plan (a mall's
+// cell block standing alone its housing unit's plan; a golf course, a campground or an RV park its variant (outdoors.js
+// outdoorVariant: the site's own dice); a mall, a prison, a jail or a campus null: their plan (a mall's
 // variant, a complex's site layout) is drawn among the map's own dice, so only the map knows it (map.vid, map.vname).
 export function buildingPlan(state, tileId, option) {
   const B = BUILDINGS[option.key];
-  if (!B || B.compound || B.complex || B.campus || B.outdoors) return null;
+  if (B && B.outdoors) { const v = outdoorVariant(state, tileId, option); return { vid: v.id, vname: v.name }; } // a golf course, a campground, an RV park: its variant from the site's dice (outdoors.js), without the map
+  if (!B || B.compound || B.complex || B.campus) return null;
   if (B.street) {
     if (legacyRooms(state)) return null;
     const v = pickLayout("neighbourhood", specSeed(state, tileId, option), { layout: option.layout || null, setting: option.setting || settingOfTile(state.tiles[tileId]) });
