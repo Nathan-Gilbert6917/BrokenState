@@ -37,6 +37,7 @@ import {
 } from "../src/sim/pois.js";
 import { SHOP, SHOP_KINDS, settingOf } from "../src/sim/shops.js";
 import { hotelSetting } from "../src/sim/hotels.js";
+import { PLACE_EXTRA, placeWeight, tileClass } from "../src/sim/placement.js"; // a new world's extra by the placement table (issue #42)
 
 const args = process.argv.slice(2);
 const corpus = !args.includes("--nocorpus");
@@ -178,7 +179,7 @@ section("The top POI and the pools");
 // ---------- 4b. the extras on their own dice ----------
 section("Extras on their own dice: a campsite, a gun store, a pawn shop or a hardware store after the list");
 {
-  let shops = 0, wrong = 0, twice = 0, outranks = 0, badPool = 0, shownOut = 0, notLast = 0, camps = 0, campWrong = 0, bunkers = 0, bunkerWrong = 0, hotels = 0, hotelWrong = 0, jails = 0, jailWrong = 0, malls = 0, mallWrong = 0;
+  let shops = 0, wrong = 0, twice = 0, outranks = 0, badPool = 0, shownOut = 0, notLast = 0, camps = 0, campWrong = 0, bunkers = 0, bunkerWrong = 0, hotels = 0, hotelWrong = 0, placed = 0, placeWrong = 0, jails = 0, jailWrong = 0, malls = 0, mallWrong = 0;
   const byKind = {};
   for (const size of SIZE_KEYS) {
     const st = W(seed, size);
@@ -192,6 +193,7 @@ section("Extras on their own dice: a campsite, a gun store, a pawn shop or a har
         if (p.extra === "jail") { jails++; if (p.kind !== "jail" || t.terrain !== "suburb") jailWrong++; continue; } // pois.js jailExtra (issue #31): a town's county jail
         if (p.extra === "bunker") { bunkers++; if (!BUNKER_POI[p.kind] || !BUNKER_POI[p.kind][t.terrain] || (permanentSite(t) && rich(p.kind) > rich(t.loc.type))) bunkerWrong++; continue; } // pois.js bunkerExtra (issue #26)
         if (p.extra === "hotel") { hotels++; if (p.kind !== "hotel" || !hotelSetting(st, t) || (t.loc && t.loc.type === "hotel") || t.pois.filter((q) => q.kind === "hotel").length > 1) hotelWrong++; continue; } // hotels.js hotelExtra (issue #29)
+        if (p.extra === "place") { placed++; if (!PLACE_EXTRA.some(([k]) => k === p.kind) || !(placeWeight(p.kind, tileClass(st, t)) > 0) || (t.loc && t.loc.type === p.kind) || t.pois.filter((q) => q.kind === p.kind).length > 1 || (permanentSite(t) && rich(p.kind) > rich(t.loc.type))) placeWrong++; continue; } // placement.js placeExtraKind (issue #42)
         shops++;
         byKind[p.kind] = (byKind[p.kind] || 0) + 1;
         if (p.extra !== "shop" || !SHOP_KINDS.includes(p.kind) || !settingOf(st, t) || (t.loc && t.loc.type === p.kind)) wrong++;
@@ -214,6 +216,7 @@ section("Extras on their own dice: a campsite, a gun store, a pawn shop or a har
   check(!notLast, `the extras come after the tile's own list (${notLast})`);
   check(!campWrong, `a campsite extra is a campsite off the suburbs and city blocks (${campWrong} of ${camps})`);
   check(bunkers > 0 && !bunkerWrong, `a bunker extra is a bunker kind on a terrain that holds it, never out-ranking the site (${bunkerWrong} of ${bunkers})`); // pois.js bunkerExtra (issue #26)
+  check(placed > 0 && !placeWrong, `a placement extra is a kind of the table's extras where its row stands, once on a tile, never the tile's own site nor out-ranking it (${placeWrong} of ${placed})`); // placement.js (issue #42)
   check(hotels > 0 && !hotelWrong, `a hotel extra is one hotel on a tile that holds one (a suburb or city block, a town, scenic land by a road), never the tile's own site (${hotelWrong} of ${hotels})`); // hotels.js hotelExtra (issue #29)
   for (const k of SHOP_KINDS) check(!!SITES[k] && !!BUILDINGS[k] && Array.isArray(AREA_SETS[k]) && !!SITE_TAGS[k] && SIZES.SITE[k] != null, `${k}: a building, a raid area set, theme tags and a map size`);
   check(AREAS.pawnshop && AREA_SETS.pawnshop.includes("pawnshop") && AREA_SETS.pawnshop.includes("gunshop"), "a pawn shop's raid map has its counter and a gun case");
