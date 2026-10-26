@@ -1,6 +1,6 @@
-// Tile heat (src/sim/pois.js TILE_HEAT, tileHeat / addTileHeat / tileHeatDaily / noteTileHeat / tileHeatEstimate;
+// Tile heat (src/sim/pois.js TILE_HEAT, tileHeat / addTileHeat / tileHeatDaily;
 // scavenge.js raidEnemies, heatSurge, startScavenge, afterRaid, searchHour, extract; poicont.js lootPoiAbstract), retired
-// by issue #65 to thin wrappers over deadpop.js: tileHeat is the tile's noise memory, the estimate the dead's band.
+// by issue #65 to thin wrappers over deadpop.js: tileHeat is the tile's noise memory; the estimate is threatknow.js's (#67).
 // Usage: node tools/poiheattest.js [seed] [days]
 // - a tile starts cold; heat adds up and stops at TILE_HEAT.MAX; it is kept apart from Field Heat and Scavenge Heat
 // - going into a POI adds ENTER; coming out of the hour-by-hour search adds the approach's heat (sneak < normal <
@@ -8,8 +8,8 @@
 // - it falls about 30% a day (the daily tick: deadpop.js NOISE_DECAY) and is gone below FLOOR
 // - effect: not on the threat or the roster's count any more (the pools: tools/deadpoptest.js); a loud tile now and then
 //   a horde (a chunk of its open ground) or a wandering band (hash dice, never state.rng)
-// - what the player sees: a stamp of the dead's level when a team is there, stale with the days like the threat;
-//   "unknown" before; the tile panel's row and the dialogue's line
+// - what the player sees (issue #67's threatknow.js since the heat words went): a stamp of the dead's level when a team
+//   is there, stale with the days like the threat; "threat unknown" before; the tile panel's rows and the dialogue's line
 // - determinism, save / load, and [days] days of the autopilot: heat appears where teams searched and stays in range
 import { createWorld, tickHour, hub, atBase, day } from "../src/sim/world.js";
 import { launchExpedition } from "../src/sim/parties.js";
@@ -17,13 +17,14 @@ import { setAutopilot } from "../src/sim/autopilot.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
 import { registerCombatHandler } from "../src/sim/combat.js";
 import {
-  poisOf, isSitePoi, poiPool, poiThreat, TILE_HEAT, tileHeat, addTileHeat, tileHeatDaily, exitHeat, noteTileHeat, tileHeatEstimate, tileHeatText, heatBand, THREAT, poiThreatEstimate,
+  poisOf, isSitePoi, poiPool, poiThreat, TILE_HEAT, tileHeat, addTileHeat, tileHeatDaily, exitHeat, THREAT, poiThreatEstimate,
 } from "../src/sim/pois.js";
 import { raidEnemies, heatSurge, startScavenge, searchHour, extract, afterRaid, APPROACHES, raidApproach } from "../src/sim/scavenge.js";
 import { popCap, tileDead, openDead, putBack, killDead, bandOfCount } from "../src/sim/deadpop.js";
 import { lootPoiAbstract } from "../src/sim/poicont.js";
 import { poiPanelRows } from "../src/ui/poiview.js";
-import { heatLine } from "../src/ui/poipick.js";
+import { threatLine } from "../src/ui/poipick.js";
+import { noteTileThreat, tileThreatEstimate, tileThreatText, tileThreatStamp as tileThreatStampOf } from "../src/sim/threatknow.js";
 
 const seed = Number(process.argv[2] || 42);
 const DAYS = Number(process.argv[3] || 40);
@@ -84,7 +85,7 @@ section("Going in and coming out (the hour-by-hour search)");
     const before = tileHeat(st, t);
     extract(st);
     check(near(tileHeat(st, t) - before, exitHeat(APPROACHES[approach].heat, shots)), `${approach}: coming out adds the approach's heat and the shots (${(tileHeat(st, t) - before).toFixed(1)}: ${APPROACHES[approach].heat} + ${shots} shots)`);
-    check(tileHeatEstimate(st, t) && tileHeatEstimate(st, t).age < 1, "the team saw how stirred up the tile is (a fresh stamp)");
+    check(tileThreatEstimate(st, t) && tileThreatEstimate(st, t).age < 1, "the team saw how many of the dead are about the tile (a fresh stamp)");
   }
 }
 
@@ -156,17 +157,17 @@ section("What the player sees");
 {
   const st = W();
   const [t, i] = findPoi(st);
-  check(tileHeatEstimate(st, t) === null && tileHeatText(st, t) === "unknown", "no look yet: unknown");
-  check(!/Tile heat/.test(poiPanelRows(st, t.id, true)) && heatLine(st, t.id) === "", "the panel and the dialogue say nothing of it");
+  check(tileThreatEstimate(st, t) === null && tileThreatText(st, t) === "threat unknown", "no look yet: threat unknown");
+  check(/threat unknown/.test(poiPanelRows(st, t.id, true)) && threatLine(st, t.id) === "", "the panel says threat unknown and the dialogue nothing");
   addTileHeat(st, t, 45);
-  noteTileHeat(st, t);
-  const e = tileHeatEstimate(st, t);
-  check(e && e.word === bandOfCount(Math.round(e.v), popCap(st, t)).word && ["none", "low", "medium", "high", "overrun"].includes(e.word) && !e.stale && /seen today/.test(e.text), `a team there sees the dead's level: "${e.text}"`);
-  check(/Tile heat/.test(poiPanelRows(st, t.id, true)) && /Tile heat/.test(heatLine(st, t.id)), "the panel's row and the dialogue's line show it");
+  noteTileThreat(st, t, "visit");
+  const e = tileThreatEstimate(st, t);
+  check(e && e.dead.word === bandOfCount(e.dead.n, popCap(st, t)).word && ["none", "low", "medium", "high", "overrun"].includes(e.dead.word) && !e.stale && /today/.test(e.text), `a team there sees the dead's level: "${e.text}"`);
+  check(/The dead here/.test(poiPanelRows(st, t.id, true)) && /The dead here/.test(threatLine(st, t.id)) && !/Tile heat/.test(poiPanelRows(st, t.id, true)), "the panel's row and the dialogue's line show it (no Tile heat)");
   killDead(st, t, i, 3);
-  check(Math.abs(tileHeatEstimate(st, t).v - e.v) < 1e-9, "kills since the look are not seen");
+  check(tileThreatEstimate(st, t).dead.n === e.dead.n, "kills since the look are not seen");
   st.hour += 24 * (THREAT.STALE_DAYS + 1);
-  const old = tileHeatEstimate(st, t);
+  const old = tileThreatEstimate(st, t);
   check(old.stale && /stale/.test(old.text), `two weeks on the look is stale: "${old.text}"`);
   const st2 = W();
   const [t2, i2] = findPoi(st2);
@@ -176,7 +177,7 @@ section("What the player sees");
   const p = team(st2, t2.id);
   p.poi = i2;
   startScavenge(st2, p);
-  check(tileHeatEstimate(st2, t2) && poiThreatEstimate(st2, t2, i2), "going in stamps both the place's threat and the tile's heat");
+  check(tileThreatStampOf(st2, t2) && poiThreatEstimate(st2, t2, i2), "going in stamps both the place's threat and the tile's dead");
 }
 
 section("Determinism and save / load");

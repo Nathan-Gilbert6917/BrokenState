@@ -1,12 +1,14 @@
 // What the player knows of a tile's points of interest (sim/pois.js), as the tile panel (ui.js renderRight) and the
 // map's hover text (render.js tileTooltip) show it: the known POIs by name with how picked over each is, as seen
 // now or as last seen (the snapshot's pool), whether anything may still be hidden, when the tile was surveyed, and
-// the tile's heat as a team last saw it (pois.js tileHeatEstimate: stale with the days, as the threat).
+// the dead and the raiders on the tile as a team last saw them, or live while one is there (ui/threatui.js, sim/
+// threatknow.js tileThreatEstimate: stale with the days, as the threat; "threat unknown" without a look).
 // Never a count of what is hidden: a tile with a hidden remainder says "possibly more unknown", a tile in the
 // unknown zone with nothing known says "POIs unknown" (even when it holds nothing), a known-zone tile with nothing
 // known "nothing of note" (its top POI would be known), so the words give away only the zone, which the map shows.
 import { LOCATIONS, DANGER_NAMES, siteDanger } from "../sim/data.js";
-import { poisOf, poiAt, isSitePoi, poiName, knownPois, morePoisHidden, poiEligible, inKnownZone, poiLootBand, poiKnowledge, permanentSite, tileHeatEstimate } from "../sim/pois.js";
+import { poisOf, poiAt, isSitePoi, poiName, knownPois, morePoisHidden, poiEligible, inKnownZone, poiLootBand, poiKnowledge, permanentSite } from "../sim/pois.js";
+import { tileThreatRows, poiThreatPlain } from "./threatui.js"; // the dead and raiders as known (issue #67)
 import { LOOT_BANDS } from "../sim/aiscav.js";
 import { campSeen } from "../sim/campsite.js"; // a campsite's state as last seen
 import { poiPlace } from "../sim/poiraid.js";
@@ -79,14 +81,13 @@ export function poiPanelRows(state, id, isLive, snap = null) {
     if (r.site) continue;
     const def = LOCATIONS[r.kind];
     const camp = r.kind === "campsite" ? campSeen(state, id, r.i) : null; // sim/campsite.js: abandoned, overrun, raiders (as seen)
-    out.push(`<div title="${esc(`${def.name}: danger ${DANGER_NAMES[siteDanger({ type: r.kind, zone: def.cat })].toLowerCase()}. Loot left here against what it held: rich, some, little, picked clean.${r.kind === "campsite" ? " A campsite: who is there (abandoned, overrun by the dead, raiders) as a survey or a visit last saw it." : ""}`)}">${esc(r.name)}${r.layout && r.layout !== r.name ? ` <span class="muted">· ${esc(r.layout)}</span>` : ""}</div><div>${bandText(r)}${r.kind === "campsite" ? ` <span class="muted">· ${camp ? esc(camp.text) : "who is there unknown"}</span>` : ""}</div>`);
+    out.push(`<div title="${esc(`${def.name}: danger ${DANGER_NAMES[siteDanger({ type: r.kind, zone: def.cat })].toLowerCase()}. Loot left here against what it held: rich, some, little, picked clean.${r.kind === "campsite" ? " A campsite: who is there (abandoned, overrun by the dead, raiders) as a survey or a visit last saw it." : ""}`)}">${esc(r.name)}${r.layout && r.layout !== r.name ? ` <span class="muted">· ${esc(r.layout)}</span>` : ""}</div><div>${bandText(r)}${poiThreatPlain(state, id, r.i) ? ` <span class="muted">· ${esc(poiThreatPlain(state, id, r.i))}</span>` : ""}${r.kind === "campsite" ? ` <span class="muted">· ${camp ? esc(camp.text) : "who is there unknown"}</span>` : ""}</div>`);
   }
   if (v.unknown) out.push(`<div>Places</div><div class="muted">POIs unknown. Survey the tile to find what stands here.</div>`);
   else if (v.empty) out.push(`<div>Places</div><div class="muted">Nothing of note here as far as you know.</div>`);
   else if (!out.length && v.hasSite && !v.more) out.push(`<div>Places</div><div class="muted">Nothing besides the site.</div>`);
   if (v.more && !v.unknown) out.push(`<div>Hidden</div><div class="muted">Possibly more unknown. A survey here may find them.</div>`);
-  const heat = tileHeatEstimate(state, id); // pois.js: the tile's heat as a team last saw it (stale with the days, as the threat)
-  if (heat) out.push(`<div title="${esc("Tile heat: how many of the dead are about this tile and its places, as your people last saw it (none, low, medium, high, overrun of what the land can hold). Kills bring it down; noise draws the tile's dead in. As last seen: what changed since is not known.")}">Tile heat</div><div>${esc(heat.word)} <span class="muted">(seen ${heat.age < 1 ? "today" : `${Math.floor(heat.age)}d ago`}${heat.stale ? ", stale" : ""})</span></div>`);
+  out.push(tileThreatRows(state, id)); // ui/threatui.js: the dead and raiders as last seen, live while you are there, else "threat unknown"
   if (v.surveyed != null || v.looked != null) out.push(`<div>Surveyed</div><div class="muted">${v.surveyed != null ? `in full on ${stamp(state, v.surveyed)}` : ""}${v.surveyed != null && v.looked != null && v.looked > v.surveyed ? ", " : ""}${v.looked != null && !(v.surveyed != null && v.looked <= v.surveyed) ? `a quick look on ${stamp(state, v.looked)}` : ""}</div>`);
   return out.join("");
 }

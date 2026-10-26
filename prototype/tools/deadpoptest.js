@@ -19,7 +19,8 @@ import { launchExpedition } from "../src/sim/parties.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
 import { createBattle, autoResolveCombat, finishCombat, registerCombatHandler } from "../src/sim/combat.js";
 import { raidEnemies, rosterOf, startScavenge, searchHour } from "../src/sim/scavenge.js";
-import { poisOf, poiAt, isSitePoi, poiThreat, tileHeat, addTileHeat, noteTileHeat, tileHeatEstimate } from "../src/sim/pois.js";
+import { poisOf, poiAt, isSitePoi, poiThreat, tileHeat, addTileHeat } from "../src/sim/pois.js";
+import { noteTileThreat, tileThreatEstimate } from "../src/sim/threatknow.js"; // what the player sees of the band (issue #67)
 import { tileClass } from "../src/sim/placement.js";
 import { tileDanger } from "../src/sim/fieldheat.js";
 import { raidPoiAsGroup } from "../src/sim/grouppois.js";
@@ -293,9 +294,9 @@ section("Field Heat's trouble, poiThreat and the AI read the same pools");
   // tile heat's wrappers
   const n0 = tileHeat(s2, t2);
   check(addTileHeat(s2, t2, 5) === n0 + 5 && tileHeat(s2, t2) === noiseOf(s2, t2), "tileHeat / addTileHeat: the tile's noise memory");
-  noteTileHeat(s2, t2);
-  const e = tileHeatEstimate(s2, t2);
-  check(!!e && ["none", "low", "medium", "high", "overrun"].includes(e.word) && e.band >= 0 && e.band <= 3, `tileHeatEstimate: the dead's band as seen (${e && e.text})`);
+  noteTileThreat(s2, t2, "visit");
+  const e = tileThreatEstimate(s2, t2);
+  check(!!e && ["none", "low", "medium", "high", "overrun"].includes(e.dead.word) && e.dead.band >= 0 && e.dead.band <= 4, `tileThreatEstimate (threatknow.js): the dead's band as seen (${e && e.text})`);
 }
 
 section("The hour-by-hour search: an empty place has no fights with the dead");

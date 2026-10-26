@@ -4,7 +4,7 @@
 // (hardcore-groups.js) and, later, the nomads. The player's side is pois.js / survey.js / poiraid.js.
 //
 // Knowledge (state.groupPois, made on first use, plain data saved with the world):
-//   { [holder id]: { f: { [tileId]: [POI indices found by a survey] }, s: { [tileId]: day surveyed } } }
+//   { [holder id]: { f: { [tileId]: [POI indices found by a survey] }, s: { [tileId]: day surveyed }, t?: threat stamps } }
 //   A holder is anything with an id (a group, a band, a nomad camp); the key is its id as a string. Hardcore bands
 //   keep their id when they found a hub (hardcore-groups.js foundHub), so what a band found the group still knows.
 //   - Seen without a survey: every POI that is not hidden (the known zone's, pois.js poi.hidden) on a tile the holder
@@ -18,6 +18,9 @@
 //     holder's own `scouting` wins) and its people (n). Success finds every hidden POI there, failure each on its
 //     own at survey.js LOOK.fail of the odds. Hash dice (the seed, the tile, the hour, the holder's world-local id).
 //     The tile is stamped with the day (s) and not surveyed again for GPOI.AGAIN days.
+//   - The dead and raiders it believes a tile holds (issue #67, AI parity): t: { [tileId]: [hour, dead, cap, raiders,
+//     raider cap] }, stamped by its survey there and its raids (threatknow.js noteGroupThreat), read with the player's
+//     errors and staleness (groupThreatEstimate). Nothing decides by it yet.
 //   - Dead groups and bands that left the map are dropped from it once a day (pruneGroupPois).
 // Targets (groupTargets, the one picker for every kind of holder): around some centres, within a range, every POI
 // the holder knows with something left (pool at least GPOI.MIN) scored by need (the kind's loot table × the
@@ -35,6 +38,7 @@ import { log, localId, day } from "./world.js";
 import { tileLabel } from "./parties.js";
 import { hash01 } from "./skills.js";
 import { aiRaidKills } from "./deadpop.js"; // the dead on the land: the groups' raids kill from the same pools
+import { noteGroupThreat } from "./threatknow.js"; // knowing the threat level (issue #67, AI parity): a group's own stamp of the tiles it surveys or raids
 import {
   poisOf, poiAt, isSitePoi, poiPool, poiName, permanentSite, poiEligible, inKnownZone, POI_KINDS, COUNTS, POI, poiBand, TILE_HEAT,
 } from "./pois.js";
@@ -181,6 +185,7 @@ export function groupSurveyTile(state, who, tile, opts = {}) {
     found.push(i);
   }
   rec.s[t.id] = day(state);
+  noteGroupThreat(state, who, t); // threatknow.js: what its survey makes of the dead and raiders here, as the player's Survey
   const st = /** @type {any} */ (state);
   const S = st.groupPoiStats || (st.groupPoiStats = { surveys: 0, found: 0, raids: 0, took: 0, stripped: 0, leftTaken: 0 });
   S.surveys++; S.found += found.length;
@@ -288,6 +293,7 @@ export function raidPoiAsGroup(state, who, tile, i, need, opts = {}) {
   const before = poiPool(t, i), was = !!p.stripped, band0 = poiBand(t, i);
   const r = lootPoiAbstract(state, who, t, i, need / poiHouses(state, t, i), { floor: opts.floor != null ? opts.floor : AISCAV.floor, heat: opts.heat != null ? opts.heat : TILE_HEAT.AI, hours: opts.hours, room: opts.room });
   if (!r) return null;
+  if (opts.count !== false) noteGroupThreat(state, who, t); // threatknow.js: a raid there is a look at the tile (a group's own land worn down daily is not)
   aiRaidKills(state, t, i, { hours: opts.hours }); // deadpop.js (issue #65, AI parity): their fight kills from the POI's dead and the tile's, loudly; raiders seen raiding here
   const goods = r.took > 0 && opts.haul !== false ? haulFor(t, r.took, before, opts.eff != null ? opts.eff : AISCAV.eff, state, isSitePoi(t, i) ? null : p.kind) : {};
   for (const [k, q] of Object.entries(r.left.sup)) goods[k] = (goods[k] || 0) + q;

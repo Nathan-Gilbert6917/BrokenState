@@ -10,11 +10,13 @@
 //   everything. Optics with a reach of a tile or more (binoculars, a scope, a thermal) add the ring of six tiles round
 //   the team at LOOK.ring of the odds, never further (a car is a small bonus, not a bigger ring). It also rolls the own
 //   tile's hidden site and the look-around finds (tile.hidden, parties.js survey), stamps "surveyed" on the tile and a
-//   perceived threat on every POI known there (pois.js notePoiThreat, the error smaller with optics). Hash dice (the
-//   seed, the tile, the hour, the team): never the world's random numbers.
+//   perceived threat on every POI known there (pois.js notePoiThreat, the error smaller with optics), and an approximate
+//   level of the tile's dead and raiders (threatknow.js noteTileThreat, issue #67). Hash dice (the seed, the tile, the
+//   hour, the team): never the world's random numbers.
 // - Quick look (MISSIONS.survey, 2 hours, parties.js survey → quickLook): the own tile only whatever the optics (they
 //   help the odds, never the range); each hidden POI rolls on its own at LOOK.quick of the Survey's odds; the kind
-//   only, no threat, stamped "looked". A recon's look on arrival is a quick look too.
+//   only, stamped "looked", and a general estimate of the dead in each place known there (pois.js notePoiThreat "look",
+//   rougher than a Survey's: threatknow.js). A recon's look on arrival is a quick look too.
 // Neither runs in a fight or on the move (they are tasks on the spot). Both build Field Heat (fieldheat.js ACTIVITY).
 // The autopilot sends POI surveys as it sends sweeps (poiSurveyCandidate): known-zone tiles that may still hide a POI
 // and unknown-zone tiles near the places it scavenges, by what the hub knows only.
@@ -74,6 +76,7 @@ import { crashSurvey } from "./crashes.js";
 import { opticsFor, OPTICS } from "./optics.js";
 import { carriedAll } from "./comforts.js";
 import { listeners } from "./radio.js";
+import { noteTileThreat } from "./threatknow.js"; // knowing the threat level (issue #67): the Survey's stamp of the tile
 import { withLook, surveyErr } from "./intelnotes.js"; // a close look at a group's base (the State Map's estimates)
 import { cfgOf } from "./worldcfg.js"; // the run's dials: Durability loss, Fuel use
 import { groundsSurveyed } from "./campscout.js"; // a base of yours set up blind here: its grounds known now (call-time only)
@@ -681,6 +684,7 @@ export function fullSurveyDone(state, p) {
     }
   }
   // What the team makes of each place it knows here: a threat stamp (sharper with optics, rougher at night).
+  noteTileThreat(state, tile, "survey", surveyErr(state, opt)); // threatknow.js (issue #67): the tile's dead and raiders, approximately (less error with optics)
   for (const i of knownPois(state, tile, p)) notePoiThreat(state, tile, i, "survey", surveyErr(state, opt));
   const look = lookAround(state, p, LOOK.finds, false, { pois: false }); // parties.js: the look-around finds, the Known area layer, a base close by
   gainXpAll(state, members, "scouting", USE.survey * (LOOK.xp - 1)); // on top of the look-around's
@@ -706,6 +710,7 @@ export function quickLook(state, p) {
   const ctx = lookContext(state, members, { mode: p.vehicle || false, stance: p.stance, cargo: p.cargo });
   const chance = lookOdds(state, ctx, tile, tile) * LOOK.quick;
   const found = revealPois(state, p, tile, { chance, stamp: "looked" });
+  for (const i of knownPois(state, tile, p)) notePoiThreat(state, tile, i, "look"); // threatknow.js (issue #67): a general estimate of each place known here, rougher than a Survey's
   if (!found.length) return "";
   const names = found.map((i) => poiName(state.tiles[tile], i).toLowerCase());
   return `Noticed ${names.join(", ")} here that the map never showed.`;

@@ -90,6 +90,7 @@ import { visitorsHour, visitorsDaily } from "./visitors.js";
 import { nomadsHour, nomadsDaily } from "./nomads.js"; // baseless bands that camp, raid the places round them and move on
 import { caravanRaidsHour } from "./caravanraids.js";
 import { noteFinds, discoveryHour, mergeLooked } from "./discovery.js";
+import { threatKnowHour } from "./threatknow.js"; // knowing the threat level (issue #67): the tiles your people stand on, looked at live
 import { deadPopDaily, deadPopSpread } from "./deadpop.js"; // the dead on the land: the midnight recalculation
 import { ensurePois, poiSnapshot, learnPois, mergePoiFinds } from "./pois.js"; // points of interest on the tiles: their lists, and what a report says of them
 import { hiveBirthHour } from "./hivebirth.js"; // hive birth you can see: rumours, the massing card, a hive risen
@@ -1224,6 +1225,7 @@ function hourOfWorld(state) {
   for (const b of state.bases) for (const k of Object.keys(b.stock)) if (b.stock[k] < 0) b.stock[k] = 0;
   checkGameOver(state);
   updateVision(state);
+  threatKnowHour(state); // threatknow.js (issue #67): the dead and raiders on every tile your teams or bases stand on, stamped live
   discoveryHour(state); // discovery.js: hidden sites reported this hour (radio, maps, intel, prisoners, the coalition)
   hiveBirthHour(state); // hivebirth.js: a new hive site heard of, the dead seen massing, a hive you knew of risen
   crashHour(state); // crashstart.js: Crashlanding's chain (the wreck's lure, the base's reveal, the hive born there, the bunker found); nothing in other runs
