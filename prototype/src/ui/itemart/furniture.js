@@ -714,6 +714,11 @@ function f_plotter(p) { // a plotter: a long beige body on two legs, the paper r
   box(p, 0, 3, 15, 8, "#d8d4c8"); H(p, 0, 15, 3, "#efece2"); R(p, 11, 4, 14, 5, "#383b41"); p.set(13, 6, "#6fe08a");
   R(p, 2, 9, 13, 10, "#eef0f2"); legs(p, 2, 13, 11, 15, "#383b41");
 }
+function f_dartcab(p) { // a zoo vet's dart cabinet (issue #59): grey steel, a glass door on a rack of orange-flighted darts, a hazard stripe
+  box(p, 2, 0, 13, 15, STEEL, "#a4adb4", STEELD); R(p, 4, 2, 11, 11, "#2f3a44");
+  for (let x = 5; x <= 10; x += 2) { V(p, x, 4, 10, "#c9ced3"); R(p, x, 3, x, 4, "#e8742a"); }
+  for (let x = 3; x <= 12; x++) p.set(x, 13, x % 2 ? "#e6c23a" : "#202226"); p.set(12, 7, "#d9b13b");
+}
 function f_liquorcab(p) { // a liquor cabinet: dark wood, glass doors with bottles behind them, a carved top
   R(p, 1, 0, 14, 1, "#5f3c20"); box(p, 2, 2, 13, 15, "#4a2a18"); R(p, 3, 3, 12, 10, "#2a3a44");
   for (const [x, c] of [[4, "#c9873c"], [6, "#4f8a3a"], [8, "#a83a30"], [10, "#e8c04a"]]) { V(p, x, 5, 9, c); p.set(x, 4, c); }
@@ -757,7 +762,7 @@ export const GEAR_ART = {
   f_hazmatrack, f_rationshelf, f_handfilter, f_screens, f_maptable, f_radioconsole, f_footlocker, f_batteries,
   f_freezercase, f_islandfreezer, f_meatcase, f_freezershelf, f_producebin, f_breadrack, f_selfcheckout, f_aislesign,
   f_luggage, f_ammocrate, f_fuelbladder, f_gateseat, f_intakelocker,
-  f_dentalchair, f_podium, f_headsetdesk, f_beanbag, f_camera, f_studiolight, f_newsdesk, f_sorter, f_plotter, f_liquorcab,
+  f_dentalchair, f_podium, f_headsetdesk, f_beanbag, f_camera, f_studiolight, f_newsdesk, f_sorter, f_plotter, f_liquorcab, f_dartcab,
   f_medcart, f_drugsafe, f_instcab, f_morguelocker, f_autopsy, f_wheelchair, f_vettable, f_curtain, f_linencart, f_monitor, f_crib, f_exambed,
   f_bed, f_bunk, f_hospbed, f_gurney, f_ivstand, f_hay, f_barrel, f_range, f_dishwasher, f_washer, f_dryer, f_fryer, f_coldshelf,
   f_icemachine, f_watercooler, f_compressor, f_tank, f_jukebox, f_pooltable, f_clothesrack, f_pottingbench, f_palletrack, f_tirerack,

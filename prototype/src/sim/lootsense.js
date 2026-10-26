@@ -198,4 +198,7 @@ export const LOOT_SENSE = {
   mallservices:   S({ drugs: 0.5, gadgets: 0.5 }, ["explosive"], { note: "mall security's gun rack" }),
   mallrestrooms:  S({ drink: 0.25, food: 0.25 }, NO_GUNS),
   vacantunit:     S({ food: 0.1 }, NO_GUNS),
+  // Zoos (issue #59, zoo.js): the food prep's meat and produce (spoiled but in winter), the vet hospital's drugs and
+  // its dart cabinet's tranquilliser darts (medical kit), the keepers' radios and torches, the café's food and drink.
+  zoo:            S({ food: 0.95, drink: 0.95, drugs: 0.95, medgear: 0.6, tools: 0.5 }, ARMY),
 };

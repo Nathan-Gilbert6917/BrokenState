@@ -146,6 +146,8 @@ export const PLACEMENT_ROWS = {
   callcenter: "centre 1 L, city 1.4 L, suburb 1.4 L, town 0.3 M",
   techoffice: "centre 2 L, city 1.6 L, suburb 1 M",
   station: "centre 0.5 M, city 0.6 M, suburb 0.8 M, town 1.6 S",
+  // ---- zoos (issue #59, zoo.js: its variant by the size class here) ----
+  zoo: "centre 1.2 H, city 1 H, suburb 0.8 L, town 0.8 M, highway 0.5 M, coast 0.5 M, scenic 0.5 L, rural 0.6 M", // a city's big zoo or aquarium by the centre, a safari park or a primate centre in the suburbs and the hills, a town's zoo or bird park, a petting zoo, a roadside zoo or a sanctuary out in the country
   // ---- colleges ----
   univ: "centre 1 H, city 1.4 H, suburb 1 L", // a city's university: its biggest campuses by the centre
   college: "town 1 L", // a town's college

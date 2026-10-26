@@ -390,6 +390,10 @@ export const FURNITURE_KINDS = {
   screener:     P("Walk-through scanner", POLE, 30, 120, "fixed", S1, false, ["office"], "none"),
   liquorcab:    P("Liquor cabinet",       HALF, 25, 30, "one", S1, true, ["office", "living", "bar"], "storage:30", true),
   phonebooth:   P("Phone booth",          C(false, 1, false), 30, 200, "fixed", S1, false, ["office"], "none", true),
+  // ---------- zoos (issue #59: zoo.js lays them) ----------
+  // The vet hospital's dart cabinet: a steel wall cabinet of the sedatives and the tranquilliser darts (its own table:
+  // combat.js BOX_LOOT, data-zoo.js ZOO_BOX).
+  dartcab:      P("Dart cabinet",         HALF, 30, 28, "one", S1, true, ["ward"], "storage:20", true),
   // ---------- lootable decor (issue #13: decor.js places them; light comfort pieces for the base) ----------
   // The plant and the floor lamp stand on a room's floor cell; the painting and the wall clock hang on a wall (decor.js:
   // c.wart = { k, d, piece: true } on the wall cell, the wall's own kind unchanged) and stand on a cell only once set down.

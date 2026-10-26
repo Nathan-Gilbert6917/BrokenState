@@ -26,6 +26,7 @@
 //   (shops.js franchiseFor): poi.v, place.v, a site's by its tile.
 // ROWS: the new kinds' rows in the find tables, by table (each module merges its own: loot.js SITE_FINDS …).
 
+import { ZOO_AREAS } from "./data-zoo.js"; // a zoo's keepers' rooms, food prep, animal houses and gift shop (issue #59)
 import { OFFICE_KINDS, OFFICE_AREAS, OFFICE_W, OFFICE_FIRMS, OFFICE_ROWS } from "./data-offices.js"; // the office buildings of every kind, with their firms (issue #27)
 
 /** @typedef {{ wall: string, trim: string, sign: string, text: string, accent: string, roof?: string, style: number }} Look */
@@ -219,6 +220,7 @@ export const AREA_DEFS = {
   libtech: { tags: ["tech", "office", "school"], def: { name: "Computers", boxes: ["computer", "printer"],
     loot: { electronics: [0.2, 1, 1], parts: [0.2, 1, 1], scrap: [0.3, 1, 2] }, gear: [["laptop", 0.01], ["phone", 0.01], ["camera", 0.005], ["handradio", 0.005]] } },
   ...OFFICE_AREAS,
+  ...ZOO_AREAS, // a zoo's own rooms (issue #59, data-zoo.js)
 };
 
 // ---------- where each stands (shops.js) ----------

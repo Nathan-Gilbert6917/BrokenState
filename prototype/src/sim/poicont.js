@@ -51,7 +51,7 @@
 // your side opened is saved as it is, unopened ones are left alone; things on the floor and on bodies are lost.
 /** @import { State, Tile } from "./types" */
 import { poiAt, poiLedger, poiPool, poiTake, poiFull, poiBand, isSitePoi, addTileHeat, TILE_HEAT } from "./pois.js";
-import { siteBuildings, SITES, BUILDINGS, streetHouses } from "./buildingmaps.js";
+import { siteBuildings, SITES, BUILDINGS, streetHouses, zooBuildings } from "./buildingmaps.js"; // zooBuildings: a zoo's (issue #59, zoo.js), through buildingmaps so the modules load in their order
 import { mallUnits } from "./mall.js"; // a mall's buildings (issue #30)
 import { campusBuildings } from "./campus.js"; // a college campus's buildings (issue #28)
 import { hash01 } from "./skills.js";
@@ -97,6 +97,7 @@ export function poiHouses(state, tile, i) {
   const entry = SITES[poi.kind], first = entry ? (Array.isArray(entry) ? entry : entry.list)[0] : null;
   const key = Array.isArray(first) ? first[0] : first;
   if (key && BUILDINGS[key] && BUILDINGS[key].compound) return mallHouses(state, t.id, { id: `poi${i}:${key}`, key, name: BUILDINGS[key].name });
+  if (key && BUILDINGS[key] && BUILDINGS[key].zoo) return zooBuildings(state, t.id, { id: `poi${i}:${key}` }); // a zoo (zoo.js): its buildings
   return key && BUILDINGS[key] && BUILDINGS[key].street ? streetHouses(state, t.id, { id: `poi${i}:${key}`, key, ...(poi.lay ? { layout: poi.lay } : {}) }) : 1;
 }
 // A mall's buildings, counted once per map (the map is made from the mall's own dice; cached by the seed and the place).

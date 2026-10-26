@@ -133,6 +133,10 @@ export const PLACE_EXTRA = [
   ["church", { rural: 0.006, highway: 0.004 }],
   ["feedstore", { rural: 0.004, highway: 0.006 }],
   ["farmstand", { highway: 0.01 }],
+  // Issue #59: a zoo (zoo.js), its variant by the placement table's size class: about one big zoo for every two or three
+  // cities by their centres, a few in the suburbs and the towns, a handful out in the country (a world of 17 cities
+  // has some 98 centre tiles, 370 suburb, 2,300 town, 2,500 highway, 2,400 coast, 10,000 rural and 18,000 scenic).
+  ["zoo", { centre: 0.1, city: 0.05, suburb: 0.008, town: 0.002, highway: 0.001, coast: 0.0008, scenic: 0.00015, rural: 0.0004 }],
 ];
 export const PLACE_KNOWN = 0.7; // the share of them known from the start in the known zone (shops.js SHOP.KNOWN)
 /**
