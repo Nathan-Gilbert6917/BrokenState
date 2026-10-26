@@ -37,6 +37,7 @@
 //               station's booth; a newspaper's press room) at the front; the control room, the archive and a break
 //               room behind; upstairs the editorial offices, the station manager's office, the tape library and the
 //               transmitter room.
+import { planSlug, stampPlan } from "./planname.js"; // the plan's id and name on the spec (issue #40)
 import { REAL_SIZE } from "./data-buildingsize.js"; // the sizes (issue #24 took over SIZE)
 
 // #24's real-world size table holds these rows now (data-buildingsize.js REAL_SIZE, planned; "h" the depth there "d";
@@ -648,12 +649,13 @@ export const OFFICE_VARIANTS = {
   storefront: STOREFRONT, bizpark: BIZPARK, cityhall: CITYHALL, courthouse: COURTHOUSE, callcenter: CALLCENTER, techoffice: TECHOFFICE, station: STATION,
   tower: TOWER_VARIANTS.map((v, i) => (i === 0 ? { name: v.name, make: () => tower } : { name: v.name, make: () => (rng, o, plan, max) => towerVariant(v, rng, o, plan, max) })),
 };
-// The plan a building takes: o.plan (a name or an index), else by its dice.
+// The plan a building takes: o.plan (a name, an id or an index), else by its dice. A plan's id is its name's slug
+// (planname.js planSlug: "Brutalist office block" → "brutalist-office-block", issue #40).
 /** @param {string} kind @param {any} rng @param {any} o */
 export function pickVariant(kind, rng, o) {
   const L = OFFICE_VARIANTS[kind];
-  if (o && o.plan != null) { const i = typeof o.plan === "number" ? o.plan : L.findIndex((v) => v.name === o.plan); if (i >= 0 && L[i]) return L[i]; }
+  if (o && o.plan != null) { const i = typeof o.plan === "number" ? o.plan : L.findIndex((v) => v.name === o.plan || planSlug(v.name) === o.plan); if (i >= 0 && L[i]) return L[i]; }
   return L[rng.int(0, L.length - 1)];
 }
-const dispatch = (kind) => (rng, o, plan, max) => { const v = pickVariant(kind, rng, o || {}); const spec = v.make(kind)(rng, o || {}, plan, max); spec.variant = v.name; return spec; };
+const dispatch = (kind) => (rng, o, plan, max) => { const v = pickVariant(kind, rng, o || {}); const spec = v.make(kind)(rng, o || {}, plan, max); stampPlan(spec, planSlug(v.name), v.name); spec.variant = v.name; return spec; }; // spec.vid / spec.vname (planname.js, issue #40); variant: the name's older field (the tower's restorey pins by it)
 export const OFFICE_PLANS = { storefront: dispatch("storefront"), bizpark: dispatch("bizpark"), tower: dispatch("tower"), cityhall: dispatch("cityhall"), courthouse: dispatch("courthouse"), callcenter: dispatch("callcenter"), techoffice: dispatch("techoffice"), station: dispatch("station") };

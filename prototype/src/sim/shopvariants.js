@@ -41,6 +41,7 @@
 // dice (the plan's first roll). A kind without franchises names its variants itself.
 //
 // For a strip mall (#30): shopPlan(kind, { size, setting, layout, variant }) returns the spec of a kind's plan for a slot.
+import { planName } from "./planname.js"; // a plan's name, one field (issue #40)
 import { FRANCHISES } from "./data-shops.js";
 import { Rng } from "./rng.js";
 import { ROLES } from "./buildingmaps.js"; // the rooms' usual containers (read when a plan is made: no cycle at load)
@@ -818,4 +819,4 @@ export function shopPlan(kind, o = {}, rng) {
   return shopVariantSpec(kind, rng || new Rng(o.seed || 1), o);
 }
 /** The layout's name a place shows under its own ("Drive-through pharmacy"), or "". @param {any} spec */
-export const layoutName = (spec) => (spec && spec.layout ? spec.layout.name : "");
+export const layoutName = (spec) => planName(spec) || ""; // planname.js (issue #40): the one reader of a plan's name

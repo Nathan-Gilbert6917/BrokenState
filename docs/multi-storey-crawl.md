@@ -194,7 +194,8 @@ The last ticket of the interiors epic (#7) brought the crawl up to what the raid
   entry block where the vehicles wait, else dropped from exhaustion there and remembered on the block (`mem.left`,
   taken up again from the block card).
 - **The card**: each place's hint line names its storeys and its kind's signature rooms ("Hospital: 4 floors, wards,
-  a pharmacy": `placeHint`).
+  a pharmacy": `placeHint`), after its plan's name where it has one ("Clinic (Strip-mall urgent care): 1 floor, …"):
+  `buildingmaps.js buildingPlan`, the same `spec.vid` / `spec.vname` every reader goes through (issue #40).
 - **Quick search**: opens the place's own building's containers (`placeProfile`, `quickLoot`, combat `boxFinds`), so
   a container searched quickly holds what it holds on the map.
 

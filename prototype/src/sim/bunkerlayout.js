@@ -44,6 +44,7 @@
 // Determinism and older saves: the plans are new kinds; nothing an older save holds changes (a saved bunker_mil site
 // had no buildings, so its raid was the street map: a save from before this change opens the bunker's own map the next
 // time, which is the fix the ticket asks for; its POI ledger had no containers).
+import { planSlug, stampPlan } from "./planname.js"; // the plan's id and name on the spec (issue #40)
 import { hash01 } from "./skills.js";
 import { registerScene, SCENES } from "./interiorscenes.js";
 import { vehicleIn, CIVIC_STYLES } from "./civiclayout.js";
@@ -381,7 +382,11 @@ function prepper(rng, o = {}) {
   const i = pick(rng, PREP, o);
   return i === 0 ? { ...shedPrepper(rng), variant: PREP[0].name } : prepperPlan(rng, PREP[i]);
 }
-export const BUNKER_PLANS = { milbunker, govbunker, shelter, prepper };
+// Each plan's id and name on the spec (planname.js, issue #40): spec.vid its name's slug, spec.vname its name (spec.variant
+// the name's older field, kept). Crashlanding's mountain bunker (o.levels) has no named plan.
+/** @param {(rng: any, o?: any) => any} make */
+const stamped = (make) => (rng, o = {}) => { const spec = make(rng, o); return spec && spec.variant ? stampPlan(spec, planSlug(spec.variant), spec.variant) : spec; };
+export const BUNKER_PLANS = { milbunker: stamped(milbunker), govbunker: stamped(govbunker), shelter: stamped(shelter), prepper: stamped(prepper) };
 export const BUNKER_KEYS = Object.keys(BUNKER_PLANS);
 export const isBunker = (key) => BUNKER_KEYS.includes(key);
 // A level's name: the Entrance level at the surface, then Level −1, −2 ... going down (assemble's floorName).
