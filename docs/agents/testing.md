@@ -6,7 +6,7 @@ The suite is about 370 `prototype/tools/*test*.js` files and takes hours. In a s
 
 Run `node tools/gate.js` from `prototype/` before every merge to dev. **A merge that adds a failing check is not done.**
 
-- It runs the typecheck and a fixed core set of shared tests in parallel: `shopstest`, `interiortest`, `storeytest`, `itemarttest`, `furnituretest`, `citycrawltest`, `basefurnituretest` at full seeds, and `scaletest`, `varianttest`, `scenestest`, `malltest` with `BS_QUICK=1`. About 15 minutes on 4 cores.
+- It runs the typecheck and a fixed core set of shared tests in parallel: `shopstest`, `interiortest`, `storeytest`, `itemarttest`, `furnituretest`, `citycrawltest`, `basefurnituretest` at full seeds, and `scaletest`, `varianttest`, `scenestest`, `malltest` with `BS_QUICK=1`. About 10 minutes on 4 cores (587 s on 2026-10-26; citycrawltest alone is most of it).
 - It reads every `FAIL` line and compares the check names (numbers written `#`) with `tools/gate-baseline.json`, the checks known to fail on dev. A failing check not in the baseline is printed under "NEW FAILURES" and the gate exits 1. A crash or a timeout with no `FAIL` line counts as a check too.
 - A baseline check that passes now is printed under "Fixed"; `node tools/gate.js --update` drops it. The baseline only shrinks: never add a check to it. Fix the failure instead.
 - `node tools/gate.js --against origin/dev` (or any ref, such as `09c8f00`) also runs the set in a temporary worktree of that ref and lists the checks failing here only, there only and on both. That is how you prove a failure is old.

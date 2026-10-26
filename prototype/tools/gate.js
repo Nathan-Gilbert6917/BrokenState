@@ -89,7 +89,7 @@ async function runAll(list) {
   return results;
 }
 
-const ORDER = ["shopstest", "interiortest", "storeytest", "citycrawltest", "varianttest", "scaletest"]; // slowest first
+const ORDER = ["citycrawltest", "interiortest", "varianttest", "shopstest", "scenestest", "storeytest", "scaletest"]; // slowest first
 const sorted = [...picked].sort((a, b) => (ORDER.indexOf(a[0]) + 1 || 99) - (ORDER.indexOf(b[0]) + 1 || 99));
 const t0 = Date.now();
 let otherDir = null;
