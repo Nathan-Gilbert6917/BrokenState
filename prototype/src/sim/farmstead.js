@@ -255,7 +255,7 @@ export function farmsteadMap(state, tileId, option, withVehicle) {
   const sceneList = [], sceneBodies = [], scenePiles = [], scenePieces = [];
   for (const B of built) {
     const m = B.m, Rb = m.building;
-    const part = placeBuilding(C, m, { x0: B.x0, y0: B.y0, face: "s", k: B.k, name: B.name, key: B.key });
+    const part = placeBuilding(C, m, { x0: B.x0, y0: B.y0, face: "s", k: B.k, name: B.name, key: B.key, tag: { room: { bldg: B.key } } }); // bldg: its type (indoorlight.js: a barn's rooms have no wiring)
     B.part = part;
     const S = m.scenes;
     if (S) {

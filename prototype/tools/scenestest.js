@@ -52,13 +52,20 @@ const maps = [];
     for (let i = 0; i < PER; i++) {
       const m = mapOf(key, i);
       maps.push([key, m]);
-      if (m.scenes) { n++; if (m.scenes.list.length < 1 || m.scenes.list.length > 3) counts = false; }
+      // A site of several buildings (civicsite.js, issue #49: a churchyard's church and parish hall) rolls each
+      // building's scenes on its own (sc.house): 1 to 3 a building.
+      if (m.scenes) {
+        n++;
+        const per = new Map();
+        for (const sc of m.scenes.list) per.set(sc.house ?? null, (per.get(sc.house ?? null) || 0) + 1);
+        if (!per.size || [...per.values()].some((k) => k < 1 || k > 3)) counts = false;
+      }
     }
     total += PER;
     const want = SC.SCENES.ODDS[key] ?? SC.SCENES.DEFAULT, got = n / PER;
     check(Math.abs(got - want) <= 0.1, `${key}: ${(got * 100).toFixed(0)}% of ${PER} have scenes (the table ${(want * 100).toFixed(0)}%)`);
   }
-  check(total >= 300 && counts, `${total} buildings: each with scenes has 1 to 3`);
+  check(total >= 300 && counts, `${total} buildings: each with scenes has 1 to 3 (a site of several buildings: 1 to 3 in each)`);
   const seen = {};
   for (const [, m] of maps) for (const s of (m.scenes && m.scenes.list) || []) seen[s.kind] = (seen[s.kind] || 0) + 1;
   check(["barricade", "overrun", "choke", "stand", "quiet"].every((k) => seen[k] > 0), `every scene turns up (${Object.entries(seen).map(([k, v]) => `${k} ${v}`).join(", ")})`);
