@@ -855,10 +855,10 @@ const MORE_HOMES = {
       });
     },
     // A campground office: the office and the camp store, the coin laundry, the showers (their own door) and the
-    // firewood store.
+    // woodshed.
     campground(rng) {
       const bw = rng.int(16, 17), bh = rng.int(10, 11);
-      return home(bw, bh, Y(["*", X(["*", Rm("reception", { name: "Campground office", entry: true })], [6, Rm("sales", { name: "Camp store", type: "store", hub: false, lay: "aislefront", maxBoxes: 3 })])], [4, X([4, Rm("laundry", { name: "Coin laundry" })], ["*", Rm("restroom", { name: "Showers" })], [4, Rm("storage", { name: "Firewood store", type: "cabin" })])]), {
+      return home(bw, bh, Y(["*", X(["*", Rm("reception", { name: "Campground office", entry: true })], [6, Rm("sales", { name: "Camp store", type: "store", hub: false, lay: "aislefront", maxBoxes: 3 })])], [4, X([4, Rm("laundry", { name: "Coin laundry" })], ["*", Rm("restroom", { name: "Showers" })], [4, Rm("storage", { name: "Woodshed", type: "cabin" })])]), {
         foot: "medium", ground: "woods", exits: [{ side: "back", roles: ["restroom", "laundry"], chance: 0.9, lock: 0.2 }],
       });
     },
