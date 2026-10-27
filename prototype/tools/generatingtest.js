@@ -114,7 +114,7 @@ section("3. main.js and the CSS");
   has(/customw: \(el\) => \{ ui\.startPick = null; ui\.customW = clampCustomW\(el\.value\); gen\(/, "Width");
   has(/customh: \(el\) => \{ ui\.startPick = null; ui\.customH = clampCustomH\(el\.value\); gen\(/, "Height");
   has(/hivecount: \(el\) => \{ ui\.hiveCount = clampHives\(el\.value\); gen\(/, "Starting hives");
-  has(/takeModeSet\(ui, mode\);\n    for \(const s of state\.survivors\) delete s\.ownMax;\n    gen\(\(\) => newWorld\(state\.seed, true\)\);/, "Mode (the set taken first, so the box names the mode's size)");
+  has(/takeModeSet\(ui, mode\);\n    for \(const s of state\.survivors\) delete s\.ownMax;\n    if \(ui\.ironman && crewCustomized\(state\)\) \{ gen\(\(\) => newWorld\(state\.seed, true, \{ crew: ironmanCrew\(state\)[^\n]*\n    gen\(\(\) => newWorld\(state\.seed, true\)\);/, "Mode (the set taken first, so the box names the mode's size; Hardcore's Ironman crew as rolled, issue #79)");
   has(/"nr-vehicle": \(el\) => \{ if \(ui\.started\) return; ui\.startVehicle = !!el\.checked; gen\(/, "Start with a vehicle");
   has(/el\.value = v;\n    gen\(\(\) => newWorld\(state\.seed, true\)\);/, "the Custom counts");
   has(/startpeople: \(el\) => \{ ui\.startPeople = clampStartPeople\(el\.value, ui\.mode\); ui\.fleet = \(ui\.fleet \|\| \[\]\)\.slice\(0, ui\.startPeople\); gen\(/, "Starting people");

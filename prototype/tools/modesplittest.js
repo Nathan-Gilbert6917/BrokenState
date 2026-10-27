@@ -100,7 +100,7 @@ try { for (let i = 0; i < 24 * 3; i++) { tickHour(normal); normal.cards.length =
 
 section("4. The information hidden in Hardcore");
 check(tileThreatEstimate(hard, hard.survivors[0] && hard.parties[0] ? hard.parties[0].tile ?? 0 : 0) === null, "no threat estimate on a tile");
-check(/No forecast/.test(threatBar(hard)) && !/No forecast/.test(threatBar(normal)), "no forecast meter in Hardcore, the meter in Normal");
+check(/No forecast/.test(threatBar(hard).html) && /tf-cell/.test(threatBar(hard).html) === false && /tf-cell/.test(threatBar(normal).html) && !/No forecast/.test(threatBar(normal).html), "no forecast meter in Hardcore (its slots say so), the meter in Normal");
 
 section("5. The screen and the endings");
 const ui = { mode: "normal", ironman: false, freeEdit: true, startPeople: 4, pointsMax: 90, startVehicle: true, fleet: [], modeSets: {} };

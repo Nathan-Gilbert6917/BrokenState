@@ -29,7 +29,12 @@ const rowHTML = (it) => {
 
 // The meter (the button), the panel's head and its list; the whole of it as one string (renderTopbar, tests).
 export function threatBar(state, fc = null) {
-  if (fogged(state, "forecast")) return `<span class="tf-title muted"${tip("Hardcore: no threat forecast. Watch the land yourself")}>No forecast (Hardcore)</span>`; // sim/hardrules.js
+  if (fogged(state, "forecast")) { // Hardcore (sim/hardrules.js): no forecast, the meter's slots say so
+    const btn = `<span class="tf-top"><span class="tf-word muted">No forecast</span></span>`;
+    const head = `<span class="tf-title">No threat forecast (Hardcore)</span>`;
+    const list = `<div class="tf-foot muted small">Hardcore: nobody tells you what is coming. Watch the land yourself.</div>`;
+    return { btn, head, list, level: 0, html: threatSkeleton(btn, head, list) };
+  }
   fc = fc || threatForecast(state);
   const lvl = fc.level;
   const cells = fc.days.map((d) => `<i class="tf-cell tf-l${d.level}${d.known ? "" : " tf-far"}"></i>`).join("");

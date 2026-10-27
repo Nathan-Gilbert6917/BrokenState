@@ -95,7 +95,7 @@ export function moodWork(s) {
 }
 
 // What the People tab shows next to someone's mood.
-export function moodRisk(s) {
+export function moodRisk(s, state = null) { // state: Hardcore breaks sooner (mentalbreaks.js snapAt); left out, the usual line
   if (!s || !s.alive) return null;
   const w = s.moodWarn || 0;
   if (nearSnap(s, state)) return { level: 3, text: "May break down", tone: "danger" }; // mentalbreaks.js: days at rock bottom

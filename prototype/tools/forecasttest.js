@@ -281,9 +281,9 @@ section("The meter and its list (ui/threatbar.js)");
   check(classes.has("tf-open"), "a click pins it open (a tap, a TV remote)");
 }
 
-section("Hardcore: no base yet");
+section("A road start (Normal; Hardcore has no forecast: tools/modesplittest.js): no base yet");
 {
-  const st = mk({ mode: "hardcore" });
+  const st = mk({ mode: "normal", roadStart: true });
   let ok = true, fc = null, tb = null;
   try { fc = fresh(st); tb = threatBar(st); } catch (e) { ok = false; console.log(e); }
   check(ok && fc.days.length === 7 && /tf-cell/.test(tb.btn), `the road team's forecast (${fc && fc.items.map((x) => x.kind).join(", ") || "calm"})`);

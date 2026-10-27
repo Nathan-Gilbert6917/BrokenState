@@ -3,6 +3,9 @@
 // force on the road; destroying the base's hive saves it), no raiders before state.hardcore.raidersFrom, save/load
 // mid-founding, a normal world untouched.
 // Usage: node tools/hcgroupstest.js [--quick]
+// The road start's groups (Normal since issue #79, three on the road as Hardcore's default was): Hardcore's hard rules
+// (raiders from the first days, the director) are tools/modesplittest.js's.
+const ROAD = { mode: "normal", roadStart: true, startPeople: 3 };
 import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, tickHour, day, supplyValue, hub } from "../src/sim/world.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
@@ -66,7 +69,7 @@ console.log("A normal world");
 // ---------- day 1 ----------
 console.log("Day 1 in hardcore worlds");
 const SEEDS = quick ? [4242, 7, 99] : [4242, 7, 99, 1234, 31337, 5, 2024, 77];
-const worlds = SEEDS.map((seed) => ({ seed, s: createWorld({ seed, factionCount: 7, mode: "hardcore" }) }));
+const worlds = SEEDS.map((seed) => ({ seed, s: createWorld({ seed, factionCount: 7, ...ROAD }) }));
 for (const { seed, s } of worlds) {
   const mil = s.factions.find((f) => f.type === "military");
   const based = s.factions.filter((f) => f.bases.length);
@@ -100,7 +103,7 @@ for (const { seed, s } of worlds) {
 // ---------- meeting a band ----------
 console.log("Meeting a band");
 {
-  const s = createWorld({ seed: 4242, factionCount: 7, mode: "hardcore" });
+  const s = createWorld({ seed: 4242, factionCount: 7, ...ROAD });
   const b = bandsOf(s)[0];
   const who = s.survivors.find((x) => x.alive);
   const p = { id: 999999, owner: "player", kind: "recon", path: [b.tile], idx: 0, progress: 0, members: [who.id], supplies: { food: 10, water: 10 }, cargo: { supplies: {}, gear: [] }, phase: "waiting" };
@@ -121,7 +124,7 @@ console.log("Meeting a band");
 // ---------- a band taken in by a group: the very people ----------
 console.log("A band taken in by a group");
 {
-  const s = createWorld({ seed: 4242, factionCount: 7, mode: "hardcore" });
+  const s = createWorld({ seed: 4242, factionCount: 7, ...ROAD });
   const host = s.factions.find((f) => f.type === "military");
   ensureMembers(s, host);
   const tile = s.grid.neighbors(host.bases[0]).find((id) => s.tiles[id].terrain !== "water" && s.tiles[id].terrain !== "mountain");
@@ -184,7 +187,7 @@ console.log(`     founding days: ${foundDays.join(" ")}`);
 // ---------- save / load mid-founding ----------
 console.log("Save and load mid-founding");
 {
-  const s = createWorld({ seed: 31337, factionCount: 7, mode: "hardcore" });
+  const s = createWorld({ seed: 31337, factionCount: 7, ...ROAD });
   runDays(s, 10);
   s.cards.length = 0;
   const saved = JSON.stringify(serializeState(s));
@@ -205,7 +208,7 @@ console.log("The military's arc: the strike on the city hive, the hive by the ba
 const MSEEDS = quick ? [4242, 7, 42] : [4242, 7, 99, 1234, 42, 2024, 5, 13];
 const arcs = [];
 for (const seed of MSEEDS) {
-  const s = createWorld({ seed, factionCount: 7, mode: "hardcore" });
+  const s = createWorld({ seed, factionCount: 7, ...ROAD });
   const mil = s.factions.find((f) => f.type === "military");
   const g = s.grid, O = s.hardcore.outbreak;
   const pop0 = mil.pop;
@@ -267,7 +270,7 @@ for (const seed of MSEEDS) {
 }
 // Save and load mid-arc: the strike force on the road.
 {
-  const s = createWorld({ seed: 42, factionCount: 7, mode: "hardcore" });
+  const s = createWorld({ seed: 42, factionCount: 7, ...ROAD });
   for (let i = 0; i < 24 * 15 && !(hcMilitary(s).strike && hcMilitary(s).strike.phase === "travel" && hcMilitary(s).strike.idx > 0); i++) { keepAlive(s); s.cards.length = 0; tickHour(s); }
   const x = hcMilitary(s).strike;
   check(!!x && x.phase === "travel", `seed 42: the strike force is on the road on day ${day(s)} (${x && x.idx} of ${x && x.path.length - 1} tiles)`);
@@ -283,7 +286,7 @@ for (const seed of MSEEDS) {
 }
 // Destroy the hive by the base (you, say) and the base holds; the strike force's survivors come home.
 {
-  const s = createWorld({ seed: 4242, factionCount: 7, mode: "hardcore" });
+  const s = createWorld({ seed: 4242, factionCount: 7, ...ROAD });
   const O = s.hardcore.outbreak, mil = s.factions.find((f) => f.type === "military");
   runDays(s, 60, (st) => {
     const hv = st.hives.find((h) => h.tile === O.mil.tile);
@@ -295,7 +298,7 @@ for (const seed of MSEEDS) {
 }
 // Without a hive and its hordes the base holds, and the Guard does not grow (cut off, closed to civilians).
 {
-  const s = createWorld({ seed: 4242, factionCount: 7, mode: "hardcore" });
+  const s = createWorld({ seed: 4242, factionCount: 7, ...ROAD });
   for (const h of s.hives) s.tiles[h.tile].hive = false;
   s.hives.length = 0;
   s.hordes.length = 0;
@@ -322,7 +325,7 @@ console.log("The fall: the splinters' stores are the fallen base's");
   const add = (into, rec, k = 1) => { for (const [key, q] of Object.entries(rec || {})) into[key] = (into[key] || 0) + q * k; return into; };
   // Runs a hardcore world until the strike force is cut off, then brings the base down there and then.
   const fallNow = (seed, empty = false) => {
-    const s = createWorld({ seed, factionCount: 7, mode: "hardcore" });
+    const s = createWorld({ seed, factionCount: 7, ...ROAD });
     const mil = s.factions.find((f) => f.type === "military");
     for (let d = 0; d < 40 && !(hcMilitary(s).strike && hcMilitary(s).strike.failed != null); d++) runDays(s, 1);
     const m = hcMilitary(s), x = m.strike;
@@ -365,7 +368,7 @@ console.log("The fall: the splinters' stores are the fallen base's");
 // ---------- raiders ----------
 console.log("Raiders appear from raidersFrom");
 {
-  const s = createWorld({ seed: 99, factionCount: 7, mode: "hardcore" });
+  const s = createWorld({ seed: 99, factionCount: 7, ...ROAD });
   s.hardcore.raidersFrom = 50; // brought forward for the test
   let before = null;
   runDays(s, 49, (st) => { const r = raiderSigns(st); if (day(st) < st.hardcore.raidersFrom && (r.groups || r.outsiders || r.gangs)) before = before || { d: day(st), ...r }; });
@@ -379,7 +382,7 @@ console.log("Raiders appear from raidersFrom");
 // ---------- the autopilot ----------
 console.log("The autopilot plays a hardcore start");
 {
-  const s = createWorld({ seed: 2024, factionCount: 7, mode: "hardcore" });
+  const s = createWorld({ seed: 2024, factionCount: 7, ...ROAD });
   s.autopilot = true;
   let err = null;
   try { runDays(s, quick ? 30 : 45); } catch (e) { err = e; }

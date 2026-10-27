@@ -52,7 +52,7 @@ export function statusesOf(state, s, { skip = [] } = {}) {
   const add = (key, icon, name, tone, tip) => { if (!skip.includes(key)) out.push({ key, icon, name, tone, tip }); };
   const mood = Number.isFinite(s.mood) ? s.mood : 50;
   if (mood < STATUS.mood) {
-    const r = moodRisk(s);
+    const r = moodRisk(s, state);
     add("mood", STATUS_ICONS.mood, "Low mood", mood < STATUS.moodBad || (r && r.level >= 3) ? "danger" : "warn", `Low mood (${n0(mood)})${r ? `: ${r.text.toLowerCase()}` : ""}. Below ${STATUS.mood} they talk about leaving, below ${STATUS.moodBad} they may walk out, and under 10 for 3 mornings they may break down. Hover their mood for what weighs on them.`);
   }
   const now = starvingNow(state, s);

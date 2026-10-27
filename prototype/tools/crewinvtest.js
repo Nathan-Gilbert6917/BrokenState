@@ -24,7 +24,8 @@ const section = (t) => console.log(`\n== ${t}`);
 const UI = (extra = {}) => ({ started: false, freeEdit: false, ironman: false, worldSize: "normal", factionCount: 5, nrMsg: "", ...extra });
 const J = (x) => JSON.stringify(x);
 const fnv = (str) => { let h = 0x811c9dc5; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; } return h.toString(16).padStart(8, "0"); };
-const HC = (seed, crew = null) => createWorld({ seed, factionCount: 5, mode: "hardcore", startPeople: 4, crew });
+// The road start (Normal since issue #79): Hardcore's hard rules change its car and loot on purpose (tools/modesplittest.js).
+const HC = (seed, crew = null) => createWorld({ seed, factionCount: 5, mode: "normal", roadStart: true, startPeople: 4, crew });
 const NM = (seed, crew = null) => createWorld({ seed, factionCount: 5, startPeople: 4, crew });
 const keyOf = (it) => (it ? it.key : null);
 const inside = (s) => [...s.pockets, ...(packOf(s) || [])].filter(Boolean);
