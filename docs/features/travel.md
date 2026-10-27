@@ -1152,6 +1152,19 @@ The user's requests (2026-10-26, the heat epic #64, issue #76): "I want the deep
 - **What stays as it was**: the sources (every #65 number there); #66's spread rules and numbers (`LEECH`, `INF`, `HIVE`, `RIVER`, `KILL`) up to each tile's limit; the over-cap trim; the order centre > city > suburb > town > rural at every year; kills (quiet or loud) lower a tile and the spread or the daily rise refills it only up to its limit; loud play still draws from it (`drawFromTile`, surges, reinforcements), and a loud night still lifts it, up to its limit.
 - **Numbers changed** (every other #65 and #66 number is the same): off the sources, #65's default (`FILL` × the hordes' growth + infection, and the POIs' defaults) is held under the limit, and its loud-night rise toward the cap (`DAY.medLoudP` / `medLoudRise` / `highLoudDrift`) stops at the limit; #66's spread fills to the limit instead of the cap.
 - **Saves**: nothing new is saved and nothing is migrated. A save from before this change loads with its stored counts as they were; an untouched tile reads the new default, at or under the old one (the same on the sources); a stored tile over its limit sheds toward it from the first midnight, and one under it rises only by the day's rules, never past its limit. The test checks all three and that it goes on deterministically.
+- **A 6-year Normal autopilot run, seed 42** (`tools/deadspreadrun.js 6 42 normal --maps`; 169 and 172 minutes; before is origin/dev cdcc034). Seeds 43 and 44 were started and stopped to save time (the user's call), so the six-year table is one seed; the day-1 checks in the test cover seeds 42 to 44. The deep countryside (12,253 tiles): mean fill of the cap, then the share of tiles none / low / medium / high / overrun.
+
+  | end of | before | after |
+  |---|---|---|
+  | day 1 | 20.2% · 0/97/3/0/0 | 4.8% · 0/100/0/0/0 |
+  | year 1 | 21.6% · 0/95/5/0/0 | 6.3% · 0/100/0/0/0 |
+  | year 2 | 27.0% · 0/88/5/2/4 | 7.7% · 0/100/0/0/0 |
+  | year 3 | 42.2% · 0/62/12/7/19 | 9.1% · 0/100/0/0/0 |
+  | year 4 | 66.6% · 0/31/11/8/50 | 10.6% · 0/100/0/0/0 |
+  | year 5 | 84.5% · 0/13/6/5/76 | 12.0% · 0/100/0/0/0 |
+  | year 6 | 93.3% · 0/5/3/2/89 | 12.0% · 0/100/0/0/0 |
+
+  Before, the deep countryside was a fifth full on day 1 and 93% by year 6, 89% of it overrun. After, it climbs a point and a half a year to 12.0% at year 5 and holds, every tile low, none over 15% (the most 13.9%). Mean fill of the other zones at year 6 (before / after): city land 98.1 / 97.1%, towns 94.3 / 94.5%, 0–2 steps out 97.5 / 76.1%, 3–5 steps out 97.9 / 27.8%, past 5 steps and not deep 92.5 / 11.9%. The order centre > city > suburb > town > rural held at every year in both (after, year 6: 815 > 290 > 173 > 96 > 13). The test's untouched-land stand-in gives 4.8, 6.3, 7.7, 9.1, 10.6, 12.0 and 12.0% at the same years: the run's stored tiles sit on it. The heat maps of every year, both runs: the artifact "Dead Spread Heat Maps" (made by `tools/spreadmaps.js`).
 - **Performance**: `reachDist` is three breadth-first passes over the map, kept on the state (not saved) until the hives change; a tile's limit is then a few array reads. A Normal autopilot day took no longer (3.3 s against 3.7 s, both under load).
 
 ## Hunt the dead
