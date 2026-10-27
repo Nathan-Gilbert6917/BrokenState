@@ -6,7 +6,7 @@
 //   BS_QUICK=1 from the environment and play fewer seeds, days and runs, the same checks on less; the rest run as
 //   they are. No SLOW allowance: each has the plain time limit.
 //   The whole suite (no pattern) is held to --budget seconds of wall time (default 10800, 3 hours): the SLOW tests run
-//   in their quick form (BS_QUICK=1) unless --long is given, they start first, no test starts once the budget is spent,
+//   in their quick form (BS_QUICK=1, every test that has one) unless --long is given, they start first, no test starts once the budget is spent,
 //   and a test still running at the deadline is killed. Both count as failures, so a run never passes on less than it
 //   was meant to run. With patterns the budget applies too but nothing is made quick (use --quick for that).
 import { readdirSync, mkdirSync, writeFileSync } from "node:fs";
@@ -31,7 +31,7 @@ const SLOW = { "depletetest.js": 4, "diplotest.js": 4, "worktest.js": 2, "savete
 const skip = (opt("--skip", "") || "").split(",").filter(Boolean);
 const jsonOut = opt("--json", null);
 const patterns = args;
-const WHOLE = !patterns.length && !LONG; // the whole suite: the SLOW tests in their quick form, to fit the budget
+const WHOLE = !patterns.length && !LONG; // the whole suite: every test in its quick form, to fit the budget
 // Not tests: tools that only report, or need a browser.
 const NOT_TESTS = new Set(["runtests.js"]);
 const files = readdirSync(here)
@@ -48,7 +48,7 @@ const t0 = Date.now();
 function runOne(f) {
   return new Promise(res => {
     const start = Date.now();
-    const child = spawn(process.execPath, [join(here, f)], { cwd: dirname(here), env: QUICK || (WHOLE && SLOW[f]) ? { ...process.env, BS_QUICK: "1" } : process.env, stdio: ["ignore", "pipe", "pipe"], detached: true }); // its own process group: a timeout kills its children too
+    const child = spawn(process.execPath, [join(here, f)], { cwd: dirname(here), env: QUICK || WHOLE ? { ...process.env, BS_QUICK: "1" } : process.env, stdio: ["ignore", "pipe", "pipe"], detached: true }); // its own process group: a timeout kills its children too
     let out = "";
     child.stdout.on("data", d => { out += d; if (out.length > 4e6) out = out.slice(-2e6); });
     child.stderr.on("data", d => { out += d; if (out.length > 4e6) out = out.slice(-2e6); });

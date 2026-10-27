@@ -14,7 +14,7 @@ Run `node tools/gate.js` from `prototype/` before every merge to dev. **A merge 
 
 ## The whole suite has a 3-hour budget
 
-`node tools/runtests.js` with no pattern is held to `--budget` seconds of wall time (default 10800). The slow tests run in their quick form (`BS_QUICK=1`) unless `--long` is given, they start first, no test starts once the budget is spent, and one still running at the deadline is killed. Tests cut that way are listed as FAIL ("not run: the budget was spent") so a run never passes on less than it was meant to run. This has not been timed end to end: if a run reports budget failures, raise `--jobs`, or shorten the tests it names.
+`node tools/runtests.js` with no pattern is held to `--budget` seconds of wall time (default 10800). Every test runs in its quick form (`BS_QUICK=1`) unless `--long` is given, the slow ones start first, no test starts once the budget is spent, and one still running at the deadline is killed. Tests cut that way are listed as FAIL ("not run: the budget was spent") so a run never passes on less than it was meant to run. Timed on 2026-10-27 (4 cores, only the SLOW tests quick): 427 tests summed 43 200 s, the 3 hours ran out with 6 not started and 15 killed at the 600 s limit; 100 tests over 120 s are three quarters of the time, 59 of them with no quick form yet. Give a long test a `BS_QUICK` form rather than raising the budget.
 
 ## Never
 
