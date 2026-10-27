@@ -60,6 +60,7 @@ Older design docs: [docs/base-building/plan.md](../base-building/plan.md), [docs
 - **Family**: couples, pregnancy, births, children growing up [family].
 - **Recruits**: newcomer cards for strangers, refugees, loners and returning deserters [recruits].
 - **Appearance and customization**: backgrounds, points, starting gear, random kits; low-poly figures on the maps [appearance, custombg, custompoints, startgear, ui/figures]. [details](../features/survivors.md#appearance-figures-and-customization)
+- **Weapon models**: one low-poly model a weapon in the figures' hands (guns from their 2D art, the rest a table), a pose a weapon [ui/weaponmodels] `tools/weaponfiguretest.js`. [details](../features/survivors.md#weapon-models-in-the-figures-hands)
 - **Status icons** and a "Why?" cause chain for deaths, lost bases and setbacks (vehicles lost, teams wiped, failed missions, walkouts) [status, causes, ui/causes] `tools/whytest.js`. [details](../features/survivors.md#why-did-this-happen-setbacks)
 
 ## 3. Bases and economy

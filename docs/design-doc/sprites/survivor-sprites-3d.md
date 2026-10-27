@@ -49,7 +49,8 @@ flannel, a plate on a carrier, the dead's wounds) are painted by a small texture
 - **The weapon art.** Today every weapon has its own drawing (116 keys) and the gun builder paints a gun's finish
   and fitted parts on the sprite. In a box figure a weapon is a box or two: an AR is a long box with a magazine box,
   a machete a thin grey box. The gun's identity stays in its thumbnail and the gun builder, not on the figure.
-  Finer weapon models are possible (a few boxes each) but are a second project.
+  Finer weapon models are possible (a few boxes each) but are a second project. (Done since, issue #77: every weapon
+  has its own model, below under *Weapon models*.)
 - **A different look.** Low-poly and round-shouldered where the flat sprites are drawn; the face is four pixels.
   It sits with the map's blocks and cars better than the flat sprite does, and less with the 16 × 16 item icons.
 - **Soft edges at 1×.** Eight-sided parts and turned boxes rasterise as short stairs; fine at 2× and up, soft at
@@ -218,3 +219,69 @@ run twice the trials (two battles apart at sixteen).
 ## The State Map's pieces
 
 The map's moving pieces (teams, the groups' parties, bands, outsiders, hordes, herds, workers) are built from the same limb at the map's scale, heading the way they travel and animated on their way: `map-figures-3d.md`.
+
+## Weapon models
+
+Asked for next (issue #77, the user's request 2026-10-26: "There's several weapons but all guns seem to use the same
+model same for short melee and long melee. I want each weapon ... displayed accordingly with models that match the 2d
+sprite"). Until then `holdOf` sorted every weapon into one of seven poses and `figureLimbs` drew one generic model a
+pose: every long gun the same grey box with a magazine, every short blade the same steel slab, every long melee weapon
+the same haft with a grey head. Now every weapon a survivor, a raider or an AI group's survivor can hold (every `GEAR`
+entry with the weapon slot and every kit's list in `combat.js` `KITS`: 122 keys) has a model of its own, in
+`ui/weaponmodels.js`, and `figures.js` places it by its pose class.
+
+- **Guns are built from their own 2D drawing.** The gun builder's spec (`ui/gunspecs.js` `GUN_ART`, normalised by
+  `ui/gunpaint.js` `norm`) already holds every gun's landmarks and colours: the receiver, fore-end and barrel ends,
+  the grip, the stock and magazine kinds and lengths (`STOCKS`, `MAGS`), the colours by part (body, furniture,
+  handguard, barrel, pump, slide, frame, grip, cylinder), its own optic, bipod and muzzle device, and the small
+  drawing's features (a pump's slide, a lever gun's loop and tube, a double barrel over-and-under or side by side, a
+  bullpup's magazine behind the grip, a carry handle, a front sight post, a tube on the shoulder). `gunModel` reads
+  those and lays boxes and eight-sided rods along the bore: 0.29 figure px an art px along the gun and 0.36 up it
+  (a 54 px rifle is 15.7 px long on a 30 px figure; pistols and revolvers, drawn at a bigger scale, 0.19 and 0.22), so
+  a gun's silhouette, proportions and colours are its icon's by construction, and a new gun needs only its spec (a
+  gun without one is drawn as its look-alike, as its icon is). Stocks come in six shapes (fixed, telescoping,
+  wire, a sporting drop, a pistol grip only, none), magazines in eight (stick, curve, box, clear, drum, belt box,
+  top-mounted, none); a revolver has a fluted cylinder and its grips, a pistol a slide, frame and grip with panels.
+- **Fitted parts show.** A weapon look (`gunparts.js` `weaponLook`: `key|finish|slot=look,...`) carries the
+  finish and the parts fitted; the model draws the ones that read at this scale: an optic (a dot, a prism, a scope
+  with its lens), a suppressor or brake (the muzzle moves to its end), a drum, box or stick magazine, a stock, a
+  bipod folded under the fore-end, a fore grip, a light or laser; a finish recolours the furniture and metal as the
+  icon's does. `figureCanvas` passes the whole look through (it used to keep the key alone), and the look was
+  already in the cache key, so the cache grows only by the looks actually seen.
+- **Melee weapons, bows and launchers are a table** (`MELEE`, `BOWS`): a build function a weapon on a few helpers
+  (a handle, a haft, a blade with a tapered point, a guard, a head across the haft, a spike, a disc), the colours the
+  item icons' (`ui/itemart/wear.js`) and the knives' and swords' from `sim/data-blades.js` `BLADE_LOOK` (the ones
+  without an entry are built from that look). A kitchen knife is a thin blade with a black handle, a machete broad
+  toward the tip, the saw-blade machete a toothed disc, a kukri bent forward, a bat a tapered club (aluminium with
+  its maker's band, a nail bat with nail heads, a spiked one with long spikes), a sledge a steel block across a
+  hickory haft, the fire axe red with its pick, the pickaxe two curved points, a spear a leaf head on an ash shaft,
+  the compound bow a black riser with cams and a sight, the pulley bow an arc of laminated wood, the crossbows a
+  stock with the prod swept back and the cord drawn, the rocket tubes a long tube with the RPG's warhead.
+- **Pose classes** (`HOLDS`, the model's `hold`; `holdOf` reads it): `gun` (the low ready, the right hand on the
+  grip, the left out on the fore-end), `smg` (the same, close), `pump` (the left hand on the slide), `pistol` (one
+  arm out), `revolver` (the arm a little bent, the gun nosed up), `side` (a short blade or tool hanging in the
+  right fist, point down and forward), `sabre` (one hand, raised), `sword` (both hands on the hilt before the
+  chest, the blade up: katana, broadsword), `shoulder` (a club, axe or long tool over the right shoulder, both fists
+  on it, the haft passing beside the shoulder so it shows at every heading), `spear` (level at the hip in both
+  hands), `bow` (out in the right hand, the string hand at the chest), `crossbow` (the smg pose, the prod across),
+  `tube` (resting on the right shoulder). Every model has its origin at the right fist and a `fore` point for the
+  other hand (the fore-end, the pump, the haft, the hilt below the first hand); `placeModel` turns the model along
+  the pose's direction and the arms reach the placed points, so the hands stay on the weapon at every yaw. The
+  muzzle (`F.muzzle`, `isoview.js` `muzzlePoint`) is the barrel's far end, a fitted suppressor's end past it.
+- **Everywhere a figure is drawn**: the battle units, the panels, the inventory spin (its key carries the look),
+  and the fallen: a dead unit's weapon now lies on the ground beside its right hand, as the flat painter drew it,
+  until the body is searched (`unitFigureDown`, `downsprites.js` `bodySearched`); a downed survivor who is alive
+  shows none. Zombies, the special dead, the bosses and the risen keep their own looks.
+- **Cost.** A model is 6-14 limbs where the old pose was 1-2; painting a figure costs about 5% more
+  (1.03 ms against 0.98 ms a figure over 1,952 paints in Node, 2026-10-27), and a raid's frame time is unchanged
+  since figures are cached by look and heading (a town raid against six raiders at zoom 6, the battle redrawn every
+  frame for 3 s in headless Chromium, `tools/weaponmapshot.cjs`: median 3.9 ms a frame against 4.1 on dev; 79
+  figures painted once in 205 ms against 168).
+- **Adding a weapon.** A gun: its `GUN_ART` spec (and `FACTORY_FIT` for the parts it comes with) is all. A melee
+  weapon or bow: an entry in `MELEE` or `BOWS` with its `hold` and a build on the helpers (`M.handle`, `M.haft`,
+  `M.blade`, `M.guard`, `M.cross`, `M.spike`, `M.disc`, `M.bar`, `M.box`, `M.rod`, `M.post`), the origin at the
+  fist, +x toward the business end, in figure pixels; a two-handed one names `fore`. A weapon with no entry still
+  shows as a plain blade or haft by its `GEAR` category. `tools/weaponfiguretest.js` checks every key has a model
+  of its own, the classes, the hands on the weapon at every heading, the muzzle on the barrel, the fitted parts,
+  the cache key and the fallen; `tools/weaponsheet.js` renders every weapon beside its 2D art as a gallery page
+  (`--before` another checkout's painter for the change, `--battle` a shot from `tools/weaponmapshot.cjs`).
