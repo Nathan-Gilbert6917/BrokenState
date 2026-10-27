@@ -538,13 +538,18 @@ function gearCatalogue(state, ui, s, P, spec, B, target, sel, selFree) {
     const where = selFree ? `the ${sel.where === "pouch" ? "pouch" : sel.where === "pocket" ? "pocket" : "pack slot"} picked` : "where it first fits";
     return `<h3>Catalogue: carried <span class="small muted">${n > 1 ? `×${n} ` : ""}${where}</span></h3>${gearPicker(entries, { ns: "carry", act: "sg-pick-carry", verb: `put ${n > 1 ? `${n} of it` : "it"} in ${where}` })}`;
   }
-  const cur = s.gear[target], curPts = cur ? slotPoints(target, cur.key) : 0;
+  const cur = s.gear[target], curPts = cur ? slotPoints(target, cur.key, target === "weapon" && cur.key === P.slots.weapon ? P.mods : null) : 0; // the gun's fitted parts too, as the points bar counts them
   const price = (k) => slotPoints(target, k);
   const entries = slotChoices(target).map((k) => gearEntry(k, price, cur && cur.key === k ? "" : over(price(k) - curPts), !!cur && cur.key === k));
   return `<h3${tip(SLOT_TIPS[target])}>Catalogue: ${esc(SLOT_LABELS[target])} <span class="small muted">${cur ? `now the ${esc(GEAR[cur.key] ? GEAR[cur.key].name : cur.name)}` : "nothing now"}</span></h3>${gearPicker(entries, { ns: `gear:${target}`, act: "sg-pick-slot", attrs: `data-slot="${target}"`, verb: `put it on (${SLOT_LABELS[target]})` })}`;
 }
 
 // ---------- actions (registered in main.js; true: build the world again for the change) ----------
+// What is on a slot now: the pick, else what they wear (the dice's kit).
+const slotNow = (state, ui, slot) => {
+  const s = ui.gearEdit && state.survivors[ui.gearEdit.i], P = s && sanitizeStartGear(s.startGear);
+  return P && P.slots && slot in P.slots ? P.slots[slot] : s && s.gear[slot] ? s.gear[slot].key : "";
+};
 const blankCarry = () => ({ pocket: [], pouch: [], pack: [] });
 function edit(state, ui, fn) {
   const s = ui.gearEdit && state.survivors[ui.gearEdit.i];
@@ -677,7 +682,8 @@ export const SG_ACTIONS = {
   "sg-slot-clear": (state, ui, d) => SG_CHANGE["sg-slot"](state, ui, { value: "-", dataset: { slot: d.slot } }),
   // A catalogue row: on the slot it shows (sg-slot), into what they carry (sg-item-add: the × box, the spot picked), or
   // into the vehicle's back (sg-trunk-add, sg-trunk-supadd, sg-trunk-round).
-  "sg-pick-slot": (state, ui, d) => (d.k && GEAR[d.k] && GEAR[d.k].slot === d.slot ? SG_CHANGE["sg-slot"](state, ui, { value: d.k, dataset: { slot: d.slot } }) : false),
+  // The ticked row (what is on the slot now) does nothing, as the old select's same pick fired no change: no parts lost, no dice kit made picks.
+  "sg-pick-slot": (state, ui, d) => (d.k && GEAR[d.k] && GEAR[d.k].slot === d.slot && slotNow(state, ui, d.slot) !== d.k ? SG_CHANGE["sg-slot"](state, ui, { value: d.k, dataset: { slot: d.slot } }) : false),
   "sg-pick-carry": (state, ui, d) => SG_CHANGE["sg-item-add"](state, ui, { value: d.k, dataset: {} }),
   "sg-pick-trunk": (state, ui, d) => SG_CHANGE["sg-trunk-add"](state, ui, { value: d.k, dataset: {} }),
   "sg-pick-sup": (state, ui, d) => SG_CHANGE["sg-trunk-supadd"](state, ui, { value: d.k, dataset: {} }),

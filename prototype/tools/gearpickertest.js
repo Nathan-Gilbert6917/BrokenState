@@ -95,6 +95,8 @@ section("2. The gear window");
   check(SG_ACTIONS["sg-pick-slot"](st, ui, { k: "ar", slot: "weapon" }) === true && s.startGear.slots.weapon === "ar", "a row clicked: on the slot (sg-slot's rules; true: the world is built again)");
   check(SG_ACTIONS["sg-pick-slot"](st, ui, { k: "milhelmet", slot: "weapon" }) === false && s.startGear.slots.weapon === "ar", "a thing of another slot: refused");
   check(SG_ACTIONS["sg-pick-slot"](st, ui, { k: "rucksack", slot: "backpack" }) === true && s.startGear.slots.backpack === "rucksack", "a bag on the Bag slot");
+  s.startGear.mods = { rail: "quadrail" };
+  check(SG_ACTIONS["sg-pick-slot"](st, ui, { k: "ar", slot: "weapon" }) === false && s.startGear.slots.weapon === "ar" && s.startGear.mods && s.startGear.mods.rail === "quadrail", "the ticked row clicked again: nothing (the gun keeps its parts, no rebuild)");
   // The world as main.js gearRebuild makes it: the same seed, the crew as it stands.
   const re = () => createWorld({ seed: 42, factionCount: 5, crew: [{ points: true, startGear: s.startGear, startPoints: true, startCustom: true }] });
   let st2 = re();
