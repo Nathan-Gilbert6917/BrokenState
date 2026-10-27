@@ -326,7 +326,7 @@ console.log("Estimates: hours, rations and fuel");
     // The team's rate for the coming hour (needs.js teamNeedsHour), to add the arrival hour, when the packs are
     // already unloaded and the gauges are the base's.
     const rateNow = () => { const mv = onTheMove(p) || sweeping(p); const r = partyMembers(st, p).reduce((a, s) => a + personRation(p.burden, s, p.vehicle, mv), 0) / 24, rf = partyMembers(st, p).reduce((a, s) => a + personRation(p.burden, s, p.vehicle, mv) * appetite(s), 0) / 24; return { food: rf * teamCold(st, p), water: r * thirstAt(st, st.hour + 1) }; }; // the coming hour's day; a Glutton eats more (traits.js), as in the winter trips
-    let delay = 0, start = st.hour, queueSeen = false, cardsSeen = 0;
+    let delay = 0, start = st.hour, queueSeen = false, cardsSeen = 0, stuck0 = p.stuck, members0 = partyMembers(st, p).length;
     let foodHome = null, waterHome = null, fuelHome = null, eatenOut = 0, drunkOut = 0, lastRate = { food: 0, water: 0 }, gulps = true;
     for (let i = 0; i < 24 * 12 && st.parties.includes(p); i++) {
       st.hordes.length = 0;
@@ -334,6 +334,8 @@ console.log("Estimates: hours, rations and fuel");
       lastRate = rateNow();
       tickHour(st);
       if (p.roadblock && p.roadblock.hour === st.hour && !sweeping(p)) delay += 1; // a road blockage (sim/roadblocks.js) is a delay like a card's
+      if (p.stuck && p.stuck !== stuck0) { stuck0 = p.stuck; delay += 1; } // a car bogged down in the mud (parties.js stuckInMud): the same (issue #78: case 2's 4 hours)
+      if (st.parties.includes(p) && partyMembers(st, p).length < members0) { members0 = partyMembers(st, p).length; delay += 1; } // someone lost on the road (a fight after an attack card, loneattack.js): fewer mouths (issue #78: case 19)
       for (let k = st.cards.length - 1; k >= 0; k--) {
         const card = st.cards[k];
         st.cards.splice(k, 1);
@@ -660,17 +662,26 @@ console.log("Crews and the autopilot");
 console.log("Save, load and determinism");
 {
   const play = (st, hours) => { for (let i = 0; i < hours; i++) { tickHour(st); while (st.cards.length) { const c = st.cards.shift(); const ch = c.choices.find((x) => !x.uiAction && !(typeof x.disabled === "function" ? x.disabled(st) : x.disabled)); if (ch && !c.isOrders) ch.resolve(st); } } };
+  // The world: the first from seed 77 on whose survey team is still out surveying 6 hours into it (issue #78: on 77 since
+  // the plans of f3593cd a raider ambush on the survey's third hour kills the whole team; a lost team is no save mid-survey).
+  let seed = 77;
   const make = () => {
-    const st = W(77);
+    const st = W(seed);
     const h = hub(st);
     const center = nearestUnknown(st, 3, 9)[0];
     const res = sendSurvey(st, { memberIds: atBase(st, h.id).slice(0, 2).map((s) => s.id), tile: center, radius: 3, hours: 24, supplies: { food: 10, water: 10 } });
     return { st, p: res.party };
   };
-  const A = make();
-  play(A.st, 12);
-  while (!sweeping(A.p) && A.st.parties.includes(A.p)) play(A.st, 1);
-  play(A.st, 6);
+  const midSurvey = () => {
+    const X = make();
+    play(X.st, 12);
+    while (!sweeping(X.p) && X.st.parties.includes(X.p)) play(X.st, 1);
+    play(X.st, 6);
+    return X;
+  };
+  let A = midSurvey();
+  while (!(sweeping(A.p) && A.st.parties.includes(A.p)) && seed < 96) { seed++; A = midSurvey(); }
+  if (seed !== 77) console.log(`  (seed ${seed})`);
   check(sweeping(A.p) && A.p.task.done >= 1 && A.p.task.done < 24, `mid-survey (${sweepStatus(A.st, A.p)})`);
   const B = deserializeState(JSON.parse(JSON.stringify(serializeState(A.st))));
   play(A.st, 60); play(B, 60);

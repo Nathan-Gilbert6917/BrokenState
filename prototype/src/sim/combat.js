@@ -8383,7 +8383,12 @@ function autoRaidTurn(state) {
       const score = pools ? (i) => field[i] + pools(i) : (i) => field[i];
       let best = null;
       for (let i = 0; i < W * H; i++) if (isFinite(r.dist[i]) && r.dist[i] > 0 && (!best || score(i) < score(best))) best = i;
-      if (best == null || field[best] >= field[idx(u.x, u.y)]) {
+      // On the way out with the field's way shut by people (the field reads no units: a window with a crowd of the dead
+      // on the far side, specialtest's raid that never ended, issue #78): the way round them (wayRound), kept to for
+      // the rest of the way out so the field does not pull them back to the crowd.
+      const round = leave && (u.wayRound || best == null || field[best] >= field[idx(u.x, u.y)]) ? wayRound(b, u, targets, r) : null;
+      if (round != null) { best = round; u.wayRound = true; }
+      else if (best == null || field[best] >= field[idx(u.x, u.y)]) {
         // Nowhere better to go (the way is blocked, often by what is coming at them): a shot at anything aware and
         // close rather than waiting with the action unused.
         if (shot) { combatAct(state, { type: "shoot", unit: u.id, target: shot.t.id }); break; }
@@ -8398,6 +8403,19 @@ function autoRaidTurn(state) {
   if (R.folk || b.parley) resolveBattleCards(state); // a card its moves raised this turn
   bump(b);
   if (!b.over && b.phase === "player") endPlayerTurn(state);
+}
+// The bot's way out round the units in the way (autoRaidTurn): the nearest target cell a walk reaches with every unit
+// where it stands (reachable, up to WAY_ROUND steps), and the furthest cell along that walk this turn's move reaches
+// (in r), or null.
+const WAY_ROUND = 80;
+function wayRound(b, u, targets, r) {
+  const far = reachable(b, u, WAY_ROUND);
+  let goal = -1;
+  for (const [x, y] of targets) { const i = idx(x, y); if (isFinite(far.dist[i]) && (goal < 0 || far.dist[i] < far.dist[goal])) goal = i; }
+  if (goal < 0) return null;
+  const path = pathTo(far, goal % W, (goal / W) | 0);
+  for (let k = path.length - 1; k >= 0; k--) { const i = idx(path[k][0], path[k][1]); if (isFinite(r.dist[i]) && r.dist[i] > 0) return i; }
+  return null;
 }
 // The nearest floor (up first on a tie) with a container the bot still wants (todo), or -1 (storeys, buildingmaps.js).
 function nearestFloorWith(b, u, todo) {

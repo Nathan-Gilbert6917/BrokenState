@@ -846,6 +846,13 @@ function militaryDaily(state) {
 // ---------- the strike on the city hive ----------
 const STRIKE_OUT = ["travel", "fight", "retreat", "holed", "home"]; // phases while the strike force is out (not back, not gone)
 export const hcStrike = (state) => { const m = hcMilitary(state); return m && m.strike && STRIKE_OUT.includes(m.strike.phase) ? m.strike : null; };
+// The garrison holding the base on its own (the strike force out, or cut off for good, and the base not fallen): every
+// hand stays on the walls, so it sends nobody out (parties.js spawnAiParty: no convoy, scavengers, envoy or raid). Its
+// fall is counted against what stayed (m.breakPop, GARRISON_BREAK of it: three of 15), and a party that walked into a
+// horde on the road could lose the base before its hive had stood or its hordes came (issue #78: seed 1234, soldiers
+// lost on convoys and a scavenging trip, the base gone on day 22, then on day 28).
+/** @param {any} state @param {any} f */
+export const hcHoldingWalls = (state, f) => { const m = hcMilitary(state); return !!m && !m.fell && !!f && m.id === f.id && m.garrison != null && !(m.strike && m.strike.phase === "back"); };
 
 // "the 3rd Battalion" / "Bravo Company": the unit sent out (not the group's own name).
 function strikeName(state, f) {

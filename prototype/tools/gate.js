@@ -58,6 +58,11 @@ const CORE = [
   // 365-day autopilot years; quick 162 s, but red on dev since #69, d3994a4e: two worlds of one seed differ)
   ["landordertest", false], ["detachtest", false], ["claimstest", false], ["guidetest", false], ["teamctxtest", false],
   ["etatest", false], ["teamtest", false], ["roadeventstest", false],
+  // #78: red tests made green, kept so (with the machine shared on 2026-10-27: specialtest 142 s, visitortest quick 321 s,
+  // hunttest quick 416 s); left out, too long: surveytest (quick 502 s shared, full about 35 minutes), fighttest (quick
+  // about 24 minutes) and hcoutbreaktest (about 18 minutes, no quick form); visitortest and hunttest at full length
+  // (about 43 and 59 minutes)
+  ["specialtest", false], ["visitortest", true], ["hunttest", true],
 ];
 
 const args = process.argv.slice(2);

@@ -59,7 +59,7 @@
 // are plain data; a base without it (an older save) starts with none pending and no cooldown; nothing else is stored.
 import { hash01 } from "./skills.js";
 import { popCap, raiderCap, openDead, openRaiders, poiRaiders, noiseOf, deadBand, raiderBand, drawFromTile, drawRaiders, putBack, putBackRaiders, killDead, killRaiders } from "./deadpop.js";
-import { log, addCard, homeAt, isNight } from "./world.js";
+import { log, addCard, homeAt, isNight, localId } from "./world.js";
 import { registerCombatHandler } from "./combat.js";
 import { fightNow, holdCheck } from "./defences.js";
 import { isShelter, count } from "./buildings.js";
@@ -104,18 +104,19 @@ const rollIn = (state, lohi, ...salt) => lohi[0] + Math.floor(die(state, ...salt
 function basesByTile(state) {
   const by = new Map();
   const add = (tile, x) => { if (tile == null) return; const l = by.get(tile); if (l) l.push(x); else by.set(tile, [x]); };
-  for (const b of state.bases || []) if (!b.group) add(b.tile, { base: b, key: diceKey(b), f: null });
+  for (const b of state.bases || []) if (!b.group) add(b.tile, { base: b, key: diceKey(state, b), f: null });
   for (const f of state.factions || []) {
     if (!f || !f.alive || !Array.isArray(f.bases) || !f.bases.length) continue;
     const H = homesOf(state, f);
-    for (const tile of f.bases) if (H[tile]) add(tile, { base: H[tile], key: diceKey(H[tile], f), f });
+    for (const tile of f.bases) if (H[tile]) add(tile, { base: H[tile], key: diceKey(state, H[tile], f), f });
   }
   return by;
 }
 // A base's dice: by its tile and POI (one base per POI and one normal base a tile, #70), never by its id (ids count up
-// across every world made in one process: two worlds of one seed must roll the same).
-/** @param {any} base @param {any} [f] */
-const diceKey = (base, f = null) => `${f ? `f${f.id}` : "b"}:${base.tile}:${base.poi != null ? base.poi : "-"}`;
+// across every world made in one process: two worlds of one seed must roll the same). A group's by its world-local id
+// (world.js localId; issue #78: the raw f.id gave two worlds of one seed different attacks on the groups' homes).
+/** @param {any} state @param {any} base @param {any} [f] */
+const diceKey = (state, base, f = null) => `${f ? `f${localId(state, f.id)}` : "b"}:${base.tile}:${base.poi != null ? base.poi : "-"}`;
 /** Your bases and the groups' homes on a tile. @param {any} state @param {number} tile */
 export const basesOn = (state, tile) => basesByTile(state).get(tile) || [];
 
@@ -237,7 +238,7 @@ export function nearbyView(state, base) {
  * @param {any} state @param {any} base @param {{ grounds?: boolean, trickle?: boolean, raiders?: boolean }} hit @param {any[]} [list]
  */
 export function waveSource(state, base, hit, list = basesOn(state, base.tile)) {
-  const tile = base.tile, salt = [diceKey(base, base.fid != null ? { id: base.fid } : null), state.hour];
+  const tile = base.tile, salt = [diceKey(state, base, base.fid != null ? { id: base.fid } : null), state.hour];
   let g = 0, d = 0, r = 0, rp = 0, rooms = null;
   if (hit.grounds) {
     const left = groundsLeft(state, base);

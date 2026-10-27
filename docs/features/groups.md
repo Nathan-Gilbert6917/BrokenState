@@ -133,6 +133,7 @@ The user's request 2026-10-21. Test `tools/trademeettest.js`.
 - The trade caravan planner opens aimed at the tile with your side loaded (meetCaravanForm, a "Meet the … caravan" destination).
 - A group calling with an offer may ask to meet halfway when your base is over MEET.OFFER_HOURS away (radio meetOfferCard; the governor declines).
 - Groups' trade convoys are a swap both ways out of their own stores (convoyLoad): to the partner's base when near; both to the halfway tile when the road is over MEET.AI_FAR_HOURS (they wait for each other, swap, go home).
+- A hardcore military garrison holding its base alone (its strike force out or cut off: hardcore-groups `hcHoldingWalls`) sends nobody out (parties `spawnAiParty` returns null: no convoy, either half of a halfway meeting or a haul, no scavengers, envoy or raid). Its fall counts against the garrison that stayed (three of 15), and soldiers lost on convoys and a scavenging trip that walked into hordes once broke the base before its hive stood or its hordes came (issue #78, 2026-10-27).
 - Modules: [trademeet, caravans sendCaravan meetTile, radio radioRequestCaravan offerCard, radiotrade "meet", factions convoys, parties aiPartyHour, ui/tradewindow meetPicker meetRow meetPick*, main.js meetPick mode, ui/codex "Meeting to trade"].
 
 ## Outsiders and raider bands
@@ -140,6 +141,7 @@ Outsiders from beyond the state, and the raider bands who live by the nomads' co
 - Outsiders/visitors from beyond the state [visitors].
 - Raider bands live as a nomad band does, by the nomads' own code: people records with what they carry; stores and shelf carried by your teams' rule; a day's forage; food and water from their stores (hungry, they lose people); their wounded cared for from their own meds.
 - They take only what they can carry and leave the rest; a band broken or wiped out leaves its goods where it ended [visitors raiderDay, addToStock, dropBandGoods; nomads bandRoom, bandFeeds, bandCare].
+- New gangs (factions `newGangs`, 12–30 tiles from your hub) and raider bands that settle (visitors `settleBands`) keep off the land the coalition's patrols keep: alliance `coalitionMask(state, soon, true)`, the bases' ranges unscaled (your hub and taken bases 9 tiles, an outpost 7, 8 walled, a member's base 7) on every map size, as the raids' reach (RAIDS.REACH 30). The land share for the victory keeps the ranges scaled by the map's area (34 tiles round the hub on Normal). Before issue #78 (2026-10-27) the gangs read the scaled land, and on the 250 × 150 Normal map (1370d1c) every site in their ring lay in the hub's own land: no gang ever moved in.
 
 ## Nomads
 Baseless bands of 3–10 in four tiers that camp, raid places nearby and move on; they live by the band code but are not a group.

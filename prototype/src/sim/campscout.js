@@ -51,7 +51,7 @@ import { openDead, killDead } from "./deadpop.js"; // the dead on the land (issu
 import { poiKnowledge } from "./pois.js";
 import { LOOK } from "./survey.js";
 import { hash01 } from "./skills.js";
-import { log, isNight } from "./world.js";
+import { log, isNight, localId } from "./world.js";
 import { partyMembers, partyTile, tileLabel, teamName, awaitOrders, wipeIfEmpty } from "./parties.js";
 import { startTask } from "./orders.js";
 import { firstHubPending } from "./hardcore-start.js";
@@ -277,8 +277,8 @@ registerCombatHandler("groundsDead", (state, result, setup) => {
 export function groundsSpot(state, base) {
   const o = (base.plan && base.plan.origin) || [0, 0], g = base.grounds || {};
   for (let i = 0; i < 40; i++) {
-    const a = hash01(state.seed, "groundsraid", base.id, g.raids || 0, i, "a") * Math.PI * 2;
-    const r = GROUNDS.RAID_SPOT[0] + hash01(state.seed, "groundsraid", base.id, g.raids || 0, i, "r") * (GROUNDS.RAID_SPOT[1] - GROUNDS.RAID_SPOT[0]);
+    const a = hash01(state.seed, "groundsraid", localId(state, base.id), g.raids || 0, i, "a") * Math.PI * 2;
+    const r = GROUNDS.RAID_SPOT[0] + hash01(state.seed, "groundsraid", localId(state, base.id), g.raids || 0, i, "r") * (GROUNDS.RAID_SPOT[1] - GROUNDS.RAID_SPOT[0]);
     const at = [Math.round(o[0] + Math.cos(a) * r), Math.round(o[1] + Math.sin(a) * r)];
     if (!siteProblem(state, base.tile, at)) return at;
   }
