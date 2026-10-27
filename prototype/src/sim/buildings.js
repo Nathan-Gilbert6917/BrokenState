@@ -1,6 +1,6 @@
 // @ts-check
 // Buildings, workshop stations and the construction queue for every base (hub and outposts).
-import { poiFits, POICAMP } from "./poicamp.js"; // a camp inside a POI: what fits on its map (issue #70; call-time only)
+import { poiFits, POICAMP, siteRoomWhy } from "./poicamp.js"; // a camp inside a POI: what fits on its map (issue #70; call-time only)
 import { FOODS, addFood, qtyOf } from "./foods.js"; // a station's food out (the kitchen's jars, the pen's eggs and milk)
 import { campBecameShelter, baseUpgraded } from "./staging.js"; // a camp built up into a shelter (the founding)
 import { log, atBase, skill, newId, day, localId } from "./world.js";
@@ -1403,7 +1403,7 @@ export function constructionHour(state) {
     if (!base.construction.length) continue;
     gatherHour(state, base);
     if (campMaterialsHour(state, base)) continue; // a camp's builders make the building materials its step up waits for
-    const job = base.construction.find((c) => !gatherStalled(c) && !siteWaits(state, base, c) && !terraWaits(state, base, c)); // basemap.js siteWaits: a building whose site has land on it waits for its clearing; terraform.js terraWaits: a hollow or a hill with no shovel here (or no dirt)
+    const job = base.construction.find((c) => !gatherStalled(c) && !siteWaits(state, base, c) && !terraWaits(state, base, c) && !siteRoomWhy(base, c)); // basemap.js siteWaits: a building whose site has land on it waits for its clearing; terraform.js terraWaits: a hollow or a hill with no shovel here (or no dirt); poicamp.js siteRoomWhy (#71): a build on a POI camp's map in a room turned Not cleared waits (its progress kept)
     if (!job) continue;
     if (job.type === "terra") { terraHour(state, base, job); continue; } // terraform.js: the builders with shovels, a cell-level at a time
     const was = job.progress;

@@ -78,6 +78,7 @@ import { workFactor } from "./health.js";
 import { describeActivity } from "./activity.js"; // call-time only
 import { helpingAs } from "./noidle.js"; // call-time only
 import { homesOf } from "./groupbases.js"; // call-time only
+import { cutOffWhy } from "./poirooms.js"; // a camp inside a POI cut off: nobody leaves its map (issue #71; call-time only)
 
 export const HAUL = {
   start: 6, end: 21,     // a haul trip leaves from 06:00 and is home by 21:00
@@ -740,6 +741,7 @@ export function routeWork(state, base) {
   const transit = inTransit(state);
   const out = [];
   for (const X of haulPartners(state, base)) {
+    if (cutOffWhy(state, X, { heavy: true })) continue; // poirooms.js (#71): no haul into a cut-off camp inside a POI (a load cannot get in)
     const kg = wantKg(pairWants(state, base.id, X.id, transit)) + wantKg(pairWants(state, X.id, base.id, transit));
     if (kg >= HAUL.minKg && routePath(state, base.tile, X.tile, false)) out.push({ dest: X, kg: r1(kg) });
   }
@@ -757,6 +759,8 @@ export function haulActivity(state, base, s, h, opts = {}) {
     if (st) return actOf("work", st.text, st.held ? "Trouble on the road: they hold where they are until you answer the card (or do what seems best after a few hours)." : st.kind === "fetch" ? "Bringing a stockpile's goods into the base's storage." : "A standing haul order (Supply runs tab: Hauling). The goods go into the other base's storage, as far as it has room.");
   }
   if (underAttack(state, base)) return { ...actOf("off", "On hold: base under siege", `${base.name} is on alert or under attack: nobody goes out until it is over.`, "⛔"), hold: "siege" };
+  const co = cutOffWhy(state, base, { heavy: true }); // poirooms.js (#71): a cut-off camp's loads cannot leave its map (a climb out is for people on foot)
+  if (co) return actOf("stalled", `Can't haul: ${co}`, `${base.name} is cut off inside its place: nothing is carried off the map until a route is cleared or they break out (Camp tab).`, "⛔");
   const routes = routeWork(state, base);
   const helping = helpingAs(s) === "haul";
   if (!inHaulHours(h)) return actOf("off", "Hauler – off until 06:00", "Haulers set out from 06:00 and are home by 21:00.");

@@ -54,6 +54,7 @@ import { lootQty } from "./worldcfg.js"; // the run's dials: the loot by kind (t
 import { winterScavFood } from "./winter.js"; // winter: less food in a find (call-time only)
 import { note, goodsRounds } from "./ledger.js"; // the conservation test's ledger (off in play): rounds off the ground
 import { personKey } from "./members.js"; // a person's id for the dice: a member who joined keeps their own (call-time only)
+import { cutOffWhy } from "./poirooms.js"; // a camp inside a POI cut off: nobody leaves its map (issue #71; call-time only)
 
 export const ROLES = {
   farm:     { name: "Farm",     desc: "Tends, plants and harvests the crop plots (Farming tab). Crops take days to ripen; more farmers per plot and better Farming give a bigger harvest from the same days. Ripe crops left unharvested rot." },
@@ -243,6 +244,8 @@ function baseScavenging(state, base, people) {
 export const fetchWaterTile = (state, base) => waterSources(state, base, "water")[0] || null;
 // Why nobody here can fetch water ("" = they can).
 export function fetchWaterWhy(state, base) {
+  const co = cutOffWhy(state, base); // poirooms.js (#71): a cut-off camp's people cannot leave its map
+  if (co) return co;
   if (!fetchWaterTile(state, base)) return NO_WATER;
   if (rawRoom(base) < 1) return "the un-purified barrels are full";
   return "";

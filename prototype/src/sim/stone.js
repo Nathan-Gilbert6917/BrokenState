@@ -25,6 +25,7 @@ import { SUPPLIES, GEAR } from "./data.js";
 import { carriedItems } from "./hunting.js";
 import { woodTime, woodcutterMult } from "./woodcutting.js";
 import { BUILDINGS, isShelter, countAll } from "./buildings.js"; // a camp's first stone builds (call-time only)
+import { cutOffWhy } from "./poirooms.js"; // a camp inside a POI cut off: nobody leaves its map (issue #71; call-time only)
 
 export const STONE = {
   RATE: 10,         // stone an hour for one average gatherer with bare hands on the best ground (a mountain's scree; 5 until the user's request 2026-10-26: "Increase yield of stones when gathering")
@@ -137,6 +138,8 @@ export function stoneSummary(state, p, t) {
 // ---------- the Gather stone job at a base (economy.js daily) ----------
 // Why the job cannot be worked here ("" = it can).
 export function stoneWorkWhy(state, base) {
+  const co = cutOffWhy(state, base); // poirooms.js (#71): a cut-off camp's people cannot leave its map
+  if (co) return co;
   return stoneAbundance(state, base.tile) < 0.1 ? "no stone to speak of round here" : "";
 }
 // The stone the base wants: what the queued buildings still wait for, else STONE.keep in the stores.
