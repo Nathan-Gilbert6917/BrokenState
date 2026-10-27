@@ -49,8 +49,9 @@
 //     night raises it past that toward the cap. Without that, every tile the spread (deadspread.js) touched, so stored,
 //     rose to its cap within months (the fix to #66, the user's decision 2026-10-26: a 2-year run had 97% of the land
 //     overrun by year 1); the spread itself still fills the land near the towns, cities and hives up to the caps;
-//   - on the deep countryside (deadspread.js deepLimit, #76) every rise, quiet or loud, stops at its ceiling, and a
-//     count over that sheds DEADSPREAD.DEEP.SHED of the excess a day (its default, seedOf, is held under it too);
+//   - off the sources, every rise, quiet or loud, stops at the tile's reach (deadspread.js reachLimit, #76: a share of
+//     its cap falling off with its steps from the towns, cities and hives, down to the deep countryside's 12%), and a
+//     count over that sheds DEADSPREAD.FLOOR.SHED of the excess a day (its default, seedOf, is held under it too);
 //   - first, a count over its cap is trimmed to it (a POI's excess goes to the open ground, the tile's is lost: the
 //     dead a hive's land held when its hive died, popCap's HIVE_CAP gone, dispersed and rotted; the spread pushes
 //     nothing for them);
@@ -72,7 +73,7 @@ import { tileClass, sizeFor } from "./placement.js";
 import { hordeGrowth } from "./eras.js";
 import { cfgOf } from "./worldcfg.js";
 import { zombieToughness } from "./hives.js"; // call-time only
-import { spreadDaily, deepLimit, DEADSPREAD } from "./deadspread.js"; // call-time only (the spread between tiles, #66; the deep countryside, #76)
+import { spreadDaily, reachLimit, DEADSPREAD } from "./deadspread.js"; // call-time only (the spread between tiles, #66; the reach, #76)
 
 export const DEADPOP = {
   // The most dead a tile can hold, by land class (placement.js TILE_CLASSES).
@@ -171,12 +172,12 @@ function poiSeed(state, t, i) {
   return Math.max(0, Math.round(base + Math.floor(hash01(state.seed, "dpoi", t.id, i) * 3) - 1));
 }
 /**
- * The POIs' defaults on the deep countryside held under its ceiling (deadspread.js deepLimit, #76): one off the largest
+ * The POIs' defaults held under the tile's reach (deadspread.js reachLimit, #76): one off the largest
  * (the first of equals) until they fit. @param {State} state @param {Tile} t @param {number} cap @param {number[]} p
  */
 function deepPois(state, t, cap, p) {
   if (!p.length || !cap) return p;
-  const deep = deepLimit(state, t, cap);
+  const deep = reachLimit(state, t, cap);
   if (deep == null) return p;
   let over = p.reduce((a, b) => a + b, 0) - deep;
   while (over > 0) {
@@ -187,14 +188,14 @@ function deepPois(state, t, cap, p) {
   return p;
 }
 /**
- * The tile's default count of the dead (before the POIs' share): cap × its fill ± a hash die, held under the deep
- * countryside's ceiling there (deadspread.js deepLimit, #76). @param {State} state @param {Tile} t @param {number} cap
+ * The tile's default count of the dead (before the POIs' share): cap × its fill ± a hash die, held under the
+ * tile's reach (deadspread.js reachLimit, #76). @param {State} state @param {Tile} t @param {number} cap
  */
 function defaultTotal(state, t, cap) {
   const cls = landClass(state, t), hz = hiveLand(state, t) || (t.hive ? 1 : 0);
   const fill = clamp((DEADPOP.FILL[cls] + DEADPOP.INF_FILL * (t.infection || 0) + (hz ? DEADPOP.HIVE_FILL : 0)) * hordeGrowth(state), 0, 1);
   const total = Math.round(cap * fill * (1 + (hash01(state.seed, "dptile", t.id) - 0.5) * 2 * DEADPOP.JITTER));
-  const deep = deepLimit(state, t, cap, hz);
+  const deep = reachLimit(state, t, cap);
   return deep == null ? total : Math.min(total, deep);
 }
 /**
@@ -275,11 +276,11 @@ export function poiRaiders(state, tile, i) {
   if (!t || i == null || i < 0 || i >= poisOf(t).length) return 0;
   return counts(state, t).q[i] || 0;
 }
-/** POI i's untouched count (its generated default now; on the deep countryside under its ceiling, #76). @param {State} state @param {Tile | number} tile @param {number} i */
+/** POI i's untouched count (its generated default now; held under the tile's reach, #76). @param {State} state @param {Tile | number} tile @param {number} i */
 export function poiDefault(state, tile, i) {
   const t = tileOf(state, tile);
   if (!t) return 0;
-  return deepLimit(state, t, popCap(state, t)) == null ? Math.min(popCap(state, t), poiSeed(state, t, i)) : seedOf(state, t).p[i] || 0;
+  return reachLimit(state, t, popCap(state, t)) == null ? Math.min(popCap(state, t), poiSeed(state, t, i)) : seedOf(state, t).p[i] || 0;
 }
 /** POI i's cap: its default × POI_CAP, at least POI_CAP_MIN (and never over the tile's). @param {State} state @param {Tile | number} tile @param {number} i */
 export function poiCap(state, tile, i) {
@@ -540,7 +541,7 @@ function dayOf(state, t, r, kind, d0) {
   const band = bandOfCount(total(), cap).band;
   // A quiet day rises only up to the tile's own level (its default), a loud one up to the cap.
   const own = dead ? d0.o + sumTo(d0.p, n) : d0.r + sumTo(d0.q, n);
-  const deep = dead ? deepLimit(state, t, cap) : null; // the deep countryside's ceiling (#76): quiet or loud
+  const deep = dead ? reachLimit(state, t, cap) : null; // the tile's reach (#76): quiet or loud
   const lim = Math.min(loud ? cap : Math.min(cap, Math.round(own * D.quietCeil)), deep == null ? Infinity : deep);
   const room = () => Math.max(0, lim - total());
   let rise = 0;
@@ -589,12 +590,12 @@ export function deadPopDaily(state) {
     trimToCap(r, "dead", cap, (i) => poiCap(state, t, i), n);
     trimToCap(r, "raiders", raiderCap(state, t), () => DEADPOP.POI_RAIDERS.max, n);
     const d0 = seedOf(state, t);
-    // The deep countryside over its ceiling (#76: a hive died, an older save) sheds a share of the excess a day, lost;
-    // never below its own default (its POIs' share can sit over the ceiling).
-    const deep = deepLimit(state, t, cap);
+    // Over the tile's reach (#76: an older save, a hive gone) it sheds a share of the excess a day, lost;
+    // never below its own default.
+    const deep = reachLimit(state, t, cap);
     if (deep != null) {
       const over = r.o + sumTo(r.p, n) - Math.max(deep, d0.o + sumTo(d0.p, n));
-      if (over > 0) trimToCap(r, "dead", r.o + sumTo(r.p, n) - Math.max(1, Math.round(over * DEADSPREAD.DEEP.SHED)), (i) => poiCap(state, t, i), n);
+      if (over > 0) trimToCap(r, "dead", r.o + sumTo(r.p, n) - Math.max(1, Math.round(over * DEADSPREAD.FLOOR.SHED)), (i) => poiCap(state, t, i), n);
     }
     dayOf(state, t, r, "dead", d0);
     dayOf(state, t, r, "raiders", d0);
@@ -621,8 +622,8 @@ export function deadNow(state, t) {
   const n = poisOf(t).length;
   let sum = 0;
   for (let i = 0; i < n; i++) sum += Math.min(cap, poiSeed(state, t, i));
-  const deep = n ? deepLimit(state, t, cap) : null;
-  if (deep != null && sum > deep) sum = deep; // deepPois
+  const deep = n ? reachLimit(state, t, cap) : null;
+  if (deep != null && sum > deep) sum = deep; // as deepPois
   const total = defaultTotal(state, t, cap);
   return Math.max(0, Math.min(cap, total) - sum) + sum; // seedOf's o + Σ p
 }
