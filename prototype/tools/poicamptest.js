@@ -206,7 +206,7 @@ section("The POI's map is the base map: its fog, no builds on fog, what fits");
   check(/edge/.test(placeProblemAt(base, crate, P.w - P.at[0], 0, 0, occ)) || /Off the map/.test(placeProblemAt(base, crate, P.w - P.at[0], 0, 0, occ)), `the map never grows: past its edge refused ("${placeProblemAt(base, crate, P.w - P.at[0], 0, 0, occ)}")`);
   const bunks = { ...FOOT.bunks, type: "bunks", key: null };
   check(!!yardAt && /rooms/.test(placeProblemAt(base, bunks, yardAt[0], yardAt[1], 0, occ)), `a fitting (bunks) in the yard refused ("${yardAt && placeProblemAt(base, bunks, yardAt[0], yardAt[1], 0, occ)}")`);
-  check(PC.poiFits(base, "bunks") && placeProblem(base, "bunks") === "", "bunks fit in the building's rooms (seen)");
+  check(!PC.poiFits(base, "bunks"), "bunks: the building's rooms are not seen enough yet, so Not cleared: no room for them (#71: fittings only in Cleared rooms)");
   check(!PC.poiFits(base, "gen_lodge") || !FOOT.gen_lodge, "a lodge does not fit (too big for the yard)");
   check(placeProblem(base, "outpost_up") === "" || placeProblem(base, "outpost_up") === PC.POICAMP.NO_ROOM || /main base|camp/i.test(placeProblem(base, "outpost_up")), `the step up offered only if it fits ("${placeProblem(base, "outpost_up")}")`);
   // A huge thing never fits.
@@ -216,6 +216,7 @@ section("The POI's map is the base map: its fog, no builds on fog, what fits");
   check(room.yard > 0 && room.unknown > 0, `the site facts show the room left (${PC.roomWords(room)})`);
   PC.poiCampSurveyed(st, t.id);
   check(PC.poiSeenMask(base.poiCamp).every((x) => x === 1), "a survey of the POI opens the whole map");
+  check(PC.poiFits(base, "bunks") && placeProblem(base, "bunks") === "", "bunks fit in the building's rooms once they are seen and empty (Cleared)");
 }
 
 section("Bases on a tile: one per POI plus one normal base");

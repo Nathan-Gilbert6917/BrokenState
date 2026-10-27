@@ -69,6 +69,7 @@ import { noteOutput } from "./output.js"; // the base's Work now panel: what eac
 import { workLand, distFactor, tripScale, TRIP_JOBS, walkMult, tileFactor } from "./tripland.js"; // the Cut wood job in trips: the land and its walking (jobtrips.js)
 import { baseCarts, CART_JOB } from "./carts.js"; // a cart at the base: a woodcutter hauls more home (call-time only)
 import { WINTER } from "./winter.js"; // winter's wood (call-time only)
+import { cutOffWhy } from "./poirooms.js"; // a camp inside a POI cut off: nobody leaves its map (issue #71; call-time only)
 
 // ---------- numbers ----------
 export const WOOD = {
@@ -296,6 +297,8 @@ export function baseWoodDay(state, base, s = null, hour = state.hour) {
   return WOOD.rate * t.v * seasonWood(state, hour) * m * WOOD.base.hours * t.f;
 }
 export function woodWorkWhy(state, base) {
+  const co = cutOffWhy(state, base); // poirooms.js (#71): a cut-off camp's people cannot leave its map
+  if (co) return co;
   const tiles = baseWoodTiles(state, base);
   if (!tiles.length) return "no trees or timber within 2 tiles";
   if (baseWoodDay(state, base) < WOOD.worth) return "the land around is cut bare";

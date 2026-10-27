@@ -51,6 +51,7 @@ import { sumRecs } from "./rounds.js"; // rounds by calibre
 import { noteOutput } from "./output.js"; // the base's Work now panel: what each job brought in a day (activity.js)
 import { workLand, distFactor, walkMult, tileFactor } from "./tripland.js"; // the Forage job in trips: the land and its walking (jobtrips.js)
 import { WINTER } from "./winter.js"; // winter's forage (call-time only)
+import { cutOffWhy } from "./poirooms.js"; // a camp inside a POI cut off: nobody leaves its map (issue #71; call-time only)
 
 // ---------- numbers ----------
 export const FORAGE = {
@@ -326,6 +327,8 @@ export function baseForageDay(state, base, s = null, hour = state.hour) {
 export const FORAGE_WORTH = 0.3; // a forager must be expected to bring in this much a day for the job to be open
 export const FORAGE_SHORT = 25;  // the Forage job (work.js) opens while the base has less food than this many days
 export function forageWorkWhy(state, base) {
+  const co = cutOffWhy(state, base); // poirooms.js (#71): a cut-off camp's people cannot leave its map
+  if (co) return co;
   const d = baseForageDay(state, base);
   if (d < FORAGE_WORTH) return seasonKey(state) === "winter" ? "winter: almost nothing to gather" : "the land around is picked clean or bare";
   return "";

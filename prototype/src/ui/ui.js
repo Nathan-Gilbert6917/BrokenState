@@ -168,6 +168,7 @@ import { winBar } from "./windows.js"; // the title bar the big windows share: t
 import { firstHubCard, fromTeamRow, stagingTileCard, fireButton, stageSteps } from "./hardcore.js";
 import { stagingView, needText, ESTABLISH_LABEL, STAGING, shelterView, STRIKE_LABEL } from "../sim/staging.js";
 import { nearbyView } from "../sim/campattack.js"; // issue #69: the attacks on a base by the dead and raiders nearby
+import { wayView, breakOutProblem, POIROOMS } from "../sim/poirooms.js"; // issue #71: a camp inside a POI: its rooms and its way out
 import { tileScouted, blindText, groundsFogged, deadText, GROUNDS_LABEL } from "../sim/campscout.js"; // an unscouted tile: a blind camp; the dead on its grounds (2026-10-23)
 import { campSleep, tentsText, TENT_TYPES } from "../sim/tents.js"; // the camp's tents: beds under cover, storage out of the weather
 import { BED_MOOD, ROUGH_WEATHER } from "../sim/data-beds.js"; // the one rough-sleeping rule (sim/beds.js bedLine)
@@ -1780,7 +1781,7 @@ function campTab(state, b) {
       <h3>Around the camp</h3>
       <div class="card small"><div class="kv small">
         <div${tip("A camp has no well: beside a river or lake its people haul water into the stores; anywhere else only what is carried in.")}>Water</div><div class="${v.riverside ? "good" : "warn"}">${esc(v.water)}</div>
-        ${b.poiCamp ? `<div${tip("A camp inside a POI (sim/poicamp.js): its map is the place's own and never grows. Fittings go in the building's rooms, crop plots and small builds in the yard; unknown (fogged) ground opens as your people see it, or with a survey.")}>Map</div><div>${esc(roomWords(poiRoomLeft(state, b)))}</div>` : ""}
+        ${b.poiCamp ? `<div${tip("A camp inside a POI (sim/poicamp.js): its map is the place's own and never grows. Fittings go in the building's rooms, crop plots and small builds in the yard; unknown (fogged) ground opens as your people see it, or with a survey.")}>Map</div><div>${esc(roomWords(poiRoomLeft(state, b)))}</div>${wayRow(state, b)}` : ""}
         <div${tip("The camp's Heat (what draws the dead and raiders): its fire (most at night), vehicles parked here and shooting nearby lately; its people count as at any base.")}>Heat from</div><div>${esc(v.heat.text || "nothing but its people")}</div>
         <div${tip("The camp fire: warmth, hot food and boiled water, better spirits. Its light and smoke add to the Heat, most at night.")}>Fire</div><div>${v.fire ? "Lit" : "Out"} ${fireButton(v.fire, `data-base="${b.id}"`)}</div>
         ${away}
@@ -1962,6 +1963,15 @@ function nearbyRow(state, b) {
   const v = nearbyView(state, b);
   return `<div${tip(`The dead and raiders round ${b.name} and how often they come at it: the dead on its own grounds, the tile's open ground (a trickle drawn by the noise, the night and the base's own Heat; shared with any other base on this tile) and raider bands by the raider level. Kill them down (Hunt the dead, Clear the grounds) to make it quieter; running silent and camouflage netting help. ${v.why}`)}>Nearby</div><div class="${v.warn ? "warn" : ""}">${esc(v.text)}</div>`;
 }
+// A camp inside a POI (poirooms.js, issue #71): "Way out: open / cut off", its rooms, and Break out when cut off.
+function wayRow(state, b) {
+  const v = wayView(state, b);
+  if (!v) return "";
+  const why = breakOutProblem(state, b);
+  const rooms = v.rooms.map((r) => `${r.name}${r.f ? ` (floor ${r.f + 1})` : ""}: ${r.state === "cleared" ? "Cleared" : `Not cleared${r.dead ? `, ${r.dead} dead known` : r.seen ? "" : " (fogged)"}`}`).join("; ");
+  const btn = v.cut ? ` <button class="mini danger" data-action="breakout" data-base="${b.id}" ${why ? "disabled" : ""}${tip(why || `${POIROOMS.BREAK}: whoever is home fights a route open on the camp's map, against the dead in the rooms between the camp and the way out.`)}>${POIROOMS.BREAK}</button>` : "";
+  return `<div${tip(`Can the camp's people leave the place? A walkable route from the camp to the map's edge (or a ground-floor door out) through Cleared rooms and seen, empty yard only, over the floors by their stairs; a rope, a siege ladder or knotted sheets out of an upper window does for people on foot (not furniture, heavy loads or vehicles). Cut off, nobody leaves: no land jobs, hauling or teams going out, and a team coming home fights its way in. ${v.why} ${rooms}.`)}>Way out</div><div class="${v.cls}">${esc(v.text)}${btn}</div>`;
+}
 function shelterRows(state, b) {
   const v = shelterView(state, b);
   if (!v) return "";
@@ -2044,6 +2054,7 @@ function baseOverview(state, b) {
         ${holdRow(state, b)}
         <div>Heat</div><div>${baseHeat(state, b)}</div>
         ${nearbyRow(state, b)}
+        ${wayRow(state, b)}
         ${shelterRows(state, b)}
         <div${tip("Days of food left at today's rate without harvests, and the next harvest (Farming tab)")}>Food</div>${foodCellHtml(state, b)}
         ${rationRow(state, b)}
