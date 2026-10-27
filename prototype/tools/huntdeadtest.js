@@ -302,7 +302,8 @@ section("The governor's pick; no Hunt raiders");
   console.log(`  the hub's tile is ${deadBand(state, h.tile).word}: ${pick.ids.length ? `${pick.ids.length} go` : pick.why}`);
   check(deadBand(state, h.tile).band >= DEAD_HUNT.GOV.band || /the dead here/.test(pick.why), "no hunt on a low tile");
   // The hub's tile filled to medium: the governor sends a team out on its own tile, and it hunts and comes home.
-  putBack(state, h.tile, null, Math.ceil(popCap(state, h.tile) * 0.5));
+  // Filled to 78% of its cap: the count it held here before #76's reach held the land off the towns at a lower default.
+  putBack(state, h.tile, null, Math.max(0, Math.ceil(popCap(state, h.tile) * 0.78) - tileDead(state, h.tile)));
   for (const s of home) { s.health = 100; s.leader = false; }
   setAutopilot(state, true, "balanced");
   const before = state.parties.length;

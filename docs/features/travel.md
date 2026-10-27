@@ -1128,6 +1128,45 @@ All in [deadspread] (`spreadDaily`, tunables `DEADSPREAD`), run from `deadpop de
 - **Saves**: nothing new is saved. The spread writes only `state.deadPop` records (#65's), so an older save loads as it did and goes on deterministically.
 - **API** (for #67–#71): `spreadDaily(state, { rates?: Map, dry?: boolean })` returns `{ sources, relays, receivers, moved }`; `rates` gets each receiver's inflow a day before rounding, `dry` moves nothing (for tools and estimates). `deadpop deadNow(state, tile)`.
 
+### The reach and the deep countryside's floor
+The user's requests (2026-10-26, the heat epic #64, issue #76): "I want the deep countryside to be max 10-15% cap and should hit that cap around year 5" and "The tiles between cities to deep countryside have them gradually reduce in max cap a% down to the 10-15% so it dwindles and does not need to be linear. Can have a high rate really close to towns/cities then drops off drastically 5 or so tiles away from the center." All in [deadspread] (`DEADSPREAD.REACH`, `FLOOR`, `DEEP`; `reachDist`, `nearShare`, `reachShare`, `floorShare`, `reachLimit`, `isDeep`) and [deadpop] (`seedOf`, `deadNow`, `poiDefault`, `deadPopDaily`). Test: `tools/deadspreadtest.js` (its last sections). Heat maps: `tools/deadspreadrun.js 6 <seed> normal --maps <file>`, then `tools/spreadmaps.js --html <page> before-42=<file> after-42=<file> …` (the tables on stdout, the page from `tools/spreadmaps.html`).
+
+- **The reach** (`reachLimit`): every land tile that is not a source holds at most a share of its cap (`popCap`) that falls off with its hex steps from the nearest source of each kind (`reachDist`; water counts as a step). The share is the highest of the three kinds' tables (`REACH[kind][steps − 1]`, `nearShare`), and never below the floor:
+
+  | steps out | 1 | 2 | 3 | 4 | 5 | 6+ |
+  |---|---|---|---|---|---|---|
+  | city land (centre, city, suburb) | 100% | 90% | 70% | 45% | 20% | the floor |
+  | a town | 90% | 60% | 30% | 15% | the floor | the floor |
+  | a hive's tile | 100% | 100% | 80% | 50% | 20% | the floor |
+
+  Not linear: high close in, steep at 3–5 steps, flat at the floor past them. Decisions of #76: the steps are counted from the nearest source tile (a city's suburbs are its edge, so its centre is 2–4 steps further in: "5 or so tiles from the center"); a city's land reaches further and higher than a town; a hive's land (4 steps) keeps most of its cap. The sources themselves (#66's: the town, suburb, city and centre tiles and the hives' own tiles) have no limit. Highway land is limited like the rest (it is not a source).
+- **The floor** (`floorShare`): `FLOOR.CEIL` **12%** of the cap × the year's ramp: `FLOOR.START` 0.4 of it (4.8%) on day 1, rising in a straight line to all of it at `FLOOR.YEARS` 5 years, then held. A tile's limit is never below it.
+- **The deep countryside** (`isDeep`): farmland, the coast and the wild (`DEEP`: rural, coast, scenic) past every kind's table, so held at the floor. On seed 42 at Normal that is 12,253 of 36,343 land tiles; no deep tile is on a hive's land.
+- **Whole dead**: the limit's fraction rounds up on a hash die of the tile, so the land's mean moves smoothly and no tile goes past the next whole dead (the most a deep tile holds is 13.9% of its cap; never over 15%).
+- **How it holds**:
+  - the spread treats the limit as the tile's cap: it fills a tile to its limit (at #66's rate) and relays from there, so the front still moves ring by ring;
+  - the default (#65's `seedOf`, what an untouched tile holds) is held under it: the open ground's share and its POIs' (one off the largest POI until they fit; `poiDefault` gives that held value, so a POI's threat and search odds read as before);
+  - `deadPopDaily`'s rises stop at it, quiet or loud;
+  - a count over it (a save from before this change, or a hive gone and its land's limit with it) sheds `FLOOR.SHED` 5% of the excess a day (at least 1), lost like the over-cap trim; never below the tile's own default.
+- **Why the default too**: before this change an untouched deep tile already held 18–25% of its cap on day 1 (#65's `FILL` 0.15–0.2 of the cap, + infection, × the hordes' growth), so a limit on the spread alone could not keep the deep countryside at 10–15%. The ramp starts it at about 5% and it reaches 12% around year 5.
+- **What stays as it was**: the sources (every #65 number there); #66's spread rules and numbers (`LEECH`, `INF`, `HIVE`, `RIVER`, `KILL`) up to each tile's limit; the over-cap trim; the order centre > city > suburb > town > rural at every year; kills (quiet or loud) lower a tile and the spread or the daily rise refills it only up to its limit; loud play still draws from it (`drawFromTile`, surges, reinforcements), and a loud night still lifts it, up to its limit.
+- **Numbers changed** (every other #65 and #66 number is the same): off the sources, #65's default (`FILL` × the hordes' growth + infection, and the POIs' defaults) is held under the limit, and its loud-night rise toward the cap (`DAY.medLoudP` / `medLoudRise` / `highLoudDrift`) stops at the limit; #66's spread fills to the limit instead of the cap.
+- **Saves**: nothing new is saved and nothing is migrated. A save from before this change loads with its stored counts as they were; an untouched tile reads the new default, at or under the old one (the same on the sources); a stored tile over its limit sheds toward it from the first midnight, and one under it rises only by the day's rules, never past its limit. The test checks all three and that it goes on deterministically.
+- **A 6-year Normal autopilot run, seed 42** (`tools/deadspreadrun.js 6 42 normal --maps`; 169 and 172 minutes; before is origin/dev cdcc034). Seeds 43 and 44 were started and stopped to save time (the user's call), so the six-year table is one seed; the day-1 checks in the test cover seeds 42 to 44. The deep countryside (12,253 tiles): mean fill of the cap, then the share of tiles none / low / medium / high / overrun.
+
+  | end of | before | after |
+  |---|---|---|
+  | day 1 | 20.2% · 0/97/3/0/0 | 4.8% · 0/100/0/0/0 |
+  | year 1 | 21.6% · 0/95/5/0/0 | 6.3% · 0/100/0/0/0 |
+  | year 2 | 27.0% · 0/88/5/2/4 | 7.7% · 0/100/0/0/0 |
+  | year 3 | 42.2% · 0/62/12/7/19 | 9.1% · 0/100/0/0/0 |
+  | year 4 | 66.6% · 0/31/11/8/50 | 10.6% · 0/100/0/0/0 |
+  | year 5 | 84.5% · 0/13/6/5/76 | 12.0% · 0/100/0/0/0 |
+  | year 6 | 93.3% · 0/5/3/2/89 | 12.0% · 0/100/0/0/0 |
+
+  Before, the deep countryside was a fifth full on day 1 and 93% by year 6, 89% of it overrun. After, it climbs a point and a half a year to 12.0% at year 5 and holds, every tile low, none over 15% (the most 13.9%). Mean fill of the other zones at year 6 (before / after): city land 98.1 / 97.1%, towns 94.3 / 94.5%, 0–2 steps out 97.5 / 76.1%, 3–5 steps out 97.9 / 27.8%, past 5 steps and not deep 92.5 / 11.9%. The order centre > city > suburb > town > rural held at every year in both (after, year 6: 815 > 290 > 173 > 96 > 13). The test's untouched-land stand-in gives 4.8, 6.3, 7.7, 9.1, 10.6, 12.0 and 12.0% at the same years: the run's stored tiles sit on it. The heat maps of every year, both runs: the artifact "Dead Spread Heat Maps" (made by `tools/spreadmaps.js`).
+- **Performance**: `reachDist` is three breadth-first passes over the map, kept on the state (not saved) until the hives change; a tile's limit is then a few array reads. A Normal autopilot day took no longer (3.3 s against 3.7 s, both under load).
+
 ## Hunt the dead
 The user's request (2026-10-26, the heat epic #64 §6, wave 2 issue #68): "Killing zombies in the tile (add an order to hunt down zombies in a tile to reduce the overall threat level, when you encounter Them open a small raid map to attack or retreat in)" and "No hunt raiders just hunt zombies".
 

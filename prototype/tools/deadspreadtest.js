@@ -8,11 +8,17 @@
 //   frozen or bridged
 // - the inflow lands on the open ground, not in the POIs
 // - deterministic for a seed, through a save and load too
+// - the reach (#76): the limit falls off with the steps from the towns, cities and hives (never rising, steep by about
+//   5, then the floor in 10-15%); the deep countryside past it; the limits hold on every tile at every year; the
+//   timing (the deep countryside's mean fill climbs to the floor around year 5 and holds: the stand-in below); a year
+//   of days under the spread and the daily rules keeps every tile under its limit, one over it sheds, a quiet kill
+//   lowers it, a loud night does not lift it past it and loud play still draws from it; the land classes' order
+//   (centre > city > suburb > town > rural) at the end of every year 1-6; an older save gains nothing
 // - a timing on Huge (500 × 300)
 import { createWorld } from "../src/sim/world.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
-import { aiRaidKills, noteNoise, popCap, tileDead, deadNow, openDead, poiDead, putBack, killDead, deadPopDaily, deadPopSpread } from "../src/sim/deadpop.js";
-import { DEADSPREAD, spreadDaily } from "../src/sim/deadspread.js";
+import { aiRaidKills, noteNoise, popCap, tileDead, deadNow, openDead, poiDead, putBack, killDead, drawFromTile, deadPopDaily, deadPopSpread } from "../src/sim/deadpop.js";
+import { DEADSPREAD, spreadDaily, isDeep, reachLimit, reachShare, floorShare, reachDist } from "../src/sim/deadspread.js";
 import { tileClass } from "../src/sim/placement.js";
 import { poisOf } from "../src/sim/pois.js";
 import { riverFrozen } from "../src/sim/weather.js";
@@ -214,6 +220,191 @@ section("The default's count without its lists (deadNow) is tileDead's");
 {
   const st = W("small");
   check(st.tiles.every((t) => deadNow(st, t) === tileDead(st, t)), "deadNow = tileDead on every tile");
+}
+
+// ---------- the reach and the deep countryside (#76) ----------
+const YEAR = 365 * 24;
+const R = DEADSPREAD.REACH, F = DEADSPREAD.FLOOR;
+const deepOf = (st) => st.tiles.filter((t) => isDeep(st, t));
+const offSource = (st) => st.tiles.filter((t) => t.terrain !== "water" && reachShare(st, t) != null);
+const meanFill = (st, list) => list.reduce((a, t) => a + tileDead(st, t) / popCap(st, t), 0) / (list.length || 1);
+const classMean = (st, c) => { let n = 0, s = 0; for (const t of st.tiles) if (t.terrain !== "water" && tileClass(st, t) === c) { n++; s += tileDead(st, t); } return n ? s / n : 0; };
+const ORDER = ["centre", "city", "suburb", "town", "rural"];
+const ordered = (st) => { const m = ORDER.map((c) => classMean(st, c)); return { ok: m.every((v, i) => i === 0 || v < m[i - 1]), text: ORDER.map((c, i) => `${c} ${m[i].toFixed(1)}`).join(" > ") }; };
+const nearest = (dist, id) => Math.min(...["city", "town", "hive"].map((k) => (dist[k][id] < 0 ? 1e9 : dist[k][id])));
+
+section("The reach falls off with the steps from the towns, cities and hives: high close in, steep by about 5 steps, then the floor");
+{
+  for (const k of Object.keys(R)) {
+    const tab = R[k];
+    check(tab.every((v, i) => i === 0 || v <= tab[i - 1]) && tab[0] >= 0.9 && tab[tab.length - 1] <= 0.2 && tab.length <= 5, `${k}: ${tab.map((v) => `${v * 100}%`).join(", ")} by steps 1-${tab.length}, never rising, then nothing (the floor)`);
+  }
+  const st = W();
+  st.hour = 5 * YEAR;
+  const dist = reachDist(st), by = [];
+  for (const t of offSource(st)) {
+    const d = Math.min(nearest(dist, t.id), 9);
+    (by[d] || (by[d] = [])).push(reachShare(st, t));
+  }
+  const mean = (l) => (l && l.length ? l.reduce((x, y) => x + y, 0) / l.length : 0);
+  const m = by.map(mean);
+  console.log(`  year 5, the mean limit by steps from the nearest source: ${m.map((v, d) => (by[d] ? `${d}: ${(v * 100).toFixed(0)}%` : null)).filter(Boolean).join(", ")}`);
+  check(m.every((v, d) => d < 2 || !by[d] || v <= m[d - 1] + 1e-9), "the mean limit never rises with the steps out");
+  check(m[1] >= 0.85 && m[2] >= 0.6 && m[5] <= 0.3 && m[6] <= 0.2, `high next to a source (${(m[1] * 100).toFixed(0)}% at 1, ${(m[2] * 100).toFixed(0)}% at 2), dropping steeply by 5-6 (${(m[5] * 100).toFixed(0)}%, ${(m[6] * 100).toFixed(0)}%)`);
+  const far = by.slice(7).flat();
+  check(far.length > 500 && far.every((v) => Math.abs(v - F.CEIL) < 1e-9) && F.CEIL >= 0.1 && F.CEIL <= 0.15, `7+ steps out every tile is at the floor, ${F.CEIL * 100}% (${far.length} tiles)`);
+  const cityFar = R.city.length > R.town.length && R.city.every((v, i) => i >= R.town.length || v >= R.town[i]);
+  check(cityFar, "a city's land reaches further and higher than a town");
+}
+
+section("The deep countryside: rural, coast and scenic land past every source's reach");
+{
+  const st = W();
+  const dist = reachDist(st), deep = deepOf(st);
+  const wrong = deep.filter((t) => !DEADSPREAD.DEEP.includes(tileClass(st, t)) || ["city", "town", "hive"].some((k) => dist[k][t.id] >= 0 && dist[k][t.id] <= R[k].length));
+  const onHive = deep.filter((t) => (st.hives || []).some((h) => st.grid.distance(h.tile, t.id) <= 4));
+  console.log(`  ${deep.length} deep tiles of ${st.tiles.filter((t) => t.terrain !== "water").length} land`);
+  check(deep.length > 1000 && wrong.length === 0, `every deep tile is ${DEADSPREAD.DEEP.join(", ")} and past every reach (${wrong.length} not)`);
+  check(onHive.length === 0, `no deep tile on a hive's land (${onHive.length})`);
+}
+
+section(`The limits hold: no tile off the sources holds more than its reachLimit at any year; the deep countryside never over 15%`);
+{
+  const st = W();
+  const off = offSource(st), deep = new Set(deepOf(st));
+  for (const y of [0, 1, 2, 3, 4, 5, 6, 8]) {
+    st.hour = y * YEAR;
+    let over = 0, over15 = 0, most = 0;
+    for (const t of off) {
+      const cap = popCap(st, t), n = tileDead(st, t), lim = reachLimit(st, t, cap);
+      if (lim == null || n > lim) over++;
+      if (!deep.has(t)) continue;
+      if (n > cap * 0.15 || lim > Math.ceil(cap * F.CEIL)) over15++;
+      most = Math.max(most, n / cap);
+    }
+    check(over === 0 && over15 === 0, `year ${y}: ${off.length} tiles at or under their limits (${over} over); the deep countryside ${over15} over 15%, the most ${(most * 100).toFixed(1)}% of its cap`);
+  }
+  st.hour = 3 * YEAR;
+  check(st.tiles.every((t) => deadNow(st, t) === tileDead(st, t)), "deadNow = tileDead on every tile (the POIs held under the limit too)");
+}
+
+// The stand-in for the 6-year autopilot run (too slow for a test: hours a seed): the deep countryside nobody has
+// touched, read at the end of each year. Calibrated against tools/deadspreadrun.js 6 <seed> normal --maps on seeds
+// 42-44 and tools/spreadmaps.js (docs/features/travel.md, the reach's table): there the deep countryside's mean fill,
+// stored tiles and all (killed, drawn from, pushed by the spread), sat within about a point of this every year.
+section("The timing (stand-in): the deep countryside's mean fill climbs each year to its floor around year 5, then holds");
+{
+  const st = W();
+  const deep = deepOf(st), C = F.CEIL;
+  const m = [];
+  for (let y = 0; y <= 6; y++) { st.hour = y * YEAR; m.push(meanFill(st, deep)); }
+  console.log(`  mean fill at the end of years 0-6: ${m.map((v) => `${(v * 100).toFixed(1)}%`).join(", ")} (the floor ${C * 100}%)`);
+  check(m.every((v, i) => i === 0 || v >= m[i - 1] - 1e-9) && m[1] < m[3] && m[3] < m[5], "it climbs steadily, year on year");
+  check(m[1] < 0.6 * C && m[3] < 0.9 * C, `well under it in years 1 and 3 (${(m[1] * 100).toFixed(1)}%, ${(m[3] * 100).toFixed(1)}%)`);
+  check(m[4] < 0.95 * C && m[5] >= 0.95 * C, `it reaches it between years 4 and 5 (${(m[4] * 100).toFixed(1)}% → ${(m[5] * 100).toFixed(1)}%), not sooner`);
+  check(m[5] >= 0.1 && m[5] <= 0.15 && Math.abs(m[6] - m[5]) < 0.005, `and holds in 10-15% (${(m[5] * 100).toFixed(1)}% at year 5, ${(m[6] * 100).toFixed(1)}% at year 6)`);
+  st.hour = 5 * YEAR;
+  check(Math.abs(floorShare(st) - C) < 1e-12 && Math.abs(floorShare(W()) - C * F.START) < 1e-12, `the ramp: ${F.START * C * 100}% on day 1 to ${C * 100}% at year ${F.YEARS}`);
+}
+
+section(`A ${QUICK ? "half " : ""}year of days from year 2 (small map): under the spread and the daily rules no tile goes past its limit`);
+{
+  const st = W("small");
+  st.hour = 2 * YEAR;
+  const off = offSource(st), deep = deepOf(st), dist = reachDist(st);
+  const lim = (t) => reachLimit(st, t, popCap(st, t));
+  // Watched: a deep tile put over its floor (an older save's), a tile 3-4 steps out put over its limit, one killed to
+  // nothing quietly, one loud every night.
+  const pick = deep.filter((t) => openDead(st, t) > 0 && nbrs(st, t.id).every((n) => land(st, n)));
+  const mid = off.find((t) => { const d = nearest(dist, t.id); return d >= 3 && d <= 4 && lim(t) < popCap(st, t) - 10; });
+  const [hi, lo, loud] = [pick[0], pick[Math.floor(pick.length / 2)], pick[pick.length - 1]];
+  putBack(st, hi, null, 20);
+  if (mid) putBack(st, mid, null, popCap(st, mid) - tileDead(st, mid));
+  const hi0 = tileDead(st, hi), mid0 = mid ? tileDead(st, mid) : 0;
+  killDead(st, lo, null, tileDead(st, lo), { loud: false });
+  let rose = false, overLim = 0, loudOver = 0, worst = 0;
+  const n = QUICK ? 180 : 365;
+  let prev = hi0;
+  for (let d = 0; d < n; d++) {
+    noteNoise(st, loud, null, 30);
+    days(st, 1);
+    const h = tileDead(st, hi);
+    if (h > prev) rose = true;
+    prev = h;
+    if (tileDead(st, loud) > lim(loud)) loudOver++;
+    if (d % 30 === 29) for (const t of off) if (t !== hi && t !== mid && tileDead(st, t) > lim(t)) { overLim++; worst = Math.max(worst, tileDead(st, t) / popCap(st, t)); }
+  }
+  check(overLim === 0, `no tile off the sources past its limit at any month's end over ${n} days (${overLim}; the most ${(worst * 100).toFixed(1)}%)`);
+  check(!rose && tileDead(st, hi) <= lim(hi), `a deep tile put over its floor (${hi0} of ${popCap(st, hi)}) sheds to it and never rises (${tileDead(st, hi)}, its limit ${lim(hi)})`);
+  check(!!mid && tileDead(st, mid) <= lim(mid), `a tile ${mid ? nearest(dist, mid.id) : "?"} steps out filled to its cap (${mid0}) is trimmed to its reach (${mid ? tileDead(st, mid) : "?"}, its limit ${mid ? lim(mid) : "?"})`);
+  check(loudOver === 0, `loud nights every day do not lift one past it (${tileDead(st, loud)} of ${lim(loud)})`);
+  check(tileDead(st, lo) <= lim(lo), `one killed quietly to nothing regrows no further than it (${tileDead(st, lo)} of ${lim(lo)})`);
+  // Loud play's draws (reinforcements, surges) and a quiet kill, on a deep tile with dead on its open ground.
+  const open = deep.find((t) => openDead(st, t) > 0);
+  check(!!open, "a deep tile with dead on its open ground");
+  if (open) {
+    noteNoise(st, open, null, 30);
+    const before = tileDead(st, open), drawn = drawFromTile(st, open, 1);
+    check(drawn === 1 && tileDead(st, open) === before - 1, `loud play still draws from it (${drawn} drawn of ${before})`);
+    putBack(st, open, null, drawn);
+    killDead(st, open, null, 1, { loud: false });
+    check(tileDead(st, open) === before - 1, `a quiet kill there lowers it (${before} → ${tileDead(st, open)})`);
+  }
+}
+
+section(`The land classes' order (centre > city > suburb > town > rural) at the end of every year 1-6`);
+{
+  const st = W();
+  for (let y = 1; y <= 6; y++) {
+    st.hour = y * YEAR;
+    const o = ordered(st);
+    check(o.ok, `year ${y}, the land nobody touched: ${o.text}`);
+  }
+  const a = W(QUICK ? "small" : "normal");
+  a.hour = 4 * YEAR;
+  days(a, QUICK ? 60 : 180);
+  const o = ordered(a);
+  check(o.ok, `after ${QUICK ? 60 : 180} days of the spread from year 4: ${o.text}`);
+}
+
+section("An older save gains nothing, and goes on deterministically");
+{
+  // Before #76: no reach (every share 1, the floor too). A save made then, its land stored by a few months.
+  const off = () => {
+    const r = DEADSPREAD.REACH, f = DEADSPREAD.FLOOR.CEIL;
+    DEADSPREAD.REACH = { city: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1].concat(Array(500).fill(1)), town: [], hive: [] };
+    DEADSPREAD.FLOOR.CEIL = 1 / (DEADSPREAD.FLOOR.START || 1) + 1;
+    return () => { DEADSPREAD.REACH = r; DEADSPREAD.FLOOR.CEIL = f; };
+  };
+  const st = W("small");
+  st.hour = 2 * YEAR;
+  const on0 = st.tiles.map((t) => (t.terrain === "water" ? 0 : tileDead(st, t)));
+  let back = off();
+  const off0 = st.tiles.map((t) => (t.terrain === "water" ? 0 : tileDead(st, t)));
+  check(st.tiles.every((t) => reachLimit(st, t, popCap(st, t)) == null), "(the stand-in for the old rules has no limits)");
+  back();
+  const lims = new Set(offSource(st).map((t) => t.id));
+  check(st.tiles.every((t) => on0[t.id] <= off0[t.id] && (lims.has(t.id) || on0[t.id] === off0[t.id])), "every tile's default is at or under the old one, and the same on the sources");
+  back = off();
+  days(st, 90);
+  back();
+  const saved = serializeState(st);
+  const a = deserializeState(saved), b = deserializeState(saved);
+  check(JSON.stringify(a.deadPop) === JSON.stringify(st.deadPop), "loading changes no stored count");
+  const was = new Map(Object.keys(a.deadPop).map((k) => [+k, tileDead(a, +k)]));
+  const unstored = [...lims].filter((id) => !a.deadPop[id]).slice(0, 3000);
+  days(a, 1); days(b, 1);
+  let gained = 0, stored = 0;
+  // A stored tile may still rise by the day's rules, but never past its new limit unless it was there already.
+  for (const [id, v] of was) if (lims.has(id)) { stored++; if (tileDead(a, id) > Math.max(v, reachLimit(a, a.tiles[id], popCap(a, id)))) gained++; }
+  const still = unstored.filter((id) => !a.deadPop[id]), nowU = still.map((id) => tileDead(a, id));
+  back = off();
+  const oldU = still.map((id) => tileDead(a, id)); // the old rules' default the same day
+  back();
+  const gainedU = still.filter((id, i) => nowU[i] > oldU[i]).length;
+  check(gained === 0 && gainedU === 0, `its first day: no stored tile gains past its count or its limit (${gained} of ${stored}), no untouched one past the old rules' default (${gainedU} of ${still.length})`);
+  days(a, 30); days(b, 30);
+  check(JSON.stringify(a.deadPop) === JSON.stringify(b.deadPop), "two loads of it go on the same");
 }
 
 section("Timing on Huge (500 × 300)");

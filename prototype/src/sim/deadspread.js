@@ -24,13 +24,25 @@
 //   - The inflow lands on the receiver's open ground (deadpop.js putBack, no POI); deadPopDaily's refill moves it into
 //     its POIs. Infection speeds the spread but never raises a cap, and t.infection is not read back from the counts.
 //   - Every rate uses the counts as they stood at the start of the pass, so the order tiles are visited in never matters.
+// THE REACH (issue #76, the user's requests 2026-10-26: "I want the deep countryside to be max 10-15% cap and should hit
+// that cap around year 5" / "The tiles between cities to deep countryside have them gradually reduce in max cap a% down
+// to the 10-15% so it dwindles and does not need to be linear. Can have a high rate really close to towns/cities then
+// drops off drastically 5 or so tiles away from the center."): every tile that is not a source holds at most a share of
+// its cap (reachLimit) that falls off with its hex steps from the nearest source of each kind (reachDist: a city's land,
+// centre, city and suburb; a town; a hive's tile; water counts as a step): REACH[kind][steps − 1], the highest of the
+// three, and never below the FLOOR. Past every kind's table is the deep countryside (isDeep: its farmland, coast and
+// wild), held at the FLOOR: FLOOR.CEIL of its cap × the year's ramp (floorShare: FLOOR.START of it on day 1, rising in
+// a straight line to all of it at FLOOR.YEARS years, then held). The spread treats the limit as the tile's cap (it
+// fills it to there and relays from there), its default (deadpop.js seedOf: the open ground's and its POIs', the
+// largest POI trimmed first) is held under it, a quiet or a loud day's rise stops at it, and a count over it (an older
+// save, a hive gone) sheds FLOOR.SHED of the excess a day. The sources themselves keep #65's caps.
 // Lakes and the sea (water without a river) stop it. The lands' caps (DEADPOP.CAP) are what make rural land always
 // hold fewer than a city: a farm beside a city fills to its own 36 and stops.
 // PERFORMANCE: the pass visits the sources, the relays and the tiles next to them only, with typed scratch arrays kept
 // per map (no allocation per tile); a hex's neighbours are worked out in place (hex.js's arithmetic).
 // AI PARITY (docs/adr/0001): the groups' kills (deadpop.js aiRaidKills, their fights through deadPopBattleEnd) go into
 // the same recent-kill memory, so their hunting slows the spread the same way.
-/** @import { State } from "./types" */
+/** @import { State, Tile } from "./types" */
 import { hash01 } from "./skills.js";
 import { tileClass } from "./placement.js";
 import { riverFrozen } from "./weather.js";
@@ -44,6 +56,14 @@ export const DEADSPREAD = {
   RIVER: 0.5,       // across a river that is not frozen or bridged
   KILL: 0.2,        // × 1 / (1 + KILL × recent kills): 5 kills lately halve it
   SOURCES: ["centre", "city", "suburb", "town"], // the land classes that spread (and the hives' tiles)
+  // The reach (the header, #76): the share of its cap a tile holds at most, by its steps from the nearest source of each
+  // kind (index 0: next to it); past a table, nothing from that kind. Steep at 3-5 steps: a city's land (its suburbs
+  // are its edge, its centre 2-4 steps further in) reaches about 5, a hive's (its land is 4 steps) 5, a town's 4.
+  REACH: { city: [1, 0.9, 0.7, 0.45, 0.2], town: [0.9, 0.6, 0.3, 0.15], hive: [1, 1, 0.8, 0.5, 0.2] },
+  // The floor (the deep countryside): CEIL of the cap, START of that on day 1 rising to all of it by YEARS years; SHED of
+  // the excess over a tile's limit lost a day (at least 1). DEEP: the classes the deep countryside is counted for.
+  FLOOR: { CEIL: 0.12, START: 0.4, YEARS: 5, SHED: 0.05 },
+  DEEP: ["rural", "coast", "scenic"],
 };
 
 // Odd-r hex neighbours (hex.js EVEN_DIRS / ODD_DIRS).
@@ -69,6 +89,94 @@ function buffers(tiles) {
   return b;
 }
 
+// ---------- the reach (#76) ----------
+const KINDS = ["city", "town", "hive"];
+const CITY = new Set(["centre", "city", "suburb"]);
+/**
+ * Hex steps from each tile to the nearest source of each kind ({ city, town, hive }: Int32Arrays, -1 none; water a
+ * step), cached on the state (not saved) until the hives change. @param {State} state
+ * @returns {{ city: Int32Array, town: Int32Array, hive: Int32Array } | null}
+ */
+export function reachDist(state) {
+  const g = state.grid, tiles = state.tiles;
+  if (!g || !tiles || !tiles.length) return null;
+  const hl = state.hives || [];
+  /** @type {any} */
+  let c = /** @type {any} */ (state).reachDistCache;
+  if (c && c.tiles === tiles && c.hives.length === hl.length) {
+    let same = true;
+    for (let i = 0; i < hl.length && same; i++) same = c.hives[i] === hl[i].tile;
+    if (same) return c.dist;
+  }
+  const W = g.width, H = g.height, n = tiles.length, hs = new Set(hl.map((h) => h.tile));
+  const q = new Int32Array(n);
+  /** @type {any} */
+  const dist = {};
+  for (const kind of KINDS) {
+    const d = (dist[kind] = new Int32Array(n).fill(-1));
+    let qn = 0;
+    for (let id = 0; id < n; id++) {
+      const t = tiles[id];
+      if (t.terrain === "water") continue;
+      const cls = tileClass(state, t);
+      if (kind === "hive" ? hs.has(id) : kind === "city" ? CITY.has(cls) : cls === "town") { d[id] = 0; q[qn++] = id; }
+    }
+    for (let qi = 0; qi < qn; qi++) {
+      const id = q[qi], x = id % W, y = (id - x) / W, dirs = y & 1 ? ODD : EVEN;
+      for (let k = 0; k < 12; k += 2) {
+        const nx = x + dirs[k], ny = y + dirs[k + 1];
+        if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+        const nid = ny * W + nx;
+        if (d[nid] < 0) { d[nid] = d[id] + 1; q[qn++] = nid; }
+      }
+    }
+  }
+  c = { tiles, hives: hl.map((h) => h.tile), dist };
+  Object.defineProperty(state, "reachDistCache", { value: c, writable: true, configurable: true, enumerable: false });
+  return dist;
+}
+/** The floor's share of the cap today: FLOOR.CEIL × the ramp (the header). @param {State} state */
+export function floorShare(state) {
+  const F = DEADSPREAD.FLOOR, d = Math.floor((state.hour || 0) / 24);
+  return F.CEIL * Math.min(1, F.START + (1 - F.START) * d / (F.YEARS * 365));
+}
+/**
+ * The nearest sources' reach on tile t: the highest REACH share of the three kinds (0 past them all), or null on a
+ * source or water (no limit). @param {State} state @param {Tile} t
+ */
+export function nearShare(state, t) {
+  if (!t || t.terrain === "water") return null;
+  const dist = reachDist(state);
+  if (!dist) return null;
+  let best = 0;
+  for (const kind of KINDS) {
+    const d = dist[kind][t.id];
+    if (d === 0) return null; // a source
+    if (d > 0) { const v = DEADSPREAD.REACH[kind][d - 1] || 0; if (v > best) best = v; }
+  }
+  return best;
+}
+/** The share of its cap tile t holds at most today (the higher of its reach and the floor), or null: no limit. @param {State} state @param {Tile} t */
+export function reachShare(state, t) {
+  const near = nearShare(state, t);
+  if (near == null) return null;
+  const s = Math.max(near, floorShare(state));
+  return s >= 1 ? null : s;
+}
+/** The deep countryside: farmland, coast or wild past every source's reach (the header). @param {State} state @param {Tile} t */
+export function isDeep(state, t) {
+  return nearShare(state, t) === 0 && DEADSPREAD.DEEP.includes(tileClass(state, t));
+}
+/**
+ * The most dead tile t holds today (its cap × reachShare, the fraction rounded up on a hash die of the tile so the
+ * land's mean moves smoothly and no tile goes past the next whole one), or null: no limit (a source, water, the full
+ * reach). @param {State} state @param {Tile} t @param {number} cap its popCap
+ */
+export function reachLimit(state, t, cap) {
+  const s = reachShare(state, t);
+  return s == null ? null : Math.floor(cap * s + hash01(state.seed, "dpdeep", t.id));
+}
+
 /**
  * The day's spread (the header). Returns { sources, relays, receivers, moved } for the tools and tests; opts.rates (a
  * Map) gets each receiver's inflow before rounding, opts.dry moves nothing.
@@ -86,7 +194,8 @@ export function spreadDaily(state, opts = {}) {
     if (b.seen[id] !== pass) {
       b.seen[id] = pass;
       const t = tiles[id];
-      b.cap[id] = t.terrain === "water" ? 0 : popCap(state, t);
+      const cap = t.terrain === "water" ? 0 : popCap(state, t), lim = cap > 0 ? reachLimit(state, t, cap) : null;
+      b.cap[id] = lim == null ? cap : Math.min(cap, lim); // the reach's limit is its cap for the spread (#76)
       b.dead[id] = b.cap[id] > 0 ? deadNow(state, t) : 0;
     }
   };
