@@ -711,11 +711,22 @@ const groupOf = (state, type) => {
     const s5 = world(seed + 402), b5 = hub(s5);
     for (const t of ["walls", "walls", "gate", "barricades", "bunkhouse", "ammo_bench", "cistern", "common_room"]) addBuilding(b5, t);
     const isOuter = (b) => ["walls", "gate", "barricades"].includes(b.type) || isPiece(b.type); // the wall: its pieces (buildings.js)
-    const inner0 = b5.buildings.filter((b) => !isOuter(b)).reduce((a, b) => a + (b.wear || 0), 0);
-    raidDamage(s5, b5, { strength: 40, hours: 8, outcome: "held" });
-    const outerW = b5.buildings.filter(isOuter).reduce((a, b) => a + (b.wear || 0), 0);
-    const innerW = b5.buildings.filter((b) => !isOuter(b)).reduce((a, b) => a + (b.wear || 0), 0) - inner0;
-    check(outerW > innerW, `a raid driven off hits the defences first (outer ${outerW.toFixed(0)}, inner ${innerW.toFixed(0)})`);
+    // Twelve raids driven off, each at its own hour (raidDamage's dice are keyed by the tile and the hour) on the same
+    // buildings: one raid is 2-3 hits, so one alone can fall mostly inside (issue #78: outer 52, inner 68 once the
+    // plans of f3593cd moved the hub); together the walls take most of it (RAID_DAMAGE.outerShare.held, 85%).
+    const wear = (pick) => b5.buildings.filter(pick).reduce((a, b) => a + (b.wear || 0), 0);
+    const was = b5.buildings.map((b) => [b, b.wear || 0, b.broken || null]), hour0 = s5.hour;
+    const outer0 = wear(isOuter), inner0 = wear((b) => !isOuter(b));
+    let outerW = 0, innerW = 0;
+    for (let k = 0; k < 12; k++) {
+      for (const [b, w, br] of was) { b.wear = w; b.broken = br; }
+      s5.hour = hour0 + k;
+      raidDamage(s5, b5, { strength: 40, hours: 8, outcome: "held" });
+      outerW += wear(isOuter) - outer0; innerW += wear((b) => !isOuter(b)) - inner0;
+    }
+    for (const [b, w, br] of was) { b.wear = w; b.broken = br; }
+    s5.hour = hour0;
+    check(outerW > innerW * 2, `raids driven off hit the defences first (12 raids: outer ${outerW.toFixed(0)}, inner ${innerW.toFixed(0)})`);
     // Damaged and broken buildings work worse or not at all.
     const pieces = b5.buildings.filter((b) => isPiece(b.type)), wall = pieces[0];
     for (const p of pieces) { p.broken = null; p.wear = 10; }
@@ -757,7 +768,11 @@ const groupOf = (state, type) => {
   // A peaceful group you provoked into hostility raids you now and then, and only you.
   {
     const s7 = world(seed + 404);
-    const m = groupOf(s7, "military");
+    // The group nearest the hub made the military (as groupOf does when there is none): on the 250 × 150 maps
+    // (1370d1c) the military's base is 73 tiles off, past the raids' reach (RAIDS.REACH, 30 on every size; issue #78).
+    const near = (f) => Math.min(...f.bases.map((b) => s7.grid.distance(b, hub(s7).tile)));
+    const m = s7.factions.filter((f) => f.alive && f.bases.length).sort((a, b) => near(a) - near(b))[0];
+    m.type = "military";
     let onYou = 0, onGroups = 0;
     for (let d = 0; d < 200; d++) {
       m.goodwill = -80; m.pop = Math.max(m.pop, 20);

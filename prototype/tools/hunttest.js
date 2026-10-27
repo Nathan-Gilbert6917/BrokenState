@@ -727,6 +727,10 @@ section("The hunting mix: traps, bows and guns (a base's setting, its hunters an
   hunters[2].gear.weapon = newItem("compbow");
   // The day's hours (CABIN.huntHours, 4): one hunter at 30% guns shoots 1.2 a day: 1, 1, 1, 1, then 2 (the fraction
   // carries over).
+  // The plans below are for whole, fit hunters (each of CABIN.huntHours): their health as at the start, since a trip's
+  // accident on the days above (tripevents.js: a fall down a gully, a sprain) cuts a hunter's hours by workFactor
+  // (issue #78: a sprained third hunter's 1 hour left the bow nothing to take).
+  hunters.forEach((s, i) => Object.assign(s, { conditions: structuredClone(snap[i].conditions), health: snap[i].health, mood: snap[i].mood }));
   const one = [hunters[0]];
   delete base.huntCarry;
   const mix = { traps: 70, bows: 0, guns: 30 };

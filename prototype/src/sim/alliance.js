@@ -480,17 +480,22 @@ export function controlRadius(state, kind, walled = false) {
 }
 export const baseRadius = (state, b) => controlRadius(state, b.type === "hub" || b.captured ? "stronghold" : "outpost", hasWall(b));
 // Every centre of coalition land with its radius: your bases and the members' bases.
-// The land the coalition holds, as a mask over the tiles (1 = held). Gangs from beyond the border and raider bands
-// do not dig in there (factions.js newGangs, visitors.js settleBands): the coalition's patrols see them off.
-// soon: with the members whose land only waits for their year (the governor's land planner).
-export function coalitionMask(state, soon = false) {
+// The land the coalition holds, as a mask over the tiles (1 = held). soon: with the members whose land only waits for
+// their year (the governor's land planner). patrol: the land its patrols keep, the same reach on every map size
+// (STRONGHOLD_RANGE, CONTROL_RANGE: a day's walk, not a share of the map, as RAIDS.REACH): gangs from beyond the border
+// and raider bands do not dig in there (factions.js newGangs, visitors.js settleBands), the patrols see them off.
+// (Issue #78: with the land's reach, 34 tiles round the hub on the 250 × 150 Normal map since 1370d1c, every site of
+// newGangs' 12–30-tile ring was held and no gang ever moved in.)
+export function coalitionMask(state, soon = false, patrol = false) {
   const mark = new Uint8Array(state.tiles.length);
-  for (const c of landCentres(state, soon)) for (const id of state.grid.within(c.tile, c.r)) mark[id] = 1;
+  for (const c of landCentres(state, soon, patrol)) for (const id of state.grid.within(c.tile, c.r)) mark[id] = 1;
   for (const id of playerClaims(state)) mark[id] = 1; // claims.js: tiles your teams claimed
   return mark;
 }
-export function landCentres(state, soon = false) {
-  return [...state.bases.filter((b) => !isCamp(b)).map((b) => ({ tile: b.tile, r: baseRadius(state, b) })), ...countedMembers(state, soon).flatMap((f) => f.bases.map((t) => ({ tile: t, r: controlRadius(state, "outpost") })))];
+// A base's patrols' reach (coalitionMask's patrol): baseRadius's ranges unscaled.
+const patrolRadius = (b) => (b.type === "hub" || b.captured ? ALLIANCE.STRONGHOLD_RANGE : ALLIANCE.CONTROL_RANGE + (hasWall(b) ? ALLIANCE.WALLED_RANGE : 0));
+export function landCentres(state, soon = false, patrol = false) {
+  return [...state.bases.filter((b) => !isCamp(b)).map((b) => ({ tile: b.tile, r: patrol ? patrolRadius(b) : baseRadius(state, b) })), ...countedMembers(state, soon).flatMap((f) => f.bases.map((t) => ({ tile: t, r: patrol ? ALLIANCE.CONTROL_RANGE : controlRadius(state, "outpost") })))];
 }
 // Land the coalition controls: land tiles within reach of your bases or a member's base, plus your claims
 // (claims.js). `claims`: how many land tiles the claims add that no base's reach covered; `claimed`: all of them.

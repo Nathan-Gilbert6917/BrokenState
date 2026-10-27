@@ -548,7 +548,7 @@ function settleBands(state) {
     if (v.kind !== "raiders" || v.paid || v.phase === "battle" || v.phase === "siege" || v.size < SETTLE.people) continue;
     if (supplyValue(v.stock) < SETTLE.goods || !info.rng.chance(SETTLE.chance)) continue;
     if (controlledLand(state).pct > ALLIANCE.LAND_NEEDED) return; // a state the coalition governs: no band digs in
-    const held = coalitionMask(state); // alliance.js: not on the coalition's land
+    const held = coalitionMask(state, false, true); // alliance.js: not on the land the coalition's patrols keep
     const sites = g.within(v.tile, SETTLE.reach).map((id) => state.tiles[id]).filter((t) => (t.loc || t.ruin) && t.terrain !== "water" && !t.hive && !held[t.id] &&
       (t.owner == null || t.owner === undefined) && !(t.loc && (t.loc.type === "city" || t.loc.zone === "urban")) &&
       state.bases.every((b) => g.distance(b.tile, t.id) >= 6) && state.factions.every((f) => !f.alive || f.bases.every((b) => g.distance(b, t.id) >= 8)));

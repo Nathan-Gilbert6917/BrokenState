@@ -5,7 +5,9 @@
 //   days (half to one 112-day game year).
 // - The first year (250 days, the player kept fed): infection spreads, towns and cities above open country by day 30;
 //   by day 112 at the latest the land's infection and the hive count are a normal start's (the same seed's normal world
-//   on its day 1, printed side by side at days 1, 30, 60, 90, 112); no border hordes, no border hive and no tier above 0
+//   on its day 1, printed side by side at days 1, 30, 60, 90, 112; its infection as it settles in its first weeks,
+//   hives.js radiate: each tile at the higher of its level and its hives' radiation, issue #78: since the 250 × 150
+//   maps, 1370d1c, a normal world's 60 hives lift mapgen's 0.135 to 0.162 by day 30); no border hordes, no border hive and no tier above 0
 //   before the offset allows; the dead mass by the military base and their hive stands (it once never did on seed 42:
 //   the garrison's sorties ate the mass), its hordes reach the base and it gives way on days 20–60 (the day is printed).
 // - The era offset: rampDay, the year, the victories' year, the outbreak floor, the tech tiers and the border mix in
@@ -18,7 +20,7 @@ import { hcMilitary } from "../src/sim/hardcore-groups.js";
 import { HC_START } from "../src/sim/hardcore-start.js";
 import { rampDay, yearOf, winOpen, hiveFloor, yearStartDay, ERAS, eraProgress, beforeFall, ensureEraState } from "../src/sim/eras.js";
 import { hiveTier, eraTier, borderMix } from "../src/sim/hivetech.js";
-import { TECH } from "../src/sim/hiveconst.js";
+import { TECH, HIVE } from "../src/sim/hiveconst.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
 import { raidEnemies } from "../src/sim/scavenge.js";
 
@@ -52,6 +54,13 @@ function infStats(st) {
   }
   const m = (a) => (a.length ? a.reduce((s, t) => s + t.infection, 0) / a.length : 0);
   return { land: m(land), urban: m(urban), town: m(town), settle: m([...urban, ...town]), open: m(open), hot: land.filter((t) => t.infection >= 0.5).length / land.length };
+}
+// A normal world's infection as it settles (hives.js radiate, within its first weeks: up 0.02 a day): each tile at the
+// higher of its level and its hives' radiation. The tiles as infStats reads them.
+function settled(st) {
+  const g = st.grid, rad = new Float32Array(st.tiles.length);
+  for (const hv of st.hives) for (const id of g.within(hv.tile, HIVE.RADIATE)) { const v = 1 - g.distance(hv.tile, id) * 0.1; if (v > rad[id]) rad[id] = v; }
+  return { grid: g, tiles: st.tiles.map((t) => ({ ...t, infection: Math.max(t.infBase ?? t.infection, rad[t.id]) })) };
 }
 const f3 = (v) => v.toFixed(3);
 const row = (label, s, st) => `    ${label.padEnd(12)} land ${f3(s.land)}  cities ${f3(s.urban)}  towns ${f3(s.town)}  open ${f3(s.open)}  ≥50% ${f3(s.hot)}  hives ${st.hives.length}  sites ${st.hiveSites.length}`;
@@ -93,14 +102,15 @@ console.log("The first year (the player kept fed)");
 const firstYear = seeds.slice(0, 3);
 for (const seed of firstYear) {
   const n = createWorld({ seed, factionCount: 7 });
-  const sn = infStats(n);
+  const sn = infStats(settled(n)); // the normal start as it settles (above)
   const st = createWorld({ seed, factionCount: 7, mode: "hardcore" });
   st.started = true;
   const off = st.hardcore.eraOffset;
   const O = st.hardcore.outbreak;
   const mf = st.factions.find((f) => f.alive && f.type === "military");
   console.log(`  seed ${seed}: era offset ${off}, normal start ${n.hives.length} hives, military ${mf ? `${mf.name} (pop ${mf.pop})` : "none"}, base meant to give way about day ${O.mil ? O.mil.overrun : "-"}`);
-  console.log(row("normal d1", sn, n));
+  console.log(row("normal d1", infStats(n), n));
+  console.log(row("settled", sn, n));
   const marks = { 1: infStats(st) };
   console.log(row("hardcore d1", marks[1], st));
   // Scavenging reads the infection (scavenge.js raidEnemies: the dead's power is 2 + 3 × infection off a hive's land):

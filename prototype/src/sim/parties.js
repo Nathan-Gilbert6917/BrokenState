@@ -10,6 +10,7 @@
  *   idx?: number, fuel?: number, offroad?: number, onroad?: number, walkers?: number, cartTer?: any, maxHours?: number, startHour?: number, weather?: boolean, known?: number, used?: number }} TravelOpts
  */
 import { haulConvoyArrive } from "./hauling.js"; // AI parity: a group's haul convoy unloads at its outpost (call-time only)
+import { hcHoldingWalls } from "./hardcore-groups.js"; // call-time only
 import { earnAch } from "./achievements.js"; // a lost convoy's vehicle recovered with its cargo
 import { sendMembers } from "./members.js"; // an AI party is its people (docs/adr/0001-ai-parity.md)
 import { kitParty, packForJob } from "./loadouts.js"; // the launchers go with a raid; the rest of the job's kit
@@ -1130,6 +1131,7 @@ export function sendHelpSquad(state, raidParty, target) {
 /** @param {State} state @param {Faction} f @param {string} kind @param {number} fromTile @param {number} toTile */
 export const AI_PARTY_MEDS = { SHARE: 0.5, PER: 0.5 };
 export function spawnAiParty(state, f, kind, fromTile, toTile, opts) {
+  if (hcHoldingWalls(state, f)) return null; // hardcore-groups.js: a garrison holding its base alone sends nobody out
   const vehicle = kind === "convoy" || !!opts.vehicle; // opts.vehicle: a scavenging party that drives out (aiscav.js)
   let res = planPath(state, fromTile, toTile, vehicle, f.id); // a bridge barricaded by someone else is closed to them (bridgeClosedTo)
   let usesVehicle = vehicle && !!res;

@@ -593,7 +593,7 @@ function newGangs(state) {
   const g = state.grid;
   const h = hub(state);
   if (!h) return;
-  const held = coalitionMask(state); // alliance.js: not on the coalition's land
+  const held = coalitionMask(state, false, true); // alliance.js: not on the land the coalition's patrols keep
   const sites = state.tiles.filter((t) => t.loc && t.loc.type !== "city" && t.loc.zone !== "urban" && t.owner == null && !held[t.id] &&
     g.distance(t.id, h.tile) >= 12 && g.distance(t.id, h.tile) <= 30 && !t.hive &&
     state.bases.every((b) => g.distance(b.tile, t.id) >= 6) &&

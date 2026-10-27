@@ -62,6 +62,7 @@ export const HC = {
   // New hives through the first year: build sites at the normal start's hive spots, due at these shares of the year.
   ORIGIN_DUE: [0.12, 0.5], OTHER_DUE: [0.3, 0.8],
   SITE_DAYS: [12, 20],    // such a site has the dead gathered and part of the hive grown: it stands in this many days
+  SITE_RETRY: { days: 3, tries: 10 }, // a tile with no room yet (a site building within 4, people near): tried again this many days on, this often
   SITES_AFTER: 1,         // the hives' own new build sites (hives.js, every 120–180 days) begin this share of the year late
   BORDER_FROM: 0.5,       // hordes from beyond the border begin at this share of the year
   // The first hive, in the city nearest the outbreak origin.
@@ -306,11 +307,21 @@ function spreadInfection(state, O, offset, first = false) {
 function sitesDaily(state, O) {
   const d = day(state);
   while (O.pending.length && O.pending[0].due <= d) {
-    const { tile } = O.pending.shift();
+    const next = O.pending.shift(), { tile } = next;
     const standing = state.hives.length + state.hiveSites.filter((s) => s.started != null || s.hardcore).length;
     if (standing >= O.normalHives) continue; // as many as a normal start already
     const at = siteTile(state, tile);
-    if (at == null) continue;
+    if (at == null) {
+      // No room yet: tried again a few days on (the origin's cluster sits within 4 of each other, so one waits for its
+      // neighbour's site to stand; issue #78: dropped for good, seed 42 ended its first year two hives short).
+      const tries = (next.tries || 0) + 1;
+      if (tries <= HC.SITE_RETRY.tries) {
+        const again = { tile, due: d + HC.SITE_RETRY.days, tries };
+        const i = O.pending.findIndex((x) => x.due > again.due || (x.due === again.due && x.tile > tile));
+        O.pending.splice(i < 0 ? O.pending.length : i, 0, again);
+      }
+      continue;
+    }
     gatherSite(state, at, "spread", state.rng.int(HC.SITE_DAYS[0], HC.SITE_DAYS[1]));
     if (state.live.has(at)) log(state, `The dead are pouring out of the stricken places and gathering in a great mass nearby. Something is being built there.`, "danger");
   }
