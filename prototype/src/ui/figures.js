@@ -19,6 +19,8 @@ import { shade } from "./itemart/kit.js";
 import { ensureAppearance } from "../sim/appearance.js";
 import { spriteArmorKey } from "../sim/inventory.js";
 import { weaponLook, unitGun } from "./gunparts.js";
+import { weaponModel, placeModel, holdOfModel } from "./weaponmodels.js"; // one model a weapon, placed by its pose (issue #77)
+import { bodySearched } from "./downsprites.js"; // a dead unit searched: its weapon gone from beside it
 import { onForgetPictures } from "./pictures.js";
 import { carriedPiece, pieceKg } from "../sim/furnicarry.js"; // a piece of furniture in the arms (issue #17): the carry poses
 import { MAX_LOAD } from "../sim/load.js";
@@ -51,7 +53,7 @@ const LIGHT = (n) => 0.18 * n[2] - 0.3 * Math.max(0, n[0]) + 0.04 * Math.max(0, 
 // bottom; s across the face 0..1, t along the limb 0..1 from A), u (the u axis to use).
 // flat: the sides run straight between the section's corners (a true prism: a car's body, a cabin) instead of round
 // along the ellipse through them (a limb's cushion of a side).
-export const limb = (A, B, ra, rb, col, o = {}) => ({ A, B, ra, rb, col, sides: o.sides ?? 8, phase: o.phase ?? 0, taper: o.taper ?? 1, tex: o.tex || null, u: o.u || null, group: o.group || 0, flat: !!o.flat });
+export const limb = (A, B, ra, rb, col, o = {}) => ({ A, B, ra, rb, col, sides: o.sides ?? 8, phase: o.phase ?? 0, taper: o.taper ?? 1, tex: o.tex || null, u: o.u || null, group: o.group || 0, flat: !!o.flat, part: o.part || null }); // part: a tag for the tests (a hand)
 const OUTLINE = "#0b0c0e";
 // A box from A to B: half-height ha (along u) and half-width hb.
 export const boxL = (A, B, ha, hb, col, o = {}) => limb(A, B, ha * Math.SQRT2, hb * Math.SQRT2, col, { sides: 4, phase: Math.PI / 4, ...o });
@@ -131,7 +133,7 @@ function paintLimb(p, zb, gb, L, W, g, cb = null) {
 }
 // The transform of a figure into the world: a yaw (degrees), and lying: the figure's up along the world's +x (the
 // head toward +x), its front turned up and pressed flat, centred on the tile (height: the figure's, to centre it).
-function transformOf(yaw, lie = false, height = 30) {
+export function transformOf(yaw, lie = false, height = 30) {
   const a = (yaw * Math.PI) / 180, c = Math.cos(a), s = Math.sin(a);
   const rot = (q) => [q[0] * c - q[1] * s, q[0] * s + q[1] * c, q[2]];
   if (!lie) return rot;
@@ -160,15 +162,13 @@ function rim(p, g, gb) {
 // ---------- the figure ----------
 const SHOE = "#2a2622";
 const ARMOR = { vest: "#4d5440", plate: "#3c4148", padding: "#8a7f6a", tirevest: "#2a2a2a", sportspads: "#b8b0a0", scrapvest: "#6e5a48", riot: "#3a3d44" };
+// The pose class a weapon look (a key, or gunparts.js weaponLook's "key|finish|parts") is held in: its model's
+// (ui/weaponmodels.js HOLDS: gun, smg, pump, pistol, revolver, side, sabre, sword, shoulder, spear, bow, crossbow,
+// tube); null for no weapon (the arms hang).
 export function holdOf(key) {
   if (!key || key === "fists" || key === "claws" || key === "acid") return null;
   if (key === "carry" || key === "carryLow") return key; // a piece of furniture in the arms (sim/furnicarry.js): figureCanvas o.carry
-  if (["pistol", "revolver", "pistol22", "compact9", "pistol45", "usp45", "magnum", "snub357", "snub38", "service38", "fiveseven", "revolver44"].includes(key)) return "pistol";
-  if (["smg", "ump45", "p90", "vector"].includes(key)) return "smg";
-  if (["bat", "spikedbat", "nailbat", "sledge", "fireaxe", "pickaxe", "spear", "pipespear", "golfclub", "hockeystick", "katana", "broadsword"].includes(key)) return "shoulder";
-  if (["pulleybow", "compbow"].includes(key)) return "bow";
-  if (["knife", "machete", "sawmachete", "springmachete", "prybar", "baton", "stunbaton", "combatknife", "hatchet", "tomahawk", "kukri", "hammer", "etool", "cleaver", "bowie", "cutlass", "sabre"].includes(key)) return "side";
-  return "gun";
+  return holdOfModel(key);
 }
 const GUN = "#4b5159", GUNL = "#6d747d", WOOD = "#8a5e36", STEEL = "#cdd5da", GLINT = "#e9eef1";
 const BONE = "#d8d0bc", WORM = "#f0e4c0", WORM_D = "#c4b48a"; // the hives' bone and worms (ui/hivesprites.js)
@@ -254,7 +254,7 @@ export function figureLimbs(app, weaponKey = null, armorKey = null) {
     const S = SH(side);
     F.push(limb(S, E, armR, armR, top, { sides: 6, taper: 0.9, tex: armTex(side) }));
     F.push(limb(E, H, armR * 0.9, armR * 0.9, short ? skin : shade(top, -0.08), { sides: 6, taper: 0.9 }));
-    F.push(limb(H, add(H, mul(norm(sub(H, E)), 1.8)), armR * 1.05, armR * 0.8, skin, { sides: 6 })); // the hand
+    F.push(limb(H, add(H, mul(norm(sub(H, E)), 1.8)), armR * 1.05, armR * 0.8, skin, { sides: 6, part: side < 0 ? "handR" : "handL" })); // the hand
   };
   const swing = (side) => -(app.stride || 0) * side; // walking: a free arm swings against its own side's leg
   const hang = (side) => { const w = swing(side); arm(side, [-0.4 + w * 1.4, side * (sideL + 0.3), shoulderZ - 6.4], [0.4 + w * 3.4, side * (sideL + 0.4), shoulderZ - 11.3 + Math.abs(w) * 0.6]); };
@@ -264,7 +264,12 @@ export function figureLimbs(app, weaponKey = null, armorKey = null) {
   const hangLong = (side) => { const w = swing(side) * 0.6; arm(side, [-0.4 + w * 1.4, side * (sideL + 0.4), shoulderZ - 7 * longArm], [0.6 + w * 3.4, side * (sideL + 0.6), shoulderZ - 13 * longArm]); };
   if (down) { // lying: dead with the arms out a little; down with them over the chest
     if (down.pose === "down") { arm(1, [1.6, sideL * 0.9, shoulderZ - 5.5], [TD / 2 + 1.2, -1.5, shoulderZ - 4]); arm(-1, [1.6, -sideL * 0.9, shoulderZ - 6.5], [TD / 2 + 1.4, 1.5, shoulderZ - 5]); }
-    else { arm(1, [0.2, sideL + 1.6, shoulderZ - 6], [0.8, sideL + 3.2, shoulderZ - 11]); arm(-1, [0.2, -(sideL + 1.6), shoulderZ - 6], [0.8, -(sideL + 3.2), shoulderZ - 11]); }
+    else {
+      arm(1, [0.2, sideL + 1.6, shoulderZ - 6], [0.8, sideL + 3.2, shoulderZ - 11]); arm(-1, [0.2, -(sideL + 1.6), shoulderZ - 6], [0.8, -(sideL + 3.2), shoulderZ - 11]);
+      // dead: the weapon dropped beside the right hand, lying along the body on the ground (until the body is searched: unitFigureDown)
+      const model = down.pose === "dead" && weaponKey ? weaponModel(weaponKey) : null;
+      if (model) F.push(...placeModel(model, [-TD / 2 + 0.7, -(sideL + 3.6), shoulderZ - 11.5], [0, 0.08, 1], [1, 0, 0]).limbs);
+    }
   }
   else if (D && D.pose === "reach") { reach(1); reach(-1); }
   else if (D && D.pose === "up") { armUp(1); armUp(-1); if (D.hooks) for (const side of [-1, 1]) F.push(limb([-2.8, side * (sideL + 2.6), shoulderZ + 6.5 * longArm], [-3.4, side * (sideL + 3.0), shoulderZ + 9.2 * longArm], 0.55, 0.55, BONE, { sides: 4 })); } // hooked bone fingers
@@ -293,39 +298,24 @@ export function figureLimbs(app, weaponKey = null, armorKey = null) {
   } else if (hold === "carryLow") { // a heavy one: the arms down and straight, the hands low under it
     for (const side of [-1, 1]) arm(side, [1.6, side * (sideL + 0.6), shoulderZ - 6.2], [3.4, side * (sideL + 0.4), shoulderZ - 11.4]);
     F.carryAt = [4.8, 0, shoulderZ - 11.6];
-  } else if (hold === "gun" || hold === "smg") {
-    // low ready: the gun ahead and a little to the right, muzzle down; the right hand on the grip, the left out to the fore-end
-    const long = hold === "gun";
-    const butt = [long ? -2.2 : -0.8, -2.8, shoulderZ - 2.4], muzzle = [long ? 11.6 : 8.6, -2.4, shoulderZ - (long ? 4.2 : 3.2)];
-    const grip = lerp(butt, muzzle, 0.3), fore = lerp(butt, muzzle, long ? 0.68 : 0.66);
-    arm(-1, [1.0, -(sideL + 1.0), shoulderZ - 5.8], add(grip, [0, -0.9, -0.9]));
-    arm(1, [2.6, TW / 2 - 0.4, shoulderZ - 6.4], add(fore, [0, -0.3, -1.0]));
-    F.muzzle = muzzle;
-    F.push(boxL(butt, muzzle, 1.25, 0.75, GUN, { group: 1, u: [0, 0, 1], tex: glint((face, s, t) => (t < 0.26 ? shade(GUN, -0.3) : t > 0.62 ? GUNL : null), GUNL) }));
-    F.push(boxL(add(grip, [1.8, 0, -0.6]), add(grip, [2.3, 0, -3.8]), 0.8, 0.6, shade(GUN, -0.25), { group: 1 })); // the magazine
-  } else if (hold === "pistol") {
-    const H = [7.4, -(sideL - 0.3), shoulderZ - 3.6];
-    arm(-1, [3.6, -(sideL + 0.6), shoulderZ - 3.2], H);
-    hang(1);
-    F.muzzle = add(H, [5.4, 0, 0.9]);
-    F.push(boxL(add(H, [0.0, 0, 1.2]), add(H, [5.4, 0, 0.9]), 0.85, 0.6, GUNL, { group: 1, u: [0, 0, 1], tex: glint(null, GUNL) }));
-    F.push(boxL(add(H, [0.5, 0, 1.0]), add(H, [0.2, 0, -1.2]), 0.65, 0.55, shade(GUN, -0.3), { group: 1 })); // the grip through the fist
-  } else if (hold === "side") {
-    hang(1); hang(-1);
-    const l = -(sideL + 0.5);
-    F.push(boxL([1.0, l, shoulderZ - 12.8], [1.4, l, shoulderZ - 0.6], 1.0, 0.32, STEEL, { group: 1, u: [1, 0, 0], tex: glint((face, s, t) => (t < 0.2 ? "#3a2a1c" : t < 0.25 ? "#1a1c20" : null)) }));
-  } else if (hold === "shoulder") {
-    const l = -(sideL + 0.2), A = [1.8, l, shoulderZ - 8.6], B = [-5.4, l, shoulderZ + 5.4];
-    arm(-1, [1.0, l - 1.2, shoulderZ - 5.6], add(A, [-0.2, 0, 0.6]));
-    arm(1, [2.6, TW / 2 - 0.6, shoulderZ - 5.6], add(lerp(A, B, 0.24), [0.2, 0.3, 0]));
-    F.push(boxL(A, B, 0.7, 0.7, WOOD, { group: 1, u: [1, 0, 0], tex: glint(null, WOOD) }));
-    F.push(boxL(add(B, [0, -2.4, 0]), add(B, [0, 2.4, 0]), 1.5, 1.3, "#7d858c", { group: 1, u: [0, 0, 1], tex: glint(null, "#7d858c") })); // the head
-  } else if (hold === "bow") {
-    const H = [7.2, -(sideL - 0.4), shoulderZ - 4.2];
-    arm(-1, [3.6, -(sideL + 0.6), shoulderZ - 3.6], H);
-    arm(1, [-0.6, sideL + 0.8, shoulderZ - 3.8], [2.4, -1.2, shoulderZ - 4.2]); // the string hand drawn to the chest
-    F.push(boxL(add(H, [0.8, 0, -8.0]), add(H, [0.8, 0, 7.8]), 0.6, 0.55, WOOD, { group: 1, u: [1, 0, 0], tex: glint(null, WOOD) }));
-    F.push(boxL(add(H, [0.1, 0, -7.6]), add(H, [0.1, 0, 7.4]), 0.22, 0.22, GLINT, { group: 1, u: [1, 0, 0] })); // the string
+  } else if (hold && !carrying && weaponModel(weaponKey)) {
+    // The weapon's own model (ui/weaponmodels.js), placed by its pose class with the right fist at its grip; the
+    // other hand goes to the model's fore point (the fore-end, the pump, the haft, the hilt below the first hand).
+    const model = weaponModel(weaponKey), sZ = shoulderZ;
+    const put = (O, d, up) => { const P = placeModel(model, O, d, up); F.push(...P.limbs); if (P.muzzle) F.muzzle = P.muzzle; return P; };
+    const twoHands = (P, ER, EL) => { arm(-1, ER, P.grip); arm(1, EL, P.fore || add(P.grip, [3.0, 0.2, -0.4])); };
+    if (hold === "gun" || hold === "pump") twoHands(put([2.0, -2.7, sZ - 3.4], [1, 0.03, -0.14]), [1.0, -(sideL + 1.0), sZ - 5.8], [2.6, TW / 2 - 0.4, sZ - 6.4]); // the low ready: ahead and a little to the right, the muzzle down
+    else if (hold === "smg" || hold === "crossbow") twoHands(put([1.8, -2.4, sZ - 3.1], [1, 0.04, -0.1]), [1.0, -(sideL + 1.0), sZ - 5.8], [2.6, TW / 2 - 0.4, sZ - 6.4]);
+    else if (hold === "pistol") { const H = [7.4, -(sideL - 0.3), sZ - 3.6]; put(H, [1, 0.06, -0.04]); arm(-1, [3.6, -(sideL + 0.6), sZ - 3.2], H); hang(1); } // one arm out
+    else if (hold === "revolver") { const H = [6.4, -(sideL - 0.1), sZ - 3.0]; put(H, [1, 0.06, 0.1]); arm(-1, [3.0, -(sideL + 0.7), sZ - 3.4], H); hang(1); } // the arm a little bent, the gun nosed up
+    else if (hold === "side") { const w = swing(-1), H = [0.4 + w * 3.4, -(sideL + 0.5), sZ - 11.3 + Math.abs(w) * 0.6]; put(H, [0.42, 0.05, -1]); arm(-1, [-0.4 + w * 1.4, -(sideL + 0.4), sZ - 6.4], H); hang(1); } // hanging at the side, the point down and forward
+    else if (hold === "sabre") { const H = [4.6, -(sideL - 0.4), sZ - 2.2]; put(H, [0.55, -0.12, 1]); arm(-1, [1.6, -(sideL + 1.0), sZ - 4.6], H); hang(1); } // raised
+    else if (hold === "sword") { const H = [4.4, -2.0, sZ - 5.6], P = put(H, [0.42, 0.02, 1]); arm(-1, [1.4, -(sideL + 0.8), sZ - 6.0], H); arm(1, [1.2, sideL + 0.6, sZ - 7.0], P.fore || add(H, [-0.6, 0, -1.6])); } // both hands on the hilt before the chest, the blade up
+    else if (hold === "shoulder") { const O = [3.0, -(sideL + 0.4), sZ - 8.6], P = put(O, [-3.0, -2.6, 14]); arm(-1, [1.0, -(sideL + 1.4), sZ - 5.6], O); arm(1, [2.6, TW / 2 - 0.6, sZ - 5.6], P.fore ? add(P.fore, [0.2, 0.3, 0]) : add(O, [-1.6, 0.3, 3.2])); } // the haft over the right shoulder, both fists on it
+    else if (hold === "spear") { const O = [1.4, -(sideL + 0.1), sZ - 9.2], P = put(O, [1, 0.28, 0.05]); arm(-1, [0.4, -(sideL + 0.9), sZ - 6.6], O); arm(1, [2.4, sideL - 0.2, sZ - 6.4], P.fore || add(O, [6, 1.7, 0.3])); } // level at the hip, the point forward
+    else if (hold === "bow") { const H = [7.2, -(sideL - 0.4), sZ - 4.2]; put(H, [1, 0.02, 0]); arm(-1, [3.6, -(sideL + 0.6), sZ - 3.6], H); arm(1, [-0.6, sideL + 0.8, sZ - 3.8], [2.4, -1.2, sZ - 4.2]); } // the string hand drawn to the chest
+    else if (hold === "tube") { const O = [2.0, -(sideL - 0.4), sZ - 0.8], P = put(O, [1, 0, 0.06]); arm(-1, [1.0, -(sideL + 1.0), sZ - 4.4], O); arm(1, [3.4, TW / 2 - 0.6, sZ - 5.0], P.fore || add(O, [4, 0.2, 0.6])); } // resting on the right shoulder
+    else { hang(1); hang(-1); }
   } else { hang(1); hang(-1); }
   // the neck and the head: rounder at the crown, the face on the front, hair by style
   F.push(limb([0, 0, shoulderZ + 1.2], [0, 0, shoulderZ - 0.6], 1.3, 1.4, shade(skin, -0.12), { sides: 6 }));
@@ -656,7 +646,7 @@ export function figureCanvas(app, look = null, armorKey = null, yaw = 0, o = {})
   if (e !== undefined) { cache.delete(key); cache.set(key, e); return e.cv; }
   if (o.cached) return null;
   const t0 = typeof performance !== "undefined" ? performance.now() : 0;
-  const p = paintBoxFigure({ ...app, accessory: o.pack ? "backpack" : app.accessory, ...(st ? { stride: st } : {}) }, look ? String(look).split("|")[0] : null, armorKey, y, false, carry);
+  const p = paintBoxFigure({ ...app, accessory: o.pack ? "backpack" : app.accessory, ...(st ? { stride: st } : {}) }, look ? String(look) : null, armorKey, y, false, carry); // the whole look: its fitted parts show on the model
   const cv = toCanvas(p);
   if (cv) { cv.figure = p.fig; if (p.muzzle) MUZZLE.set(cv, p.muzzle); }
   const bytes = p.w * p.h * 64; // the canvas, 4 × 4 px a grid px of 4 bytes (headless too, where there is none)
@@ -719,7 +709,8 @@ export function unitFigureDown(state, b, t, salt, yaw) {
   const u = unitApp(state, b, t, salt);
   const D = u.app.dead;
   if (D && (D.body === "swarm" || D.body === "hivemind" || D.body === "broodmother" || D.body === "beast")) return figureCanvas(t.dead ? { ...u.app, skin: shade(u.app.skin, -0.4), top: shade(u.app.top, -0.4) } : u.app, null, null, yaw); // no way to lay a mass (or a four-legged body) down: darker
-  return figureCanvas({ ...u.app, down: { pose: t.dead ? "dead" : "down", pool: !!t.dead } }, null, u.armor, yaw, u.o || {});
+  const dropped = t.dead && u.look && !bodySearched(b, t) ? u.look : null; // the weapon beside the dead until the body is searched (ui/downsprites.js had it so)
+  return figureCanvas({ ...u.app, down: { pose: t.dead ? "dead" : "down", pool: !!t.dead } }, dropped, u.armor, yaw, u.o || {});
 }
 // A body on the ground (sim/sleepers.js: c.seed, c.burnt, c.burst) as a lying figure.
 export function corpseFigure(c, yaw) {
