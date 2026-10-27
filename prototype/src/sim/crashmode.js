@@ -22,6 +22,7 @@
 // - The numbers live here (CRASH) so the sim and the new-run screen read the same ones.
 // A leaf module (no imports), safe to read from the sim and the UI.
 
+import { isRoadStart } from "./roadstart.js";
 export const CRASH = {
   W: 300, H: 200,       // the map: 300 × 200 (the user, 2026-10-24: "reduce map size to 300x200 for crashlanding mode"; it was the 500 × 250 of the first request); the Large preset's grid (worldsize.js), so a crash world's size def is Large's
   YEAR: 4,              // "3 year after the fall": the run starts on year 4, day 1 (eras.js yearStartDay)
@@ -64,7 +65,7 @@ export const CRASH_KIT_KEYS = ["m4", "pistol", "chestrig", "plate", "milhelmet",
 export const CRASH_UNIT = { name: "3rd Guard Battalion", short: "the 3rd Battalion", bunker: "Mountain bunker" };
 
 /** A Crashlanding run (a normal-mode world with state.crash). @param {any} state */
-export const isCrashRun = (state) => !!state && state.mode !== "hardcore" && !!state.crash;
+export const isCrashRun = (state) => !!state && !isRoadStart(state) && !!state.crash;
 
 /** The special zombie shares' multiplier: CRASH.SPECIALS in a crash run, 1 in any other. @param {any} state */
 export const crashSpecials = (state) => (isCrashRun(state) ? CRASH.SPECIALS : 1);

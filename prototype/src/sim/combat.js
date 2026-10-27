@@ -105,7 +105,7 @@ import { crossFoes, crossTurn, crossDraw, crossHit, noteShot, crossRound } from 
 import { folkTick, resolveBattleCards, dropBattleCards } from "./floorfolk.js"; // who holds the upper floors of a city building (the crawl)
 import { placeParley, parleySetup, parleyTick, parleySpotted, parleyEnemyPhase, parleyEnd, parleyResult, callOut, parleyHarm, botCallOut } from "./parley.js"; // other groups on a raid's map: they call out, you call out (every hook marked "parley.js")
 import { allyOrder, allyTurn, allyEvac, allyKeepsWatch, allyIntelTick } from "./allyorders.js"; // orders to an allied group's people (every hook marked "allyorders.js"; none run without an ally)
-import { isHardcore } from "./hardcore.js";
+import { isRoadStart, isHardcore } from "./roadstart.js";
 import { raidCarrySetup, autoTake, stashAll, raidHome, personalRoom, trunkSpace, atVehicle, setRefit, haulLoad, dropHaul, dropHeld } from "./raidloot.js"; // loot by hand: each survivor carries their own, the vehicle has a trunk
 import { SEARCH, hideSome, revealHidden, quickRefusal, quickNoise, quickHurt, quickable, botPressed, takeFree } from "./search.js"; // full search (1 action) and the quick rummage
 import { GUN_WEAPONS, KIT_PATCH, WEAPON_PATCH } from "./data-guns.js"; // the weapons overhaul's guns, melee and launchers (merged below)
@@ -7596,7 +7596,7 @@ export function createRaid(state, setup) {
       // Hardcore (hardcore-loot.js): sites hold about twice a normal start's loot, so the cap is higher there.
       // A point of interest's containers hold what they held untouched (pois.js poiFull: how picked over it is shows
       // as containers already ransacked, poicont.js), else the site's loot.
-      found: {}, foundGear: [], richness: Math.max(0.35, Math.min(isHardcore(state) ? 2 : 1.2, (tile ? (poiI != null ? poiFull(tile, poiI) : tile.loot) : 0.5) * 1.3)),
+      found: {}, foundGear: [], richness: Math.max(0.35, Math.min(isHardcore(state) ? 1.2 : isRoadStart(state) ? 2 : 1.2, (tile ? (poiI != null ? poiFull(tile, poiI) : tile.loot) : 0.5) * 1.3)),
       // A point of interest's dice key (poicont.js): its containers' contents (boxRng), its locks (locks.js) are the
       // same on every visit. Unset for any other raid (their dice as before).
       poiDice: poiI != null ? `poi${poiI}:${pick ? pick.id : "street"}` : undefined,

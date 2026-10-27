@@ -56,7 +56,8 @@ const dayOf = (state) => Math.floor(state.hour / 24) + 1;
 // Hardcore mode (hardcore-outbreak.js): the run starts on the day Calder falls, state.hardcore.eraOffset days before
 // a normal game's day 1. Every ramp keyed to the year or the game day counts from that normal start: a hardcore
 // run's day N ramps like a normal run's day N − offset (never below day 1). In a normal game this is the day itself.
-export const eraOffsetOf = (state) => (state.mode === "hardcore" && state.hardcore && state.hardcore.eraOffset) || 0;
+import { isRoadStart } from "./roadstart.js";
+export const eraOffsetOf = (state) => (isRoadStart(state) && state.hardcore && state.hardcore.eraOffset) || 0;
 export const rampDay = (state) => { const d = dayOf(state), o = eraOffsetOf(state); return o ? Math.max(1, d - o) : d; };
 // Hardcore: still before the normal start (the outbreak is spreading through its first year).
 export const beforeFall = (state) => { const o = eraOffsetOf(state); return o > 0 && dayOf(state) <= o; };

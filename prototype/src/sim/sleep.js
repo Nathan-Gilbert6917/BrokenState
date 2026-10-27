@@ -23,6 +23,7 @@
 // Exhausted (TIRED.EXHAUSTED, 36): aim −12, mood −0.3 an hour; on guard they count half in the walls' hold limit
 // (defences.js guardHold) and half as alert on watch (watch.js readiness: two exhausted watchers are one awake one;
 // one alone dozes off half the time). A steady 22–06 watch, slept off each morning, owes about 18–21 by its end.
+import { hardMult } from "./hardrules.js";
 import { hourOfDay, baseById } from "./world.js";
 import { roleOf, isManaged, schedAt, healthRest } from "./work.js";
 import { onWatchNow, watchShift } from "./watch.js";
@@ -61,7 +62,7 @@ export function tiredHour(state) {
     if (!s.alive) continue;
     const t = s.tired || 0;
     if (s.location.kind === "post") { // a field work's shift: up out there
-      s.tired = Math.min(TIRED.MAX, t + TIRED.AWAKE);
+      s.tired = Math.min(TIRED.MAX, t + TIRED.AWAKE * hardMult(state, "TIRED"));
       if (sleepHour(state, s, h) && (s.location.at ?? 0) <= state.hour) s.postNight = true; // out there through their sleep hours (not just the early walk out)
       const lv = tiredLevel(s);
       if (lv) s.mood = Math.max(0, (s.mood || 0) - TIRED.MOOD[lv]);
@@ -86,7 +87,7 @@ export function tiredHour(state) {
     if (watching) delete s.sleepIn;
     else if (base && sleepingIn(state, base, s, h)) s.sleepIn = true;
     const asleep = !watching && (!!s.sleepIn || !!healthRest(s, state) || sleepHour(state, s, h));
-    const next = asleep ? Math.max(0, t - TIRED.SLEEP) : Math.min(TIRED.MAX, t + TIRED.AWAKE);
+    const next = asleep ? Math.max(0, t - TIRED.SLEEP) : Math.min(TIRED.MAX, t + TIRED.AWAKE * hardMult(state, "TIRED"));
     if (next || s.tired) s.tired = next;
     if (asleep && next <= 0) delete s.sleepIn;
     const lv = tiredLevel(s);
@@ -106,7 +107,7 @@ export function rosterStrain(state, base, s) {
     if (watching) { sleepIn = false; run++; best = Math.max(best, run); } else run = 0;
     if (!watching && !sleepIn && t >= TIRED.SLEEP_IN && on(h - 1) && sleepHour(state, s, (h + 23) % 24)) sleepIn = true;
     const asleep = !watching && (sleepIn || sleepHour(state, s, h));
-    t = asleep ? Math.max(0, t - TIRED.SLEEP) : Math.min(TIRED.MAX, t + TIRED.AWAKE);
+    t = asleep ? Math.max(0, t - TIRED.SLEEP) : Math.min(TIRED.MAX, t + TIRED.AWAKE * hardMult(state, "TIRED"));
     if (asleep && t <= 0) sleepIn = false;
     if (i >= 24) peak = Math.max(peak, t);
   }

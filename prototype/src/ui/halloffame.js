@@ -89,6 +89,7 @@ export const HALL_ACTIONS = {
 
 const KIND_ICON = { hives: "🔥", alliance: "🏛", reunited: "🏔", defeat: "🪦" };
 const modeName = (m) => (MODES[m] ? MODES[m].label : m || "?");
+const badge = (m) => (m === "hardcore" ? " ☠" : ""); // a Hardcore ending (sim/hardrules.js, issue #79): its badge
 const when = (e) => (e.date ? String(e.date).slice(0, 10) : "");
 /** @param {any} p */
 const personLine = (p) => `<b>${esc(p.n)}</b>${p.bg ? ` <span class="muted">${esc(p.bg)}</span>` : ""}${p.sk ? ` · ${esc(SKILL_NAMES[p.sk[0]] || p.sk[0])} ${p.sk[1]}` : ""}${p.why ? ` · <span class="muted">${esc(p.why)}</span>` : ""} · ${p.fate === "alive" ? "alive" : `<span class="muted">${esc(p.fate)}</span>`}`;
@@ -107,7 +108,7 @@ export function hallModal(state, ui) {
     (modes.length > 1 ? `<div class="row">${chip("mode", "all", "Every mode")}${modes.map((m) => chip("mode", m, modeName(m))).join("")}</div>` : "");
   const rows = list.map((x) => `<div class="card small" style="cursor:pointer" data-action="hall-sel" data-key="${esc(x.key)}">
       <div class="spread"><b>${KIND_ICON[x.ending.kind] || ""} ${esc(x.ending.label)} · day ${x.days}</b><span class="muted">${esc(when(x))}</span></div>
-      <div class="muted">${esc(modeName(x.mode))} · ${esc(x.size)} · seed ${esc(x.seed)} · ${x.alive} alive of ${x.peak} at most · ${x.deaths} lost${x.ach ? ` · 🏆 ${x.ach.length}` : ""}${x.leader ? ` · led by ${esc(x.leader)}` : ""}</div></div>`).join("");
+      <div class="muted">${esc(modeName(x.mode))}${badge(x.mode)} · ${esc(x.size)} · seed ${esc(x.seed)} · ${x.alive} alive of ${x.peak} at most · ${x.deaths} lost${x.ach ? ` · 🏆 ${x.ach.length}` : ""}${x.leader ? ` · led by ${esc(x.leader)}` : ""}</div></div>`).join("");
   return `<div class="box wide">${head("🏛 Hall of fame")}
     <div class="muted small">Every ending you reach is kept here, outside your saves (at most ${HALL.MAX}, the oldest dropped). ${all.length} so far.</div>
     ${H.msg ? `<div class="result small">${esc(H.msg)}</div>` : ""}
@@ -120,7 +121,7 @@ function detail(e, H) {
   const custom = e.custom ? Object.entries(e.custom).filter(([, v]) => typeof v === "number" || typeof v === "string").map(([k, v]) => `${k} ${v}`).join(", ") : "";
   const ach = (e.ach || []).map(([id, d]) => { const a = ACH_BY_ID[id]; return a ? `<span class="lgchip"${tip(`${a.desc} (day ${d})`)}>${a.icon} ${esc(a.name)}</span>` : ""; }).join("");
   return `
-    <div class="muted">${esc(modeName(e.mode))}${e.ironman ? " · Ironman" : ""} · ${esc(e.size)} map · seed ${esc(e.seed)}${custom ? ` · Custom: ${esc(custom)}` : ""} · played ${esc(when(e))}</div>
+    <div class="muted">${esc(modeName(e.mode))}${badge(e.mode)}${e.ironman ? " · Ironman" : ""} · ${esc(e.size)} map · seed ${esc(e.seed)}${custom ? ` · Custom: ${esc(custom)}` : ""} · played ${esc(when(e))}</div>
     <div class="text">${esc(e.ending.label)} on day ${e.ending.day}, ${esc(e.ending.season)} of year ${e.ending.year}${e.ending.how ? `: ${esc(e.ending.how)}` : ""}.${e.leader ? ` ${esc(e.leader)} led them at the end.` : ""}</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(10rem,1fr));gap:0.3rem;margin:0.5rem 0">${num.map(([k, v]) => `<div class="card small"><div class="muted">${k}</div><b>${v}</b></div>`).join("")}</div>
     ${e.founders && e.founders.length ? `<h3>The founders</h3>${e.founders.map((p) => `<div class="small">${personLine(p)}</div>`).join("")}` : ""}

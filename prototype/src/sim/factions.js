@@ -38,6 +38,8 @@
 // - When fewer than 2 aggressive groups are left hostile to you (from day 60), a new gang from beyond the border
 //   settles 12–30 tiles from your hub (2% a day): 12–18 people, hostile, at any time of the run (makeGang; raider
 //   bands from outside that settle use it too, visitors.js settleBands).
+import { HARD } from "./hardrules.js";
+import { isHardcore } from "./roadstart.js";
 import { groupHaulDaily } from "./hauling.js"; // AI parity: their haulers carry the run out (call-time only)
 import { personKey } from "./members.js"; // dice the same in every world on the seed
 import { ensureMembers, syncMembers, placeMembers, moveMember, removeMember } from "./members.js"; // a group's people (docs/adr/0001-ai-parity.md)
@@ -867,7 +869,7 @@ function resolveRaidOnPlayerNow(state, party, opts = {}) {
     outcome = "overrun";
     head = `${f.name} overran ${base.name}.`;
     log(state, `${f.name} overran ${base.name}.`, "death");
-    steal(base.stock, count(base, "storehouse") ? 0.25 : 0.5, f.stock);
+    steal(base.stock, (count(base, "storehouse") ? 0.25 : 0.5) * (isHardcore(state) ? HARD.OVERRUN_TAKE : 1), f.stock); // hardrules.js: a Hardcore base overrun loses half again
     for (let i = 0; i < 3 && people.length; i++) wound(rng.pick(people), rng.int(30, 70), `when ${base.name} was overrun`);
     raidWon(state, f);
     settleKit();

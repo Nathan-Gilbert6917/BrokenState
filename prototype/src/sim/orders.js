@@ -2,6 +2,7 @@
 // move, look around, camp, field repairs, treating someone, a mission on the spot, or going home.
 // When an order finishes and nothing else is queued, the team reports in with an orders card
 // (parties.js awaitOrders), which doubles as the "done, what next?" notice.
+import { hardMult } from "./hardrules.js";
 import { MOVES, detachProblem } from "./detach.js"; // some of a team out on a job: its moves wait (the user's request 2026-10-24)
 import { keyWord } from "./water.js"; // supplies as words: "9mm FMJ", "rounds"
 import { log, survivorById, baseById, hub } from "./world.js";
@@ -658,7 +659,7 @@ const healthLine = (state, p) => `Health: ${partyMembers(state, p).map((m) => `$
 // An infected wound does not heal in camp (it needs meds); anyone with the worm in them heals at half the rate (worm.js). A camp with no food or no water gives no rest:
 // nobody heals and nobody cheers up until the team eats and drinks again (parties.js consume). In daylight the fit
 // forage around the camp, part of each hour (foraging.js campForageHour): a hungry camp feeds itself a little.
-export const campHealPerHour = (state, p, s) => (isHurt(s) && !s.woundInfected && !starving(p) ? ((BASE_HEAL_PER_DAY * 2 + bestSkill(state, p, "medicine") * 0.4) / 24) * wormHealMult(s) * healMult(s) : 0); // Quick Healer (traits.js)
+export const campHealPerHour = (state, p, s) => (isHurt(s) && !s.woundInfected && !starving(p) ? ((BASE_HEAL_PER_DAY * 2 + bestSkill(state, p, "medicine") * 0.4) / 24) * wormHealMult(s) * healMult(s) * hardMult(state, "HEAL") : 0); // Quick Healer (traits.js); hardrules.js: Hardcore heals slower
 // The camp fire (fieldheat.js FIRE, a toggle in the team panel) lifts spirits more: +0.3 an hour lit, +0.1 out.
 function campHour(state, p) {
   campForageHour(state, p);

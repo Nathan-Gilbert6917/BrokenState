@@ -13,7 +13,8 @@ import { atBase } from "../sim/world.js";
 import { fireLit } from "../sim/fieldheat.js";
 import { RAW } from "../sim/water.js";
 import { teamAmmoBreakdown, breakdownText } from "../sim/ammo.js"; // the Ammo figure: every round and arrow the team has
-import { MODES, isHardcore } from "../sim/hardcore.js";
+import { MODES } from "../sim/hardcore.js";
+import { isRoadStart, isHardcore } from "../sim/roadstart.js";
 import { isCustomRun } from "../sim/custommode.js";
 import { isCrashRun } from "../sim/crashmode.js"; // Crashlanding (2026-10-24): a normal run with state.crash
 import { landFoodHint, landFoodOptions, FORAGE } from "../sim/foraging.js"; // food from the land when the team runs low

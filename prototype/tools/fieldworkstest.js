@@ -829,7 +829,7 @@ section("hc-food: the snare line is field craft (2 scrap, an hour, anyone sets i
   recomputeOwnership(g);
   check(FW.govFieldWorks(g, gh, { foodShort: 0 }).length === 0 && !FW.playerWorks(g, gh).length, "normal, fed: no snare line");
   check(FW.snareLinesWanted(g, gh, 1) === 1 && FW.snareLinesWanted(g, gh, 2) === 2, "normal: one line under the food target, two under half of it");
-  g.mode = "hardcore";
+  g.start = "road"; // a road start (sim/roadstart.js: Normal and Hardcore since issue #79)
   check(FW.snareLinesWanted(g, gh, 0) === 1 && FW.snareLinesWanted(g, gh, 2) === FW.maxSnares(gh), `hardcore: one line from the start, up to ${FW.maxSnares(gh)} while short`);
   const said = FW.govFieldWorks(g, gh, { foodShort: 0 });
   const line = FW.playerWorks(g, gh).find((x) => x.kind === "snares");
@@ -839,7 +839,7 @@ section("hc-food: the snare line is field craft (2 scrap, an hour, anyone sets i
   // The steward and the governor at a full base (maxWorks > 0): the line comes before the rest, then nothing else that day.
   const n = mk();
   const nh = hub(n);
-  n.mode = "hardcore";
+  n.start = "road";
   const nl = FW.govFieldWorks(n, nh, { foodShort: 0, waterShort: true });
   check(FW.playerWorks(n, nh).filter((x) => x.kind === "snares").length === 1 && FW.playerWorks(n, nh).length === 1, `hub: the snare line first, the well waits (${nl.join(" ")})`);
   // The groups: the same cheap line, wanted first, outside their field works' count.
@@ -853,10 +853,10 @@ section("hc-food: the snare line is field craft (2 scrap, an hour, anyone sets i
     const gl = FW.buildGroupWork(state, f, "snares", w.tile, false);
     check(gl.readyDay === day(state) + 1, "theirs is ready the next day");
     setFood(f.stock, f.pop * 50);
-    state.mode = "normal";
-    check(FW.groupSnaresWanted(state, f) === 0, "a fed group in a normal game wants none");
-    state.mode = "hardcore";
-    check(FW.groupSnaresWanted(state, f) === 1, "a fed group in hardcore keeps one");
+    state.start = "hub";
+    check(FW.groupSnaresWanted(state, f) === 0, "a fed group in a hub start wants none");
+    state.start = "road";
+    check(FW.groupSnaresWanted(state, f) === 1, "a fed group on a road start keeps one");
   }
 }
 

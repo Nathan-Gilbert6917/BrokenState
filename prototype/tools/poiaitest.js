@@ -246,9 +246,9 @@ section("Outsiders: raiders survey and raid POIs, explorers pick through a site'
   }
 }
 
-section("Hardcore: every POI pool doubled at the start, the surplus wears off to exactly the start");
+section("The road start (Normal since issue #79; Hardcore's start is below: tools/modesplittest.js): every POI pool doubled at the start, the surplus wears off to exactly the start");
 {
-  const st = createWorld({ seed, factionCount: 7, mode: "hardcore" });
+  const st = createWorld({ seed, factionCount: 7, mode: "normal", roadStart: true });
   const pairs = [];
   for (const t of st.tiles) poisOf(t).forEach((p, i) => { if (!isSitePoi(t, i) && p.poolNormal != null) pairs.push([t, i, p.poolNormal]); });
   check(pairs.length > 100 && pairs.every(([t, i, n]) => Math.abs(poiPool(t, i) - n * HC_LOOT.START) < 1e-9), `${pairs.length} POI pools at ${HC_LOOT.START} × a normal start`);

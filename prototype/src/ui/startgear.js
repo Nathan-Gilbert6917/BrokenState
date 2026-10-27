@@ -23,7 +23,7 @@
 // HTML builders plus their action handlers; main.js registers them (an action returning true asks for the rebuild).
 import { GEAR, SUPPLIES } from "../sim/data.js";
 import { POUCH_NAMES } from "../sim/data-kit.js";
-import { isHardcore } from "../sim/hardcore.js";
+import { isRoadStart } from "../sim/roadstart.js";
 import { itemLoad } from "../sim/inventory.js";
 import { LOAD_BANDS, wornLoad } from "../sim/load.js";
 import { VEHICLE_TYPES, RIDER_KG } from "../sim/vehicles.js";
@@ -118,7 +118,7 @@ export function uiFleet(state, ui) {
   const crew = (state && state.survivors) || [];
   ui.fleet.forEach((f, i) => {
     const w = live[i];
-    if (!f || f.empty || !w || w.vid == null || (isHardcore(state) && i === 0)) return;
+    if (!f || f.empty || !w || w.vid == null || (isRoadStart(state) && i === 0)) return;
     if (f.roll == null && w.roll != null) f.roll = w.roll;
     if (f.owner == null && w.ownerId != null && crew.some((s) => s.id === w.ownerId)) f.owner = crew.findIndex((s) => s.id === w.ownerId);
   });
@@ -128,7 +128,7 @@ export function uiFleet(state, ui) {
 export function fleetInfo(state, i) {
   const f = fleetEntry(state, i), v = fleetVehicle(state, i);
   if (!f || !v || !VEHICLE_TYPES[v.type]) return null;
-  return { v, type: v.type, name: VEHICLE_TYPES[v.type].name, label: fleetName(state, i), room: fleetRoom(state, i), hard: isHardcore(state), open: openLoads(state), limit: f.limit, load: f.load };
+  return { v, type: v.type, name: VEHICLE_TYPES[v.type].name, label: fleetName(state, i), room: fleetRoom(state, i), hard: isRoadStart(state), open: openLoads(state), limit: f.limit, load: f.load };
 }
 // The first starting vehicle (Hardcore: the car the team flees in; a normal start: the hub's pickup): { v, type, name,
 // room (kg), hard }, as before the fleet (the tools read it).
@@ -137,11 +137,11 @@ export const startVehicleInfo = (state) => fleetInfo(state, 0);
 const diceLoad = (state) => { const d = (state.survivors || []).find((s) => s.diceTrunk); return d ? d.diceTrunk : null; };
 // What the dice put in vehicle i (Hardcore's car's on its owner; every other's on its slot, f.diceTrunk, noted by
 // hardcore-start.js rollBack: the user's requests 2026-10-25, Hardcore then Normal and Custom), or null.
-const diceOf = (state, i) => (isHardcore(state) && i === 0 ? diceLoad(state) : (fleetEntry(state, i) || {}).diceTrunk || null);
+const diceOf = (state, i) => (isRoadStart(state) && i === 0 ? diceLoad(state) : (fleetEntry(state, i) || {}).diceTrunk || null);
 // The back shown for vehicle i: its load, or as rolled (the dice's; else empty).
 const shownLoad = (state, i) => { const f = fleetEntry(state, i); return (f && f.load) || diceOf(state, i) || { items: [], supplies: {} }; };
 // Slot i is Hardcore's car slot (the car the team flees in: as rolled or a kind).
-const carSlot = (state, i) => isHardcore(state) && i === 0;
+const carSlot = (state, i) => isRoadStart(state) && i === 0;
 // Vehicle i's back has the dice's to go back to (every starting vehicle, every mode, since 2026-10-25).
 const hasDice = (state, i) => !!fleetVehicle(state, i) && !!diceOf(state, i);
 // A back in a few words: "3 things, 40 food, 20 meds, 60 rounds" ("empty").
@@ -452,7 +452,7 @@ export function gunPartsBox(key, mods0, attrs, what) {
 export function startGearEditor(state, ui) {
   const i = ui.gearEdit ? ui.gearEdit.i : -1, s = state.survivors[i];
   if (!s) return `<div class="box"><h1>Starting gear</h1><div class="muted">Nobody to dress.</div><div class="row" style="justify-content:flex-end"><button class="primary" data-action="sg-close">Done</button></div></div>`;
-  const hard = isHardcore(state);
+  const hard = isRoadStart(state);
   const P = sanitizeStartGear(s.startGear) || { slots: {} };
   const extra = s.startGear || {}; // what the last rebuild wrote: what had no room
   const who = state.survivors.map((o, j) => { const B = pricePerson(state, o); return `<button class="mini ${j === i ? "active" : ""}" data-action="sg-who" data-i="${j}"${tip(`${o.name}: ${kitLoad(o).kg} kg, ${B.total} / ${B.max} points`)}>${o.leader ? "★ " : ""}${esc(o.name.split(" ")[0])}${B.over ? " ⚠" : ""}</button>`; }).join("");

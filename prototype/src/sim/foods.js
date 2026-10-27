@@ -32,6 +32,7 @@
 // ingredient (a cooking bill takes it: cooking.js CLASSES), until (an early-only shop item: days after the
 // outbreak it can still be found), shopOnly (only shops have it: a new lot is as old as the outbreak), moodLift (a meal: wave 2's mood ladder), desc.
 import { Rng } from "./rng.js";
+import { isRoadStart } from "./roadstart.js";
 import { cfgOf } from "./worldcfg.js"; // the run's dials: Food spoilage
 import { ROWS, mergeRows } from "./data-shops.js";
 import { CUISINES } from "./data-eateries.js"; // the restaurants' food by cuisine (issue #33)
@@ -232,7 +233,7 @@ export const stockOf = (h) => (!h ? null : h.stock && typeof h.stock === "object
 const keepsLots = (h) => !!h && stockOf(h) !== h && !Array.isArray(h.bases);
 // Days since the outbreak (a normal game starts NORMAL_START days after it; hardcore on the day itself).
 export const NORMAL_START = 60;
-export const outbreakDays = (state) => (state ? Math.floor((state.hour || 0) / 24) + (state.mode === "hardcore" ? 0 : NORMAL_START) : NORMAL_START);
+export const outbreakDays = (state) => (state ? Math.floor((state.hour || 0) / 24) + (isRoadStart(state) ? 0 : NORMAL_START) : NORMAL_START);
 // Shelf left on a fresh lot of `k` with no history: the item's shelf, less (shopOnly: bread, cheese, frozen meat) the days since
 // the outbreak it has already sat (bread found on day 3 has 2 days left).
 export function newLeft(k, state = null) {
@@ -626,7 +627,7 @@ export function shopTime(state) {
   const d = outbreakDays(state) - NORMAL_START;
   return d <= 0 ? 1 : Math.max(SHOP.floor, Math.pow(0.5, d / SHOP.halfLife));
 }
-export const shopStock = (state, t) => (t && t.foodStock != null ? t.foodStock : state && state.mode === "hardcore" ? SHOP.hardcoreStart : 1);
+export const shopStock = (state, t) => (t && t.foodStock != null ? t.foodStock : state && isRoadStart(state) ? SHOP.hardcoreStart : 1);
 // The share of a site's usual food still there (1 for a site that is not a shop).
 export function shopFood(state, t) {
   const type = t && t.loc && t.loc.type;

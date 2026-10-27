@@ -4,6 +4,7 @@
 // background, a small team's skills and loaded seats, armed strangers sized to the team), saves before, during and
 // after the camp, and the autopilot founding one.
 // Usage: node tools/hcstarttest.js [autopilot games] [days] (default 8 games, 40 days)
+import { isRoadStart } from "../src/sim/roadstart.js";
 import { stockTools } from "./toolset.js"; // every tool a build or recipe can need (toolreqs.js)
 import { FOODS, foodIn } from "../src/sim/foods.js";
 import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
@@ -54,7 +55,9 @@ const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FA
 // of 2026-10-24, and a plain top-level block keeps its locals alive to the module's end (they sit in the module
 // function's registers), so the run ran out of its 2 GB heap; a function's go when it returns.
 const section = (t) => console.log(t);
-const hc = (seed, extra = {}) => createWorld({ seed, factionCount: 7, mode: "hardcore", ...extra });
+// The road start (Normal since issue #79, three on the road as Hardcore's default was): Hardcore's hard rules (the car on
+// fumes, the scarce loot) are tools/modesplittest.js's; its 1–4 range is checked on a Hardcore world below.
+const hc = (seed, extra = {}) => createWorld({ seed, factionCount: 7, mode: "normal", roadStart: true, startPeople: 3, ...extra });
 
 // ---------- spawn ----------
 section("Spawn: three survivors on the road, no hub, a reasonable place");
@@ -67,7 +70,7 @@ for (const st of worlds) {
   const tag = `seed ${st.seed}`;
   if (!check(!!p, `${tag}: a team on the road`)) continue;
   const tile = st.tiles[partyTile(p)];
-  check(st.mode === "hardcore" && st.bases.length === 0 && !hub(st), `${tag}: no base`);
+  check(isRoadStart(st) && st.bases.length === 0 && !hub(st), `${tag}: no base`);
   check(partyMembers(st, p).length === HC_START.CREW && st.survivors.length === HC_START.CREW, `${tag}: ${HC_START.CREW} survivors, all on the team`);
   check(st.survivors.filter((s) => s.leader).length === 1, `${tag}: one leader`);
   check(playerTile(st) === tile.id, `${tag}: playerTile is the team's tile`);
@@ -615,7 +618,7 @@ await (async () => {
   }
   // New-run screen in both modes.
   for (const mode of ["hardcore", "normal"]) {
-    const w = mode === "hardcore" ? hc(5) : createWorld({ seed: 5, factionCount: 7 });
+    const w = mode === "hardcore" ? createWorld({ seed: 5, factionCount: 7, mode: "hardcore" }) : createWorld({ seed: 5, factionCount: 7 }); // the Hardcore screen itself
     const html = newRunScreen(w, { ...freshUi(), started: false, worldSize: "normal", factionCount: 7 });
     check(!scan(html, mode).length && /data-action="gamemode"/.test(html) && new RegExp(`value="${mode}" selected`).test(html), `new-run screen (${mode}): the Mode select, clean`);
     check((html.match(/nrcard/g) || []).length === (mode === "hardcore" ? 3 : 6), `new-run screen (${mode}): ${mode === "hardcore" ? 3 : 6} colonists to edit`);
@@ -655,7 +658,7 @@ await (async () => {
   // The default: leaving it out, 3 and the old start build the same world.
   const a = hc(42), b = hc(42, { startPeople: 3 });
   check(JSON.stringify(a.survivors.map((s) => [s.name, s.background, s.skills])) === JSON.stringify(b.survivors.map((s) => [s.name, s.background, s.skills])) && JSON.stringify(roadTeam(a).supplies) === JSON.stringify(roadTeam(b).supplies) && a.rng.next() === b.rng.next(), "leaving it out is the same as 3");
-  check(hc(42, { startPeople: 0 }).survivors.length === 1 && hc(42, { startPeople: 7 }).survivors.length === 4, "out of range: clamped to 1–4");
+  check(hc(42, { startPeople: 0 }).survivors.length === 1 && createWorld({ seed: 42, factionCount: 7, mode: "hardcore", startPeople: 7 }).survivors.length === 4, "out of range: clamped to 1–4 (Hardcore)");
   // A normal start takes its own count (1–8, six when left out: hardcore.js NORMAL_PEOPLE).
   const nw = createWorld({ seed: 42, factionCount: 7, startPeople: 1 });
   check(nw.mode === "normal" && nw.survivors.length === 1 && nw.startPeople === 1 && createWorld({ seed: 42, factionCount: 7 }).survivors.length === 6, "a normal start takes its own count (six when left out)");
@@ -677,7 +680,7 @@ await (async () => {
   check(four.survivors.length === 4 && four.survivors[1].name === "Bo Test" && four.survivors[1].leader && four.survivors.filter((s) => s.leader).length === 1, "a crew of three edited, four start: the three and one more");
   // The new-run screen: the select, set to the count, in Hardcore; greyed out for a normal start.
   for (let n = 1; n <= 4; n++) {
-    const w = hc(5, { startPeople: n });
+    const w = createWorld({ seed: 5, factionCount: 7, mode: "hardcore", startPeople: n }); // the Hardcore screen's 1–4
     const html = newRunScreen(w, { ...freshUi(), started: false, worldSize: "normal", factionCount: 7, startPeople: n });
     const sel = /<select data-action="startpeople"([^>]*)>([\s\S]*?)<\/select>/.exec(html);
     check(!!sel && !/disabled/.test(sel[1]) && (sel[2].match(/<option/g) || []).length === 4 && new RegExp(`value="${n}" selected`).test(sel[2]), `new-run screen (hardcore, ${n}): Starting people, ${n} selected`);
@@ -841,8 +844,8 @@ await (async () => {
   const text = saveToString(st);
   const ld = loadFromString(text);
   const p1 = roadTeam(ld);
-  check(JSON.parse(text).meta.mode === "hardcore", "the save list knows it is hardcore");
-  check(ld.mode === "hardcore" && firstHubPending(ld) && !!p1 && p1.hcStart && partyTile(p1) === partyTile(p0) && partyMembers(ld, p1).length === partyMembers(st, p0).length, "hubless: the team and the start come back");
+  check(JSON.parse(text).meta.start === "road", "the save list knows it is on the road");
+  check(isRoadStart(ld) && firstHubPending(ld) && !!p1 && p1.hcStart && partyTile(p1) === partyTile(p0) && partyMembers(ld, p1).length === partyMembers(st, p0).length, "hubless: the team and the start come back");
   check(JSON.stringify(p1.supplies) === JSON.stringify(p0.supplies), "hubless: its supplies too");
   try { for (let i = 0; i < 24; i++) tickHour(ld); check(true, "the loaded hubless world runs"); } catch (e) { check(false, `the loaded hubless world runs: ${e.message}`); }
   // Mid-build: save, load, and both worlds finish the camp the same way.
@@ -870,7 +873,7 @@ await (async () => {
   ld.cards.length = 0;
   const l2 = loadFromString(saveToString(ld));
   check(!!hub(l2) && isShelter(hub(l2)) && hub(l2).fire === false && tierName(hub(l2)) === "Shelter", "after founding: the shelter (tier 0) and its fire (out) come back");
-  check(!!h && hub(l2) && hub(l2).name === h.name && !firstHubPending(l2) && l2.staging === undefined && l2.hardcore.start.foundedDay === ld.hardcore.start.foundedDay && l2.mode === "hardcore", "after founding: the hub and the founding day come back");
+  check(!!h && hub(l2) && hub(l2).name === h.name && !firstHubPending(l2) && l2.staging === undefined && l2.hardcore.start.foundedDay === ld.hardcore.start.foundedDay && isRoadStart(l2), "after founding: the hub and the founding day come back");
   // A save from before camps were bases (state.staging, the team working there): it loads as the camp base that is your
   // hub, its stores its stock, its work the step up's progress, the team moved in.
   {

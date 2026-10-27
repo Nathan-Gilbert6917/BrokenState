@@ -445,10 +445,10 @@ section("The people you left: a light simulation, with no dice of the world's");
 }
 
 // ---------- hardcore loot ----------
-section("Hardcore: the buildings are only half picked over");
+section("The road start (Normal since issue #79; Hardcore starts below a normal start: tools/modesplittest.js): the buildings are only half picked over");
 {
   const n = createWorld({ seed: 4242, factionCount: 7 });
-  const h = createWorld({ seed: 4242, factionCount: 7, mode: "hardcore" });
+  const h = createWorld({ seed: 4242, factionCount: 7, mode: "normal", roadStart: true });
   const sites = h.tiles.filter((t) => t.loc && t.lootNormal != null);
   const ratio = sites.reduce((a, t) => a + t.loot / t.lootNormal, 0) / sites.length;
   const nSum = n.tiles.filter((t) => t.loc).reduce((a, t) => a + t.loot, 0), hSum = h.tiles.filter((t) => t.loc).reduce((a, t) => a + t.loot, 0);

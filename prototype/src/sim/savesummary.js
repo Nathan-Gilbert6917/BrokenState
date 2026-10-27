@@ -4,6 +4,7 @@
 // Day, people alive, the season, then the one thing that matters most right now: the run's end (won / fallen), a war
 // you joined (the enemy; "+1" for each more), a group hostile to you, or a Hardcore band still on the road.
 import { day, alive, hub } from "./world.js";
+import { isRoadStart } from "./roadstart.js";
 import { season } from "./weather.js";
 
 const MAX = 72; // characters: the line fits the save list on a narrow window
@@ -32,6 +33,6 @@ function standing(state) {
   // Groups hostile to you (factions.js attitude: goodwill −40 or below), the most hostile first.
   const hostile = (state.factions || []).filter((f) => f.known && f.alive !== false && f.goodwill <= -40).sort((a, b) => a.goodwill - b.goodwill);
   if (hostile.length) return `${hostile[0].name} hostile${more(hostile)}`;
-  if (state.mode === "hardcore" && !hub(state)) return "on the road";
+  if (isRoadStart(state) && !hub(state)) return "on the road";
   return "";
 }

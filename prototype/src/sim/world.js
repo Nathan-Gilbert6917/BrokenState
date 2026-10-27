@@ -3,6 +3,7 @@
 // Pure simulation: no DOM or canvas code lives here.
 /** @import { State, Survivor, Base, Item, Card, Stock, TileSnapshot, Marker } from "./types" */
 import { achievementsDaily, achievementsEnd } from "./achievements.js"; // achievements per run: the daily pass and the endings (recording only)
+import { isRoadStart } from "./roadstart.js";
 import { syncAllMembers } from "./members.js"; // the AI groups' people (docs/adr/0001-ai-parity.md)
 import { typedFood, addFoodsTo, FOODS, foodIn } from "./foods.js"; // the hub's first food, by type
 import { keyWord } from "./water.js"; // supply names in log lines (call-time only: safe in the import cycle)
@@ -102,7 +103,7 @@ import { surveyDaily } from "./survey.js";
 import { riseOnMap, walkingDaily } from "./carriers.js"; // the worm: someone who has it gets up when they die; the walking dead drift
 import { erasVictoryDaily, accordReady, containReady } from "./eras.js";
 import { outbreakDaily } from "./outbreak.js";
-import { hardcoreCreate, hardcoreAfterHives, hardcoreDaily, hardcoreHour, clampStartPeople, NORMAL_PEOPLE } from "./hardcore.js";
+import { hardcoreCreate, hardcoreAfterHives, hardcoreDaily, hardcoreHour, clampStartPeople, HUB_PEOPLE } from "./hardcore.js";
 import { countWord, normalStartBackgrounds, normalStartKit, rollHubFleet } from "./hardcore-start.js";
 import { campsHour } from "./staging.js";
 import { needsHour } from "./needs.js";
@@ -202,11 +203,12 @@ export const isPreview = (state) => !!(state && state.preview);
 // size: a worldsize.js key (small / normal / large / huge; Normal when left out, the original 64 × 42 map), or
 // "custom" with customW × customH hexes (experimental: worldsize.js customDef).
 // hives (optional): how many hives the map starts with, 0–20 (null: what the size makes; mapgen.js).
-// mode: "normal" (6–12 months after the outbreak, with a hub) or "hardcore" (the day Calder falls: hardcore.js).
+// mode: "normal" or "hardcore" (the hard rules: hardrules.js). roadStart (issue #79): true opens the run the day Calder falls, on the road with no hub
+// (hardcore.js; the game's Normal and Hardcore), false at a hub 6–12 months after the outbreak (Custom, Crashlanding); left out, Hardcore only.
 // crewRoll (optional, every mode): the crew's own dice (crewDice; Hardcore: their backgrounds, what they grabbed and
 // the car; the new-run screen's Randomize all rolls a new one); left out, crewRollOf the seed.
-// startPeople (optional): Hardcore, how many flee together on day 1, 1–4 (hardcore.js START_PEOPLE; 3 when left out); a
-// normal start, how many hold the hub, 1–8 (NORMAL_PEOPLE; 6 when left out). Kept as state.startPeople.
+// startPeople (optional): a road start, how many flee together on day 1: Hardcore 1–4 (hardcore.js START_PEOPLE; 3 when left out), Normal 1–8
+// (NORMAL_PEOPLE; 4); a hub start, how many hold the hub, 1–8 (HUB_PEOPLE; 6 when left out). Kept as state.startPeople.
 // start (optional): { roll, not } where you start drawn with dice of their own on the same map (the new-run screen's
 // New start position; startpick.js): the hub's town, or the Hardcore roadside tile. Kept as state.startRoll. Or
 // { tile }: the start picked on the map (Pick start on map), used when it can be one (startpick.js startWhyNot); kept as state.startTile.
@@ -226,24 +228,27 @@ export const isPreview = (state) => !!(state && state.preview);
 // unit's base across the map and the calendar at year 4. Kept as state.crash (isCrashRun).
 /**
  * @param {{ seed: number, factionCount: number, crew?: any[] | null, size?: string, mode?: string, customW?: number | null,
- *   customH?: number | null, hives?: number | null, crewRoll?: number | null, startPeople?: number | null, customBackgrounds?: any,
+ *   customH?: number | null, roadStart?: boolean | null, hives?: number | null, crewRoll?: number | null, startPeople?: number | null, customBackgrounds?: any,
  *   start?: { roll?: number | null, not?: number | null, tile?: number | null } | null, worldCfg?: any, vehicle?: boolean, custom?: any, fleet?: any[] | null, crash?: boolean, preview?: boolean }} opts
  * @returns {State}
  */
-export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SIZE, mode = "normal", customW = null, customH = null, hives = null, crewRoll = null, startPeople = null, customBackgrounds = null, start = null, worldCfg = null, vehicle = true, custom = null, fleet = null, crash = false, preview = false }) {
+export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SIZE, mode = "normal", customW = null, customH = null, hives = null, crewRoll = null, startPeople = null, roadStart = null, customBackgrounds = null, start = null, worldCfg = null, vehicle = true, custom = null, fleet = null, crash = false, preview = false }) {
   const rng = new Rng(seed);
   if (crash) { mode = "normal"; custom = null; size = "custom"; customW = CRASH.W; customH = CRASH.H; vehicle = false; fleet = []; startPeople = 1; } // Crashlanding (crashmode.js): the map and the start are fixed
   const wantGroups = custom && mode !== "hardcore" ? cleanCustom(custom).groups : factionCount;
+  // Where the run opens (roadstart.js, issue #79): on the road the day Calder falls (the game's Normal and Hardcore pass roadStart; a
+  // headless tool that leaves it out gets the road in Hardcore only), else at a hub (Custom, Crashlanding, the tools' default).
+  const road = !crash && !(custom && mode !== "hardcore") && (roadStart ?? mode === "hardcore");
   if (preview) { size = "custom"; customW = PREVIEW_MAP.W; customH = PREVIEW_MAP.H; start = null; } // the new-run screen's world before its map (PREVIEW_MAP)
   const { sdef, cust, mapDef } = worldMapDef({ size, customW, customH, mode, custom });
   const worldSize = sdef.key;
   const map = generateMap(rng, mapDef, { hives: cust ? cust.hives : clampHives(hives), seed });
   /** @type {State} */
   const state = {
-    seed, rng, worldSize, mode: mode === "hardcore" ? "hardcore" : "normal",
+    seed, rng, worldSize, mode: mode === "hardcore" ? "hardcore" : "normal", start: road ? "road" : "hub",
     startVehicles: vehicle !== false, // Start with a vehicle (custommode.js startsWithVehicle)
     ...(cust ? { custom: cust } : {}), // Custom mode's counts (custommode.js isCustomRun)
-    fleet: cleanFleet(fleet, cust ? "custom" : mode === "hardcore" ? "hardcore" : "normal").map((f) => ({ ...f, vid: null })), // the starting vehicles (startfleet.js): vid set as each is made
+    fleet: cleanFleet(fleet, cust ? "custom" : road ? "hardcore" : "normal").map((f) => ({ ...f, vid: null })), // the starting vehicles (startfleet.js): vid set as each is made
     idBase: nextId - 1, // localId: this world's ids counted from its own start
     fleetV: 1, // several vehicles to a team (vehicles.js fleets: p.vehicleIds); save.js gives older saves the list
     kitV: 2, magFitV: 1, // carry kit (w2-kit): a new world in either mode is born with it (carrykit.js migrateKit is for older saves only; a hardcore world never set it and gained magazines on every load)
@@ -306,7 +311,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
   }
   noteLootAge(state); // itemcond.js: the loot rolled from here on is as old as this world (a new world: year 1)
   ensurePois(state); // pois.js: every tile's points of interest (hash dice from the seed: the map's dice are untouched)
-  if (state.mode === "hardcore") {
+  if (isRoadStart(state)) {
     hardcoreCreate(state, { factionCount, crew, crewRoll, start, ...(startPeople != null ? { startPeople } : {}) });
     ensureHives(state);
     hardcoreAfterHives(state);
@@ -364,7 +369,7 @@ export function createWorld({ seed, factionCount, crew = null, size = DEFAULT_SI
   // Six people (by default) in the hub's six beds from the first hour (more sleep rough): the new-run screen and the
   // first-week guide say so, so the Overcrowded card (moveout.js) waits its usual days before it asks (and is not shown
   // at all once beds are up).
-  const people = cust ? clampStartPeople(cust.people, "custom") : clampStartPeople(startPeople ?? NORMAL_PEOPLE.DEF, "normal"); // Custom mode: 1–30
+  const people = cust ? clampStartPeople(cust.people, "custom") : clampStartPeople(startPeople ?? HUB_PEOPLE.DEF, "hub"); // Custom mode: 1–30
   state.startPeople = people;
   const startBeds = baseBeds(hubBase);
   if (people > startBeds) hubBase.crowdNote = { hour: state.hour, over: people - startBeds };
@@ -544,7 +549,7 @@ export function applyCrew(state, crew) {
     if (Number.isFinite(c.budget)) s.skillBudget = c.budget;
     if (c.appearance) s.appearance = { ...c.appearance };
     // A normal start's weapon and armor (Randomize all hands the kit out again). Hardcore's come from what they grabbed.
-    if (c.gear && state.mode !== "hardcore") for (const k of ["weapon", "armor"]) if (k in c.gear) s.gear[k] = c.gear[k] && GEAR[c.gear[k].key] ? { ...c.gear[k] } : null;
+    if (c.gear && !isRoadStart(state)) for (const k of ["weapon", "armor"]) if (k in c.gear) s.gear[k] = c.gear[k] && GEAR[c.gear[k].key] ? { ...c.gear[k] } : null;
     // Gear picked on the new-run screen (startgear.js: put on after the dice and any custom background's kit, both modes).
     const sg = sanitizeStartGear(c.startGear);
     if (sg) s.startGear = sg; else delete s.startGear;
@@ -1160,7 +1165,7 @@ function hourOfWorld(state) {
   visitorsHour(state); // visitors.js: raiders, merchants and explorers from outside the state
   nomadsHour(state); // nomads.js: nomad bands on the move, their camps seen, meeting your teams
   caravanRaidsHour(state); // caravanraids.js: caravans met on the road, chased, robbed (by you or by the groups)
-  if (state.mode === "hardcore") hardcoreHour(state); // hardcore.js: bands on the road (hardcore mode only)
+  if (isRoadStart(state)) hardcoreHour(state); // hardcore.js: bands on the road (hardcore mode only)
   contactHour(state); // conflicts.js: a horde or an enemy party that came onto a team's tile attacks it
   fieldworksHour(state); // fieldworks.js: the lookouts posted at field works (gone, moved, enemies there)
   const meal = isMealHour(state.hour, state); // meals.js: breakfast, lunch and dinner, the builders, crafters and the bench stop for them

@@ -57,6 +57,7 @@
 // SAVES: base.campAttack = { after, rafter, n, wave: { g, d, r, rp, poi } } (the next hour an attack may come, a raider
 // band may come, the attacks so far, the wave out at the camp now)
 // are plain data; a base without it (an older save) starts with none pending and no cooldown; nothing else is stored.
+import { hardMult } from "./hardrules.js";
 import { hash01 } from "./skills.js";
 import { popCap, raiderCap, openDead, openRaiders, poiRaiders, noiseOf, deadBand, raiderBand, drawFromTile, drawRaiders, putBack, putBackRaiders, killDead, killRaiders } from "./deadpop.js";
 import { log, addCard, homeAt, isNight, localId } from "./world.js";
@@ -158,6 +159,8 @@ export function attackMult(state, x, dead = true) {
   if (!dead) { const sm = softTarget(state, x); if (sm < 0.99) { m *= sm; parts.push(`its defence ×${Math.round(sm * 100) / 100} (raiders pick soft targets)`); } }
   if (x.base.silent) { m *= C.SILENT; parts.push("running silent"); }
   if (!x.f && x.base.buildings && count(x.base, "camo") > 0) { m *= C.CAMO; parts.push("camouflage netting"); }
+  const hm = hardMult(state, "CAMP_ATTACK"); // hardrules.js: Hardcore's camps are attacked more
+  if (hm !== 1) { m *= hm; parts.push(`Hardcore ×${hm}`); }
   return { mult: m, night, noise, loud, parts };
 }
 // Raiders pick soft targets: a band's strength (RAID_SOFT: a usual band × RAIDER_POWER) over the base's defence

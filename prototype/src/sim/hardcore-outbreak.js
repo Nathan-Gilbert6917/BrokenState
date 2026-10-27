@@ -34,7 +34,7 @@
 //   least MIL_HOLD days after the hive stands: about days 24–48). How the military fights back and what happens when
 //   it falls is hardcore-groups.js's. Destroy the hive (or its mass) and the hordes stop. With no military group
 //   nothing is sent.
-// Everything here runs only in a hardcore world (state.mode === "hardcore"); a normal game never calls it.
+// Everything here runs only on a road start (roadstart.js isRoadStart: Normal and Hardcore); a hub start never calls it.
 import { day, log } from "./world.js";
 import { ensureHives, newHive, hiveAt, deliverToSite } from "./hives.js";
 import { HIVE } from "./hiveconst.js";

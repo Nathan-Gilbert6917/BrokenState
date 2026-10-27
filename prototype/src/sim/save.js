@@ -21,6 +21,7 @@
 //   { $: "M", e: [[k, v]…] } Map · { $: "S", e: […] } Set · { $: "WM", e } WeakMap · { $: "WS", e } WeakSet
 //   { $: "T", t: "Uint16Array", b: base64 } typed array · { $: "Rng", s } · { $: "Grid", w, h } · { $: "O", v }
 //   { $: "u" } undefined · { $: "N", v: "NaN" | "Infinity" | "-Infinity" | "-0" }
+import { isRoadStart } from "./roadstart.js";
 import { migrateFood } from "./foods.js"; // old saves: generic food into food by type
 import { migrateAllMods, relocateMisfits, misfitNote, migrateParts } from "./gunmods.js"; // old saves: gun parts onto the attachment slots; parts that no longer fit taken off
 import { migrateAmmo, findRounds, kindTheme } from "./ammo.js"; // old saves: generic ammo into rounds by calibre
@@ -97,7 +98,7 @@ export function saveMeta(state) {
     autopilot: !!state.autopilot, world: worldSizeOf(state), // "world", not "size": the save list keeps the byte size under that key (ui/saves.js)
     mode: state.mode === "hardcore" ? "hardcore" : "normal", // hardcore.js: the save list says which
     ironman: !!state.ironman, // ui/saves.js: an Ironman game's own slot
-    ...(state.mode === "hardcore" && Number.isFinite(state.startPeople) ? { startPeople: state.startPeople } : {}), // hardcore.js START_PEOPLE: the save list says when it was not three
+    ...(isRoadStart(state) && Number.isFinite(state.startPeople) ? { startPeople: state.startPeople, start: "road" } : {}), // hardcore.js START_PEOPLE: the save list says when it was not the mode's default; start: it opened on the road (roadstart.js)
     summary: `${isCrashRun(state) ? "Crashlanding · " : ""}${saveSummary(state)}`, camp: campaignKey(state), // "Day 143 · 31 people · winter · …" (a Crashlanding run named so: crashmode.js, 2026-10-24); the campaign the save list groups it under
   };
 }
@@ -159,10 +160,11 @@ export function deserializeState(save) {
   // over the old 64 × 42 grid, or any grid that is no preset's now, is a custom map of its own grid and plays on as it was).
   state.worldSize = worldSizeOf(state);
   if (state.mode !== "hardcore") state.mode = "normal"; // saves from before the modes (hardcore.js)
+  if (state.start !== "road" && state.start !== "hub") state.start = state.mode === "hardcore" ? "road" : "hub"; // roadstart.js (issue #79): a save from before the split opened as its mode did
   noteLootAge(state); // itemcond.js: loot rolled after the load is as old as this world (shops and homes, COND_AGE)
   // Starting people (hardcore.js START_PEOPLE): a hardcore save from before the choice started with three (its start's
   // backgrounds name them); a normal start has none.
-  if (state.mode === "hardcore" && !Number.isFinite(state.startPeople)) {
+  if (isRoadStart(state) && !Number.isFinite(state.startPeople)) {
     const bg = state.hardcore && state.hardcore.start && state.hardcore.start.backgrounds;
     state.startPeople = bg && Object.keys(bg).length ? Object.keys(bg).length : 3;
   }

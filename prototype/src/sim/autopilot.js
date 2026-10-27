@@ -148,7 +148,7 @@ import { surveyCandidate, surveySent, SURVEY, poiSurveyCandidate, poiSurveySent,
 import { autoTreats } from "./comforts.js";
 import { firstHubPending, hubSites } from "./hardcore-start.js";
 import { stagingNeeds, establishProblem, STAGING, besideWaterSource } from "./staging.js"; // no base: Establish base (a camp with its step up)
-import { isHardcore } from "./hardcore.js";
+import { isRoadStart } from "./roadstart.js";
 import { WORM, baseWater, baseFilter, baseTabCount, baseCooks, armoryTabs, TABS_TRIP_DAYS, wormMeatAt, wormVegAt, wormSeen, boilerUse, cropLandBad, baseDewormers, wormOf } from "./worm.js";
 import { gunWant, pickGunToBuy, noteGunBought, radioGunDeal } from "./govguns.js"; // the governor buys guns for the unarmed
 import { carriedRec } from "./ammo.js"; // the loose rounds people carry
@@ -409,7 +409,7 @@ export function governBase(state, base, areas = ALL_AREAS) {
   // Hardcore: a snare line wanted and not set at the morning's look (a camp's scrap comes in with a delivery and goes
   // into its building materials within hours) is looked at again every hour while the base has fewer than it wants
   // and has the scrap or the snare wire (else not before the next delivery).
-  else if (areas.building && state.mode === "hardcore" && hourlySnares(state, base)) { const line = govSnares(state, base, snareFoodLevel(state, base)); if (line) say(state, line); }
+  else if (areas.building && isRoadStart(state) && hourlySnares(state, base)) { const line = govSnares(state, base, snareFoodLevel(state, base)); if (line) say(state, line); }
   if (areas.production) { govOrders(state, base); autoReloadOrders(state, base); planCrafts(state, base); planRepairs(state, base); } // repair.js: worn gear to the bench; reloading.js: HP, slugs, AP to keep
   if (areas.building) { const up = autoReloadBench(state, base); if (up) say(state, up); } // reloading.js: an ammo bench upgraded once there are inputs to load with
   if (areas.building) { const up = autoCanner(state, base); if (up) say(state, up); } // machines-2: a pressure canner fitted to a working preserving room
@@ -4749,7 +4749,7 @@ function roadKit(state, p) {
   weighTeam(state, p);
 }
 // Hardcore's first hub while it is small (four or fewer at home): trips take more of it (planTrip, launchTrip).
-const smallHub = (state, home) => isHardcore(state) && home.length <= 4;
+const smallHub = (state, home) => isRoadStart(state) && home.length <= 4;
 // A site the team can be ordered to search (not water, not a place a group holds).
 const orderable = (state, id) => !missionProblem(state, id, "scavenge");
 

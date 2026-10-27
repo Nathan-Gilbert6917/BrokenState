@@ -36,6 +36,7 @@
 // than climbing to 100, so a small dark camp stays quiet and a big one with a bonfire, trucks and gunfights does not.
 // A shelter (buildings.js, tier 0) is a base: its Heat is the base's (hordes.js baseHeat) with the same fire, vehicle
 // and shooting terms (shelterHeat) in place of the hub's flat 3.
+import { hardMult } from "./hardrules.js";
 import { partyMembers, partyTile, tileLabel } from "./parties.js";
 import { conflictChance, stationaryEncounter, COOLDOWN_HOURS } from "./conflicts.js";
 import { zombieToughness } from "./hives.js";
@@ -74,10 +75,15 @@ export function stationaryActivity(p) {
 const atHome = (state, tile) => state.bases.some((b) => state.grid.distance(b.tile, tile) <= 1);
 
 // Heat gained this hour on the spot, with the reasons (team panel tooltip).
+// hardrules.js: Hardcore's noise draws the dead twice as hard.
+function hardNoise(state, r) {
+  const m = hardMult(state, "NOISE");
+  return m === 1 ? r : { gain: r.gain * m, parts: [...r.parts, `Hardcore ×${m}`] };
+}
 export function heatGain(state, p, activity = stationaryActivity(p), hour = state.hour) {
   if (!activity) return { gain: 0, parts: [] };
   const site = campSite(state, p, activity, hour);
-  if (site) return campGain(state, p, site, hour);
+  if (site) { const r = campGain(state, p, site, hour); return hardNoise(state, r); }
   const tile = partyTile(p);
   const t = state.tiles[tile];
   const parts = [];
@@ -96,7 +102,7 @@ export function heatGain(state, p, activity = stationaryActivity(p), hour = stat
   g *= teamMult(state, p, parts);
   const kit = kitMult(state, p, activity === "camp" ? ["stay", "camp"] : ["stay"], hour);
   if (kit.mult !== 1) { g *= kit.mult; parts.push(...kit.parts); }
-  return { gain: g, parts };
+  return hardNoise(state, { gain: g, parts });
 }
 const isNightHour = (hour) => hour % 24 < 6 || hour % 24 >= 20;
 // The place: city, suburbs, infection, hive land (multipliers, their reasons pushed onto parts).

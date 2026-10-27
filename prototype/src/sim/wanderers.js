@@ -29,7 +29,7 @@ import { registerCombatHandler, startCombat, winOdds, KITS, WEAPONS } from "./co
 import { makeCandidate, offerRecruits } from "./recruits.js";
 import { hash01, anyPerk, gainXp, USE } from "./skills.js";
 import { Rng } from "./rng.js";
-import { isHardcore } from "./hardcore.js";
+import { isRoadStart } from "./roadstart.js";
 import { zombieToughness } from "./hives.js";
 import { lootItem } from "./inventory.js";
 import { groupCapture } from "./groupjails.js"; // prisoners of a three-way fight into a group's jail
@@ -153,7 +153,7 @@ export function wanderDensity(state, tileId) {
 }
 // The mode's factor: 1 in a normal game; hardcore: people fleeing in the first weeks, fewer as the months go by.
 export function modeFactor(state, d = day(state)) {
-  return isHardcore(state) ? 1 + W.HC_EARLY * Math.exp(-(d - 1) / W.HC_FADE) : 1;
+  return isRoadStart(state) ? 1 + W.HC_EARLY * Math.exp(-(d - 1) / W.HC_FADE) : 1;
 }
 // factor: the mode's (default); 1 for the chance a normal game would have on the tile (the tests' baseline).
 export const roadChance = (state, tileId, night = isNight(state), factor = modeFactor(state)) => Math.min(W.ROAD_MAX, W.ROAD * wanderDensity(state, tileId) * factor) * (night ? W.NIGHT : 1);
@@ -195,7 +195,7 @@ export function newNeutralGroup(state, tileId, rng) {
   const ws = wanderers(state);
   const g = {
     wid: ++ws.seq, kind: "neutral", people, tile: tileId, since: day(state), mood: rng.weighted(MOOD_KEYS, (k) => W.MOODS[k].w),
-    met: 0, lastMet: null, talked: false, gifted: false, fled: isHardcore(state) && day(state) < 30,
+    met: 0, lastMet: null, talked: false, gifted: false, fled: isRoadStart(state) && day(state) < 30,
   };
   ws.groups.push(g);
   if (ws.groups.length > W.SIM.MAX) ws.groups.shift();
@@ -216,7 +216,7 @@ function neutralFor(state, tileId, rng) {
 }
 const hostileCount = (state, tileId, rng) => rng.int(W.HOSTILE_SIZE[0], W.HOSTILE_SIZE[1]) + (state.tiles[tileId].terrain === "city" ? 1 : 0);
 // A team of one or two in hardcore: its HC_SMALL row ({ share, max }), else null (three or more, or a normal game).
-export const smallTeam = (state, p) => (isHardcore(state) ? W.HC_SMALL[partyMembers(state, p).length] || null : null);
+export const smallTeam = (state, p) => (isRoadStart(state) ? W.HC_SMALL[partyMembers(state, p).length] || null : null);
 // Loose bands pick on people their own size: never more than HOSTILE_OVER over the team they stop (a small team in
 // hardcore: never more than its HC_SMALL max).
 export function sized(state, p, n) {

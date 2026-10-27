@@ -9,6 +9,7 @@
 // tool (GEAR toolWear) that is the only one of its kind for a job loses a use when the job is queued (wearTools).
 // AI groups build and craft by their own coarse rules (groupworks.js, arsenal.js) and need no tools.
 import { GEAR } from "./data.js";
+import { isRoadStart } from "./roadstart.js";
 import { atBase, residents } from "./world.js";
 import { hash01 } from "./skills.js";
 import { allCarried, lootItem, newItem } from "./inventory.js";
@@ -101,7 +102,7 @@ export const isBasicToolJob = (job) => !!job && BASIC_KINDS.some((k) => TOOL_MAK
 // HUB_TOOLS), each one it has nothing of that kind for, so its builds do not stop the day it loads. Hardcore: nothing.
 /** @param {any} state @param {string[]} shelf */
 export function migrateTools(state, shelf) {
-  if (state.mode === "hardcore") return;
+  if (isRoadStart(state)) return;
   const base = (state.bases || []).find((b) => b.type === "hub");
   if (!base) return;
   base.armory = base.armory || [];

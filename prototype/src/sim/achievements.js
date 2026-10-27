@@ -15,6 +15,7 @@
 //                      combat.js finishCombat: a military site raided, a Broodmother put down on the map).
 // A row's modes: the run modes (runMode) it can be earned in (all when absent); hidden: shown as "???" until earned.
 import { day, log, alive, hub } from "./world.js";
+import { isRoadStart, isHardcore } from "./roadstart.js";
 import { seasonOfDay } from "./weather.js";
 import { isShelter, isCamp, hasWall, piecesOf } from "./buildings.js";
 import { birthsTotal } from "./family.js";
@@ -35,8 +36,8 @@ export const ACHIEVEMENTS = [
   { id: "winter", group: "Survival", icon: "❄", name: "Through the winter", desc: "See the first winter out to spring." },
   { id: "nodeath", group: "Survival", icon: "🕊", name: "Nobody lost", desc: `${ACH.noDeath} days in a row with no death in the group.` },
   // Growth
-  { id: "shelter", group: "Growth", icon: "🛖", name: "A roof at last", desc: "Your first camp becomes a shelter.", modes: ["hardcore", "crash"] },
-  { id: "mainhub", group: "Growth", icon: "🏠", name: "A real hub", desc: "Your hub becomes a Main hub.", modes: ["hardcore", "crash"] },
+  { id: "shelter", group: "Growth", icon: "🛖", name: "A roof at last", desc: "Your first camp becomes a shelter.", modes: ["road", "crash"] },
+  { id: "mainhub", group: "Growth", icon: "🏠", name: "A real hub", desc: "Your hub becomes a Main hub.", modes: ["road", "crash"] },
   { id: "outpost", group: "Growth", icon: "🏕", name: "Outpost", desc: "A base of yours becomes an outpost." },
   { id: "pop25", group: "Growth", icon: "👥", name: "A village", desc: `${ACH.pop1} people alive at once.` },
   { id: "pop50", group: "Growth", icon: "🏘", name: "A town again", desc: `${ACH.pop2} people alive at once.` },
@@ -62,7 +63,10 @@ export const ACHIEVEMENTS = [
   { id: "winhives", group: "Victory", icon: "🏆", name: "Every hive is ash", desc: "Win the hive victory." },
   { id: "wincoalition", group: "Victory", icon: "🏛", name: "The state is ours", desc: "Win with the Calder Coalition." },
   // Modes
-  { id: "road", group: "Mode", icon: "🎒", name: "Life on the road", desc: `Survive ${ACH.road} days with no base yet.`, modes: ["hardcore"] },
+  { id: "road", group: "Mode", icon: "🎒", name: "Life on the road", desc: `Survive ${ACH.road} days with no base yet.`, modes: ["road"] },
+  // Hardcore only (issue #79: sim/hardrules.js): the run's own feats, the Hall of fame's badge
+  { id: "hcyear", group: "Mode", icon: "☠", name: "Hardcore: a year and a day", desc: "Survive 365 days in Hardcore.", modes: ["hardcore"] },
+  { id: "hcvillage", group: "Mode", icon: "⚒", name: "Hardcore: a village", desc: `${ACH.pop1} people alive at once in Hardcore.`, modes: ["hardcore"] },
   { id: "bunker", group: "Mode", icon: "🏔", name: "The bunker", desc: "Find your unit's bunker.", modes: ["crash"] },
   // Hidden
   { id: "love", group: "Hidden", icon: "💞", name: "Till death", desc: `Two of your people become partners and both live ${ACH.love} days more together.`, hidden: true },
@@ -71,11 +75,11 @@ export const ACHIEVEMENTS = [
 export const ACH_BY_ID = Object.fromEntries(ACHIEVEMENTS.map((a) => [a.id, a]));
 
 // The run's mode as the new-run screen names it (hardcore.js MODES): Crashlanding and Custom are normal runs with
-// state.crash / state.custom.
+// state.crash / state.custom. A row's "road" mode: any road start, Normal or Hardcore (roadstart.js, issue #79).
 /** @param {any} state */
-export const runMode = (state) => (state.mode === "hardcore" ? "hardcore" : state.crash ? "crash" : state.custom ? "custom" : "normal");
+export const runMode = (state) => (isHardcore(state) ? "hardcore" : state.crash ? "crash" : state.custom ? "custom" : "normal");
 /** @param {any} state @param {{ modes?: string[] }} a */
-export const achInMode = (state, a) => !a.modes || a.modes.includes(runMode(state));
+export const achInMode = (state, a) => !a.modes || a.modes.includes(runMode(state)) || (a.modes.includes("road") && isRoadStart(state));
 // The rows this run can earn (its mode's), in table order.
 /** @param {any} state */
 export const achievementsFor = (state) => ACHIEVEMENTS.filter((a) => achInMode(state, a));
@@ -130,12 +134,14 @@ function facts(state) {
     day30: d >= 30,
     day100: d >= 100,
     day365: d >= 365,
+    hcyear: d >= 365,
     winter: d >= 2 && seasonOfDay(d - 2).key === "winter" && seasonOfDay(d - 1).key !== "winter",
     nodeath: d - lastDeath >= ACH.noDeath,
     shelter: !!h && !isCamp(h),
     mainhub: !!h && !isShelter(h),
     outpost: mine.some((b) => b.type === "outpost" && !isShelter(b)),
     pop25: people.length >= ACH.pop1,
+    hcvillage: people.length >= ACH.pop1,
     pop50: people.length >= ACH.pop2,
     child: birthsTotal(state) > 0,
     master: people.some((s) => s.skillFloor && SKILLS.some((k) => (s.skills[k] || 0) >= MASTER_LEVEL && (s.skillFloor[k] || 0) < MASTER_LEVEL)), // grown to it, not joined with it (skills.js skillFloor)

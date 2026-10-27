@@ -17,6 +17,7 @@
 // roll no wear. Crafted items keep the crafting roll (crafting.js makeItem). Starting and recruit gear is not loot
 // (inventory.js START_DUR).
 import { GEAR } from "./data.js";
+import { isRoadStart } from "./roadstart.js";
 import { YEAR_DAYS } from "./eras.js"; // the game year (112 days); eras.js imports nothing
 import { ROWS, mergeRows } from "./data-shops.js";
 
@@ -83,7 +84,7 @@ export const setLootAge = (years) => { LOOT_AGE = Math.max(0, Number(years) || 0
 export const lootAge = () => LOOT_AGE;
 export function lootAgeOf(state) {
   if (!state || !Number.isFinite(state.hour)) return 0;
-  const days = Math.floor(state.hour / 24) + (state.mode === "hardcore" ? 0 : COND_AGE.NORMAL_FALL);
+  const days = Math.floor(state.hour / 24) + (isRoadStart(state) ? 0 : COND_AGE.NORMAL_FALL);
   return days / YEAR_DAYS;
 }
 export const noteLootAge = (state) => setLootAge(lootAgeOf(state));

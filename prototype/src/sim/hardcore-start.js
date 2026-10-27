@@ -40,7 +40,7 @@
 //   into a shelter (the shelter shack) is placed from its Build list; the team brings the materials in and its builders build it up over a few days (staging.js
 //   STAGING.HARDCORE). The shelter is the hub, empty: no buildings, no truck. Losing every base later is the normal
 //   game's exile (conquest.js): Establish base again; later outposts are camps too (Build outpost).
-// Everything here runs only in a hardcore world (hardcore.js isHardcore).
+// Everything here runs only on a road start (roadstart.js isRoadStart: Normal and Hardcore since issue #79).
 import { typedFood, typeFind, addFoodsTo } from "./foods.js"; // the first food, by type
 import { keyWord } from "./water.js"; // supplies as words: "9mm FMJ", "rounds"
 import { GEAR, SUPPLY_KEYS, TRAITS, SKILL_NAMES, clashIn } from "./data.js";
@@ -66,7 +66,8 @@ import { randomTrunk } from "./randomkit.js"; // a back rolled again: filled up 
 import { pickStart, chosenStart } from "./startpick.js"; // where you start, rolled again on the same map or picked on it
 import { meleeBump, cookingBump } from "./appearance.js"; // a background's Melee bump: its own die
 import { sightRadius, partyMembers, partyTile, weighTeam } from "./parties.js";
-import { isHardcore } from "./hardcore.js";
+import { isRoadStart, isHardcore } from "./roadstart.js";
+import { HARD } from "./hardrules.js";
 import { isCrashRun } from "./crashmode.js"; // Crashlanding (2026-10-24): the road before the first base, the soldier background
 import { startsWithVehicle } from "./custommode.js"; // Start with a vehicle (2026-10-24): off, no car
 import { isCustomBg } from "./custombg.js";
@@ -248,7 +249,7 @@ export function playerTile(state) {
 }
 
 // True while a hardcore run has not founded its first hub yet (later, a hub lost is the normal game's exile).
-export const firstHubPending = (state) => isHardcore(state) && !!(state.hardcore && state.hardcore.start) && state.hardcore.start.foundedDay == null;
+export const firstHubPending = (state) => isRoadStart(state) && !!(state.hardcore && state.hardcore.start) && state.hardcore.start.foundedDay == null;
 // The team on the road before the first hub (you are with it): the player team that carries the start's flag, else any.
 export function roadTeam(state) {
   if (!firstHubPending(state)) return null;
@@ -684,6 +685,7 @@ export function rollCar(state, p, people, keptOwner = null) {
   const tankAt = (r) => r.range(C.CAR.FUEL[0], C.CAR.FUEL[1]), condAt = (r) => r.int(C.CAR.CONDITION[0], C.CAR.CONDITION[1]);
   let fill = tankAt(rng), condition = condAt(rng);
   if (own) { fill = tankAt(own); condition = condAt(own); }
+  if (isHardcore(state)) fill *= HARD.START_FUEL; // hardrules.js: Hardcore's car flees on fumes
   const car = createVehicle(state, type, { kind: "party", partyId: p.id }, { fuel: Math.round(T.tank * fill * 10) / 10, condition });
   p.vehicle = true;
   p.vehicleId = car.id;

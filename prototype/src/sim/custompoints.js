@@ -13,6 +13,7 @@
 // startgear.js) and a custom background's own supplies, car and its back (custombg.js). s.startPoints marks a colonist built this way (startgear.js: the dice's kit is not handed out on
 // top of the picks).
 import { GEAR, SKILLS, SUPPLIES } from "./data.js";
+import { isRoadStart } from "./roadstart.js";
 import { ROUND_SUPPLIES, CALIBERS } from "./data-ammo.js";
 import { WEAPONS } from "./combat.js";
 import { newItem, startKit } from "./inventory.js";
@@ -179,7 +180,7 @@ function ownBill(state, s, max) {
   if (gear) lines.push(`Worn and held ${gear}`);
   if (carried) lines.push(`Carried ${carried}`);
   const extra = bgExtraPoints(state, s);
-  if (extra) lines.push(`Their background's own supplies${state && state.mode !== "hardcore" && startsWithVehicle(state) ? ", car and its back" : ""} ${extra}`);
+  if (extra) lines.push(`Their background's own supplies${state && !isRoadStart(state) && startsWithVehicle(state) ? ", car and its back" : ""} ${extra}`);
   return { skills, good, bad, back, cap, gear, carried, extra, own: skills + good + back + gear + carried + extra, lines };
 }
 // What is theirs alone, as a number (the dice under Customize: randomkit.js).
@@ -205,7 +206,7 @@ export const bgCarBack = (A) => (A && A.car ? suppliesPoints(A.car.trunk || {}) 
 // vehicle's As rolled, free); none with Start with a vehicle off.
 /** @param {any} state @param {any[]} [crew] */
 export function bgBacks(state, crew = (state && state.survivors) || []) {
-  if (!state || state.mode === "hardcore" || !state.customBackgrounds || !startsWithVehicle(state)) return []; // Start with a vehicle off: no car, no back (hardcore-start.js normalStartKit)
+  if (!state || isRoadStart(state) || !state.customBackgrounds || !startsWithVehicle(state)) return []; // Start with a vehicle off: no car, no back (hardcore-start.js normalStartKit)
   const out = [];
   for (const s of crew) {
     const A = s && s.startPoints && s.background ? state.customBackgrounds[s.background] : null;
@@ -229,7 +230,7 @@ export function vehiclePoints(v) {
 export function bgExtraPoints(state, s) {
   const A = state && state.customBackgrounds && s && s.background ? state.customBackgrounds[s.background] : null;
   if (!A) return 0;
-  const car = state.mode !== "hardcore" && startsWithVehicle(state);
+  const car = !isRoadStart(state) && startsWithVehicle(state);
   return suppliesPoints(A.supplies || {}) + (car ? bgCarPoints(A, state.mode) + bgCarBack(A) : 0);
 }
 // A custom background's own car: at a normal start a vehicle more at the hub (its price by kind); in Hardcore it is the

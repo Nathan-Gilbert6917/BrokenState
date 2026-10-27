@@ -9,6 +9,7 @@
 // opens and closes like the Needs button (ui/needsbar.js initNeedsBar); main.js writes its button, head and list as
 // slots of their own, so an open list keeps the mouse and its scroll position. Everything in it is sim/forecast.js's.
 import { threatForecast, levelName } from "../sim/forecast.js";
+import { fogged } from "../sim/hardrules.js";
 import { partyTile } from "../sim/parties.js";
 import { baseById, survivorById } from "../sim/world.js";
 import { initNeedsBar } from "./needsbar.js";
@@ -27,7 +28,14 @@ const rowHTML = (it) => {
 };
 
 // The meter (the button), the panel's head and its list; the whole of it as one string (renderTopbar, tests).
-export function threatBar(state, fc = threatForecast(state)) {
+export function threatBar(state, fc = null) {
+  if (fogged(state, "forecast")) { // Hardcore (sim/hardrules.js): no forecast, the meter's slots say so
+    const btn = `<span class="tf-top"><span class="tf-word muted">No forecast</span></span>`;
+    const head = `<span class="tf-title">No threat forecast (Hardcore)</span>`;
+    const list = `<div class="tf-foot muted small">Hardcore: nobody tells you what is coming. Watch the land yourself.</div>`;
+    return { btn, head, list, level: 0, html: threatSkeleton(btn, head, list) };
+  }
+  fc = fc || threatForecast(state);
   const lvl = fc.level;
   const cells = fc.days.map((d) => `<i class="tf-cell tf-l${d.level}${d.known ? "" : " tf-far"}"></i>`).join("");
   const worst = fc.days.find((d) => d.level === lvl && lvl > 0);
