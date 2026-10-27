@@ -22,10 +22,10 @@ Run `node tools/gate.js` from `prototype/` before every merge to dev. **A merge 
 1. List the modules you changed (`git diff --name-only origin/dev`).
 2. Find the tests that import each one: `grep -l "sim/<module>.js" tools/*test*.js` (`ui/<name>.js` for UI modules).
 3. Add the tests named for the area (`ls tools | grep <area>`), plus any test you wrote.
-4. Core modules (`world.js`, `combat.js`, `parties.js` and the like) match hundreds of tests. Over about 20, keep the ones that call the functions you changed (`grep -l "<fn>" …`) and the ones named for the area, and say in your report which you left out.
-5. Run them: `node tools/runtests.js --quick <name1> <name2> ...` (each name is a file-name substring). Run `npm run typecheck` too.
+4. Core modules (`world.js`, `combat.js`, `parties.js` and the like) match hundreds of tests. Over about 20 for one module, keep the ones that call the functions you changed (`grep -l "<fn>" …`) and the ones named for the area, and say in your report which you left out.
+5. Run no more than 25 tests in all: if the list is longer, keep the changed and area-named ones first and say what you left out. Run them: `node tools/runtests.js --quick <name1> <name2> ...` (each name is a file-name substring). Run `npm run typecheck` too.
 
-`node tools/affected.js [paths...]` does steps 1 to 4: with no paths it reads `git diff --name-only origin/dev` (working tree included), prints the test names, and lists what it left out on stderr. So: `node tools/runtests.js --quick $(node tools/affected.js)`.
+`node tools/affected.js [paths...]` does steps 1 to 4: with no paths it reads `git diff --name-only origin/dev` (working tree included), prints at most 25 test names, and lists what it left out on stderr. So: `node tools/runtests.js --quick $(node tools/affected.js)`.
 
 ## `--quick` and the slow tests
 
