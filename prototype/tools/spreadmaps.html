@@ -1,0 +1,306 @@
+<title>Dead Spread Heat Maps</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a field survey sheet. Controls and legend, then each run as a strip of yearly maps (start, years 1-6), then the charts and tables. */
+:root {
+  --plane: #f4f5f2; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --muted: #77756f;
+  --grid: #e1e0d9; --axis: #c3c2b7; --ring: rgba(11,11,11,0.10);
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a;
+  --none: #e6e5df; --settle: #a8a59b; --hive: #d03b3b; --five: #eb6834;
+  --band: rgba(42,120,214,0.10);
+  --h0: #cde2fb; --h1: #9ec5f4; --h2: #6da7ec; --h3: #3987e5; --h4: #256abf; --h5: #184f95; --h6: #0d366b;
+  --display: "Barlow Condensed", "Arial Narrow", system-ui, sans-serif;
+  --body: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --plane: #0f100f; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #95938c;
+  --grid: #2c2c2a; --axis: #383835; --ring: rgba(255,255,255,0.10);
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70;
+  --none: #2a2a28; --settle: #6f6d66; --hive: #e66767; --five: #f08a5d;
+  --band: rgba(57,135,229,0.16);
+  --h0: #133f78; --h1: #1c5cab; --h2: #2a78d6; --h3: #4c93e8; --h4: #6da7ec; --h5: #9ec5f4; --h6: #d6e8fc;
+  color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --plane: #0f100f; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #95938c;
+  --grid: #2c2c2a; --axis: #383835; --ring: rgba(255,255,255,0.10);
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70;
+  --none: #2a2a28; --settle: #6f6d66; --hive: #e66767; --five: #f08a5d;
+  --band: rgba(57,135,229,0.16);
+  --h0: #133f78; --h1: #1c5cab; --h2: #2a78d6; --h3: #4c93e8; --h4: #6da7ec; --h5: #9ec5f4; --h6: #d6e8fc;
+  color-scheme: dark; }
+body { background: var(--plane); color: var(--ink); font: 15px/1.5 var(--body); }
+.wrap { max-width: 1240px; margin: 0 auto; padding-block: 28px 56px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 28px; }
+h1, h2 { font-family: var(--display); font-weight: 600; letter-spacing: 0.01em; text-wrap: balance; margin: 0; }
+h1 { font-size: 2.4rem; line-height: 1.05; }
+h2 { font-size: 1.5rem; }
+p { margin: 0; max-width: 68ch; }
+.lede { color: var(--ink-2); }
+.eyebrow { font: 500 0.75rem var(--mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+header { display: grid; gap: 8px; }
+.controls { display: flex; flex-wrap: wrap; gap: 10px 22px; align-items: center; position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--plane); padding-block: 10px; border-bottom: 1px solid var(--grid); }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--plane); }
+.seg { display: inline-flex; border: 1px solid var(--axis); border-radius: 6px; overflow: hidden; }
+.seg button { font: 500 0.85rem var(--mono); background: var(--surface); color: var(--ink-2); border: 0; padding: 6px 12px; cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--axis); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--plane); }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--s1); outline-offset: 2px; }
+label.tog { display: inline-flex; gap: 6px; align-items: center; font-size: 0.9rem; color: var(--ink-2); cursor: pointer; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: center; font: 0.8rem var(--mono); color: var(--ink-2); }
+.ramp { display: flex; align-items: stretch; }
+.ramp span { display: grid; gap: 3px; text-align: center; min-width: 46px; }
+.ramp i { display: block; height: 14px; }
+.ramp span.ceil i { outline: 2px solid var(--ink); outline-offset: -2px; }
+.ramp span.ceil b { color: var(--ink); }
+.ramp b { font-weight: 400; font-size: 0.72rem; }
+.key { display: inline-flex; gap: 6px; align-items: center; }
+.key i { width: 12px; height: 12px; display: inline-block; border-radius: 2px; }
+.strip { display: grid; gap: 10px; }
+.strip h3 { margin: 0; font: 600 1.1rem var(--display); letter-spacing: 0.02em; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.strip h3 small { font: 0.8rem var(--mono); color: var(--muted); font-weight: 400; }
+.panels { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 330px), 1fr)); gap: 12px; }
+figure { margin: 0; background: var(--surface); border: 1px solid var(--ring); border-radius: 6px; padding: 8px; display: grid; gap: 6px; min-width: 0; }
+figure canvas { width: 100%; height: auto; display: block; image-rendering: pixelated; cursor: crosshair; }
+figcaption { display: flex; justify-content: space-between; gap: 8px; font: 0.78rem var(--mono); color: var(--ink-2); font-variant-numeric: tabular-nums; flex-wrap: wrap; }
+figcaption strong { color: var(--ink); font-weight: 500; }
+.charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr)); gap: 16px; }
+.chart { background: var(--surface); border: 1px solid var(--ring); border-radius: 6px; padding: 14px; display: grid; gap: 8px; min-width: 0; position: relative; }
+.chart h4 { margin: 0; font: 600 1.05rem var(--display); }
+.chart p { font-size: 0.85rem; color: var(--ink-2); }
+.chart svg { width: 100%; height: auto; display: block; overflow: visible; }
+.chart svg text { fill: var(--muted); font: 11px var(--mono); }
+.chart .lg { display: flex; flex-wrap: wrap; gap: 4px 14px; font: 0.78rem var(--mono); color: var(--ink-2); }
+.chart .lg i { width: 14px; height: 3px; display: inline-block; vertical-align: middle; margin-right: 5px; border-radius: 2px; }
+.tablewrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--ring); border-radius: 6px; }
+table { border-collapse: collapse; width: 100%; font: 0.8rem var(--mono); font-variant-numeric: tabular-nums; }
+th, td { padding: 6px 10px; text-align: right; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+th:first-child, td:first-child, th:nth-child(2), td:nth-child(2) { text-align: left; }
+thead th { color: var(--muted); font-weight: 500; position: sticky; top: 0; background: var(--surface); }
+td.hit { color: var(--ink); font-weight: 500; }
+td.dim { color: var(--muted); }
+.notes { display: grid; gap: 8px; color: var(--ink-2); font-size: 0.9rem; }
+.notes p { max-width: 80ch; }
+#tip { position: fixed; pointer-events: none; z-index: 20; background: var(--ink); color: var(--plane); font: 0.75rem/1.45 var(--mono); padding: 6px 8px; border-radius: 4px; white-space: pre; transform: translate(12px, 12px); }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">BrokenState · the heat epic #64 · issue #76 · Normal map, autopilot, 6 years</div>
+    <h1>Dead Spread Heat Maps</h1>
+    <p class="lede" id="lede"></p>
+  </header>
+
+  <div class="controls" role="group" aria-label="Map controls">
+    <div class="seg" id="seeds" role="group" aria-label="Seed"></div>
+    <div class="seg" id="views" role="group" aria-label="What the colour shows">
+      <button type="button" data-v="fill" aria-pressed="true">Fill of cap</button>
+      <button type="button" data-v="zone" aria-pressed="false">Zones</button>
+    </div>
+    <label class="tog"><input type="checkbox" id="settle" checked> Towns, cities, hives</label>
+    <label class="tog"><input type="checkbox" id="five" checked> The 5-step ring</label>
+  </div>
+
+  <div class="legend" id="legend" aria-live="polite"></div>
+
+  <section class="strip" id="maps"></section>
+
+  <section class="charts" id="charts"></section>
+
+  <section class="strip">
+    <h2>The deep countryside, year by year</h2>
+    <p class="lede">Mean fill of the cap, then the share of its tiles at each band (none / low / medium / high / overrun). The target is 10–15% of cap, reached around year 5 and held.</p>
+    <div class="tablewrap"><table id="deeptable"></table></div>
+  </section>
+
+  <section class="strip">
+    <h2>Mean fill by zone</h2>
+    <p class="lede">Averaged over the seeds. City land is the city centres, cities and suburbs; the steps are hex steps from the nearest town, city or hive tile.</p>
+    <div class="tablewrap"><table id="zonetable"></table></div>
+  </section>
+
+  <section class="notes" id="notes"></section>
+</div>
+<div id="tip" hidden></div>
+
+<script id="data" type="application/json">__DATA__</script>
+<script>
+(() => {
+  const D = JSON.parse(document.getElementById("data").textContent);
+  const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+  const dec = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+  const pct = (v, d = 1) => `${(v * 100).toFixed(d)}%`;
+  const BINS = [[0.05, "0–5"], [0.10, "5–10"], [0.15, "10–15"], [0.30, "15–30"], [0.60, "30–60"], [0.85, "60–85"], [Infinity, "85+"]];
+  const ZCOL = ["--settle", "--settle", "--h5", "--h3", "--h1", "--h0"];
+  const seeds = [...new Set(D.runs.map((r) => r.seed))].sort((a, b) => a - b);
+  let seed = seeds[0], view = "fill";
+  try { const s = +localStorage.getItem("seed"); if (seeds.includes(s)) seed = s; } catch {}
+  const runOf = (w, s) => D.runs.find((r) => r.label === `${w}-${s}`);
+  const cache = new Map();
+  const decoded = (run) => {
+    if (!cache.has(run.label)) cache.set(run.label, { cls: dec(run.cls), years: run.years.map((y) => ({ fill: dec(y.fill), zone: dec(y.zone), step: dec(y.step) })) });
+    return cache.get(run.label);
+  };
+  // A tile 4 px wide and 3 high, the odd rows shifted half a tile (the game's odd-r hexes).
+  const TW = 4, TH = 3;
+  function palette() {
+    return { none: css("--none"), heat: ["--h0", "--h1", "--h2", "--h3", "--h4", "--h5", "--h6"].map(css), settle: css("--settle"), hive: css("--hive"), five: css("--five"), zone: ZCOL.map(css) };
+  }
+  const hex = (h) => { const m = h.replace("#", ""); return [parseInt(m.slice(0, 2), 16), parseInt(m.slice(2, 4), 16), parseInt(m.slice(4, 6), 16)]; };
+  function binOf(f) { if (f <= 0) return -1; for (let i = 0; i < BINS.length; i++) if (f < BINS[i][0]) return i; return BINS.length - 1; }
+  function draw(cv, run, yi) {
+    const dd = decoded(run), W = run.w, H = run.h, P = palette();
+    cv.width = W * TW + TW / 2; cv.height = H * TH;
+    const ctx = cv.getContext("2d"), img = ctx.createImageData(cv.width, cv.height), px = img.data;
+    const heat = P.heat.map(hex), none = hex(P.none), settle = hex(P.settle), five = hex(P.five), zone = P.zone.map(hex);
+    const Y = dd.years[yi], fill = Y.fill, showS = document.getElementById("settle").checked, show5 = document.getElementById("five").checked;
+    for (let id = 0; id < W * H; id++) {
+      const c = dd.cls[id];
+      if (c === 255) continue;
+      let col;
+      if (showS && c <= 3) col = settle;
+      else if (view === "zone") col = zone[Y.zone[id]] || none;
+      else { const b = binOf(fill[id] / 200); col = b < 0 ? none : heat[b]; }
+      if (show5 && c > 3 && Y.step[id] === 5) col = five;
+      const x = id % W, y = (id - x) / W, ox = x * TW + (y & 1 ? TW / 2 : 0), oy = y * TH;
+      for (let j = 0; j < TH; j++) for (let i = 0; i < TW; i++) { const p = ((oy + j) * cv.width + ox + i) * 4; px[p] = col[0]; px[p + 1] = col[1]; px[p + 2] = col[2]; px[p + 3] = 255; }
+    }
+    ctx.putImageData(img, 0, 0);
+    if (showS) {
+      ctx.fillStyle = P.hive;
+      for (const h of run.years[yi].hives) { const x = h % W, y = (h - x) / W; ctx.beginPath(); ctx.arc(x * TW + (y & 1 ? TW / 2 : 0) + TW / 2, y * TH + TH / 2, 4, 0, 7); ctx.fill(); }
+    }
+  }
+  const CLS = D.runs[0] ? ["centre", "city", "suburb", "town", "highway", "rural", "coast", "scenic", "other"] : [];
+  function tipFor(cv, run, yi, e) {
+    const r = cv.getBoundingClientRect(), sx = (e.clientX - r.left) * cv.width / r.width, sy = (e.clientY - r.top) * cv.height / r.height;
+    const y = Math.floor(sy / TH), x = Math.floor((sx - (y & 1 ? TW / 2 : 0)) / TW);
+    if (x < 0 || y < 0 || x >= run.w || y >= run.h) return null;
+    const dd = decoded(run), id = y * run.w + x, c = dd.cls[id];
+    if (c === 255) return `water (${x}, ${y})`;
+    const Y = dd.years[yi], f = Y.fill[id] / 200, deep = Y.zone[id] === 5;
+    return `${CLS[c] || "?"}${deep ? " · deep countryside" : ""}  (${x}, ${y})\nfill ${pct(f)} of cap\n${c <= 3 ? "a source" : `${Y.step[id]} steps from a source`}\n${run.years[yi].year ? `end of year ${run.years[yi].year}` : "day 1"}`;
+  }
+  const tip = document.getElementById("tip");
+  function renderMaps() {
+    const host = document.getElementById("maps");
+    host.innerHTML = "";
+    for (const w of ["before", "after"]) {
+      const run = runOf(w, seed);
+      if (!run) continue;
+      const sec = document.createElement("div");
+      sec.className = "strip";
+      const last = run.years[run.years.length - 1];
+      sec.innerHTML = `<h3>${w === "before" ? "Before: dev, no reach" : "After: the reach and the 12% floor"} <small>seed ${seed} · deep countryside ${pct(last.deep.fill)} of cap at ${last.year ? `year ${last.year}` : "day 1"}</small></h3>`;
+      const grid = document.createElement("div");
+      grid.className = "panels";
+      run.years.forEach((y, yi) => {
+        const fig = document.createElement("figure"), cv = document.createElement("canvas");
+        cv.setAttribute("role", "img");
+        cv.setAttribute("aria-label", `${w}, seed ${seed}, ${y.year ? `year ${y.year}` : "day 1"}: deep countryside ${pct(y.deep.fill)} of cap`);
+        draw(cv, run, yi);
+        cv.addEventListener("mousemove", (e) => { const t = tipFor(cv, run, yi, e); if (!t) { tip.hidden = true; return; } tip.textContent = t; tip.style.left = `${e.clientX}px`; tip.style.top = `${e.clientY}px`; tip.hidden = false; });
+        cv.addEventListener("mouseleave", () => { tip.hidden = true; });
+        const cap = document.createElement("figcaption");
+        cap.innerHTML = `<strong>${y.year ? `Year ${y.year}` : "Day 1"}</strong><span>deep ${pct(y.deep.fill)} · 3–5 steps ${pct(y.zones[3].fill)}</span>`;
+        fig.append(cv, cap);
+        grid.append(fig);
+      });
+      sec.append(grid);
+      host.append(sec);
+    }
+  }
+  function renderLegend() {
+    const P = palette(), L = document.getElementById("legend");
+    const settle = document.getElementById("settle").checked, five = document.getElementById("five").checked;
+    const keys = `${settle ? `<span class="key"><i style="background:${P.settle}"></i>towns and city land</span><span class="key"><i style="background:${P.hive};border-radius:50%"></i>hives</span>` : ""}${five ? `<span class="key"><i style="background:${P.five}"></i>5 steps from a town or city</span>` : ""}`;
+    if (view === "fill") {
+      L.innerHTML = `<span>fill of each tile's cap</span><span class="ramp"><span><i style="background:${P.none}"></i><b>0</b></span>${BINS.map((b, i) => `<span class="${i === 2 ? "ceil" : ""}"><i style="background:${P.heat[i]}"></i><b>${b[1]}%</b></span>`).join("")}</span><span>outlined: the 10–15% target</span>${keys}`;
+    } else {
+      L.innerHTML = `${["0–2 steps out", "3–5 steps out", "past 5 steps, not deep", "deep countryside"].map((z, i) => `<span class="key"><i style="background:${P.zone[i + 2]}"></i>${z}</span>`).join("")}${keys}`;
+    }
+  }
+  function renderSeeds() {
+    const host = document.getElementById("seeds");
+    host.innerHTML = seeds.map((s) => `<button type="button" data-s="${s}" aria-pressed="${s === seed}">Seed ${s}</button>`).join("");
+    host.querySelectorAll("button").forEach((b) => b.addEventListener("click", () => { seed = +b.dataset.s; try { localStorage.setItem("seed", seed); } catch {} renderSeeds(); renderMaps(); }));
+  }
+  document.querySelectorAll("#views button").forEach((b) => b.addEventListener("click", () => { view = b.dataset.v; document.querySelectorAll("#views button").forEach((x) => x.setAttribute("aria-pressed", x === b)); renderLegend(); renderMaps(); }));
+  for (const id of ["settle", "five"]) document.getElementById(id).addEventListener("change", () => { renderLegend(); renderMaps(); });
+
+  // ---------- charts (SVG, one axis each) ----------
+  const NS = "http://www.w3.org/2000/svg";
+  function lineChart({ title, note, series, xs, xlab, ymax, band, ref, fmtX }) {
+    const el = document.createElement("div");
+    el.className = "chart";
+    const Wd = 420, Ht = 220, l = 40, r = 12, t = 10, b = 28;
+    const X = (x) => l + (x - xs[0]) / (xs[xs.length - 1] - xs[0]) * (Wd - l - r), Y = (y) => t + (1 - y / ymax) * (Ht - t - b);
+    let s = `<svg viewBox="0 0 ${Wd} ${Ht}" role="img" aria-label="${title}">`;
+    if (band) s += `<rect x="${l}" y="${Y(band[1])}" width="${Wd - l - r}" height="${Y(band[0]) - Y(band[1])}" fill="var(--band)"/>`;
+    const step = ymax <= 0.2 ? 0.05 : ymax <= 0.5 ? 0.1 : 0.25, ticks = []; for (let v = 0; v <= ymax + 1e-9; v += step) ticks.push(v);
+    for (const v of ticks) s += `<line x1="${l}" x2="${Wd - r}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--grid)" stroke-width="1"/><text x="${l - 6}" y="${Y(v) + 4}" text-anchor="end">${Math.round(v * 100)}%</text>`;
+    s += `<line x1="${l}" x2="${Wd - r}" y1="${Y(0)}" y2="${Y(0)}" stroke="var(--axis)" stroke-width="1"/>`;
+    for (const x of xs) s += `<text x="${X(x)}" y="${Ht - 8}" text-anchor="middle">${fmtX ? fmtX(x) : x}</text>`;
+    if (ref) s += `<line x1="${l}" x2="${Wd - r}" y1="${Y(ref.v)}" y2="${Y(ref.v)}" stroke="var(--ink-2)" stroke-width="1" stroke-dasharray="3 3"/><text x="${Wd - r}" y="${Y(ref.v) - 4}" text-anchor="end">${ref.label}</text>`;
+    for (const se of series) {
+      const pts = se.pts.filter((p) => p[1] != null);
+      if (!pts.length) continue;
+      s += `<path d="${pts.map((p, i) => `${i ? "L" : "M"}${X(p[0]).toFixed(1)},${Y(p[1]).toFixed(1)}`).join("")}" fill="none" stroke="${se.color}" stroke-width="2" ${se.dash ? `stroke-dasharray="${se.dash}"` : ""} stroke-linejoin="round" stroke-linecap="round"/>`;
+      for (const p of pts) s += `<circle cx="${X(p[0])}" cy="${Y(p[1])}" r="4" fill="${se.color}" stroke="var(--surface)" stroke-width="2"><title>${se.name}, ${fmtX ? fmtX(p[0]) : p[0]}: ${pct(p[1])}</title></circle>`;
+    }
+    s += `</svg>`;
+    el.innerHTML = `<h4>${title}</h4><p>${note}</p><div class="lg">${series.map((se) => `<span><i style="background:${se.color}"></i>${se.name}</span>`).join("")}</div>${s}<p class="eyebrow">${xlab}</p>`;
+    return el;
+  }
+  function renderCharts() {
+    const host = document.getElementById("charts");
+    host.innerHTML = "";
+    const years = [...new Set(D.runs.flatMap((r) => r.years.map((y) => y.year)))].sort((a, b) => a - b);
+    const avg = (w, y, f) => { const v = seeds.map((s) => runOf(w, s)).filter(Boolean).map((r) => r.years.find((x) => x.year === y)).filter(Boolean); return v.length ? v.reduce((a, x) => a + f(x), 0) / v.length : null; };
+    const C1 = css("--s1"), C2 = css("--s2"), C3 = css("--s3");
+    host.append(lineChart({
+      title: "The deep countryside's mean fill", note: `Averaged over seeds ${seeds.join(", ")}. The shaded band is the 10–15% target; the dashed line the 12% floor.`,
+      xs: years, xlab: "years of play", ymax: Math.max(0.2, Math.ceil(Math.max(...years.map((y) => avg("before", y, (x) => x.deep.fill) || 0)) * 10) / 10), band: [0.1, 0.15], ref: { v: D.floor.CEIL, label: "12%" },
+      fmtX: (x) => (x ? `y${x}` : "d1"),
+      series: [{ name: "before", color: C2, pts: years.map((y) => [y, avg("before", y, (x) => x.deep.fill)]) }, { name: "after", color: C1, pts: years.map((y) => [y, avg("after", y, (x) => x.deep.fill)]) }],
+    }));
+    const steps = [1, 2, 3, 4, 5, 6, 7, 8];
+    const reach = (k, s, fl) => Math.max(D.reach[k][s - 1] || 0, fl);
+    host.append(lineChart({
+      title: "The reach: the most a tile can hold", note: "Its share of the cap by hex steps from the nearest source of each kind, at year 5 (the floor at 12%). A tile takes the highest of the three.",
+      xs: steps, xlab: "hex steps from the nearest source", ymax: 1, ref: { v: D.floor.CEIL, label: "floor 12%" },
+      series: [{ name: "city land", color: C1, pts: steps.map((s) => [s, reach("city", s, D.floor.CEIL)]) }, { name: "town", color: C2, pts: steps.map((s) => [s, reach("town", s, D.floor.CEIL)]) }, { name: "hive", color: C3, pts: steps.map((s) => [s, reach("hive", s, D.floor.CEIL)]) }],
+    }));
+    const lastY = years[years.length - 1];
+    const stepFill = (w, s) => avg(w, lastY, (x) => { const e = x.steps.find((q) => q.s === s); return e ? e.fill : 0; });
+    host.append(lineChart({
+      title: `Measured fill by steps out, ${lastY ? `year ${lastY}` : "day 1"}`, note: "Every tile off the sources, by its steps from the nearest town, city or hive tile; averaged over the seeds.",
+      xs: steps, xlab: "hex steps from the nearest source", ymax: 1, band: [0.1, 0.15],
+      series: [{ name: "before", color: C2, pts: steps.map((s) => [s, stepFill("before", s)]) }, { name: "after", color: C1, pts: steps.map((s) => [s, stepFill("after", s)]) }],
+    }));
+  }
+  function renderTables() {
+    const years = [...new Set(D.runs.flatMap((r) => r.years.map((y) => y.year)))].sort((a, b) => a - b);
+    const bands = (y) => (y ? y.deep.bands.map((b) => Math.round(b * 100)).join(" / ") : "–");
+    let h = `<thead><tr><th>seed</th><th>year</th><th>before: fill</th><th>before: bands %</th><th>after: fill</th><th>after: bands %</th></tr></thead><tbody>`;
+    for (const s of seeds) for (const y of years) {
+      const b = runOf("before", s)?.years.find((x) => x.year === y), a = runOf("after", s)?.years.find((x) => x.year === y);
+      const hit = a && a.deep.fill >= 0.1 && a.deep.fill <= 0.15;
+      h += `<tr><td>${s}</td><td>${y ? `year ${y}` : "day 1"}</td><td>${b ? pct(b.deep.fill) : "–"}</td><td class="dim">${bands(b)}</td><td class="${hit ? "hit" : ""}">${a ? pct(a.deep.fill) : "–"}</td><td class="dim">${bands(a)}</td></tr>`;
+    }
+    document.getElementById("deeptable").innerHTML = h + "</tbody>";
+    const avg = (w, y, f) => { const v = seeds.map((s) => runOf(w, s)).filter(Boolean).map((r) => r.years.find((x) => x.year === y)).filter(Boolean); return v.length ? v.reduce((a, x) => a + f(x), 0) / v.length : null; };
+    let z = `<thead><tr><th>year</th><th></th>${D.zones.map((n) => `<th>${n}</th>`).join("")}</tr></thead><tbody>`;
+    for (const y of years) for (const w of ["before", "after"]) z += `<tr><td>${w === "before" ? (y ? `year ${y}` : "day 1") : ""}</td><td>${w}</td>${D.zones.map((_, i) => { const v = avg(w, y, (x) => x.zones[i].fill); return `<td>${v == null ? "–" : pct(v)}</td>`; }).join("")}</tr>`;
+    document.getElementById("zonetable").innerHTML = z + "</tbody>";
+  }
+  const after5 = (() => { const v = seeds.map((s) => runOf("after", s)?.years.find((x) => x.year === 5)).filter(Boolean); return v.length ? v.reduce((a, x) => a + x.deep.fill, 0) / v.length : null; })();
+  document.getElementById("lede").textContent = `How far the dead spread out from the towns, cities and hives, at the end of each year, before and after the reach. Each pixel block is one tile, coloured by how full it is against its own cap.${after5 != null ? ` After the change the deep countryside averages ${pct(after5)} of its cap at year 5.` : ""}`;
+  document.getElementById("notes").innerHTML = D.notes || "";
+  renderSeeds(); renderLegend(); renderMaps(); renderCharts(); renderTables();
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { renderLegend(); renderMaps(); renderCharts(); });
+  new MutationObserver(() => { renderLegend(); renderMaps(); renderCharts(); }).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+})();
+</script>
