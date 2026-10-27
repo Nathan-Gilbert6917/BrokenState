@@ -49,6 +49,8 @@
 //     night raises it past that toward the cap. Without that, every tile the spread (deadspread.js) touched, so stored,
 //     rose to its cap within months (the fix to #66, the user's decision 2026-10-26: a 2-year run had 97% of the land
 //     overrun by year 1); the spread itself still fills the land near the towns, cities and hives up to the caps;
+//   - on the deep countryside (deadspread.js deepLimit, #76) every rise, quiet or loud, stops at its ceiling, and a
+//     count over that sheds DEADSPREAD.DEEP.SHED of the excess a day (its default, seedOf, is held under it too);
 //   - first, a count over its cap is trimmed to it (a POI's excess goes to the open ground, the tile's is lost: the
 //     dead a hive's land held when its hive died, popCap's HIVE_CAP gone, dispersed and rotted; the spread pushes
 //     nothing for them);
