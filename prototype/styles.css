@@ -677,13 +677,59 @@ input.colorinput { width: 1.8rem; height: 1.3rem; padding: 0; border-radius: 4px
 .bgform .nrskill input { width: 3.4rem; }
 /* starting gear window (ui/startgear.js): worn and held on the left, the load and what they carry on the right */
 .sgedit { display: flex; gap: 1.1rem; align-items: flex-start; flex-wrap: wrap; }
-.sgcol { flex: 1; min-width: 20rem; }
+.sgcol { flex: 1; min-width: min(20rem, 100%); }
 .sgcol h3 { margin: 0.5rem 0 0.3rem; font-size: 0.92rem; }
-.sgslot { display: grid; grid-template-columns: 5rem 1fr auto; align-items: center; gap: 0.1rem 0.45rem; padding: 0.22rem 0; border-bottom: 1px solid var(--line); }
-.sgslot select { min-width: 0; width: 100%; }
+/* The loadout (2026-10-27, EdB Prepare Carefully's way): a row a slot, a click makes it the catalogue's target (.on). */
+.sgslot { display: flex; flex-wrap: wrap; align-items: center; gap: 0.1rem 0.25rem; padding: 0.1rem 0; border-bottom: 1px solid var(--line); }
+button.sgpick { flex: 1 1 0; min-width: 0; display: flex; align-items: center; gap: 0.4rem; padding: 0.15rem 0.35rem; text-align: left; background: transparent; border-color: transparent; font-size: 0.85rem; }
+.sgslot.on button.sgpick, button.sgpick.on { background: #4a3816; border-color: var(--accent); }
+.sgcol h3 button.sgcarry { width: 100%; font-weight: 600; }
+button.sgpick .sglabel { flex: none; width: 4.6rem; }
+button.sgx { flex: none; padding: 0 0.4rem; }
 .sglabel { color: var(--muted); font-size: 0.85rem; }
-.sginfo { grid-column: 2 / -1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.sgparts { grid-column: 1 / -1; margin-top: 0.2rem; } /* the gun in the hands' parts (a select a slot) */
+.sgparts { flex-basis: 100%; margin-top: 0.2rem; } /* the gun in the hands' parts (a select a slot) */
+.sgthings { display: flex; flex-wrap: wrap; gap: 0.15rem; margin-top: 0.15rem; }
+.chip.sgthing { display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.05rem 0.1rem 0.05rem 0.35rem; }
+.chip.sgthing .gppic { width: 1.6rem; height: 1.1rem; }
+.chip.sgthing button.mini { padding: 0 0.3rem; }
+.lookopts.sgsups { grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr)); gap: 0.25rem 0.6rem; }
+.sgsups .lookopt { flex-direction: row; align-items: center; gap: 0.3rem; }
+.sgsups .lookopt input { margin-left: auto; }
+.sgsups .lookopt .gpimg { flex: none; width: 1.1rem; height: 1.1rem; }
+.sgcat h3 .small { text-transform: none; letter-spacing: 0; }
+/* The catalogue (ui/gearpicker.js): a mode tab, the find box and sort, the category chips, the rows (a <button> each). */
+.gpick { display: flex; flex-direction: column; gap: 0.25rem; }
+.gpmodes { display: flex; flex-wrap: wrap; gap: 0.2rem; }
+.gpbar { display: flex; flex-wrap: wrap; gap: 0.3rem; align-items: center; }
+.gpq { flex: 1 1 8rem; min-width: 6rem; padding: 0.22rem 0.5rem; font-size: 0.85rem; }
+.gpsorts { display: inline-flex; gap: 2px; }
+.gpbar label { white-space: nowrap; }
+.gpchips { display: flex; flex-wrap: wrap; gap: 0.2rem; }
+.gpchips .gpchip { padding: 0.05rem 0.4rem; font-size: 0.74rem; border-radius: 99px; }
+.gplist { display: flex; flex-direction: column; gap: 2px; max-height: min(26rem, 60vh); overflow-y: auto; overscroll-behavior: contain; padding-right: 2px; }
+.gpgrp { position: sticky; top: 0; z-index: 1; padding: 0.15rem 0.3rem; font-size: 0.7rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); background: var(--panel); }
+button.gprow { display: flex; align-items: center; gap: 0.45rem; width: 100%; padding: 0.12rem 0.35rem; text-align: left; font-size: 0.8rem; line-height: 1.15; }
+button.gprow.on { border-color: var(--good); background: #21402c; }
+button.gprow.dim { opacity: 0.55; }
+button.gprow.dim:hover { opacity: 0.85; }
+.gppic { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 2.4rem; height: 1.4rem; }
+.gppic img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.gpart { display: block; width: 100%; height: 100%; background: center / contain no-repeat; image-rendering: pixelated; } /* a picture by its class (ui/gearpicker.js gearPic) */
+.gpname { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gpbit, .gpcat { font-size: 0.7rem; color: var(--muted); }
+.gpkg { flex: none; width: 4.2rem; text-align: right; font-size: 0.72rem; color: var(--muted); white-space: nowrap; }
+.gppts { flex: none; width: 3.4rem; text-align: right; font-weight: 600; white-space: nowrap; }
+.gpmore { padding: 0.3rem; }
+@media (max-width: 759px), (pointer: coarse) and (min-width: 760px) and (max-height: 500px) {
+  .gpchips { flex-wrap: nowrap; overflow-x: auto; overscroll-behavior-x: contain; padding-bottom: 2px; } /* a phone: the chips one row that scrolls sideways */
+  #modal .gpchips .gpchip { flex: none; min-height: 2.1rem; }
+  #modal button.gprow { min-height: 2.6rem; }
+}
+@media (max-width: 759px) {
+  .gplist { max-height: 55vh; }
+  .gpkg { width: 3.4rem; }
+  button.sgpick .sglabel { width: 3.6rem; }
+}
 .sgparts .lookopts { grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr)); margin: 0.2rem 0 0; }
 .sgwhere { margin-top: 0.35rem; display: flex; flex-direction: column; gap: 0.2rem; }
 .sgwhere .chip { margin: 0.05rem 0.1rem; }

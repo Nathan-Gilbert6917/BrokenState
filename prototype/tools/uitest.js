@@ -622,9 +622,9 @@ section("New-run screen: world size and AI groups (sim/worldsize.js)");
   const { BG_ACTIONS, BG_CHANGE, backgroundEditor, setCustomLibrary, presetToCustom } = await import("../src/ui/backgrounds.js"); // custom backgrounds window
   Object.assign(CLICK, BG_ACTIONS);
   Object.assign(CHANGE, BG_CHANGE);
-  const { SG_ACTIONS, SG_CHANGE, startGearEditor } = await import("../src/ui/startgear.js"); // the starting gear window (Customize)
+  const { SG_ACTIONS, SG_CHANGE, GP_INPUT, startGearEditor } = await import("../src/ui/startgear.js"); // the starting gear window (Customize)
   Object.assign(CLICK, SG_ACTIONS);
-  Object.assign(CHANGE, SG_CHANGE);
+  Object.assign(CHANGE, SG_CHANGE, GP_INPUT); // GP_INPUT: its catalogue's find box, as you type (main.js PANEL_INPUT; ui/gearpicker.js)
   const { WORLD_SIZES, SIZE_KEYS, clampGroups, HIVES_MAX } = await import("../src/sim/worldsize.js");
   for (const k of SIZE_KEYS) {
     const d = WORLD_SIZES[k];

@@ -259,7 +259,7 @@ section("Guns: calibre and capacity, parts, a loaded magazine");
   ui.gearEdit = { i: 0, sel: null, msg: "" };
   const s = st.survivors[0];
   let html = startGearEditor(st, ui);
-  check(/>Assault rifle · 5\.56 NATO( \/ \.223 Rem)? · 30 rds · /.test(html) && />9mm pistol · 9mm · 15 rds · /.test(html) && /Takes 5\.56 NATO( \(and \.223 Rem\))?: 30 rounds/.test(html), "every gun in the pickers: its calibre and rounds (and a sentence on hover)");
+  check(/>Assault rifle <span class="gpbit">5\.56 NATO( \/ \.223 Rem)? · 30 rds<\/span>/.test(html) && />9mm pistol <span class="gpbit">9mm · 15 rds<\/span>/.test(html) && /Takes 5\.56 NATO( \(and \.223 Rem\))?: 30 rounds/.test(html), "every gun in the pickers: its calibre and rounds (and a sentence on hover; the catalogue's rows, ui/gearpicker.js, 2026-10-27)");
   SG_CHANGE["sg-slot"](st, ui, { value: "ar", dataset: { slot: "weapon" } });
   const p0 = pricePerson(st, s).gear;
   html = startGearEditor(st, ui);

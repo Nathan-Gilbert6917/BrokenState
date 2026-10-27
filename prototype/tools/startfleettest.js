@@ -113,7 +113,9 @@ section("3. Custom: several vehicles, any thing and material");
   // The window: any supply or material.
   const ui = UI({ mode: "custom", freeEdit: true });
   SG_ACTIONS["fleet-edit"](st, ui, { i: "1" });
-  check(ui.fleetEdit && ui.fleetEdit.i === 1 && /data-action="sg-trunk-supadd"/.test(fleetEditor(st, ui)), "Edit… under Customize: the window, with Add a supply or material");
+  SG_ACTIONS["gp-mode"](st, ui, { ns: "trunk", m: "sups" }); // the catalogue's Supplies and materials (ui/gearpicker.js, 2026-10-27)
+  check(ui.fleetEdit && ui.fleetEdit.i === 1 && /data-action="gp-mode" data-ns="trunk" data-m="sups"/.test(fleetEditor(st, ui)) && /data-action="sg-pick-sup" data-k="propane"/.test(fleetEditor(st, ui)), "Edit… under Customize: the window, with Add a supply or material (the catalogue's Supplies and materials)");
+  SG_ACTIONS["gp-mode"](st, ui, { ns: "trunk", m: "things" });
   check(SG_CHANGE["sg-trunk-supadd"](st, ui, el("stone")) === "fleet" && ui.fleet[1].load.supplies.stone === 10 && st.fleet[1].load.supplies.stone === 10, "a material in: ten of it, on the screen's fleet and the world's");
   check(SG_CHANGE["sg-trunk-sup"](st, ui, el(250, { k: "stone" })) === "fleet" && ui.fleet[1].load.supplies.stone === 250, "as much as the room holds (250 stone)");
   SG_CHANGE["sg-trunk-sup"](st, ui, el(99999, { k: "stone" }));

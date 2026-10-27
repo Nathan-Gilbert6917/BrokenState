@@ -2,7 +2,8 @@
 //   folds        a short line you can open for what is under it; the panels are redrawn as a whole (main.js setHTML),
 //                so each fold remembers whether it is open by its key, for the session
 //   scroll fades the top / bottom edge of a box that scrolls fades out while there is more to see that way
-//   focus        a text box in a panel keeps the focus and the caret when the panel is redrawn under it
+//   focus        a text box in a panel keeps the focus and the caret when the panel is redrawn under it (and a list
+//                marked data-keepscroll its scroll)
 //   People tab   the find box's text and the compact / cards view (remembered in this browser)
 const opened = new Map(); // key → open (true) or closed (false) by the player; a fold never touched shows its default
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -57,9 +58,23 @@ export function keepFocusAfter(el, k) {
   n.focus({ preventScroll: true });
   try { if (k.s != null) n.setSelectionRange(k.s, k.e, k.d); } catch { /* not a text box */ }
 }
+// A box marked data-keepscroll="key" that scrolls on its own (the starting-gear catalogue's list, ui/gearpicker.js,
+// 2026-10-27) keeps its scroll when its panel is rewritten, while its key is the same (a new view: a new key, the top).
+export function keepScrollBefore(el) {
+  if (!el || !el.querySelectorAll) return null;
+  const out = [];
+  for (const n of el.querySelectorAll("[data-keepscroll]")) if (n.scrollTop > 0) out.push([n.dataset.keepscroll, n.scrollTop]);
+  return out.length ? out : null;
+}
+export function keepScrollAfter(el, saved) {
+  if (!saved || !el || !el.querySelectorAll) return;
+  const now = [...el.querySelectorAll("[data-keepscroll]")];
+  for (const [key, top] of saved) { const n = now.find((x) => x.dataset.keepscroll === key); if (n) n.scrollTop = top; }
+}
 // Everything a panel needs after it was rewritten.
-export function afterPanelWrite(el, k) {
+export function afterPanelWrite(el, k, scroll = null) {
   keepFocusAfter(el, k);
+  keepScrollAfter(el, scroll);
   updateFades(el);
 }
 
