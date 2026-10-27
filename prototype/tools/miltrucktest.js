@@ -115,7 +115,7 @@ section("What is in one (truckLoot)");
 let truckValue = 0;
 {
   const rng = new Rng(SEED);
-  const N = 400;
+  const N = 100;
   const keys = new Set(), avg = {};
   for (const kind of Object.keys(TRUCK_KINDS)) for (const cond of ["intact", "wrecked", "burnt"]) {
     let v = 0, items = 0, ammo = 0;

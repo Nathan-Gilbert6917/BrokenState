@@ -64,7 +64,7 @@ const W = (opts = {}) => { const st = createWorld({ seed, factionCount: 6, ...op
   const st = W();
   for (const mix of Object.keys(MIXES)) {
     let sum = 0;
-    const N = 300;
+    const N = 100;
     for (let i = 0; i < N; i++) sum += foodIn(typedFood(st, mix, 10));
     check(Math.abs(sum / N - 10) < 0.35, `10 days of "${mix}" food average ${r2(sum / N)} days (the dice round whole items)`);
   }

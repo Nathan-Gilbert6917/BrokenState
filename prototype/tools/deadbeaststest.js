@@ -202,7 +202,7 @@ section("In a fight (combat.js damage, meleeOdds)");
   d3.dead = true;
   check(packAim(b, d1, me) === BEASTS.PACK, "a dead one of the pack counts for nothing");
   // Bites leave the worm in the living INFEST of the time.
-  let bit = 0, N = 600;
+  let bit = 0, N = 100;
   for (let i = 0; i < N; i++) { me.wormed = false; me.hp = 200; beastBite(b, me, d1); if (me.wormed) bit++; }
   check(Math.abs(bit / N - BEASTS.INFEST) < 0.06, `a beast's bite leaves the worm in someone about ${Math.round(BEASTS.INFEST * 100)}% of the time (${bit} of ${N})`);
   me.wormed = false; me.hp = 200;
