@@ -5,6 +5,10 @@
 //   --quick (npm run test:quick): every test in its short form. The long ones (over 10 minutes in full) read
 //   BS_QUICK=1 from the environment and play fewer seeds, days and runs, the same checks on less; the rest run as
 //   they are. No SLOW allowance: each has the plain time limit.
+//   The whole suite (no pattern) is held to --budget seconds of wall time (default 10800, 3 hours): the SLOW tests run
+//   in their quick form (BS_QUICK=1) unless --long is given, they start first, no test starts once the budget is spent,
+//   and a test still running at the deadline is killed. Both count as failures, so a run never passes on less than it
+//   was meant to run. With patterns the budget applies too but nothing is made quick (use --quick for that).
 import { readdirSync, mkdirSync, writeFileSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { cpus } from "node:os";
@@ -18,19 +22,23 @@ const jobs = Number(opt("--jobs", Math.max(1, cpus().length)));
 const QUICK = args.includes("--quick");
 if (QUICK) args.splice(args.indexOf("--quick"), 1);
 const timeout = Number(opt("--timeout", 600)) * 1000;
+const budget = Number(opt("--budget", 10800)) * 1000;
+const LONG = args.includes("--long");
+if (LONG) args.splice(args.indexOf("--long"), 1);
 // Tests that run a year of 12 seeds twice in child processes (about 20 minutes alone on 4 cores, twice that while
 // other tests share them): this many times the timeout.
 const SLOW = { "depletetest.js": 4, "diplotest.js": 4, "worktest.js": 2, "savetest.js": 3, "sameseedtest.js": 3, "surveytest.js": 4, "discoverytest.js": 4, "conquertest.js": 4, "autotest.js": 4, "foragetest.js": 2, "caravantest2.js": 6, "hivetest.js": 4, "stealthtest.js": 3, "hunttest.js": 8, "poipacingtest.js": 4, "exploretest.js": 2, "medstest.js": 2 }; // worktest: about 32 minutes alone; savetest about 15 and sameseedtest about 13 (2026-10-22), over the 10-minute limit even alone; surveytest (18 autopilot runs of 90 days) and discoverytest (9 of 120) took 34 and 36 minutes with the machine shared (2026-10-23): the autopilot's days cost about twice what they did on 2026-10-18 (the 250 × 250 base maps, more teams out); conquertest: six 400-day autopilot worlds played to their first taken base (days 61-163, about 2-3 s a game day like autotest's) is 25-35 minutes (2026-10-23); autotest: five 120-day autopilot worlds, 80-160 s each with the machine to itself, over the 10-minute limit with the others running (2026-10-23); foragetest: six 40-day autopilot games, 190 s alone on the 250 × 250 base maps and about 330 s on the 500 × 500 ones (2026-10-24: each clearing lays the base's land again), over the limit with the others running; caravantest2: eight 200-day autopilot worlds (the groups robbing caravans is luck in one), 112 minutes with the machine shared by other test runs (load 10-20 on 4 cores, 2026-10-24), each world 8-15 minutes; hivetest: two 365-day autopilot worlds, two of 120 days and the calibration's 264 battles, 27 minutes of CPU (30.5 minutes with load 7-12 on 4 cores, 2026-10-24; its 40-day autopilot a little faster than at bc31471); stealthtest: its checks and a 120-day soak, about 17 minutes (2026-10-24), 9–10 minutes with the machine shared since its Monte Carlo builds the small 64 × 42 map (issue #63, 2026-10-26), at the 10-minute limit; hunttest: 24 lean-year autopilot worlds of 110 days (about 2 minutes each alone) after 2 minutes of checks, 59 minutes with the machine shared then alone (2026-10-24; the autopilot's day about 1.7 times its cost on 2026-10-22, the bigger base maps, and faster than at the stone merge c5960f6); poipacingtest: 4 years of three Normal and three Large worlds in parallel (seeds 42-44), about 17 minutes on 4 cores alone, more shared (issue #45, 2026-10-26: Large about 2-3 minutes a year since the map sizes of 2026-10-24); depletetest (issue #63, 2026-10-26): its 24 loot-curve years (about 250-285 s each) now play beside its other sections (about 440 s), about 1600-1800 s alone on 4 cores by the sum, but 94 minutes with the machine shared at load 11: run it alone, or BS_QUICK (about 150 s); exploretest: its three 200-day long runs side by side in child processes, 570 s with the machine shared at load 11 (issue #63, 2026-10-26; killed at 600 s one after another); medstest: 64 raids at each ordinary place and 16 at the rest, its site types in 4 child processes, 25.5 minutes of CPU, 13.2 minutes with the machine shared (load 7-10 on 4 cores, issue #63, 2026-10-26)
 const skip = (opt("--skip", "") || "").split(",").filter(Boolean);
 const jsonOut = opt("--json", null);
 const patterns = args;
+const WHOLE = !patterns.length && !LONG; // the whole suite: the SLOW tests in their quick form, to fit the budget
 // Not tests: tools that only report, or need a browser.
 const NOT_TESTS = new Set(["runtests.js"]);
 const files = readdirSync(here)
   .filter(f => /test.*\.js$/.test(f) && !NOT_TESTS.has(f))
   .filter(f => !patterns.length || patterns.some(p => f.includes(p)))
   .filter(f => !skip.some(p => f.includes(p)))
-  .sort();
+  .sort((a, b) => (SLOW[b] || 0) - (SLOW[a] || 0) || a.localeCompare(b)); // the slow ones first, so they overlap the short ones
 const logs = join(here, ".testlogs");
 mkdirSync(logs, { recursive: true });
 
@@ -40,11 +48,11 @@ const t0 = Date.now();
 function runOne(f) {
   return new Promise(res => {
     const start = Date.now();
-    const child = spawn(process.execPath, [join(here, f)], { cwd: dirname(here), env: QUICK ? { ...process.env, BS_QUICK: "1" } : process.env, stdio: ["ignore", "pipe", "pipe"], detached: true }); // its own process group: a timeout kills its children too
+    const child = spawn(process.execPath, [join(here, f)], { cwd: dirname(here), env: QUICK || (WHOLE && SLOW[f]) ? { ...process.env, BS_QUICK: "1" } : process.env, stdio: ["ignore", "pipe", "pipe"], detached: true }); // its own process group: a timeout kills its children too
     let out = "";
     child.stdout.on("data", d => { out += d; if (out.length > 4e6) out = out.slice(-2e6); });
     child.stderr.on("data", d => { out += d; if (out.length > 4e6) out = out.slice(-2e6); });
-    const limit = timeout * (QUICK ? 1 : SLOW[f] || 1);
+    const limit = Math.min(timeout * (QUICK || WHOLE ? 1 : SLOW[f] || 1), Math.max(1000, t0 + budget - start));
     const timer = setTimeout(() => { out += `\n[runtests] timed out after ${limit / 1000}s\n`; try { process.kill(-child.pid, "SIGKILL"); } catch { child.kill("SIGKILL"); } }, limit);
     child.on("close", (code, sig) => {
       clearTimeout(timer);
@@ -58,7 +66,9 @@ function runOne(f) {
 await new Promise(done => {
   const pump = () => {
     while (running < jobs && next < files.length) {
-      const f = files[next++]; running++;
+      const f = files[next++];
+      if (Date.now() - t0 >= budget) { results.push({ file: f, ok: false, code: "budget", secs: 0, tail: "not run: the budget of " + budget / 1000 + "s was spent" }); process.stdout.write(`FAIL ${f} (not run: budget spent)\n`); if (results.length === files.length) done(); continue; }
+      running++;
       runOne(f).then(r => {
         running--; results.push(r);
         process.stdout.write(`${r.ok ? "ok  " : "FAIL"} ${r.file} (${r.secs.toFixed(1)}s)\n`);

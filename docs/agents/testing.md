@@ -12,6 +12,10 @@ Run `node tools/gate.js` from `prototype/` before every merge to dev. **A merge 
 - `node tools/gate.js --against origin/dev` (or any ref, such as `09c8f00`) also runs the set in a temporary worktree of that ref and lists the checks failing here only, there only and on both. That is how you prove a failure is old.
 - `node tools/gate.js <test...>` runs just those tests (file-name substrings) against the same baseline, for example `node tools/gate.js --against origin/dev interiortest`.
 
+## The whole suite has a 3-hour budget
+
+`node tools/runtests.js` with no pattern is held to `--budget` seconds of wall time (default 10800). The slow tests run in their quick form (`BS_QUICK=1`) unless `--long` is given, they start first, no test starts once the budget is spent, and one still running at the deadline is killed. Tests cut that way are listed as FAIL ("not run: the budget was spent") so a run never passes on less than it was meant to run. This has not been timed end to end: if a run reports budget failures, raise `--jobs`, or shorten the tests it names.
+
 ## Never
 
 - Never run `npm test`, or `node tools/runtests.js` with no pattern: that is the full suite.
