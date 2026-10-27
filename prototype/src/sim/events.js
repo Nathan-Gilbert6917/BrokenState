@@ -32,7 +32,7 @@ import { setGunStack } from "./gunload.js"; // the rounds in a gun (2026-10-20: 
 import { gunCapacity } from "./gunrounds.js";
 import { swapGun } from "./gundist.js"; // the gun distribution: a crashed Humvee's gun
 import { marchingNow, NIGHT_MARCH } from "./nightmarch.js"; // pushing on through the night: more trouble on the road
-import { isHardcore } from "./hardcore.js"; // hardcore's year Calder falls: road cards of its own (HC_EVENTS)
+import { isRoadStart } from "./roadstart.js"; // hardcore's year Calder falls: road cards of its own (HC_EVENTS)
 import { hardcoreEraOffset, hcOutbreakCity } from "./hardcore-outbreak.js";
 import { hcMilitary } from "./hardcore-groups.js";
 import { cfgChance } from "./worldcfg.js"; // the run's dials: Events
@@ -803,7 +803,7 @@ const EVENTS = [
 // hardcoreEraOffset): the evacuation that jammed the roads, the Guard's checkpoints and relief drops while it still
 // stands, the emergency broadcast still on the air, people who would not leave, the first weeks' looters, and the dead
 // still in the clothes they died in. Most come in the first weeks and fade as the months go by (hcFade).
-const hcYear = (st) => isHardcore(st) && day(st) <= hardcoreEraOffset(st);
+const hcYear = (st) => isRoadStart(st) && day(st) <= hardcoreEraOffset(st);
 const hcFade = (st, days) => Math.exp(-(day(st) - 1) / days);
 const guardStands = (st) => { const m = hcMilitary(st); return !!m && !m.fell; };
 const LOOTED = { town: "corner shop", gas: "gas station", pharmacy: "pharmacy", grocery: "grocery store", supermarket: "supermarket", truckstop: "truck stop" };

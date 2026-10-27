@@ -9,6 +9,7 @@
 // it can be a start (startWhyNot: open land START_CLEAR tiles or more from the towns, cities, hives and groups); the
 // world's die is cast all the same, so only where you start changes.
 import { Rng } from "./rng.js";
+import { isRoadStart } from "./roadstart.js";
 
 // A town's or a city's tile (the user's request 2026-10-22: "Bases cannot be established in towns and city tiles"): the
 // city's blocks and suburbs (terrain city, suburb), a town's centre (loc town) and its shops and services round it (a
@@ -96,7 +97,7 @@ export function startWhyNot(state, id) {
   if (t.hive) return "A hive is there.";
   if ((state.militaryIds || []).includes(id)) return "The National Guard holds that base.";
   if (state.factions.some((f) => (f.bases || []).includes(id))) return "Another group's base is there.";
-  if (state.mode === "hardcore" || state.crash) return ""; // Hardcore and Crashlanding (crashmode.js, 2026-10-24): any open land that is no hive and no base
+  if (isRoadStart(state) || state.crash) return ""; // Hardcore and Crashlanding (crashmode.js, 2026-10-24): any open land that is no hive and no base
   if (isSettlementTile(t)) return `Your hub cannot be in a town or a city: pick open land at least ${START_CLEAR} tiles out.`;
   const n = startNear(state).get(id);
   if (n) return `Too close to ${n.what} (${n.d} tile${n.d === 1 ? "" : "s"}): a start has to be at least ${START_CLEAR} tiles from the towns, the cities, the hives and the other groups.`;

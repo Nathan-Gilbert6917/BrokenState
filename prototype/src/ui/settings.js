@@ -67,7 +67,7 @@ function ago(ts) {
   const d = new Date(ts);
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 }
-const entryLine = (e) => `Day ${e.day ?? "?"}, ${pad2(e.hour ?? 0)}:00 · ${e.ironman ? "Ironman · " : ""}${e.mode === "hardcore" ? `Hardcore${e.startPeople && e.startPeople !== 3 ? ` (${e.startPeople} at the start)` : ""} · ` : ""}${esc(e.hub || (e.mode === "hardcore" ? "on the road" : "?"))} ·${e.survivors ?? "?"} alive · seed ${e.seed ?? "?"}${WORLD_SIZES[e.world] && e.world !== "normal" ? ` · ${WORLD_SIZES[e.world].label} map` : e.world === "custom" ? " · Custom map" : ""}${e.gameOver ? (e.victory ? " · won" : " · fallen") : ""}`;
+const entryLine = (e) => `Day ${e.day ?? "?"}, ${pad2(e.hour ?? 0)}:00 · ${e.ironman ? "Ironman · " : ""}${e.mode === "hardcore" ? `Hardcore${e.startPeople && e.startPeople !== 3 ? ` (${e.startPeople} at the start)` : ""} · ` : ""}${esc(e.hub || (e.mode === "hardcore" || e.start === "road" ? "on the road" : "?"))} ·${e.survivors ?? "?"} alive · seed ${e.seed ?? "?"}${WORLD_SIZES[e.world] && e.world !== "normal" ? ` · ${WORLD_SIZES[e.world].label} map` : e.world === "custom" ? " · Custom map" : ""}${e.gameOver ? (e.victory ? " · won" : " · fallen") : ""}`;
 
 // ---------- the view ----------
 export function settingsModal(state, ui, api = API) {

@@ -9,32 +9,35 @@
 // tile.loot above) × START, poi.poolNormal what it held at a normal start, the surplus wearing off by the same share a
 // day; once it is gone the pool goes back to exactly what it was made with (unless a raid took it lower), so a save
 // keeps only the POIs that changed (pois.js packPois).
-import { isHardcore } from "./hardcore.js";
+import { isRoadStart, isHardcore } from "./roadstart.js";
+import { HARD } from "./hardrules.js";
 import { hcEraOffset } from "./hardcore-groups.js";
 import { poisOf, isSitePoi } from "./pois.js";
 
 export const HC_LOOT = { START: 2, LEFT_AT_ERA: 0.1 };
+// Normal's road start leaves twice a normal start's loot; Hardcore starts below it (hardrules.js LOOT_START).
+const startLoot = (state) => (isHardcore(state) ? HARD.LOOT_START : HC_LOOT.START);
 
 // createWorld (hardcore.js hardcoreAfterHives): double every tile's loot and every POI's pool, remembering the normal
 // start's level.
 export function setupHardcoreLoot(state) {
-  if (!isHardcore(state)) return;
+  if (!isRoadStart(state)) return;
   for (const t of state.tiles) {
     poisOf(t).forEach((p, i) => {
       if (isSitePoi(t, i) || !(p.pool > 0)) return;
       p.poolNormal = p.pool;
-      p.pool = p.pool * HC_LOOT.START;
+      p.pool = p.pool * startLoot(state);
     });
     if (!(t.loot > 0)) continue;
     t.lootNormal = t.loot;
-    t.loot = t.loot * HC_LOOT.START;
+    t.loot = t.loot * startLoot(state);
   }
 }
 
 // Once a day (hardcore.js hardcoreDaily): the surplus above the normal start's level shrinks by the same share a day,
 // so LEFT_AT_ERA of it is left on the day the normal game would start.
 export function hardcoreLootDaily(state) {
-  if (!isHardcore(state)) return;
+  if (!isRoadStart(state)) return;
   const keep = Math.pow(HC_LOOT.LEFT_AT_ERA, 1 / Math.max(20, hcEraOffset(state)));
   for (const t of state.tiles) {
     for (const p of poisOf(t)) {

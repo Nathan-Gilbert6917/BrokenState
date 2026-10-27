@@ -9,6 +9,7 @@
 //               the nearest base or the hub on foot, give them supplies and part ways (2 food and 2 water each from
 //               the team: +2 mood for the team, +2 goodwill with known groups nearby), or turn them away.
 // People walking to a base arrive after their days on the road (or never). Deserters (morale.js) sometimes come back.
+import { hardMult } from "./hardrules.js";
 import { foodIn, payFood } from "./foods.js"; // food by type (foods.js)
 import { SKILL_NAMES, TRAITS } from "./data.js";
 import { log, addCard, day, hub, baseById, residents, survivorById, makeSurvivor, skill } from "./world.js";
@@ -143,7 +144,7 @@ function walkTo(state, s, base, fromTile) {
   const dist = state.grid.distance(fromTile, base.tile);
   delete s.pending;
   s.walking = true;
-  (state.walkers || (state.walkers = [])).push({ s, baseId: base.id, arrive: day(state) + walkDays(dist), chance: walkChance(dist) });
+  (state.walkers || (state.walkers = [])).push({ s, baseId: base.id, arrive: day(state) + walkDays(dist), chance: walkChance(dist) * hardMult(state, "RECRUIT") });
 }
 // Word gets around: known groups (not hostile) with a base near the tile.
 function goodwillNear(state, tile) {
@@ -290,6 +291,8 @@ export function recruitCard(state, candidates, ctx) {
 
 export function offerRecruits(state, candidates, ctx) {
   if (!hub(state) && ctx.partyId == null) return null; // no base left (conquest.js exiles): nobody to take them in
+  const keep = Math.max(1, Math.ceil(candidates.length * hardMult(state, "RECRUIT"))); // hardrules.js: fewer strangers come asking in Hardcore
+  if (keep < candidates.length) candidates = candidates.slice(0, keep);
   const card = recruitCard(state, candidates, ctx);
   addCard(state, card);
   return card;

@@ -31,7 +31,7 @@ import { supplyAmt, useSupply, roundsIn } from "./rounds.js"; // "ammo": every r
 import { calibrateDeal, suppliesText, baseAmmo } from "./ammo.js"; // a deal's rounds named by calibre
 import { changeGoodwill } from "./factions.js";
 import { tileLabel } from "./parties.js";
-import { isHardcore } from "./hardcore.js"; // hardcore's year Calder falls: hub events of its own
+import { isRoadStart } from "./roadstart.js"; // hardcore's year Calder falls: hub events of its own
 import { hardcoreEraOffset, hcOutbreakCity } from "./hardcore-outbreak.js";
 import { hcMilitary } from "./hardcore-groups.js";
 import { cfgOf } from "./worldcfg.js"; // the run's dials: Events
@@ -57,7 +57,7 @@ export const FENCE = { shots: 3 }; // rounds a head of the dead, shooting from t
 export const COLD = { wood: 45, fuel: 0.3, frostbite: 0.3 };
 export const SALVAGE = { scrap: [6, 12], risk: 0.2, sheets: 2, electronics: 1 }; // sheets: off the pickup's bed and doors; electronics: its engine control unit and radio (the user's request 2026-10-24: electronics salvaged from cars)
 // Hardcore's first year (until the day a normal game would start), the first weeks most.
-const hcYear = (st) => isHardcore(st) && day(st) <= hardcoreEraOffset(st);
+const hcYear = (st) => isRoadStart(st) && day(st) <= hardcoreEraOffset(st);
 const hcFade = (st, days) => Math.exp(-(day(st) - 1) / days);
 export const HC_CROWD = { share: 0.05, little: 0.3, refused: 0.4 };
 export const HC_DESERTER = { goodwill: 8 };

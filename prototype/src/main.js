@@ -1,6 +1,7 @@
 // Entry point: game loop, input, and the action dispatcher that connects the UI to the simulation.
 import { haulAdd, haulDel, haulVeh, haulFormChange } from "./ui/hauling.js"; // the Hauling panel's actions
 import { togglePeopleIdle, assignIdlePreview } from "./ui/activity.js"; // the People tab's Idle filter, Assign all idle
+import { isRoadStart, isHardcore, roadScreenMode } from "./sim/roadstart.js";
 import { gearOutdoorWorkers, gearText } from "./sim/tripgear.js"; // the Work now panel's Gear outdoor workers (trips-plus #2)
 import { applyIdlePlan } from "./sim/idlework.js";
 import {
@@ -59,7 +60,7 @@ import { woodAbundance } from "./sim/woodcutting.js";
 import { canClaim, wellProblem, CLAIM } from "./sim/claims.js"; // land claims and wells (the right-click menu)
 import { initCombatUI, drawCombat, renderCombatPanel, renderCombatBar, raidLayout, renderRaidTop, renderRaidCards, renderRaidLog, renderRaidLogFoot, combatTick, combatMouse, combatClick, combatKey, combatKeyUp, combatAction, combatPress, combatRelease, combatWheel, combatPan, combatLeave, combatTap, combatTapChip, cui, padCur, combatPadOn, combatPadOff, combatPadMove, combatPadFrame, combatPadA, combatPadB, combatPadCycle, combatPadEnd, combatPadZoom } from "./ui/combat.js";
 import { defaultCustom, cleanCustom, clampCustomCount, isCustomRun, startsWithVehicle } from "./sim/custommode.js"; // Custom mode and Start with a vehicle (2026-10-24)
-import { defaultFleet, fleetText } from "./sim/startfleet.js"; // the starting vehicles: each its kind, point limit and back (2026-10-24)
+import { defaultFleet, fleetKind, fleetText } from "./sim/startfleet.js"; // the starting vehicles: each its kind, point limit and back (2026-10-24)
 import { isCrashRun } from "./sim/crashmode.js"; // Crashlanding (2026-10-24): a normal-mode run with state.crash, the screen's fourth mode
 import { LOOK_ACTIONS, LOOK_CHANGE_ACTIONS, crewSnapshot, randomizeAllCrew, randomizeEverything, randomizeGear, randomizeOne, rerollCarried, randomBackground, rollRandomRun, ironmanCrew, crewCustomized, crewWithBackground, crewWithBackgrounds, blankCrew, backToSetup, stashModeSet, takeModeSet, crashSizeDef, generating, generatingUp } from "./ui/newgame.js"; // crashSizeDef: Crashlanding's map defaults (runOpts); generating: the "Generating map…" box over every world build (gen)
 import { CUSTOM_POINTS, clampMax, overText } from "./sim/custompoints.js"; // Customize: everything costs points
@@ -222,8 +223,8 @@ const ui = { title: false, scale: 1, factionCount: 7, worldSize: DEFAULT_SIZE, c
 // vehicle's kind, point limit and back) are the current mode's, the other modes' wait here (switching mode swaps them:
 // ui/newgame.js stashModeSet and takeModeSet, from the gamemode select, rollRandomRun and adopt).
 ui.modeSets = {
-  normal: { startPeople: NORMAL_PEOPLE.DEF, pointsMax: CUSTOM_POINTS.DEF, startVehicle: true, fleet: defaultFleet("normal") },
-  hardcore: { startPeople: START_PEOPLE.DEF, pointsMax: CUSTOM_POINTS.DEF, startVehicle: true, fleet: defaultFleet("hardcore") },
+  normal: { startPeople: NORMAL_PEOPLE.DEF, pointsMax: CUSTOM_POINTS.DEF, startVehicle: true, fleet: defaultFleet(fleetKind("normal")) },
+  hardcore: { startPeople: START_PEOPLE.DEF, pointsMax: CUSTOM_POINTS.DEF, startVehicle: true, fleet: defaultFleet(fleetKind("hardcore")) },
   custom: { startPeople: peopleRange("custom").DEF, pointsMax: CUSTOM_POINTS.DEF, startVehicle: true, fleet: defaultFleet("custom") },
   crash: { startPeople: peopleRange("crash").DEF, pointsMax: CUSTOM_POINTS.DEF, startVehicle: false, fleet: [] }, // Crashlanding (sim/crashmode.js): one survivor, no vehicle; its Points each is its own
 };
@@ -247,7 +248,7 @@ initAudio(options, () => saveOptions(options)); // the Sound options, the first-
 // until you start the game, or want to select a tile or view the map prior to starting instead of what is currently
 // loading the map as the application starts"): the settings and the crew on a tiny map, built at once; the real map is
 // built when it is needed (newWorld's real, gen). Every later build goes through gen() below.
-let state = createWorld({ seed: randomSeed(), factionCount: ui.factionCount, size: ui.worldSize, worldCfg: ui.worldCfg, preview: true });
+let state = createWorld({ seed: randomSeed(), factionCount: ui.factionCount, size: ui.worldSize, worldCfg: ui.worldCfg, roadStart: true, preview: true });
 let dirty = true;      // a tick changed something: redraw the panels (throttled at dev speeds)
 let dirtyNow = false;  // the player did something on the map: redraw on the next frame
 let clockDirty = false; // a new minute on the clock and nothing else: only what counts the minutes (refreshClock)
@@ -749,7 +750,7 @@ function renderCombat(user) {
 function bannerHTML() {
   const compact = compactUI();
   if (!ui.started && ui.nrMap && !ui.title) {
-    const pickHow = `${keyHint({ key: "Click", touch: "Tap", pad: `${kh("A")} on` })} ${state.mode === "hardcore" ? "open land" : "a town"} to start there`;
+    const pickHow = `${keyHint({ key: "Click", touch: "Tap", pad: `${kh("A")} on` })} ${isRoadStart(state) ? "open land" : "a town"} to start there`;
     const about = "The new-run screen is put aside so you can look around the map: where you start, the groups, the roads. Nothing runs until you start.";
     if (compact) return `<div class="paused compact" data-tip="${about}"><b class="big">Setting up</b>${ui.nrPick ? ` <span class="small">${pickHow}</span>` : ""} ` +
       `<button class="mini" data-action="nr-start" data-tip="Roll a new starting position on this same map and seed (the map, the hives and your colonists stay)">📍 New start</button> ` +
@@ -1471,7 +1472,7 @@ const actions = {
   },
   restart: () => gen(() => newWorld(randomSeed()), null),
   // Victory screen: carry on in the same world (sim/world.js checkGameOver does not end it again for the hives).
-  keepplaying: () => { if (state.victory) { state.victoryKept = true; state.gameOver = false; } },
+  keepplaying: () => { if (state.victory && !isHardcore(state)) { state.victoryKept = true; state.gameOver = false; } },
 };
 
 for (const k of ["cb-sel", "cb-act", "cb-plan", "cb-log", "cb-target", "cb-end", "cb-confirm", "cb-auto", "cb-close", "cb-deploy", "cb-prison", "cb-retreat", "cb-view", "cb-fallback", "cb-redeploy", "cb-clear", "cb-autoplay", "cb-volorder", "cb-inv", "cb-bar", "cb-store", "cb-store-take", "cb-store-force"]) actions[k] = (d) => combatAction(state, k, d, ui); // cb-store: a store on the base map (sim/basemap.js); cb-store-take, cb-store-force: an assault's stores (ui/basemap.js takeButtons)
@@ -1738,6 +1739,7 @@ const changeActions = {
   // is built again without them, and unticking it brings them back (Customize being on: without it the backs are as
   // rolled anyway).
   ironman: (el) => {
+    if (ui.mode === "hardcore") { el.checked = true; ui.ironman = true; return; } // Hardcore is always Ironman (ui/newgame.js takeModeSet)
     ui.ironman = !!el.checked;
     const backs = !!ui.freeEdit && (ui.fleet || []).some((f) => f && f.load);
     if (!ui.ironman) { if (backs && !ui.started) gen(() => newWorld(state.seed, true)); return; }
@@ -1807,6 +1809,7 @@ const changeActions = {
     stashModeSet(ui);
     takeModeSet(ui, mode);
     for (const s of state.survivors) delete s.ownMax;
+    if (ui.ironman && crewCustomized(state)) { gen(() => newWorld(state.seed, true, { crew: ironmanCrew(state), crewRoll: ui.pickRoll ? null : ui.crewRoll })); return; } // Hardcore is Ironman: the crew as rolled
     gen(() => newWorld(state.seed, true));
   },
   // Start with a vehicle (2026-10-24, user request; every mode, Ironman too): the world again on the same seed.
@@ -1881,7 +1884,7 @@ function runOpts() {
   const custom = ui.mode === "custom", crash = ui.mode === "crash";
   return {
     factionCount: ui.factionCount, size: ui.worldSize, customW: ui.customW, customH: ui.customH, hives: ui.hiveCount,
-    mode: custom ? "normal" : ui.mode, crewRoll: ui.crewRoll, startPeople: ui.startPeople, start: ui.startPick, worldCfg: uiCfg(ui),
+    mode: custom ? "normal" : ui.mode, roadStart: roadScreenMode(ui.mode), crewRoll: ui.crewRoll, startPeople: ui.startPeople, start: ui.startPick, worldCfg: uiCfg(ui),
     vehicle: ui.startVehicle !== false, custom: custom ? { ...ui.custom, people: ui.startPeople } : null,
     fleet: ui.ironman || !ui.freeEdit ? (ui.fleet || []).map((f) => ({ ...f, load: null })) : ui.fleet, // Starting vehicles (sim/startfleet.js); Ironman or Customize off: the backs as rolled (the ones set wait on the screen for Customize)
     ...(crash ? { mode: "normal", crash: true, custom: null, vehicle: false, fleet: [], startPeople: 1, factionCount: crashSizeDef().defGroups, hives: null, worldCfg: null } : {}), // Crashlanding: the one survivor on foot, no fleet, no Custom counts; the map's own groups, hives and dials

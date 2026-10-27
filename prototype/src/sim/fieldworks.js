@@ -71,6 +71,7 @@
 //   base.raidRoads = { tile: { n, last } }: the road tiles raids on that base came down (the governor's roadblocks).
 // Older saves have no state.fieldworks: ensureFW makes an empty one.
 import { totalRounds } from "./rounds.js"; // a group's rounds by calibre
+import { isRoadStart } from "./roadstart.js";
 import { FOODS, foodIn, packPick, giveFood, bestFoodKey } from "./foods.js"; // food by type: caches, stockpiles and catches hold items
 import { log, atBase, baseById, hub, newId, skill, combatPower, hourOfDay, isNight, day, alive, survivorById, factionById, killSurvivor, hurt, localId, archerCount, ARROWS } from "./world.js";
 import { BUILDINGS, buildRate, isCamp, isShelter, gatherStalled, underAttack, matName, onUpkeep } from "./buildings.js";
@@ -1839,7 +1840,7 @@ const stockRoomOf = (fw) => Math.max(0, (K[fw.kind].capKg || 0) - kgIn(fw.conten
 // half that (yours: snareLinesWanted, by the governor's food target), at most SNARES.max.camp (2).
 export const groupSnaresWanted = (state, f) => {
   const days = foodIn(f.stock) / Math.max(1, f.pop);
-  return Math.min(FIELD.SNARES.max.camp, (state.mode === "hardcore" ? 1 : 0) + (days < FIELD.AI.snareShort ? 1 : 0) + (days < FIELD.AI.snareShort / 2 ? 1 : 0));
+  return Math.min(FIELD.SNARES.max.camp, (isRoadStart(state) ? 1 : 0) + (days < FIELD.AI.snareShort ? 1 : 0) + (days < FIELD.AI.snareShort / 2 ? 1 : 0));
 };
 export function groupWants(state, f, mine = groupWorks(state, f), full = false) {
   const has = (k) => mine.some((x) => x.kind === k);
@@ -1948,7 +1949,7 @@ export function govFieldWorks(state, base, { threatened = false, waterShort = fa
 }
 // Snare lines a base of yours should keep (hc-food): one from the start in hardcore, one more for each step of the
 // governor's food level (foodShort 1: under the food target, 2: under half of it), at most SNARES.max for the base.
-export const snareLinesWanted = (state, base, foodShort = 0) => Math.min(maxSnares(base), (state.mode === "hardcore" ? 1 : 0) + Math.max(0, Math.min(2, foodShort)));
+export const snareLinesWanted = (state, base, foodShort = 0) => Math.min(maxSnares(base), (isRoadStart(state) ? 1 : 0) + Math.max(0, Math.min(2, foodShort)));
 // The governor's snare line: when the base has fewer than snareLinesWanted and no field job queued, one on the tile
 // with the most small game (snareDayRate × lines, at least SNARES.minRate a day), the nearer first. Returns the line.
 export function govSnares(state, base, foodShort = 0) {

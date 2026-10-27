@@ -28,6 +28,8 @@
 //     hours getting them walking again (events.js-style delay) and they do nothing that day.
 // Every outcome is one log line (kind "death" where someone dies), a moment on the record where it fits, and a count
 // in state.relStats.snaps[kind] for the tools. Only state.rng is drawn, only inside the daily tick (deterministic).
+import { HARD } from "./hardrules.js";
+import { isHardcore } from "./roadstart.js";
 import { foodIn, takeFood, FOODS, foodWord } from "./foods.js"; // days of food
 import { hasTrait, traitFx, breakMult } from "./traits.js"; // Iron Will, Hothead
 import { log, addCard, day, atBase, hurt, killSurvivor, hub, skill } from "./world.js";
@@ -83,7 +85,9 @@ function talkerAt(state, pl, s) {
 }
 
 // The People tab and the alerts (morale.js moodRisk asks): on the edge of a break?
-export const nearSnap = (s) => !!s && s.alive && (s.lowDays || 0) >= SNAP.days && s.mood < SNAP.at;
+/** The mood under which the mornings count: Hardcore breaks sooner (hardrules.js MOOD_BREAK). @param {any} [state] */
+export const snapAt = (state) => SNAP.at + (isHardcore(state) ? HARD.MOOD_BREAK : 0);
+export const nearSnap = (s, state = null) => !!s && s.alive && (s.lowDays || 0) >= SNAP.days && s.mood < snapAt(state);
 
 // ---------- daily (economy.js basesDaily, after relationsDaily) ----------
 // Every base, and every team of yours that is not in the middle of a fight.
@@ -98,11 +102,11 @@ export function mentalBreaksDaily(state) {
   for (const pl of places) {
     for (const s of [...peopleAt(state, pl)]) {
       if (!s.alive || !here(state, s, pl)) continue;
-      if (s.mood >= SNAP.at) { if (s.lowDays) s.lowDays = 0; continue; }
+      if (s.mood >= snapAt(state)) { if (s.lowDays) s.lowDays = 0; continue; }
       s.lowDays = (s.lowDays || 0) + 1;
       if (s.lowDays === SNAP.days) log(state, `${s.name} has been at rock bottom for ${SNAP.days} days${pl.party ? " on the road" : ""} (mood ${Math.round(s.mood)}). Nobody knows what they might do.`, "danger");
       if (s.lowDays < SNAP.days || (s.snapCd || 0) > d) continue;
-      if (!rng.chance((SNAP.base + SNAP.per * (SNAP.at - s.mood)) * breakMult(s))) continue; // Iron Will (traits.js): half as likely
+      if (!rng.chance((SNAP.base + SNAP.per * (snapAt(state) - s.mood)) * breakMult(s))) continue; // Iron Will (traits.js): half as likely
       snap(state, pl, s, rng);
     }
   }

@@ -28,7 +28,7 @@ export function savesByCampaign(state, ui, saves, row) {
   return groups.map((g) => {
     const e = g.entries[0];
     const autos = g.entries.filter((x) => x.id.startsWith("auto-")).length;
-    const name = e.hub || (e.mode === "hardcore" ? "On the road" : "Campaign");
+    const name = e.hub || (e.mode === "hardcore" || e.start === "road" ? "On the road" : "Campaign");
     const bits = [e.mode === "hardcore" ? "Hardcore" : "Normal", `seed ${e.seed ?? "?"}`, `${g.entries.length} save${g.entries.length === 1 ? "" : "s"}${autos ? ` (${autos} autosave${autos === 1 ? "" : "s"}, the last 3 kept)` : ""}`];
     const head = `<div class="sgroup"${tip("One campaign: its saves, newest first. Its autosaves rotate: the last 3 are kept, the oldest written over.")}><b>${esc(name)}</b>${e.ironman || e.iron ? ` <span class="tag">ironman</span>` : ""}${g.key === cur ? ` <span class="tag">this game</span>` : ""} <span class="small muted">${esc(bits.join(" · "))}</span></div>`;
     return head + g.entries.map(row).join("");

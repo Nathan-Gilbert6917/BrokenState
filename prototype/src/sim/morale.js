@@ -98,7 +98,7 @@ export function moodWork(s) {
 export function moodRisk(s) {
   if (!s || !s.alive) return null;
   const w = s.moodWarn || 0;
-  if (nearSnap(s)) return { level: 3, text: "May break down", tone: "danger" }; // mentalbreaks.js: days at rock bottom
+  if (nearSnap(s, state)) return { level: 3, text: "May break down", tone: "danger" }; // mentalbreaks.js: days at rock bottom
   if (s.mood < MOOD.desert && w >= 2) return { level: 3, text: "May walk out any night", tone: "danger" };
   if (s.mood < MOOD.warn2 || w >= 2) return { level: 2, text: "Close to leaving", tone: "danger" };
   if (s.mood < MOOD.warn1 || w >= 1) return { level: 1, text: "Talks about leaving", tone: "warn" };

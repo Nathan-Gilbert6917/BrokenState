@@ -4,6 +4,7 @@
 // browser (localStorage BG_KEY); a world built with them keeps its own copy. Not in an Ironman run: the button is off
 // while Ironman is ticked. HTML builders plus their action handlers; main.js registers them (bg-close there: closing
 // the window rebuilds the world when a colonist's background was changed in it).
+import { isRoadStart } from "../sim/roadstart.js";
 import { GEAR, SKILLS, SKILL_NAMES, SUPPLIES } from "../sim/data.js";
 import { VEHICLE_TYPES } from "../sim/vehicles.js";
 import { HC_START } from "../sim/hardcore-start.js";
@@ -146,7 +147,7 @@ export function costLineHtml(d, state) {
   // and, at a normal start, its car and its back (on the colonist's own bill since 2026-10-24); the line adds them up
   // (2026-10-09, user request) against Points each, and follows every change in the window. In Hardcore the car's back
   // is the starting vehicle's (As rolled), so it is shown apart.
-  const hard = !!(state && state.mode === "hardcore");
+  const hard = isRoadStart(state);
   const T = backgroundPoints(d, hard ? "hardcore" : "normal");
   const max = pointsMax(state);
   const sign = (v) => `${v >= 0 ? "+" : "−"}${Math.abs(v)}`;

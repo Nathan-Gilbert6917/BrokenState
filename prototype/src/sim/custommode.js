@@ -14,6 +14,7 @@
 
 // Each count: at least 1 ("any number above 1"); the maxima keep a run from hanging (more survivors, groups and
 // hives cost every hour; cities, towns and bases need room on the map). DEF: a Normal map's own counts.
+import { isRoadStart } from "./roadstart.js";
 export const CUSTOM_RUN = {
   people: { MIN: 1, MAX: 30, DEF: 6, label: "Starting survivors" },
   groups: { MIN: 1, MAX: 50, DEF: 7, label: "AI groups" },
@@ -41,7 +42,7 @@ export function cleanCustom(raw) {
 export const defaultCustom = () => cleanCustom(null);
 
 /** A Custom run (a normal start with the counts set: state.custom). @param {any} state */
-export const isCustomRun = (state) => !!state && state.mode !== "hardcore" && !!state.custom;
+export const isCustomRun = (state) => !!state && !isRoadStart(state) && !!state.custom;
 
 /** Start with a vehicle: on unless the run was made with it off (older saves: on). @param {any} state */
 export const startsWithVehicle = (state) => !state || state.startVehicles !== false;

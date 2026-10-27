@@ -27,6 +27,7 @@
 // partner and rivals as above, and high spirits fade (-10% of the mood above 50 a day).
 // Breaks: below 12 mood, 10% + 2% per point below 12 a day (cooldown 5 days): sits out a day, binge eats, wanders
 // off, or picks a fight; mood +8 afterwards; a card for a fight or a second break within 10 days.
+import { hardMult } from "./hardrules.js";
 import { foodIn, payFood } from "./foods.js"; // food by type (foods.js)
 import { rationKey, RATION_LEVELS } from "./meals.js"; // the ration levels (lean: −1 a day)
 import { hasTrait, traitFx, breakMult } from "./traits.js"; // Hothead, Glutton, Unlucky, Iron Will, Squeamish, Pessimist
@@ -405,7 +406,7 @@ export function moodFactors(state, s) {
   if (rv) add(`${rv} rival${rv === 1 ? "" : "s"} close by`, Math.max(MOODF.rivalMax, rv * MOODF.rival), true);
   for (const f of bondMood(state, s, pl, base)) add(f.label, f.v, true, f.tip || ""); // bonds.js: friends and rivals at work, cliques, promises, apprentices
   for (const f of familyMood(state, s, pl.route ? null : base)) add(f.label, f.v, true); // family.js: expecting, children
-  if (s.grief) add(`${s.grief.left ? "Misses" : "Grieving for"} ${s.grief.name} (${s.grief.days} day${s.grief.days === 1 ? "" : "s"} left)`, -(GRIEF.daily + GRIEF.dailyPer * s.grief.bond) * (base && count(base, "chapel") ? GRIEF.chapel : 1), true);
+  if (s.grief) add(`${s.grief.left ? "Misses" : "Grieving for"} ${s.grief.name} (${s.grief.days} day${s.grief.days === 1 ? "" : "s"} left)`, -(GRIEF.daily + GRIEF.dailyPer * s.grief.bond) * (base && count(base, "chapel") ? GRIEF.chapel : 1) * hardMult(state, "GRIEF"), true);
   if (s.rough != null && s.rough >= d) {
     if (base && !pl.route && s.role === "rest") add("Resting after a rough trip", MOODF.roughRest, true);
     else add("Shaken after a rough trip (rest helps)", MOODF.rough, true);

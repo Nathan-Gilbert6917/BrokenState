@@ -53,6 +53,7 @@ import { wornLoad } from "./load.js";
 import { sanitizeStartVehicle, trunkKg } from "./startgear.js";
 import { vehiclePoints } from "./custompoints.js";
 import { isCustomRun } from "./custommode.js";
+import { isRoadStart, roadScreenMode } from "./roadstart.js";
 
 export const START_FLEET = {
   LIMIT: 60, MIN: 0, MAX: 1000, STEP: 5, // a vehicle's point limit: 60 by default (a back of supplies and a few good things)
@@ -78,8 +79,10 @@ export function clampFleetCount(v, max = START_FLEET.COUNT.MAX) {
 /** How many starting vehicles a world may have: one a starting survivor. @param {any} state */
 export const fleetMax = (state) => Math.max(START_FLEET.COUNT.MIN, Math.min(START_FLEET.COUNT.MAX, (state && state.survivors ? state.survivors.length : 0) || START_FLEET.COUNT.MIN));
 
-/** The new-run screen's mode for a world's fleet: "custom", "hardcore" or "normal". @param {any} state */
-export const fleetMode = (state) => (isCustomRun(state) ? "custom" : state && state.mode === "hardcore" ? "hardcore" : "normal");
+/** The fleet kind of a new-run screen mode: "normal" and "hardcore" both flee in the car with the team (the fleet kind "hardcore", its old name); "custom" parks at the hub. @param {string} screenMode */
+export const fleetKind = (screenMode) => (roadScreenMode(screenMode) ? "hardcore" : screenMode);
+/** The fleet kind of a world: "custom", "hardcore" (a road start, Normal or Hardcore) or "normal" (a hub). @param {any} state */
+export const fleetMode = (state) => (isCustomRun(state) ? "custom" : isRoadStart(state) ? "hardcore" : "normal");
 
 /**
  * A fleet made safe for a mode: 1 up to max slots (the starting survivors), each of the kinds fleetKinds lists (a
@@ -111,7 +114,7 @@ export function fitFleet(fleet, n, mode) {
   return list;
 }
 /** The slot's vehicle is the one the riders sit in (Hardcore: the first vehicle there is). @param {any} state @param {number} i */
-export const ridesIn = (state, i) => !!state && state.mode === "hardcore" && Array.isArray(state.fleet) && state.fleet.findIndex((f) => f && f.vid != null) === i;
+export const ridesIn = (state, i) => !!state && isRoadStart(state) && Array.isArray(state.fleet) && state.fleet.findIndex((f) => f && f.vid != null) === i;
 /** A driver made safe: a place in the crew below max, else null (whoever is free). @param {any} v @param {number} [max] */
 export function cleanDriver(v, max = START_FLEET.COUNT.MAX) {
   const n = Number(v);
@@ -184,7 +187,7 @@ export function fleetName(state, i) {
  * @param {any} state @param {any} [ownerId] the car's owner (Hardcore; by default state.hardcore.start's)
  * @returns {any[]}
  */
-export function fleetDrivers(state, ownerId = state && state.mode === "hardcore" && state.hardcore && state.hardcore.start ? state.hardcore.start.carOwner : null) {
+export function fleetDrivers(state, ownerId = state && isRoadStart(state) && state.hardcore && state.hardcore.start ? state.hardcore.start.carOwner : null) {
   const crew = (state && state.survivors) || [], fleet = (state && state.fleet) || [];
   const out = fleet.map(() => null), taken = new Set();
   const take = (i, s) => { out[i] = s; taken.add(s); };

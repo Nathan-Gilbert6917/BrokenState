@@ -100,7 +100,7 @@ section("3. main.js and the CSS");
   const main = readFileSync(new URL("../src/main.js", import.meta.url), "utf8");
   const css = readFileSync(new URL("../newrun.css", import.meta.url), "utf8");
   const has = (re, what) => check(re.test(main), `main.js: ${what}`);
-  has(/let state = createWorld\(\{ seed: randomSeed\(\), factionCount: ui\.factionCount, size: ui\.worldSize, worldCfg: ui\.worldCfg, preview: true \}\);/, "the first world is a preview (no map at load, no box)");
+  has(/let state = createWorld\(\{ seed: randomSeed\(\), factionCount: ui\.factionCount, size: ui\.worldSize, worldCfg: ui\.worldCfg, roadStart: true, preview: true \}\);/, "the first world is a preview (no map at load, no box)");
   has(/function gen\(fn, seed = state\.seed, real = false\) \{\n  const quick = !needsMap\(real\) \|\| \(seed != null && worldMapCached\(\{ \.\.\.runOpts\(\), seed \}\)\);\n  generating\(fn, \{ size: buildSize\(\), quick, after: \(\) => \{ dirtyNow = true; refresh\(\); \} \}\);\n\}/, "gen() shows the size being built (no box for a preview or a kept map) and redraws after");
   has(/function needsMap\(real = false\) \{ return real \|\| ui\.started \|\| ui\.nrMap \|\| ui\.nrPick; \}/, "needsMap: asked for, the map looked at or picked on, or a run under way");
   has(/function realThen\(then\) \{\n  if \(!isPreview\(state\) \|\| ui\.started\) \{ then\(\); return; \}\n  gen\(\(\) => \{ newWorld\(state\.seed, true, null, true\); then\(\); \}, state\.seed, true\);\n\}/, "realThen: the real world under the box, the crew kept, then the action");

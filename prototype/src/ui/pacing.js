@@ -10,6 +10,7 @@
 //  - Speeds: 0.25× (key 0) and 0.5× 1× 2× 3× 5× (keys 1–5). At 3× and 5× the game drops to 1× by itself when a card (pausing or
 //    tray) or a new red alert arrives (Options: "Drop to 1× when something happens", on by default).
 // Nothing here runs on autopilot (the governor answers every card at once) or in the headless tools.
+import { fogged } from "../sim/hardrules.js";
 import { PAUSE_KINDS, KIND_BY_KEY, DEFAULT_PAUSE, TRAY_HOURS, cardKind, cardIcon, defaultChoice, autoAnswer, holdTeam, trayStale, dropCard } from "../sim/cardrules.js";
 export { TRAY_HOURS };
 import { attitude } from "../sim/factions.js";
@@ -144,7 +145,7 @@ export function pacingFrame(state, ui) {
 // A plain move's arrival card (parties.js quietArrival) opens instead: "Hold here" would leave a team out of contact
 // with no way to reach it.
 function expire(state, c, byPlayer = false) {
-  if (!defaultChoice(state, c) || c.quietArrival) c.tray.kind = "always";
+  if (!defaultChoice(state, c) || c.quietArrival || (!byPlayer && fogged(state, "autoAnswer"))) c.tray.kind = "always"; // Hardcore (sim/hardrules.js): no card answers itself
   else autoAnswer(state, c, byPlayer);
 }
 

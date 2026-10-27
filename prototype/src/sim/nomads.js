@@ -55,6 +55,7 @@
 // Seen only when you can see them (state.live): drawn on the map like a band on the road (ui/render.js), their camp
 // marked. Every roll is on the nomads' own generator (state.nomads.rng) or a hash: the world's dice are untouched.
 import { Rng } from "./rng.js";
+import { isRoadStart } from "./roadstart.js";
 import { SUPPLIES, SUPPLY_KEYS, STOCK_KEYS, supValue } from "./data.js";
 import { newId, log, addCard, day, combatPower, skill, snapshot, hourOfDay } from "./world.js";
 import {
@@ -165,7 +166,7 @@ export const nomadById = (state, id) => nomadsOf(state).find((b) => String(b.id)
 export const nomadTarget = (state) => Math.max(1, Math.round(stateSizeDef(state).defGroups * N.SHARE));
 // The count the first fill-up aims for: the target, or HC_START × it on a hardcore run (more bands on the road at the
 // start; once filled the respawn holds only the target, so the extra bands thin out as they starve, break up or leave).
-export const nomadStartTarget = (state) => (state.mode === "hardcore" ? Math.round(nomadTarget(state) * N.HC_START) : nomadTarget(state));
+export const nomadStartTarget = (state) => (isRoadStart(state) ? Math.round(nomadTarget(state) * N.HC_START) : nomadTarget(state));
 // The tiers open in this year of the run (hardcore: counted from the normal start, eras.js rampDay).
 export const nomadTiers = (state) => NOMAD_TIERS.filter((t) => yearOf(state) >= N.TIERS[t].unlock);
 export const tierOf = (b) => N.TIERS[b.tier] || N.TIERS[1];
@@ -318,7 +319,7 @@ function spawnDaily(state) {
   if (nomadsOf(state).length < target) spawnNomads(state);
   const full = nomadsOf(state).length >= target;
   if (full) S.filled = true;
-  const gap = S.filled ? N.GAP : state.mode === "hardcore" ? N.HC_FILL : N.FILL;
+  const gap = S.filled ? N.GAP : isRoadStart(state) ? N.HC_FILL : N.FILL;
   S.next = d + S.rng.int(gap[0], gap[1]);
 }
 

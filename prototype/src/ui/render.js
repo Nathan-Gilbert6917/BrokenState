@@ -1,4 +1,5 @@
 // Canvas renderer for the State Map. Reads the simulation; never changes it.
+import { fogged } from "../sim/hardrules.js";
 import { PAL } from "./palette.js"; // good / bad colours (the colour-blind-safe set swaps them: ui/display.js)
 import { TERRAIN, LOCATIONS, SITE_ZONES, DANGER_NAMES, siteDanger } from "../sim/data.js";
 import { hub, day, factionById, RADIO_RANGE, isNight } from "../sim/world.js";
@@ -172,6 +173,7 @@ function shade(hex, f) {
 
 function ageText(state, snap) {
   const h = state.hour - snap.hour;
+  if (fogged(state, "lastSeen")) return h < 24 ? "today" : "a while ago"; // Hardcore (sim/hardrules.js): no exact times
   if (h < 24) return `${h}h ago`;
   return `${Math.floor(h / 24)}d ago`;
 }

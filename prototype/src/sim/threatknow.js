@@ -33,6 +33,7 @@
 //   same errors and staleness).
 // Hash dice from the world seed (skills.js hash01), never state.rng.
 /** @import { State, Tile } from "./types" */
+import { fogged } from "./hardrules.js";
 import { hash01 } from "./skills.js";
 import { tileDead, openDead, popCap, tileRaiders, raiderCap, poiDead, poiCap, poiRaiders, bandOfCount, DEADPOP } from "./deadpop.js";
 import { poiKnowledge, poiAt, knownPois, notePoiThreat, THREAT } from "./pois.js"; // call-time only (pois.js reads this module's poiStampFields)
@@ -115,6 +116,7 @@ export const bandText = (b) => `${b.word}${b.skulls ? ` ${b.skulls}` : ""}`;
  * @param {State} state @param {Tile | number} tile
  */
 export function tileThreatEstimate(state, tile) {
+  if (fogged(state, "threat")) return null; // hardrules.js: Hardcore has no threat estimates (you see what you see)
   const id = idOf(state, tile);
   const t = state.tiles[id];
   if (!t || t.terrain === "water") return null;
@@ -162,6 +164,7 @@ export function poiStampFields(state, t, i, src, err, old = null) {
  * @param {State} state @param {Tile | number} tile @param {number} i
  */
 export function poiDeadEstimate(state, tile, i) {
+  if (fogged(state, "threat")) return null; // hardrules.js: none in Hardcore
   const id = idOf(state, tile), t = state.tiles[id], p = poiAt(t, i);
   if (!p) return null;
   const old = p.threatStamp && p.threatStamp.d != null ? p.threatStamp : null;
@@ -205,6 +208,7 @@ export function threatKnowHour(state) {
  * @param {State} state
  */
 export function threatOverlay(state) {
+  if (fogged(state, "threat")) return []; // hardrules.js: none in Hardcore
   const ids = new Set(liveTiles(state));
   for (const [k, v] of Object.entries(state.poiKnow || {})) if (v && v.threat) ids.add(Number(k));
   const out = [];

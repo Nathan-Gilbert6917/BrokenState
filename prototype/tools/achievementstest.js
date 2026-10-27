@@ -29,7 +29,7 @@ const achLines = (st) => st.log.filter((l) => l.text.startsWith("🏆 Achievemen
   check(ACHIEVEMENTS.length >= 25, `${ACHIEVEMENTS.length} achievements (about 25 asked)`);
   check(new Set(ids).size === ids.length, "ids are unique");
   check(ACHIEVEMENTS.every((a) => a.name && a.desc && a.icon && a.group), "every row has a name, a description, an icon and a group");
-  check(ACHIEVEMENTS.every((a) => !a.modes || a.modes.every((m) => MODES[m])), "every row's modes are run modes (hardcore.js MODES)");
+  check(ACHIEVEMENTS.every((a) => !a.modes || a.modes.every((m) => MODES[m] || m === "road")), "every row's modes are run modes (hardcore.js MODES), or \"road\": any road start (issue #79)");
   const hidden = ACHIEVEMENTS.filter((a) => a.hidden).map((a) => a.id);
   check(hidden.includes("love") && hidden.includes("founders") && hidden.length === 2, `the hidden ones are flagged (${hidden.join(", ")})`);
 }

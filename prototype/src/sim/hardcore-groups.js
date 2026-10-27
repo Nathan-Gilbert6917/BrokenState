@@ -67,6 +67,8 @@
 // - The aggressive groups (zealots, expansionists) do not raid and nobody declares war while the bands are still
 //   founding: until QUIET_GRACE days after the last band has its hub (QUIET_MAX at the latest).
 // Decisions draw from their own generator (state.hardcore.groups.rng), so they never shift the world's dice.
+import { isHardcore } from "./roadstart.js";
+import { HARD } from "./hardrules.js";
 import { spendAmmo } from "./rounds.js"; // a group's rounds by calibre
 import { FOODS, typeFind, GROUP_MIX, foodShare, addFoodsTo, foodIn, giveFood, takeFood, typeStray, ageCoarse } from "./foods.js"; // food by type (foods.js)
 import { Rng } from "./rng.js";
@@ -74,7 +76,7 @@ import { FACTION_TYPES, FACTION_COLORS } from "./data.js";
 import { newId, log, addCard, day, hub, factionById, snapshot, hourOfDay, localId } from "./world.js";
 import { PREFERRED_SITES, attitude, strength, isAggressiveType, recomputeOwnership, clearStaleAlerts, changeGoodwill } from "./factions.js";
 import { planPath, moveCost, partyMembers, partyTile, tileLabel, removeParty, carried, takeSupply } from "./parties.js";
-import { isHardcore } from "./hardcore.js";
+import { isRoadStart } from "./roadstart.js";
 import { hash01 } from "./skills.js";
 import { haulFor, AISCAV, groupNeeds } from "./aiscav.js";
 import { poisOf, poiPool, permanentSite } from "./pois.js"; // points of interest: the camp's, one a day
@@ -198,7 +200,7 @@ export function hcRaidersFrom(state) {
 }
 // createWorld, after the outbreak's setup (hardcore.js hardcoreAfterHives): the raiders' day, from its era offset.
 export function hardcoreGroupsAfterOutbreak(state) {
-  if (isHardcore(state)) hcRaidersFrom(state);
+  if (isRoadStart(state)) hcRaidersFrom(state);
 }
 const grng = (state) => hcGroups(state).rng;
 export const bandsOf = (state) => (state.hardcore && state.hardcore.groups ? state.hardcore.groups.bands : []);
@@ -216,12 +218,12 @@ export function hcPlayerTile(state) {
 // ---------- the switches other modules read ----------
 // No raider groups, outsider raider bands or new gangs yet (factions.js, visitors.js).
 export function hcNoRaiders(state) {
-  if (!isHardcore(state)) return false;
+  if (!isRoadStart(state) || isHardcore(state)) return false; // Hardcore: raiders walk from the first days (hardrules.js)
   return day(state) < hcRaidersFrom(state);
 }
 // The aggressive groups' raids and new wars wait while the bands are still founding (factions.js, diplomacy.js).
 export function hcGroupRaidsQuiet(state) {
-  if (!isHardcore(state)) return false;
+  if (!isRoadStart(state)) return false;
   const H = hcGroups(state), d = day(state);
   if (d >= B.QUIET_MAX) return false;
   return H.quietUntil == null || d < H.quietUntil;
@@ -298,7 +300,7 @@ export function makeBand(state, type, opts = {}) {
   const foundAt = opts.foundAt != null ? opts.foundAt : d - 1 + B.FOUND_DAYS[0] + Math.floor(hash01(state.seed, "hc-found", H.bands.length, type) * (B.FOUND_DAYS[1] - B.FOUND_DAYS[0] + 1));
   const b = {
     id: newId(), name: opts.name || def.names[0], type, color: opts.color || FACTION_COLORS[(state.factions.length + H.bands.length) % FACTION_COLORS.length],
-    pop, stock, goodwill: opts.goodwill != null ? opts.goodwill : def.goodwill + rng.int(-8, 8), known: false, met: false, metTeams: [], destKnown: false,
+    pop, stock, goodwill: opts.goodwill != null ? opts.goodwill : def.goodwill + rng.int(-8, 8) + (isHardcore(state) ? HARD.GOODWILL_START : 0), known: false, met: false, metTeams: [], destKnown: false,
     tile, path: [tile], idx: 0, progress: 0, phase: "camp", stops: [], goal: null, joinId: opts.joinId ?? null,
     foundAt, forceAt: foundAt + B.FORCE_AFTER, campUntil: 0, started: d, remnant: !!opts.remnant, helped: false, lastSeen: null, act: "on the road",
   };
@@ -457,7 +459,7 @@ function arriveAt(state, b) {
 
 // ---------- the hour (hardcore.js) ----------
 export function hardcoreGroupsHour(state) {
-  if (!isHardcore(state) || !state.hardcore || !state.hardcore.groups) return;
+  if (!isRoadStart(state) || !state.hardcore || !state.hardcore.groups) return;
   const live = state.live || new Set();
   for (const b of [...bandsOf(state)]) {
     if (!bandsOf(state).includes(b)) continue;
@@ -612,7 +614,7 @@ function meetCard(state, b, p) {
 
 // ---------- the day (hardcore.js, after the groups' and the hordes' day) ----------
 export function hardcoreGroupsDaily(state) {
-  if (!isHardcore(state)) return;
+  if (!isRoadStart(state)) return;
   hcGroups(state);
   for (const b of [...bandsOf(state)]) if (bandsOf(state).includes(b)) bandDay(state, b);
   militaryDaily(state);

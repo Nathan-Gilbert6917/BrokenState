@@ -7,7 +7,8 @@ import { newItem, START_DUR, SLOT_NAMES, carriedSpots, rigOf, itemLoad } from ".
 import { countOf } from "../sim/itemstack.js"; // 👁 Inventory: a stack's count
 import { randomStarterMods } from "../sim/gunmods.js";
 import { WORLD_SIZES, SIZE_KEYS, sizeDef, customDef, isCustom, CUSTOM, GROUPS_MAX, HIVES_MAX, clampGroups, clampHives } from "../sim/worldsize.js";
-import { MODES, isHardcore, peopleRange, clampStartPeople } from "../sim/hardcore.js";
+import { MODES, peopleRange, clampStartPeople } from "../sim/hardcore.js";
+import { isRoadStart, isHardcore } from "../sim/roadstart.js";
 import { CUSTOM_RUN, CUSTOM_KEYS, isCustomRun, startsWithVehicle } from "../sim/custommode.js"; // Custom mode and Start with a vehicle (2026-10-24)
 import { isCrashRun, CRASH, CRASH_KIT } from "../sim/crashmode.js"; // Crashlanding (2026-10-24): a normal-mode run with state.crash; its fixed kit
 import { HC_START, backgroundInfo, countWord } from "../sim/hardcore-start.js"; // who they were (a hardcore start)
@@ -16,7 +17,7 @@ import { isCustomBg } from "../sim/custombg.js"; // custom backgrounds (sim/cust
 import { FAMILY } from "../sim/family.js"; // the Children box shows only while children are on
 import { sanitizeStartGear, hasPicks } from "../sim/startgear.js"; // starting gear picked under Customize
 import { gearRow, pointsBar, fleetSection, uiFleet } from "./startgear.js"; // its Gear… button, load and kit points, and the points bar, on the crew card; the Starting vehicles
-import { cleanFleet, fleetRoom, openLoads, fleetVehicle, fleetName } from "../sim/startfleet.js"; // the starting vehicles: each its point limit and back (2026-10-24)
+import { cleanFleet, fleetKind, fleetRoom, openLoads, fleetVehicle, fleetName } from "../sim/startfleet.js"; // the starting vehicles: each its point limit and back (2026-10-24)
 import { gunCals } from "../sim/ammo.js"; // a random back's rounds: the crew's guns' calibres
 import { traitPickerHtml, traitBlock, traitChips, traitWords } from "./traitpick.js"; // Customize: the traits, good and bad, none that clash; the chips
 import { randomBuild, randomEverything, randomTraits, randomKit, randomTrunk, kitBudget } from "../sim/randomkit.js"; // Customize: a whole random colonist within the points; the crew and the vehicles' backs
@@ -105,10 +106,10 @@ function backgroundPicker(state, s) {
   const drawn = !s.bgPicked && backgroundInfo(state, s.background);
   const presets = Object.entries(HC_START.ARCHETYPES).map(([k, a]) => `<option value="${k}" ${cur === k ? "selected" : ""}>${esc(a.name)}</option>`).join("");
   const mine = Object.values(customLibrary()).map((b) => `<option value="${b.id}" ${cur === b.id ? "selected" : ""}>${esc(b.name)}</option>`).join("");
-  const what = isHardcore(state)
+  const what = isRoadStart(state)
     ? "it adds to their skills, may give a trait, and decides what they grabbed and the car if it is theirs"
     : "it shapes their skills (the same total: more where the background is, less elsewhere) and may give a trait; a year on, the hub's kit is theirs";
-  return `<label class="small"${tip(`Who they were before Calder fell: ${what}. A custom background (Backgrounds…) gives exactly what it says${isHardcore(state) ? "" : ", its kit and supplies too (its car parks at the hub)"}. Changing it builds the world again on the same seed; this colonist's skills and traits start over from it.`)}>Background <select data-action="nr-bg" data-id="${s.id}"><option value="" ${cur ? "" : "selected"}>Dice${drawn ? ` (${esc(drawn.name)})` : ""}</option><optgroup label="Presets">${presets}</optgroup>${mine ? `<optgroup label="Custom">${mine}</optgroup>` : ""}</select></label>`;
+  return `<label class="small"${tip(`Who they were before Calder fell: ${what}. A custom background (Backgrounds…) gives exactly what it says${isRoadStart(state) ? "" : ", its kit and supplies too (its car parks at the hub)"}. Changing it builds the world again on the same seed; this colonist's skills and traits start over from it.`)}>Background <select data-action="nr-bg" data-id="${s.id}"><option value="" ${cur ? "" : "selected"}>Dice${drawn ? ` (${esc(drawn.name)})` : ""}</option><optgroup label="Presets">${presets}</optgroup>${mine ? `<optgroup label="Custom">${mine}</optgroup>` : ""}</select></label>`;
 }
 
 // The crew card (the user's request 2026-10-24: "so many menus are crowded", "remove redundant buttons", "a card stays a
@@ -120,7 +121,7 @@ function backgroundPicker(state, s) {
 const foldOpen = (ui, s, k) => !!(ui.nrOpen && ui.nrOpen[`${s.id}:${k}`]);
 function crewCard(state, ui, s) {
   const left = budgetOf(ui, s) - skillTotal(s.skills);
-  const free = freeEdit(ui), locked = !!ui.ironman, hard = isHardcore(state), crash = isCrashRun(state);
+  const free = freeEdit(ui), locked = !!ui.ironman, hard = isRoadStart(state), crash = isCrashRun(state);
   const i = state.survivors.indexOf(s);
   // Gear: Customize draws a kit on points; a normal start trades the starting weapon and vest with a crewmate (the
   // crew's kit stays the same); Hardcore draws what they grabbed again (not in Ironman: as rolled). Crashlanding
@@ -191,7 +192,7 @@ function crewCard(state, ui, s) {
 function bgChip(state, s) {
   const b = backgroundInfo(state, s.background);
   if (!b) return "";
-  const shaped = isHardcore(state) ? "It shaped their skills, what they grabbed and the car." : "It shaped their skills (the same total) and maybe a trait.";
+  const shaped = isRoadStart(state) ? "It shaped their skills, what they grabbed and the car." : "It shaped their skills (the same total) and maybe a trait.";
   return `<span class="chip"${tip(`Who they were before Calder fell${b.blurb ? `: ${b.blurb}` : ""}. ${b.custom ? "A custom background: it gave exactly what it says." : shaped}${s.bgPicked ? " Picked on the new-run screen." : ""}`)}>${esc(b.name)}${b.custom ? " ✎" : ""}</span>`;
 }
 
@@ -247,17 +248,17 @@ function customSizeRow(state, ui) {
 // AI groups: 0–50 on any size; the size suggests a range.
 function groupInput(state, ui) {
   const d = uiSizeDef(ui);
-  const hard = isHardcore(state);
+  const hard = isRoadStart(state);
   const t = `How many other survivor groups share the state, 0–${GROUPS_MAX} (${d.groups.join("–")} suits a ${d.label} map; many groups on a small map may not all find room, and many groups slow the game)${hard ? ". Hardcore always has the National Guard" : ""}`;
   return `<label${tip(t)}>AI groups <input type="number" min="0" max="${GROUPS_MAX}" step="1" style="width:4rem" data-action="factioncount" value="${ui.factionCount}"></label>`;
 }
 // Starting hives: what the map makes (Default), or 0–20 (worldsize.js HIVES_MAX).
 function hiveSelect(state, ui) {
-  const made = isHardcore(state) ? state.hardcore?.outbreak?.normalHives ?? (state.hives || []).length : (state.hives || []).length;
+  const made = isRoadStart(state) ? state.hardcore?.outbreak?.normalHives ?? (state.hives || []).length : (state.hives || []).length;
   const cur = ui.hiveCount == null ? "default" : String(ui.hiveCount);
   const opts = [`<option value="default" ${cur === "default" ? "selected" : ""}>Default${ui.hiveCount == null ? ` (${made})` : ""}</option>`];
   for (let v = 0; v <= HIVES_MAX; v++) opts.push(`<option value="${v}" ${cur === String(v) ? "selected" : ""}>${v}</option>`);
-  const t = `How many hives the outbreak starts with (Default: what this map makes on its own). More hives mean more hordes from the start; with none, new hives still rise near the border.${isHardcore(state) ? " In Hardcore the outbreak still begins with one hive: this is how many the first year grows to." : ""}`;
+  const t = `How many hives the outbreak starts with (Default: what this map makes on its own). More hives mean more hordes from the start; with none, new hives still rise near the border.${isRoadStart(state) ? " In Hardcore the outbreak still begins with one hive: this is how many the first year grows to." : ""}`;
   return `<label${tip(t)}>Starting hives <select data-action="hivecount">${opts.join("")}</select></label>`;
 }
 // Crashlanding's static setup (2026-10-24, the user's request: "Remove customization and setting starting hives etc just
@@ -287,15 +288,19 @@ export const screenMode = (state) => (isCrashRun(state) ? "crash" : isCustomRun(
 // the current one with its own. The gamemode select, rollRandomRun and main.js adopt use them.
 export function stashModeSet(ui) {
   if (!ui.modeSets) return;
-  ui.modeSets[ui.mode] = { ...(ui.modeSets[ui.mode] || {}), startPeople: ui.startPeople, pointsMax: ui.pointsMax, startVehicle: ui.startVehicle !== false, fleet: cleanFleet(ui.fleet, ui.mode) };
+  ui.modeSets[ui.mode] = { ...(ui.modeSets[ui.mode] || {}), startPeople: ui.startPeople, pointsMax: ui.pointsMax, startVehicle: ui.startVehicle !== false, fleet: cleanFleet(ui.fleet, fleetKind(ui.mode)) };
 }
 export function takeModeSet(ui, mode) {
   const m = (ui.modeSets && ui.modeSets[mode]) || {};
+  // Hardcore is always Ironman (sim/hardrules.js, issue #79): the box is ticked and locked while it is chosen, and goes
+  // back to what it was on leaving it. Ironman's own rule takes Customize off.
+  if (mode === "hardcore" && ui.mode !== "hardcore") { ui.ironmanWas = !!ui.ironman; ui.ironman = true; ui.freeEdit = false; }
+  else if (mode !== "hardcore" && ui.mode === "hardcore") { ui.ironman = !!ui.ironmanWas; delete ui.ironmanWas; }
   ui.mode = mode;
   ui.startPeople = clampStartPeople(m.startPeople ?? peopleRange(mode).DEF, mode);
   ui.pointsMax = clampMax(m.pointsMax ?? CUSTOM_POINTS.DEF);
   ui.startVehicle = m.startVehicle !== false;
-  ui.fleet = cleanFleet(m.fleet, mode);
+  ui.fleet = cleanFleet(m.fleet, fleetKind(mode));
 }
 
 // Normal, Hardcore, Custom or Crashlanding (sim/hardcore.js MODES): the mode the world on this screen was built with.
@@ -308,7 +313,7 @@ function modeSelect(state) {
 // Start with a vehicle (2026-10-24, user request), every mode, Ironman too: off, no pickup at the hub (Normal, Custom)
 // or no car to flee in (Hardcore: on foot). Each mode keeps its own (main.js ui.modeSets).
 function vehicleToggle(state) {
-  const on = startsWithVehicle(state), hard = isHardcore(state);
+  const on = startsWithVehicle(state), hard = isRoadStart(state);
   const t = hard
     ? "Start with a vehicle: ticked, one of you fled in their car with what was in its back (and a small team loaded its empty seats; Starting vehicles sets the back). Unticked, you flee on foot with only what you can carry (the tents too). Changing it builds the world again on the same seed"
     : `Start with a vehicle: ticked, the hub starts with the vehicles set under Starting vehicles (a pickup truck by default) (and a custom background's car, if it brings one); Starting vehicles sets what is in their backs. Unticked, no vehicle at all: your people go on foot until they find, take or fix one. Changing it builds the world again on the same seed`;
@@ -349,7 +354,7 @@ function customShort(state) {
 function startPeopleSelect(state, ui) {
   // Crashlanding (2026-10-24, user request: "the sole surviving member"): one, locked.
   if (isCrashRun(state)) return `<label${tip("Crashlanding: you are the sole survivor of the crash. The count cannot be changed in this mode; build up a group of your own on the way")}>Starting people <select data-action="startpeople" disabled><option value="1" selected>1 (the sole survivor)</option></select></label>`;
-  const hard = isHardcore(state), mode = hard ? "hardcore" : "normal", R = peopleRange(mode);
+  const hard = isRoadStart(state), mode = isHardcore(state) ? "hardcore" : hard ? "normal" : "hub", R = peopleRange(mode);
   const cur = Number.isFinite(state.startPeople) ? clampStartPeople(state.startPeople, mode) : clampStartPeople(ui.startPeople ?? R.DEF, mode);
   const opts = [];
   for (let v = R.MIN; v <= R.MAX; v++) opts.push(`<option value="${v}" ${v === cur ? "selected" : ""}>${v}${v === R.DEF ? " (default)" : ""}</option>`);
@@ -382,7 +387,7 @@ const UNBUILT_SHORT = "decided when the map is built";
 const UNBUILT = "The map is not built yet: it is built when you Start, View map, Pick start on map or roll a New start position (a Generating map box shows while it is built). Your survivors are kept exactly as they are; what is on the map (the groups that find room, the hives, the towns, where you start) is decided then";
 const groupsOf = (state) => (isPreview(state) ? state.preview.groups ?? state.factions.length : state.factions.length);
 function introText(state) {
-  const people = state.survivors, hard = isHardcore(state), custom = isCustomRun(state);
+  const people = state.survivors, hard = isRoadStart(state), custom = isCustomRun(state);
   if (isCrashRun(state)) return crashIntro(state);
   const foot = startsWithVehicle(state) ? "" : hard ? " No car: you go on foot." : " No vehicle: your people go on foot until they find, take or fix one.";
   // A normal or Custom start's vehicles, rolled by whose they are (2026-10-25): named in the yard, their backs in the stores.
@@ -416,7 +421,7 @@ function crashIntro(state) {
 // the screen has room for. Continue and Load game… are gone from here: the title and the Menu have them.
 export function newRunScreen(state, ui) {
   const people = state.survivors;
-  const hard = isHardcore(state), custom = isCustomRun(state), crash = isCrashRun(state), free = freeEdit(ui);
+  const hard = isRoadStart(state), custom = isCustomRun(state), crash = isCrashRun(state), free = freeEdit(ui);
   const story = introText(state);
   const mode = MODES[screenMode(state)].label;
   const randomTip = `Random run: a new seed and a random world size, AI groups, starting hives, mode (Normal or Hardcore), starting people, zombie look, and a random crew with their gear${free ? " built within random Points each" : ""}, then it starts at once. Ironman, Customize, the First-week guide, Children and the World… dials stay as you set them; the settings rolled are in the log`;
@@ -437,7 +442,7 @@ export function newRunScreen(state, ui) {
       ${modeSelect(state)}
       ${custom ? customInputs(state, ["people"]) : startPeopleSelect(state, ui)}
       ${crash ? `<span class="small muted"${tip("Crashlanding: you do not start with a vehicle, and no Starting vehicles can be set. Find, take or fix one on the way; three years on, most cars are past repair")}>No vehicle: you walk</span>` : vehicleToggle(state)}
-      <label${tip("Ironman: the game saves itself (at dawn, when a battle starts and ends, when you leave it) to one slot of its own. No saving or loading by hand, no restarting a battle, no export: you live with every choice. The crew starts as rolled: no Customize, no custom backgrounds, no moving skill points (names, looks and the leader are yours). Works with Normal, Hardcore, Custom and Crashlanding.")}><input type="checkbox" data-action="ironman"${ui.ironman ? " checked" : ""}> Ironman</label>
+      <label${tip((ui.mode === "hardcore" ? "Hardcore is always Ironman. " : "") + "Ironman: the game saves itself (at dawn, when a battle starts and ends, when you leave it) to one slot of its own. No saving or loading by hand, no restarting a battle, no export: you live with every choice. The crew starts as rolled: no Customize, no custom backgrounds, no moving skill points (names, looks and the leader are yours). Works with Normal, Hardcore, Custom and Crashlanding.")}><input type="checkbox" data-action="ironman"${ui.ironman ? " checked" : ""}${ui.mode === "hardcore" ? " disabled" : ""}> Ironman</label>
       <label${tip(ui.ironman ? "Not with Ironman: an Ironman crew starts as rolled. Untick Ironman to customize." : "Customize: build each colonist from a blank slate with points (Points each, under Crew): skill levels, traits and their tiers (bad ones give points back; Traits ▸ on each card opens the picker), who they were (a preset or one of your own, Backgrounds… under Crew), what they wear, hold and carry, placed by hand (Gear… on each card), and the starting vehicles' backs, each on its own point limit (under Starting vehicles). Start from the dice loads what was rolled. Unticking puts the crew and the backs back as rolled. Not with Ironman.")}${ui.ironman ? ` class="muted"` : ""}><input type="checkbox" data-action="nr-free"${free ? " checked" : ""}${ui.ironman ? " disabled" : ""}> Customize</label>
       <label${tip("First-week guide: a checklist under the alerts for the first days (check the stores, work priorities, a building, a team out and home, the first night), each step with a Show me that points at the button to press. It ticks off as you play and steps aside after day 7; the menu hides it or brings it back. On for your first campaign here.")}><input type="checkbox" data-action="nr-guide"${ui.guide ? " checked" : ""}> First-week guide</label>
       ${FAMILY.enabled ? `<label${tip("Children: couples at a base may have children, who grow up in a year into survivors (Help: Children and families). Untick for a run without couples forming on their own, pregnancies or children.")}><input type="checkbox" data-action="children"${ui.childrenOff ? "" : " checked"}> Children</label>` : ""}
@@ -487,7 +492,7 @@ export function newRunScreen(state, ui) {
 export function crewSnapshot(state) {
   // A custom background's kit comes with it again (sim/hardcore-start.js normalStartKit), not from here.
   const kit = (s) => {
-    if (isHardcore(state) || (s.bgPicked && isCustomBg(s.background))) return null;
+    if (isRoadStart(state) || (s.bgPicked && isCustomBg(s.background))) return null;
     const dice = s.startDice || {}, out = {};
     for (const k of ["weapon", "armor"]) { const it = k in dice ? dice[k] : s.gear[k]; out[k] = it ? { ...it } : null; }
     return out;
@@ -548,11 +553,11 @@ export function randomizeAllCrew(state, ui, rebuild) {
     state.survivors.forEach((s) => { reroll(state, ui, s, ["name", "skills", "look"]); s.traits = rollTraits(rng); });
     return state;
   }
-  if (!isHardcore(state) && state.survivors.some((s) => hasPicks(sanitizeStartGear(s.startGear)))) {
+  if (!isRoadStart(state) && state.survivors.some((s) => hasPicks(sanitizeStartGear(s.startGear)))) {
     const crew = crewSnapshot(state).map((c) => ({ ...c, startGear: null }));
     state = rebuild(crew, ui.crewRoll ?? null);
   }
-  if (!isHardcore(state)) {
+  if (!isRoadStart(state)) {
     const weapons = rng.shuffle(state.survivors.map((s) => s.gear.weapon));
     const armor = rng.shuffle(state.survivors.map((s) => s.gear.armor));
     state.survivors.forEach((s, i) => {
@@ -655,7 +660,7 @@ export function randomizeGear(state, ui, s, rebuild) {
     ui.crewEdited = true;
     return rebuild(null);
   }
-  if (isHardcore(state)) {
+  if (isRoadStart(state)) {
     if (ui.ironman) return state;
     const crew = crewSnapshot(state);
     Object.assign(crew[state.survivors.indexOf(s)], { grabRoll: newRoll(rng), grabPick: true, stuffRoll: null }); // the whole grab again: the pocket and bag things too (rerollCarried's dice go)
@@ -706,7 +711,7 @@ export function randomizeOne(state, ui, s, rebuild) {
   c.budget = budget;
   c.traits = rollTraits(rng);
   delete c.traitTier;
-  if (isHardcore(state)) { c.grabRoll = newRoll(rng); c.grabPick = true; c.stuffRoll = null; }
+  if (isRoadStart(state)) { c.grabRoll = newRoll(rng); c.grabPick = true; c.stuffRoll = null; }
   else if (!isCrashRun(state)) c.gear = { ...(crewSnapshot(state)[i].gear || {}), weapon: startWeapon(rng, s) }; // their vest as it was (a background change leaves out the kit); Crashlanding keeps the unit's issue
   return rebuild(crew, !!key);
 }
@@ -732,8 +737,8 @@ export function carriedDice(state, ui, s) {
   if (ui.ironman) return { why: "Ironman: what they carry stays as rolled" };
   if (freeEdit(ui)) return { tip: "Empty what they wear, hold and carry, then a new random kit for the points they have left after their skills and traits (as the card's Gear does). Each click is a new draw" };
   if (isCustomBg(s.background)) return { why: "A custom background's kit is fixed: they carry exactly what it says (Backgrounds… to change it)" };
-  if (isHardcore(state) && s.background === "prepper") return { why: "A prepper's bag was packed by the door: the kit is fixed (the card's Gear draws their whole grab again)" };
-  if (isHardcore(state)) return { tip: "Draw again the things in their pockets and bag, from the same kind of things for who they were. The bag, the weapon, the armor and what they wear and hold stay; nobody else's grab changes. Each click is a new draw" };
+  if (isRoadStart(state) && s.background === "prepper") return { why: "A prepper's bag was packed by the door: the kit is fixed (the card's Gear draws their whole grab again)" };
+  if (isRoadStart(state)) return { tip: "Draw again the things in their pockets and bag, from the same kind of things for who they were. The bag, the weapon, the armor and what they wear and hold stay; nobody else's grab changes. Each click is a new draw" };
   return { tip: "A year on they carry little: their starting weapon, maybe a box of its rounds and spare magazines. This draws a new starting weapon with its load; the vest stays. Each click is a new draw" };
 }
 // 🎲 Reroll what they carry. Customize: the card's Gear (randomizeGear: a random kit within their points). Hardcore:
@@ -744,7 +749,7 @@ export function rerollCarried(state, ui, s, rebuild) {
   if (!s || carriedDice(state, ui, s).why) return state;
   if (freeEdit(ui)) return randomizeGear(state, ui, s, rebuild);
   const rng = freshRng(), crew = crewSnapshot(state), c = crew[state.survivors.indexOf(s)];
-  if (isHardcore(state)) c.stuffRoll = newRoll(rng);
+  if (isRoadStart(state)) c.stuffRoll = newRoll(rng);
   else c.gear = { ...(c.gear || {}), weapon: startWeapon(rng, s) };
   return rebuild(crew, false);
 }
@@ -772,7 +777,7 @@ export function crewInvViewer(state, ui) {
   const worn = spots.filter(isWorn).map((x) => `<div>${esc(SLOT_NAMES[x.where] || x.where)}</div><div>${invChip(x.item, x.where)}</div>`).join("");
   const kgAll = spots.filter((x) => isWorn(x) || x.where === "pocket").reduce((a, x) => a + itemLoad(x.item), 0); // a rig's and a pack's things in theirs
   return `<div class="box"><h1>${esc(s.name)}</h1>
-    <div class="small muted">What they ${isCrashRun(state) ? "were issued" : isHardcore(state) ? "grabbed as they fled" : "start with"}: ${Math.round(kgAll * 10) / 10} kg on them in all.</div>
+    <div class="small muted">What they ${isCrashRun(state) ? "were issued" : isRoadStart(state) ? "grabbed as they fled" : "start with"}: ${Math.round(kgAll * 10) / 10} kg on them in all.</div>
     <h3 style="margin-top:0.6rem">Worn and held</h3>${worn ? `<div class="kv small">${worn}</div>` : `<div class="small muted">Nothing worn or held.</div>`}
     <h3 style="margin-top:0.6rem">Pockets</h3><div>${invChips(spots, "pocket", "Empty pockets.")}</div>
     <h3 style="margin-top:0.6rem">${rig ? `Rig: ${esc(rig.name)}` : "Rig"}</h3><div>${rig ? invChips(spots, "rig", "Nothing in its pouches.") : `<span class="small muted">No rig.</span>`}</div>

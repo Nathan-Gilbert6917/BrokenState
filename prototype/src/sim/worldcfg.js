@@ -32,6 +32,7 @@
 // ---------- the dials ----------
 // kind "mult": a multiplier on the usual rate (1 is the game as it is). "int": a whole number. "bool": on or off.
 // pair: the other end of a min–max pair (min ≤ max is kept by cleanCfg).
+import { hardDial } from "./hardrules.js";
 export const WORLD_CFG = {
   hunger: { group: "needs", name: "Hunger", kind: "mult", min: 0.25, max: 3, step: 0.05, def: 1, tip: "How fast people get hungry (at a base, on a team, on an errand). ×2: twice as fast, so twice the food eaten." },
   thirst: { group: "needs", name: "Thirst", kind: "mult", min: 0.25, max: 3, step: 0.05, def: 1, tip: "How fast people get thirsty, and so how much water a base and a team go through (every water estimate follows it)." },
@@ -204,8 +205,8 @@ export function cfgOf(state, key) {
   const d = WORLD_CFG[key];
   const c = state && state.worldCfg;
   if (!d) return 1;
-  if (!c || c[key] == null) return d.def;
-  return d.kind === "bool" ? !!c[key] : c[key];
+  const v = !c || c[key] == null ? d.def : d.kind === "bool" ? !!c[key] : c[key];
+  return d.kind === "mult" ? v * hardDial(state, key) : v; // Hardcore's hard rules on top of the run's own dials (hardrules.js)
 }
 // Put on a new world (world.js createWorld): kept only when something is off its default, so a standard world is the
 // same object it always was.

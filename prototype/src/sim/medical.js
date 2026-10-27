@@ -14,6 +14,7 @@
 // Beds (B-10): a per-base admit line (base.admitBelow, default 70, 30-100): people below it, with a severe or
 // infected wound, or too ill to work take beds, worst off first; everyone else keeps working and heals slowly.
 // A hospital without enough medics for its tier runs as the highest tier its medics can staff.
+import { hardMult } from "./hardrules.js";
 import { log, atBase, alive, skill, survivorById, baseById, hurt, hub, residents, day } from "./world.js";
 import { BUILDINGS, isCamp } from "./buildings.js";
 import { partyTile, partyMembers, wipeParty } from "./parties.js";
@@ -179,10 +180,10 @@ export function healRatePerHour(state, base, s, hosp = activeHospital(state, bas
   if (bedHeals) perDay += hosp.heal + hosp.staffSkill * 0.5 + ((hosp.staff || []).some((m) => hasPerk(m, "chiefmedic")) ? 6 : 0); // Chief of Medicine (skills.js)
   // Severe wounds heal slowly without a bed; the hospital tier sets the speed in a bed.
   if (isSevere(s)) perDay *= bedHeals ? hosp.severe : SEVERE_NO_BED;
-  if (s.woundInfected) perDay = perDay * 0.5 - 2;
+  if (s.woundInfected) perDay = perDay * 0.5 - 2 * hardMult(state, "INFECT"); // hardrules.js: Hardcore's infected wounds drain faster
   // Nobody recovers on an empty stomach: no healing while the base is out of food (wounds can still worsen).
   if ((base.hungerDays > 0 || base.thirstDays > 0) && perDay > 0) perDay = 0; // nor without water (economy.js)
-  if (perDay > 0) perDay *= wormHealMult(s) * healMult(s); // worm.js: half while it is in them; Quick Healer (traits.js)
+  if (perDay > 0) perDay *= wormHealMult(s) * healMult(s) * hardMult(state, "HEAL"); // worm.js: half while it is in them; Quick Healer (traits.js); hardrules.js: Hardcore heals slower
   return perDay / 24;
 }
 
@@ -209,7 +210,7 @@ export function medicalHour(state) {
   for (const s of alive(state)) {
     if (!s.woundInfected || s.location.kind !== "party") continue;
     const p = state.parties.find((x) => x.id === s.location.partyId);
-    hurt(state, s, 3 / 24, p ? partyTile(p) : null, "of an infected wound", { raw: true });
+    hurt(state, s, (3 * hardMult(state, "INFECT")) / 24, p ? partyTile(p) : null, "of an infected wound", { raw: true });
     if (p && state.parties.includes(p) && !partyMembers(state, p).length) wipeParty(state, p);
   }
 }
@@ -234,11 +235,11 @@ export function medicalDaily(state, base) {
   for (const s of residents(state, base.id)) {
     if (!s.alive) continue;
     if (s.woundInfected) {
-      if (s.health >= 50 && rng.chance(0.1)) {
+      if (s.health >= 50 && rng.chance(0.1 * hardMult(state, "HEAL"))) {
         s.woundInfected = false;
         log(state, `${s.name}'s infected wound cleared up on its own.`, "good");
       }
-    } else if (s.health < 40 && !(hosp.guards && beds.has(s.id)) && rng.chance(0.05)) {
+    } else if (s.health < 40 && !(hosp.guards && beds.has(s.id)) && rng.chance(0.05 * hardMult(state, "INFECT"))) {
       s.woundInfected = true;
       log(state, `${s.name}'s wounds are infected. Treat them with meds${hosp.cures ? "" : " (a Clinic or better cleans them reliably)"}.`, "danger");
     }

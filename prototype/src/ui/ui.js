@@ -1,5 +1,6 @@
 // DOM panels and modals. Every user action goes through the action dispatcher in main.js.
 // Any element with data-tip="..." shows a hover description.
+import { isHardcore } from "../sim/roadstart.js";
 import { poiRoomLeft, roomWords } from "../sim/poicamp.js"; // a camp inside a POI: the room left on its map (issue #70)
 import { haulPanel } from "./hauling.js"; // the Supply runs tab's Hauling panel (sim/hauling.js)
 import { baseFoodHtml } from "./food.js"; // food by type: the base window's Food section (the top bar's Food row: ui/needsbar.js)
@@ -966,6 +967,8 @@ function gameOverScreen(state, ui) {
   return gameOverWords(state).replace('<div class="box">', '<div class="box rsbox">')
     .replace('<div class="row">', `${hallEndHTML(ui)}${achievementsEndHTML(state)}<div class="rs-over">${runSummaryHTML(state, { noButtons: true })}</div><div class="row"><button data-action="ld-open" data-tab="ledger"${tip("Every resource day by day, per base (E)")}>📈 Ledger</button><button data-action="ach-open"${tip("Every achievement of this run")}>🏆 Achievements</button>`);
 }
+// Keep playing after an ending: not in Hardcore (sim/hardrules.js, issue #79: the run ends where it ends).
+const keepPlayingBtn = (state) => (isHardcore(state) ? `<span class="small muted"${tip("Hardcore: an ending is the end of the run")}>Hardcore: the run ends here.</span>` : `<button data-action="keepplaying"${tip("Close this and carry on in the same world")}>Keep playing</button>`);
 function gameOverWords(state) {
   if (state.victory && state.victoryReason === "alliance") {
     const st = hiveTracker(state).stats;
@@ -973,7 +976,7 @@ function gameOverWords(state) {
     return `<div class="box"><h1>${esc(ALLIANCE.NAME)} holds the state</h1>
     <div class="text">Victory by alliance: the coalition holds ${Math.round(a.land.pct * 100)}% of the land (more than half${a.land.claimed ? `, ${a.land.claimed} tile${a.land.claimed === 1 ? "" : "s"} of it claimed by your teams` : ""}), and ${a.members} group${a.members === 1 ? " stands" : "s stand"} in it beside you${a.groups > a.members ? ` (${a.groups - a.members} outside: conquest counts)` : ""}${state.conquest && state.conquest.stats.defeated ? ` (you broke ${state.conquest.stats.defeated} that would not join)` : ""}. ${a.hivesLeft ? `${a.hivesLeft} hive${a.hivesLeft === 1 ? " still stands" : "s still stand"}, but the state is in your hands.` : "No hive is left."} ${alive(state).length} survivors made it to day ${day(state)}; you destroyed ${st.destroyed} hive${st.destroyed === 1 ? "" : "s"}, took ${state.conquest ? state.conquest.stats.taken : 0} base${state.conquest && state.conquest.stats.taken === 1 ? "" : "s"}, saved ${state.stats.peopleSaved} people and repelled ${state.stats.raidsRepelled} raids.</div>
     <div class="row">${state.chronicle ? `<button data-action="tl-open" data-from="end"${tip("Replay the whole game sped up with the fog of war off: the groups' land, the infection, the hives rising and falling, hordes, teams and your holdout")}>Watch the timelapse</button>` : ""}
-    <button data-action="keepplaying"${tip("Close this and carry on in the same world")}>Keep playing</button>
+    ${keepPlayingBtn(state)}
     <button class="primary" data-action="restart">New campaign</button></div></div>`;
   }
   if (state.victory && state.victoryReason === "reunited") { // Crashlanding (sim/crashstart.js crashJoin): you made it back to your unit
@@ -981,7 +984,7 @@ function gameOverWords(state) {
     return `<div class="box"><h1>You made it back</h1>
     <div class="text">Three years and more after Calder fell, ${esc(unit)} takes you in at ${esc(state.crash && state.crash.nextName ? state.crash.nextName : "the bunker")}. ${alive(state).length} of you made it to day ${day(state)}. The state is still out there: keep playing and the remnant is an ally in your coalition.</div>
     <div class="row">${state.chronicle ? `<button data-action="tl-open" data-from="end"${tip("Replay the whole game sped up with the fog of war off")}>Watch the timelapse</button>` : ""}
-    <button data-action="keepplaying"${tip("Close this and carry on in the same world")}>Keep playing</button>
+    ${keepPlayingBtn(state)}
     <button class="primary" data-action="restart">New campaign</button></div></div>`;
   }
   if (state.victory) {
@@ -989,7 +992,7 @@ function gameOverWords(state) {
     return `<div class="box"><h1>Every hive is destroyed</h1>
     <div class="text">The hives are ash. Hordes still drift in from beyond the state's borders, but nothing breeds them here any more. ${alive(state).length} survivors made it to day ${day(state)}; you destroyed ${st.destroyed} hive${st.destroyed === 1 ? "" : "s"}, beat ${st.repelled} break-in${st.repelled === 1 ? "" : "s"}, saved ${state.stats.peopleSaved} people and repelled ${state.stats.raidsRepelled} raids.</div>
     <div class="row">${state.chronicle ? `<button data-action="tl-open" data-from="end"${tip("Replay the whole game sped up with the fog of war off: the groups' land, the infection, the hives rising and falling, hordes, teams and your holdout")}>Watch the timelapse</button>` : ""}
-    <button data-action="keepplaying"${tip("Close this and carry on in the same world")}>Keep playing</button>
+    ${keepPlayingBtn(state)}
     <button class="primary" data-action="restart">New campaign</button></div></div>`;
   }
   return `<div class="box"><h1>The holdout has fallen</h1>
