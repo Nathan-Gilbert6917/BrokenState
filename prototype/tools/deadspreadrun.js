@@ -11,14 +11,32 @@ import { setAutopilot } from "../src/sim/autopilot.js";
 import { WORLD_SIZES } from "../src/sim/worldsize.js";
 import { popCap, tileDead, bandOfCount } from "../src/sim/deadpop.js";
 import { tileClass } from "../src/sim/placement.js";
-import { writeFileSync, appendFileSync } from "node:fs";
+import { writeFileSync, appendFileSync, readFileSync, existsSync, renameSync } from "node:fs";
+import { serializeState, deserializeState } from "../src/sim/save.js";
 
 const argv = process.argv.slice(2), mi = argv.indexOf("--maps"), mapFile = mi >= 0 ? argv[mi + 1] : null;
 const args = argv.filter((a, i) => !a.startsWith("--") && !(mi >= 0 && i === mi + 1));
 const years = Number(args[0] || 2), seed = Number(args[1] || 42), size = args[2] || "normal";
-const st = createWorld({ seed, factionCount: WORLD_SIZES[size].defGroups, size });
-st.started = true;
-if (!process.argv.includes("--noauto")) setAutopilot(st, true, "balanced");
+// With --maps, the world is also kept at every 91st day and each year's end (<maps>.state) and a run that stopped
+// (a restart) goes on from there: the maps' lines after it are dropped. A resumed run is not hour-for-hour the
+// continuous one (the save drops any card waiting), but it is the same world and rules.
+const ckFile = mapFile ? `${mapFile}.state` : null, resumed = !!(ckFile && existsSync(ckFile));
+let st;
+if (resumed) {
+  st = deserializeState(JSON.parse(readFileSync(ckFile, "utf8")));
+  const keep = readFileSync(mapFile, "utf8").split("\n").filter((l) => l && JSON.parse(l).day <= day(st));
+  writeFileSync(mapFile, keep.map((l) => l + "\n").join(""));
+  console.log(`resumed at day ${day(st)} from ${ckFile} (${keep.length} map lines kept)`);
+} else {
+  st = createWorld({ seed, factionCount: WORLD_SIZES[size].defGroups, size });
+  st.started = true;
+  if (!process.argv.includes("--noauto")) setAutopilot(st, true, "balanced");
+}
+function checkpoint() {
+  if (!ckFile) return;
+  try { writeFileSync(`${ckFile}.tmp`, JSON.stringify(serializeState(st, { dropCards: true }))); renameSync(`${ckFile}.tmp`, ckFile); }
+  catch (e) { console.log(`  (no checkpoint on day ${day(st)}: ${e.message})`); }
+}
 const ORDER = ["centre", "city", "suburb", "town", "highway", "rural", "coast", "scenic"];
 const WORDS = ["none", "low", "medium", "high", "overrun"];
 const CLASSES = ORDER.concat(["other"]);
@@ -34,7 +52,7 @@ function dumpMap() {
     cls[t.id] = k < 0 ? CLASSES.length - 1 : k;
   }
   const line = { seed, day: day(st), year: (day(st) - 1) / 365, w: st.grid.width, h: st.grid.height, classes: CLASSES, hives: (st.hives || []).map((h) => h.tile), n: b64(n), cap: b64(cap), cls: b64(cls) };
-  if (day(st) === 1) writeFileSync(mapFile, ""); 
+  if (day(st) === 1) writeFileSync(mapFile, "");
   appendFileSync(mapFile, JSON.stringify(line) + "\n");
 }
 function sample() {
@@ -59,7 +77,7 @@ function sample() {
   console.log(`  cities highest: ${mean("centre") > mean("city") || !by.city ? "yes" : "no"} (centre ${mean("centre").toFixed(0)}, city ${mean("city").toFixed(0)}) > suburb ${mean("suburb").toFixed(0)} > town ${mean("town").toFixed(0)} > rural ${mean("rural").toFixed(0)}: ${mean("suburb") > mean("town") && mean("town") > mean("rural") && mean("rural") > mean("scenic") ? "yes" : "no"}`);
 }
 sample();
-dumpMap();
+if (!resumed) dumpMap();
 const t0 = Date.now();
 let was = day(st);
 while (day(st) <= years * 365) {
@@ -69,6 +87,7 @@ while (day(st) <= years * 365) {
     was = day(st);
     if ((was - 1) % 365 === 0 || (was - 1) % 91 === 0) sample();
     if ((was - 1) % 365 === 0) dumpMap();
+    if ((was - 1) % 365 === 0 || (was - 1) % 91 === 0) checkpoint();
   }
 }
 console.log(`\n${years} years in ${((Date.now() - t0) / 60000).toFixed(1)} minutes`);
