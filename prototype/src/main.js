@@ -67,7 +67,7 @@ import { CUSTOM_POINTS, clampMax, overText } from "./sim/custompoints.js"; // Cu
 import { BG_ACTIONS, BG_CHANGE, BG_INPUT, customLibrary } from "./ui/backgrounds.js"; // custom backgrounds (sim/custombg.js), not in Ironman
 import { WC_ACTIONS, WC_CHANGE, uiCfg, wcChanged } from "./ui/worldcfg.js"; // World…: the run's dials (sim/worldcfg.js), into the world as it is built
 import { cleanCfg, isDefaultCfg, cfgSummary } from "./sim/worldcfg.js";
-import { SG_ACTIONS, SG_CHANGE, loadDice } from "./ui/startgear.js"; // starting gear picked under Customize (sim/startgear.js)
+import { SG_ACTIONS, SG_CHANGE, GP_INPUT, loadDice } from "./ui/startgear.js"; // starting gear picked under Customize (sim/startgear.js)
 import { clearStartGear } from "./sim/startgear.js";
 import { loadUpAll } from "./sim/itemacts.js"; // physical rounds out of a fight: loaded at Start
 import { DEFAULT_SIZE, sizeDef, clampGroups, clampHives, customDef, clampCustomW, clampCustomH, BASE_W, BASE_H } from "./sim/worldsize.js";
@@ -160,7 +160,7 @@ import { initPadNav, navPanels, navBar, navBattle } from "./ui/padnav.js"; // a 
 import { initLogWindow, syncLogWindow } from "./ui/logwindow.js"; // a raid's log as a small window over the battle map
 import { initOverlays, syncOverlays, resetOverlays } from "./ui/overlaydrag.js";
 import { initHudBar, syncHudBar } from "./ui/hudbar.js"; // the row of buttons at the bottom left of the map: a box over the map each, shown or hidden // the boxes over the map move (drag a header, Alt+arrows)
-import { keepFocusBefore, afterPanelWrite, PANEL_ACTIONS, PANEL_INPUT } from "./ui/panelfold.js"; // the side panels' folds, find box, scroll fades
+import { keepFocusBefore, keepScrollBefore, afterPanelWrite, PANEL_ACTIONS, PANEL_INPUT } from "./ui/panelfold.js"; // the side panels' folds, find box, scroll fades
 import { initKeymap, keyAction, keyIs } from "./ui/keymap.js"; // every key in one table, rebindable (Menu → Controls)
 import { CONTROLS_ACTIONS, controlsKey } from "./ui/controls.js";
 import { initPalette, openPalette, paletteIndex } from "./ui/cmdpalette.js"; // the search box (Ctrl+K or /)
@@ -459,10 +459,10 @@ function setHTML(id, html, user) {
     heldBack = true;
     return false;
   }
-  const keep = keepFocusBefore(el); // a text box being typed in keeps its focus and caret (ui/panelfold.js)
+  const keep = keepFocusBefore(el), scroll = keepScrollBefore(el); // a text box being typed in keeps its focus and caret, a data-keepscroll list its scroll (ui/panelfold.js)
   el.innerHTML = html;
   shown.set(id, html);
-  afterPanelWrite(el, keep); // and the boxes that scroll fade at the edges with more to see
+  afterPanelWrite(el, keep, scroll); // and the boxes that scroll fade at the edges with more to see
   return true;
 }
 function setPanel(id, html, user) {
@@ -2098,6 +2098,7 @@ actions["gear-out"] = (d) => {
 Object.assign(changeActions, { "ppl-q": (el) => PANEL_INPUT["ppl-q"](el) });
 for (const [k, fn] of Object.entries(BN_INPUT)) PANEL_INPUT[k] = (el) => fn(state, ui, el); // the naming window's box: the draft as you type
 for (const [k, fn] of Object.entries(ARMV_INPUT)) PANEL_INPUT[k] = (el) => fn(state, ui, el); // the armory's find box (ui/armoryview.js)
+for (const [k, fn] of Object.entries(GP_INPUT)) PANEL_INPUT[k] = (el) => fn(state, ui, el); // the starting-gear catalogue's find box (ui/gearpicker.js, via ui/startgear.js)
 const tripApi = { plan: (d) => actions.plan(d), autofill: (pl) => autofill(pl) };
 const tripAct = (fn) => (d) => fn(state, ui, d, tripApi), tripChange = (fn) => (el) => fn(state, ui, el);
 Object.assign(actions, {

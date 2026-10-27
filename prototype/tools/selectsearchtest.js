@@ -8,8 +8,9 @@
 //     (no change); a printable key on a focused long select opens the box with that letter;
 //   - re-renders: the panel rebuilt with innerHTML (before opening, and while the box is open: the pick lands on the new
 //     select) and no listeners pile up; searchOpenIn holds the panel's tick redraws while open; a click outside closes;
-//   - the real screens: the start-gear window's pickers (slots, Add a thing, the vehicle's back), the background
-//     editor's and the gun builder's Ammo list get the box, and a typed pick reaches SG_CHANGE with the right item.
+//   - the real screens: the background editor's and the gun builder's Ammo list get the box; the start-gear window's
+//     pickers (slots, Add a thing, the vehicle's back) are a catalogue with its own find box since 2026-10-27
+//     (ui/gearpicker.js): no long select left there, and a typed find then a click reaches sg-item-add with the item.
 // Usage: node tools/selectsearchtest.js
 let pass = 0, fail = 0;
 const check = (ok, msg) => { if (ok) pass++; else { fail++; console.log(`  FAIL ${msg}`); } return ok; };
@@ -354,35 +355,34 @@ section("The real screens");
 {
   globalThis.document = doc; // the gun builder's art draws on stub canvases
   const { createWorld } = await import("../src/sim/world.js");
-  const { startGearEditor, SG_ACTIONS, SG_CHANGE } = await import("../src/ui/startgear.js");
+  const { startGearEditor, fleetEditor, SG_ACTIONS, GP_INPUT } = await import("../src/ui/startgear.js");
   const st = createWorld({ seed: 42, factionCount: 5, crew: [{ points: true }] });
   const ui = { started: false, freeEdit: true, ironman: false, worldSize: "normal", factionCount: 5 };
   SG_ACTIONS["sg-open"](st, ui, { id: st.survivors[0].id });
   modal.innerHTML = startGearEditor(st, ui);
   const sels = modal.querySelectorAll("select");
   const census = sels.map((s) => `${s.dataset.action}${s.dataset.slot ? `:${s.dataset.slot}` : ""} ${s.options.length}${wantsSearch(s) ? "*" : ""}`);
-  console.log(`  start gear: ${census.join(", ")}  (* gets the box)`);
-  const add = modal.querySelector('select[data-action="sg-item-add"]');
-  check(add && wantsSearch(add), `Add a thing… gets the box (${add ? add.options.length : 0} options)`);
-  const trunk = modal.querySelector('select[data-action="sg-trunk-add"]');
-  check(!trunk || wantsSearch(trunk) || trunk.disabled, "the vehicle's back gets it");
-  check(modal.querySelectorAll('select[data-action="sg-slot"]').filter(wantsSearch).length >= 3, "the long slot pickers get it");
-  // A typed pick through the real change handler.
-  const SG_SEEN = [];
-  const h = (e) => { const el = e.target.closest("[data-action]"); if (el && SG_CHANGE[el.dataset.action]) SG_SEEN.push(SG_CHANGE[el.dataset.action](st, ui, el) !== false ? el.value : null); };
-  doc.addEventListener("change", h);
-  mouse(add);
-  typeIn(input(), "bandage");
-  const want = rows().find((r) => !r.classList.contains("dis"));
-  const wantVal = want ? add.options[Number(want.dataset.ssi)].value : null;
-  press(input(), "Enter");
-  const carried = JSON.stringify(st.survivors[0].startGear || {});
-  check(wantVal && SG_SEEN[0] === wantVal && carried.includes(`"${wantVal}"`), `typing "bandage" + Enter: SG_CHANGE adds ${wantVal} to the carried list`);
-  doc.removeEventListener("change", h);
-  mouse(add);
-  const titled = rows().filter((r) => r.getAttribute("title"));
-  check(titled.length > 100, `the items' descriptions stay on hover (${titled.length} rows with one)`);
-  press(input(), "Escape");
+  console.log(`  start gear: ${census.join(", ") || "no selects"}  (* gets the box)`);
+  // Since 2026-10-27 the start-gear window's pickers are catalogues with a find box of their own (ui/gearpicker.js,
+  // tools/gearpickertest.js): no long drop-downs left there (slots, Add a thing…, the vehicle's back).
+  check(!modal.querySelector('select[data-action="sg-item-add"]') && !modal.querySelector('select[data-action="sg-slot"]') && !!modal.querySelector('input[data-action="gp-q"]'), "the start-gear window: its long pickers are a catalogue with a find box now (no sg-slot or Add a thing… select)");
+  SG_ACTIONS["fleet-edit"](st, ui, { i: 0 });
+  modal.innerHTML = fleetEditor(st, ui);
+  check(!modal.querySelector('select[data-action="sg-trunk-add"]') && !modal.querySelector('select[data-action="sg-trunk-round"]'), "the vehicle's back: no long select either");
+  SG_ACTIONS["fleet-close"](st, ui);
+  SG_ACTIONS["sg-open"](st, ui, { id: st.survivors[0].id }); // (Edit… shut the gear window)
+  // A typed find and a click through the real handlers.
+  SG_ACTIONS["sg-target"](st, ui, { slot: "carry" });
+  modal.innerHTML = startGearEditor(st, ui);
+  const q = modal.querySelector('input[data-action="gp-q"]');
+  q.value = "bandage";
+  GP_INPUT["gp-q"](st, ui, q);
+  modal.innerHTML = startGearEditor(st, ui);
+  const rows = modal.querySelectorAll("button").filter((b) => b.dataset.action === "sg-pick-carry");
+  const want = rows.find((r) => !r.classList.contains("dim"));
+  check(rows.length > 0 && rows.every((r) => /bandage/i.test(r.textContent + r.dataset.tip)) && rows.every((r) => (r.dataset.tip || "").length > 20), `typing "bandage": only bandages listed (${rows.length}), each with its description on hover`);
+  const r = want ? SG_ACTIONS["sg-pick-carry"](st, ui, { k: want.dataset.k }) : false;
+  check(want && r && JSON.stringify(st.survivors[0].startGear || {}).includes(`"${want.dataset.k}"`), `and a click on ${want ? want.dataset.k : "nothing"} adds it to the carried list (sg-item-add's rules)`);
 
   const { backgroundEditor, BG_ACTIONS, setCustomLibrary } = await import("../src/ui/backgrounds.js");
   setCustomLibrary([]);
