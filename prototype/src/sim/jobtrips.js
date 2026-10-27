@@ -159,9 +159,10 @@ export function planTrip(state, base, s, job, start, from = null) {
   return { job, base: base.id, tile: tg.tile, at: tg.at, d: tg.d, leave: start, arrive: start + out, workEnd: home - back, home, ...(next != null ? { next } : {}), ...(drop != null ? { drop, wh: walk } : {}), ...(from != null && from !== base.tile && !c.fixed ? { from } : {}), ...(tg.well ? { well: true } : {}) };
 }
 
-// The old job's hours a trip's work counts as (Fetch water: its share of a full fill). The lunch hour inside the trip,
-// at the work or on the walk, is an hour's stop: it comes off the work (a walk home over lunch gets home an hour later
-// in the old reckoning, so the work before it ends an hour sooner).
+// The hours of work a trip's work counts as (a team's hours for the gathering jobs, tripland.js tripScale; Fetch water:
+// its share of a full fill). The lunch hour inside the trip, at the work or on the walk, is an hour's stop: it comes off
+// the work (a walk home over lunch gets home an hour later in the old reckoning, so the work before it ends an hour
+// sooner).
 const tripHours = (state, t) => {
   const w = Math.max(0, t.workEnd - t.arrive - lunchOverlap(t.leave, t.home, state));
   return TRIP_JOBS[t.job].fixed ? Math.min(1, w / TRIP_JOBS[t.job].fixed.fill) : w * tripScale(t.job);

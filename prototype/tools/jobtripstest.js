@@ -1,7 +1,7 @@
 // Job trips (src/sim/jobtrips.js, tripland.js, grouptrips.js; the map's walkers in src/ui/workermap.js).
 // Usage: node tools/jobtripstest.js [seed] (default 42).
 // - The hours: walking costs time on the tile (0.5 h a tile each way), the farther tile gives less, each job's day at its
-//   reference distance gives the old job's hours.
+//   reference distance is its hours there, each a team's hour of the work (2026-10-27; the old job's 6 for wood before).
 // - A woodcutter's day at the hub: home outside the job's hours, out by day on a route over the base's land, the load
 //   credited when they get home (not at midnight), the day's deposits = the output counter = the midnight total.
 // - Tile yields: the trip goes to the best ground (forest over farmland), trading the walk against what a tile holds.
@@ -71,7 +71,8 @@ section("The hours: the walk costs time on the tile");
   note(`hours on the tile a day: wood ${w.join(" / ")} (0, 1, 2 tiles out), hunting ${h.join(" / ")} (1, 2 out); trips of water a day ${[1, 2].map(waterTripsADay).join(" / ")}`);
   check(w[0] > w[1] && w[1] > w[2] && h[0] > h[1], "the farther the tile, the fewer hours on it");
   check(near(distFactor("wood", 1), 1) && near(distFactor("hunt", 2), 1) && near(distFactor("fish", 1), 1), "each job's day at its reference distance is the old job's (wood 1 tile, hunting 2, fishing 1)");
-  check(near(onTileHours("wood", 1) * tripScale("wood"), 6) && near(onTileHours("hunt", 2) * tripScale("hunt"), 4), "the daily hours there (wood 6, hunting 4: CABIN.huntHours since 2026-10-12)");
+  // An hour at the work is a team's hour (the user's request 2026-10-27, tools/gatherparitytest.js): the day there is its hours on the tile (wood 6 before).
+  check(near(onTileHours("wood", 1) * tripScale("wood"), 10) && near(onTileHours("hunt", 2) * tripScale("hunt"), 4), "the daily hours there (wood 10, hunting 4: CABIN.huntHours since 2026-10-12)");
   check(distFactor("wood", 0) > 1.1 && distFactor("wood", 2) < 0.85 && distFactor("hunt", 1) > 1.4, `a near tile gives more, a far one less (wood ${r1(distFactor("wood", 0) * 100) / 100} / 1 / ${r1(distFactor("wood", 2) * 100) / 100})`);
   check(waterTripsADay(1) > waterTripsADay(2), "water fetched from farther: fewer trips a day");
 }
