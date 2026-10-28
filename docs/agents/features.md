@@ -54,7 +54,7 @@ Older design docs: [docs/base-building/plan.md](../base-building/plan.md), [docs
 
 ## 2. Survivors
 - **Skills, XP, teaching, books and perks** [skills]; **traits** with tiers and points [traits].
-- **Needs**: hunger, thirst and mood; eating person by person with a meal mood ladder, preferences and rations [needs, eating].
+- **Needs**: hunger, thirst and mood; eating person by person (meal mood ladder, preferences, rations); at a base they drink from the stores hourly [needs, eating, economy] `tools/needstest.js`. [details](../features/survivors.md#drinking-at-a-base)
 - **Sleep and tiredness** [sleep].
 - **Morale**: crowding, leader lift, desertion [morale]; **mental breaks** [mentalbreaks]; **comforts and treats** [comforts].
 - **Relationships**: grief, service record, memorial wall, daily mood factors [relations].
@@ -91,10 +91,11 @@ Base detail: [bases.md](../features/bases.md). Economy detail: [economy.md](../f
 - **Work priorities** (RimWorld-style): roles, a 1–5 grid and an hourly scheduler [work]; idle-worker assignment [idlework], watch roster [watch], stewards and leaders [steward], bulk roster actions [bulk].
 - **No idle workers**: anyone whose job has no work helps elsewhere and keeps their role [noidle, autopilot] `tools/noidletest.js`. [details](../features/economy.md#no-idle-workers)
 - **Daily economy and upkeep per head** [economy, upkeep].
-- **Water**: purified vs un-purified, wells and filters [water, claims].
+- **Water**: purified vs un-purified, wells and filters; un-purified drinking by each base's and team's rule (Ask, Allow, Never) [water, claims, rawdrink] `tools/watertest.js`. [details](../features/survivors.md#un-purified-water-ask-allow-never)
 - **Food**: types with their own shelf life, spoiling, storage, preserving and jarring [foods, storage]; mealtimes [meals], food chain and ledger views [foodchain, foodlog].
 - **Cooking**: Rimworld-style recipes from ingredients, food poisoning and the kitchen [cooking, kitchen].
 - **Farming**: crops, seasons, greenhouses; crop plots are 2 × 2 pieces placed on soil [farming, buildings, basemap]. [details](../features/economy.md#farming-placed-crop-plots)
+  - Crop water: a gauge a plot, each crop its own level; farmers water while they work, un-purified or purified first (the worm) [farming, needs] `tools/farmtest.js`. [details](../features/economy.md#watering-the-crops)
 - **Hunting, snares, fishing and foraging** [hunting, foraging].
 - **Winter's lean months**: frost kills crops; forage, game, fish and wood yield less in winter [winter, weather, farming]. [details](../features/economy.md#winters-lean-months)
 - **Stone**: field stone cleared on the build map, the Gather stone job and team order; a camp's fire takes 5 wood and 8 stone [stone, work, orders, buildings, staging] `tools/stonetest.js`. [details](../features/economy.md#stone)

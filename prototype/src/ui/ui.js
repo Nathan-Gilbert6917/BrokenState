@@ -173,7 +173,7 @@ import { wayView, breakOutProblem, POIROOMS } from "../sim/poirooms.js"; // issu
 import { tileScouted, blindText, groundsFogged, deadText, GROUNDS_LABEL } from "../sim/campscout.js"; // an unscouted tile: a blind camp; the dead on its grounds (2026-10-23)
 import { campSleep, tentsText, TENT_TYPES } from "../sim/tents.js"; // the camp's tents: beds under cover, storage out of the weather
 import { BED_MOOD, ROUGH_WEATHER } from "../sim/data-beds.js"; // the one rough-sleeping rule (sim/beds.js bedLine)
-import { gaugeRows, treatsRow, needsEffectText, foodOnThem, rationRow } from "./needs.js";
+import { gaugeRows, treatsRow, needsEffectText, foodOnThem, rationRow, rawDrinkRow } from "./needs.js";
 import { packFood, packWater } from "../sim/eating.js"; // the planner's per-person ration line
 import { needsBar, needsBase } from "./needsbar.js"; // the top bar's Needs button and its drop-down of every supply
 import { threatBar } from "./threatbar.js"; // the top bar's 7-day threat forecast meter and its list of causes
@@ -2061,6 +2061,7 @@ function baseOverview(state, b) {
         ${shelterRows(state, b)}
         <div${tip("Days of food left at today's rate without harvests, and the next harvest (Farming tab)")}>Food</div>${foodCellHtml(state, b)}
         ${rationRow(state, b)}
+        ${rawDrinkRow(state, b)}
         <div${tip("Where the fresh food is kept (the food rooms: cellars, storehouse, cold store, a freezer; above them it is stored outside and spoils faster), what will spoil before it is eaten, and the food that keeps")}>Food storage</div>${storeCellHtml(state, b)}
         ${storageRow(state, b)}
         <div${tip("Water per day (in minus out), stock and capacity, days left")}>Water</div>${waterCellHtml(state, b)}

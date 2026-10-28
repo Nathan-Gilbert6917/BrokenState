@@ -810,6 +810,9 @@ function useTabs(stacks, n) {
 }
 export const teamTabs = (state, p) => tabStacks(partyMembers(state, p), [(p.cargo && p.cargo.gear) || []]);
 export const teamTabCount = (state, p) => tabCount(teamTabs(state, p));
+// The team makes its un-purified water safe as it drinks it (drinkHour): a water filter, a fed camp fire or tablets.
+// rawdrink.js: then it is not un-purified water drunk as it is, whatever the team's setting.
+export const teamTreatsWater = (state, p) => hasFilter(state, p) || campFireFed(state, p) || teamTabCount(state, p) > 0;
 export const baseTabs = (state, base) => tabStacks(atBase(state, base.id), [base.armory]);
 export const baseTabCount = (state, base) => tabCount(baseTabs(state, base));
 // Tubes in a base's armory (what a team can pack).

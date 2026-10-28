@@ -5,8 +5,9 @@ import { survivorById, log } from "../sim/world.js";
 import { NEEDS, RATIONS, SHARES, hungerOf, thirstOf, hungerWord, thirstWord, needsWork, needsAim, treatsFor, useTreat, teamFood, teamWater, needAlerts, teamCold } from "../sim/needs.js";
 import { useText } from "../sim/comforts.js";
 import { GEAR } from "../sim/data.js";
-import { partyMembers, partyPace, onTheMove } from "../sim/parties.js";
+import { partyMembers, partyPace, onTheMove, teamName } from "../sim/parties.js";
 import { thirstAt } from "../sim/weather.js";
+import { RAW_DRINK, rawDrinkOf, setRawDrink } from "../sim/rawdrink.js"; // un-purified water: Ask / Allow / Never
 import { teamMeds, teamWants, conditionsOf, CONDITIONS } from "../sim/health.js";
 import { tiredLevel, tiredText, TIRED, TIRED_WORDS } from "../sim/sleep.js";
 import { eatTarget, EAT, PACK, packFood, packWater, packKg, thoughtsOf, setRationLevel } from "../sim/eating.js"; // meal breaks, carried rations, food thoughts
@@ -127,7 +128,8 @@ export function teamNeedsBlock(state, p, live) {
   const food = teamFood(p), water = teamWater(p);
   return `<div class="card small"><div class="spread"><b${tip("Everyone eats and drinks from the team's supplies and what it found (fresh game first) when their hunger or thirst gauge gets low.")}>Eating</b><span class="muted">food ${n0(food)} · water ${n0(water)}</span></div>
     ${live ? `<div class="row" style="flex-wrap:wrap;margin-top:0.25rem"><span class="muted" style="width:4.5rem">Rations</span>${pick("nd-ration", ration, Object.entries(RATIONS))}</div>
-    <div class="row" style="flex-wrap:wrap;margin-top:0.2rem"><span class="muted" style="width:4.5rem"${tip("Who eats and drinks first when there is not enough for everyone")}>When short</span>${pick("nd-share", share, Object.entries(SHARES))}</div>` : `<div class="muted">Rations: ${RATIONS[ration].name} · ${SHARES[share].name}</div>`}
+    <div class="row" style="flex-wrap:wrap;margin-top:0.2rem"><span class="muted" style="width:4.5rem"${tip("Who eats and drinks first when there is not enough for everyone")}>When short</span>${pick("nd-share", share, Object.entries(SHARES))}</div>
+    <div class="row" style="flex-wrap:wrap;margin-top:0.2rem"><span class="muted" style="width:4.5rem"${tip(RAW_TIP)}>Un-purified</span>${pick("nd-raw-team", rawDrinkOf(p), Object.entries(RAW_DRINK))}</div>` : `<div class="muted">Rations: ${RATIONS[ration].name} · ${SHARES[share].name} · Un-purified water: ${RAW_DRINK[rawDrinkOf(p)].name}</div>`}
     ${short.length ? short.map((x) => `<div class="${x.tone}">${esc(x.text)}</div>`).join("") : ""}
     ${p.noFood ? `<div class="danger">Out of food: nobody heals in camp.</div>` : ""}${p.noWater ? `<div class="danger">Out of water.</div>` : ""}
   </div>`;
@@ -142,7 +144,17 @@ export function rationRow(state, b) {
   return `<div${tip("How much everyone here eats (sim/eating.js): Normal, Lean (smaller portions: food lasts a quarter longer, mood −1 a day) or a Feast today (everyone eats their fill and half as much again; mood +6). The governor and a steward with Farming & food set it by themselves.")}>Rations</div><div>${note}${["normal", "lean", "feast"].map(btn).join("")}</div>`;
 }
 
+// Un-purified water (sim/rawdrink.js): a base's rule, for the Overview's Status (a kv row pair).
+const RAW_TIP = "Un-purified water (from a well, rain or a river): may they drink it as it is when the purified water is gone? Ask (a card the first time), Allow, or Never (purified water only: they go thirsty). A team with a water filter, at a camp fire or with purification tablets makes it safe as it drinks, whatever this says.";
+export function rawDrinkRow(state, b) {
+  const cur = rawDrinkOf(b);
+  const btn = (k) => `<button class="mini ${cur === k ? "active" : ""}" data-action="nd-raw-base" data-base="${b.id}" data-v="${k}"${tip(RAW_DRINK[k].desc)}>${RAW_DRINK[k].name}</button>`;
+  return `<div${tip(RAW_TIP)}>Un-purified water</div><div>${Object.keys(RAW_DRINK).map(btn).join("")}</div>`;
+}
+
 export const NEEDS_ACTIONS = {
+  "nd-raw-base": (state, ui, d) => { const b = state.bases.find((x) => x.id === Number(d.base)); const line = b ? setRawDrink(state, b, d.v, b.name) : ""; if (line) log(state, line, "info"); },
+  "nd-raw-team": (state, ui, d) => { const p = state.parties.find((x) => x.id === Number(d.id)); const line = p ? setRawDrink(state, p, d.v, teamName(state, p)) : ""; if (line) log(state, line, "info"); },
   "nd-ration-level": (state, ui, d) => { const b = state.bases.find((x) => x.id === Number(d.base)); const line = b ? setRationLevel(state, b, d.v) : ""; if (line) log(state, line, "info"); },
   "nd-ration": (state, ui, d) => { const p = state.parties.find((x) => x.id === Number(d.id)); if (p && RATIONS[d.v]) p.ration = d.v; },
   "nd-share": (state, ui, d) => { const p = state.parties.find((x) => x.id === Number(d.id)); if (p && SHARES[d.v]) p.share = d.v; },

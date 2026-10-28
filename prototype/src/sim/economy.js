@@ -32,7 +32,8 @@ import { huntingDaily, snaresDaily } from "./hunting.js";
 import { foodUse, mouthsAt, prisonersAt, guestsAt, crewAt } from "./upkeep.js";
 import { takeEatAcc } from "./eating.js"; // people eat by the hour (meal breaks): the day's eating counted here
 import { rationKey, RATION_LEVELS } from "./meals.js"; // the ration levels (lean, a feast day)
-import { heatDaily, starvingDaily } from "./needs.js";
+import { heatDaily, starvingDaily, takeDrinkAcc } from "./needs.js";
+import { rawDrinkOf } from "./rawdrink.js"; // un-purified water: the base's rule (Never: purified water only)
 import { stoneDaily } from "./stone.js"; // the Gather stone job (the user's request 2026-10-23)
 import { woodDaily, fireDayBurn, WOOD } from "./woodcutting.js"; // fireDayBurn, WOOD: a camp's fire's pile kept (shipFromOutposts)
 import { prisonWater } from "./prisoners.js"; // prisoners-tab: water hauled by prisoners (waterProduction)
@@ -267,7 +268,8 @@ export function fetchWaterDay(state, base) {
 // the season's thirst (weather.js THIRST: spring and autumn 1, summer 1.3, winter 0.9; at least 1.6 on a hot day),
 // the sick with dysentery 1 more, prisoners in the cells the same as anyone (prisoners.js), and so do guests you
 // shelter (visitors.js) and a supply convoy's crew holding there (supply.js) (upkeep.js: per head × heads); growing
-// crops are watered on dry days (farming.cropWaterNeed, more in summer). Water filters (crafting.js) add their water
+// crops are watered by the farmers as their gauges need it (farming.js farmWaterHour; farming.cropWaterNeed is the
+// day's estimate, more in summer). Water filters (crafting.js) add their water
 // on top.
 export const WATER = { hubWell: 12, spring: 3, stream: 3, well: 6, rainPerCatcher: 2, hubCap: 80, outpostCap: 40, cistern: 150, drink: 1, filter: 3, evaporate: 0.05 };
 // The tanks and cisterns hold both kinds; water barrels (buildings.js WATER_BARREL) keep room for one kind each.
@@ -465,13 +467,12 @@ export function summerWarningDaily(state) {
 /** @param {number} days */
 export const thirstDamage = (days) => Math.min(25, 6 + 4 * Math.max(1, days));
 /** @param {State} state @param {Base} base */
-function thirst(state, base, mouths, short) {
-  base.waterFed = Math.round((1 - short) * 100) / 100; // needs.js: the share of a day's water everyone got (thirst gauges)
+function thirst(state, base, mouths, short, note = "") {
   base.thirstDays = (base.thirstDays || 0) + 1;
   econStats(state).thirstDays++;
   const dmg = Math.round(thirstDamage(base.thirstDays) * Math.max(0.35, short) * 10) / 10;
   for (const s of mouths) hurt(state, s, dmg, base.tile, `of thirst at ${base.name}`, { raw: true }); // mood: needs.js starvingDaily (parched, worse each day)
-  log(state, `${base.name} is out of water (${Math.round(short * 100)}% short${base.thirstDays > 1 ? `, day ${base.thirstDays}` : ""}): everyone there loses ${dmg} health and nobody heals.`, "danger");
+  log(state, `${base.name} is out of water (${Math.round(short * 100)}% short${base.thirstDays > 1 ? `, day ${base.thirstDays}` : ""}): everyone there loses ${dmg} health and nobody heals.${note}`, "danger");
 }
 
 // ---------- food ----------
@@ -600,21 +601,34 @@ function baseDaily(state, base) {
   // turn un-purified water into purified water before anyone drinks.
   purifyDaily(state, base);
   // Drinking: people first (purified water first, then un-purified: worm.js rolls the share drunk un-purified), then the
-  // crops get what is left (un-purified first). Thirst counts both kinds.
+  // crops get what is left (un-purified first). Thirst counts both kinds. People drink from the stores by the hour as
+  // their thirst gauges drop (needs.js baseHour: the stock goes down through the day, as with food); here the day is
+  // settled against its need: what the hours did not drink (the sick's extra water, a day nobody's gauge was due) is
+  // drawn now. A day they drank more than its need leaves a credit for the next (at most a day's need): the gauges'
+  // drinks come every half day or so, not on the midnight, so a day's drinking runs over or under its need.
   const need = waterNeed(state, base);
-  const have = waterIn(st);
+  const sipped = takeDrinkAcc(base);
+  const paid = sipped.units + (base.drinkCredit || 0);
+  const owed = Math.max(0, need.people - paid);
+  base.drinkCredit = Math.round(Math.min(need.people, Math.max(0, paid - need.people)) * 100) / 100;
+  // A base that never drinks un-purified water (rawdrink.js) pays with purified water only: short of it, it is out
+  // of water however much un-purified water it holds. A question still waiting holds back only the hours' drinks.
+  const pureOnly = rawDrinkOf(base) === "no";
+  const have = pureOnly ? Math.max(0, st.water || 0) : waterIn(st);
   let drank;
-  if (mouths.length && have + 1e-9 < need.people) {
-    const short = 1 - have / need.people;
-    drank = drawWater(st, have);
-    thirst(state, base, mouths, short);
+  if (mouths.length && have + 1e-9 < owed) {
+    const short = (owed - have) / need.people;
+    drank = drawWater(st, have, { pureOnly });
+    const raw = pureOnly ? Math.floor(st[RAW] || 0) : 0;
+    thirst(state, base, mouths, short, raw > 0 ? ` ${raw} un-purified water is in store, but un-purified water is set to Never (the Overview).` : "");
   } else {
-    drank = drawWater(st, need.people);
+    drank = drawWater(st, owed, { pureOnly });
     base.thirstDays = 0;
   }
-  base.drank = { day: day(state), pure: drank.pure, raw: drank.raw }; // worm.js baseWormDaily: the share drunk un-purified
-  const give = drawWater(st, need.crops, { rawFirst: true }).got;
-  farmingDaily(state, base, need.crops > 0 ? give / need.crops : 1);
+  base.drank = { day: day(state), pure: drank.pure + sipped.pure, raw: drank.raw + sipped.raw }; // worm.js baseWormDaily: the share drunk un-purified
+  // The crops are watered by the hour as the farmers tend them (farming.js farmWaterHour), not here: the day counts
+  // the hours each plot spent under its crop's line.
+  farmingDaily(state, base);
   foodMark(state, base, "farm");
   flowMark(state, base); // history.js: drinking out, the harvest in (before the eating)
 

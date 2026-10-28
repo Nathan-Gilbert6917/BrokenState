@@ -599,10 +599,10 @@ export function teamMeal(state, p, members, { fire = false, short = false, toOf 
   }
   return out;
 }
-// Drinks up to `units` water from the pack (purified first). Returns the water drunk.
-export function drinkPack(s, units) {
+// Drinks up to `units` water from the pack (purified first; pureOnly: purified only, rawdrink.js). Returns the water drunk.
+export function drinkPack(s, units, pureOnly = false) {
   if (!s.ration || !(units > EPS)) return 0;
-  return drawWater(s.ration.supplies, units).got;
+  return drawWater(s.ration.supplies, units, { pureOnly }).got;
 }
 // Minutes a meal takes: EAT.min.base + EAT.min.per × days of food eaten (a mealtime meal at least EAT.min.meal).
 export const breakMin = (units, meal) => Math.round(Math.max(meal ? EAT.min.meal : 0, Math.min(EAT.min.max, EAT.min.base + EAT.min.per * units)));

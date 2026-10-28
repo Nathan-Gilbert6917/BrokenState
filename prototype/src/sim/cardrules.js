@@ -74,6 +74,7 @@ export function cardIcon(card, kind) {
   if (card.hubEvent) return "🏠";
   if (card.moraleFor != null || card.breakFor != null || card.snapFor != null) return "💬";
   if (card.outbreakBase != null) return "🦠";
+  if (card.rawFor) return "💧"; // rawdrink.js: out of purified water
   if (card.crashId != null) return "✈";
   if (card.convoyId != null) return "🪖"; // miltrucks.js: an abandoned Army convoy
   if (card.jobId != null || card.allianceAsk != null || card.coalAsk != null) return "📜"; // coalition.js: a member's ask
@@ -127,6 +128,7 @@ export function trayStale(state, card) {
   if (card.mapBase != null && bGone(card.mapBase)) return "the base is gone"; // staging.js: a card with Open the build map
   if (card.raidReport && card.raidReport.baseId != null && bGone(card.raidReport.baseId)) return "the base is gone";
   if (card.recruit && card.recruit.baseId != null && card.recruit.partyId == null && bGone(card.recruit.baseId)) return "the base is gone";
+  if (card.rawFor && !(card.rawFor.kind === "base" ? !bGone(card.rawFor.id) : (state.parties || []).some((p) => p.id === card.rawFor.id))) return `the ${card.rawFor.kind} is gone`; // rawdrink.js
   if (card.jobId != null && state.jobs && Array.isArray(state.jobs.list) && !state.jobs.list.some((j) => j.id === card.jobId)) return "the job is gone";
   return "";
 }

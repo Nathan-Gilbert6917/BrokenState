@@ -11,7 +11,8 @@
 import { FOODS, addFood, foodIn } from "../src/sim/foods.js"; // food value (a meal 1.00)
 import { food, setFood, addDays, clearFood, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { createWorld, hub, atBase, residents, makeSurvivor, tickHour } from "../src/sim/world.js";
-import { basesDaily } from "../src/sim/economy.js";
+import { basesDaily, waterNeed } from "../src/sim/economy.js";
+import { waterIn } from "../src/sim/water.js";
 import { foodUse, heatUse, heatRate, HEAT } from "../src/sim/upkeep.js";
 import { econStats } from "../src/sim/farming.js";
 import { launchExpedition, partyMembers } from "../src/sim/parties.js";
@@ -124,6 +125,24 @@ function team(st, n, supplies) {
     const want = 2 * NEEDS.water * thirstAt(st), aDrink = NEEDS.drink[1] - NEEDS.drink[0];
     check(drinks >= 2 && tMin >= NEEDS.drink[0] - 1e-6, `they drink from the stores below ${NEEDS.drink[0]} and never sit under it (${drinks} drinks in two days, lowest ${r1(tMin)})`);
     check(Math.abs(drank - want) <= aDrink + 1e-6, `about a day's water a day, at the season's thirst (${r1(drank)} of ${r1(want)} points over two days)`);
+  }
+  // The water goes down as they drink, as the food does at the meals (2026-10-28): each hour's drinks come out of the
+  // stores then (needs.js baseHour), not all at midnight; midnight only draws what the day's need still owes.
+  {
+    let hoursDrunk = 0, matched = 0, fell = 0, daytime = 0;
+    for (let i = 0; i < 24; i++) {
+      const people = residents(st, h.id), before = people.map((s) => s.thirst), w0 = waterIn(h.stock), a0 = (h.drinkAcc && h.drinkAcc.units) || 0;
+      st.hour++; needsHour(st);
+      const wr = (NEEDS.water / 24) * thirstAt(st);
+      const pts = people.reduce((a, s, j) => a + Math.max(0, s.thirst - (before[j] - wr)), 0);
+      const units = ((h.drinkAcc && h.drinkAcc.units) || 0) - a0;
+      if (pts > 1e-6) { hoursDrunk++; if (near(units, pts / NEEDS.water, 0.02 * people.length)) matched++; if (w0 - waterIn(h.stock) >= units - 0.02) fell++; daytime += units; }
+    }
+    check(hoursDrunk > 0 && matched === hoursDrunk && fell === hoursDrunk, `each drink comes out of the stores in the hour it is drunk (${hoursDrunk} hours with drinks, ${r1(daytime)} water drunk through the day)`);
+    const need = waterNeed(st, h).people, sipped = h.drinkAcc.units, c0 = h.drinkCredit || 0;
+    basesDaily(st);
+    const all = h.drank.pure + h.drank.raw, owed = Math.max(0, need - sipped - c0);
+    check(near(all, sipped + owed, 0.05) && !(h.thirstDays > 0) && near(h.drinkCredit, Math.min(need, Math.max(0, sipped + c0 - need)), 0.01), `midnight draws only what the day still owes: ${r1(sipped)} drunk by the hour, ${r1(owed)} more at midnight for a need of ${r1(need)} (credit ${r1(c0)} → ${h.drinkCredit})`);
   }
   const e0 = econStats(st).eaten, f0 = food(h);
   for (let i = 0; i < 24; i++) { st.hour++; needsHour(st); }
