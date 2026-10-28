@@ -60,7 +60,7 @@ export function titleMenuHTML(ui, api = API) {
   items.push(`<button class="tt-item${last ? "" : " primary"}" data-action="title-new"${tip("Pick the map, the mode and your people, then start")}>New game</button>`);
   items.push(`<button class="tt-item" data-action="title-load"${n ? "" : " disabled"}${tip(n ? `Pick one of your ${n} save${n === 1 ? "" : "s"}, or load a save file` : "No saves yet")}>Load game</button>`);
   items.push(`<button class="tt-item" data-action="title-settings"${tip("Autosave, confirmations, display, the keys")}>Settings</button>`);
-  items.push(`<button class="tt-item" data-action="title-help"${tip("How the game works, one topic at a time")}>How to play</button>`);
+  items.push(`<button class="tt-item" data-action="title-help"${tip("The basics for a first game in a few short pages, then the full reference")}>How to play</button>`);
   items.push(`<button class="tt-item" data-action="title-board"${tip("The plan for making the real game in Godot or Unity: every feature in build order, with priorities. Opens in your browser.")}>Rebuild board</button>`);
   if (api && api.desktop) items.push(`<button class="tt-item" data-action="title-quit">Quit</button>`);
   return items.join("");
