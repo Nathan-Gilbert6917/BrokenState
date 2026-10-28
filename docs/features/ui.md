@@ -2,7 +2,7 @@
 
 Detail for section 12 of [docs/agents/features.md](../agents/features.md). `[name]` is `prototype/src/sim/name.js`; `ui/name` is `prototype/src/ui/name.js`. Related: [docs/prompts/performance.md](../prompts/performance.md), [docs/design-doc/](../design-doc/).
 
-Contents: [Autopilot governor: wood](#autopilot-governor-wood) · [First-week guide](#first-week-guide) · [New-run screen layout](#new-run-screen-layout) · [Generating map popup](#generating-map-popup) · [Static Crashlanding setup](#static-crashlanding-setup) · [Touch input](#touch-input) · [Game controller](#game-controller) · [The whole game by pad](#the-whole-game-by-pad) · [Key hints by device](#key-hints-by-device) · [Windows and menus](#windows-and-menus) · [Seasonal trees](#seasonal-trees) · [Snow on buildings](#snow-on-buildings) · [Rocks and boulders](#rocks-and-boulders) · [Carrying furniture: the carry poses](#carrying-furniture-the-carry-poses) · [The boxes over the map: a strip on phones, one handle on desktops](#the-boxes-over-the-map-a-strip-on-phones-one-handle-on-desktops)
+Contents: [Autopilot governor: wood](#autopilot-governor-wood) · [First-week guide](#first-week-guide) · [Prototype banner on the title](#prototype-banner-on-the-title) · [New-run screen layout](#new-run-screen-layout) · [Generating map popup](#generating-map-popup) · [Static Crashlanding setup](#static-crashlanding-setup) · [Touch input](#touch-input) · [Game controller](#game-controller) · [The whole game by pad](#the-whole-game-by-pad) · [Key hints by device](#key-hints-by-device) · [Windows and menus](#windows-and-menus) · [Seasonal trees](#seasonal-trees) · [Snow on buildings](#snow-on-buildings) · [Rocks and boulders](#rocks-and-boulders) · [Carrying furniture: the carry poses](#carrying-furniture-the-carry-poses) · [The boxes over the map: a strip on phones, one handle on desktops](#the-boxes-over-the-map-a-strip-on-phones-one-handle-on-desktops)
 
 ## Autopilot governor: wood
 The autopilot fells for wood when the pile runs short and staffs the felling with woodcutters.
@@ -19,6 +19,13 @@ A checklist of first steps with Show me, and a note the first time each kind of 
   - A hub start (Custom): *Day 1*: stores, the clock, work priorities, a building, wood, the first night; *This week*: a team out and home, the diary.
   - Help's Start here (ui/help.js) opens on the road start: the day Calder falls, and the first week's camp and shelter.
 - **Notes on new things** while it is on: the first window of each kind (cards by type, the raid plan, the raid map, a fight, a base defence, the build map, unpacking) gets a note over it in #guidetip; the first alert of each kind a New line on the card. Told once (`state.guide.seen`; guide.js POPUP_TIPS, ALERT_TIPS, popupOf, renderGuideTip).
+
+## Prototype banner on the title
+A note on the title screen that this build is a prototype.
+- The user's request 2026-10-28: "Add a banner on the start screen saying this is a prototype using AI to generate music and sprites. The goal is to use this prototype to test the game is fun and what features to make and then to develop it in Unity or Godot with proper assets".
+- **The text** is `PROTOTYPE_NOTE` in ui/title.js (a head, "Prototype", and the sentence under it), shown in `<aside class="tt-proto" role="note">` inside `.tt-main`, so it hides with the logo and the menu whenever the title is covered (the menu or the Hall of fame over it, the new-run screen).
+- **Where**: bottom right on a desktop, clear of the menu (bottom left) and the logo (top), at most `min(26rem, 40vw)` wide (`prototype/title.css`); across the top on a phone held upright, the logo moved down under it; bottom right under the logo on a phone on its side (`prototype/responsive.css`).
+- Modules: [ui/title (PROTOTYPE_NOTE, build), `prototype/title.css`, `prototype/responsive.css`]. Test: `tools/titletest.js`; screenshots `tools/uishot.cjs --only title`.
 
 ## New-run screen layout
 The new-run screen as a full screen over the title's background: a sticky header with Start, the settings in three groups, a crew grid that takes the columns the screen fits, decluttered cards.

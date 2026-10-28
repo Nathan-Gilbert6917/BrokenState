@@ -11,11 +11,14 @@
 //     water tile: half a tile short of its middle (d − 0.5).
 //   - Each job has its hours (windows: the day's daylight for wood, forage and water; dawn and dusk for hunting and
 //     fishing) split into `trips` trips each; a trip's walk out and back comes out of its window.
-//   - The output of an hour on the tile is the job's old rate × `scale` (= the job's old daily hours / its hours on a
-//     tile at the job's reference distance `ref`: where its workers usually went before, so a typical base brings in
-//     what it did on average): wood and forage one tile out 1 (the base's own tile 1.14, two out 0.8), scavenging on
-//     the base's own ground 1; hunting two out 1, one 1.5 (game keeps off the walls, though: gameAbundance); fishing at
-//     water next to the base 1, two out 0.71.
+//   - An hour on the tile of a gathering job (wood, forage, hunt, fish) is an hour of the work, as a team's land order
+//     is (the user's request 2026-10-27: "Fix gathering orders when coming from a base set as work to match output
+//     yield of when doing so when in a team": one woodcutter's trip brought 33 wood where the same person on a team's
+//     Cut wood brought far more; the trips' hours counted 0.6 of an hour, the old 6-hour day spread over the 10 on the
+//     tile, fishing's 0.43). Scavenging's hour counts `scale` (= its old daily hours `nominal` / its hours on a tile
+//     at the reference distance `ref`). A day's work against the reference distance (distFactor): wood and forage one
+//     tile out 1 (the base's own tile 1.14, two out 0.8), scavenging on the base's own ground 1; hunting two out 1, one
+//     1.5 (game keeps off the walls, though: gameAbundance); fishing at water next to the base 1, two out 0.71.
 //   - The tile: the best of the base's land for the job by what it holds × that distance factor (tripTile, jobtrips.js).
 // The base's land: the tiles within TRIP.radius (2) of the base that no other group holds (tile.owner null or yours).
 // Water jobs (fish, water) need a water tile the base OWNS (tile.owner "player": the ground round a base, factions.js
@@ -33,15 +36,15 @@ export const PACE_KEYS = Object.keys(PACES);
 // The pace a game's outdoor workers keep (a per-game option, saved with the game).
 export const paceOf = (state) => PACES[state && state.tripPace] || PACES.normal;
 export const walkMult = (state) => paceOf(state).walk;
-// windows: [from, to) hours of the day; trips: trips per window; nominal: the old daily job's hours (its scale); prime:
+// windows: [from, to) hours of the day; trips: trips per window; nominal (scavenging): the old daily job's hours (its scale); prime:
 // the hour the odds are read at (hunt and fish: dawn and dusk, as the old job read them); water: works a water tile.
 // fixed (Fetch water): a short trip of `fill` hours at the water, then `rest` hours hauling it into the barrels and
 // chores before the next, as many as fit; perTrip: what one trip brings (2 buckets).
 export const TRIP_JOBS = {
-  wood:     { windows: [[7, 19]], trips: 2, nominal: 6, ref: 1, unit: "wood", stage: ["Felling trees", "Chopping wood", "Splitting logs"], ing: "Cutting wood", load: "logs" },
-  forage:   { windows: [[7, 19]], trips: 2, nominal: 6, ref: 1, unit: "food", stage: ["Searching", "Picking", "Gathering"], ing: "Foraging", load: "basket" },
-  hunt:     { windows: [[6, 10], [16, 20]], trips: 1, nominal: 4, ref: 2, prime: [7, 17], unit: "food", stage: ["Tracking", "Stalking", "Dressing the kill"], ing: "Hunting", load: "game" },
-  fish:     { windows: [[6, 10], [16, 20]], trips: 1, nominal: 3, ref: 1, prime: [7, 17], unit: "food", water: true, stage: ["Casting", "Fishing", "Fishing"], ing: "Fishing", load: "fish" },
+  wood:     { windows: [[7, 19]], trips: 2, ref: 1, unit: "wood", stage: ["Felling trees", "Chopping wood", "Splitting logs"], ing: "Cutting wood", load: "logs" },
+  forage:   { windows: [[7, 19]], trips: 2, ref: 1, unit: "food", stage: ["Searching", "Picking", "Gathering"], ing: "Foraging", load: "basket" },
+  hunt:     { windows: [[6, 10], [16, 20]], trips: 1, ref: 2, prime: [7, 17], unit: "food", stage: ["Tracking", "Stalking", "Dressing the kill"], ing: "Hunting", load: "game" },
+  fish:     { windows: [[6, 10], [16, 20]], trips: 1, ref: 1, prime: [7, 17], unit: "food", water: true, stage: ["Casting", "Fishing", "Fishing"], ing: "Fishing", load: "fish" },
   scavenge: { windows: [[8, 18]], trips: 2, nominal: 1, ref: 0, unit: "finds", stage: ["Searching", "Picking through", "Sorting"], ing: "Scavenging", load: "sack" },
   water:    { windows: [[7, 19]], ref: 1, fixed: { fill: 0.5, rest: 2 }, perTrip: 2, water: true, unit: "rawwater", stage: ["Filling the buckets", "Filling the buckets", "Filling the buckets"], ing: "Fetching water", load: "buckets" },
 };
@@ -76,8 +79,12 @@ export function onTileHours(job, d, m = 1) {
 // within 2, mostly 2 out; the trips pick nearer ground more often), hunting 2 (game keeps away from the walls),
 // scavenging 0 (the ground right round the base), a water job's water next to the base 1).
 const refD = (job) => TRIP_JOBS[job].ref ?? TRIP.ref;
-// The old daily hours an hour on the tile counts as.
-export const tripScale = (job) => (TRIP_JOBS[job] && !TRIP_JOBS[job].fixed ? TRIP_JOBS[job].nominal / Math.max(0.1, onTileHours(job, refD(job))) : 1);
+// The hours of work an hour on the tile counts as: 1 for the gathering jobs (a team's hour), scavenging's old daily hours
+// spread over its hours on the tile.
+export const tripScale = (job) => (TRIP_JOBS[job] && !TRIP_JOBS[job].fixed && TRIP_JOBS[job].nominal ? TRIP_JOBS[job].nominal / Math.max(0.1, onTileHours(job, refD(job))) : 1);
+// A worker's hours of work a day at the job's reference distance (the walk out of them; the day estimates: woodcutting.js
+// WOOD.base.hours, foraging.js FORAGE.base.hours, hunting.js baseFishDay): wood and forage 10, hunting 4, fishing 7.
+export const tripDayHours = (job) => onTileHours(job, refD(job));
 // What a tile d away gives a day against one at the job's reference distance (1 there) at the Normal pace; m: the
 // game's pace (walkMult: a Brisk pace gives a little more, a Relaxed one less).
 export const distFactor = (job, d, m = 1) => onTileHours(job, d, m) / Math.max(0.1, onTileHours(job, refD(job)));

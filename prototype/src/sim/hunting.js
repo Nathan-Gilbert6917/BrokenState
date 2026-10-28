@@ -110,7 +110,7 @@ import { FOODS, foodIn, foodUnits, addFood, takeFood, moveFood, ageLots, unitsOf
 import { totalRounds, sumRecs } from "./rounds.js"; // rounds by calibre
 import { huntRounds, huntLoad, takeHuntShots, baseAmmo, carriedRec, spendCarried } from "./ammo.js"; // a gun hunts with its own calibre and load (R9)
 import { noteOutput } from "./output.js"; // the base's Work now panel: what each job brought in a day (activity.js)
-import { workLand, distFactor, waterSources, shoreOf, NO_WATER, walkMult, tileGameMult } from "./tripland.js"; // the Hunt and Fish jobs in trips: the land, the water and the walking (jobtrips.js)
+import { workLand, distFactor, waterSources, shoreOf, NO_WATER, walkMult, tileGameMult, tripDayHours } from "./tripland.js"; // the Hunt and Fish jobs in trips: the land, the water and the walking (jobtrips.js)
 import { WINTER } from "./winter.js"; // winter's game and fish (call-time only)
 import { cutOffWhy } from "./poirooms.js"; // a camp inside a POI cut off: nobody leaves its map (issue #71; call-time only)
 
@@ -156,8 +156,8 @@ export const FISH = { rod: 0.6, net: 1.2, netAlone: 0.7, deplete: 50, halfLife: 
 // gives each fisher past the first fishCrowd less (fishers' bank space and spooked fish; at least fishCrowdFloor).
 export const MEAT_KG = 1.35; // kg of raw game a day of food, about (venison 1.33, boar 1, rabbit and fowl 1.4, fish 1.4)
 // huntHours (2026-10-12, user request "improve hunting work at bases, it does not seem to do anything"): a base hunter's
-// day at dawn and dusk, 4 hours (it was CABIN.hours, 3, the fishers' day still); the trip's scale is the same
-// (tripland.js TRIP_JOBS.hunt.nominal).
+// day at dawn and dusk, 4 hours (it was CABIN.hours, 3); the trips' hours at the work count in full, as a team's
+// (tripland.js tripScale; a fisher's day is tripDayHours("fish"), 7, since 2026-10-27).
 export const CABIN = { radius: 2, hours: 3, huntHours: 4, smoke: 6, smokeOut: 5, land: 3, spoil: 0.6, snareLines: 2, fishCrowd: 0.1, fishCrowdFloor: 0.4 };
 export const GAME_TERRAIN = { forest: 1, hills: 0.8, mountain: 0.5, plains: 0.55, suburb: 0.12, city: 0.03, water: 0 };
 // Hunting weapons by trade category (data.js GEAR cat); a GEAR entry's own `hunt: { big, small }` overrides it.
@@ -1065,8 +1065,9 @@ export function baseFishDay(state, base, hour = state.hour) {
   if (!w) return 0;
   const dayStart = hour - (hour % 24);
   let r = 0;
-  for (const hh of DAWN_DUSK.slice(0, CABIN.hours)) r += fishRate(state, kit, w.shore, dayStart + hh);
-  return r * distFactor("fish", w.d, walkMult(state));
+  const hrs = DAWN_DUSK.slice(0, CABIN.hours);
+  for (const hh of hrs) r += fishRate(state, kit, w.shore, dayStart + hh);
+  return (r / hrs.length) * tripDayHours("fish") * distFactor("fish", w.d, walkMult(state)); // the day's hours at the water (tripland.js)
 }
 // The Hunt job's room (no fixed cap): hunters to close the land food gap to goalDays (foraging.js landFoodHands).
 export const huntWorkCap = (state, base, goalDays) => landFoodHands(state, base, goalDays, baseHuntDay(state, base));
@@ -1166,7 +1167,7 @@ export function hunterDayPlan(state, base, s) {
   }
   return P.rows[s.id];
 }
-// One hunter's trip (jobtrips.js): `hours` of the old job's hours (the walk already out of them: the day's CABIN.huntHours
+// One hunter's trip (jobtrips.js): `hours` of hunting (the walk already out of them: the day's CABIN.huntHours
 // one tile out) on `tile`, read at `hour` (dawn or dusk). Their share of the day's plan by method (hunterDayPlan); each
 // hour's weapon chosen again (the ammo or arrows may run out), whole hours rolled as the old job did and the last
 // part-hour at its share of the odds. The walls' ammo is never taken (ammoKeep). Returns the catch (rations, deer,
@@ -1234,9 +1235,9 @@ export function huntTrip(state, base, s, tile, hours, hour) {
   gainXp(state, s, "scouting", (shot || !row.hours ? 4 : 3) * frac);
   return got;
 }
-// One fisher's trip (jobtrips.js): `hours` of the old job's hours on the bank at `shore` (fishWater), read at `hour`.
+// One fisher's trip (jobtrips.js): `hours` of fishing (a team's hours) on the bank at `shore` (fishWater), read at `hour`.
 // The base's fishing tools are shared out over its fishers (fishTools; each one past the first catches a little less:
-// fishCrowdShare), so their trips together catch what the old day's fishing did. Returns { rations, fish, worm, infested }.
+// fishCrowdShare), an hour on the bank catching what a team's hour there does. Returns { rations, fish, worm, infested }.
 export function fishTrip(state, base, s, shore, hours, hour) {
   // Only the tools they took out (jobtrips.js checkOutTool: from the armory into their hands or pack): one who has
   // none catches nothing, and the armory's rods left at home fish for nobody.

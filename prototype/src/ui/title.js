@@ -3,6 +3,9 @@
 // Settings (the menu's Options tab), How to play (its Help tab) and, in the desktop app, Quit. The menu itself
 // (ui/settings.js) and the Hall of fame open over the title.
 //
+// A banner (PROTOTYPE_NOTE) says what this build is for: a prototype with AI-generated music and sprites, to find out
+// whether the game is fun and which features to make, before the real game is made in Unity or Godot.
+//
 // Behind it, three animated backgrounds drawn in code take turns: a ruined skyline at dusk, a campfire at night and a
 // holdout's wall in a storm, each held for a while and then cross-faded into the next.
 import { latestSave, listSaves } from "./saves.js";
@@ -16,6 +19,13 @@ const SCENES = ["skyline", "camp", "walls"];
 const HOLD_S = 45;  // how long each background stays before the next fades in
 const FADE_S = 3;   // the cross-fade
 const PIXEL_BUDGET = 5e6; // a background layer's pixels at most (a 4K screen gets a softer, cheaper scene)
+
+// The banner on the title (the user's request 2026-10-28).
+export const PROTOTYPE_NOTE = {
+  head: "Prototype",
+  body: "Its music and sprites are generated with AI. It is here to test whether the game is fun and which features to make; "
+    + "the game will then be developed in Unity or Godot with proper assets.",
+};
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
@@ -84,7 +94,8 @@ function build() {
   root.id = "title";
   root.className = "hidden";
   root.innerHTML = `<canvas id="titlebg"></canvas><div class="tt-shade"></div>
-    <div class="tt-main"><div class="tt-logo" id="tt-logo">${LOGO()}</div><nav class="tt-menu" id="tt-menu"></nav></div>
+    <div class="tt-main"><div class="tt-logo" id="tt-logo">${LOGO()}</div><nav class="tt-menu" id="tt-menu"></nav>
+      <aside class="tt-proto" role="note"><b>${esc(PROTOTYPE_NOTE.head)}</b>${esc(PROTOTYPE_NOTE.body)}</aside></div>
     <div class="tt-ver">Broken State · prototype ${esc(GAME_VERSION)}</div>`;
   document.body.appendChild(root);
   bgCanvas = root.querySelector("#titlebg");

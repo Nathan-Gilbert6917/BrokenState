@@ -2,7 +2,8 @@
 // orchards, now and then a wild hive's honey or a handful of medicinal herbs. Three ways to forage:
 //   - the team order "Forage" on a land tile (N hours, like Hunt; orders.js), and a plan step;
 //   - a team in camp short of food (under a day): its fit people forage around the camp in daylight (orders.js campHour);
-//   - the base job "Forage" (work.js, economy.js ROLES): people gather within 2 tiles of the base 6 hours a day.
+//   - the base job "Forage" (work.js, economy.js ROLES): people gather within 2 tiles of the base, in trips (jobtrips.js),
+//     each hour at the work gathering what a team's hour there does (6 hours' worth a day until 2026-10-27).
 // It stretches food; it does not replace farming: a forager brings in about a ration a day around a base in summer,
 // more in autumn, little in spring and next to nothing in winter, and the land around runs out when picked hard.
 //
@@ -49,7 +50,7 @@ import { cropEggs } from "./worm.js"; // the worm: forage from infected ground c
 import { FOODS, addFood, typedFood, unitsOf, qtyOf, foodIn, foodText } from "./foods.js"; // forage by kind
 import { sumRecs } from "./rounds.js"; // rounds by calibre
 import { noteOutput } from "./output.js"; // the base's Work now panel: what each job brought in a day (activity.js)
-import { workLand, distFactor, walkMult, tileFactor } from "./tripland.js"; // the Forage job in trips: the land and its walking (jobtrips.js)
+import { workLand, distFactor, walkMult, tileFactor, tripDayHours } from "./tripland.js"; // the Forage job in trips: the land and its walking (jobtrips.js)
 import { WINTER } from "./winter.js"; // winter's forage (call-time only)
 import { cutOffWhy } from "./poirooms.js"; // a camp inside a POI cut off: nobody leaves its map (issue #71; call-time only)
 
@@ -67,7 +68,7 @@ export const FORAGE = {
   // The Forage job: hours a day; no head-count cap (tune-jobcaps: it was 3, 4 at 12+ people). Each forager takes the
   // best tile left and strips it (a forest tile ~40 rations, half back in 10 days), so a crowd yields less each.
   // How many go is sized to the need (landFoodHands): the day's eating and refilling the stores, less the plots.
-  base: { radius: 2, hours: 6 },
+  base: { radius: 2, hours: tripDayHours("forage") }, // hours of work a day one tile out (tripland.js)
   refill: 20,                // landFoodGap: the stores are refilled to the goal over this many days
 };
 // What a day's gathering is by the season: shares of the calories (foods.js items).
@@ -321,8 +322,8 @@ export function baseForageDay(state, base, s = null, hour = state.hour) {
   const m = s ? foragerMult(s) : 0.8;
   const dayStart = hour - (hour % 24);
   let r = 0;
-  for (let i = 0; i < FORAGE.base.hours; i++) r += forageRate(state, t.id, dayStart + 9 + i * 2, m);
-  return r * t.f;
+  for (let i = 0; i < 6; i++) r += forageRate(state, t.id, dayStart + 9 + i * 2, m); // the day's hours, 9:00 to 19:00
+  return (r / 6) * FORAGE.base.hours * t.f;
 }
 export const FORAGE_WORTH = 0.3; // a forager must be expected to bring in this much a day for the job to be open
 export const FORAGE_SHORT = 25;  // the Forage job (work.js) opens while the base has less food than this many days
@@ -350,11 +351,11 @@ export function landFoodHands(state, base, goalDays, each, max = 40) {
 }
 // The Forage job's room: foragers to close the land food gap (no fixed cap; the land thins as they pick it).
 export const forageWorkCap = (state, base, goalDays = FORAGE_SHORT) => landFoodHands(state, base, goalDays, baseForageDay(state, base));
-// One forager's trip (jobtrips.js): `hours` of the old job's hours (the walk already out of them) on `tile`, read at
+// One forager's trip (jobtrips.js): `hours` of work (the walk and lunch already out of them) on `tile`, read at
 // `hour`. The land thins by what they pick; now and then herbs (meds) or honey; a bad mushroom eaten out there.
 // Returns { food, herbs, honey, sick } (the food and finds come home with them).
 export function forageTrip(state, base, s, tile, hours, hour) {
-  const m = foragerMult(s) * Math.min(1, workFactor(s));
+  const m = foragerMult(s); // their work factor in it, as a team's
   const amount = Math.round(forageRate(state, tile, hour, m) * hours * (0.6 + 0.8 * state.rng.next()) * 100) / 100;
   takeForage(state, tile, amount);
   const got = { food: amount, herbs: 0, honey: 0, sick: false };

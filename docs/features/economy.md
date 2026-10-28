@@ -4,7 +4,7 @@ Detail for section 3 of [docs/agents/features.md](../agents/features.md) (what r
 
 `[name]` is `prototype/src/sim/name.js`; `ui/name` is `prototype/src/ui/name.js`.
 
-Contents: [No idle workers](#no-idle-workers) · [Farming: placed crop plots](#farming-placed-crop-plots) · [Winter's lean months](#winters-lean-months) · [Woodcutting and heating](#woodcutting-and-heating) · [Stone](#stone) · [The land order box: hours and expected yield](#the-land-order-box-hours-and-expected-yield) · [A team at a gathering order on the map](#a-team-at-a-gathering-order-on-the-map) · [Teamwork on job trips](#teamwork-on-job-trips) · [Tools as prerequisites](#tools-as-prerequisites) · [Crafting stacks](#crafting-stacks) · [Building materials and metal sheets](#building-materials-and-metal-sheets) · [The power grid](#the-power-grid) · [Hauling](#hauling) · [Electronics recipes](#electronics-recipes) · [More of the grid: electronics builds](#more-of-the-grid-electronics-builds) · [The governor builds the grid](#the-governor-builds-the-grid)
+Contents: [No idle workers](#no-idle-workers) · [Farming: placed crop plots](#farming-placed-crop-plots) · [Winter's lean months](#winters-lean-months) · [Woodcutting and heating](#woodcutting-and-heating) · [Stone](#stone) · [The land order box: hours and expected yield](#the-land-order-box-hours-and-expected-yield) · [A base's gathering yields as a team's orders](#a-bases-gathering-yields-as-a-teams-orders) · [A team at a gathering order on the map](#a-team-at-a-gathering-order-on-the-map) · [Teamwork on job trips](#teamwork-on-job-trips) · [Tools as prerequisites](#tools-as-prerequisites) · [Crafting stacks](#crafting-stacks) · [Building materials and metal sheets](#building-materials-and-metal-sheets) · [The power grid](#the-power-grid) · [Hauling](#hauling) · [Electronics recipes](#electronics-recipes) · [More of the grid: electronics builds](#more-of-the-grid-electronics-builds) · [The governor builds the grid](#the-governor-builds-the-grid)
 
 ## No idle workers
 Anyone whose job has no work helps elsewhere and keeps their role.
@@ -55,7 +55,7 @@ Modules: [woodcutting, woodwork, upkeep, needs]. Test `tools/woodworktest.js`.
 - **Governor's reserve**: leaves the fires their days of wood and a share of the coming cold's need, rising from none 150 days out (all of it in season), for any build over 100 wood but beds (autopilot planBuilds buildWoodKeep / WOOD_BUILD_SMALL).
 
 ### What a base makes a day
-- A woodcutter on a trip 45–160 (forest, by hand or with a fire axe; farmland a quarter); one felling marked trees about 330; a builder clearing about 600 (a tree: 4 work-hours, 120 wood).
+- A woodcutter's day of trips 75–265 (forest, by hand or with a fire axe; farmland a quarter; 45–160 before [the base's gathering yields a team's](#a-bases-gathering-yields-as-a-teams-orders), 2026-10-27); one felling marked trees about 330; a builder clearing about 600 (a tree: 4 work-hours, 120 wood).
 - **By tool** [woodcutting CHOP / chopMult, basescatter CLEAR.NO_TOOL]: bare hands ×0.5 (WOOD.hands), felling axe ×2, fire axe ×1.8, hatchet or bow saw ×1.5, tomahawk ×1.4, makeshift axe ×1.3, machete ×0.9. A tree, log or stump on the base map with no cutting tool there takes 2.5 times as long.
 
 ### Felling on the base map
@@ -94,6 +94,17 @@ The user's request 2026-10-23: "For gathering LAND orders for Forage, Hunt, Fish
 - **How much**: Bring back at most (forage, hunt, fish, wood: the old how-much box's slider, Max, Packs only), sent as the order's qty only below Max; what of the expected haul would go in the arms.
 - **The order**: the action picked runs again with d.hours, d.qty and d.asked (main.js "xp-order", "tc-do", ctxhunt; ui/teamctx.js runTeamAction puts them on the item's land job, queued after a move too).
 - Modules: [landest, stone expectStone, ui/landorder, ui/teamctx landPick, ui/expedition landBlock, ui/carry askQty, main]; test `tools/landordertest.js`.
+
+## A base's gathering yields as a team's orders
+An hour at the work on a base job's trip brings in what an hour of a team's land order does.
+
+The user's request 2026-10-27: "Fix gathering orders when coming from a base set as work to match output yield of when doing so when in a team. I had one survivor chop wood and they came back with 33 but doing so from a team would not bring back 33 alone."
+- **The cause**: the job trips counted an hour on the tile as `tripScale` of an hour (the old daily job's hours spread over the trips' hours on the tile at the reference distance): wood and forage 0.6 (6 of 10), fishing 0.43 (3 of 7). A team's hour counted in full, so one survivor on a team's Cut wood brought in about 1.7 times what the same survivor did on the base job, hour for hour (seed 42, a forest 2 tiles out: a day of trips 110 wood, a team the same 7 hours 178).
+- **Now**: tripScale is 1 for wood, forage, hunting (already 1) and fishing; scavenging keeps its old day's scale (`nominal`; no team order to match). The same person, tool, tile and hour cut the same wood and forage the same food either way (woodTrip / woodHour, forageTrip / forageHour; the dice: a trip 0.7–1.3 and 0.6–1.4, a team's hour 0.5–1.5 and 0.4–1.6, the same mean). A woodcutter's day one tile out is about 9 hours of work (the 12 of daylight less the walks and lunch).
+- **Work factor once**: a woodcutter's or forager's trip took their illness twice (woodcutterMult / foragerMult already hold workFactor); now once, as a team's.
+- **The day estimates** that size the jobs and fill the panels count the day's hours at the work (tripland `tripDayHours`: wood and forage 10, hunting 4, fishing 7, at the reference distance; × distFactor / tileFactor as before): WOOD.base.hours and FORAGE.base.hours are tripDayHours, baseFishDay the dawn and dusk hours' mean × 7. So baseWoodDay, baseForageDay and baseFishDay rise with the yields, and the governor (woodHandsWanted, landFoodHands) sends fewer people for the same need. A prisoner on Cut wood (prisoners.js prisonWoodDay) works the job's day too.
+- **Not changed**: the AI groups' land (grouptrips.js) is a factor on their daily food and wood, not the trips' hours. XP a day is as before (a trip's share of WOOD.base.hours / FORAGE.base.hours); felling on the base map (woodwork.js) teaches USE.wood a tenth of a day an hour (a sixth before).
+- Modules: [tripland tripScale / tripDayHours, jobtrips tripHours, woodcutting woodTrip / baseWoodDay, foraging forageTrip / baseForageDay, hunting baseFishDay, activity]; test `tools/gatherparitytest.js`.
 
 ## A team at a gathering order on the map
 A team of yours at Cut wood, Gather stone, Hunt, Fish, Forage or Fetch water is drawn at the job, with a ring filling over it; out on a Survey, a Quick look, snares, shore materials, a claim or a well, the same.

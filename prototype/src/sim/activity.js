@@ -429,7 +429,7 @@ function jobProgress(state, base, job, list, h) {
   if (job === "wood" && !woodWorkWhy(state, base)) {
     const tile = woodTripTile(state, base);
     const crew = chopCrew(able(list), (base.armory || []).filter(isChopTool));
-    const expect = tile ? crew.reduce((a, c, k) => a + WOOD.rate * tile.v * tile.f * seasonWood(state) * c.mult * Math.min(1, workFactor(c.s)) * woodCrowd(k) * WOOD.base.hours, 0) : 0;
+    const expect = tile ? crew.reduce((a, c, k) => a + WOOD.rate * tile.v * tile.f * seasonWood(state) * c.mult * woodCrowd(k) * WOOD.base.hours, 0) : 0;
     out.progress = daily(dayShare(woodTime, h), expect, "wood", ` · ${crew.filter((c) => c.tool).length} of ${crew.length} with a cutting tool`);
     const w = woodNeed(state, base);
     const kg = (v) => n0(v * SUPPLIES.wood.weight);
