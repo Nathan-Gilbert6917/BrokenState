@@ -2,14 +2,20 @@
 // A handful of steps a new player needs in the first days, each with a line on why it matters and a "Show me" that
 // opens the right screen and pulses the button to press. Steps tick off from the state of the game (a team really
 // out, a building really queued, the clock really past the first dawn), never by clicking them; a small toast says so.
-// - Two lists: a normal start (a hub with people: the stores, work priorities, a building, a team out and home, the
-//   first night, the diary) and a Hardcore start on the road (the team, water, the camp (Establish base), its needs, the
-//   shelter, the first night, the diary). Which one is picked when the guide starts: no base yet = the road list.
+// - Two lists, each in two parts (GUIDE_PHASES: Day 1, then the rest of the week):
+//   - the road start (Normal and Hardcore since issue #79, and Crashlanding: no base yet): on day 1 the team, the clock,
+//     water, the camp fire's wood and stone, the camp (Establish base) and the first night; by day 7 wood for the
+//     shelter, a team out to scavenge, the shelter shack placed and its needs in, the shelter founded, the diary (the
+//     user's request 2026-10-28: the shelter is the first week's goal, not the first day's);
+//   - a hub start (Custom): on day 1 the stores, work priorities, a building, wood, the clock and the first night; then
+//     a team out and home, the diary.
+//   Which one is picked when the guide starts: no base past a camp yet = the road list. A step can read differently
+//   on the road (ROAD_WORDS: the night, wood, scavenging from the camp).
 // - state.guide = { kind: "base" | "road", on, keep, fold, done: { step id: hour }, h0, b0, sent: [{ id, who }], wLow,
 //   woodLow, seen: { tip id: hour }, stepsDone, ended }. Saved with the world (sim/save.js writes the whole state); an older save has none and shows nothing.
 //   h0: the hour it started (the clock and the first dawn count from it); b0: buildings then; sent: player teams seen
 //   leaving a base (for "bring them home"); wLow: the least water held so far (for "find water"); woodLow: the least
-//   wood at the hub so far (for "wood coming in"); stepsDone: the hour every step was done (tips only from then).
+//   wood at the hub so far (for "wood coming in"; null until there is a hub); stepsDone: the hour every step was done (tips only from then).
 // - Off by itself once every step is done or after day GUIDE.DAYS (not when brought back by hand from the menu:
 //   keep), or with its ✕. The menu's Game tab brings it back or hides it (gd-toggle).
 // - The new-run screen's "First-week guide" box (ui/newgame.js, ui.guide): on by default for the first campaign on
@@ -23,7 +29,7 @@
 // - Purely the player's: it never pauses the clock, adds cards or touches the simulation; the autopilot and the
 //   headless tools never start it.
 import { day, hub, alive } from "../sim/world.js";
-import { partyTile, partyMembers } from "../sim/parties.js";
+import { partyTile, partyMembers, carried } from "../sim/parties.js";
 import { teamWaterIn, waterIn } from "../sim/water.js";
 import { waterSource, ESTABLISH_LABEL } from "../sim/staging.js";
 import { isCamp, tierUpJob, gatherRows, BUILDINGS, CAMP } from "../sim/buildings.js";
@@ -58,9 +64,13 @@ function waterHeld(state) {
   for (const b of state.bases) w += waterIn(b.stock);
   return w;
 }
-const hubWood = (state) => { const h = hub(state); return h ? h.stock.wood || 0 : 0; };
+const hubWood = (state) => { const h = hub(state); return h ? h.stock.wood || 0 : null; }; // null: no hub yet (the road)
 // "20 scrap, 2 building materials and 200 wood"
 const costText = (cost) => Object.entries(cost).map(([k, n]) => `${n} ${String(SUPPLIES[k] ? SUPPLIES[k].name : k).toLowerCase()}`).join(", ").replace(/, ([^,]*)$/, " and $1");
+// "5 wood and 8 stone": the camp fire's cost.
+const fireText = () => Object.entries(CAMP.fireCost).map(([k, n]) => `${n} ${k}`).join(" and ");
+// A team of yours carrying the camp fire's wood and stone (sim/staging.js fireCostProblem).
+const fireCarried = (state) => mine(state).some((p) => Object.entries(CAMP.fireCost).every(([k, n]) => carried(p, k) >= n));
 // The first dawn after the guide started (06:00 of the next day).
 const firstDawn = (g) => (Math.floor(g.h0 / 24) + 1) * 24 + 6;
 const homeTeams = (state, g) => g.sent.filter((x) => !state.parties.some((p) => p.id === x.id));
@@ -86,8 +96,8 @@ const STEPS = {
   },
   wood: {
     title: "Keep wood coming in", why: "Wood builds, cooks, boils the water and heats the base when the cold comes, and nobody starts on it: the first builds eat the woodpile fast. Put someone on Cut wood (the role drop-down beside their name), or mark trees to fell on the base map; a team in the field can cut wood too.",
-    done: (state, g) => alive(state).some((s) => s.role === "wood" && s.location && s.location.kind === "base") || hubWood(state) >= (g.woodLow ?? Infinity) + GUIDE.WOOD_GAIN, // a fixed woodcutter, or someone on priorities cutting this hour (work.js sets s.role to the hour's job)
-    show: (state, ui, act) => (openHub(state, ui, act, "overview") ? ['[data-action="role"]', '[data-action="basetab"][data-tab="basemap"]'] : []),
+    done: (state, g) => alive(state).some((s) => s.role === "wood" && s.location && s.location.kind === "base") || (hubWood(state) ?? -Infinity) >= (g.woodLow ?? Infinity) + GUIDE.WOOD_GAIN, // a fixed woodcutter, or someone on priorities cutting this hour (work.js sets s.role to the hour's job)
+    show: (state, ui, act) => (openHub(state, ui, act, "overview") ? ['[data-action="role"]', '[data-action="basetab"][data-tab="basemap"]'] : openTeam(state, ui, act) ? ['[data-action="xp-order"][data-type="wood"]'] : []), // no camp yet: the team's Cut wood
   },
   scavenge: {
     title: "Send a team to scavenge", why: "Scrap, parts, meds and ammo come from the ruins. Click a site, pick Scavenge / raid, choose who goes and launch: the planner packs their supplies. When they get there you pick the place to go into (one not found yet needs a survey first) and play the raid on its map.",
@@ -133,14 +143,14 @@ const STEPS = {
     done: (state, g, ui) => !!ui.diary,
     show: (state, ui) => { closeWindows(ui); return ['[data-action="dy-open"]']; },
   },
-  // Hardcore: on the road with no base.
+  // The road start (Normal and Hardcore): no base yet.
   team: {
-    title: "Meet your team", why: "You are on the road with the people who got out with you. Their panel holds their orders, people and supplies: what they carry (a tent each among it) is all you have.",
+    title: "Meet your team", why: "These are the people who got out with you, on the road with no home yet. Click the team on the map (or find it on the Teams tab) to open its panel: its orders, its people and everything they carry. What they carry is all you have for now: some food and water, a tent bag each.",
     done: (state, g, ui) => ui.expedition != null && state.parties.some((p) => p.id === ui.expedition && p.owner === "player"),
     show: (state, ui, act) => (openTeam(state, ui, act) ? ['[data-action="xp-move"]', "#right h2"] : []),
   },
   water: {
-    title: "Find water", why: "Thirst kills in days. Rivers and lakes (Fetch water from the shore), shops, diners and churches. Raw water can carry the worm: boil it on a lit camp fire, filter it or use tablets.",
+    title: "Find water", why: "Thirst kills in days, sooner than hunger. Look for a river or lake (Fetch water from the shore) or search a shop, diner or church on the way. Raw water can carry the worm: boil it on a lit camp fire, filter it or use tablets. Forage as you go to stretch the food.",
     done: (state, g) => state.bases.length > 0 || waterHeld(state) >= g.wLow + GUIDE.WATER_GAIN,
     show: (state, ui, act) => {
       const p = openTeam(state, ui, act);
@@ -150,29 +160,55 @@ const STEPS = {
       return ['[data-action="xp-order"][data-type="water"]', '[data-action="xp-move"]'];
     },
   },
+  fire: {
+    title: "Gather wood and stone for a camp fire", get why() { return `Every camp starts with a fire, and the team has to carry what it takes: ${fireText()}. The team panel's Land row has Cut wood… and Gather stone… (both by daylight; stone is easiest in hills and mountains). A few hours of each is plenty.`; },
+    done: (state) => state.bases.length > 0 || fireCarried(state),
+    show: (state, ui, act) => (openTeam(state, ui, act) ? ['[data-action="xp-order"][data-type="wood"]', '[data-action="xp-order"][data-type="stone"]'] : []),
+  },
   camp: {
-    title: `Set up your camp (${ESTABLISH_LABEL})`, why: `Your hub starts as a camp, the barest base: pick a spot beside a river or lake, with sites and trees around and few of the dead, and give the team the order there. Its camp fire takes ${CAMP.fireCost.wood} wood and ${CAMP.fireCost.stone} stone carried: give the team Cut wood and Gather stone first (its right-click menu, Land). Your people live there from the start, in their tents; the alert that follows opens its build map to lay it out.`,
+    title: `Set up your camp (${ESTABLISH_LABEL})`, why: `The camp is your first home: the barest base, your people in their tents round the fire. It grows into your hub where it stands, so pick the spot with care: beside a river or lake, with trees and sites to scavenge nearby and few of the dead. Take the team there and give the order ${ESTABLISH_LABEL}; the alert that follows opens the camp's build map to lay it out.`,
     done: (state) => state.bases.length > 0,
     show: (state, ui, act) => (openTeam(state, ui, act) ? ['[data-action="xp-order"][data-mission="establish"]', '[data-action="xp-move"]'] : []),
   },
   needs: {
-    title: "Place the shelter, and bring in what it needs", why: `The camp grows into a shelter when its Shelter shack stands: put it down where you want it (the Camp tab's Place the shelter shack, or the build map's Build list; nothing is placed for you). It takes ${costText(BUILDINGS.camp_up.cost)} (its builders make the building materials from scrap, ${CAMP.matScrap} each; the Camp tab lists what is in). Send teams out from the camp to scavenge the sites around it and to cut wood (a team's Cut wood order, or trees marked on the build map); what comes home goes into its stores and the step up takes it as it comes in.`,
+    title: "Place the shelter shack and bring in what it needs", get why() { return `The camp becomes a shelter once its Shelter shack stands. On the Camp tab press Place the shelter shack, then click where it goes on the build map (nothing is placed for you). It takes ${costText(BUILDINGS.camp_up.cost)}; the builders make the building materials from scrap (${CAMP.matScrap} each). Whatever reaches the camp's stores goes into it as it comes in, and the Camp tab lists what is still missing.`; },
     done: (state) => { const h = hub(state); if (!h) return false; const job = isCamp(h) ? tierUpJob(h) : null; return !isCamp(h) || (!!job && gatherRows(job).every((r) => r.have + (h.stock[r.key] || 0) >= r.need - 1e-9)); }, // taken by the step up or waiting in the stores
     show: (state, ui, act) => { const h = hub(state); if (h && isCamp(h)) { closeWindows(ui); act.openbase({ id: h.id, tab: "camp" }); return [...(tierUpJob(h) ? [] : ['[data-action="tier-pick"]:not([disabled])']), '[data-action="tf-open"]', '[data-action="basetab"][data-tab="camp"]']; } return openTeam(state, ui, act) ? ['[data-action="xp-order"][data-mission="establish"]'] : []; },
   },
   found: {
-    title: "Found your shelter", why: "With everything in, the camp's builders build it up (more hands and Mechanics go faster). Done, it becomes a shelter you can live at and build up.",
+    title: `Found your shelter by day ${GUIDE.DAYS}`, get why() { return `The week's goal, so there is no rush on day 1: water, food and a safe camp come first. With everything in, the camp's builders put the shack up (${BUILDINGS.camp_up.hours} work-hours; more hands and Mechanics go faster). When it stands the camp is a shelter: a roof, room to build, and later your hub.`; },
     done: (state) => state.bases.some((b) => b.type === "hub" && !isCamp(b)),
-    show: (state, ui, act) => (openTeam(state, ui, act) ? ['[data-action="xp-order"][data-mission="establish"]'] : []),
+    show: (state, ui, act) => { const h = hub(state); if (h && isCamp(h)) { closeWindows(ui); act.openbase({ id: h.id, tab: "camp" }); return ['[data-action="basetab"][data-tab="camp"]', '[data-action="basetab"][data-tab="construction"]']; } return openTeam(state, ui, act) ? ['[data-action="xp-order"][data-mission="establish"]'] : []; },
   },
 };
-// The lists, in the order they are shown. Steps can be done in any order; the first one not done is "next".
-export const GUIDE_LISTS = {
-  base: ["stores", "work", "build", "wood", "scavenge", "clock", "night", "home", "diary"],
-  road: ["team", "clock", "water", "camp", "needs", "found", "night", "diary"],
+// The same steps in the road's words (guideSteps): the night out or at the camp, wood for the shelter, a team sent
+// from the camp.
+const ROAD_WORDS = {
+  night: { why: "Night runs from 20:00 to 06:00 and nobody sees far in the dark. At the camp the fire keeps your people warm and boils the water, but its light can draw the dead. Still on the road at dusk? Set up camp where you stand: a night's camp with the tents, struck again in the morning." },
+  wood: { title: "Cut wood for the shelter", get why() { return `The shelter shack takes ${BUILDINGS.camp_up.cost.wood} wood, and the fire burns more every night. At the camp, put someone on Cut wood (the job drop-down beside their name) or mark trees to fell on the build map; a team out can cut wood and bring it home too.`; } },
+  scavenge: {
+    get why() { return `The shelter needs ${BUILDINGS.camp_up.cost.scrap} scrap and more, and scrap, parts, meds and ammo all come from the ruins. From the camp, click a site nearby, pick Scavenge / raid, choose who goes and launch; leave someone at the camp to work it. What they find is yours once they are back.`; },
+    get pad() { return `The shelter needs ${BUILDINGS.camp_up.cost.scrap} scrap and more, and scrap, parts, meds and ammo all come from the ruins. ${PAD.X} on a site near the camp opens its menu: pick Scavenge / raid, choose who goes and launch; leave someone at the camp to work it. What they find is yours once they are back.`; },
+  },
 };
-export const guideSteps = (g) => (GUIDE_LISTS[g && g.kind] || GUIDE_LISTS.base).map((id) => ({ id, ...STEPS[id] }));
-export const guideStep = (id) => (STEPS[id] ? { id, ...STEPS[id] } : null);
+// The lists in two parts, in the order they are shown: what day 1 needs, then the rest of the week. Steps can be done
+// in any order; the first one not done is "next".
+export const GUIDE_PHASES = {
+  base: [
+    { label: "Day 1", sub: "set the hub to work", ids: ["stores", "clock", "work", "build", "wood", "night"] },
+    { label: "This week", sub: "out into the ruins", ids: ["scavenge", "home", "diary"] },
+  ],
+  road: [
+    { label: "Day 1", sub: "off the road and through the night", ids: ["team", "clock", "water", "fire", "camp", "night"] },
+    { label: `By day ${GUIDE.DAYS}`, sub: "a shelter of your own", ids: ["wood", "scavenge", "needs", "found", "diary"] },
+  ],
+};
+export const GUIDE_LISTS = Object.fromEntries(Object.entries(GUIDE_PHASES).map(([k, ph]) => [k, ph.flatMap((x) => x.ids)]));
+const phasesOf = (g) => GUIDE_PHASES[g && g.kind] || GUIDE_PHASES.base;
+// A step with its words (a getter's text read now) and its part of the week (phase: an index into GUIDE_PHASES).
+const stepOf = (id, kind, phase) => ({ id, ...STEPS[id], ...(kind === "road" ? ROAD_WORDS[id] : null), phase });
+export const guideSteps = (g) => phasesOf(g).flatMap((ph, i) => ph.ids.map((id) => stepOf(id, g && g.kind, i)));
+export const guideStep = (id, kind = "base") => (STEPS[id] ? stepOf(id, kind, null) : null);
 
 // ---------- show-me helpers ----------
 function closeWindows(ui) {
@@ -197,28 +233,32 @@ function openTeam(state, ui, act, p = null) {
   act["panel-toggle"]({ p: "right", v: "0" });
   return team;
 }
-// The nearest site to the hub that a team could scavenge: its tile panel, with the Scavenge button to press.
+// The nearest site to the hub that a team could scavenge: its tile panel, with the Scavenge button to press. No base
+// yet (the road): nothing is sent from a base (ui.js tileActions), so the team's panel, centered on the nearest site,
+// with Move to walk there.
 function showSite(state, ui, act) {
   const h = hub(state) || state.bases[0];
-  closeWindows(ui);
-  ui.expedition = null;
-  act["panel-toggle"]({ p: "right", v: "0" });
-  const sels = ['[data-action="plan"][data-mission="scavenge"]', '[data-action="pl-launch"]'];
-  if (!h) return sels;
+  const road = h ? null : openTeam(state, ui, act);
+  if (h) { closeWindows(ui); ui.expedition = null; act["panel-toggle"]({ p: "right", v: "0" }); }
+  const from = h ? h.tile : road ? partyTile(road) : null;
+  const sels = road ? ['[data-action="xp-move"]'] : ['[data-action="plan"][data-mission="scavenge"]', '[data-action="pl-launch"]'];
+  if (from == null) return sels;
   for (let r = 1; r <= GUIDE.SITE_REACH; r++) {
-    const ring = state.grid.within(h.tile, r).filter((id) => state.grid.distance(h.tile, id) === r && state.tiles[id] && state.tiles[id].loc);
-    const tile = ring.find((id) => tileActions(state, id).some(([m]) => m === "scavenge"));
+    const ring = state.grid.within(from, r).filter((id) => state.grid.distance(from, id) === r && state.tiles[id] && state.tiles[id].loc);
+    const tile = road ? ring[0] : ring.find((id) => tileActions(state, id).some(([m]) => m === "scavenge"));
     if (tile != null) { act.center({ tile }); return sels; }
   }
   return sels;
 }
 
 // ---------- starting, checking, ending ----------
+// A base past the camp stands (a hub start's hub, or the road's shelter founded): the road list is over.
+const roadOver = (state) => state.bases.some((b) => !isCamp(b));
 // A new guide for this world (main.js begin, or the menu). Nothing is made when it is off.
 export function startGuide(state, on = true, { keep = false } = {}) {
   if (!on) return null;
   state.guide = {
-    kind: state.bases.length ? "base" : "road", on: true, keep: !!keep, fold: true, done: {}, // folded to its Next line until opened (the user's request 2026-10-24: the alerts' corner takes less of the map)
+    kind: roadOver(state) ? "base" : "road", on: true, keep: !!keep, fold: true, done: {}, // folded to its Next line until opened (the user's request 2026-10-24: the alerts' corner takes less of the map)
     h0: state.hour, b0: buildingCount(state), sent: [], wLow: waterHeld(state), woodLow: hubWood(state), seen: {}, stepsDone: null, ended: null,
   };
   return state.guide;
@@ -235,16 +275,16 @@ export function guideCheck(state, ui) {
   if (!g.done) g.done = {};
   if (!g.sent) g.sent = [];
   if (!g.seen) g.seen = {}; // a save from before the tips
-  g.woodLow = Math.min(g.woodLow ?? Infinity, hubWood(state));
+  const wood = hubWood(state);
+  if (wood != null) g.woodLow = Math.min(g.woodLow ?? Infinity, wood); // from the first hour there is a hub (the road: the camp)
   noteAlert(state, ui, g);
-  // Teams that set out from a base (any mission), remembered by who is on them.
-  if (g.kind === "base") {
-    for (const p of mine(state)) {
-      if (p.homeBaseId == null || g.sent.some((x) => x.id === p.id)) continue;
-      g.sent.push({ id: p.id, who: partyMembers(state, p).map((s) => s.id) });
-      if (g.sent.length > GUIDE.SENT_MAX) g.sent.shift();
-    }
-  } else g.wLow = Math.min(g.wLow ?? Infinity, waterHeld(state));
+  // Teams that set out from a base (any mission; on the road, from the camp), remembered by who is on them.
+  for (const p of mine(state)) {
+    if (p.homeBaseId == null || g.sent.some((x) => x.id === p.id)) continue;
+    g.sent.push({ id: p.id, who: partyMembers(state, p).map((s) => s.id) });
+    if (g.sent.length > GUIDE.SENT_MAX) g.sent.shift();
+  }
+  if (g.kind === "road") g.wLow = Math.min(g.wLow ?? Infinity, waterHeld(state));
   const steps = guideSteps(g);
   const fresh = [];
   for (const st of steps) {
@@ -263,7 +303,7 @@ export function guideCheck(state, ui) {
   else if (n === steps.length && g.stepsDone == null) {
     g.stepsDone = state.hour;
     ui.flash = { text: `✔ First week: every step done. The checklist steps aside; notes on new things go on to day ${GUIDE.DAYS}.`, at: now() };
-  } else if (over) endGuide(state, ui, n === steps.length ? "done" : "days", "The first-week guide steps aside after day 7. The menu (Game tab) brings it back.");
+  } else if (over) endGuide(state, ui, n === steps.length ? "done" : "days", `The first-week guide steps aside after day ${GUIDE.DAYS}.${g.kind === "road" && g.done.found == null && isCamp(hub(state)) ? " No shelter yet: the camp's Camp tab shows what it still needs." : ""} The menu (Game tab) brings it back.`);
   return fresh;
 }
 function endGuide(state, ui, why, text) {
@@ -433,19 +473,26 @@ export function renderGuide(state, ui) {
   const open = steps.filter((st) => g.done[st.id] == null);
   const cur = open.find((st) => st.id === ui.guideSel) || open[0];
   const n = steps.length - open.length;
-  const head = `<div class="gd-head"><span class="gd-title"${tip("The first-week guide: what a new holdout needs in its first days. Steps tick off by themselves as you do them, in any order. Show me opens the screen and pulses the button to press.")}>🧭 First week</span>
+  const phases = phasesOf(g);
+  const head = `<div class="gd-head"><span class="gd-title"${tip(`The first-week guide: ${phases.map((ph) => `${ph.label}, ${ph.sub}`).join("; ")}. Steps tick off by themselves as you do them, in any order. Show me opens the screen and pulses the button to press.`)}>🧭 First week</span>
     <span class="gd-count"${tip(`${n} of ${steps.length} steps done · day ${day(state)} of ${GUIDE.DAYS}`)}>${n}/${steps.length}</span>
     <button class="gd-btn" data-action="help-open" data-sec="start-here"${tip("Help: Start here, the game in a few lines")}>?</button>
     <button class="gd-btn" data-action="gd-fold"${tip(g.fold ? "Show the steps" : "Fold the guide to one line")}>${g.fold ? "▸" : "▾"}</button>
     <button class="gd-btn" data-action="gd-close"${tip("Hide the guide (⚙ Menu → Game brings it back)")}>✕</button></div>`;
   if (g.fold) return `<div class="guide folded">${head}${note}${cur ? `<div class="gd-next small">Next: ${esc(cur.title)}</div>` : ""}</div>`;
-  const rows = steps.map((st) => {
+  const row = (st) => {
     if (g.done[st.id] != null) return `<div class="gd-step done"${tip(sayFor(st, "why"))}><span class="gd-mark">✔</span><span class="gd-name">${esc(st.title)}</span></div>`;
     const on = cur && st.id === cur.id;
     return `<div class="gd-step${on ? " cur" : ""}"><button class="gd-go" data-action="gd-pick" data-id="${st.id}"${tip(sayFor(st, "why"))}><span class="gd-mark">${on ? "▶" : "○"}</span>${esc(st.title)}</button>` +
       `<button class="gd-show" data-action="gd-show" data-id="${st.id}"${tip("Open the screen for this step and point at the button to press")}>Show me</button></div>` +
       (on ? `<div class="gd-why">${padHtml(esc(sayFor(st, "why")))}</div>` : "");
-  }).join("");
+  };
+  // Each part of the week under its heading (Day 1, then the rest of the week), ✔ once its steps are all done.
+  const phaseHead = (i) => {
+    const ph = phases[i], left = ph.ids.some((id) => g.done[id] == null);
+    return `<div class="gd-phase${i ? "" : " first"}"><b>${esc(ph.label)}</b> · ${esc(ph.sub)}${left ? "" : " ✔"}</div>`;
+  };
+  const rows = steps.map((st, i) => (i === 0 || steps[i - 1].phase !== st.phase ? phaseHead(st.phase) : "") + row(st)).join("");
   return `<div class="guide">${head}${note}${rows}</div>`;
 }
 
@@ -493,7 +540,7 @@ export const GUIDE_MENU_ACTIONS = {
     if (guideOn(state)) { endGuide(state, ui, "closed", ""); if (S) { S.msg = "The first-week guide is hidden."; S.err = false; } return; }
     const g = state.guide;
     const done = g ? guideSteps(g).every((st) => g.done[st.id] != null) : false;
-    if (!g || done || (g.kind === "road" && state.bases.length)) startGuide(state, true, { keep: true }); // a fresh list (none yet, finished, or the road is over)
+    if (!g || done || (g.kind === "road" && roadOver(state))) startGuide(state, true, { keep: true }); // a fresh list (none yet, finished, or the road is over)
     else Object.assign(g, { on: true, keep: true, ended: null });
     if (S) { S.msg = "The first-week guide is back under the alerts."; S.err = false; }
   },

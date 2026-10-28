@@ -14,8 +14,10 @@ The autopilot fells for wood when the pile runs short and staffs the felling wit
 ## First-week guide
 A checklist of first steps with Show me, and a note the first time each kind of window or alert appears.
 - A checklist under the alerts with Show me [ui/guide]. Test `tools/guidetest.js`.
-  - Normal: stores, work priorities, a building, wood, a team out and home, the clock, the first night, the diary.
-  - Hardcore: the team, the clock, water, the camp, its needs, the shelter, the night, the diary.
+  - Two parts a list, each under its heading (guide.js GUIDE_PHASES; GUIDE_LISTS is the two joined): what day 1 needs, then the rest of the week.
+  - The road start (Normal and Hardcore since issue #79, Crashlanding: no base past a camp yet): *Day 1*, off the road and through the night: the team, the clock, water, the camp fire's wood and stone (`fire`: CAMP.fireCost carried), the camp (Establish base), the first night. *By day 7*, a shelter of your own: wood for the shelter (counted from the camp's own pile: `woodLow` null until there is a hub), a team out from the camp, the shelter shack placed and its needs in, the shelter founded, the diary. The user's request 2026-10-28: "you no longer are going to be setting up the shelter within the first day; by the end of the first week makes more sense. Update the guide to be better for first time players". The night, wood and scavenge steps have road words (ROAD_WORDS); Show me with no camp yet points at the team's own buttons (Cut wood…, Gather stone…, Move toward the nearest site). A guide started (or brought back) at a camp is still the road list (roadOver: a base past a camp). After day 7 with only a camp, the toast says the Camp tab shows what the shelter still needs.
+  - A hub start (Custom): *Day 1*: stores, the clock, work priorities, a building, wood, the first night; *This week*: a team out and home, the diary.
+  - Help's Start here (ui/help.js) opens on the road start: the day Calder falls, and the first week's camp and shelter.
 - **Notes on new things** while it is on: the first window of each kind (cards by type, the raid plan, the raid map, a fight, a base defence, the build map, unpacking) gets a note over it in #guidetip; the first alert of each kind a New line on the card. Told once (`state.guide.seen`; guide.js POPUP_TIPS, ALERT_TIPS, popupOf, renderGuideTip).
 
 ## New-run screen layout
