@@ -32,7 +32,7 @@ import { helpTopics, helpTab, HELP_GROUPS } from "../src/ui/help.js";
 import { addCard } from "../src/sim/world.js";
 import { loadOptions, saveOptions } from "../src/ui/saves.js";
 import {
-  GUIDE, GUIDE_LISTS, GUIDE_PHASES, GUIDE_ACTIONS, GUIDE_MENU_ACTIONS, guideSteps, guideDay, startGuide, guideCheck, renderGuide, guidePulse, guideDefault, guideMenuRow,
+  GUIDE, GUIDE_LISTS, GUIDE_PHASES, GUIDE_READY, GUIDE_ACTIONS, GUIDE_MENU_ACTIONS, guideSteps, guideDay, startGuide, guideCheck, renderGuide, guidePulse, guideDefault, guideMenuRow,
   POPUP_TIPS, ALERT_TIPS, popupOf, renderGuideTip,
 } from "../src/ui/guide.js";
 
@@ -206,7 +206,7 @@ section("Hub start: the base list, day by day, ticks off from the state");
   const def = Object.keys(BUILDINGS).find((k) => BUILDINGS[k].tab === "defenses" && canBuild(st, hub(st), k).ok);
   check(!!def && /queued/.test(queueBuild(st, hub(st), def)) && guideCheck(st, ui).some((x) => x.id === "defence"), `defence: a first defence queued (${def})`);
   // Day 2's water boiler (the user's request 2026-10-28: "build a boiler to purify the water").
-  check(guideSteps(g).find((x) => x.id === "boiler").why.includes("wrench") && GUIDE_PHASES.base[1].ids.includes("boiler") && GUIDE_PHASES.road[1].ids.includes("boiler"), "boiler: on day 2 of both lists, and it names the wrench it needs");
+  check(guideSteps(g).find((x) => x.id === "boiler").why.includes("wrench") && GUIDE_PHASES.base[3].ids.includes("boiler") && GUIDE_PHASES.road[3].ids.includes("boiler"), "boiler: on day 4 of both lists (after the first raids bring scrap; the playtest 2026-10-28), and it names the wrench it needs");
   hub(st).armory.push(newItem("toolkit"));
   Object.assign(hub(st).stock, { scrap: (hub(st).stock.scrap || 0) + 10, stone: (hub(st).stock.stone || 0) + 10 });
   check(/queued/.test(queueBuild(st, hub(st), "boiler")) && guideCheck(st, ui).some((x) => x.id === "boiler"), "boiler: a water boiler queued");
@@ -217,7 +217,7 @@ section("Hub start: the base list, day by day, ticks off from the state");
   st.hour = dawnOf(g, 6);
   guideCheck(st, ui);
   check(g.on && ["night2", "night3", "night4", "night5", "night6"].every((id) => g.done[id] != null) && g.done.night7 == null && guideDay(st, g) === 7, "the nights tick at their dawns; day 7, its night still ahead");
-  check(g.ready === st.hour, "days 1 to 6 all done: ready for the seventh night's attack (g.ready)");
+  check(g.ready != null && g.ready <= st.hour && GUIDE_READY.base.every((id) => g.done[id] != null && g.done[id] <= g.ready) && !GUIDE_READY.base.includes("boiler") && !GUIDE_READY.base.includes("farm") && !GUIDE_READY.road.includes("boiler") && !GUIDE_READY.road.includes("farm"), `ready for the seventh day's attack once the steps it waits for were done (hour ${g.ready}); no tool-bound step among them (the playtest 2026-10-28)`);
   GUIDE_ACTIONS["gd-fold"](st, ui, {}); GUIDE_ACTIONS["gd-fold"](st, ui, {}); // as it was: open
   html = renderGuide(st, ui);
   check(clean(html) && (html.match(/class="gd-phase gd-dayline past/g) || []).length === GUIDE.DAYS - 1 && /<b>Day 7<\/b>[^<]*<span class="gd-today">today/.test(html) && (html.match(/data-action="gd-show"/g) || []).length === 1 && !/data-id="hold"/.test(html) && /data-id="night7"/.test(html), "day 7: the six days behind it one line each; its night left (the attack not shown before it comes)");

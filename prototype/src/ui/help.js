@@ -185,7 +185,7 @@ const HOW_TO_PLAY = [
       `<b>Raid for scrap.</b> The shack takes ${shackScrap()} scrap besides its wood, and only the ruins have it. Send a small team to the places near the camp: ${link("raiding-for-supplies", "Raiding for supplies")}.`,
       `<b>Keep wood coming.</b> Put someone on <i>Cut wood</i> (the job beside their name). Wood builds, cooks, boils water and heats.`,
       `<b>Boil the water.</b> A <i>Water boiler</i> (${BUILDINGS.boiler.cost.scrap} scrap, ${BUILDINGS.boiler.cost.stone} stone, a wrench) makes all the camp's water safe.`,
-      `<b>Be ready on day 7.</b> Finish the guide's first six days and expect trouble: nomads by day, the dead by night. A wall and a guard help.`,
+      `<b>Be ready on day 7.</b> Follow the guide's first six days and expect trouble: nomads by day, the dead by night. A wall and a guard help.`,
     ])}
     <p>Night runs 20:00 to 06:00; the fire warms, but its light draws the dead. Once the shack stands, the camp is a shelter and later your hub. (A Custom run starts at a hub.)</p>
     ${see(["water-and-the-summer", "Water"], ["wood", "Wood"], ["bases-manage", "Bases"], ["night-on-the-map", "Night"])}`)],

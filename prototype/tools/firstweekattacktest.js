@@ -42,6 +42,9 @@ function camp(seed, { guide = true, ready = true } = {}) {
 }
 const day7 = (g, h) => nightDawn(g, FIRST_ATTACK.NIGHT) - 24 + (h - 6) + (h < 6 ? 24 : 0); // an hour of the seventh day (and its night)
 const cardAt = (st, b) => st.cards.find((c) => c.campAttack === b.id || c.firstWeek === b.id);
+const fitOf = (st, b) => homeAt(st, b.id).filter((s) => (s.health ?? 100) >= FIRST_ATTACK.FIT);
+const armedOf = (st, b) => fitOf(st, b).filter((s) => s.gear && (s.gear.weapon || s.gear.sidearm)).length;
+const deadFor = (st, b) => Math.max(FIRST_ATTACK.DEAD[0], Math.min(FIRST_ATTACK.DEAD[1], 2 + armedOf(st, b) + Math.floor((fitOf(st, b).length - armedOf(st, b)) / 2)));
 const holdShown = (g) => guideSteps(g).some((x) => x.id === "hold");
 const holdDone = (st, g) => { const h = guideSteps(g).find((x) => x.id === "hold"); return !!h && h.done(st, g, freshUi()); };
 // Run the hours with firstWeekHour alone, from one hour of day 7 to another (or until a card comes).
@@ -100,7 +103,7 @@ section("By day: a nomad band made for it");
   const people = homeAt(st, b.id).length, bands0 = nomadsOf(st).length;
   g.attackAt = day7(g, 13); g.warned = g.attackAt;
   const card = hours(st, b, day7(g, 13), day7(g, 13));
-  const n = Math.max(FIRST_ATTACK.NOMADS[0], Math.min(FIRST_ATTACK.NOMADS[1], Math.ceil(people / 2) + 1));
+  const n = Math.max(FIRST_ATTACK.NOMADS[0], Math.min(FIRST_ATTACK.NOMADS[1], Math.ceil(fitOf(st, b).length / 2) + 1));
   const band = nomadsOf(st).find((x) => x.id === (g.attack && g.attack.band));
   check(g.attack && g.attack.kind === "nomads" && g.attack.n === n && nomadsOf(st).length === bands0 + 1 && band && band.tier === 1 && band.pop === n, `13:00: a band of ${n} looters made for it, for ${people} at home (none on the map before)`);
   check(st.grid.distance(band.tile, b.tile) <= 1 && band.phase === "battle" && band.goodwill <= -50, `beside the base (${st.grid.distance(band.tile, b.tile)} away), hostile, held for the raid`);
@@ -125,17 +128,25 @@ section("By day: a nomad band made for it");
 section("By night: a horde of the dead made for it");
 {
   const { st, g, b } = camp(32);
-  const people = homeAt(st, b.id).length;
+  const people = homeAt(st, b.id).length, armed = armedOf(st, b);
   g.attackAt = day7(g, 22);
+  const n = deadFor(st, b);
   const card = hours(st, b, day7(g, 22), day7(g, 22));
-  const n = Math.max(FIRST_ATTACK.DEAD[0], Math.min(FIRST_ATTACK.DEAD[1], people + 3));
-  check(g.attack && g.attack.kind === "dead" && g.attack.n === n && b.campAttack.wave.d === n, `22:00: a horde of ${n} dead for ${people} at home`);
-  check(!!card && /A horde of the dead/.test(card.title) && /after dark/.test(card.text) && /Defend/.test(card.choices[0].label), `the camp-attack card: "${card && card.title}"`);
+  check(g.attack && g.attack.kind === "dead" && g.attack.n === n && b.campAttack.wave.d === n && n <= FIRST_ATTACK.DEAD[1], `22:00: a horde of ${n} dead for ${people} at home, ${armed} armed (2 + the armed + half the rest, at most ${FIRST_ATTACK.DEAD[1]})`);
+  check(!!card && /A horde of the dead/.test(card.title) && card.text.includes(`horde of ${n} dead`) && !/Nearby|drawn to the camp/.test(card.text) && /Defend/.test(card.choices[0].label), `the camp-attack card in the horde's own words: "${card && card.text.slice(0, 80)}…"`);
   st.cards.splice(st.cards.indexOf(card), 1);
   card.choices.find((x) => x.default).resolve(st);
   check(!st.combat && !(b.campAttack && b.campAttack.wave) && holdDone(st, g), "defended: the fight over, the step done");
   const ld = loadFromString(saveToString(st));
   check(JSON.stringify(ld.guide.attack) === JSON.stringify(g.attack) && ld.guide.attackAt === g.attackAt, "saved with the guide");
+  // A worn, unarmed crew meets a smaller horde (the playtest 2026-10-28: people + 3 overran one).
+  const c2 = camp(43);
+  for (const s of homeAt(c2.st, c2.b.id)) { s.gear.weapon = null; s.gear.sidearm = null; }
+  for (const s of homeAt(c2.st, c2.b.id).slice(0, 1)) s.health = 30;
+  c2.g.attackAt = day7(c2.g, 23);
+  const fit = fitOf(c2.st, c2.b).length, want = Math.max(3, Math.min(6, 2 + Math.floor(fit / 2)));
+  hours(c2.st, c2.b, day7(c2.g, 23), day7(c2.g, 23));
+  check(c2.g.attack && c2.g.attack.n === want && want < homeAt(c2.st, c2.b.id).length + 3, `unarmed, one badly hurt: ${c2.g.attack && c2.g.attack.n} dead for ${fit} fit of ${homeAt(c2.st, c2.b.id).length}`);
 }
 
 section("Waits for the hub to be ready; a quiet night otherwise");

@@ -5,19 +5,20 @@
 // horde if it is in the day have it be a nomad group. And don't base it off an AI group just spawn in a horde or nomad
 // group to attack. The attack can happen anytime on the 7th day after the prerequisites are finished").
 // - Only while the first-week guide is on (ui/guide.js, state.guide: started with the run, not brought back by hand from
-//   the menu, never beside the autopilot), and only once its steps of days 1 to 6 are all done: the guide marks that
-//   hour in g.ready (ui/guide.js guideCheck). Day 7's own steps (the shelter, the diary) are not needed.
+//   the menu, never beside the autopilot), and only once the guide's steps it waits for are done (ui/guide.js GUIDE_READY:
+//   the camp, work priorities, a team out, a raid, a team home, the shack placed, a lookout or a defence; none a tool can
+//   hold up): the guide marks that hour in g.ready (guideCheck).
 // - Its hour: once ready, an hour picked by the seed between then (no sooner than the seventh dawn) and LAST hours
 //   before the eighth (g.attackAt), with a warning in the log as it is picked. Not ready by then: no attack.
 // - The attack: at that hour, or the first one after it that the hub is ready (people at home, no fight, no attack card
 //   waiting, no wave out), until the window closes:
 //   - BY DAY (06:00 to 20:00): A NOMAD BAND, made for it (nomads.js spawnNomads: looters, hostile), on the tile beside
-//     the base, as many as half the people at home + 1 (NOMADS). Its own card: Defend (the base defence battle against
+//     the base, as many as half the fit people at home + 1 (NOMADS). Its own card: Defend (the base defence battle against
 //     the band's people, nomads.js nomadEnemy) or Hide (they carry off HIDE_TAKE of the stores into their own). Beaten
 //     off, its dead come off the band (under its minimum it breaks up); getting in, it carries off LOST_TAKE. Either way
 //     the band moves on (bandRaidEnd) and lives on as any band.
-//   - BY NIGHT: A HORDE OF THE DEAD, made for it: the people at home + 3 (DEAD), as campattack.js scriptedWave (the usual
-//     camp-attack card). The ones left standing stay on the land round the base (settleWave puts them on the tile).
+//   - BY NIGHT: A HORDE OF THE DEAD, made for it: 2 + the armed fit people at home + half the unarmed (DEAD; fit: health
+//     FIT or more), as campattack.js scriptedWave (the camp-attack card, its text the horde's own). The ones left standing stay on the land round the base (settleWave puts them on the tile).
 // - Once a guide: state.guide.attackAt (the hour picked), .warned, .attack = { hour, base, kind: "nomads" | "dead", n,
 //   band? } or { hour, quiet: true } (the window closed with the hub never ready). Plain data, saved with the guide; the
 //   guide shows its "Hold off the attack" step from the hour it comes. The autopilot and the headless tools never start
@@ -33,10 +34,11 @@ import { registerCombatHandler } from "./combat.js";
 export const FIRST_ATTACK = {
   NIGHT: 7,          // the guide's day it comes on (its last), and the night after it
   LAST: 3,           // hours before the eighth dawn: the last hour it may be picked for or come
-  NOMADS: [2, 5],    // a nomad band: half the people at home + 1, within these
+  NOMADS: [3, 4],    // a nomad band: half the fit people at home + 1, within these (the playtest 2026-10-28: 2 was a non-event, 5 too many for an unarmed crew)
   HIDE_TAKE: 0.25,   // the share of the stores a band carries off while you hide
   LOST_TAKE: 0.35,   // the share it carries off when it gets in
-  DEAD: [4, 10],     // a horde of the dead: the people at home + 3, within these
+  DEAD: [3, 6],      // a horde of the dead: 2 + the armed fit people at home + half the unarmed ones, within these (the playtest: people + 3 overran a worn, mostly unarmed crew)
+  FIT: 50,           // health a defender needs to count
 };
 const F = FIRST_ATTACK;
 const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
@@ -59,14 +61,15 @@ export function firstWeekHour(state) {
     const start = Math.max(state.hour, from);
     g.attackAt = start + Math.floor(hash01(state.seed, "firstweek", g.h0) * Math.max(1, to - start));
     g.warned = state.hour;
-    log(state, `Fresh tracks round ${base.name}, and too many crows over ${groundsWord(state, base.tile)}: something is coming before the week is out. Keep watch.`, "danger");
+    log(state, `Fresh tracks round ${base.name}, and too many crows over ${groundsWord(state, base.tile)}: something is coming before the week is out. Put someone on Guard and hand out what weapons you have.`, "danger");
   }
   if (state.hour < g.attackAt) return;
-  const people = homeAt(state, base.id).length;
+  const home = homeAt(state, base.id), people = home.length;
+  const fit = home.filter((s) => (s.health ?? 100) >= F.FIT), armed = fit.filter((s) => s.gear && (s.gear.weapon || s.gear.sidearm)).length;
   if (!people || state.combat || pending(state, base) || (base.campAttack && base.campAttack.wave)) return; // not ready: the next hour
   if (!isNight(state)) {
     // By day: a nomad band, made for it, beside the base.
-    const n = clamp(Math.ceil(people / 2) + 1, F.NOMADS[0], F.NOMADS[1]);
+    const n = clamp(Math.ceil(fit.length / 2) + 1, F.NOMADS[0], F.NOMADS[1]);
     const band = spawnNomads(state, { tier: 1, tile: base.tile, pop: n });
     if (band) {
       band.goodwill = Math.min(band.goodwill, -50);
@@ -78,11 +81,11 @@ export function firstWeekHour(state) {
     }
   }
   // By night (or no band could be made): a horde of the dead, made for it.
-  const n = clamp(people + 3, F.DEAD[0], F.DEAD[1]);
+  const n = clamp(2 + armed + Math.floor((fit.length - armed) / 2), F.DEAD[0], F.DEAD[1]);
   g.attack = { hour: state.hour, base: base.id, kind: "dead", n };
   scriptedWave(state, base, { g: 0, d: n, r: 0, rp: 0, poi: base.poi != null ? base.poi : null }, {
     title: `A horde of the dead comes for ${base.name}`,
-    lead: `Drawn by the fire and the noise of a week's work, a horde of the dead has gathered in ${groundsWord(state, base.tile)} after dark.`,
+    text: `Drawn by the fire and the noise of a week's work, a horde of ${n} dead has gathered in ${groundsWord(state, base.tile)} after dark, and now it comes for ${base.name}.`,
   });
 }
 
