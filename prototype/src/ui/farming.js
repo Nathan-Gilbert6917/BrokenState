@@ -7,7 +7,7 @@ import { cookingCard } from "./cooking.js"; // wave 2 cooking: the stations' bil
 import {
   CROPS, CROP_KEYS, farmOf, careToday, expectedYield, daysToRipe, plotWeatherNote, plantCheck, bestCrop, plantPlot,
   harvestPlot, clearPlot, setPlotWant, setAutoReplant, plotLimit, greenhouseLimit, siteFarm, farmers, recentGrowth,
-  cropForecast, winterOutlook, cropProgress,
+  cropForecast, winterOutlook, cropProgress, cropGauge, cropLine, CROP_WATER, CROP_WATER_FIRST, cropWaterFirst, setCropWater,
 } from "../sim/farming.js";
 import { foodOutlook, waterOutlook, RATION, RATION_DAYS, WATER, summerWater, summerWaterOk, summerFixText, SUMMER } from "../sim/economy.js";
 import { useText, perHeadText, heatUse, HEAT, woodFor } from "../sim/upkeep.js";
@@ -169,6 +169,12 @@ export function hubSupplyTip(state, b, key) {
 
 // ---------- the Farming tab ----------
 const STAGE = { empty: "Empty", growing: "Growing", ripe: "Ripe", dead: "Dead" };
+// A growing plot's water gauge (sim/farming.js farmWaterHour): the soil's water and the line its crop needs.
+const WATER_TIP = `Each growing plot has a water gauge: it falls by the hour (by its crop's water, more in summer and on hot days, less on moist soil; rain fills an outdoor plot) and each crop needs its own level (thirsty crops like corn more). Under it the crop is dry: it grows slower and can die. The farmers water the plots while they work, up to ${CROP_WATER.perHour} plots an hour each, the driest first: nobody on the Farm role, nothing watered. The water comes from the stores (the people's day of drinking is kept back). Un-purified water can give a crop the worm and kill it; purified water never does.`;
+function waterGauge(p) {
+  const v = Math.round(cropGauge(p)), line = cropLine(p.crop), dry = v < line;
+  return `<span class="small ${dry ? "danger" : "muted"}"${tip(`${CROPS[p.crop].name}: water ${v} of 100; it needs ${line} or more${dry ? ": dry now, growing slower and at risk" : ""}. ${WATER_TIP}`)}>💧 ${v}<span class="muted"> / ${line}</span></span>${bar(v, dry ? "var(--bad)" : "var(--info)")}`;
+}
 
 function cropOptions(selected, gh, state, b, p) {
   return `<option value="">Farmers pick</option>` + CROP_KEYS.map((k) => {
@@ -188,7 +194,7 @@ export function cropsCard(state, b, { farmTab = true } = {}) {
   const head = sectionHead(`🌱 Crops`, btn, v.growing.length + v.ripe.length || null, "What grows on this base's crop plots, read at this hour (growth is counted each midnight)");
   if (!v.plots) return `${head}<div class="card small muted">No crop plots here yet.</div>`;
   const ghTag = (x) => (x.gh ? ` <span class="chip on"${tip("Greenhouse plot")}>glass</span>` : "");
-  const grow = v.growing.sort((x, y) => y.frac - x.frac).map((x) => `<div${tip(`${x.name}${x.gh ? " under glass" : ""}: ${x.grown} of ${x.days} growing days (slower in cold or dry weather, none out of season). About ${x.ripeIn} day${x.ripeIn === 1 ? "" : "s"} to ripe; about ${n0(x.yield)} food at harvest from the care so far.${x.thirsty ? " Thirsty: short of water on a dry day, it grows slower." : ""}`)}>${pbar(Math.round(x.frac * 100), x.thirsty ? "warn" : "good", `${esc(x.name)}${ghTag(x)}`, `${Math.round(x.frac * 100)}% · ~${x.ripeIn}d`)}</div>`).join("");
+  const grow = v.growing.sort((x, y) => y.frac - x.frac).map((x) => `<div${tip(`${x.name}${x.gh ? " under glass" : ""}: ${x.grown} of ${x.days} growing days (slower in cold or dry weather, none out of season). About ${x.ripeIn} day${x.ripeIn === 1 ? "" : "s"} to ripe; about ${n0(x.yield)} food at harvest from the care so far.${x.thirsty ? " Thirsty yesterday: it spent hours under the water it needs and grew slower." : ""} Water ${x.water} of 100 (it needs ${x.line}): the farmers water it while they work.`)}>${pbar(Math.round(x.frac * 100), x.thirsty || x.water < x.line ? "warn" : "good", `${esc(x.name)}${ghTag(x)}`, `${Math.round(x.frac * 100)}% · ~${x.ripeIn}d · 💧${x.water}${x.water < x.line ? " dry" : ""}`)}</div>`).join("");
   const ripe = v.ripe.map((x) => `<div class="spread"${tip(`${x.note || "Ripe"}. Farmers harvest ripe plots by themselves each day; one not brought in within ${x.keeps} more day${x.keeps === 1 ? "" : "s"} rots in the field.`)}><span>${esc(x.name)}${ghTag(x)}</span><span>${badge(`Ripe · ~${n0(x.yield)} food`, "good")}${badge(`keeps ${x.keeps}d`, x.keeps <= 1 ? "bad" : "muted")}</span></div>`).join("");
   const dead = v.dead.map((x) => `<div class="spread"${tip(x.note)}><span class="muted">${esc(x.name || "A plot")}</span>${badge("Dead", "bad", x.note)}</div>`).join("");
   const none = !v.growing.length && !v.ripe.length;
@@ -231,6 +237,7 @@ export function baseFarming(state, b) {
       <td>${p.id}${p.gh ? ` <span class="chip on"${tip("Greenhouse plot: grows in every season and the weather rarely harms it")}>glass</span>` : ""}</td>
       <td${tip(c ? c.desc : "")}>${c ? esc(c.name) : "<span class='muted'>—</span>"}</td>
       <td style="min-width:7rem">${STAGE[p.stage]}${c && p.stage === "growing" ? bar(pct, "var(--good)") : ""}${p.note && p.stage !== "growing" ? `<div class="small muted">${esc(p.note)}</div>` : ""}</td>
+      <td style="min-width:5rem">${c && p.stage === "growing" ? waterGauge(p) : "—"}</td>
       <td>${p.stage === "growing" ? `~${daysToRipe(p)}d` : p.stage === "ripe" ? "ready" : "—"}</td>
       <td>${c && (p.stage === "growing" || p.stage === "ripe") ? `~${n0(exp)}` : "—"}</td>
       <td class="small ${warn ? "danger" : "muted"}">${esc(note || (p.stage === "empty" ? "" : ""))}</td>
@@ -276,6 +283,7 @@ export function baseFarming(state, b) {
           <div>Plots</div><div>${plotLimit(b)} outdoor${greenhouseLimit(b) ? ` + ${greenhouseLimit(b)} under glass` : ""} · ${f.plots.filter((p) => p.stage === "growing").length} growing</div>
         </div>
         <label style="display:block;margin-top:0.35rem"${tip("Farmers sow free plots by themselves (the crop picked for the plot, or the best one for the season) and clear dead ones. Off: only what you sow.")}><input type="checkbox" data-action="farm-auto" data-base="${b.id}" ${f.auto ? "checked" : ""}> Replant automatically</label>
+        <div class="row" style="flex-wrap:wrap;margin-top:0.3rem;gap:0.25rem"><span class="muted"${tip(WATER_TIP)}>Water the crops with</span>${Object.entries(CROP_WATER_FIRST).map(([k, v]) => `<button class="mini ${cropWaterFirst(b) === k ? "active" : ""}" data-action="farm-water" data-base="${b.id}" data-v="${k}"${tip(v.desc)}>${esc(v.name)}</button>`).join("")}</div>
       </div>
       <h3${tip("Food by kind: how much, the days before the soonest of it spoils where it is kept today, and the food rooms")}>Food in store</h3>
       <div class="card">${baseFoodHtml(state, b, { max: 24 })}</div>
@@ -289,7 +297,7 @@ export function baseFarming(state, b) {
     </div>
   </div>
   <h3>Plots</h3>
-  <table class="t"><tr><th>#</th><th>Crop</th><th>Stage</th><th>Ripe in</th><th${tip("Food at harvest from the care so far (farmers, skill, ground)")}>Yield</th><th>Weather</th><th>Next crop</th><th></th></tr>${rows}</table>
+  <table class="t"><tr><th>#</th><th>Crop</th><th>Stage</th><th${tip(WATER_TIP)}>Water</th><th>Ripe in</th><th${tip("Food at harvest from the care so far (farmers, skill, ground)")}>Yield</th><th>Weather</th><th>Next crop</th><th></th></tr>${rows}</table>
   <h3>Crop guide</h3>
   <table class="t small"><tr><th>Crop</th><th${tip("Growing days at full growth")}>Days</th><th${tip("Food per plot at care ×1")}>Yield</th><th>Seed</th><th${tip("Water per plot on a dry day")}>Water</th><th>Seasons</th><th>Frost</th><th>Drought</th><th>Heat</th><th${tip("Days a ripe crop keeps in the field")}>Keeps</th><th${tip("What the harvest is (a food item): its shelf life sets where it keeps (grain and dry beans keep years in any dry corner; greens days; potatoes, squash and roots a month or two, months in a root cellar)")}>Harvest</th><th${tip("Growth over the last week outdoors")}>Growth</th><th${tip("Sown outdoors today: about how many days until it is ripe and the chance it lives that long, by the usual weather for the time of year (frost, storms, heat)")}>Sow now</th></tr>${guide}</table>`;
 }
@@ -348,6 +356,7 @@ export const FARM_ACTIONS = {
     ui.baseMsg = clearPlot(state, b, Number(d.plot));
   },
   "farm-auto": (state, ui, d) => { const b = baseOf(state, d); if (b) ui.baseMsg = setAutoReplant(state, b, !farmOf(state, b).auto); },
+  "farm-water": (state, ui, d) => { const b = baseOf(state, d); if (b) ui.baseMsg = setCropWater(state, b, d.v) || ui.baseMsg; },
   "hunt-preset": (state, ui, d) => { const b = baseOf(state, d); const p = MIX_PRESETS[d.preset]; if (b && p) ui.baseMsg = setHuntMix(b, p.mix); },
 };
 // Change events (selects).

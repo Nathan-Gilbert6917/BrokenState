@@ -95,6 +95,7 @@ Base detail: [bases.md](../features/bases.md). Economy detail: [economy.md](../f
 - **Food**: types with their own shelf life, spoiling, storage, preserving and jarring [foods, storage]; mealtimes [meals], food chain and ledger views [foodchain, foodlog].
 - **Cooking**: Rimworld-style recipes from ingredients, food poisoning and the kitchen [cooking, kitchen].
 - **Farming**: crops, seasons, greenhouses; crop plots are 2 × 2 pieces placed on soil [farming, buildings, basemap]. [details](../features/economy.md#farming-placed-crop-plots)
+  - Crop water: a gauge a plot, each crop its own level; farmers water while they work, un-purified or purified first (the worm) [farming, needs] `tools/farmtest.js`. [details](../features/economy.md#watering-the-crops)
 - **Hunting, snares, fishing and foraging** [hunting, foraging].
 - **Winter's lean months**: frost kills crops; forage, game, fish and wood yield less in winter [winter, weather, farming]. [details](../features/economy.md#winters-lean-months)
 - **Stone**: field stone cleared on the build map, the Gather stone job and team order; a camp's fire takes 5 wood and 8 stone [stone, work, orders, buildings, staging] `tools/stonetest.js`. [details](../features/economy.md#stone)

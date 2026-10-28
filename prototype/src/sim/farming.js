@@ -25,7 +25,12 @@ import { FOODS, addFood, qtyOf, foodSplit, takeFood, takeItem, unitsOf } from ".
 import { hasPerk, seedCost } from "./skills.js";
 import { prisonersAt } from "./upkeep.js";
 import { prisonLabour } from "./prisoners.js"; // prisoners-tab: prisoners set to Farm (careToday)
-import { cropEggs } from "./worm.js"; // the worm: fresh crops from infected ground carry its eggs
+import { cropEggs, rawWaterEggs, wormRng } from "./worm.js"; // the worm: fresh crops from infected ground carry its eggs; un-purified water can kill a crop
+import { drawWater, RAW } from "./water.js"; // the crops' water comes out of the base's stores as the farmers water them
+import { describeActivity } from "./activity.js"; // who is tending the crops this hour (call-time only: activity.js imports this module)
+import { waterNeed } from "./economy.js"; // the people's day of drinking, kept back from the crops (call-time only)
+import { rawDrinkOf } from "./rawdrink.js"; // a base that never drinks un-purified water keeps no un-purified water back for its people
+import { cfgChance } from "./worldcfg.js"; // the run's Infection dial on the worm's chance
 import { noteOutput } from "./output.js"; // the base's Work now panel: what each job brought in a day (activity.js)
 
 // days = growing days at a growth factor of 1 (a cold or dry spell makes it longer); yield = food per plot at
@@ -314,7 +319,7 @@ function paySeed(state, base, crop, amount) {
 }
 
 function sow(p, crop) {
-  Object.assign(p, { stage: "growing", crop, grown: 0, care: 0, careDays: 0, ripeDays: 0, yieldLeft: 0, note: "", thirsty: false });
+  Object.assign(p, { stage: "growing", crop, grown: 0, care: 0, careDays: 0, ripeDays: 0, yieldLeft: 0, note: "", thirsty: false, water: 100, dryH: 0 }); // watered in when sown
 }
 
 export const plotById = (state, base, id) => farmOf(state, base).plots.find((p) => p.id === Number(id)) || null;
@@ -474,13 +479,17 @@ function takeHarvest(state, base, p) {
 
 // ---------- water for crops ----------
 // Water the planted plots need today: nothing on a rainy day outdoors, a fifth more on a summer day, half again in
-// a heat wave or dry spell. dry: as on a dry day (no rain), for planning. Moist soil halves it.
+// a heat wave or dry spell. dry: as on a dry day (no rain), for planning. Moist soil halves it. The estimate for the
+// water outlook (economy.js waterNeed); the water itself goes in as the farmers water the plots (farmWaterHour).
 export const CROP_SUMMER_WATER = 1.2, CROP_HOT_WATER = 1.5;
-export function cropWaterNeed(state, base, { dry = false } = {}) {
-  const w = todayWeather(state);
+const cropWaterMult = (state, w) => {
   const hot = w.key === "heat" || w.key === "drought" || (w.hi ?? 20) >= 30;
   const summer = Weather.season && Weather.season(state).key === "summer";
-  const mult = hot ? CROP_HOT_WATER : summer ? CROP_SUMMER_WATER : 1;
+  return hot ? CROP_HOT_WATER : summer ? CROP_SUMMER_WATER : 1;
+};
+export function cropWaterNeed(state, base, { dry = false } = {}) {
+  const w = todayWeather(state);
+  const mult = cropWaterMult(state, w);
   const soil = dry ? 0.4 : (w.soil ?? 0.5);
   let need = 0;
   for (const p of farmOf(state, base).plots) {
@@ -489,6 +498,102 @@ export function cropWaterNeed(state, base, { dry = false } = {}) {
     need += CROPS[p.crop].water * mult * (!p.gh && soil >= 0.6 ? 0.5 : 1);
   }
   return Math.round(need * 10) / 10;
+}
+
+// ---------- the crops' water gauge ----------
+// The user's request 2026-10-28: "The crops are to be watered when needed. Have a thirst gauge for crops each crop
+// needs different level and when tending to crops that is when they are watered not automatically each day at
+// midnight. Using unpurified water has a chance the crop dies due to worm infections when using purified water this
+// does not happen. Give an option to toggle between use purified water or unpurified water first".
+// Every growing plot has a water gauge (p.water, 0-100: the soil's water, full when sown). By the hour it falls by its
+// crop's water a day (CROPS water, the gauge holding CROP_WATER.soak days of it: a fifth more in summer, half again
+// on a hot day, half on moist soil); on a rainy day outdoors it fills instead (greenhouse plots only by watering).
+// Each crop needs its own level (cropLine: 30 + 40 × its climate thirst; corn 58, potatoes 50, wheat 42, winter
+// wheat 40): below it the plot is dry, and each hour dry counts (p.dryH) toward the midnight's growth and losses
+// (farmingDaily: as the old share of the day's water missing). The farmers water by the hour while they are at work
+// on the Farm job (activity.js describeActivity: not asleep, not at a meal, not on watch): each waters
+// CROP_WATER.perHour plots an hour, the driest by their need first, any plot under its line + CROP_WATER.ahead, up to
+// full. Nobody tending, nothing watered.
+// The water comes out of the base's stores as they water (cropDraw), past the people's day of drinking (kept back:
+// economy.js waterNeed; purified water first, as people drink it; a base whose rule is Never keeps none of its
+// un-purified water back), in the order the base picks (base.cropWater, CROP_WATER_FIRST): un-purified water first
+// (the default, as before: the purified water stays for people) or purified first. A watering with un-purified water
+// can kill the crop with the worm: CROP_WATER.worm × the un-purified share × (wormBase + the rest × the eggs in the
+// base's water, worm.js rawWaterEggs) × the run's Infection dial, rolled on the worm's own dice; purified water never.
+export const CROP_WATER = { soak: 2, rainFill: 12, perHour: 4, ahead: 20, worm: 0.015, wormBase: 0.25, slow: 0.6, kill: 0.04, sowDry: 0.4 };
+export const CROP_WATER_FIRST = {
+  raw: { name: "Un-purified first", desc: "The farmers water with un-purified water first and keep the purified water for people. Each watering with un-purified water can give the crop the worm and kill it (more where the ground is infected)." },
+  pure: { name: "Purified first", desc: "The farmers water with purified water first: no risk of the worm to the crops, but it uses the clean water people drink (they fall back on un-purified water when it runs out)." },
+};
+export const cropWaterFirst = (base) => (base && CROP_WATER_FIRST[base.cropWater] ? base.cropWater : "raw");
+export function setCropWater(state, base, v) {
+  if (!CROP_WATER_FIRST[v] || cropWaterFirst(base) === v) return "";
+  base.cropWater = v;
+  return `${base.name}: the crops are watered with ${v === "pure" ? "purified" : "un-purified"} water first.`;
+}
+export const cropLine = (crop) => Math.round(30 + 40 * CROPS[crop].climate.thirst);
+export const cropGauge = (p) => (Number.isFinite(p.water) ? p.water : 100); // a plot from before the gauge: full
+// Water to fill a plot's gauge by `pts` points.
+const ptsWater = (p, pts) => (pts / 100) * CROP_WATER.soak * CROPS[p.crop].water;
+// The farmers at work on the Farm job this hour (how much each can do: workFactor).
+export function tendingNow(state, base) {
+  return farmers(state, base).filter((s) => { const a = describeActivity(state, s); return a.kind === "work" && a.job === "farm"; });
+}
+// Up to `q` water for the crops, past the people's day of drinking, in the base's order. Returns { pure, raw, got }.
+function cropDraw(state, base, q) {
+  const st = base.stock;
+  const pure = Math.max(0, st.water || 0), raw = Math.max(0, st[RAW] || 0);
+  const keep = waterNeed(state, base).people;
+  const keepPure = Math.min(pure, keep), keepRaw = rawDrinkOf(base) === "no" ? 0 : Math.max(0, keep - pure);
+  const free = { water: pure - keepPure, [RAW]: Math.max(0, raw - keepRaw) };
+  const out = { pure: 0, raw: 0, got: 0 };
+  for (const k of cropWaterFirst(base) === "pure" ? ["water", RAW] : [RAW, "water"]) {
+    const t = drawWater(st, Math.min(q - out.got, free[k]), { rawFirst: k === RAW, pureOnly: k === "water" });
+    out.pure += t.pure; out.raw += t.raw; out.got += t.got;
+  }
+  return out;
+}
+// Hourly (needs.js needsHour, after the people drink): the gauges fall (or the rain fills them), the farmers at work
+// water what needs it, and each plot under its line counts a dry hour. Returns the plots watered.
+export function farmWaterHour(state, base) {
+  const f = base.farm;
+  if (!f || !f.plots.length) return 0;
+  const growing = f.plots.filter((p) => p.stage === "growing" && CROPS[p.crop]);
+  if (!growing.length) return 0;
+  const wx = todayWeather(state);
+  const rain = (wx.rain || 0) > 0;
+  const fall = (100 / CROP_WATER.soak / 24) * cropWaterMult(state, wx) * ((wx.soil ?? 0.5) >= 0.6 ? 0.5 : 1);
+  for (const p of growing) p.water = !p.gh && rain ? Math.min(100, cropGauge(p) + CROP_WATER.rainFill) : Math.max(0, cropGauge(p) - fall);
+  let watered = 0;
+  const want = growing.filter((p) => p.water < cropLine(p.crop) + CROP_WATER.ahead).sort((a, b) => (a.water - cropLine(a.crop)) - (b.water - cropLine(b.crop)) || a.id - b.id);
+  if (want.length) {
+    const hands = tendingNow(state, base).reduce((a, s) => a + workFactor(s) * jobShare(state, s, "farm"), 0);
+    let cap = hands > 0 ? Math.max(1, Math.floor(hands * CROP_WATER.perHour + 1e-9)) : 0;
+    let eggs = null;
+    for (const p of want) {
+      if (cap <= 0) break;
+      const d = cropDraw(state, base, ptsWater(p, 100 - p.water));
+      if (!(d.got > 0)) break; // nothing left to water with
+      cap--; watered++;
+      p.water = Math.min(100, p.water + (d.got / ptsWater(p, 100)) * 100);
+      const es = econStats(state);
+      es.cropWater = (es.cropWater || 0) + d.got;
+      if (!(d.raw > 0)) continue;
+      // The worm in the un-purified water (worm.js rawWaterEggs: the eggs of the ground the water came from).
+      if (eggs === null) eggs = rawWaterEggs(state, base).eggs || 0;
+      const chance = CROP_WATER.worm * (d.raw / d.got) * (CROP_WATER.wormBase + (1 - CROP_WATER.wormBase) * Math.min(1, eggs));
+      if (wormRng(state).chance(cfgChance(state, "worm", chance))) {
+        const c = CROPS[p.crop];
+        p.stage = "dead";
+        p.note = `Killed by the worm on day ${day(state)}: watered with un-purified water`;
+        es.cropsLost += 1;
+        es.cropWorm = (es.cropWorm || 0) + 1;
+        log(state, `🪱 ${base.name}: the ${c.name.toLowerCase()} on plot ${p.id} died of the worm from un-purified water. Purified water never carries it to the crops (Farming tab: water with purified water first; a water boiler or filters make more).`, "danger");
+      }
+    }
+  }
+  for (const p of growing) if (p.stage === "growing" && p.water < cropLine(p.crop)) p.dryH = (p.dryH || 0) + 1;
+  return watered;
 }
 
 // The Crops section of a camp's or a base's window (BASE-04, ui/farming.js cropsCard): the crop plots as they stand
@@ -503,7 +608,7 @@ export function cropProgress(state, base) {
   const care = careToday(state, base);
   const row = (p) => {
     const c = CROPS[p.crop];
-    return { id: p.id, gh: !!p.gh, crop: p.crop, name: c.name, grown: Math.round(p.grown * 10) / 10, days: c.days, frac: Math.max(0, Math.min(1, p.grown / c.days)), thirsty: !!p.thirsty, note: p.note || "" };
+    return { id: p.id, gh: !!p.gh, crop: p.crop, name: c.name, grown: Math.round(p.grown * 10) / 10, days: c.days, frac: Math.max(0, Math.min(1, p.grown / c.days)), thirsty: !!p.thirsty, water: Math.round(cropGauge(p)), line: cropLine(p.crop), note: p.note || "" };
   };
   const has = (p) => !!p.crop && !!CROPS[p.crop];
   const n = farmers(state, base).length;
@@ -520,31 +625,36 @@ export function cropProgress(state, base) {
 
 // ---------- the daily tick ----------
 const FROSTS = new Set(["frost", "hard freeze", "cold snap"]); // weather.js cropDamage's cold reasons (out.frost)
-// watered: share (0..1) of today's crop water the base could give (economy.js decides, people drink first).
-// Returns { harvested, sown, died, rotted, frost } for the log and tests (frost: the crops the cold killed).
-export function farmingDaily(state, base, watered = 1) {
+// The water each plot had: its hours under its crop's line today (p.dryH, farmWaterHour), as a share of the day; a
+// plot the hours never reached (a test's day without hours) counts as watered. Returns { harvested, sown, died,
+// rotted, frost } for the log and tests (frost: the crops the cold killed).
+export function farmingDaily(state, base) {
   const rng = state.rng;
   const f = farmOf(state, base);
   const out = { harvested: 0, sown: 0, died: [], rotted: [], plots: 0, frost: [] };
   const care = careToday(state, base);
   const site = siteFarm(state, base);
   const wx = todayWeather(state);
+  let dryAll = 0, dryN = 0;
   for (const p of f.plots) {
     if (p.stage === "growing") {
+      const dry = Math.min(1, (p.dryH || 0) / 24);
+      p.dryH = 0;
+      dryAll += dry; dryN++;
       const c = CROPS[p.crop];
       const clim = plotClimate(p.crop, p.gh);
       let g = W.growth(state, clim);
       if (p.gh && g < GH_MIN_GROWTH && (wx.hi + wx.lo) / 2 > c.climate.tMin - 14) g = GH_MIN_GROWTH; // under glass it keeps going
-      p.thirsty = watered < 0.999 && !(!p.gh && (wx.rain || 0) > 0);
-      if (p.thirsty) g *= 0.4 + 0.6 * watered;
+      p.thirsty = dry > 0.001;
+      if (p.thirsty) g *= 1 - CROP_WATER.slow * dry;
       p.grown += g;
       p.care += care.care;
       p.careDays += 1;
       const dmg = W.damage(state, clim);
       let kill = dmg.kill * (p.gh ? 0.15 : 1);
       if (dmg.reason === "heat") kill *= 1 - c.heatTol * 0.6;
-      if (dmg.reason === "drought") kill *= 0.1 + 0.9 * (p.thirsty ? 1 - watered : 0); // watered plots ride out a dry spell
-      if (p.thirsty) kill += 0.04 * (1 - watered) * (0.5 + c.climate.thirst);
+      if (dmg.reason === "drought") kill *= 0.1 + 0.9 * dry; // watered plots ride out a dry spell
+      if (p.thirsty) kill += CROP_WATER.kill * dry * (0.5 + c.climate.thirst);
       if (kill > 0 && rng.chance(kill)) {
         p.stage = "dead";
         p.note = `Killed by ${p.thirsty && !dmg.reason ? "thirst" : dmg.reason || "the weather"} on day ${day(state)}`;
@@ -586,9 +696,10 @@ export function farmingDaily(state, base, watered = 1) {
   // Sowing: free (and dead) plots, if the farmers replant on their own or a crop was picked for the plot.
   let plantCap = Math.floor(care.labour * PLANT_PER_FARMER + 1e-9);
   if (care.labour > 0) plantCap = Math.max(1, plantCap);
-  const short = watered < 0.999;
+  const dryAvg = dryN ? dryAll / dryN : 0;
+  const short = dryAvg > 0.001;
   // Nothing new is sown while the base cannot water what is already in the ground (it would die of thirst).
-  if (watered < 0.6) plantCap = 0;
+  if (dryAvg >= CROP_WATER.sowDry) plantCap = 0;
   for (const p of f.plots) {
     if (plantCap <= 0) break;
     if (p.stage !== "empty" && !(p.stage === "dead" && f.auto)) continue;

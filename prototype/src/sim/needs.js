@@ -80,7 +80,7 @@ import { packOf, removeAt, useOneAt, personPlace, placeOfLoc } from "./inventory
 import { teamFire } from "./fieldheat.js";
 import { heatUse, HEAT } from "./upkeep.js";
 import { shelterFire } from "./woodcutting.js";
-import { econStats } from "./farming.js";
+import { econStats, farmWaterHour } from "./farming.js";
 import { conditionsOf } from "./health.js";
 import { eatRawCargo, eatRawForageCargo, drinkHour, teamTreatsWater } from "./worm.js";
 import { teamPoisonHour } from "./cooking.js"; // wave 2 cooking: food poisoning from what the team ate this hour
@@ -411,6 +411,7 @@ export function needsHour(state) {
     shelterFire(state, base); // woodcutting.js: a lit camp or shelter fire burns its wood, or goes out
     const people = residents(state, base.id);
     if (people.length) baseHour(state, base, people);
+    farmWaterHour(state, base); // farming.js: the crops' gauges, and the farmers at work water them (after the people drink)
   }
   for (const s of state.survivors) if (s.alive && s.location && s.location.kind === "errand") errandHour(state, s);
   if (state.hour % 24 === 0) eatingDaily(state); // eating.js: the day's food log (the same food again), thoughts, packs age

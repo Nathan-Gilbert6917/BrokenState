@@ -17,6 +17,7 @@ import { tickHour } from "../src/sim/world.js";
 import {
   CROPS, CROP_KEYS, farmOf, farmingDaily, careToday, tendMult, skillMult, plotLimit, cropWaterNeed, bestCrop, plantPlot,
   harvestPlot, clearPlot, econStats, cropForecast, hungryGap, winterOutlook, plantCheck,
+  farmWaterHour, tendingNow, cropLine, CROP_WATER, cropWaterFirst, setCropWater,
 } from "../src/sim/farming.js";
 import {
   STORE, FACTOR, RACK, storeCapacity, storeFactor, foodStore, edibleFood, eatFromStore, jarsInUse, rackPlan,
@@ -224,6 +225,77 @@ has(Weather.growthFactor, "growthFactor"); has(Weather.cropDamage, "cropDamage")
   check(thirstDamage(1) < thirstDamage(2) && thirstDamage(3) < thirstDamage(5), "thirst damage grows day by day");
 }
 
+// 3a. The crops' water (2026-10-28): a gauge a plot, each crop its own line, the farmers water it while they work (not
+// at midnight), from the stores past the people's day, un-purified or purified water first; un-purified water can
+// kill a crop with the worm, purified water never.
+{
+  console.log("Crop water: the gauge, the farmers' watering, un-purified or purified first, the worm");
+  const st = W();
+  const h = hub(st);
+  const f = bareFarm(st, h);
+  const ppl = atBase(st, h.id);
+  ppl.forEach((s) => { plain(s); s.role = "rest"; s.conditions = []; s.health = 100; });
+  const farmer = ppl[0]; farmer.role = "farm";
+  // A dry, plain spring day (no rain, dry soil, not hot).
+  setFood(h, 200);
+  const [a, b] = f.plots.filter((p) => !p.gh);
+  let d = 0;
+  for (; d < 400; d++) {
+    setDay(st, d);
+    const w = Weather.weather(st);
+    if (!w.rain && (w.soil ?? 0.5) < 0.6 && w.key !== "heat" && w.key !== "drought" && (w.hi ?? 20) < 30 && Weather.season(st).key === "spring" && plantCheck(st, h, a, "potato").ok && plantCheck(st, h, b, "wheat").ok) break;
+  }
+  plantPlot(st, h, a.id, "potato"); plantPlot(st, h, b.id, "wheat");
+  check(a.stage === "growing" && b.stage === "growing" && a.water === 100 && b.water === 100 && cropLine("corn") > cropLine("potato") && cropLine("potato") > cropLine("wheat"), `sown plots are watered in (100); each crop needs its own level (corn ${cropLine("corn")}, potatoes ${cropLine("potato")}, wheat ${cropLine("wheat")})`);
+  // The night: the farmer is asleep, the gauges fall, nothing is drawn.
+  st.hour = d * 24 + 1;
+  Object.assign(h.stock, { water: 60, rawwater: 60 });
+  for (let i = 0; i < 3; i++) { st.hour++; farmWaterHour(st, h); }
+  const fall = (100 / CROP_WATER.soak / 24) * 3;
+  check(tendingNow(st, h).length === 0 && near(a.water, 100 - fall, 0.01) && h.stock.water === 60 && h.stock.rawwater === 60, `at night nobody tends: the gauges fall ${r1(fall)} in three hours and no water is drawn`);
+  // The day: the farmer at work waters the plots under their line (+ the margin), un-purified water first by default.
+  st.hour = d * 24 + 9;
+  check(tendingNow(st, h).includes(farmer), `at 09:00 the farmer is tending the crops (${tendingNow(st, h).length})`);
+  const keepWorm = CROP_WATER.worm; CROP_WATER.worm = 0;
+  a.water = 30; b.water = 30;
+  farmWaterHour(st, h);
+  check(a.water > 99 && b.water > 99 && h.stock.water === 60 && h.stock.rawwater < 60, `the farmer waters both up to full, with un-purified water first (raw ${r1(60 - h.stock.rawwater)} used, purified untouched)`);
+  check(cropWaterFirst(h) === "raw" && setCropWater(st, h, "pure") !== "" && cropWaterFirst(h) === "pure", "the toggle: purified water first (Farming tab)");
+  const raw1 = h.stock.rawwater;
+  a.water = 30; b.water = 30;
+  farmWaterHour(st, h);
+  check(a.water > 99 && h.stock.water < 60 && h.stock.rawwater === raw1, `purified first: the purified water is used (${r1(60 - h.stock.water)}), the un-purified kept`);
+  // The people's day of drinking is kept back from the crops.
+  const keepDay = waterNeed(st, h).people;
+  Object.assign(h.stock, { water: keepDay, rawwater: 0 });
+  a.water = 30; b.water = 30; a.dryH = 0;
+  farmWaterHour(st, h);
+  check(h.stock.water === keepDay && a.water < cropLine("potato") && a.dryH === 1, `the people's day of water (${keepDay}) is kept back: no watering, and the potatoes count a dry hour`);
+  // The worm: un-purified water can kill a crop (pinned), purified water never.
+  CROP_WATER.worm = 1; const keepBase = CROP_WATER.wormBase; CROP_WATER.wormBase = 1;
+  Object.assign(h.stock, { water: 100, rawwater: 100 });
+  a.water = 30; b.water = 30;
+  farmWaterHour(st, h);
+  check(a.stage === "growing" && b.stage === "growing", "purified first with purified water to spare: no worm, whatever its chance");
+  setCropWater(st, h, "raw");
+  a.water = 30;
+  farmWaterHour(st, h);
+  check(a.stage === "dead" && /worm/.test(a.note) && st.log.some((l) => /died of the worm from un-purified water/.test(l.text)), `un-purified water (pinned): the potatoes died of the worm ("${a.note}")`);
+  CROP_WATER.worm = keepWorm; CROP_WATER.wormBase = keepBase;
+  // Nobody tending: nothing watered, the dry hours slow the crop at midnight.
+  plantPlot(st, h, a.id, "wheat");
+  farmer.role = "rest";
+  a.water = 100; a.dryH = 0; b.water = 10; b.dryH = 0;
+  const g0 = b.grown;
+  for (let i = 0; i < 6; i++) { st.hour++; farmWaterHour(st, h); }
+  check(b.water < 10 && b.dryH === 6 && a.dryH === 0, `nobody on the Farm role: nothing watered (wheat at ${r1(b.water)}, ${b.dryH} dry hours)`);
+  const ga = a.grown, gb = b.grown;
+  b.dryH = 24;
+  farmingDaily(st, h);
+  check(b.thirsty && !a.thirsty && b.dryH === 0 && (b.stage !== "growing" || a.stage !== "growing" || b.grown - gb < a.grown - ga), `a day under its line: thirsty, it grows slower (${r1(b.grown - gb)} against ${r1(a.grown - ga)})`);
+  void g0;
+}
+
 // 3b. Seasonal water: everyone drinks by the season (spring and autumn 1, summer 1.3, winter 0.9, at least 1.6 on a
 // hot day), crops need a fifth more on a summer dry day, water above the capacity evaporates a little in summer, the
 // summer outlook and its warning a week before summer, and the governor's summer plan on a big hub.
@@ -281,12 +353,13 @@ has(Weather.growthFactor, "growthFactor"); has(Weather.cropDamage, "cropDamage")
   h.stock.water = cap + 100; h.stock.rawwater = 0; // both kinds count (sim/water.js)
   const nd = waterNeed(st, h);
   basesDaily(st); st.cards.length = 0;
-  check(Math.abs(wtot(h) - (cap + 100 - 100 * WATER.evaporate - nd.people - nd.crops)) < 0.2, `summer: ${Math.round(WATER.evaporate * 100)}% of the water above the capacity evaporates (${wtot(h).toFixed(1)} of ${cap + 100})`);
+  // The crops drink as the farmers water them by the hour (farming.js farmWaterHour, 2026-10-28), not at midnight.
+  check(Math.abs(wtot(h) - (cap + 100 - 100 * WATER.evaporate - nd.people)) < 0.2, `summer: ${Math.round(WATER.evaporate * 100)}% of the water above the capacity evaporates (${wtot(h).toFixed(1)} of ${cap + 100})`);
   setDay(st, plainDay.spring);
   h.stock.water = cap + 100; h.stock.rawwater = 0; // both kinds count (sim/water.js)
   const ns = waterNeed(st, h);
   basesDaily(st); st.cards.length = 0;
-  check(Math.abs(wtot(h) - (cap + 100 - ns.people - ns.crops)) < 0.2, "spring: no evaporation");
+  check(Math.abs(wtot(h) - (cap + 100 - ns.people)) < 0.2, `spring: no evaporation (${wtot(h).toFixed(1)}; the crops' ${ns.crops} goes in by the hour)`);
   // The summer outlook: a crowd at the hub with the starting well falls short, and the outlook says what to build.
   const big = W();
   const hb = hub(big);

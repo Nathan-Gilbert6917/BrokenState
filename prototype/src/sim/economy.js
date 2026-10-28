@@ -268,7 +268,8 @@ export function fetchWaterDay(state, base) {
 // the season's thirst (weather.js THIRST: spring and autumn 1, summer 1.3, winter 0.9; at least 1.6 on a hot day),
 // the sick with dysentery 1 more, prisoners in the cells the same as anyone (prisoners.js), and so do guests you
 // shelter (visitors.js) and a supply convoy's crew holding there (supply.js) (upkeep.js: per head × heads); growing
-// crops are watered on dry days (farming.cropWaterNeed, more in summer). Water filters (crafting.js) add their water
+// crops are watered by the farmers as their gauges need it (farming.js farmWaterHour; farming.cropWaterNeed is the
+// day's estimate, more in summer). Water filters (crafting.js) add their water
 // on top.
 export const WATER = { hubWell: 12, spring: 3, stream: 3, well: 6, rainPerCatcher: 2, hubCap: 80, outpostCap: 40, cistern: 150, drink: 1, filter: 3, evaporate: 0.05 };
 // The tanks and cisterns hold both kinds; water barrels (buildings.js WATER_BARREL) keep room for one kind each.
@@ -625,8 +626,9 @@ function baseDaily(state, base) {
     base.thirstDays = 0;
   }
   base.drank = { day: day(state), pure: drank.pure + sipped.pure, raw: drank.raw + sipped.raw }; // worm.js baseWormDaily: the share drunk un-purified
-  const give = drawWater(st, need.crops, { rawFirst: true }).got;
-  farmingDaily(state, base, need.crops > 0 ? give / need.crops : 1);
+  // The crops are watered by the hour as the farmers tend them (farming.js farmWaterHour), not here: the day counts
+  // the hours each plot spent under its crop's line.
+  farmingDaily(state, base);
   foodMark(state, base, "farm");
   flowMark(state, base); // history.js: drinking out, the harvest in (before the eating)
 
