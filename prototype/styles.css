@@ -668,7 +668,7 @@ input.colorinput { width: 1.8rem; height: 1.3rem; padding: 0; border-radius: 4px
 .nrport:hover { border-color: var(--accent); }
 .nrport img.sprite { margin: 0; }
 /* The skills take the columns the card has room for (three on a wide card, two on a narrow one): the crew grid's
-   columns follow the screen (newrun.css .nrcrew), so a card's width does. */
+   columns follow the screen (newrun.css .nrcrew: two on a desktop, one on a phone), so a card's width does. */
 .nrskills { display: grid; grid-template-columns: repeat(auto-fill, minmax(8.6rem, 1fr)); gap: 0.1rem 0.5rem; font-size: 0.8rem; }
 .nrskill { display: flex; align-items: center; gap: 0.2rem; }
 .nrskill span { flex: 1; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
