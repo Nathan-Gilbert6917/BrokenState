@@ -65,7 +65,7 @@ export function firstWeekHour(state) {
   }
   if (state.hour < g.attackAt) return;
   const home = homeAt(state, base.id), people = home.length;
-  const fit = home.filter((s) => (s.health ?? 100) >= F.FIT), armed = fit.filter((s) => s.gear && (s.gear.weapon || s.gear.sidearm)).length;
+  const fit = home.filter((s) => (s.health ?? 100) >= F.FIT), armed = fit.filter((s) => s.gear && (s.gear.weapon || /** @type {any} */ (s.gear).sidearm)).length; // a sidearm counts too (not on the Gear type)
   if (!people || state.combat || pending(state, base) || (base.campAttack && base.campAttack.wave)) return; // not ready: the next hour
   if (!isNight(state)) {
     // By day: a nomad band, made for it, beside the base.
