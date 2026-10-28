@@ -33,12 +33,15 @@
 // baseEatHour: meal breaks, what they eat, the base's ration level; economy.js counts the day at midnight). Thirst
 // falls by the hour at a base too (NEEDS.water a day × the day's thirst) and people drink from the stores when they
 // drop below NEEDS.drink[0] (70), up to full (NEEDS.drink[1]): the same rhythm as on a team, a drink about every half
-// day in spring, oftener in summer. The stores still pay once a day (economy.js baseDaily: per head × the day's
-// thirst, upkeep.js), so the gauge is the day's water as it is drunk, not a second charge. The base's share decides
-// what the gauge gets: watered in full, they drink their fill; with no water nobody drinks and it falls; under
-// rationing (base.thirstDays with some water: base.waterFed) each person's share of a day's water trickles in by the
-// hour and the gauge drifts down by what is missing. Under rationing the base's share (base.share) decides who gets
-// watered first (the hurt, then the workers, then those resting).
+// day in spring, oftener in summer.
+// Drinking at a base (2026-10-28, user request: "the thirst system does not seem to decrease like food does"): each
+// drink comes out of the base's water as it is drunk (baseHour, purified first), so the stores go down through the
+// day as they do at the meals; before, the gauge refilled for nothing and the stores paid the whole day at midnight.
+// Midnight now settles the day against its need (economy.js baseDaily: per head × the day's thirst, upkeep.js): what
+// the hours did not drink is drawn then (the sick's extra water), a day over its need leaves a credit for the next
+// (base.drinkCredit), and what the stores could not pay is the base's thirst (base.thirstDays: health, the parched
+// mood). A dry base: nobody drinks and the gauges fall. Not enough for everyone in an hour: the hurt first, then the
+// thirstiest (base.share "even": the same share each).
 // Everyone also carries a pack (eating.js PACK: about a day and a half of food that keeps and of purified water):
 // away from the stores (a job trip, a field work, an errand) they eat from it; on a team, after the team's shared
 // supplies are gone.
@@ -323,38 +326,31 @@ function warnPerson(state, s) {
   else if (s.thirst >= NEEDS.warnBack) w.t = false;
 }
 
-// A base's shares today: what part of a day's food and water each person gets (economy.js baseDaily sets the state).
+// A base's share of food today: what part of a day's food each person gets (economy.js baseDaily sets the state).
 export const baseFoodShare = (base) => (base.hungerDays > 0 ? 0 : base.rationing ? NEEDS.ration : 1);
-export const baseWaterShare = (base) => (base.thirstDays > 0 ? Math.max(0, Math.min(1, base.waterFed ?? 0)) : 1);
-// Under rationing, who gets fed first: the hurt, then the workers, then those resting (base.share "even": everyone the
-// same). Returns Map(survivor → share 0..1) that averages to `share`.
-function splitShare(people, share, mode) {
-  const out = new Map();
-  if (share >= 1 || share <= 0 || mode === "even") { for (const s of people) out.set(s, share); return out; }
-  const rank = (s) => (hurtNow(s) ? 0 : s.role !== "rest" && !s.inBed ? 1 : 2);
-  const list = [...people].sort((a, b) => rank(a) - rank(b) || hungerOf(a) - hungerOf(b) || a.id - b.id);
-  let left = share * people.length;
-  for (const s of list) { const q = Math.min(1, left); out.set(s, q); left -= q; }
-  return out;
+
+// The water drunk from a base's stores since its last midnight (economy.js baseDaily settles the day with it):
+// units in all, and how much of it was purified and un-purified (worm.js: base.drank).
+export function takeDrinkAcc(base) {
+  const a = base.drinkAcc || { units: 0, pure: 0, raw: 0 };
+  base.drinkAcc = { units: 0, pure: 0, raw: 0 };
+  return a;
 }
 
 function baseHour(state, base, people) {
-  const fW = baseWaterShare(base);
-  const ws = splitShare(people, fW, base.share);
   const tf = Weather.thirstAt ? Weather.thirstAt(state) : 1;
   const wr = (NEEDS.water / 24) * tf;
   baseEatHour(state, base, people); // eating.js: hunger falls and people eat, each to their own target (meal breaks)
-  for (const s of people) {
-    ensureNeeds(s);
-    const w = ws.get(s);
-    // Thirst falls as hunger does (the season's rate), then they drink. Watered in full: a drink from the stores
-    // when they drop below the drink line, up to full (the stores paid for the day at midnight, economy.js). Short:
-    // their share of the day's water by the hour (the gauge drifts down by what is missing); none: it falls.
-    s.thirst = clamp(s.thirst - wr);
-    if (w >= 1) { if (s.thirst < NEEDS.drink[0]) s.thirst = clamp(NEEDS.drink[1]); }
-    else if (w > 0) s.thirst = clamp(s.thirst + w * wr);
-    warnPerson(state, s);
-  }
+  // Thirst falls as hunger does (the season's rate), then whoever is below the drink line drinks from the stores up to
+  // full, purified water first, as they eat at the mealtimes: the stores go down as they drink. Not enough for
+  // everyone this hour: the hurt first, then the thirstiest (base.share "even": the same share each); a dry base:
+  // nobody drinks and the gauge falls.
+  for (const s of people) { ensureNeeds(s); s.thirst = clamp(s.thirst - wr); }
+  const acc = base.drinkAcc || (base.drinkAcc = { units: 0, pure: 0, raw: 0 });
+  // drawWater keeps the stock to the hundredth: a drink it covered fills the gauge in full.
+  const drink = (q) => { const d = drawWater(base.stock, q); acc.units += d.got; acc.pure += d.pure; acc.raw += d.raw; return d.got >= q - 0.01 ? q : d.got; };
+  feed(people, "thirst", NEEDS.drink, NEEDS.water, waterIn(base.stock), drink, base.share === "even" ? "even" : "hurt");
+  for (const s of people) warnPerson(state, s);
 }
 
 // On a personal errand (hubevents.js): they eat and drink from what they took (s.location.pack).

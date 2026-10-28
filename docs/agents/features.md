@@ -54,7 +54,7 @@ Older design docs: [docs/base-building/plan.md](../base-building/plan.md), [docs
 
 ## 2. Survivors
 - **Skills, XP, teaching, books and perks** [skills]; **traits** with tiers and points [traits].
-- **Needs**: hunger, thirst and mood; eating person by person with a meal mood ladder, preferences and rations [needs, eating].
+- **Needs**: hunger, thirst and mood; eating person by person (meal mood ladder, preferences, rations); at a base they drink from the stores hourly [needs, eating, economy] `tools/needstest.js`. [details](../features/survivors.md#drinking-at-a-base)
 - **Sleep and tiredness** [sleep].
 - **Morale**: crowding, leader lift, desertion [morale]; **mental breaks** [mentalbreaks]; **comforts and treats** [comforts].
 - **Relationships**: grief, service record, memorial wall, daily mood factors [relations].

@@ -2,7 +2,7 @@
 
 Detail for section 2 of [docs/agents/features.md](../agents/features.md). `[name]` is `prototype/src/sim/name.js`; `ui/name` is `prototype/src/ui/name.js`.
 
-Contents: [Bonds between survivors](#bonds-between-survivors) · [Appearance, figures and customization](#appearance-figures-and-customization) · [Why did this happen: setbacks](#why-did-this-happen-setbacks)
+Contents: [Bonds between survivors](#bonds-between-survivors) · [Appearance, figures and customization](#appearance-figures-and-customization) · [Why did this happen: setbacks](#why-did-this-happen-setbacks) · [Drinking at a base](#drinking-at-a-base)
 
 ## Bonds between survivors
 Named levels from rival to partner, with reasons, work and mood buffs and debuffs, behaviours and hub cards.
@@ -89,3 +89,14 @@ The user's request (issue #77, 2026-10-26): "There's several weapons but all gun
 - **The fallen**: a dead unit's weapon lies beside its right hand until the body is searched [ui/figures unitFigureDown; ui/downsprites bodySearched]; a downed survivor who is alive shows none.
 - **Performance** (2026-10-27): painting a figure about 5% dearer (1.03 vs 0.98 ms a figure in Node); a raid's frame time unchanged (median 3.9 vs 4.1 ms, `tools/weaponmapshot.cjs`, figures cached by look and heading).
 - Tools: `tools/weaponfiguretest.js` (every key a model of its own, the classes, the hands on the weapon at every heading, the muzzle on the barrel, fitted parts, the cache key, the fallen), `tools/weaponsheet.js` (the gallery page: every weapon at three headings beside its 2D art, a raider and a soldier, fitted parts, the fallen; `--before` another checkout's figures, `--battle` a battle shot), `tools/weaponmapshot.cjs` (a raid with armed figures in place, shot and timed), `tools/pngout.js` (a painter's grid as a PNG without a browser). `tools/gunarttest.js`'s muzzle checks now expect each gun its own point and a drawn suppressor.
+
+## Drinking at a base
+Thirst at a base now draws on the stores as it is drunk, the way food does at the meals: the base's water goes down through the day, not in one charge at midnight.
+
+The user's request 2026-10-28: "Improve the thirst system it does not seem to decrease like food does". An earlier request (2026-10-19) had made the thirst gauge fall by the hour at a base, but the drinks it took were free: the stores paid a whole day's water at midnight, so the water count sat still all day while the food went down at every meal. Modules: [needs `baseHour` / `takeDrinkAcc`], [economy `baseDaily`]. Test: `tools/needstest.js` (At a base).
+
+- **By the hour** (needs.js `baseHour`): the gauge falls `NEEDS.water` (60) a day × the day's thirst (weather.js `thirstAt`); whoever is below `NEEDS.drink[0]` (70) drinks from the base's stores up to full (`NEEDS.drink[1]`), purified water first (water.js `drawWater`). A water fills 60 points, so a drink is about half a water, about every half day in spring. What they drink is added up in `base.drinkAcc` (units, purified, un-purified).
+- **Not enough this hour**: the hurt first, then the thirstiest (`base.share` "even": the same share each). A dry base: nobody drinks and the gauge falls.
+- **Midnight** (economy.js `baseDaily`): the day is settled against its need (`waterNeed().people`: per head × the day's thirst, plus the sick's extra). What the hours did not drink is drawn then (the sick's water; the whole day when the hours did not run, as a test that calls `basesDaily` alone). A day they drank more than its need leaves `base.drinkCredit` for the next (at most a day's need), since the drinks come every half day or so, not on the midnight. What the stores could not pay is the base's thirst as before (`thirst`: health, `base.thirstDays`, the parched mood). `base.drank` (worm.js) is the hours' drinks plus midnight's.
+- **Removed**: `base.waterFed` and needs.js `baseWaterShare` / `splitShare` (the gauge's share of a day's water under rationing): the hourly drinks from the stores do that now.
+- **Totals**: the same water a day as before (a seed-3 hub of 6: 6 purified a day either way), only spread over the day. Teams already drank from their supplies by the hour; errands from their packs.

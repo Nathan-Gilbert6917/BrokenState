@@ -32,7 +32,7 @@ import { huntingDaily, snaresDaily } from "./hunting.js";
 import { foodUse, mouthsAt, prisonersAt, guestsAt, crewAt } from "./upkeep.js";
 import { takeEatAcc } from "./eating.js"; // people eat by the hour (meal breaks): the day's eating counted here
 import { rationKey, RATION_LEVELS } from "./meals.js"; // the ration levels (lean, a feast day)
-import { heatDaily, starvingDaily } from "./needs.js";
+import { heatDaily, starvingDaily, takeDrinkAcc } from "./needs.js";
 import { stoneDaily } from "./stone.js"; // the Gather stone job (the user's request 2026-10-23)
 import { woodDaily, fireDayBurn, WOOD } from "./woodcutting.js"; // fireDayBurn, WOOD: a camp's fire's pile kept (shipFromOutposts)
 import { prisonWater } from "./prisoners.js"; // prisoners-tab: water hauled by prisoners (waterProduction)
@@ -466,7 +466,6 @@ export function summerWarningDaily(state) {
 export const thirstDamage = (days) => Math.min(25, 6 + 4 * Math.max(1, days));
 /** @param {State} state @param {Base} base */
 function thirst(state, base, mouths, short) {
-  base.waterFed = Math.round((1 - short) * 100) / 100; // needs.js: the share of a day's water everyone got (thirst gauges)
   base.thirstDays = (base.thirstDays || 0) + 1;
   econStats(state).thirstDays++;
   const dmg = Math.round(thirstDamage(base.thirstDays) * Math.max(0.35, short) * 10) / 10;
@@ -600,19 +599,27 @@ function baseDaily(state, base) {
   // turn un-purified water into purified water before anyone drinks.
   purifyDaily(state, base);
   // Drinking: people first (purified water first, then un-purified: worm.js rolls the share drunk un-purified), then the
-  // crops get what is left (un-purified first). Thirst counts both kinds.
+  // crops get what is left (un-purified first). Thirst counts both kinds. People drink from the stores by the hour as
+  // their thirst gauges drop (needs.js baseHour: the stock goes down through the day, as with food); here the day is
+  // settled against its need: what the hours did not drink (the sick's extra water, a day nobody's gauge was due) is
+  // drawn now. A day they drank more than its need leaves a credit for the next (at most a day's need): the gauges'
+  // drinks come every half day or so, not on the midnight, so a day's drinking runs over or under its need.
   const need = waterNeed(state, base);
+  const sipped = takeDrinkAcc(base);
+  const paid = sipped.units + (base.drinkCredit || 0);
+  const owed = Math.max(0, need.people - paid);
+  base.drinkCredit = Math.round(Math.min(need.people, Math.max(0, paid - need.people)) * 100) / 100;
   const have = waterIn(st);
   let drank;
-  if (mouths.length && have + 1e-9 < need.people) {
-    const short = 1 - have / need.people;
+  if (mouths.length && have + 1e-9 < owed) {
+    const short = (owed - have) / need.people;
     drank = drawWater(st, have);
     thirst(state, base, mouths, short);
   } else {
-    drank = drawWater(st, need.people);
+    drank = drawWater(st, owed);
     base.thirstDays = 0;
   }
-  base.drank = { day: day(state), pure: drank.pure, raw: drank.raw }; // worm.js baseWormDaily: the share drunk un-purified
+  base.drank = { day: day(state), pure: drank.pure + sipped.pure, raw: drank.raw + sipped.raw }; // worm.js baseWormDaily: the share drunk un-purified
   const give = drawWater(st, need.crops, { rawFirst: true }).got;
   farmingDaily(state, base, need.crops > 0 ? give / need.crops : 1);
   foodMark(state, base, "farm");
