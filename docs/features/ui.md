@@ -27,6 +27,15 @@ A note on the title screen that this build is a prototype.
 - **Where**: bottom right on a desktop, clear of the menu (bottom left) and the logo (top), at most `min(26rem, 40vw)` wide (`prototype/title.css`); across the top on a phone held upright, the logo moved down under it; bottom right under the logo on a phone on its side (`prototype/responsive.css`).
 - Modules: [ui/title (PROTOTYPE_NOTE, build), `prototype/title.css`, `prototype/responsive.css`]. Test: `tools/titletest.js`; screenshots `tools/uishot.cjs --only title`.
 
+
+## Rebuild board on the title
+
+Asked on 2026-10-28: a button on the main menu to view the rebuild board, and the Hall of fame button off it.
+
+- **Rebuild board** sits after How to play on the title menu (`titleMenuHTML` in ui/title.js, action `title-board`). It opens `BOARD_URL`, https://nathan-gilbert6917.github.io/BrokenState/board/, in a new tab: the board sub-project (`board/README.md`), the cards for rebuilding the game in Godot or Unity, published by Pages beside the game.
+- **The desktop app** denies every new window; its `setWindowOpenHandler` (desktop/main.js) hands that one address to the system browser with `shell.openExternal`.
+- **The Hall of fame** left the title menu; it opens from the end screens as before (ui/halloffame.js `hallEndHTML`).
+- Tests: `tools/titletest.js` (the button, its place, the address it opens, the desktop handler, no Hall of fame on the menu).
 ## New-run screen layout
 The new-run screen as a full screen over the title's background: a sticky header with Start, the settings in three groups, a crew grid that takes the columns the screen fits, decluttered cards.
 - The user's request 2026-10-24: "Improve the UI for the menus and windows for this game. The starting window to select and create the survivors should be full screen. So many menus are crowded or not responsive making it so you have to scroll a lot to get to information or buttons needed. The survivor screen when used on a phone in portrait was still a 2xY grid and in landscape the top and bottom were cut off. I want the design to work well for mobile as well as desktop. Good UI/UX to help players understand how to get around. Remove redundant buttons and information. If it's just a description of what is happening remove it; provide more details in a hover. Check that the information the UI provides is accurate to the actions and what is on screen."

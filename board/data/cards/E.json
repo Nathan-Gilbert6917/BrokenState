@@ -1,0 +1,1729 @@
+[
+  {
+    "id": "combat.interiors",
+    "title": "Procedural building interiors, room layouts & the variant picker",
+    "summary": "Every raid into a building opens a map generated for that building kind: footprint at real size, rooms by a floor plan, doors, windows, storeys and stairs, furniture that makes sense, loot containers by room, and 'signs of survival'. A shared variant picker chooses one of a dozen-plus named plans per kind.",
+    "whyHere": "The slice ships one hand-made building template (combat.map); this card turns that into the content engine the rest of M4 stands on: stealth needs rooms and light, doors need door cells, loot needs room types, and the city crawl and hive crawl reuse the same generator.",
+    "subsystems": [
+      "Plan registry & variant picker",
+      "Footprint & shape (real size, L/T/U, wings)",
+      "Room partition (split tree / BSP) & room graph",
+      "Doors, windows, exits, locked rooms",
+      "Storeys & stairwells",
+      "Room styles & furnishing helpers",
+      "Containers, scenes & occupants",
+      "Generator validation & preview gallery"
+    ],
+    "sliceScope": "First version: ONE generator pipeline for 3 kinds (house, corner store, clinic), 3 named plans each, 1–2 storeys, maps up to 64×64. Plans are JSON split trees (or LDtk/Tiled room prefabs), rooms get roles, a spanning tree of doors, front/back exits, windows, a handful of furniture styles (kitchen, bedroom, shop aisle) and containers by room role. Same seed + site = same building every visit.",
+    "fullScope": "The prototype has 114 building types and 1,442 named plans (12+ per type) in one registry (variantpick.js), 237+ furniture kinds, real-size footprints at 1 m a cell (towers to 10 storeys, only 4 built), maps up to 500×500 for stadiums/zoos/parks, multi-building compounds (prisons, campuses, malls), scenes in 40–90% of buildings, and density tests that keep rooms/containers/dead within ±15% per m².",
+    "protoRefs": [
+      "prototype/src/sim/buildingmaps.js",
+      "prototype/src/sim/roomlayout.js",
+      "prototype/src/sim/variantpick.js",
+      "prototype/src/sim/data-furniture.js",
+      "docs/features/combat.md"
+    ],
+    "tasks": {
+      "data": [
+        "Define content/buildings/*.json: BuildingKindDef (size range m, storeys, exits, door style, room roles allowed, map cap) and PlanDef (id, name, weights by setting/franchise/tile, split tree or prefab ref).",
+        "Define content/rooms/roles.json: RoomRoleDef (floor look, has windows, loot area, furnishing style id, max containers, dark by default).",
+        "Define content/furniture.json: FurnitureDef (cell walk/cover/LOS, size w×h, hp, kg, carry one/two/fixed, loot, wall, tags, base use, art key).",
+        "Author room prefabs in LDtk or Tiled (or the engine tilemap) and write an importer that converts them to the same JSON PlanDef, so hand-made and generated plans share one format.",
+        "Add a `genVersion` per kind so a saved building rebuilt from its seed always uses the generator it was made with."
+      ],
+      "backend": [
+        "VariantPicker: Register(kind, plans) and Pick(kind, ctx) with pin → filter (franchise, tile, size) → weights → walk; dice from a hash of (worldSeed, tile, building, 'variant') so adding a plan never shifts other picks.",
+        "Generator pipeline as small pure stages over a BuildingMap: Footprint → Partition (split tree) → RoomGraph (spanning tree + extra doors via hubs) → Exits/Windows/Locks → Storeys/Stairs → Furnish (style helpers: Wall, Centre, Run, Fill, Beside, Facing, door lanes kept clear) → Containers → Scenes → Occupants.",
+        "Connectivity guard: flood-fill after every placement; refuse any piece that cuts a walkable cell off; every exit reachable from every room.",
+        "Real-size scaling: grow a plan to the footprint by wings/copies and room splits, keeping containers and dead per m² near the plan's own.",
+        "Unit tests: determinism (same seed → same hash), reachability, every plan reachable by some roll, density bands over 200 seeds, 'loot makes sense' (signature finds present, forbidden finds absent) over 100 buildings a kind."
+      ],
+      "ui": [
+        "Render each floor as a TileMapLayer/Tilemap from the cell grid (floor, wall, door, window, stairs) with placeholder tiles; furniture as placeholder sprites by art key.",
+        "Floor switcher (Go up / Go down) and roofs-off/cutaway toggle.",
+        "A dev-only 'building gallery' scene: pick kind/plan/seed, regenerate, show room roles and the door graph overlay."
+      ]
+    },
+    "dataModel": "public record PlanDef(string Id, string Name, string Kind, Dictionary<string,float> Weights, string[] Franchises, SplitNode Root);\npublic record SplitNode(Axis Axis, float[] Shares, SplitNode[]? Kids, string? Role);\npublic record RoomRoleDef(string Id, string FloorLook, bool Windows, string LootArea, string Style, int MaxBoxes);\npublic sealed class Room { public int Id, Floor; public RectI Box; public string Role = \"\"; public List<int> DoorCells = new(); }\npublic sealed class BuildingMap {\n  public int W, H, GenVersion; public string PlanId = \"\";\n  public Cell[][] Floors = default!;   // one grid per storey\n  public List<Room> Rooms = new(); public List<ExitZone> Exits = new();\n}",
+    "dependsOn": [
+      "combat.map",
+      "data.content",
+      "data.rng",
+      "gear.loot",
+      "combat.pathing"
+    ],
+    "connections": [
+      {
+        "to": "combat.map",
+        "why": "The slice's battle map becomes one output of this generator; the battle only sees a cell grid.",
+        "how": "IMapSource.Build(siteId, seed) returns BuildingMap; Battle consumes Cells/Rooms/Exits, never the plan.",
+        "godot": "SimHost hands the BuildingMap to a BattleView scene that fills one TileMapLayer per floor.",
+        "unity": "SimHost passes it to a BattleView MonoBehaviour that paints one Tilemap per floor."
+      },
+      {
+        "to": "gear.loot",
+        "why": "Containers take their loot table from the room's loot area (kitchen, pharmacy, armory).",
+        "how": "Container { LootArea, LockKind } rolled by LootService.Roll(area, rng) when first searched.",
+        "godot": "Search button calls a sim command; result arrives as a LootRevealed event → signal.",
+        "unity": "Same command; a C# event raises the loot window."
+      },
+      {
+        "to": "combat.doors",
+        "why": "The generator places door kinds, windows, locked rooms and barricade-ready furniture.",
+        "how": "Cells carry DoorKind/WindowState/LockId set by the Exits/Locks stage; doors.json drives hp and sight.",
+        "godot": "Door tiles use alternative tiles or scenes per DoorKind.",
+        "unity": "Door tiles are RuleTiles/prefab tiles per DoorKind."
+      },
+      {
+        "to": "travel.citycrawl",
+        "why": "Multi-storey crawl buildings reuse the same plans and must restore exactly on revisit.",
+        "how": "Store (siteId, planId, genVersion, seed) plus a diff of changed cells; regenerate then apply the diff.",
+        "godot": "No engine work: the crawl screen calls the same builder.",
+        "unity": "Same."
+      },
+      {
+        "to": "meta.perf",
+        "why": "Maps reach 300–500 cells a side with 10 floors; generation and pathing must stay under budget.",
+        "how": "Generate per floor lazily, cache LOS sparsely, pack cells as runs in saves.",
+        "godot": "Render in chunks (several TileMapLayers or a quadrant size), only on-screen floors.",
+        "unity": "Chunk Tilemaps; disable renderers of hidden floors."
+      }
+    ],
+    "godot": {
+      "approach": "Keep generation in the C# sim; Godot only draws. One TileMapLayer per storey (plus one for furniture/decor), a TileSet with placeholder tiles named by art key, and a small editor tool (EditorPlugin or a @tool scene) that calls the sim generator so you can scrub seeds and plans inside the editor. If you hand-author room prefabs, draw them in a TileMapLayer or LDtk and export to the content JSON.",
+      "keyApis": [
+        "TileMapLayer",
+        "TileSet",
+        "EditorPlugin / [Tool]",
+        "Resource (ArtCatalog)",
+        "Camera2D"
+      ],
+      "docs": [
+        {
+          "t": "Using TileMaps",
+          "u": "https://docs.godotengine.org/en/stable/tutorials/2d/using_tilemaps.html"
+        },
+        {
+          "t": "Using TileSets",
+          "u": "https://docs.godotengine.org/en/stable/tutorials/2d/using_tilesets.html"
+        },
+        {
+          "t": "TileMapLayer class",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_tilemaplayer.html"
+        },
+        {
+          "t": "Making plugins",
+          "u": "https://docs.godotengine.org/en/stable/tutorials/plugins/editor/making_plugins.html"
+        }
+      ]
+    },
+    "unity": {
+      "approach": "The sim builds the grid; a BattleView paints it into one Tilemap per storey (Grid with isometric cell layout). Use a ScriptedImporter to turn LDtk/Tiled JSON or your own plan files into assets, and a custom EditorWindow to preview seeds. ScriptableObjects can hold tile palettes and art keys, but plans stay JSON so the sim can read them headless.",
+      "keyApis": [
+        "Grid + Tilemap (isometric)",
+        "TileBase / RuleTile",
+        "ScriptedImporter",
+        "EditorWindow",
+        "ScriptableObject"
+      ],
+      "docs": [
+        {
+          "t": "Tilemaps",
+          "u": "https://docs.unity3d.com/Manual/Tilemap.html"
+        },
+        {
+          "t": "Tilemap scripting API",
+          "u": "https://docs.unity3d.com/ScriptReference/Tilemaps.Tilemap.html"
+        },
+        {
+          "t": "Scripted Importers",
+          "u": "https://docs.unity3d.com/Manual/ScriptedImporters.html"
+        },
+        {
+          "t": "ScriptableObject",
+          "u": "https://docs.unity3d.com/Manual/class-ScriptableObject.html"
+        }
+      ]
+    },
+    "learn": [
+      {
+        "t": "RogueBasin: Basic BSP dungeon generation",
+        "u": "https://www.roguebasin.com/index.php/Basic_BSP_Dungeon_generation"
+      },
+      {
+        "t": "LDtk level editor docs",
+        "u": "https://ldtk.io/docs/"
+      },
+      {
+        "t": "Game Programming Patterns: Type Object",
+        "u": "https://gameprogrammingpatterns.com/type-object.html"
+      }
+    ],
+    "newb": [
+      "Think of a generator as a pipeline of small stages, each a pure function (grid in, grid out). Debug one stage at a time by drawing its output in the gallery.",
+      "BSP (binary space partition) = keep cutting a rectangle in two until the pieces are room-sized. The prototype uses a per-kind 'split tree': the same idea, but the cuts and room roles are authored, so a house always has a kitchen at the back.",
+      "A room graph is rooms as nodes and doors as edges. A spanning tree (every room reachable, no loops) plus a few extra doors gives believable flow; hubs (halls, corridors, lobbies) are the nodes most rooms open onto.",
+      "Data-driven means a new building is a JSON file, not new code. Code only grows when a plan needs a rule nothing else has (a stadium's tiered stands).",
+      "Seeded hash dice (hash of seed + tile + building + purpose) let you regenerate the same building forever without saving every cell; save only what the player changed."
+    ],
+    "pitfalls": [
+      "Consuming the shared RNG in the picker: adding one plan then reshuffles every other building in old saves. Use hash dice and a genVersion.",
+      "Placing furniture without a connectivity check: one sofa can wall off a room or block the only stair. Flood-fill after each piece.",
+      "Writing one bespoke generator per kind (the prototype's first wave did, then had to port 14 pickers into one). Build the shared registry and helpers first.",
+      "Making every map huge: pathing and LOS costs grow fast; cap maps by kind and only build floors someone can reach."
+    ],
+    "test": "xUnit: per kind × 200 seeds, assert all floor cells reachable from the front exit, stairs connect floors, containers/rooms per m² inside bands, same seed hashes identically, every PlanDef reachable by some pick and pinnable. Manual: open the gallery, scrub 20 seeds per kind and walk one raid per kind in the battle view.",
+    "size": "XL"
+  },
+  {
+    "id": "combat.stealth",
+    "title": "Stealth, vision cones, light & darkness, hearing",
+    "summary": "Sneak through a raid unseen: everyone human faces a direction with a 120° view cone, rooms are lit or dark (light switches, flashlights), noise from steps, shots and doors travels and alerts, takedowns knock out the unaware, and loud fights deafen people without ear pro.",
+    "whyHere": "Raids are the game's core loop; after the slice's 'the dead hear and chase', stealth is what makes a raid a choice between quiet and loud. It needs rooms (combat.interiors) and LOS (combat.los), and throwables, decoys and car alarms build on its noise model.",
+    "subsystems": [
+      "Facing & view cones",
+      "Awareness states (unaware, investigating, alert)",
+      "Noise model & hearing ranges",
+      "Light: day/night, indoor rooms, switches, flashlights",
+      "Sneak mode & detection ranges",
+      "Takedowns, tie-up, bodies raise alarms",
+      "Deafening & ear protection",
+      "Raid Heat meter"
+    ],
+    "sliceScope": "Facing + 120° cone for human units; three awareness states; noise events with a radius (step, door, shot) that pull unaware enemies to investigate for 3 turns; Sneak mode halves detection; day/night sight caps; a Subdue takedown on an unaware human (knock out 4–6 turns). Rooms lit or dark by a flag.",
+    "fullScope": "Prototype: takedown odds 30 + 2.5×Stealth with weapon/behind/cover/trait modifiers (5–95%); bodies seen within 5 tiles (3 at night) raise +6 Heat; dark windowless rooms and barns, light switches; suppressors and ammo change shot noise; deafening by exposure (bang + shooter − distance − ear pro) with dazed −aim; ear pro only works in its own slot; fog cuts sight by 4 (blizzard 3, min 4).",
+    "protoRefs": [
+      "prototype/src/sim/stealth.js",
+      "prototype/src/sim/vision.js",
+      "prototype/src/sim/indoorlight.js",
+      "prototype/src/sim/hearing.js",
+      "docs/features/combat.md"
+    ],
+    "tasks": {
+      "data": [
+        "content/noise.json: NoiseDef per source (step, run, door, window break, shot by calibre, suppressed shot, blast) with radius and Heat.",
+        "content/light.json: room light defaults by role (dark rooms), light sources (flashlight, lamp, flare) with radius and cone.",
+        "Unit fields: Facing (angle), Awareness, SightDay/SightNight, HearingMult, Stealth skill; Cell.LightLevel per floor.",
+        "Ear pro and helmet muffling values (shared with gear.armour)."
+      ],
+      "backend": [
+        "VisionService.CanSee(viewer, target): range by light and weather, then cone (HALF=60°), then LOS; cache per map revision.",
+        "NoiseBus: Emit(NoiseEvent{pos, floor, loudness, source}); listeners within range × hearing (− storey damping) go Investigate(pos, 3 turns) or Alert.",
+        "Awareness state machine per AI unit: Unaware → Suspicious → Investigating → Alert → (lost contact) Searching → back to patrol.",
+        "Takedown/Subdue/TieUp commands with odds; KnockedOut status with wake timer; BodySpotted rule raising group alarm + Heat.",
+        "Indoor light: rooms lit by day unless dark; LightSwitch command toggles a room; carried lights reveal the carrier.",
+        "Hearing: Deafen(bang) per listener → deaf turns / dazed aim; TickEars at turn start."
+      ],
+      "ui": [
+        "Draw each unit's facing and (for seen enemies) a translucent view-cone polygon; awareness icons (?, !).",
+        "Darkness overlay per room (CanvasModulate/2D light or a dim tile layer) and a light switch prop.",
+        "Noise ripple marker where a sound was heard; a Heat bar on the raid strip."
+      ]
+    },
+    "dataModel": "public enum Awareness { Unaware, Suspicious, Investigating, Alert, Searching }\npublic record NoiseDef(string Id, float Radius, int Heat, bool AlertsDead);\npublic readonly record struct NoiseEvent(Int2 Pos, int Floor, float Loudness, int SourceUnit);\npublic sealed class Senses { public float Facing; public Awareness State; public Int2? InvestigatePos; public int InvestigateTurns; public int DeafTurns; public bool Sneaking; }\npublic sealed class RoomLight { public int RoomId; public bool Lit; public bool HasSwitch; }",
+    "dependsOn": [
+      "combat.los",
+      "combat.ai",
+      "combat.actions",
+      "combat.interiors",
+      "dead.types"
+    ],
+    "connections": [
+      {
+        "to": "combat.ai",
+        "why": "Awareness states are the AI's top-level mode; a noise or a seen body changes what the AI does.",
+        "how": "AI reads Senses.State; NoiseBus/VisionService raise PerceptionChanged events the AI consumes in its turn.",
+        "godot": "No engine wiring; the view listens to an AwarenessChanged signal to swap icons.",
+        "unity": "View subscribes to a C# event AwarenessChanged."
+      },
+      {
+        "to": "combat.throwables",
+        "why": "Bottles, noise makers, flares and car alarms are noise/light sources that pull the unaware.",
+        "how": "Throwables call NoiseBus.Emit / LightService.AddSource with their def.",
+        "godot": "Signal NoiseEmitted → spawn a ripple scene.",
+        "unity": "Event → pooled ripple prefab."
+      },
+      {
+        "to": "gear.armour",
+        "why": "Helmets muffle hearing; ear pro prevents deafening; NVG and weapon lights change sight at night.",
+        "how": "Hearing and sight read EquipmentModifiers from the unit's worn items.",
+        "godot": "None beyond the inventory doll.",
+        "unity": "None beyond the inventory doll."
+      },
+      {
+        "to": "gear.gunbuilder",
+        "why": "Suppressors and the round fired set a shot's loudness.",
+        "how": "ShotNoise = GunStats.Noise × ammo noise × INDOOR; emitted on Fire.",
+        "godot": "Different shot sound by NoiseDef key.",
+        "unity": "Different AudioClip by NoiseDef key."
+      },
+      {
+        "to": "world.weather",
+        "why": "Night, fog and rain cut sight and muffle sound for every side alike.",
+        "how": "Battle snapshot of weather → SightCut and NoiseDamp applied in VisionService/NoiseBus.",
+        "godot": "Weather overlay scene reads the snapshot.",
+        "unity": "Weather overlay prefab reads the snapshot."
+      }
+    ],
+    "godot": {
+      "approach": "All perception math lives in the sim. Godot draws: a Polygon2D (or a custom _Draw) per visible enemy for its cone, CanvasModulate for night, and either PointLight2D with LightOccluder2D or simply a darker tile modulate per room for dark rooms. Awareness icons are small Label/TextureRect nodes over units updated by signals from SimHost.",
+      "keyApis": [
+        "Polygon2D / _Draw",
+        "CanvasModulate",
+        "PointLight2D",
+        "LightOccluder2D",
+        "AudioStreamPlayer2D"
+      ],
+      "docs": [
+        {
+          "t": "2D lights and shadows",
+          "u": "https://docs.godotengine.org/en/stable/tutorials/2d/2d_lights_and_shadows.html"
+        },
+        {
+          "t": "CanvasModulate",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_canvasmodulate.html"
+        },
+        {
+          "t": "Polygon2D",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_polygon2d.html"
+        },
+        {
+          "t": "C# signals",
+          "u": "https://docs.godotengine.org/en/stable/tutorials/scripting/c_sharp/c_sharp_signals.html"
+        }
+      ]
+    },
+    "unity": {
+      "approach": "Sim decides who sees whom; Unity only visualises. Draw cones with a generated Mesh or LineRenderer, use URP 2D lights (Global Light 2D dimmed at night, Spot Light 2D for flashlights) or a simple tint per room, and AudioSource for the noise cue. Avoid Physics2D raycasts for game rules: they would disagree with the sim's grid LOS.",
+      "keyApis": [
+        "Mesh / LineRenderer",
+        "URP 2D Lights (Light2D)",
+        "SpriteRenderer.color",
+        "AudioSource"
+      ],
+      "docs": [
+        {
+          "t": "LineRenderer",
+          "u": "https://docs.unity3d.com/ScriptReference/LineRenderer.html"
+        },
+        {
+          "t": "URP 2D lights introduction",
+          "u": "https://docs.unity3d.com/Packages/com.unity.render-pipelines.universal@17.0/manual/Lights-2D-intro.html"
+        },
+        {
+          "t": "Audio Source",
+          "u": "https://docs.unity3d.com/Manual/class-AudioSource.html"
+        }
+      ]
+    },
+    "learn": [
+      {
+        "t": "Red Blob Games: 2D visibility",
+        "u": "https://www.redblobgames.com/articles/visibility/"
+      },
+      {
+        "t": "Game Programming Patterns: State",
+        "u": "https://gameprogrammingpatterns.com/state.html"
+      },
+      {
+        "t": "Game Programming Patterns: Event Queue",
+        "u": "https://gameprogrammingpatterns.com/event-queue.html"
+      }
+    ],
+    "newb": [
+      "A state machine is a variable holding 'what mode am I in' plus rules for switching. Awareness (unaware → investigating → alert) is the classic stealth one; write it as an enum and a switch before reaching for a behaviour tree.",
+      "Perception is a filter chain: in range? (light, weather) → in the cone? → line of sight clear? Order the cheap checks first.",
+      "Noise as events: anything loud publishes a NoiseEvent; listeners decide if they heard it. This is the observer pattern, and it lets new noise sources plug in without touching the AI.",
+      "Same rules for every side (ADR 0001 AI parity): the enemy's flashlight gives them away exactly as yours does.",
+      "Show the player the numbers (cone, noise radius, takedown %): stealth feels fair only when it is readable."
+    ],
+    "pitfalls": [
+      "Using engine physics raycasts or lights to decide detection: results then depend on frame rate and art. Keep rules on the sim grid.",
+      "Instant full alert on any noise: players need a 'suspicious/investigate' middle state to recover from mistakes.",
+      "Forgetting floors: sound and sight across storeys need damping rules or the whole tower wakes up.",
+      "Recomputing every unit's vision every step on big maps; cache per map revision and only recompute movers."
+    ],
+    "test": "xUnit: cone edge cases (59° seen, 61° not), dark room halves range, a shot of loudness L alerts units inside radius and not outside, storey damping, takedown odds table, deafening thresholds with and without ear pro, determinism. Manual: sneak past a guard behind them, throw nothing, check the '?' then '!' icons and the Heat bar.",
+    "size": "L"
+  },
+  {
+    "id": "combat.terrain",
+    "title": "Elevation, high ground, weather in battle, soft cover & vaulting",
+    "summary": "The land and the weather shape a fight: shooting down a hill aims better, a hill is cover, a hollow sees only its rim, bushes and tents conceal but never stop bullets, waist-high cover can be vaulted, and the State Map's rain, fog and snow carry into the battle.",
+    "whyHere": "Once interiors and stealth exist, outdoor raids and base fights need the terrain rules to be interesting. It extends combat.los and combat.pathing with heights and move costs, and feeds the AI's cell scoring.",
+    "subsystems": [
+      "Height levels & climb cost",
+      "High-ground aim / cover modifiers",
+      "Hollows & sight limits",
+      "Soft cover (bushes, tents) concealment",
+      "Vaulting & crawling over half cover",
+      "Battle weather: sight cut, ground (mud, snow, ice)",
+      "AI terrain scoring"
+    ],
+    "sliceScope": "Integer height per cell (0–3); shooting down +5 aim a level (cap +15), up −5; a target one level up has half cover, two full; sight +2 tiles a level; climb cost in pathing. Vault over waist-high cover for +2 move cost. Fog from the tile's weather cuts sight by 4 (min 4).",
+    "fullScope": "Prototype: hollows see only the hollow and its rim (both ways); hills let you see into upper floors through windows; soft cover concealment shares (CONCEAL.IN / NEXT), tents tear and are mended; vaulting leaves you 'winded', the dead crawl over instead; mud +0.5 a step, snow +0.25 (deep +0.5), ice slips, rain jams guns ×1.3; puddles after 3 h rain; AI scores hills +2 a level and hollows −6.",
+    "protoRefs": [
+      "prototype/src/sim/highground.js",
+      "prototype/src/sim/softcover.js",
+      "prototype/src/sim/wxsight.js",
+      "docs/features/combat.md",
+      "docs/features/campaign.md"
+    ],
+    "tasks": {
+      "data": [
+        "Cell fields: Height (int), Ground (dirt, mud, snow, ice, water), Soft (bush, tent, none), CoverHeight (none, waist, full).",
+        "content/terrain-combat.json: HEIGHT {aimPerLevel 5, maxAim 15, sightPerLevel 2}, VAULT {cost, noise}, CONCEAL {in, next, minSee}, ground move costs.",
+        "content/weather-battle.json: sight cut by weather (fog 4, blizzard 3, min 4), jam multipliers, noise damp in rain."
+      ],
+      "backend": [
+        "Extend ShotOdds with height delta rows (High ground / Uphill / Hill cover) so the hit breakdown lists them.",
+        "Extend LOS with hollow rule and with 'see into an upper floor through a facing window' from a hill.",
+        "Pathing: per-step cost = ground + climb(height delta) + vault/crawl over waist cover; flag 'winded' after a vault.",
+        "Soft cover: Conceal(viewer, target) shrinks the viewer's effective sight and the notice range; never adds hit protection; loud shots reveal.",
+        "Weather snapshot at battle start (no dice): apply sight cut, jam multiplier, footstep noise.",
+        "AI TerrainScore(cell) for gun-users (+2 per level, −6 hollow)."
+      ],
+      "ui": [
+        "Raised tiles drawn with height offset (isometric stacking) and a height number in the hover.",
+        "Hit breakdown rows for height and concealment; VAULT and WINDED markers on the path preview.",
+        "Rain/fog/snow overlay (particles + tint), with an Off option."
+      ]
+    },
+    "dataModel": "public enum Ground { Dirt, Floor, Mud, Snow, DeepSnow, Ice, Water }\npublic enum SoftCover { None, Bush, Tent, TornTent }\npublic record HeightRules(int AimPerLevel, int MaxAim, int SightPerLevel, int FullCoverLevels);\npublic struct Cell { public sbyte Height; public Ground Ground; public SoftCover Soft; public CoverKind Cover; }\npublic sealed record BattleWeather(string Key, int SightCut, float JamMult, float NoiseDamp);",
+    "dependsOn": [
+      "combat.los",
+      "combat.pathing",
+      "combat.actions",
+      "core.weather"
+    ],
+    "connections": [
+      {
+        "to": "world.weather",
+        "why": "The battle's weather is the State Map tile's weather at that hour.",
+        "how": "Battle.Create reads WeatherService.At(tileId, hour) once into BattleWeather; no RNG.",
+        "godot": "WeatherOverlay scene picks particles by BattleWeather.Key.",
+        "unity": "WeatherOverlay prefab with ParticleSystems by key."
+      },
+      {
+        "to": "combat.stealth",
+        "why": "Concealment and height change who sees whom.",
+        "how": "VisionService asks TerrainRules for sight bonus and SoftCover.Conceal before the cone/LOS checks.",
+        "godot": "None.",
+        "unity": "None."
+      },
+      {
+        "to": "combat.ai",
+        "why": "The AI should seek hills and avoid hollows, and path round tall hills.",
+        "how": "AI utility adds TerrainScore(cell); distance fields use the same step cost function.",
+        "godot": "Debug overlay can tint cells by score.",
+        "unity": "Debug Gizmos tint cells by score."
+      },
+      {
+        "to": "base.basemap",
+        "why": "Base maps and raid maps share the relief layer (hills, hollows, ponds).",
+        "how": "One ReliefLayer generator in the sim writes Cell.Height for both.",
+        "godot": "Same height-offset tile drawing.",
+        "unity": "Same."
+      }
+    ],
+    "godot": {
+      "approach": "Draw height by offsetting each cell's sprite up by level × step in the isometric view (Y-sort on). Weather is a CanvasLayer overlay with GPUParticles2D for rain/snow and a ColorRect or shader for fog. All modifiers come from the sim so the hover card simply prints the breakdown list.",
+      "keyApis": [
+        "TileMapLayer (y-sort, texture origin)",
+        "GPUParticles2D",
+        "CanvasLayer",
+        "ShaderMaterial"
+      ],
+      "docs": [
+        {
+          "t": "2D particle systems",
+          "u": "https://docs.godotengine.org/en/stable/tutorials/2d/particle_systems_2d.html"
+        },
+        {
+          "t": "TileMapLayer class",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_tilemaplayer.html"
+        },
+        {
+          "t": "CanvasLayer",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_canvaslayer.html"
+        }
+      ]
+    },
+    "unity": {
+      "approach": "Use an isometric Z-as-Y Tilemap so height becomes tile Z, or offset SpriteRenderers per level. Rain and snow are ParticleSystems on a camera-attached prefab; fog a full-screen tinted sprite or URP post effect. Read every number from the sim.",
+      "keyApis": [
+        "Isometric Z as Y Tilemap",
+        "ParticleSystem",
+        "SpriteRenderer sorting",
+        "Volume (URP)"
+      ],
+      "docs": [
+        {
+          "t": "Tilemaps",
+          "u": "https://docs.unity3d.com/Manual/Tilemap.html"
+        },
+        {
+          "t": "Particle systems",
+          "u": "https://docs.unity3d.com/Manual/ParticleSystems.html"
+        },
+        {
+          "t": "Sprite Renderer",
+          "u": "https://docs.unity3d.com/Manual/class-SpriteRenderer.html"
+        }
+      ]
+    },
+    "learn": [
+      {
+        "t": "Red Blob Games: line drawing on a grid",
+        "u": "https://www.redblobgames.com/grids/line-drawing/"
+      },
+      {
+        "t": "Red Blob Games: A* with movement costs",
+        "u": "https://www.redblobgames.com/pathfinding/a-star/introduction.html"
+      }
+    ],
+    "newb": [
+      "Modifiers as a list: every rule (height, cover, concealment, weather) adds a named row to the hit breakdown. The total is just the sum, and the UI prints the rows. This keeps rules testable and explainable.",
+      "Movement cost per step is where most terrain rules live: mud, snow, climbing and vaulting are all 'this step costs more'. A* already handles weighted costs.",
+      "Soft cover vs hard cover: one hides you (affects being seen), the other stops bullets (affects being hit). Keep them separate fields.",
+      "Weather in battle has no dice: same tile and hour, same weather. Determinism makes bugs reproducible."
+    ],
+    "pitfalls": [
+      "Letting cover from height stack with adjacent-shooter rules: the prototype gives no height cover against an adjacent shooter.",
+      "A hollow that blocks sight one way but not the other: LOS must be symmetric unless you mean otherwise.",
+      "Weather effects that only touch the player's units; fog must cut every side's sight (AI parity)."
+    ],
+    "test": "xUnit: aim deltas at levels 0..4 (capped), half/full cover by level, hollow sees rim only, vault cost and winded, concealment never changes damage, fog cut with minimum. Manual: stand on a hill, compare hit % with the same shot from below; fight in fog and see both sides' sight shrink.",
+    "size": "M"
+  },
+  {
+    "id": "combat.doors",
+    "title": "Doors, windows, locks, barricades & shoving",
+    "summary": "Doors come in kinds (wood, glass, steel, security, roller, cell, vault) with hit points, sight and lock difficulty; windows open, lock, or break loudly; locks open by key, picks, force or tools; furniture can be shoved or carried to barricade, doors boarded up; people shove foes back or floor them, and the dead grapple.",
+    "whyHere": "Interiors generate door and window cells and furniture; this card gives them rules. Barricades and boarding are also the bridge to base defence (def.walls, def.sieges) later.",
+    "subsystems": [
+      "Door kinds & door state",
+      "Window state (open/locked/fixed/broken)",
+      "Locks, keys, picks & forcing",
+      "Shove / lift / carry furniture",
+      "Board up & tear down",
+      "Battering & breaking cells",
+      "Shove foe & grapple"
+    ],
+    "sliceScope": "Doors open/close (1 action), kinds wood/glass/steel with hp; locked doors opened by key (sure) or picks (odds, Heat +1); windows open/closed/broken (break = loud); shove one piece of furniture 1 tile for 2 actions; the dead batter doors and barricades by hp.",
+    "fullScope": "Prototype: 11 door kinds by archetype; lock tiers incl. safes, gun safes and steel security doors beyond makeshift picks; picks 55% + 4%/Stealth − 15%/difficulty step; boards (4 kg, from 30 wood + scrap) nailed for 2 actions; furniture catalogue of 237+ kinds with hp, kg and one/two-person carry; shove foe ~65% odds, floored chance, falls off walkways, through windows; grapples hold units (no move, surer bites); AI barricades when nothing is in sight.",
+    "protoRefs": [
+      "prototype/src/sim/windows.js",
+      "prototype/src/sim/locks.js",
+      "prototype/src/sim/barricade.js",
+      "prototype/src/sim/shoving.js",
+      "docs/features/combat.md"
+    ],
+    "tasks": {
+      "data": [
+        "content/doors.json: DoorKindDef (hp, seeThroughClosed, lockDifficulty, kickable, forceable, noise, art key).",
+        "content/locks.json: LockTierDef (difficulty, tools that work: key/picks/makeshift/crowbar/power tool, heat, noise).",
+        "Furniture fields reused from combat.interiors (hp, kg, carry, cover); BOARD and SHOVE constants; PUSH/GRIP odds tables.",
+        "Window state on cells: Open, Lock (none/locked/fixed), Broken, Known."
+      ],
+      "backend": [
+        "Commands: OpenDoor, CloseDoor, OpenWindow, BreakWindow, Climb, PickLock, ForceLock, UseKey with refusal reasons ('locked from inside').",
+        "Lock odds function shared by doors, containers, cars and boxes (one place for the numbers).",
+        "Shove/Lift/SetDown/Board/TearDown commands; containers move with their piece; connectivity check on set-down.",
+        "Damage to cells: BreakCell(cell, dmg) for dead battering, rams and blasts; a broken door becomes an open doorway.",
+        "ShoveFoe: odds, push-back via the normal move (traps fire), floored, falls off ledges/through windows; Grapple status on the held.",
+        "AI: barricade when idle and holding a building; dead prefer weak doors; anyone held shoves to break free."
+      ],
+      "ui": [
+        "A 'Doors & lights' action tray (open, close, pick, force, board, shove, lift) with odds and costs in tooltips.",
+        "Door/window tiles swap by state; boarded overlay; HELD and FLAT tags on units.",
+        "Shove chooser: highlight valid destination cells."
+      ]
+    },
+    "dataModel": "public record DoorKindDef(string Id, int Hp, bool SeeThrough, int LockDifficulty, bool Kickable, string ArtKey);\npublic enum WindowLock { None, Locked, Fixed }\npublic struct WindowState { public bool Open, Broken, Known; public WindowLock Lock; }\npublic sealed class DoorState { public string Kind = \"wood\"; public bool Open; public int Hp; public int? LockId; public bool Boarded; }\npublic sealed record LockAttempt(int Unit, int TargetCell, LockMethod Method, float Odds, int Heat);",
+    "dependsOn": [
+      "combat.interiors",
+      "combat.actions",
+      "combat.pathing",
+      "gear.items"
+    ],
+    "connections": [
+      {
+        "to": "combat.interiors",
+        "why": "Door kinds, locked rooms, windows and furniture are placed by the generator.",
+        "how": "Generator writes DoorState/WindowState/LockId on cells by the archetype's door style.",
+        "godot": "Tiles chosen from state on rebuild.",
+        "unity": "Same, via tile lookup by state."
+      },
+      {
+        "to": "combat.ai",
+        "why": "The dead batter the weakest way in; humans barricade and shove.",
+        "how": "Pathing treats closed doors/boards as passable with a 'batter' cost by hp; AI actions BatterCell, Barricade, ShoveFoe.",
+        "godot": "Hit flash/animation on Battered event.",
+        "unity": "Same on a C# event."
+      },
+      {
+        "to": "def.sieges",
+        "why": "Base defence reuses boards, battering, rams and breaking cells.",
+        "how": "Same BreakCell and DoorState APIs on the base map grid.",
+        "godot": "Shared door tile set.",
+        "unity": "Shared tile assets."
+      },
+      {
+        "to": "gear.condition",
+        "why": "Lock boxes and cases use the same lock tiers and tools.",
+        "how": "LockService.Odds(lockTier, tool, unit) used by both containers and boxes.",
+        "godot": "Same lock panel scene.",
+        "unity": "Same lock panel UXML."
+      }
+    ],
+    "godot": {
+      "approach": "Door and window visuals are tiles (or small scenes for animated doors) chosen from the sim cell state; rebuild only changed cells on a CellsChanged signal. The action tray is a HBoxContainer of Buttons generated from the sim's list of legal actions plus refusal reasons for tooltips.",
+      "keyApis": [
+        "TileMapLayer.SetCell",
+        "HBoxContainer / Button",
+        "Control.TooltipText",
+        "AnimationPlayer"
+      ],
+      "docs": [
+        {
+          "t": "TileMapLayer class",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_tilemaplayer.html"
+        },
+        {
+          "t": "Using containers",
+          "u": "https://docs.godotengine.org/en/stable/tutorials/ui/gui_containers.html"
+        },
+        {
+          "t": "C# signals",
+          "u": "https://docs.godotengine.org/en/stable/tutorials/scripting/c_sharp/c_sharp_signals.html"
+        }
+      ]
+    },
+    "unity": {
+      "approach": "Tilemap.SetTile per changed cell from a CellsChanged event; doors that animate can be prefab tiles. The tray is a UI Toolkit row of buttons built from the sim's legal actions; tooltips show odds and refusal text.",
+      "keyApis": [
+        "Tilemap.SetTile",
+        "UI Toolkit Button",
+        "UnityEvent / C# events"
+      ],
+      "docs": [
+        {
+          "t": "Tilemap scripting API",
+          "u": "https://docs.unity3d.com/ScriptReference/Tilemaps.Tilemap.html"
+        },
+        {
+          "t": "UI Toolkit",
+          "u": "https://docs.unity3d.com/Manual/UIElements.html"
+        },
+        {
+          "t": "UnityEvents",
+          "u": "https://docs.unity3d.com/Manual/UnityEvents.html"
+        }
+      ]
+    },
+    "learn": [
+      {
+        "t": "Game Programming Patterns: Command",
+        "u": "https://gameprogrammingpatterns.com/command.html"
+      }
+    ],
+    "newb": [
+      "Every interaction is a command with a 'can I?' check that returns a reason. The same check greys out the button, writes the tooltip, and stops the AI from cheating.",
+      "One odds function for every lock (doors, safes, cars, boxes) means one place to balance and one test file.",
+      "State on the cell (door open, boarded, hp) is plain data: it saves for free and renders by lookup.",
+      "Moving furniture changes the map: re-run pathing/LOS caches for the touched cells only (dirty flags)."
+    ],
+    "pitfalls": [
+      "Letting a shoved or set-down piece seal off part of the map; always flood-fill check.",
+      "Forgetting 'from which side': a locked window opens only from inside; boards can be nailed from either side.",
+      "Separate code paths for player and AI doors; use the same commands for both (AI parity)."
+    ],
+    "test": "xUnit: each door kind's hp/sight, pick odds table and clamps, key always works, window lock from inside only, shove refuses blocked cells, board then batter to 0 opens, grapple prevents move. Manual: barricade a door with shelves, watch the dead crawl over half cover and batter a boarded door.",
+    "size": "L"
+  },
+  {
+    "id": "combat.throwables",
+    "title": "Throwables, decoys, fire & car alarms",
+    "summary": "Thrown things change the fight: bottles, noise makers and firecrackers lure the unaware, flares light ground, smoke blinds, Molotovs start fires that spread and burn, pipe bombs and grenades blast and break light cover; car alarms pull the dead away for 8 turns.",
+    "whyHere": "Builds directly on the stealth noise/light model and the door/cell damage rules; gives players tools to manipulate the dead's senses before the special dead (with different senses) arrive in M5.",
+    "subsystems": [
+      "Throw arc, range & scatter (blind throws)",
+      "Lures & decoys by sense (noise, light, heat)",
+      "Fire cells, spread & burn-out",
+      "Smoke & flares",
+      "Blasts: area damage, cover destruction",
+      "Car alarms (fit, trigger, ring, silence)"
+    ],
+    "sliceScope": "Throw command (1 action, range 7–8) with landing scatter; bottle = noise lure (radius 6) that sends the unaware to investigate for 3 turns; Molotov = fire cells burning N turns that hurt and block; frag/pipe bomb = 1-tile radius 20–30 damage, breaks crates/fences.",
+    "fullScope": "Prototype: throw over walls without LOS if a teammate sees the cell (+15% scatter blind); lure radii 6/8/13 (bottle/noise maker/firecrackers, +6 Heat); flares light and lure; senses per dead type (runners noise, crawlers heat, screamers nothing); fire lures within 7; car alarms in 40–50% of civilian cars with live batteries, radius 16 for 8 turns, +10 Heat; breaking glass 40% trips one; AI throws at an armed car to drag the dead off.",
+    "protoRefs": [
+      "prototype/src/sim/throwables.js",
+      "prototype/src/sim/decoys.js",
+      "prototype/src/sim/caralarms.js",
+      "prototype/src/sim/stealth.js",
+      "docs/features/combat.md"
+    ],
+    "tasks": {
+      "data": [
+        "content/throwables.json: ThrowableDef (range, scatter, effect: lure|fire|smoke|flare|blast, radius, turns, damage, senses emitted, breaks).",
+        "Dead senses table (which stimuli each dead type follows) shared with dead.types / dead.specials.",
+        "Car alarm table by car model (chance, needs live battery) and break-glass chances per thrown item."
+      ],
+      "backend": [
+        "ThrowLanding(thrower, target, rng): aim-based scatter, blind-throw rules; returns landing cell.",
+        "Effects as small strategy classes (IThrowEffect.Apply(battle, cell)): Lure, Fire, Smoke, Flare, Blast.",
+        "Battle area effects lists (fires, smoke, flares) ticked once per round; fire spreads to flammable cells and burns tents/crates to rubble.",
+        "Decoy/stimulus system: stimuli with sense + strength; the dead pick the strongest stimulus they can sense; Shepherd aura ignores lures.",
+        "CarAlarm: fit at car creation (own hash die), Trip/Ring/Silence; ringing emits a stimulus each enemy turn; AI throw-at-car decision."
+      ],
+      "ui": [
+        "Throw targeting: arc preview, landing spread circle, 'through the window X%' over cars.",
+        "Fire/smoke/flare overlays (placeholder particles) and a blinking ALARM tag on a ringing car."
+      ]
+    },
+    "dataModel": "[Flags] public enum Sense { None = 0, Noise = 1, Light = 2, Heat = 4 }\npublic record ThrowableDef(string Id, int Range, float Scatter, string Effect, float Radius, int Turns, int[] Damage, Sense Emits);\npublic sealed record AreaEffect(string Kind, Int2 Cell, float Radius, int TurnsLeft);\npublic sealed record Stimulus(Int2 Pos, int Floor, Sense Sense, float Strength, int TurnsLeft);\npublic enum AlarmState { None, Armed, Ringing, Off }",
+    "dependsOn": [
+      "combat.stealth",
+      "combat.actions",
+      "combat.doors",
+      "gear.items"
+    ],
+    "connections": [
+      {
+        "to": "combat.stealth",
+        "why": "Lures are noise/light events; Heat rises with loud throws.",
+        "how": "Effects call NoiseBus.Emit and Stimuli.Add; stealth's investigate state consumes them.",
+        "godot": "Ripple scene on NoiseEmitted signal.",
+        "unity": "Ripple prefab on event."
+      },
+      {
+        "to": "dead.specials",
+        "why": "Each kind of dead follows different senses (crawlers heat, screamers none).",
+        "how": "DeadTypeDef.Senses flags filter which Stimulus a unit can follow.",
+        "godot": "None.",
+        "unity": "None."
+      },
+      {
+        "to": "travel.vehicles",
+        "why": "Car alarms live on found-car records that persist on the State Map.",
+        "how": "CarRecord.Alarm state saved with the car; battle reads/writes it.",
+        "godot": "Car panel shows alarm line.",
+        "unity": "Car panel shows alarm line."
+      },
+      {
+        "to": "combat.doors",
+        "why": "Blasts hit doors and break light cover; fire burns barricades.",
+        "how": "Blast effect calls BreakCell(cell, dmg) for cells in radius.",
+        "godot": "Cells rebuilt via CellsChanged.",
+        "unity": "Same."
+      }
+    ],
+    "godot": {
+      "approach": "Throw preview: a Line2D bezier arc from thrower to cursor and a circle for the scatter. Area effects are short-lived scenes (GPUParticles2D for smoke/fire, a PointLight2D for flares) spawned and freed from sim events; the sim says where and for how long.",
+      "keyApis": [
+        "Line2D",
+        "GPUParticles2D",
+        "PointLight2D",
+        "Tween",
+        "AudioStreamPlayer2D"
+      ],
+      "docs": [
+        {
+          "t": "Line2D",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_line2d.html"
+        },
+        {
+          "t": "2D particle systems",
+          "u": "https://docs.godotengine.org/en/stable/tutorials/2d/particle_systems_2d.html"
+        },
+        {
+          "t": "Tween",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_tween.html"
+        }
+      ]
+    },
+    "unity": {
+      "approach": "LineRenderer for the arc, a pooled ParticleSystem prefab per effect kind, a Light2D for flares. Spawn from sim events, despawn when the sim's effect list no longer contains them.",
+      "keyApis": [
+        "LineRenderer",
+        "ParticleSystem",
+        "Object pooling",
+        "AudioSource"
+      ],
+      "docs": [
+        {
+          "t": "LineRenderer",
+          "u": "https://docs.unity3d.com/ScriptReference/LineRenderer.html"
+        },
+        {
+          "t": "Particle systems",
+          "u": "https://docs.unity3d.com/Manual/ParticleSystems.html"
+        },
+        {
+          "t": "Audio Source",
+          "u": "https://docs.unity3d.com/Manual/class-AudioSource.html"
+        }
+      ]
+    },
+    "learn": [
+      {
+        "t": "Game Programming Patterns: Observer",
+        "u": "https://gameprogrammingpatterns.com/observer.html"
+      }
+    ],
+    "newb": [
+      "The strategy pattern: each effect kind is a tiny class with Apply(). Adding a new throwable is mostly new data plus maybe one new effect class.",
+      "Effects that last are entries in a list on the battle, ticked each round; drawing them is just drawing the list. Save and load come free.",
+      "Senses make the dead feel different without new AI code: a crawler following heat ignores your bottle, so the player has to think.",
+      "Every throw's randomness comes from the battle's seeded RNG, so replays and tests are reproducible."
+    ],
+    "pitfalls": [
+      "Fire that spreads forever: cap spread per round and give every cell a fuel value.",
+      "Lures that work on alert enemies who are already chasing you: the prototype only pulls the unaware (or the dead not within 2.5 tiles of their prey).",
+      "Particle effects driving rules (e.g. smoke blocking LOS by particles): the sim's smoke cells decide, the particles only show it."
+    ],
+    "test": "xUnit: scatter distribution bounds, blind throw rules, lure pulls only unaware within radius, fire burns out and spreads only to fuel, blast breaks crates not walls, car alarm rings 8 turns then Off forever. Manual: lure a group of walkers away from a door with a bottle, then with a car alarm.",
+    "size": "M"
+  },
+  {
+    "id": "combat.factions",
+    "title": "Third side, raiders vs the dead, parley, ally orders & retreat",
+    "summary": "Battles are not two-sided: neutrals and soldiers share the map, raiders and the dead fight each other, you can call out to other groups (truce, trade, recruit, fight together, with treachery), order allies around (they may refuse), sound the retreat, and set break-off policies for auto-resolved fights.",
+    "whyHere": "After the core tactics, this is what makes raids feel like a living world and prepares the hooks the AI groups (M6) plug into. It extends the slice's two-side turn loop to N sides with a foe matrix.",
+    "subsystems": [
+      "Sides, teams & foe matrix",
+      "Third side AI (neutral, military)",
+      "Crossfire: raiders vs the dead, heard-not-seen shots",
+      "Parley: groups, hostility, stances, cards",
+      "Treachery & grudges",
+      "Ally orders with refusal odds",
+      "Sound the retreat & break-off policies"
+    ],
+    "sliceScope": "A side/team model with a 'who fights whom' function; a neutral group that hides and defends itself; the dead attack raiders as well as you; 'Sound the retreat' (everyone tries to escape, carrying adjacent downed); a break-off policy (never/losing) for auto-resolve.",
+    "fullScope": "Prototype: hostility 0–100 per group → friendly/neutral/hostile stance; some hostile groups show as friendly (treachery); call out costs 1 action and a shout the dead hear (Heat by density); outcomes truce/trade/recruit/ally with Speech odds; broken truce = grudge for a month; ally orders within 5 tiles (attack, move, push, overwatch, hold, follow, cover, retreat) by Leadership; soldiers ignore you unless attacked; unseen shots marked within CROSS.HEARD tiles; auto-resolve in rounds with policies never/most/losing/blood.",
+    "protoRefs": [
+      "prototype/src/sim/thirdside.js",
+      "prototype/src/sim/parley.js",
+      "prototype/src/sim/allyorders.js",
+      "prototype/src/sim/breakoff.js",
+      "prototype/src/sim/crossfire.js"
+    ],
+    "tasks": {
+      "data": [
+        "Battle groups: BattleGroup { Key, FactionId?, Kind (neutral, military, raiders, party), Hostility, Stance, Treacherous, Grudge }.",
+        "content/parley.json: stance thresholds, option odds by Speech and hostility, shout radius by density, grudge length.",
+        "Ally order kinds and refusal weights; break-off policy enum and thresholds."
+      ],
+      "backend": [
+        "FoeMatrix: AreFoes(a, b) from sides + group stances; recomputed when a truce breaks or someone is hit.",
+        "Turn queue for N sides (player, enemy, third, dead) using combat.turns; each AI side runs the shared AI.",
+        "Parley commands (CallOut, Answer(option)) producing ParleyCard events; treachery timer; goodwill/grudge results out to the world after the battle.",
+        "AllyOrder command with refusal roll (Leadership, fought-together credit, danger, health); orders stored on the ally's AI as a goal.",
+        "SoundRetreat: per-unit escape odds, drag downed, battle ends as retreat; BreakOff policy in auto-resolve rounds.",
+        "Heard-not-seen: shots/blasts out of sight within range create ghost markers in the player's fog."
+      ],
+      "ui": [
+        "Group badges over units (Hostile, Truce, Allied, Leaving) and a chip per group on the raid strip.",
+        "Parley card (event card style) with options and odds; ally order radial/menu.",
+        "Ghost markers (SHOT?, BLAST?) in the fog."
+      ]
+    },
+    "dataModel": "public enum Side { Player, Enemy, Third, Dead }\npublic enum Stance { Friendly, Neutral, Hostile }\npublic sealed class BattleGroup { public string Key = \"\"; public int? FactionId; public int Hostility; public Stance Stance; public bool Treacherous, Truce, Allied; }\npublic enum AllyOrderKind { Attack, Move, Push, Overwatch, Hold, Follow, Cover, Retreat, OwnWay }\npublic enum BreakOffPolicy { Never, Most, Losing, Blood }",
+    "dependsOn": [
+      "combat.ai",
+      "combat.turns",
+      "combat.resolve",
+      "combat.stealth",
+      "surv.skills"
+    ],
+    "connections": [
+      {
+        "to": "groups.factions",
+        "why": "A real AI group's scavenging party can be on the map; goodwill changes carry back to the campaign.",
+        "how": "BattleGroup.FactionId; BattleResult.GoodwillDeltas applied by the faction system after the battle.",
+        "godot": "None beyond the results screen.",
+        "unity": "None beyond the results screen."
+      },
+      {
+        "to": "combat.ai",
+        "why": "Every non-player side runs the same AI, with goals set by orders and stances.",
+        "how": "AI reads FoeMatrix and an optional OrderGoal on the unit.",
+        "godot": "Debug label shows the goal.",
+        "unity": "Debug label shows the goal."
+      },
+      {
+        "to": "core.cards",
+        "why": "Parley uses the event-card UI and pause rules.",
+        "how": "Parley raises a CardRaised event with options; Answer is a command.",
+        "godot": "Card scene reused.",
+        "unity": "Card UXML reused."
+      },
+      {
+        "to": "combat.resolve",
+        "why": "Retreat, captives, shared hauls and break-off change battle results.",
+        "how": "BattleResult gains Retreated, AllyShare, BrokeOffAtRound fields.",
+        "godot": "Results screen shows them.",
+        "unity": "Results screen shows them."
+      }
+    ],
+    "godot": {
+      "approach": "Badges are small Label/PanelContainer nodes parented to unit views; the parley card reuses the event-card scene. Ally orders use a PopupMenu on right-click of an allied unit, built from the sim's list of allowed orders and their odds.",
+      "keyApis": [
+        "PopupMenu",
+        "PanelContainer",
+        "Label",
+        "Signals"
+      ],
+      "docs": [
+        {
+          "t": "PopupMenu",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_popupmenu.html"
+        },
+        {
+          "t": "UI index",
+          "u": "https://docs.godotengine.org/en/stable/tutorials/ui/index.html"
+        },
+        {
+          "t": "C# signals",
+          "u": "https://docs.godotengine.org/en/stable/tutorials/scripting/c_sharp/c_sharp_signals.html"
+        }
+      ]
+    },
+    "unity": {
+      "approach": "World-space badges as UI Toolkit labels positioned over units (or a world-space Canvas); a context menu built from the sim's allowed orders. Parley reuses the card window.",
+      "keyApis": [
+        "UI Toolkit",
+        "ContextualMenuManipulator",
+        "C# events"
+      ],
+      "docs": [
+        {
+          "t": "UI Toolkit",
+          "u": "https://docs.unity3d.com/Manual/UIElements.html"
+        },
+        {
+          "t": "UnityEvents",
+          "u": "https://docs.unity3d.com/Manual/UnityEvents.html"
+        }
+      ]
+    },
+    "learn": [
+      {
+        "t": "Game Programming Patterns: Command",
+        "u": "https://gameprogrammingpatterns.com/command.html"
+      }
+    ],
+    "newb": [
+      "Model 'who is an enemy of whom' as one function (a foe matrix), not as if-statements spread through combat code. Everything (targeting, overwatch, AI) asks the same function.",
+      "Hostility is a number; stance is a band of that number. Numbers move smoothly, bands give clear UI.",
+      "An order to an AI is just a goal it weighs, not remote control; that is why it can refuse.",
+      "Auto-resolve and tactical battle should agree on outcomes on average: test both on the same setups."
+    ],
+    "pitfalls": [
+      "Hard-coding two sides into the turn loop; generalise to a list of sides early.",
+      "Treachery that the player can never read: give tells (edging closer, a speaker's warning).",
+      "Forgetting the shout is noise: calling out should cost Heat and wake the dead."
+    ],
+    "test": "xUnit: foe matrix truth table, a hit flips a neutral group, broken truce sets grudge, parley odds by Speech, ally refusal odds, retreat ends battle with retreat result, break-off triggers after rounds 1–2 per policy. Manual: raid a site with a neutral group, call out, make a truce, then betray it and see the grudge.",
+    "size": "L"
+  },
+  {
+    "id": "combat.medics",
+    "title": "Downed state, battlefield medics, non-lethal & taking people alive",
+    "summary": "At 0 health people go down and bleed out instead of dying at once: anyone can stabilize or drag them, a medic with a kit heals and revives, enemies do the same; tasers, stun batons, pepper spray and rubber rounds knock people out, and the knocked out or tied up become prisoners.",
+    "whyHere": "The slice has simple wounds and death; this makes losses recoverable and creates captives, which the medical (health.medical) and prisoner systems (groups.conflict) need. It reuses stealth's knock-out and tie-up.",
+    "subsystems": [
+      "Downed & bleed-out timer",
+      "Stabilize, heal, revive",
+      "Drag & carry the downed",
+      "Medic AI (rescue planning)",
+      "Non-lethal weapons & knock-out",
+      "Finish, capture & prisoners"
+    ],
+    "sliceScope": "Downed at 0 hp with a bleed-out countdown; Stabilize (meds or hands with odds), Drag (half speed); Revive with a med kit (2 actions, odds by Medicine); the downed left at the end die unless carried out; knocked-out enemies tied up become prisoners.",
+    "fullScope": "Prototype: medic = anyone with a kit; Heal 1 action, Revive 2 (odds + Medicine + kit bonus, max cap), revived at 25–40% hp and shaken; self-stabilize with a tourniquet; enemy medics in ~1 group in 5; raiders finish or drag your downed off as captives; taser 4 tiles, 2 cartridges, stun then −20 aim, knock-out under 40%; your knocked-out wake 2–4 turns later at 15% hp; the dead ignore tasers and spray.",
+    "protoRefs": [
+      "prototype/src/sim/medics.js",
+      "prototype/src/sim/nonlethal.js",
+      "prototype/src/sim/stealth.js",
+      "docs/features/health.md"
+    ],
+    "tasks": {
+      "data": [
+        "content/medics.json: HEAL, REVIVE {base, perMedicine, perKit, max, stabBonus}, HANDS stabilize odds, BLEED turns, SHAKEN aim.",
+        "content/nonlethal.json: taser, stun baton, pepper spray, beanbag/rubber ammo (effect, range, charges).",
+        "Unit status fields: Down, Stabilized, BleedTurns, KnockedOut, WakeTurns, TiedUp, Carried."
+      ],
+      "backend": [
+        "Damage pipeline: lethal → Down (not dead) for humans; non-lethal → KnockedOut; Finish command makes it final.",
+        "Commands: Stabilize, Heal, Revive, Drag/PickUp/PutDown, TieUp, Finish, SelfStabilize; refusal reasons.",
+        "Bleed tick at side's turn start; wake timers; revived = shaken modifier.",
+        "Medic AI: assign one rescuer per downed ally, drag to the cell with most cover / fewest eyes, revive there; keep a med reserve.",
+        "Battle end: stabilized/tied enemies → captives; your unrecovered downed → dead or taken captive by the enemy group."
+      ],
+      "ui": [
+        "Downed figure lying + bleed countdown chip; KO and TIED tags.",
+        "Medic buttons with odds; drag mode path preview at half speed."
+      ]
+    },
+    "dataModel": "public enum Vital { Up, Down, KnockedOut, Dead }\npublic sealed class Condition { public Vital Vital; public bool Stabilized, TiedUp, Shaken; public int BleedTurns, WakeTurns; public int? CarriedBy; }\npublic record ReviveRules(int Base, int PerMedicine, int PerKitBonus, int Max, int StabBonus);\npublic record NonLethalDef(string Id, int Range, int Charges, string Effect, float KoBelowHp);",
+    "dependsOn": [
+      "surv.health",
+      "combat.actions",
+      "combat.stealth",
+      "combat.ai"
+    ],
+    "connections": [
+      {
+        "to": "health.medical",
+        "why": "Wounds after the battle feed hospital care; the kit's bonus and Medicine skill are shared.",
+        "how": "BattleResult lists each survivor's wounds/stabilized state; health system applies them.",
+        "godot": "Results screen.",
+        "unity": "Results screen."
+      },
+      {
+        "to": "groups.conflict",
+        "why": "Captives taken on either side become prisoners, ransom and rescue raids.",
+        "how": "BattleResult.Captives (ids + group) → PrisonerService.Take.",
+        "godot": "None.",
+        "unity": "None."
+      },
+      {
+        "to": "combat.resolve",
+        "why": "Auto-resolve must model downed/rescued rates comparable to the tactical fight.",
+        "how": "AutoResolve uses the same Down/Bleed rules abstractly per round.",
+        "godot": "None.",
+        "unity": "None."
+      },
+      {
+        "to": "combat.factions",
+        "why": "Raiders and zealots finish or drag off your downed; soldiers don't.",
+        "how": "Group kind flags (FinishesDowned, TakesCaptives) read by the AI.",
+        "godot": "None.",
+        "unity": "None."
+      }
+    ],
+    "godot": {
+      "approach": "Downed units switch to a lying sprite (AnimatedSprite2D frame or rotated placeholder) with a small countdown Label. Medic actions appear in the action bar only when the sim lists them as legal.",
+      "keyApis": [
+        "AnimatedSprite2D",
+        "Label",
+        "TextureProgressBar"
+      ],
+      "docs": [
+        {
+          "t": "AnimatedSprite2D",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_animatedsprite2d.html"
+        },
+        {
+          "t": "TextureProgressBar",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_textureprogressbar.html"
+        }
+      ]
+    },
+    "unity": {
+      "approach": "Swap to a lying sprite or Animator state on a UnitDowned event; a world-space label for the bleed timer. Action bar built from the sim's legal actions.",
+      "keyApis": [
+        "Animator",
+        "SpriteRenderer",
+        "UI Toolkit"
+      ],
+      "docs": [
+        {
+          "t": "Animator",
+          "u": "https://docs.unity3d.com/ScriptReference/Animator.html"
+        },
+        {
+          "t": "UI Toolkit",
+          "u": "https://docs.unity3d.com/Manual/UIElements.html"
+        }
+      ]
+    },
+    "learn": [],
+    "newb": [
+      "'Downed' is a state, not a number: health 0 plus a timer. Adding states (down, knocked out, tied) is easier than special-casing hp values.",
+      "One damage pipeline: every hit goes through the same function that decides lethal vs non-lethal vs armour. New weapons then just set flags.",
+      "AI rescue is a small planner: pick a rescuer, pick a safe cell, then act. Score options; don't hard-code paths."
+    ],
+    "pitfalls": [
+      "Letting the dead be knocked out by tasers; they have no consciousness in this game.",
+      "Revive loops that make death meaningless: costs (meds, kit uses, shaken) must bite.",
+      "Forgetting enemies go down too; then 'finish' and capture rules are missing for half the units."
+    ],
+    "test": "xUnit: 0 hp → Down, bleed-out at BLEED turns, stabilize stops bleed, revive odds formula and cap, taser KO under 40%, dead immune, end-of-battle captives list. Manual: let a survivor go down, drag them to cover, revive with a kit.",
+    "size": "M"
+  },
+  {
+    "id": "combat.vehicles",
+    "title": "Vehicles in battle & siege kit",
+    "summary": "The team's vehicle is on the raid map: board, drive, ram through people and light obstacles, man a Humvee turret; raiders can bring their own Humvee. Siege kit (ladders, battering rams, frag grenades) lets attackers go over and through walls.",
+    "whyHere": "Needs travel.vehicles (fleet, condition) and the tactical map's cells and damage rules; it prepares def.sieges where raiders assault bases with ladders and rams.",
+    "subsystems": [
+      "Vehicle as a multi-cell unit",
+      "Seats, board & disembark",
+      "Driving & ramming (wear by obstacle)",
+      "Turret gunner",
+      "Enemy vehicle AI",
+      "Siege ladders & rams",
+      "Wear settled to the campaign"
+    ],
+    "sliceScope": "The team's car parked on the map as a multi-cell blocker and cover; Board/Disembark; Drive along a path (no shooting while driving); ramming people and fences with condition wear settled after the battle; extraction from the vehicle zone.",
+    "fullScope": "Prototype: cars 2×3–4 cells; ramming hits 14–28 (the dead 20–40), wear per obstacle (tank trap 12, barricade 8, fence 2...); walls, trees, cars and water stop it; gunner actions (shoot, turret, reload, unjam, overwatch); a raid can bring an enemy Humvee driven on its turn; ladders make a wall climbable, defenders push them off; rams batter gates; groups bring only kit from their own arsenal.",
+    "protoRefs": [
+      "prototype/src/sim/combat.js",
+      "prototype/src/sim/siege.js",
+      "prototype/src/sim/vehicles.js",
+      "prototype/src/sim/foundcars.js",
+      "docs/features/combat.md"
+    ],
+    "tasks": {
+      "data": [
+        "VehicleTypeDef additions: footprint w×h, seats, turret, ram damage, armour/glass upgrades (from travel.vehicles).",
+        "content/ramming.json: wear per cell kind and what each becomes (rubble, open).",
+        "content/siege.json: ladder (slow, climb), ram (damage to doors/gates), grenade link to throwables."
+      ],
+      "backend": [
+        "BattleVehicle entity occupying cells; placement that never walls off ground (flood check).",
+        "Commands: Board, Disembark, Drive(path), Ram, ManTurret, PlaceLadder, PushLadder, Ram(gate).",
+        "Driving path uses its own cost map (no doors, no stairs, rammable cells allowed).",
+        "Enemy vehicle turn (drive to a firing spot, gunner fires) via the shared AI.",
+        "SettleVehicle at battle end: condition − wear, damage to the campaign record."
+      ],
+      "ui": [
+        "Vehicle drawn as one placeholder sprite over its cells, facing by heading; seat icons.",
+        "Drive mode path preview with RAM markers on rammed cells; ladder overlay on walls."
+      ]
+    },
+    "dataModel": "public sealed class BattleVehicle { public int Id, VehicleRecordId; public RectI Cells; public int Heading; public int? Driver, Gunner; public List<int> Riders = new(); public int Wear; }\npublic record RamRule(string CellKind, int Wear, string Becomes);\npublic record SiegeKitDef(string Id, int SlowTiles, int ClimbCost, int DoorDamage);",
+    "dependsOn": [
+      "travel.vehicles",
+      "combat.map",
+      "combat.pathing",
+      "combat.doors"
+    ],
+    "connections": [
+      {
+        "to": "travel.vehicles",
+        "why": "The battle vehicle is the campaign vehicle: condition, fuel, upgrades and cargo.",
+        "how": "BattleVehicle.VehicleRecordId; SettleVehicle writes wear back after the battle.",
+        "godot": "None beyond the vehicle panel.",
+        "unity": "None beyond the vehicle panel."
+      },
+      {
+        "to": "def.sieges",
+        "why": "Raids on your base use ladders and rams against your walls.",
+        "how": "Same PlaceLadder/Ram commands on the base map; AI siege planner uses them.",
+        "godot": "Shared overlays.",
+        "unity": "Shared overlays."
+      },
+      {
+        "to": "groups.factions",
+        "why": "Attackers bring only kit and vehicles their group owns (AI parity).",
+        "how": "Arsenal.PackRaidKit(factionId) decides ladders, rams, grenades, Humvee.",
+        "godot": "None.",
+        "unity": "None."
+      },
+      {
+        "to": "combat.doors",
+        "why": "Rams and ramming break doors, gates and barricades.",
+        "how": "Ram calls BreakCell with DoorDamage.",
+        "godot": "Cells rebuilt on change.",
+        "unity": "Same."
+      }
+    ],
+    "godot": {
+      "approach": "A Vehicle scene (Sprite2D + seat markers) positioned from the sim's cells and heading; Tween moves it cell to cell for animation. In isometric view, give it a y-sort origin at its back cell so units sort correctly.",
+      "keyApis": [
+        "Node2D (y_sort_enabled)",
+        "Sprite2D",
+        "Tween",
+        "Path2D (preview)"
+      ],
+      "docs": [
+        {
+          "t": "Tween",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_tween.html"
+        },
+        {
+          "t": "Path2D",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_path2d.html"
+        },
+        {
+          "t": "Sprite2D",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_sprite2d.html"
+        }
+      ]
+    },
+    "unity": {
+      "approach": "A vehicle prefab with SpriteRenderer and sorting by its back cell; move it with a coroutine or tween library cell to cell. All collisions and ramming are decided in the sim, not by Rigidbody2D.",
+      "keyApis": [
+        "SpriteRenderer sortingOrder",
+        "Coroutines",
+        "Prefab"
+      ],
+      "docs": [
+        {
+          "t": "Sprite Renderer",
+          "u": "https://docs.unity3d.com/Manual/class-SpriteRenderer.html"
+        },
+        {
+          "t": "Coroutines",
+          "u": "https://docs.unity3d.com/Manual/Coroutines.html"
+        }
+      ]
+    },
+    "learn": [],
+    "newb": [
+      "A multi-cell unit is still one entity with a rectangle; every 'is this cell blocked?' check asks the occupancy grid, which the vehicle fills.",
+      "Don't use the physics engine for a turn-based game: it isn't deterministic and won't match the sim. Movement is a list of cells.",
+      "Campaign state vs battle state: copy what the battle needs in, write only results back out (wear, damage, who rode)."
+    ],
+    "pitfalls": [
+      "Parking a car where it blocks the only street exit; check reachability after placement.",
+      "Letting drivers shoot while driving or ramming through walls; spell the stop rules out in data."
+    ],
+    "test": "xUnit: vehicle placement never reduces reachable area, ram wear table applied, walls stop driving, wear settles to the record, ladder makes wall climbable and push removes it. Manual: drive through a fence and a group of walkers, check the vehicle's condition after extraction.",
+    "size": "L"
+  },
+  {
+    "id": "gear.ballistics",
+    "title": "Physical rounds, magazines, fire modes, jams & suppression",
+    "summary": "Ammo is real: rounds by calibre and type live as ordered stacks in guns and magazines, a Reload draws only on what the shooter carries (pocket/rig 1 action, pack 2), fire modes (single, burst, auto) roll each round, guns jam by condition, ammo and weather, suppressing fire pins a cone, and rounds can over-penetrate.",
+    "whyHere": "The slice has simple ammo counts (gear.weapons). Once interiors and stealth make raids long, ammo scarcity and reload choices become the core tension; armour and the gun builder both need this round-level model.",
+    "subsystems": [
+      "Calibres & ammo types",
+      "Round stacks (firing order)",
+      "Magazines as items",
+      "Reload sources & costs",
+      "Fire modes & recoil",
+      "Jams & misfires",
+      "Suppression & over-penetration"
+    ],
+    "sliceScope": "Calibre + type per round; a gun's loaded rounds and spare magazines as stacks; Reload by magazine swap (rig/pocket 1 action, pack 2) or loose rounds up to 6; single/burst/auto with per-round hit rolls; a jam chance by gun condition with an Unjam action; rounds left in guns saved after battle.",
+    "fullScope": "Prototype: ~220 gun rows and ~220 attachment rows; rounds a_<calibre>_<type> incl. handloads; mixed magazines in any order; jams cap 12% (stovepipe 70% 1 action, double feed 25% 2, hard 5%), ×(1 + wear), rain/snow ×1.3, storm ×1.5, old ammo ×3; revolvers/pumps/bolts misfire instead; suppression −20 aim in a 25° cone (32° auto), range opt+8, 1 turn; over-penetration ×0.6 dmg up to 8 tiles; out of a fight reload/unload free.",
+    "protoRefs": [
+      "prototype/src/sim/roundstack.js",
+      "prototype/src/sim/mags.js",
+      "prototype/src/sim/gunfire.js",
+      "docs/reload-rules.md",
+      "docs/weapons-overhaul-plan.md"
+    ],
+    "tasks": {
+      "data": [
+        "content/ammo.json: CalibreDef and AmmoTypeDef (damage ×, pen, aim, noise, jam ×, nonlethal, overpen by calibre).",
+        "Gun fields: calibre, feed (box, tube, cylinder, break, belt), capacity, modes {single, burst, auto: rounds, aim}, recoil, misfire platform.",
+        "MagazineDef: compatible guns, capacity, reload cost by carry place.",
+        "Jam tables (kinds, odds, actions) and SUPPRESS / OVERPEN constants."
+      ],
+      "backend": [
+        "RoundStack value type: Push/Pop/Merge runs, Count, Chamber; unit tests first.",
+        "Reload planner: list options from the shooter's carried items only, cost by place; apply moves rounds physically.",
+        "Fire(unit, target, mode): take rounds off the top, each round its own hit roll with recoil, chamber round decides damage/noise.",
+        "Jam roll per trigger pull: quality × condition × ammo × weather; Unjam action by kind.",
+        "Suppress action: cone of cells, −aim and 'pinned' to units inside for 1 turn; overpen line trace past the target.",
+        "Out-of-fight item actions: reload/unload/swap magazines free; battle end writes stacks back to items."
+      ],
+      "ui": [
+        "Rounds badge on guns/magazines; a reload picker (magazines and stacks, firing order up/down).",
+        "Fire mode toggle and per-mode hit % in the action bar; JAMMED tag and Unjam button; suppression cone preview."
+      ]
+    },
+    "dataModel": "public readonly record struct RoundRun(string AmmoKey, int Count);\npublic sealed class RoundStack { public List<RoundRun> Runs = new(); public string? Chamber => Runs.Count > 0 ? Runs[0].AmmoKey : null; }\npublic record AmmoTypeDef(string Key, string Calibre, float DmgMult, int Pen, int Aim, float Noise, float JamMult);\npublic record FireMode(string Name, int Rounds, int Aim);\npublic sealed class MagazineItem : Item { public string MagDefId = \"\"; public RoundStack Stack = new(); }",
+    "dependsOn": [
+      "gear.weapons",
+      "gear.items",
+      "combat.actions"
+    ],
+    "connections": [
+      {
+        "to": "gear.armour",
+        "why": "The round fired sets penetration against armour class.",
+        "how": "Hit pipeline passes AmmoTypeDef.Pen into ArmourService.Resolve.",
+        "godot": "None.",
+        "unity": "None."
+      },
+      {
+        "to": "combat.stealth",
+        "why": "The chamber round and suppressor set shot noise.",
+        "how": "Fire emits NoiseEvent(loudness from gun stats × ammo).",
+        "godot": "Shot sound by key.",
+        "unity": "Shot sound by key."
+      },
+      {
+        "to": "ui.inventory",
+        "why": "Loading magazines, unloading, swapping happen in the inventory window.",
+        "how": "Item actions as commands (LoadMag, UnloadMag, InsertMag) with refusal text.",
+        "godot": "Drag-and-drop via Control._GetDragData/_DropData.",
+        "unity": "UI Toolkit drag manipulators."
+      },
+      {
+        "to": "econ.crafting",
+        "why": "A reloading bench makes handloads from brass, powder and primers.",
+        "how": "Recipe outputs AmmoTypeDef '…_hand' with its own quality.",
+        "godot": "Crafting UI lists it.",
+        "unity": "Same."
+      }
+    ],
+    "godot": {
+      "approach": "No engine logic: the reload picker is a PopupPanel with an ItemList or VBoxContainer of rows (magazine, rounds, cost) and up/down buttons. Fire mode is a toggle button group. Drag rounds onto magazines in the inventory using Control drag-and-drop virtuals.",
+      "keyApis": [
+        "PopupPanel",
+        "ItemList",
+        "ButtonGroup",
+        "Control._GetDragData / _DropData"
+      ],
+      "docs": [
+        {
+          "t": "ItemList",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_itemlist.html"
+        },
+        {
+          "t": "Control",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_control.html"
+        },
+        {
+          "t": "UI index",
+          "u": "https://docs.godotengine.org/en/stable/tutorials/ui/index.html"
+        }
+      ]
+    },
+    "unity": {
+      "approach": "Build the picker with UI Toolkit (ListView of options, buttons to reorder). Drag-and-drop between inventory slots with UI Toolkit pointer manipulators. All counts come from the sim.",
+      "keyApis": [
+        "UI Toolkit ListView",
+        "PointerManipulator",
+        "UXML / USS"
+      ],
+      "docs": [
+        {
+          "t": "UI Toolkit",
+          "u": "https://docs.unity3d.com/Manual/UIElements.html"
+        },
+        {
+          "t": "ListView API",
+          "u": "https://docs.unity3d.com/ScriptReference/UIElements.ListView.html"
+        }
+      ]
+    },
+    "learn": [
+      {
+        "t": "Red Blob Games: damage rolls",
+        "u": "https://www.redblobgames.com/articles/probability/damage-rolls.html"
+      },
+      {
+        "t": "Microsoft Learn: record types",
+        "u": "https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/builtin-types/record"
+      }
+    ],
+    "newb": [
+      "A stack of runs ([{type, count}]) is compact and keeps order: 5 hollow points then 10 FMJ is two entries, not 15 objects.",
+      "Write the RoundStack and reload planner as pure functions with heavy unit tests before touching UI; most bugs here are off-by-one rounds.",
+      "Physical ammo only for your side at first is fine (the prototype keeps enemies on simpler rules); parity can come later, but write it down.",
+      "Each round of a burst rolls separately with growing recoil: that is what makes bursts strong up close and wasteful far away."
+    ],
+    "pitfalls": [
+      "Duplicating rounds: a reload must remove rounds from the source item in the same operation.",
+      "Reloading from the team's bags in a fight; the rule is only what the shooter carries.",
+      "Floating-point counts for rounds; keep them ints."
+    ],
+    "test": "xUnit: stack push/pop/merge, mixed magazine fires in order, reload costs by place, 6-round loose cap, jam odds within cap and multipliers, misfire guns never jam, burst uses N rounds, suppression cone membership, battle-end writeback. Manual: load a magazine with mixed rounds, fire, check the chamber round's effect in the log.",
+    "size": "L"
+  },
+  {
+    "id": "gear.gunbuilder",
+    "title": "Attachments & gun builder",
+    "summary": "Tarkov-style attachments (sights, mounts, muzzle devices, magazines, stocks, grips, rails, lights, lasers, bipods, slings) fit into a gun's slots and change aim, range, damage, noise, capacity, weight, jam rate and value; the gun builder screen fits them; guns can come factory-fitted with finishes and paint.",
+    "whyHere": "Needs gear.ballistics (capacity, noise, jam) and a working inventory UI. It is a pure gear/data layer, so it can be built once tactics are deep enough for the differences to matter.",
+    "subsystems": [
+      "Slot schema per gun platform",
+      "Attachment defs & compatibility",
+      "Stat aggregation (GunStats)",
+      "Factory-fitted guns & finishes",
+      "Builder screen (fit/remove, compare)",
+      "Part finds in loot"
+    ],
+    "sliceScope": "Gun slots (sight, muzzle, magazine, stock, underbarrel) with compatibility tags; 10–15 attachments; GunStats.Compute(gun) summing mods (aim, close aim, optimal range, noise ×, capacity, weight, jam ×); a simple builder window with before/after stats.",
+    "fullScope": "Prototype: ~220 attachment rows across sights, mounts, muzzles (suppressors noise ↓ but jam ×1.2–1.4, makeshift oil filter jam ×1.5), magazines (drums ×1.5 jam), stocks, grips, rails, lights (night aim within 6 tiles), lasers, bipods (rested aim), slings; attachments are items (looted, traded, weight and value ride on the gun); factory-fitted variants; finishes and paint; one GunStats function read by combat, builder and tooltips.",
+    "protoRefs": [
+      "prototype/src/sim/gunmods.js",
+      "prototype/src/sim/gunstats.js",
+      "prototype/src/sim/data-gunmods.js",
+      "prototype/src/ui/gunbuilder.js",
+      "docs/features/gear.md"
+    ],
+    "tasks": {
+      "data": [
+        "content/gunmods.json: AttachmentDef (slot, fits tags, stat deltas, requires slot e.g. rail/mount, art key).",
+        "Gun platform slot schemas (which slots, which tags they accept, built-in parts).",
+        "Factory-fit tables (variant guns with preset parts) and finish/paint list.",
+        "Part loot weights by site theme (gun stores, military)."
+      ],
+      "backend": [
+        "Compatibility: CanFit(gun, part, slot) with reasons; nested slots (a rail on a handguard holds a light).",
+        "GunStats.Compute(gun, ammo) = base + Σ part deltas, multiplicative fields multiplied; the ONLY stat reader.",
+        "Fit/Remove commands (free at base, cost actions in a fight or disallowed); weight and value include parts.",
+        "Save format: item.Mods as slot → item, recursive."
+      ],
+      "ui": [
+        "Builder window: gun picture placeholder, slot list, compatible parts from inventory/stores, stat bars with deltas.",
+        "Paint/finish picker (placeholder colour swatches)."
+      ]
+    },
+    "dataModel": "public record AttachmentDef(string Id, string Slot, string[] Fits, StatDelta Delta, string[] ProvidesSlots, string ArtKey);\npublic record StatDelta(int Aim = 0, int CloseAim = 0, float OptRange = 0, float NoiseMult = 1, int Capacity = 0, float JamMult = 1, float Kg = 0, int Value = 0);\npublic sealed class GunItem : Item { public Dictionary<string, Item> Mods = new(); public string? Finish; }\npublic static class GunStats { public static Stats Compute(GunItem g, AmmoTypeDef? load) => default; }",
+    "dependsOn": [
+      "gear.ballistics",
+      "gear.weapons",
+      "ui.inventory"
+    ],
+    "connections": [
+      {
+        "to": "gear.ballistics",
+        "why": "Capacity, jam rate and noise are attachment-driven.",
+        "how": "Ballistics reads GunStats.Compute, never raw gun rows.",
+        "godot": "None.",
+        "unity": "None."
+      },
+      {
+        "to": "combat.stealth",
+        "why": "Suppressors and lights change noise and night sight.",
+        "how": "GunStats exposes NoiseMult, NightAim; stealth reads them.",
+        "godot": "None.",
+        "unity": "None."
+      },
+      {
+        "to": "gear.condition",
+        "why": "Attachments are items with condition and value; repairs and trade include them.",
+        "how": "Item value/weight walk the Mods tree.",
+        "godot": "None.",
+        "unity": "None."
+      },
+      {
+        "to": "gear.loot",
+        "why": "Parts are found by site theme.",
+        "how": "Loot tables reference AttachmentDef ids.",
+        "godot": "None.",
+        "unity": "None."
+      }
+    ],
+    "godot": {
+      "approach": "The builder is a Control scene: a GridContainer of slot buttons around a TextureRect gun, a Tree or ItemList of compatible parts, and ProgressBars for stats with a delta label. Every click sends a command and redraws from the sim's GunStats.",
+      "keyApis": [
+        "Control",
+        "GridContainer",
+        "Tree",
+        "ProgressBar",
+        "TextureRect"
+      ],
+      "docs": [
+        {
+          "t": "Using containers",
+          "u": "https://docs.godotengine.org/en/stable/tutorials/ui/gui_containers.html"
+        },
+        {
+          "t": "Tree",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_tree.html"
+        },
+        {
+          "t": "UI index",
+          "u": "https://docs.godotengine.org/en/stable/tutorials/ui/index.html"
+        }
+      ]
+    },
+    "unity": {
+      "approach": "A UI Toolkit window (UXML layout, USS styling) with slot buttons, a ListView of compatible parts and ProgressBars for stats. Bind to sim data by refreshing on events rather than two-way binding.",
+      "keyApis": [
+        "UI Toolkit (UXML/USS)",
+        "ListView",
+        "ProgressBar"
+      ],
+      "docs": [
+        {
+          "t": "UI Toolkit",
+          "u": "https://docs.unity3d.com/Manual/UIElements.html"
+        },
+        {
+          "t": "ListView API",
+          "u": "https://docs.unity3d.com/ScriptReference/UIElements.ListView.html"
+        }
+      ]
+    },
+    "learn": [
+      {
+        "t": "Game Programming Patterns: Component",
+        "u": "https://gameprogrammingpatterns.com/component.html"
+      }
+    ],
+    "newb": [
+      "One stats function, read everywhere: combat, tooltips and the builder all call GunStats.Compute, so the screen can never lie about the fight.",
+      "Attachments are items inside items: a tree. Weight, value and saving should recurse instead of special-casing parts.",
+      "Additive vs multiplicative stats: aim adds, noise and jam multiply. Decide per field and keep it in the data."
+    ],
+    "pitfalls": [
+      "Stat code scattered across combat and UI that drifts apart.",
+      "Losing parts on save/load or trade because Mods weren't serialized recursively.",
+      "Letting any part fit any gun; build the tag compatibility first."
+    ],
+    "test": "xUnit: compatibility truth table, Compute sums/multiplies correctly, removing a part restores stats, value/weight include parts, save round-trip keeps Mods. Manual: fit a suppressor, see noise drop and jam rise in the builder and in a fight's log.",
+    "size": "L"
+  },
+  {
+    "id": "gear.armour",
+    "title": "Armour classes, helmets & rigs",
+    "summary": "Armour pieces have a class (AC 1–6) and durability that wears per hit; a hit picks a body location and rolls penetration by the round against the piece; helmets, face shields and mounts (NVG), ear pro in its own slot, plate carriers and rigs with pouches that make reloads faster.",
+    "whyHere": "Pairs with gear.ballistics (penetration) and makes human enemies and loot meaningful. Rigs feed reload costs; helmets and ear pro feed stealth's hearing.",
+    "subsystems": [
+      "Armour classes & durability",
+      "Hit locations",
+      "Penetration & blunt damage",
+      "Helmets, face shields, mounts",
+      "Ear pro slot & hearing",
+      "Rigs, plate carriers & pouches"
+    ],
+    "sliceScope": "Equip slots head/body; AC 1–6 pieces with dur/durMax; hit location roll (head/torso/limbs); penetration p = clamp(0.5 + (pen − T × (0.4 + 0.6 × dur/dmax)) / 20, 0.03, 0.97) with T = 10 × AC; stopped = blunt share; wear per hit; one rig type with magazine pouches.",
+    "fullScope": "Prototype: crits always hit the head; through ×0.9 (×0.85 at AC ≥ 4); blunt by AC; soft-target ammo bonus on unarmoured spots; helmets with built-in face cover and mounts, full-shell helmets leave room only for earplugs; ear pro works only in the Ear pro slot; rigs with pouch kinds (rifle mag, pistol mag, grenade, radio, admin 0.5 kg) and 1–2 pocket pouches; group arsenals equip the same kit.",
+    "protoRefs": [
+      "prototype/src/sim/armour.js",
+      "prototype/src/sim/helmets.js",
+      "prototype/src/sim/data-helmets.js",
+      "prototype/src/sim/data-kit.js",
+      "docs/weapons-overhaul-plan.md"
+    ],
+    "tasks": {
+      "data": [
+        "content/armour.json: ArmourDef (slot, AC, dmax, coverage locations, blunt share, kg, material).",
+        "content/helmets.json: face cover, mounts, hearing muffle, full-shell flag; ear pro items with protection value.",
+        "content/rigs.json: pouch list by kind, pocket pouches, capacity; equip slots incl. Ear pro."
+      ],
+      "backend": [
+        "HitLocation roll (crit → head) and ArmourService.Resolve(hit, ammo) → {through, damage, wear}.",
+        "Durability wear per hit; protection scales with dur/dmax; broken pieces still worn but weak.",
+        "Slot rules: ear pro only in its slot; full-shell helmets block muffs; rig pouch fit rules (kind, weight).",
+        "Reload cost reads where a magazine lies (rig pouch 1, pocket 1, pack 2) via gear.ballistics."
+      ],
+      "ui": [
+        "Inventory doll with head, face, ears, body, rig slots; AC and durability bars.",
+        "Hit breakdown line 'Stopped by plate (AC4, 62%)' in the combat log."
+      ]
+    },
+    "dataModel": "public enum BodyLoc { Head, Face, Torso, Arms, Legs }\npublic record ArmourDef(string Id, string Slot, int AC, int DurMax, BodyLoc[] Covers, float Blunt, float Kg);\npublic record HitResult(BodyLoc Loc, bool Through, int Damage, int Wear);\npublic record RigDef(string Id, PouchDef[] Pouches, int PocketPouches);\npublic record PouchDef(string Kind, float MaxKg);",
+    "dependsOn": [
+      "gear.items",
+      "surv.health",
+      "gear.ballistics"
+    ],
+    "connections": [
+      {
+        "to": "gear.ballistics",
+        "why": "Penetration depends on the round in the chamber.",
+        "how": "Fire passes AmmoTypeDef.Pen and DmgMult to ArmourService.Resolve.",
+        "godot": "None.",
+        "unity": "None."
+      },
+      {
+        "to": "gear.condition",
+        "why": "Armour durability is the same dur/durMax field repaired at benches.",
+        "how": "One Condition model on Item; repair costs max durability.",
+        "godot": "None.",
+        "unity": "None."
+      },
+      {
+        "to": "combat.stealth",
+        "why": "Helmets muffle hearing; ear pro prevents deafening; NVG mounts help at night.",
+        "how": "EquipmentModifiers (HearingMult, EarProtection, NightSight) computed from worn items.",
+        "godot": "None.",
+        "unity": "None."
+      },
+      {
+        "to": "groups.factions",
+        "why": "Enemies wear only armour their group owns.",
+        "how": "Arsenal.ArmPerson draws ArmourDefs from the group's stock.",
+        "godot": "None.",
+        "unity": "None."
+      }
+    ],
+    "godot": {
+      "approach": "Inventory doll is a Control scene with TextureRect slots placed over a placeholder figure; each slot accepts drops by checking the sim's CanEquip. Durability shown with small ProgressBars.",
+      "keyApis": [
+        "Control (drag & drop)",
+        "TextureRect",
+        "ProgressBar"
+      ],
+      "docs": [
+        {
+          "t": "Control",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_control.html"
+        },
+        {
+          "t": "UI index",
+          "u": "https://docs.godotengine.org/en/stable/tutorials/ui/index.html"
+        }
+      ]
+    },
+    "unity": {
+      "approach": "UI Toolkit doll: VisualElements per slot with drag-and-drop manipulators that call the sim's CanEquip; bars for AC/durability.",
+      "keyApis": [
+        "UI Toolkit VisualElement",
+        "PointerManipulator",
+        "ProgressBar"
+      ],
+      "docs": [
+        {
+          "t": "UI Toolkit",
+          "u": "https://docs.unity3d.com/Manual/UIElements.html"
+        }
+      ]
+    },
+    "learn": [
+      {
+        "t": "Red Blob Games: damage rolls",
+        "u": "https://www.redblobgames.com/articles/probability/damage-rolls.html"
+      }
+    ],
+    "newb": [
+      "Penetration as a clamped probability keeps armour from being all-or-nothing: worn armour and better rounds shift the odds smoothly.",
+      "Every armour stop still hurts a little (blunt share): armour buys survival, not invincibility.",
+      "Slots with rules (ear pro only in Ear pro) are just 'CanEquip(item, slot)' checks; keep them in one place."
+    ],
+    "pitfalls": [
+      "Applying armour to the dead's bites inconsistently; route all hits through one pipeline.",
+      "Not wearing armour down: then a single plate trivialises the game.",
+      "Old saves with armour lacking durability: default dur to dmax × quality on load."
+    ],
+    "test": "xUnit: penetration formula at AC 1–6 vs pen values and wear levels (clamps 3%/97%), crit → head, blunt share, wear per hit, ear pro slot rule, rig pouch fit. Manual: shoot an armoured raider with FMJ vs AP and compare the log.",
+    "size": "M"
+  },
+  {
+    "id": "gear.condition",
+    "title": "Item condition, repair, salvage, valuation & lock boxes",
+    "summary": "Every item has a quality and durability rolled by where it was found; repairs at benches or with field kits restore durability but cost maximum durability for good; salvage breaks things into parts and electronics; hidden values and worth tiers price trade; lock boxes and cases hide their contents until opened with the right tool.",
+    "whyHere": "Once gear is deep (guns, parts, armour), wear and repair close the loop between raids and the base economy, and valuation is needed before trade (groups.trade).",
+    "subsystems": [
+      "Condition roll by source",
+      "Durability & wear",
+      "Repair (bench tiers, field kit, max loss)",
+      "Salvage & parts",
+      "Hidden valuation & worth tiers",
+      "Lock boxes & cases"
+    ],
+    "sliceScope": "Item.Quality (0.4–1) and Dur/DurMax; condition rolled by source (gun shop, wreck, soldier, raider); a repair action at a workbench restoring durability and lowering DurMax; ItemValue = base × condition × uses left; a locked box opened with picks/pry bar.",
+    "fullScope": "Prototype: one roller for loot and trader stock that never consumes world RNG (hash dice); crafting bench repairs soft gear only, workbench everything, master workbench 30% less max loss; field repair kit (5 uses) half restore, double max loss; Mechanics vs Crafting skill by item; prices = base × group kind (e.g. military ×1.5 for automatics) × state × stock × spread; worth tiers junk/cheap/decent/valuable/rare; cash boxes, fire safes, toolboxes, gun cases with weight as the clue.",
+    "protoRefs": [
+      "prototype/src/sim/itemcond.js",
+      "prototype/src/sim/repair.js",
+      "prototype/src/sim/valuation.js",
+      "prototype/src/sim/boxes.js",
+      "docs/features/gear.md"
+    ],
+    "tasks": {
+      "data": [
+        "content/condsources.json: quality and durability ranges per source kind.",
+        "content/repair.json: bench tiers, what each repairs, restore share, max loss, skill per item category, field kit.",
+        "content/salvage.json: item → parts/electronics yields; content/boxes.json: box kinds, lock tiers, content tables.",
+        "Base values per item and per-category trade multipliers per group kind; worth tier bands."
+      ],
+      "backend": [
+        "ConditionRoller.Roll(item, source, hashSeed): no shared RNG consumption.",
+        "Repair job (base work queue) and FieldRepair command; Mechanics/Crafting checks; DurMax loss.",
+        "Salvage command producing parts; ItemValue(item) recursing into contents and attachments; WorthTier.",
+        "Boxes: RollContents on find (hash dice), Open(tool) with odds/time (free out of fight, actions+Heat in raid), forced → lock broken."
+      ],
+      "ui": [
+        "Condition bar and worth tier label on item tooltips; repair queue panel at the bench.",
+        "Box window: weight shown, Open with… menu, then Take / Take all."
+      ]
+    },
+    "dataModel": "public sealed class Item { public string DefId = \"\"; public float Quality = 1f; public int Dur, DurMax; public bool Locked, Opened, Forced; public List<Item>? Contents; }\npublic record CondSource(string Id, float QMin, float QMax, float DurMin, float DurMax);\npublic record RepairRule(string Bench, string[] Categories, float Restore, float MaxLoss, string Skill);\npublic enum WorthTier { Junk, Cheap, Decent, Valuable, Rare }",
+    "dependsOn": [
+      "gear.items",
+      "gear.loot",
+      "econ.crafting",
+      "base.work"
+    ],
+    "connections": [
+      {
+        "to": "base.repairs",
+        "why": "Repairs are base jobs at benches, alongside building breakdowns.",
+        "how": "RepairJob in the job scheduler with bench + skill requirement.",
+        "godot": "Bench panel.",
+        "unity": "Bench panel."
+      },
+      {
+        "to": "groups.trade",
+        "why": "Trade prices come from hidden values and group modifiers.",
+        "how": "Valuation.Price(item, group, state) used by the trade window.",
+        "godot": "Trade window shows prices only.",
+        "unity": "Same."
+      },
+      {
+        "to": "gear.armour",
+        "why": "Armour wear uses the same Dur/DurMax and repair rules.",
+        "how": "One Condition model on Item.",
+        "godot": "None.",
+        "unity": "None."
+      },
+      {
+        "to": "combat.doors",
+        "why": "Boxes share lock tiers and tool odds with doors and safes.",
+        "how": "LockService.Odds(lockTier, tool, unit).",
+        "godot": "Shared lock panel.",
+        "unity": "Shared lock panel."
+      }
+    ],
+    "godot": {
+      "approach": "Pure UI: tooltips (Control.TooltipText or a custom tooltip via _MakeCustomTooltip) with condition bars and worth tier; the box window is a PopupPanel with an ItemList and Take buttons.",
+      "keyApis": [
+        "Control._MakeCustomTooltip",
+        "PopupPanel",
+        "ItemList",
+        "ProgressBar"
+      ],
+      "docs": [
+        {
+          "t": "Control",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_control.html"
+        },
+        {
+          "t": "ItemList",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_itemlist.html"
+        }
+      ]
+    },
+    "unity": {
+      "approach": "UI Toolkit tooltips/panels; a modal box window with a ListView and Take buttons; values from the sim.",
+      "keyApis": [
+        "UI Toolkit",
+        "ListView"
+      ],
+      "docs": [
+        {
+          "t": "UI Toolkit",
+          "u": "https://docs.unity3d.com/Manual/UIElements.html"
+        },
+        {
+          "t": "ListView API",
+          "u": "https://docs.unity3d.com/ScriptReference/UIElements.ListView.html"
+        }
+      ]
+    },
+    "learn": [
+      {
+        "t": "Game Programming Patterns: Flyweight",
+        "u": "https://gameprogrammingpatterns.com/flyweight.html"
+      }
+    ],
+    "newb": [
+      "Definition vs instance: the item definition (name, base value) is shared and immutable; the instance (quality, durability, contents) is per item. That's the flyweight idea.",
+      "Rolling with hash dice (seed + item + purpose) means generating loot never shifts the world's other random numbers, which keeps saves and tests stable.",
+      "A repair that costs max durability turns gear into a slow-burning resource and stops infinite repair loops.",
+      "Hide raw values from the player; show what someone pays. That keeps trade feeling like negotiation, not math."
+    ],
+    "pitfalls": [
+      "Value code that forgets attachments or box contents.",
+      "Rolling condition from the world RNG inside loot generation: one new item shifts every later roll.",
+      "Allowing repairs above DurMax or of items the bench tier can't handle."
+    ],
+    "test": "xUnit: condition ranges per source, hash rolls stable, repair restores and lowers DurMax (master bench less), field kit halves, value recursion, worth tier bands, box opens only with right tool and stays opened. Manual: repair a rifle three times and watch its max durability fall; open a heavy gun case with a pry bar.",
+    "size": "M"
+  }
+]

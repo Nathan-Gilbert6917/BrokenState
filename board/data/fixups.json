@@ -1,0 +1,847 @@
+{
+ "order": {
+  "gear.loot": 31,
+  "travel.pois": 32,
+  "econ.water": 60,
+  "health.disease": 66,
+  "econ.crafting": 64,
+  "econ.food": 65,
+  "ui.framework": 43,
+  "ui.input": 44,
+  "econ.land": 67,
+  "ui.platforms": 124
+ },
+ "deps": {
+  "ui.battle": [
+   "combat.los",
+   "combat.actions"
+  ],
+  "travel.pois": [
+   "gear.loot"
+  ],
+  "travel.carry": [
+   "base.furniture",
+   "combat.actions"
+  ],
+  "release.ship": [
+   "infra.devtools"
+  ],
+  "meta.perf": [
+   "infra.architecture"
+  ],
+  "combat.medics": [
+   "health.medical"
+  ],
+  "health.disease": [
+   "econ.water"
+  ],
+  "econ.food": [
+   "econ.crafting"
+  ],
+  "travel.pathing": [
+   "core.weather"
+  ],
+  "ui.placeholders": [
+   "data.content"
+  ]
+ },
+ "tasks": {
+  "data.save": {
+   "backend": [
+    "Decide on saves during a battle: store the battle state in the save, or allow saving only on the campaign map (simplest for the slice)."
+   ]
+  },
+  "art.ui": {
+   "data": [
+    "Localization: keep every player-facing string in string tables (Godot TranslationServer / Unity Localization package) from the start, so the UI skin and translations never need code changes."
+   ]
+  },
+  "gear.armour": {
+   "backend": [
+    "Holster and belt slots: a side arm or blade drawn for 1 action, and a kit check before a fight (holsters.js, kitcheck.js)."
+   ]
+  },
+  "dead.hordes": {
+   "backend": [
+    "Hunt the dead: a team order that sweeps its tile for 2\u201324 h, meeting groups to fight or avoid (deadhunt.js)."
+   ]
+  },
+  "infra.devtools": {
+   "backend": [
+    "A slim scripted autoplayer (the first piece of ai.governor) so headless soak tests can play the slice for 30+ days unattended.",
+    "Build the debug overlays now; add the console's cheat commands once core.commands (card 14) exists."
+   ]
+  },
+  "travel.events": {
+   "backend": [
+    "Attacked alone: a lone worker or walker set upon by the dead, as an event card (prototype loneattack.js)."
+   ]
+  },
+  "travel.fog": {
+   "backend": [
+    "A 'what the player knows' query (seen tiles, last-seen day, known POIs, the dead's numbers as a band) that the State Map UI reads instead of the true world."
+   ]
+  },
+  "combat.pathing": {
+   "backend": [
+    "Count movement in metres from the start (1 cell = 1 m, a diagonal 1.5 m) so the free-movement option (combat.freemove) can spend the same budget without a rewrite."
+   ]
+  },
+  "combat.actions": {
+   "backend": [
+    "Let MoveCmd take a target point (on the grid, a cell centre) rather than only a cell index, so free movement (combat.freemove) reuses the same command."
+   ]
+  }
+ },
+ "priority": {
+  "infra.engine": [
+   "P0",
+   "Essential",
+   null,
+   "Nothing runs without an engine project and a sim library that builds."
+  ],
+  "infra.vcs": [
+   "P0",
+   "Essential",
+   null,
+   "Git and LFS from day one: free, and it saves you the first time something breaks."
+  ],
+  "infra.architecture": [
+   "P0",
+   "Essential",
+   null,
+   "The sim/bridge/UI split is what keeps a 400-module game buildable by one person."
+  ],
+  "infra.testing": [
+   "P0",
+   "Essential",
+   null,
+   "A headless test harness is how a learner proves rules work without clicking through the game."
+  ],
+  "infra.ci": [
+   "P1",
+   "High",
+   null,
+   "Cheap to set up once tests exist; catches breakage you would miss. Can wait a few weeks."
+  ],
+  "infra.devtools": [
+   "P1",
+   "High",
+   null,
+   "A console and reveal-map cheats speed up every later card, but start with a few commands."
+  ],
+  "data.ids": [
+   "P0",
+   "Essential",
+   null,
+   "Every record references others by ID; changing this later means touching everything."
+  ],
+  "data.content": [
+   "P0",
+   "Essential",
+   null,
+   "The game's database. Data-driven content is what lets the game grow without code changes."
+  ],
+  "data.state": [
+   "P0",
+   "Essential",
+   null,
+   "The world state every system reads and writes."
+  ],
+  "data.rng": [
+   "P0",
+   "Essential",
+   null,
+   "Seeds make bugs reproducible and tests possible. Tiny to build, painful to add late."
+  ],
+  "data.save": [
+   "P0",
+   "Essential",
+   null,
+   "A campaign game must save and load; versioning from the start avoids broken saves."
+  ],
+  "core.clock": [
+   "P0",
+   "Essential",
+   null,
+   "The campaign runs on the hourly tick and the daily tick."
+  ],
+  "core.events": [
+   "P0",
+   "Essential",
+   null,
+   "How the sim tells the UI and the log what happened."
+  ],
+  "core.commands": [
+   "P0",
+   "Essential",
+   null,
+   "The only way the player changes the world; also what makes AI parity possible."
+  ],
+  "core.hexgrid": [
+   "P0",
+   "Essential",
+   null,
+   "The State Map is hexes. Small, well-documented maths."
+  ],
+  "core.mapgen": [
+   "P0",
+   "Essential",
+   null,
+   "A run needs a map. Keep it small and simple for the slice."
+  ],
+  "core.weather": [
+   "P2",
+   "Medium",
+   null,
+   "Flavour and pressure, but the slice plays fine with one season and simple daily weather."
+  ],
+  "core.cards": [
+   "P0",
+   "Essential",
+   null,
+   "Decision cards and pause rules are how this game talks to the player."
+  ],
+  "surv.model": [
+   "P0",
+   "Essential",
+   null,
+   "Survivors are the game. Everything hangs off this record."
+  ],
+  "surv.needs": [
+   "P0",
+   "Essential",
+   null,
+   "Hunger, thirst and sleep are the survival pressure that makes the hub matter."
+  ],
+  "surv.health": [
+   "P0",
+   "Essential",
+   null,
+   "Wounds and death give raids their stakes."
+  ],
+  "gear.items": [
+   "P0",
+   "Essential",
+   null,
+   "Loot is the reward loop; items and inventory carry it."
+  ],
+  "gear.weapons": [
+   "P0",
+   "Essential",
+   null,
+   "Fights need weapons. A handful is enough for the slice."
+  ],
+  "base.core": [
+   "P0",
+   "Essential",
+   null,
+   "The hub and its stockpile are where loot lands and people live."
+  ],
+  "base.buildings": [
+   "P1",
+   "High",
+   null,
+   "Building is half the hub fun; the slice needs only 4\u20135 buildings."
+  ],
+  "base.work": [
+   "P0",
+   "Essential",
+   null,
+   "Assigning people to jobs is the base's core decision."
+  ],
+  "econ.daily": [
+   "P0",
+   "Essential",
+   null,
+   "Daily food, water and wood is the clock that pushes the player out on raids."
+  ],
+  "travel.parties": [
+   "P0",
+   "Essential",
+   null,
+   "Sending teams across the map is the core of the State Map layer."
+  ],
+  "travel.pathing": [
+   "P0",
+   "Essential",
+   null,
+   "Routes and travel time; standard A* on hexes."
+  ],
+  "travel.fog": [
+   "P1",
+   "High",
+   null,
+   "Exploration is a big part of the fun, and the slice can start with a simple seen/unseen mask."
+  ],
+  "gear.loot": [
+   "P0",
+   "Essential",
+   null,
+   "What you find in a raid is the reward for taking the risk."
+  ],
+  "travel.pois": [
+   "P0",
+   "Essential",
+   null,
+   "Places to raid. Without them there is no reason to travel."
+  ],
+  "dead.population": [
+   "P1",
+   "High",
+   null,
+   "Per-tile threat makes route choice matter; spread can be simple at first."
+  ],
+  "travel.events": [
+   "P1",
+   "High",
+   null,
+   "Road cards make travel a story. Five or six cards are enough for the slice."
+  ],
+  "combat.map": [
+   "P0",
+   "Essential",
+   null,
+   "The raid needs a map. One hand-made building template is enough at first."
+  ],
+  "combat.turns": [
+   "P0",
+   "Essential",
+   null,
+   "The turn loop is the battle's spine."
+  ],
+  "combat.pathing": [
+   "P0",
+   "Essential",
+   null,
+   "Units must move on the grid."
+  ],
+  "combat.los": [
+   "P0",
+   "Essential",
+   null,
+   "Sight, cover and hit chance are what make XCOM-style fights tactical."
+  ],
+  "combat.actions": [
+   "P0",
+   "Essential",
+   null,
+   "Move, shoot, melee, reload, search, extract: the player's verbs in a raid."
+  ],
+  "dead.types": [
+   "P0",
+   "Essential",
+   null,
+   "The enemy. Walkers and runners are enough for the slice."
+  ],
+  "combat.ai": [
+   "P0",
+   "Essential",
+   null,
+   "The dead have to hear, chase and attack, or there is no threat."
+  ],
+  "combat.resolve": [
+   "P0",
+   "Essential",
+   null,
+   "Closes the loop: battle results flow back into the campaign."
+  ],
+  "ui.framework": [
+   "P0",
+   "Essential",
+   null,
+   "Every screen sits on it."
+  ],
+  "ui.placeholders": [
+   "P0",
+   "Essential",
+   null,
+   "The art-key seam is what lets the human-made art arrive late with no code changes."
+  ],
+  "ui.menus": [
+   "P0",
+   "Essential",
+   null,
+   "New game, save and load must be reachable."
+  ],
+  "ui.statemap": [
+   "P0",
+   "Essential",
+   null,
+   "The main screen of the game."
+  ],
+  "ui.hub": [
+   "P0",
+   "Essential",
+   null,
+   "Where the base is run."
+  ],
+  "ui.team": [
+   "P0",
+   "Essential",
+   null,
+   "How teams are formed and sent."
+  ],
+  "ui.cards": [
+   "P0",
+   "Essential",
+   null,
+   "Cards, log and time controls are the player's main feed."
+  ],
+  "ui.inventory": [
+   "P1",
+   "High",
+   null,
+   "Needed for loot; a plain list works before drag-and-drop."
+  ],
+  "ui.battle": [
+   "P0",
+   "Essential",
+   null,
+   "The tactical fight must be visible and clickable."
+  ],
+  "ui.input": [
+   "P0",
+   "Essential",
+   null,
+   "Mouse and keyboard through an input map from day one."
+  ],
+  "slice.playtest": [
+   "P0",
+   "Essential",
+   null,
+   "The slice is done when someone plays a week and wants another one."
+  ],
+  "surv.skills": [
+   "P1",
+   "High",
+   null,
+   "Growth gives the long game its pull; XP is small, perks and books can follow."
+  ],
+  "surv.morale": [
+   "P1",
+   "High",
+   null,
+   "Morale and breaks create stories and pressure; build the base version, add mental breaks later."
+  ],
+  "surv.relations": [
+   "P2",
+   "Medium",
+   null,
+   "Bonds add stories, but they are many rules for a soft effect. Build after the core loop is fun."
+  ],
+  "surv.family": [
+   "P2",
+   "Medium",
+   null,
+   "Recruits are important (P1 part); pregnancy and children growing up are a lot of work for little."
+  ],
+  "health.medical": [
+   "P1",
+   "High",
+   null,
+   "Hospitals and medics turn wounds into decisions."
+  ],
+  "health.disease": [
+   "P2",
+   "Medium",
+   null,
+   "Outbreaks add pressure, but the worm's lore and mechanics are heavy. Start with one illness."
+  ],
+  "base.basemap": [
+   "P1",
+   "High",
+   null,
+   "Placing buildings on a map is a big part of base-building fun; terraforming can wait (P3)."
+  ],
+  "base.furniture": [
+   "P2",
+   "Medium",
+   null,
+   "Beds matter; the 248-piece catalogue is content you add slowly."
+  ],
+  "base.tiers": [
+   "P1",
+   "High",
+   null,
+   "Camps to hubs is the progression arc of a run."
+  ],
+  "econ.food": [
+   "P1",
+   "High",
+   null,
+   "Food types and spoilage deepen the main pressure; cooking recipes can be simple."
+  ],
+  "econ.land": [
+   "P1",
+   "High",
+   null,
+   "Farming, foraging and hunting are the hub's production. Fishing and stone can come later."
+  ],
+  "econ.water": [
+   "P2",
+   "Medium",
+   null,
+   "Purified vs raw water is a small, cheap system with real pressure."
+  ],
+  "econ.crafting": [
+   "P1",
+   "High",
+   null,
+   "Crafting turns loot into progress; bills and tool requirements can follow."
+  ],
+  "econ.power": [
+   "P2",
+   "Medium",
+   null,
+   "Power is a mid-game goal; appliances and solar are a lot of content."
+  ],
+  "econ.hauling": [
+   "P2",
+   "Medium",
+   null,
+   "Only matters once you have more than one base."
+  ],
+  "base.repairs": [
+   "P3",
+   "Low",
+   null,
+   "Wear and repair orders are upkeep chores: much work, little extra fun."
+  ],
+  "core.hubevents": [
+   "P1",
+   "High",
+   null,
+   "Home events make the hub feel alive, and each is just a card in data."
+  ],
+  "base.workgrid": [
+   "P1",
+   "High",
+   null,
+   "The 1\u20135 priority grid is what makes a bigger colony manageable."
+  ],
+  "world.mapgen": [
+   "P1",
+   "High",
+   null,
+   "Rivers, roads and cities make Calder a place worth exploring."
+  ],
+  "world.weather": [
+   "P3",
+   "Low",
+   null,
+   "Rain waves, puddles and ponds are polish: lots of rules for a small effect on play."
+  ],
+  "travel.vehicles": [
+   "P1",
+   "High",
+   null,
+   "Cars change travel range and loot capacity; a core mid-game goal."
+  ],
+  "travel.orders": [
+   "P1",
+   "High",
+   null,
+   "Order queues and repeat trips remove tedium once the map is big."
+  ],
+  "travel.carry": [
+   "P2",
+   "Medium",
+   null,
+   "Weight limits matter; carrying furniture in tethered pairs is P3 detail."
+  ],
+  "travel.scavenge": [
+   "P2",
+   "Medium",
+   null,
+   "An abstract scavenging mode saves time on low-stakes sites."
+  ],
+  "travel.survey": [
+   "P1",
+   "High",
+   null,
+   "Knowing the threat before you go makes decisions meaningful."
+  ],
+  "travel.road": [
+   "P2",
+   "Medium",
+   null,
+   "Night marches, crossings and roadblocks add texture; each is small."
+  ],
+  "travel.citycrawl": [
+   "P3",
+   "Low",
+   null,
+   "A whole roguelike mode inside the game: XL effort; the raids already cover the fantasy."
+  ],
+  "travel.sites": [
+   "P2",
+   "Medium",
+   null,
+   "Crash sites and supply drops are cheap, exciting goals on the map."
+  ],
+  "combat.interiors": [
+   "P1",
+   "High",
+   null,
+   "Varied buildings keep raids fresh. Start with a few templates; hundreds of named plans are P3."
+  ],
+  "combat.stealth": [
+   "P1",
+   "High",
+   null,
+   "Sneaking past the dead is core zombie-game fun."
+  ],
+  "combat.terrain": [
+   "P2",
+   "Medium",
+   null,
+   "High ground and soft cover add tactics; weather in battle is polish."
+  ],
+  "combat.doors": [
+   "P1",
+   "High",
+   null,
+   "Doors, locks and barricades are central to fighting the dead indoors."
+  ],
+  "combat.throwables": [
+   "P2",
+   "Medium",
+   null,
+   "Molotovs and decoys are fun tools; car alarms are a nice extra."
+  ],
+  "combat.factions": [
+   "P2",
+   "Medium",
+   null,
+   "Raiders vs the dead and parley are great moments, but need AI groups first."
+  ],
+  "combat.medics": [
+   "P2",
+   "Medium",
+   null,
+   "Downed-not-dead saves frustration; non-lethal capture is a niche."
+  ],
+  "combat.vehicles": [
+   "P3",
+   "Low",
+   null,
+   "Vehicles in battle and siege kit: much work for a rare situation."
+  ],
+  "gear.ballistics": [
+   "P2",
+   "Medium",
+   null,
+   "Physical rounds and magazines suit the fantasy but are heavy; ammo as a count works first."
+  ],
+  "gear.gunbuilder": [
+   "P3",
+   "Low",
+   null,
+   "A Tarkov-style builder is a large feature most players touch rarely."
+  ],
+  "gear.armour": [
+   "P1",
+   "High",
+   null,
+   "Armour classes make gear choices matter in a fight."
+  ],
+  "gear.condition": [
+   "P2",
+   "Medium",
+   null,
+   "Wear and repair give loot long-term value; lock boxes are small extras."
+  ],
+  "dead.hordes": [
+   "P1",
+   "High",
+   null,
+   "Hordes on the map are the main strategic threat."
+  ],
+  "dead.hives": [
+   "P0",
+   "Essential",
+   null,
+   "Destroying hives is the win condition; without it the campaign has no goal."
+  ],
+  "dead.specials": [
+   "P1",
+   "High",
+   null,
+   "Special dead keep fights fresh; counter-dead and tunnels can come last (P3)."
+  ],
+  "dead.hivecrawl": [
+   "P2",
+   "Medium",
+   null,
+   "A climactic finale, but a big separate mode; a hive assault battle can stand in."
+  ],
+  "def.walls": [
+   "P1",
+   "High",
+   null,
+   "Walls and defences are what you build the base for."
+  ],
+  "def.sieges": [
+   "P1",
+   "High",
+   null,
+   "Defending the base is a high point of the game."
+  ],
+  "ai.governor": [
+   "P1",
+   "High",
+   null,
+   "Shared decision AI drives other groups and balance runs; it unlocks M6."
+  ],
+  "groups.factions": [
+   "P1",
+   "High",
+   null,
+   "Other survivors make the world political and dangerous."
+  ],
+  "groups.diplomacy": [
+   "P2",
+   "Medium",
+   null,
+   "Relations matter; the full Coalition with councils and fatigue is deep, slow work."
+  ],
+  "groups.trade": [
+   "P1",
+   "High",
+   null,
+   "Trade gives scavenged goods a second use and groups a reason to talk."
+  ],
+  "groups.radio": [
+   "P2",
+   "Medium",
+   null,
+   "Radio and envoys are atmospheric but add many rules."
+  ],
+  "groups.conflict": [
+   "P2",
+   "Medium",
+   null,
+   "Conquest and prisoners: good stories, much machinery."
+  ],
+  "groups.nomads": [
+   "P3",
+   "Low",
+   null,
+   "Visitors, splinters and nomads are flavour once groups work."
+  ],
+  "meta.modes": [
+   "P2",
+   "Medium",
+   null,
+   "Hardcore and Custom stretch replay value; build after the default mode is fun."
+  ],
+  "meta.victory": [
+   "P1",
+   "High",
+   null,
+   "Eras and threat growth give a run its arc."
+  ],
+  "meta.history": [
+   "P3",
+   "Low",
+   null,
+   "Achievements, hall of fame and timelapse are nice, not needed."
+  ],
+  "meta.help": [
+   "P1",
+   "High",
+   null,
+   "A deep game needs tooltips and a guide; the 'Why?' chains are P2."
+  ],
+  "meta.qol": [
+   "P2",
+   "Medium",
+   null,
+   "Command palette and minimap help, but are for a big map."
+  ],
+  "ui.platforms": [
+   "P3",
+   "Low",
+   null,
+   "Far future. Mouse and keyboard on desktop come first; there is no phone or touch support. A controller is worth adding only once every screen is final."
+  ],
+  "meta.balance": [
+   "P1",
+   "High",
+   null,
+   "Headless balance runs are cheap once the sim is engine-free, and they find problems fast."
+  ],
+  "meta.perf": [
+   "P1",
+   "High",
+   null,
+   "Big maps and many dead need it; profile before you optimise."
+  ],
+  "art.direction": [
+   "P1",
+   "High",
+   null,
+   "One style guide keeps all the human-made art consistent."
+  ],
+  "art.world": [
+   "P1",
+   "High",
+   null,
+   "The State Map is the screen players look at most."
+  ],
+  "art.characters": [
+   "P1",
+   "High",
+   null,
+   "People and the dead are what players care about."
+  ],
+  "art.props": [
+   "P2",
+   "Medium",
+   null,
+   "Hundreds of props: reuse and palette swaps first."
+  ],
+  "art.ui": [
+   "P1",
+   "High",
+   null,
+   "A UI skin turns the prototype into a game."
+  ],
+  "audio.all": [
+   "P1",
+   "High",
+   null,
+   "Sound is half the feel of a zombie game. Start with key SFX and two music tracks."
+  ],
+  "release.ship": [
+   "P1",
+   "High",
+   null,
+   "Shipping is the goal; set up export builds early, the store page later."
+  ],
+  "combat.freemove": [
+   "P2",
+   "Medium",
+   null,
+   "A battle feel many players love, offered as an option beside the grid. It touches pathing, sight, cover, the AI and the battle UI, so build it once the grid battle is fun. The two slice tasks (moves counted in metres, MoveCmd taking a point) keep it from becoming a rewrite."
+  ]
+ },
+ "removeDeps": {
+  "ui.input": [
+   "ui.menus"
+  ],
+  "econ.water": [
+   "health.disease"
+  ],
+  "econ.crafting": [
+   "econ.food"
+  ],
+  "travel.citycrawl": [
+   "combat.interiors"
+  ]
+ },
+ "lane": {
+  "ui.platforms": "L12"
+ }
+}

@@ -1,5 +1,6 @@
 # The browser build on GitHub Pages: https://nathan-gilbert6917.github.io/BrokenState/ (prototype/README.md "Play in a
 # browser"). Every push to dev publishes prototype/ as it is: no build step, the same files node server.cjs serves.
+# The rebuild board (board/README.md) is built beside it into /BrokenState/board/.
 # One-time repo setting: Settings → Pages → Source: GitHub Actions.
 name: Pages
 
@@ -37,6 +38,9 @@ jobs:
           # Plain static files, no Jekyll pass (it drops files and folders that start with _ or .). A deploy from
           # Actions runs none anyway; this says so for any other way the folder gets published.
           touch _site/.nojekyll
+          # The rebuild board: plain Node, no dependencies; it fails on a broken card reference.
+          node board/build.js
+          cp -r board/dist _site/board
           ls -la _site
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5

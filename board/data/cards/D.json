@@ -1,0 +1,576 @@
+[
+  {
+    "id": "combat.map",
+    "title": "Battle map grid & generation from a POI",
+    "summary": "The square grid every tactical battle is fought on: cells with a terrain kind, height, cover value and hit points, made from the POI the team raids (slice: one simple building template stamped into a small yard), with spawn, container and extraction zones.",
+    "whyHere": "It opens the combat lane: turns, pathing, LOS, actions and the AI all read and write the BattleMap, so it must exist (and be testable headless) before any of them. It needs the POI and loot cards to know what is being raided.",
+    "subsystems": ["BattleMap & Cell grid", "Cell kinds table (walk / cover / blocks sight)", "Building templates (JSON)", "Map generator (seeded)", "Zones: deploy, spawn, extraction", "Containers placed in rooms", "Grid ↔ iso screen projection (view only)"],
+    "sliceScope": "One map size (about 32 × 24). One building template from JSON (a house: 3–4 rooms, inner doors, 1 front door, a few windows) stamped in the middle of a yard with fences, cars and trees for cover. 3–6 containers from gear.loot, a deploy zone on one edge, an extraction zone at the same edge, the dead placed 14–20 tiles from the team. Same seed + same POI = same map.",
+    "fullScope": "battlesize.js: four size classes 24×18 to 48×34, raids 32×24 to 56×42 by site type, real-size buildings up to 300–500 cells a side; buildingmaps.js archetypes split footprints into rooms (L/T/U shapes, 12 named plans a kind, storeys and stairs), 248 furniture kinds, densify tops up cover until most open ground has cover within 3 tiles.",
+    "protoRefs": ["prototype/src/sim/battlesize.js", "prototype/src/sim/buildingmaps.js", "prototype/src/sim/combat.js", "docs/features/combat.md"],
+    "tasks": {
+      "data": [
+        "content/battle/cells.json: each cell kind's walk, cover (0 none, 1 half, 2 full), blocksSight, hp, moveCost, artKey (open, wall, door, window, fence, car, tree, crate)",
+        "content/battle/templates/house_small.json: a char-grid template ('#' wall, 'D' door, 'W' window, 'C' container slot, '.' floor) with room tags for loot",
+        "BattleSize record (w, h, contactRange [14,20], coverRadius 3) per context in content/battle/sizes.json",
+        "Validation test: every template is enclosed, every room reachable from the front door, every container slot on floor"
+      ],
+      "backend": [
+        "BattleMap class: flat Cell[] of w*h, Idx(x,y)=y*w+x, InBounds, neighbours (4 and 8), a Revision counter bumped on any cell change (for caches)",
+        "MapGenerator.Generate(BattleSetup, Rng) → yard scatter, stamp template, place containers, zones; seed = hash(worldSeed, tileId, poiId) so revisits match",
+        "Zones: deploy cells, extraction mask (bool[]), enemy spawn cells; reachability flood-fill check (regenerate or knock a door if a zone is cut off)",
+        "Unit tests: determinism (same seed → identical cell hash), reachability, counts of containers and dead within bounds"
+      ],
+      "ui": [
+        "BattleView draws cells with placeholder diamonds/colour blocks by artKey via the ArtCatalog; GridToScreen / ScreenToGrid helpers for clicks",
+        "Debug overlay toggle: cell coords, zones, cover values"
+      ]
+    },
+    "dataModel": "public enum CellKind { Open, Wall, Door, Window, Fence, Car, Tree, Crate }\npublic struct Cell { public CellKind Kind; public sbyte Height; public short Hp; public bool DoorOpen; public byte Floor; }\npublic sealed class BattleMap {\n  public int W, H, Revision; public Cell[] Cells;\n  public bool[] ExtractMask; public List<(int x,int y)> Deploy, Spawn;\n  public List<Container> Containers;\n  public int Idx(int x, int y) => y * W + x;\n}\npublic record CellDef(string Id, bool Walk, int Cover, bool BlocksSight, int Hp, float MoveCost, string ArtKey);",
+    "dependsOn": ["data.content", "data.rng", "data.state", "travel.pois", "gear.loot"],
+    "connections": [
+      {"to": "travel.pois", "why": "the POI picked on the State Map decides the template, size and loot theme", "how": "BattleSetup carries PoiId; MapGenerator reads PoiDef.TemplateId and LootTableId from ContentDb", "godot": "SimHost starts the battle and changes to Battle.tscn; the scene asks SimHost for the BattleMap", "unity": "SimHost loads the Battle scene (LoadSceneAsync) and hands it the BattleMap"},
+      {"to": "combat.los", "why": "cover and sight are read straight off the cell kinds and heights", "how": "CellDef.Cover / BlocksSight looked up by Cell.Kind; LOS cache keyed by BattleMap.Revision", "godot": "nothing engine-side: pure sim", "unity": "nothing engine-side: pure sim"},
+      {"to": "ui.battle", "why": "the battle view draws this grid isometrically", "how": "the view reads Cells and listens to CellChanged(x,y) events (a door opened, a wall broken)", "godot": "TileMapLayer with an isometric TileSet, cells set from artKey; signal CellChanged → SetCell", "unity": "Tilemap on a Grid with Isometric cell layout; SetTile per cell; C# event CellChanged"},
+      {"to": "gear.loot", "why": "containers on the map are filled from loot tables", "how": "Container { Id, X, Y, LootTableId, Searched }; contents rolled lazily on first search with the battle Rng", "godot": "container sprite node per container, highlighted when searchable", "unity": "container prefab per container, highlighted when searchable"}
+    ],
+    "godot": {
+      "approach": "Keep the grid in C# (BattleMap) and only mirror it into a TileMapLayer whose TileSet uses the isometric tile shape. Convert with your own GridToScreen so clicks map back to sim cells (or TileMapLayer.LocalToMap). Walls and props that must sort with units go on a Y-sorted Node2D layer rather than the floor TileMapLayer.",
+      "keyApis": ["TileMapLayer", "TileSet (TILE_SHAPE_ISOMETRIC)", "Node2D.YSortEnabled", "Camera2D"],
+      "docs": [
+        {"t": "TileMapLayer", "u": "https://docs.godotengine.org/en/stable/classes/class_tilemaplayer.html"},
+        {"t": "Using TileMaps", "u": "https://docs.godotengine.org/en/stable/tutorials/2d/using_tilemaps.html"},
+        {"t": "Camera2D", "u": "https://docs.godotengine.org/en/stable/classes/class_camera2d.html"}
+      ]
+    },
+    "unity": {
+      "approach": "A Grid with Cell Layout 'Isometric Z As Y' and a Tilemap for the floor; tall things (walls, units) sorted by a Custom Axis sort or as SpriteRenderers. The sim's BattleMap stays the truth: the Tilemap is rebuilt from it and GridLayout.WorldToCell turns a mouse click into (x, y).",
+      "keyApis": ["Grid", "Tilemaps.Tilemap", "GridLayout.CellToWorld / WorldToCell", "ScriptableObject (template preview)"],
+      "docs": [
+        {"t": "Tilemap API", "u": "https://docs.unity3d.com/ScriptReference/Tilemaps.Tilemap.html"},
+        {"t": "GridLayout.CellLayout", "u": "https://docs.unity3d.com/ScriptReference/GridLayout.CellLayout.html"},
+        {"t": "GridLayout.WorldToCell", "u": "https://docs.unity3d.com/ScriptReference/GridLayout.WorldToCell.html"}
+      ]
+    },
+    "learn": [
+      {"t": "Isometric tiles math (grid ↔ screen)", "u": "https://clintbellanger.net/articles/isometric_math/"},
+      {"t": "Grid parts: cells, edges, corners", "u": "https://www.redblobgames.com/grids/parts/"}
+    ],
+    "newb": [
+      "Logic is a plain square grid; isometric is only how you draw it. Screen = ((x − y) · tileW/2, (x + y) · tileH/2). Never store screen positions in the sim.",
+      "A flat array indexed y*W+x is faster and simpler to save than a 2-D array of objects; every other system (pathing, LOS caches) uses that index.",
+      "Generating from a seed means you never save the map for a revisit: same seed, same building. You only save what changed (doors broken, containers searched).",
+      "Templates as ASCII grids in JSON are a great first 'level editor': readable, diffable, and a test can check them.",
+      "A Revision counter on the map is a cheap way to tell caches 'something changed, throw yourself away'."
+    ],
+    "pitfalls": [
+      "Mixing up iso screen coordinates and grid coordinates in game logic (bugs that only appear on diagonals).",
+      "Using the engine's TileMap as the data: it ties your rules to one engine and cannot run in dotnet test.",
+      "Generating a map where the deploy zone cannot reach the building or the exit: always flood-fill check.",
+      "Using System.Random or GD.Randi in the generator: maps stop being reproducible."
+    ],
+    "test": "xUnit: same seed produces the same cell hash; every template room is reachable; containers and the dead land on walkable cells; zones are not cut off. Manual: open the battle from a POI twice, see the identical house, click cells and see the debug overlay show the right (x, y).",
+    "size": "M"
+  },
+  {
+    "id": "combat.turns",
+    "title": "Turn order, action points & battle state machine",
+    "summary": "The battle's flow as an explicit state machine (Setup → Deploy → PlayerTurn → EnemyTurn → … → Over) with XCOM-style 2 action points per unit per turn, start/end-of-turn hooks and a win/lose check after every action.",
+    "whyHere": "Every action, the AI and the battle UI need to know whose turn it is and what a unit can still do; this is the spine the other combat cards hang on, right after the map exists.",
+    "subsystems": ["BattlePhase state machine", "Action points (AP) per unit", "Turn counter & phase hooks", "Enemy unit queue (stepped)", "End check (victory / defeat / retreat)", "Battle event stream"],
+    "sliceScope": "Phases: Setup, PlayerTurn, EnemyTurn, Over. Every unit gets 2 AP at its side's turn start; moving within 1 move range costs 1 AP, a dash (up to 2× range) costs 2; shooting, overwatch-free 'hunker' and extract end the unit's turn. End Turn button. The enemy phase runs one unit per Step() so the UI can animate each. End check after each action: all dead gone → victory, no active survivors → defeat (or retreat if any extracted).",
+    "fullScope": "combat.js runs player / enemy / third-side phases with a deploy phase for base defence, ~25 start/end-of-turn hooks (bleeding out after 3 turns, stuns, fire, acid, tunnels, Heat 1.2 a turn plus noise bringing a wave every 25), surprised units starting with 0 AP, and 'area clear enough' early endings on big maps (battlesize CLEAR: at most 2 far, unaware stragglers).",
+    "protoRefs": ["prototype/src/sim/combat.js", "prototype/src/sim/battlesize.js", "docs/features/combat.md"],
+    "tasks": {
+      "data": [
+        "BattleRules record in content/battle/rules.json: apPerTurn 2, bleedTurns 3, heatPerTurn 1.2, heatStage 25",
+        "BattlePhase enum and BattleEvent types (TurnStarted, PhaseChanged, UnitActed, UnitDied, BattleEnded)",
+        "Battle runtime class (map, units, phase, turn, rng, log) as plain serialisable data"
+      ],
+      "backend": [
+        "BattleStateMachine: Enter/Exit per phase, a single Advance() that moves Setup→PlayerTurn, EndTurn() → EnemyTurn, last enemy done → PlayerTurn (turn++)",
+        "Turn hooks as an ordered list of ITurnHook (OnSideTurnStart / OnSideTurnEnd) so later cards (bleeding, Heat, stealth) plug in without editing the core",
+        "EnemyStep(): pop the next unit from the queue, run its AI, check end, return the unit (or null when the phase is over)",
+        "CheckEnd() after every command and every enemy step; set Outcome and enter Over exactly once",
+        "Tests: AP spent and refreshed, enemy queue order deterministic, end detected, no commands accepted outside PlayerTurn"
+      ],
+      "ui": [
+        "Turn banner ('Your turn' / 'The dead move'), AP pips on each unit, End Turn button and hotkey",
+        "During EnemyTurn the view calls Step(), waits for the move animation, then calls Step() again"
+      ]
+    },
+    "dataModel": "public enum BattlePhase { Setup, Deploy, PlayerTurn, EnemyTurn, Over }\npublic enum Side { Player, Enemy, Third }\npublic sealed class Battle {\n  public BattlePhase Phase; public int Turn; public BattleMap Map;\n  public List<Unit> Units; public Queue<int> EnemyQueue; public Rng Rng;\n  public BattleOutcome? Outcome; public List<BattleEvent> Events;\n}\npublic sealed class Unit { public int Id; public Side Side; public int X, Y, Hp, MaxHp, Ap; public float Mob; public bool Aware, Down, Extracted; }",
+    "dependsOn": ["combat.map", "core.events", "core.commands", "core.clock", "data.rng"],
+    "connections": [
+      {"to": "combat.actions", "why": "actions spend AP and are only legal in PlayerTurn", "how": "IBattleCommand.Validate checks Phase == PlayerTurn and unit.Ap ≥ cost; Execute subtracts AP then calls CheckEnd()", "godot": "action bar buttons send commands through SimHost.Battle.Do(cmd)", "unity": "action bar buttons send commands through SimHost.Battle.Do(cmd)"},
+      {"to": "combat.ai", "why": "the enemy phase is the AI's turn, one unit at a time", "how": "EnemyStep() calls IUnitBrain.TakeTurn(battle, unit) for the unit popped from EnemyQueue", "godot": "a Battle scene script awaits the animation (await ToSignal(tween, Tween.SignalName.Finished)) between steps", "unity": "a coroutine or async Awaitable loop yields until the move animation ends between steps"},
+      {"to": "core.clock", "why": "a battle pauses the campaign clock", "how": "Battle start publishes BattleStarted; the clock's Paused flag is held by a 'battle' pause reason until BattleEnded", "godot": "SimHost stops ticking the campaign in _Process while Battle != null", "unity": "SimHost stops ticking the campaign in Update while Battle != null"},
+      {"to": "ui.battle", "why": "the view shows phase, turn and AP", "how": "BattleEvent queue drained each frame by the bridge (PhaseChanged, UnitActed)", "godot": "SimHost re-emits as C# [Signal] delegates (PhaseChanged, UnitActed)", "unity": "SimHost raises C# events / UnityEvents"}
+    ],
+    "godot": {
+      "approach": "The state machine lives in the sim; the Battle scene only reacts. Drive the enemy phase from an async method: call Step(), play that unit's tween, await its Finished signal, repeat. Keep a 'busy' flag so input is ignored while the enemy acts.",
+      "keyApis": ["Tween", "ToSignal / await", "[Signal] delegates in C#", "Autoload (SimHost)"],
+      "docs": [
+        {"t": "C# signals", "u": "https://docs.godotengine.org/en/stable/tutorials/scripting/c_sharp/c_sharp_signals.html"},
+        {"t": "Tween", "u": "https://docs.godotengine.org/en/stable/classes/class_tween.html"},
+        {"t": "Singletons (Autoload)", "u": "https://docs.godotengine.org/en/stable/tutorials/scripting/singletons_autoload.html"}
+      ]
+    },
+    "unity": {
+      "approach": "Same sim state machine; a BattleController MonoBehaviour runs the enemy phase in a coroutine (or async Awaitable method), stepping the sim and yielding until each unit's walk finishes. Input is disabled while it runs.",
+      "keyApis": ["MonoBehaviour", "Coroutines / Awaitable", "C# events", "UnityEvent"],
+      "docs": [
+        {"t": "Coroutines", "u": "https://docs.unity3d.com/Manual/Coroutines.html"},
+        {"t": "Awaitable", "u": "https://docs.unity3d.com/ScriptReference/Awaitable.html"},
+        {"t": "UnityEvents", "u": "https://docs.unity3d.com/Manual/UnityEvents.html"}
+      ]
+    },
+    "learn": [
+      {"t": "State pattern (Game Programming Patterns)", "u": "https://gameprogrammingpatterns.com/state.html"},
+      {"t": "Event Queue pattern", "u": "https://gameprogrammingpatterns.com/event-queue.html"}
+    ],
+    "newb": [
+      "A state machine is just 'the battle is always in exactly one named phase, and only certain transitions are allowed'. Writing it as an enum + one switch kills a whole class of 'it is both turns at once' bugs.",
+      "Action points make choices legible: 2 AP = move+move, move+shoot, or dash. Shooting ending the turn (XCOM rule, also the prototype's) stops 'shoot, shoot, run away'.",
+      "The sim must never wait for animations. It resolves instantly; the view replays events at its own pace. Stepping the enemy phase one unit at a time is how you get both.",
+      "Hooks (start/end of turn) let later features (bleeding, Heat, fire) add rules without touching the core loop: open for extension, closed for edits."
+    ],
+    "pitfalls": [
+      "Putting turn logic in the scene script: it then cannot be tested or reused by auto-resolve and the autopilot.",
+      "Forgetting to re-check victory after a kill in the enemy phase (a zombie killing the last survivor must end the battle there).",
+      "Letting the player click during the enemy phase and send commands mid-step.",
+      "Iterating the unit list while units are added (screamer calls, waves) or removed: copy the queue of IDs first."
+    ],
+    "test": "xUnit: a scripted battle (1 survivor, 1 walker) runs Setup→Player→Enemy→Player with AP 2→0→2; commands are refused outside PlayerTurn; killing the last enemy sets Outcome=Victory once; the enemy queue order is the same for the same seed. Manual: end turn, watch each dead walk in turn, banner flips back.",
+    "size": "M"
+  },
+  {
+    "id": "combat.pathing",
+    "title": "Tactical grid pathfinding & movement costs",
+    "summary": "How units move on the battle grid: a Dijkstra flood for the 'where can I go with my AP' highlight and path, movement costs from terrain, doors and vaulting, and one shared flow field the whole crowd of the dead walks down toward the team.",
+    "whyHere": "Needed by both the Move action and the dead's chase; it only needs the map and AP rules, and the AI is far cheaper to write once flow fields exist.",
+    "subsystems": ["Neighbour rules (8-way, no corner cutting)", "Step cost (diagonal 1.5, terrain extras)", "Reachable set (Dijkstra within budget)", "Path reconstruction", "Flow / distance field for the dead", "Field cache by map revision"],
+    "sliceScope": "8-direction movement, diagonals 1.5, no cutting past a wall corner, units block cells. Reachable(unit, budget) = Dijkstra out to 2 × move (5 tiles a person, 3 a walker, 6 a runner) giving cost and 'prev' per cell; PathTo(x, y) walks prev back. A DistanceField from the team's cells (Dijkstra over the whole map, ignoring units) that each dead unit follows downhill. Closed doors cost 1 to open for people; the dead batter doors at cost 2 + 0.4 × hp.",
+    "fullScope": "combat.js reachable / distField: heights only change on stairs or ladders, climbs cost per level (×1.5 in rain, ×2.5 in winter), vaulting half cover +2 and lands winded, mud +0.5, snow +0.25, acid avoided by weight, tunnels as links, fire closed to people; siege fields let the dead pile on the weakest door; fields are cached (8 per key) and patched after a door is hit so a 500 × 500 map with 100 dead stays under 1.5 s a turn.",
+    "protoRefs": ["prototype/src/sim/combat.js", "docs/features/combat.md", "prototype/tools/fieldpatchtest.js", "prototype/tools/vaulttest.js"],
+    "tasks": {
+      "data": [
+        "Move costs on CellDef (moveCost, passable, vaultable) and on unit defs (mob tiles per AP)",
+        "MoveRules record: diagonalCost 1.5, vaultCost 2, doorBashBase 2, doorBashPerHp 0.4"
+      ],
+      "backend": [
+        "Pathfinder.Reachable(battle, unit, maxCost) → ReachResult { float[] Cost; int[] Prev } using .NET PriorityQueue<int,float>",
+        "PathTo(ReachResult, x, y) and MoveCost; Move command charges 1 AP if cost ≤ mob else 2",
+        "DistanceField.Build(map, sources, walkerProfile) → float[]; NextStep(field, x, y) picks the lowest neighbour that is free",
+        "FieldCache keyed by (map.Revision, profile, sources hash) so 20 dead in a turn share one field",
+        "Optional A*(start, goal) with octile heuristic for single long queries (an NPC going to a specific door)",
+        "Tests: corner cutting refused, costs of known paths, blocked cells, field gradient always reaches a source"
+      ],
+      "ui": [
+        "Move-range overlay: cells with cost ≤ mob tinted one colour, ≤ 2·mob another (dash)",
+        "Path preview line from the selected unit to the hovered cell, with the AP it will cost"
+      ]
+    },
+    "dataModel": "public readonly record struct ReachResult(float[] Cost, int[] Prev, int Start);\npublic enum WalkerProfile { Person, Dead, Runner }\npublic static class Pathfinder {\n  public static ReachResult Reachable(Battle b, Unit u, float maxCost);\n  public static List<(int x,int y)> PathTo(in ReachResult r, int x, int y);\n}\npublic sealed class DistanceField { public float[] Dist; public int Revision; public WalkerProfile Profile; }",
+    "dependsOn": ["combat.map", "combat.turns"],
+    "connections": [
+      {"to": "combat.actions", "why": "Move uses the reachable set and the path, step by step", "how": "MoveCommand validates target in Reachable(...).Cost ≤ unit dash range, then walks PathTo cell by cell (each step can trigger overwatch / noise)", "godot": "the view plays UnitMoved(id, path[]) as a Tween along GridToScreen points", "unity": "the view plays UnitMoved(id, path[]) with a coroutine lerping along CellToWorld points"},
+      {"to": "combat.ai", "why": "the dead chase by the flow field; humans pick cells from the reachable set", "how": "ZombieBrain asks FieldCache.For(team cells, Dead) and steps downhill; human utility scoring iterates ReachResult cells", "godot": "pure sim", "unity": "pure sim"},
+      {"to": "combat.map", "why": "a door broken or wall knocked down must invalidate fields", "how": "BattleMap.Revision++ on every cell change; caches compare revision", "godot": "pure sim", "unity": "pure sim"},
+      {"to": "meta.perf", "why": "big maps (300–500 a side) need incremental field patching later", "how": "keep the field API stable so a patching implementation can replace the full rebuild", "godot": "can run field builds on a worker via Task.Run in the sim", "unity": "can move field builds into the Job System later"}
+    ],
+    "godot": {
+      "approach": "Write the pathfinder in the engine-free sim (it must run in dotnet test and in auto-resolve). Godot's AStarGrid2D is handy for a throwaway prototype but cannot express vault costs, doors that the dead batter, or flow fields, so do not build on it. The engine only draws the overlay and tweens the walk.",
+      "keyApis": ["AStarGrid2D (reference only)", "Tween", "Line2D (path preview)", "TileMapLayer (overlay layer)"],
+      "docs": [
+        {"t": "AStarGrid2D", "u": "https://docs.godotengine.org/en/stable/classes/class_astargrid2d.html"},
+        {"t": "Line2D", "u": "https://docs.godotengine.org/en/stable/classes/class_line2d.html"},
+        {"t": "Tween", "u": "https://docs.godotengine.org/en/stable/classes/class_tween.html"}
+      ]
+    },
+    "unity": {
+      "approach": "NavMesh is for continuous 3-D worlds, not turn-based grids: skip it and use the sim's own Dijkstra. Draw the move range on an overlay Tilemap and the path with a LineRenderer. If fields get slow on huge maps later, the Job System + Burst can run the same algorithm over NativeArrays.",
+      "keyApis": ["Tilemaps.Tilemap (overlay)", "LineRenderer", "Job System (later)"],
+      "docs": [
+        {"t": "LineRenderer", "u": "https://docs.unity3d.com/ScriptReference/LineRenderer.html"},
+        {"t": "Job System", "u": "https://docs.unity3d.com/Manual/JobSystem.html"}
+      ]
+    },
+    "learn": [
+      {"t": "Introduction to A* (and Dijkstra)", "u": "https://www.redblobgames.com/pathfinding/a-star/introduction.html"},
+      {"t": "Flow field pathfinding for many units", "u": "https://www.redblobgames.com/pathfinding/tower-defense/"},
+      {"t": ".NET PriorityQueue", "u": "https://learn.microsoft.com/en-us/dotnet/api/system.collections.generic.priorityqueue-2"}
+    ],
+    "newb": [
+      "Dijkstra floods outward from one start and gives the cost to every cell: exactly what the blue 'you can move here' area needs. A* is Dijkstra with a hint toward one goal: best for one path, useless for an area.",
+      "Flow field: run one Dijkstra from the targets (your team) outward; now every cell knows its distance. Each of 40 dead just steps to its cheapest neighbour. One search instead of 40 A* runs.",
+      "Costs are where gameplay lives: vaulting a fence for +2, mud for +0.5, a door the dead must batter for 2 + 0.4 × hp. Same algorithm, different weights.",
+      "No corner cutting means a diagonal step is only allowed if both orthogonal neighbours are passable, so nobody slips through a wall's corner.",
+      "Store 'prev' per cell during the search; the path is just following prev back from the goal."
+    ],
+    "pitfalls": [
+      "Using a List and sorting it every pop: fine on 32 × 24, a disaster on 300 × 300. Use PriorityQueue.",
+      "Letting the flow field treat units as walls: then a crowd blocks its own field. Ignore units in the field, check occupancy only on the actual step.",
+      "Floating-point diagonal costs (1.5) compared with == : always compare with a small epsilon.",
+      "Rebuilding the field for every zombie instead of caching per revision."
+    ],
+    "test": "xUnit: on hand-made 5 × 5 maps, known costs (straight 4 = 4, diagonal 2 = 3), corner cutting blocked, occupied cells excluded as destinations, flow field strictly decreases toward the team, cache reused when revision unchanged and rebuilt after a door breaks. Manual: hover cells and check the AP shown matches the walk.",
+    "size": "M"
+  },
+  {
+    "id": "combat.los",
+    "title": "Line of sight, cover & hit chance",
+    "summary": "Who can see whom (lines traced across the grid, heights, sight ranges, fog of war), how much cover a target has against a given shooter (from the cells on its four sides), and the hit-chance formula with a readable breakdown the UI shows.",
+    "whyHere": "Shooting, overwatch, the dead noticing you and the fog of war all depend on it; it sits after the map and before actions so 'shoot' can be validated and its odds shown.",
+    "subsystems": ["LOS ray (supercover / Bresenham)", "Field of view & fog of war (shadowcasting)", "Sight ranges (day, night)", "Directional cover from neighbour cells", "Flanking", "Hit-chance breakdown", "Crit chance"],
+    "sliceScope": "Los(a, b): walk the cells on the line between centres; a sight-blocking cell blocks, ignoring start and end. Sight 13 tiles for people, 9 for the dead. Fog of war = union of what your units see this turn. Cover: each of the target's 4 neighbour cells gives 0/1/2; it counts only if the shooter is in front of that side. Hit% = aim + weapon aim − range falloff − cover (0/20/40) + 15 if target unaware, clamped 5–95; crit 25% if exposed, 10% vs the dead, 5% in cover, ×2 damage.",
+    "fullScope": "combat.js los samples the line 4× a tile with corner grazing and heights (eye 0.6 above the cell), caches every pair (dense Int8Array to 5000 cells, sparse Map after); hollows shut sight, high ground +2 sight and +5 aim a level (max +15), full cover from 2 levels up; night cones (vision.js 120°, 4–7 tiles dark), fog −4, smoke; shotOdds has ~20 labelled rows (range, round drop, bipod, hunker −20, reaction −15, flank, height).",
+    "protoRefs": ["prototype/src/sim/combat.js", "prototype/src/sim/vision.js", "prototype/src/sim/highground.js", "prototype/src/sim/stealth.js", "docs/features/combat.md"],
+    "tasks": {
+      "data": [
+        "SightRules: personSight 13, deadSight 9, nightSight 7 / dead 5 (post-slice)",
+        "CoverRules: coverPenalty [0, 20, 40], frontDot 0.35, hunker 20, unawareBonus 15, reactionPenalty 15, hit clamp 5..95",
+        "Weapon aim fields used here: aim, optimalRange, falloffPerTile, crit bonus (from gear.weapons)"
+      ],
+      "backend": [
+        "Los.Clear(map, x0,y0, x1,y1): supercover line (every cell the segment touches), symmetric, cached by (a,b) and map.Revision",
+        "Fov.Compute(map, x, y, range) with symmetric shadowcasting for the fog of war; Battle.Visible[side] bitset updated after each move",
+        "Cover.Against(map, tx,ty, sx,sy) → {Level, Flanked}: max cover over the 4 sides whose direction · (shooter − target)/dist > 0.35; flanked = some cover nearby but none facing",
+        "HitChance.Shot(battle, shooter, target) → ShotOdds { Chance, Crit, DmgMin, DmgMax, List<(string label, int delta)> Parts }",
+        "Tests: wall blocks, door open/closed, symmetric LOS, cover facing vs flanked, each formula row with fixed numbers"
+      ],
+      "ui": [
+        "Fog of war overlay (unseen cells dimmed, last-seen enemies as ghosts)",
+        "Cover shields on cell edges when hovering a cell (half / full, from CoverSides)",
+        "Target hover shows hit % and the breakdown list ('Half cover −20', 'Range −6')"
+      ]
+    },
+    "dataModel": "public enum CoverLevel { None = 0, Half = 1, Full = 2 }\npublic readonly record struct CoverResult(CoverLevel Level, bool Flanked);\npublic sealed record ShotOdds(int Chance, int Crit, int DmgMin, int DmgMax,\n  IReadOnlyList<(string Label, int Delta)> Parts);\npublic static class Los { public static bool Clear(BattleMap m, int x0, int y0, int x1, int y1); }\npublic static class HitChance { public static ShotOdds Shot(Battle b, Unit a, Unit t); }",
+    "dependsOn": ["combat.map", "combat.turns", "gear.weapons", "surv.model"],
+    "connections": [
+      {"to": "combat.actions", "why": "Shoot needs LOS and rolls against the chance; overwatch fires when a mover enters a visible cell", "how": "ShootCommand.Validate calls Los/CanSee; Execute rolls battle.Rng.Next(100) < odds.Chance", "godot": "target hover calls SimHost.Battle.Odds(a,t) and shows the Parts list in a tooltip Control", "unity": "target hover calls SimHost.Battle.Odds(a,t) and shows Parts in a UI Toolkit tooltip"},
+      {"to": "combat.ai", "why": "the dead notice by sight; human AI scores cells by cover and flank", "how": "AI calls CanSee and Cover.Against for candidate cells; same functions as the player (AI parity, ADR 0001)", "godot": "pure sim", "unity": "pure sim"},
+      {"to": "ui.battle", "why": "fog, shields and odds are the battle's most read information", "how": "Battle.Visible[Player] bitset + VisibilityChanged event; CoverSides(x,y) → int[4]", "godot": "a CanvasItem _Draw over the TileMapLayer, or a fog TileMapLayer", "unity": "a fog Tilemap layer tinted per cell, shields as small sprites"},
+      {"to": "combat.stealth", "why": "post-slice: vision cones, darkness and sneaking extend CanSee", "how": "CanSee(a,t) is the one gate; stealth adds rules inside it (cone, light, sneak behind cover)", "godot": "pure sim", "unity": "pure sim"}
+    ],
+    "godot": {
+      "approach": "All of this is sim math: do not use physics raycasts (RayCast2D) for game rules, they depend on colliders and frame timing. Godot only draws: a fog layer, edge shields and a tooltip with the breakdown.",
+      "keyApis": ["CanvasItem._Draw", "TileMapLayer (fog layer)", "Control tooltips / PanelContainer"],
+      "docs": [
+        {"t": "Custom drawing in 2D", "u": "https://docs.godotengine.org/en/stable/tutorials/2d/custom_drawing_in_2d.html"},
+        {"t": "CanvasItem", "u": "https://docs.godotengine.org/en/stable/classes/class_canvasitem.html"}
+      ]
+    },
+    "unity": {
+      "approach": "Same: no Physics2D.Raycast for rules. A second Tilemap tinted dark for fog, small shield sprites on hovered cell edges, and a UI Toolkit tooltip listing the ShotOdds parts.",
+      "keyApis": ["Tilemaps.Tilemap (SetColor for fog)", "UI Toolkit", "SpriteRenderer"],
+      "docs": [
+        {"t": "UI Toolkit", "u": "https://docs.unity3d.com/Manual/UIElements.html"},
+        {"t": "Tilemap API", "u": "https://docs.unity3d.com/ScriptReference/Tilemaps.Tilemap.html"}
+      ]
+    },
+    "learn": [
+      {"t": "Line drawing on a grid", "u": "https://www.redblobgames.com/grids/line-drawing/"},
+      {"t": "Symmetric shadowcasting", "u": "https://www.albertford.com/shadowcasting/"},
+      {"t": "2D visibility", "u": "https://www.redblobgames.com/articles/visibility/"}
+    ],
+    "newb": [
+      "Bresenham picks one cell per column, so a line can slip diagonally between two wall cells; a 'supercover' line includes every cell the segment touches and is fairer for walls. The prototype samples 4 points a tile and lets a line graze a corner.",
+      "LOS answers 'can A see B?'; FOV (shadowcasting) answers 'what can A see?' in one pass. Use FOV for fog of war, LOS for a single shot.",
+      "Make LOS symmetric (A sees B ⇔ B sees A), or players will be shot by things they cannot see.",
+      "Cover is directional: a wall east of you protects only against shooters to the east. The dot product of the side's direction with the direction to the shooter tells you if that side faces them.",
+      "Return the hit chance as a list of labelled rows, not one number: the UI tooltip, balance tests and your own debugging all read it."
+    ],
+    "pitfalls": [
+      "Showing one hit % and rolling with another (UI and sim computing separately): always call the same function.",
+      "Rolling RNG inside the odds function: then just hovering a target changes the future. Compute odds without dice; roll only in Execute.",
+      "Not caching LOS: fog of war recomputed for every unit every step gets slow fast.",
+      "Forgetting that the dead ignore cover rules for themselves (shots at the dead in the prototype get no cover penalty)."
+    ],
+    "test": "xUnit: a wall between two units blocks both ways; open door sees, closed does not; half cover facing gives −20, the same cover from behind gives 0 and Flanked=true; range falloff numbers; clamp at 5 and 95; Parts sum to Chance before clamping. Manual: walk round a crate and watch the shields and hit % change.",
+    "size": "L"
+  },
+  {
+    "id": "combat.actions",
+    "title": "Move, shoot, melee, reload, search, extract",
+    "summary": "The things a survivor can do on their turn, each a command with validation (a plain-English refusal), an AP cost, its effect and the events it emits: move, shoot, melee, reload, hunker, open door, search a container, extract and sound the retreat.",
+    "whyHere": "With turns, paths and LOS in place the battle becomes playable; the AI then uses the very same commands, and resolve reads what they recorded (ammo spent, loot carried).",
+    "subsystems": ["Battle command pattern (Validate / Execute)", "Move with step events", "Shoot & damage roll", "Melee", "Reload & magazines", "Search container → inventory", "Doors", "Extract & retreat", "Noise emitted by actions"],
+    "sliceScope": "Move (1 AP within move range, 2 AP dash), Shoot (needs LOS and a round in the magazine; ends the turn), Melee (adjacent, 10–95%), Reload (1 AP from the survivor's own ammo), Hunker (+20 defence, ends turn), Open/close door (1 AP), Search container (1 AP, contents into the search window), Extract (standing in the extraction zone: unit leaves with what it carries), Sound the retreat. Every gunshot makes noise that wakes the dead within a radius. Downed at 0 hp, bleeding out in 3 turns.",
+    "fullScope": "combat.js combatAct handles ~90 action types (overwatch, suppress, throw, vault, shove, drag, tie up, takedowns, medics, vehicles, turrets, windows, barricades, quick search that is free but loud: Heat +5, wakes the unaware within 7 tiles). Damage by weapon range × multipliers, crit ×2, armour classes, physical rounds per magazine, jams up to 12% (gunfire.js).",
+    "protoRefs": ["prototype/src/sim/combat.js", "prototype/src/sim/search.js", "prototype/src/sim/raidloot.js", "prototype/src/sim/gunfire.js", "docs/features/combat.md"],
+    "tasks": {
+      "data": [
+        "Command records: Move(unitId,x,y), Shoot(unitId,targetId), Melee, Reload, Hunker, Door(x,y), Search(containerId), Extract, Retreat, EndTurn",
+        "Action costs and noise radii in content/battle/actions.json (shot noise by weapon, door 3, search 0 in slice)",
+        "BattleEvent payloads: UnitMoved(path), ShotFired(hit, dmg, crit), UnitDowned, ContainerOpened, UnitExtracted"
+      ],
+      "backend": [
+        "IBattleCommand { string? Refusal(Battle); void Execute(Battle) }; Battle.Do(cmd) = refusal or execute + CheckEnd",
+        "Move walks the path step by step (so overwatch and noticing can interrupt later); Shoot: odds from combat.los, roll, damage roll, crit, emit events, spend round",
+        "Damage → Hp; at 0 → Down with BleedTurns 3; at bleed 0 → Dead; the dead die outright",
+        "Search: roll the container's loot table once (battle Rng), move chosen items into the unit's carried inventory (gear.items rules, weight)",
+        "Extract / Retreat: mark units Extracted, they leave the map with their carried items; when none active remain, the battle ends",
+        "Tests per command: each refusal string, AP spent, ammo spent, loot moved, noise wakes the right dead"
+      ],
+      "ui": [
+        "Action bar for the selected unit (buttons + hotkeys) with greyed buttons showing the refusal as a tooltip",
+        "Search window: container contents on one side, the survivor's inventory on the other (reuses ui.inventory)",
+        "Floating text for hits/misses/damage; combat log lines"
+      ]
+    },
+    "dataModel": "public interface IBattleCommand { int UnitId { get; } string? Refusal(Battle b); void Execute(Battle b); }\npublic sealed record MoveCmd(int UnitId, int X, int Y) : IBattleCommand { ... }\npublic sealed record ShootCmd(int UnitId, int TargetId) : IBattleCommand { ... }\npublic sealed record SearchCmd(int UnitId, int ContainerId) : IBattleCommand { ... }\npublic abstract record BattleEvent(int Turn);\npublic sealed record ShotFired(int Turn, int A, int T, bool Hit, int Dmg, bool Crit) : BattleEvent(Turn);",
+    "dependsOn": ["combat.turns", "combat.pathing", "combat.los", "gear.weapons", "gear.items", "gear.loot"],
+    "connections": [
+      {"to": "combat.ai", "why": "the dead and enemy humans act through the same commands", "how": "brains build IBattleCommand objects and call Battle.Do; ADR 0001 parity means no AI-only shortcuts", "godot": "pure sim", "unity": "pure sim"},
+      {"to": "gear.weapons", "why": "shots read the weapon's aim, damage, magazine and calibre", "how": "Unit.WeaponId → WeaponDef in ContentDb; Unit.MagRounds spent per shot; Reload draws matching rounds from the unit's inventory", "godot": "magazine count label from UnitChanged event", "unity": "magazine count label from UnitChanged event"},
+      {"to": "ui.battle", "why": "every action plays as animation and log", "how": "events appended to Battle.Events; bridge drains them in order", "godot": "SimHost emits signals; Battle scene plays them sequentially with Tweens and AnimationPlayer", "unity": "SimHost raises events; BattleView queues them and plays each in a coroutine"},
+      {"to": "combat.resolve", "why": "what happened (rounds fired, kills, loot carried, who extracted) becomes the result", "how": "Battle keeps counters (AmmoUsed, Kills) and per-unit Carried inventory read by BattleResultBuilder", "godot": "pure sim", "unity": "pure sim"}
+    ],
+    "godot": {
+      "approach": "Buttons in an action bar (HBoxContainer of Buttons) call SimHost.Battle.Do(new ShootCmd(...)); if a refusal string comes back, show it as a toast. Animations replay the event queue one at a time with Tweens; damage numbers are short-lived Label nodes.",
+      "keyApis": ["Button / HBoxContainer", "InputEvent / InputMap", "Tween", "Label (floating text)"],
+      "docs": [
+        {"t": "Using InputEvent", "u": "https://docs.godotengine.org/en/stable/tutorials/inputs/inputevent.html"},
+        {"t": "C# signals", "u": "https://docs.godotengine.org/en/stable/tutorials/scripting/c_sharp/c_sharp_signals.html"}
+      ]
+    },
+    "unity": {
+      "approach": "A UI Toolkit action bar whose buttons build commands and pass them to SimHost; the Input System maps hotkeys to the same calls. A BattleView MonoBehaviour plays the event queue with coroutines.",
+      "keyApis": ["UI Toolkit (Button)", "Input System actions", "Coroutines"],
+      "docs": [
+        {"t": "UI Toolkit", "u": "https://docs.unity3d.com/Manual/UIElements.html"},
+        {"t": "Input System", "u": "https://docs.unity3d.com/Packages/com.unity.inputsystem@1.11/manual/index.html"}
+      ]
+    },
+    "learn": [
+      {"t": "Command pattern", "u": "https://gameprogrammingpatterns.com/command.html"}
+    ],
+    "newb": [
+      "A command is a small object describing an intent ('unit 3 shoots unit 9'). Because it is data, the player, the AI, a replay and a test can all issue it the same way.",
+      "Refusal-first design: every command first answers 'why not?' as a sentence. The UI greys a button and shows that sentence; no duplicated rules in the UI.",
+      "Emit events, don't call the UI. The sim says 'ShotFired(hit, 14 dmg)'; the view decides how to show it. That keeps the sim testable and the presentation swappable.",
+      "Physical ammo: the magazine count is real state. Shooting spends rounds, reloading moves rounds from inventory into the gun; resolve later subtracts what was used."
+    ],
+    "pitfalls": [
+      "Validating in the UI only: the AI (or a bug) then does illegal things.",
+      "Rolling the dice in a different order between runs (e.g. iterating a HashSet): breaks determinism and replays.",
+      "Teleporting a move in one go: overwatch and noticing need step-by-step movement even if the slice does not use them yet.",
+      "Letting the search window move items without weight checks, then discovering at extraction that someone carries 300 kg."
+    ],
+    "test": "xUnit per command: refusals ('No line of sight.', 'No action left.'), AP and ammo spent, a forced hit with a seeded Rng deals damage in range, downed → dead after 3 turns, searched loot appears in the unit's inventory, extract removes the unit and the battle ends. Manual: play the slice raid end to end with keyboard and mouse.",
+    "size": "L"
+  },
+  {
+    "id": "dead.types",
+    "title": "The dead: stats & behaviour data (walker, runner)",
+    "summary": "The kinds of the dead as content: hit points, speed, sight and hearing, bite damage and aim, scaled by a 'power' from the tile, plus the behaviour flags the AI reads. The slice has two: the slow walker and the fast runner.",
+    "whyHere": "The AI and auto-resolve need numbers for the dead before they can chase or be fought by the numbers; it is pure data, so it is cheap and unblocks combat.ai and combat.resolve.",
+    "subsystems": ["DeadTypeDef records (JSON)", "Power scaling formulas", "Senses (sight, hearing)", "Behaviour flags / brain id", "Spawn mix by place", "Art keys"],
+    "sliceScope": "Two types in content/dead/types.json. Walker: hp 15 + 7 × power (29 at power 2), 3 tiles an action, sight 9, bite aim 55 + 3 × power, claws 12–20 × (0.6 + 0.1 × power), aware of noise. Runner: hp × 0.85, 6 tiles an action, about 15% of a mix. A spawn mix (80/20) for the slice POI. Strength value per type for auto-resolve.",
+    "fullScope": "zombietypes.js + hiveconst.js ZTYPES: runners, brutes (2.4× hp, ¾ damage taken), spitters (acid), screamers (call 1–2 more), crawlers (hidden until 2.5 tiles), Bonebacks, carriers, soldier dead, sleepers, dead beasts, five counter-dead and 2 × 2 bosses; the mix widens with the years and the place (deadpool.js), each with its own turn function.",
+    "protoRefs": ["prototype/src/sim/zombietypes.js", "prototype/src/sim/hiveconst.js", "prototype/src/sim/combat.js", "docs/features/dead.md"],
+    "tasks": {
+      "data": [
+        "DeadTypeDef JSON: id, name, hpBase, hpPerPower, hpMult, mob, sight, hearingMult, meleeAimBase, meleeAimPerPower, dmg [min,max], dmgMult, armor, brainId, artKey ('dead.walker')",
+        "Spawn mixes per POI kind (content/dead/mixes.json) with weights",
+        "Strength per type (weight in auto-resolve: walker 1.0, runner 1.15)",
+        "ContentDb validation test: every type has a brain and an art key that exist"
+      ],
+      "backend": [
+        "DeadFactory.Create(typeId, power, Rng) → Unit with stats from the formulas",
+        "Mix roll: PickType(mix, Rng) for each of the N dead a battle needs (N from dead.population)",
+        "TypeStrength(mix) for combat.resolve's odds",
+        "Tests: formulas at power 1/2/5, mix distribution over 10 000 rolls within tolerance"
+      ],
+      "ui": [
+        "Placeholder figures per artKey (a grey shambling shape vs a red lean one), name and hp bar on hover",
+        "Codex stub entry per type (name, one line of how to fight it)"
+      ]
+    },
+    "dataModel": "public sealed record DeadTypeDef(\n  string Id, string Name, int HpBase, int HpPerPower, float HpMult,\n  float Mob, int Sight, float Hearing,\n  int MeleeAimBase, int MeleeAimPerPower, int DmgMin, int DmgMax,\n  float Armor, float Strength, string BrainId, string ArtKey);\npublic sealed record DeadMix(string Id, IReadOnlyDictionary<string, float> Weights);",
+    "dependsOn": ["data.content", "data.ids", "dead.population"],
+    "connections": [
+      {"to": "combat.ai", "why": "each type names the brain that runs it and the senses it uses", "how": "BrainRegistry[def.BrainId] → IUnitBrain; brains read Sight/Hearing/Mob from the unit", "godot": "pure sim", "unity": "pure sim"},
+      {"to": "dead.population", "why": "the tile's count of the dead decides how many come to the battle; the mix decides which", "how": "BattleSetup.Enemy {Count, Power, MixId} filled from the tile's population", "godot": "pure sim", "unity": "pure sim"},
+      {"to": "ui.placeholders", "why": "each type is drawn by art key so human art swaps in later", "how": "DeadTypeDef.ArtKey → ArtCatalog lookup", "godot": "ArtCatalog Resource maps 'dead.runner' → SpriteFrames", "unity": "ArtCatalog ScriptableObject maps 'dead.runner' → Sprite / AnimatorController"},
+      {"to": "combat.resolve", "why": "auto-resolve weighs the enemy by count × power × type strength", "how": "EnemyPower = count × power × TypeStrength(mix)", "godot": "pure sim", "unity": "pure sim"}
+    ],
+    "godot": {
+      "approach": "The defs live in the sim's ContentDb (JSON → records), not in Godot Resources, so tests see them. Godot gets only the visuals: an ArtCatalog Resource mapping art keys to SpriteFrames for an AnimatedSprite2D.",
+      "keyApis": ["Resource (ArtCatalog)", "AnimatedSprite2D / SpriteFrames", "FileAccess (reading content/ in exports)"],
+      "docs": [
+        {"t": "Resources", "u": "https://docs.godotengine.org/en/stable/tutorials/scripting/resources.html"},
+        {"t": "JSON", "u": "https://docs.godotengine.org/en/stable/classes/class_json.html"}
+      ]
+    },
+    "unity": {
+      "approach": "Keep stats in JSON loaded by the sim (put content/ in StreamingAssets). A ScriptableObject ArtCatalog maps art keys to sprites and animator controllers; designers never edit stats in the Inspector, so the sim stays the single source of truth.",
+      "keyApis": ["ScriptableObject", "StreamingAssets", "Animator"],
+      "docs": [
+        {"t": "ScriptableObject", "u": "https://docs.unity3d.com/Manual/class-ScriptableObject.html"},
+        {"t": "StreamingAssets", "u": "https://docs.unity3d.com/Manual/StreamingAssets.html"}
+      ]
+    },
+    "learn": [
+      {"t": "C# records", "u": "https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/builtin-types/record"}
+    ],
+    "newb": [
+      "Data-driven design: a new kind of dead should be a JSON entry plus (maybe) a brain, never a new class with copied stats.",
+      "A 'power' number per tile (2–10) scaling a few formulas gives you difficulty curves for free; you balance formulas, not hundreds of numbers.",
+      "Each type should ask a different answer of the player (runner: walls and overwatch; brute: heavy guns). Two types that play the same are one type too many.",
+      "Strength weights let auto-resolve treat a runner as a bit more than a walker without simulating the fight."
+    ],
+    "pitfalls": [
+      "Hard-coding walker numbers inside AI code: then balancing needs a programmer.",
+      "Making the runner too fast for the slice map size: at 6 tiles an action it crosses 12 tiles a turn; check contact distance (14–20) still leaves the player one turn.",
+      "Forgetting a validation test, so a typo in brainId only shows as a crash mid-battle."
+    ],
+    "test": "xUnit: walker at power 2 has 29 hp and mob 3; runner hp = round(walker hp × 0.85); mixes roll within ±2% of weights over 10 000 draws; ContentDb rejects a type with a missing brain. Manual: a debug spawn of each type shows the right figure and hover stats.",
+    "size": "S"
+  },
+  {
+    "id": "combat.ai",
+    "title": "Enemy AI: noise, chase, attack (the dead first)",
+    "summary": "How the dead (and later enemy humans) take their turns: the dead are a small state machine (unaware → investigating a noise → aware and chasing → biting) driven by sight, hearing and a shared flow field; human enemies later pick cells and targets by utility scores.",
+    "whyHere": "The slice's promise is 'the dead hear and chase'; it needs pathing, LOS, actions and the dead's data, and is the last piece before a battle can be won or lost.",
+    "subsystems": ["Brain registry (IUnitBrain)", "Awareness states (FSM)", "Noise & alert propagation (pods)", "Chase via flow field", "Attack selection", "Utility scoring for human enemies (post-slice)", "Deterministic tie-breaking"],
+    "sliceScope": "Dead FSM: Unaware (40% chance to shuffle 1–2 cells), Investigating (walk to the last noise for 3 turns, then back to Unaware), Aware (step down the flow field toward the nearest survivor, bite if adjacent). Becomes Aware on seeing a survivor within sight 9 with LOS, or hearing a noise within its radius (a shot ~ 10–15 tiles); waking one wakes its pod. All actions through the same commands as the player.",
+    "fullScope": "combat.js aiUnit is a long priority list (a hand-written behaviour tree) for every side: lures, crossfire with raiders, medics, sieges, reload/unjam, flee, cover-seeking via scoreCell (high ground +2 a level, hollows −6), per-type turns (screamer hangs back and calls, brute smashes); stealth.js patrol/investigate; crossfire.js lets raiders and the dead fight; bosses register their own brains.",
+    "protoRefs": ["prototype/src/sim/combat.js", "prototype/src/sim/zombietypes.js", "prototype/src/sim/stealth.js", "prototype/src/sim/crossfire.js", "docs/adr/0001-ai-parity.md"],
+    "tasks": {
+      "data": [
+        "Brain ids per dead type (walker, runner) and tuning in content/ai/dead.json: shuffleChance 0.4, investigateTurns 3, podWakeAll true",
+        "Noise radii per action (gunshot by weapon, door, melee, search) and a hearing multiplier per type",
+        "Pod ids assigned at spawn (groups of 2–5 dead that wake together)"
+      ],
+      "backend": [
+        "IUnitBrain.TakeTurn(Battle, Unit) returns commands executed via Battle.Do; BrainRegistry by id",
+        "Awareness: Noise(x, y, radius) event → unaware dead in range (and their pod) become Investigating/Aware; sight check at the start of each enemy turn",
+        "Chase: FieldCache from survivors' cells; take steps while AP and mob allow; Melee when adjacent",
+        "Human enemy brain (post-slice): score each reachable cell = cover vs visible foes + hit chance from it − exposure; pick best then best shot",
+        "Tests: a noise wakes only in-range dead and their pod; aware walker closes distance every turn; same seed → identical enemy phase"
+      ],
+      "ui": [
+        "State icons over the dead in debug mode (z = unaware, ? = investigating, ! = aware)",
+        "'Something heard you' log line and a brief ping on the noise cell"
+      ]
+    },
+    "dataModel": "public enum Awareness { Dormant, Unaware, Investigating, Aware }\npublic interface IUnitBrain { void TakeTurn(Battle b, Unit u); }\npublic sealed class DeadMind { public Awareness State; public (int x,int y)? Lure; public int LureTurns; public int Pod; }\npublic readonly record struct Noise(int X, int Y, float Radius, Side Source, string Why);\npublic sealed class BrainRegistry { public IUnitBrain this[string id] => _map[id]; readonly Dictionary<string, IUnitBrain> _map = new(); }",
+    "dependsOn": ["combat.turns", "combat.pathing", "combat.los", "combat.actions", "dead.types"],
+    "connections": [
+      {"to": "combat.pathing", "why": "the crowd chases by one shared distance field", "how": "FieldCache.For(sources: active survivors, profile: Dead) reused by every dead unit in the phase", "godot": "pure sim", "unity": "pure sim"},
+      {"to": "combat.actions", "why": "noise comes from actions; the AI acts through commands", "how": "commands call battle.EmitNoise(...); brains call Battle.Do(new MoveCmd/MeleeCmd)", "godot": "pure sim", "unity": "pure sim"},
+      {"to": "combat.turns", "why": "the enemy phase calls each brain in queue order", "how": "EnemyStep() → BrainRegistry[unit.BrainId].TakeTurn", "godot": "Battle scene awaits each step's animation", "unity": "coroutine awaits each step's animation"},
+      {"to": "ai.governor", "why": "AI parity: the same tactical brains can play the player's side for the autopilot", "how": "a PlayerBotBrain implements IUnitBrain for survivors when autopilot is on", "godot": "pure sim", "unity": "pure sim"}
+    ],
+    "godot": {
+      "approach": "No Godot AI nodes needed: brains are C# classes in the sim. Godot shows only the result (walks, bites) and optional debug icons. Do not use NavigationAgent2D: it is for real-time continuous movement, not grid turns.",
+      "keyApis": ["Tween (playing AI moves)", "Label / Sprite2D (debug icons)", "Autoload SimHost"],
+      "docs": [
+        {"t": "C# in Godot", "u": "https://docs.godotengine.org/en/stable/tutorials/scripting/c_sharp/index.html"},
+        {"t": "Tween", "u": "https://docs.godotengine.org/en/stable/classes/class_tween.html"}
+      ]
+    },
+    "unity": {
+      "approach": "Same: brains live in the sim assembly. Avoid Unity's NavMeshAgent and visual behaviour-tree packages for this; they assume real-time and the engine. The BattleView only replays AI events.",
+      "keyApis": ["Coroutines (replay)", "MonoBehaviour", "Assembly definition (sim with no engine references)"],
+      "docs": [
+        {"t": "Coroutines", "u": "https://docs.unity3d.com/Manual/Coroutines.html"},
+        {"t": "MonoBehaviour", "u": "https://docs.unity3d.com/ScriptReference/MonoBehaviour.html"}
+      ]
+    },
+    "learn": [
+      {"t": "State pattern (FSMs)", "u": "https://gameprogrammingpatterns.com/state.html"},
+      {"t": "Game AI Pro: An Introduction to Utility Theory", "u": "https://www.gameaipro.com/GameAIPro/GameAIPro_Chapter09_An_Introduction_to_Utility_Theory.pdf"},
+      {"t": "Game AI Pro: The Behavior Tree Starter Kit", "u": "https://www.gameaipro.com/GameAIPro/GameAIPro_Chapter06_The_Behavior_Tree_Starter_Kit.pdf"}
+    ],
+    "newb": [
+      "Pick the simplest AI that is fun. The dead are mindless: a 3-4 state FSM is perfect and easy to debug. Behaviour trees shine when ordered fallbacks pile up (reload, else take cover, else flee); utility AI shines when choosing the best of many options (which cell, which target).",
+      "Utility AI = score every option with a formula and take the highest. For a raider: score each reachable cell by cover from visible foes, hit chance from there and danger; the prototype's scoreCell does exactly this.",
+      "Let the AI hear: noise is the stealth game. A gunshot wakes the dead for 10+ tiles; quiet play is rewarded, loud play brings the horde.",
+      "Pods (small groups that wake together) make the map feel alive and stop one shot waking all 40 dead.",
+      "The AI uses the same commands and rules as the player (ADR 0001 AI parity): no peeking through fog, no free moves."
+    ],
+    "pitfalls": [
+      "Giving the AI omniscience (reading player positions through fog): feels unfair fast.",
+      "Iterating units or neighbours in a non-deterministic order (Dictionary, HashSet): enemy turns differ between runs and tests flake.",
+      "Dead piling into a doorway forever: when the next field step is occupied, try the second-best neighbour or wait.",
+      "Building a full behaviour-tree framework before the dead even chase: start with a switch statement."
+    ],
+    "test": "xUnit: a shot at (5,5) with radius 10 wakes a walker at 8 tiles and its pod-mate at 14, not an unrelated one at 12; an aware walker's distance to the team shrinks every turn; a fixed seed reproduces the whole enemy phase event list; no brain issues a refused command. Manual: sneak past a pod, fire once, watch the pod turn and come.",
+    "size": "L"
+  },
+  {
+    "id": "combat.resolve",
+    "title": "Battle results → world, and auto-resolve",
+    "summary": "The contract between the campaign and a battle: a BattleSetup goes in, a BattleResult comes out (victory / defeat / retreat, kills, the hurt and the dead, ammo used, loot), applied back to survivors, the party, the stockpile and the dead's tile count; plus fighting it 'by the numbers' when the player does not play it on the map.",
+    "whyHere": "Closes the loop of the slice: without it a raid changes nothing in the world. It comes last in the lane because it reads everything the battle recorded.",
+    "subsystems": ["BattleSetup / BattleResult contract", "Result handlers by key", "Apply: wounds, deaths, ammo, loot", "Dead population update", "Auto-resolve odds (logistic)", "Retreat / break-off", "Pending battle queue"],
+    "sliceScope": "BattleService.Start(setup) → either a played Battle or AutoResolve(setup). Result applied in one place: each unit's hp → survivor health (wounds), dead survivors removed, rounds used removed from inventories, extracted units' carried loot → party cargo (then base stockpile on return), kills → tile's dead count down. Auto-resolve: win = logistic(4.49·ln(ratio) + 3.38 vs the dead), clamped 3–97%; won: 0–half hurt for 10–40, lost: 1–all hurt for 25–75. A 'retreat' outcome if anyone extracted but not all.",
+    "fullScope": "combat.js startCombat / finishCombat / autoResolveCombat: a handler registry (raid, ambush, base defence, hunt, lone attack) decides the aftermath; finishCombat also logs gunfire heat on the map, wears gear, records relations and achievements, takes prisoners, settles vehicles and tents; breakoff.js plays fights by the numbers in rounds with retreat policies (never / most / losing / blood); base defence resolves by tiers (wall, yard, buildings).",
+    "protoRefs": ["prototype/src/sim/combat.js", "prototype/src/sim/breakoff.js", "prototype/src/sim/raidloot.js", "prototype/src/sim/walkers.js", "docs/features/combat.md"],
+    "tasks": {
+      "data": [
+        "BattleSetup record (tileId, partyId?, baseId?, enemy {kind, count, power, mixId}, ambush, canRetreat, handlerKey, context)",
+        "BattleResult record (outcome, enemiesKilled, enemiesLeft, survivorsHurt, survivorsDead, ammoUsed, loot, turns)",
+        "AutoResolve tuning in content/battle/odds.json (ratio 4.49, deadBonus 3.38, ambush ±0.7, min 0.03, max 0.97, wound bands)",
+        "Battle state included in the save (schemaVersion bump) so a raid can be saved mid-fight, or a rule that saves are blocked in battle"
+      ],
+      "backend": [
+        "BattleService: Start, queue if one is running, Finish(result) → ResultApplier then IBattleHandler[setup.HandlerKey].Apply(world, result, setup)",
+        "BattleResultBuilder from a played Battle (per-unit hp, dead, extracted, carried items, counters)",
+        "AutoResolver: power(mine) = Σ survivor combat power × ammo factor; theirs = count × power × type strength; roll win, wounds, kills with world Rng",
+        "Handlers for the slice: 'raid' (loot to party cargo, POI marked searched) and 'ambush' (party continues or retreats)",
+        "Tests: result applied once; survivors' health matches battle hp; loot conservation (items leave the map only with extracted units); auto-resolve win rate across 10 000 seeds matches the formula"
+      ],
+      "ui": [
+        "Pre-battle card: Fight on the map / Auto-resolve (with win %) / Retreat",
+        "After-battle summary: outcome, kills, who was hurt or died, loot list, Continue (back to the State Map)"
+      ]
+    },
+    "dataModel": "public enum Outcome { Victory, Defeat, Retreat }\npublic sealed record EnemySpec(string Kind, int Count, int Power, string MixId);\npublic sealed record BattleSetup(int TileId, int? PartyId, int? BaseId, EnemySpec Enemy,\n  Side? Ambush, bool CanRetreat, string HandlerKey, JsonObject Context);\npublic sealed record BattleResult(Outcome Outcome, int EnemiesKilled, int EnemiesLeft,\n  IReadOnlyList<int> Hurt, IReadOnlyList<int> Dead, int AmmoUsed, Loot Loot, int Turns);\npublic interface IBattleHandler { void Apply(World w, BattleResult r, BattleSetup s); }",
+    "dependsOn": ["combat.actions", "combat.ai", "dead.types", "surv.health", "gear.loot", "base.core", "travel.parties", "dead.population", "data.save"],
+    "connections": [
+      {"to": "travel.parties", "why": "the party that fought gets its loot, losses and next step", "how": "IBattleHandler 'raid' adds Loot to Party.Cargo and resumes the party's order; Defeat wipes the party", "godot": "SimHost emits BattleEnded; the main scene swaps back to StateMap.tscn", "unity": "SimHost raises BattleEnded; the State Map scene is loaded back"},
+      {"to": "surv.health", "why": "battle damage becomes wounds; deaths are permanent", "how": "ResultApplier calls Health.ApplyBattleDamage(survivorId, hpLost) and Survivor.Kill(id, cause)", "godot": "a SurvivorDied signal feeds the log and the roster", "unity": "a SurvivorDied C# event feeds the log and the roster"},
+      {"to": "dead.population", "why": "the dead killed come off the tile's count; noise may draw more", "how": "DeadPop.OnBattleEnd(tileId, killed) in ResultApplier", "godot": "pure sim", "unity": "pure sim"},
+      {"to": "data.save", "why": "a battle in progress or just ended must survive save/load", "how": "Battle is plain data (map, units, rng state) serialised with System.Text.Json; caches skipped with [JsonIgnore]", "godot": "save menu calls SimHost.Save(); loading reopens Battle.tscn if world.Battle != null", "unity": "save menu calls SimHost.Save(); loading reopens the Battle scene if world.Battle != null"},
+      {"to": "core.cards", "why": "the 'fight or auto-resolve' choice is a decision card", "how": "a CardRaised with options mapped to BattleService.Start(setup) or AutoResolve(setup)", "godot": "card UI Control from ui.cards", "unity": "card UI from ui.cards"}
+    ],
+    "godot": {
+      "approach": "Keep the World in the SimHost autoload so it survives the scene change: BattleEnded → GetTree().ChangeSceneToFile(\"res://StateMap.tscn\"). The summary screen is a Control scene reading the BattleResult; nothing about the outcome is decided in Godot code.",
+      "keyApis": ["SceneTree.ChangeSceneToFile", "Autoload (SimHost)", "Control / PanelContainer", "[Signal] BattleEnded"],
+      "docs": [
+        {"t": "Change scenes manually", "u": "https://docs.godotengine.org/en/stable/tutorials/scripting/change_scenes_manually.html"},
+        {"t": "Singletons (Autoload)", "u": "https://docs.godotengine.org/en/stable/tutorials/scripting/singletons_autoload.html"}
+      ]
+    },
+    "unity": {
+      "approach": "SimHost is a DontDestroyOnLoad MonoBehaviour holding the World; on BattleEnded it loads the State Map scene with SceneManager.LoadSceneAsync. The summary panel is UI Toolkit bound to the BattleResult.",
+      "keyApis": ["SceneManager.LoadSceneAsync", "Object.DontDestroyOnLoad", "UI Toolkit", "C# events"],
+      "docs": [
+        {"t": "SceneManager.LoadSceneAsync", "u": "https://docs.unity3d.com/ScriptReference/SceneManagement.SceneManager.LoadSceneAsync.html"},
+        {"t": "Object.DontDestroyOnLoad", "u": "https://docs.unity3d.com/ScriptReference/Object.DontDestroyOnLoad.html"},
+        {"t": "UI Toolkit", "u": "https://docs.unity3d.com/Manual/UIElements.html"}
+      ]
+    },
+    "learn": [
+      {"t": "Event Queue pattern", "u": "https://gameprogrammingpatterns.com/event-queue.html"}
+    ],
+    "newb": [
+      "Treat a battle like a function call: setup in, result out. The campaign never reaches into the battle's guts, and the battle never edits the world directly; one ResultApplier does it in one place.",
+      "Handlers keyed by a string let whoever started the fight (a raid, an ambush, a base defence) decide the aftermath, without the battle knowing about any of them.",
+      "Auto-resolve is a logistic curve on the power ratio: ratio 1 is not 50/50 against the dead because the dead are worse fighters (+3.38). Tune it by playing many real battles headless and fitting the curve, as the prototype did.",
+      "Conservation tests (nothing appears or vanishes: loot out = loot that was on the map and carried out) catch the nastiest economy bugs."
+    ],
+    "pitfalls": [
+      "Applying the result twice (once on 'Continue', once on load), duplicating loot: make Finish idempotent with a battle id.",
+      "Losing the World across the scene change because it lived on a scene node.",
+      "Auto-resolve that is always better than playing, so nobody plays battles: keep its wounds a bit harsher than a careful played fight.",
+      "Forgetting to subtract ammo spent, so physical ammo becomes infinite."
+    ],
+    "test": "xUnit: a scripted battle result applies hp, deaths, ammo and loot exactly once; loot conservation; kills reduce the tile's dead count; AutoResolve over 10 000 seeds wins within ±2% of the formula at ratios 0.5/1/2; a save mid-battle loads to the same state hash. Manual: raid, extract with loot, see it in the stockpile at home; lose one and see the survivor gone from the roster.",
+    "size": "M"
+  }
+]

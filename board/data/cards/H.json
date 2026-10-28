@@ -1,0 +1,2666 @@
+[
+ {
+  "id": "surv.skills",
+  "title": "Skills XP, teaching, books, perks & full traits",
+  "summary": "Survivors get better at what they do: XP from work, fights, lessons and books raises skill levels, perks unlock at thresholds, and traits come in tiers I–III that scale their effects.",
+  "whyHere": "First M2 card because nearly every hub system (medics, crafting, farming, work priorities) reads skill levels; the slice's fixed skills from surv.model become living numbers here.",
+  "subsystems": [
+   "XP curve & daily caps",
+   "XP sources (use, fight, study)",
+   "Skill decay & floors",
+   "Teaching (lessons)",
+   "Books & the Read role",
+   "Perks",
+   "Trait tiers & TraitFx table"
+  ],
+  "sliceScope": "Use XP only: each daily tick, the job a survivor worked gives XP to its skill (capped per day), levels roll over by a curve, and a SkillLeveledUp event shows in the log. Traits keep the slice's flat list but read numbers from one TraitFx table.",
+  "fullScope": "10 skills (Shooting, Stealth, Scavenging, Scouting, Medicine, Mechanics, Farming, Speech, Leadership, Crafting). Level L→L+1 costs 40 + 0.32·L³ XP (40 at 0, 360 at 10, 2,235 at 19); a full day of a job is ~11 XP; caps 20 use / 30 fight / 25 study a day; skills above 10 unused 14 days slip 2 XP/day but never below 10 or the join level. Teaching, books, perks; traits in tiers I–III with points for Customize.",
+  "protoRefs": [
+   "prototype/src/sim/skills.js",
+   "prototype/src/sim/traits.js",
+   "prototype/src/sim/training.js",
+   "docs/agents/features.md"
+  ],
+  "tasks": {
+   "data": [
+    "SkillDef records (key, name, art key, xp curve params) in content/skills.json",
+    "TraitDef + TraitTier rows (fx key → multiplier/add per tier, points cost) in content/traits.json",
+    "PerkDef (skill, level needed, fx) and BookDef (skill, max level it teaches, hours)",
+    "Per-survivor SkillState: level, xp, today's bucket totals, lastUsedDay, floor"
+   ],
+   "backend": [
+    "SkillService.GainXp(survivorId, skill, amount, XpSource) with per-source daily buckets",
+    "SkillDailySystem (daily tick): use XP from the day's job, decay, bucket reset, level-ups → events",
+    "TeachingSystem: a teacher + learners on a Lesson job share study XP; ReadingSystem: Read role spends hours on a BookDef",
+    "TraitFx.Get(survivor, fxKey): one place every rule asks for trait numbers (aim, wound mult, heal mult)",
+    "xUnit: curve table matches the prototype, caps hold, decay never crosses the floor"
+   ],
+   "ui": [
+    "Survivor sheet: skill bars with level, XP progress and a flame for 'used today'",
+    "Trait chips with tier pips and a tooltip listing what each changes",
+    "Log line + toast on level up / perk gained"
+   ]
+  },
+  "dataModel": "public enum XpSource { Use, Fight, Study, Ward }\npublic sealed record SkillDef(string Key, string Name, string ArtKey);\npublic sealed record TraitTier(int Tier, int Points, IReadOnlyDictionary<string, float> Fx);\npublic sealed record TraitDef(string Key, string Name, TraitTier[] Tiers, string[] Excludes);\npublic sealed class SkillState { public int Level; public float Xp; public int Floor; public int LastUsedDay;\n  public Dictionary<XpSource, float> Today = new(); }\npublic static class XpCurve { public static float Need(int l) => 40f + 0.32f * l * l * l; }",
+  "dependsOn": [
+   "surv.model",
+   "core.clock",
+   "core.events",
+   "data.content",
+   "base.work"
+  ],
+  "connections": [
+   {
+    "to": "surv.model",
+    "why": "Skills and traits live on the survivor record the slice created.",
+    "how": "Survivor gets a Skills dictionary of SkillState and TraitRefs (key + tier); no slice code changes, the old fixed level just becomes SkillState.Level.",
+    "godot": "Roster panel reads the survivor view-model; refreshes on SkillLeveledUp signal.",
+    "unity": "Roster UI Toolkit panel binds to the view-model; refreshes on the SkillLeveledUp C# event."
+   },
+   {
+    "to": "base.work",
+    "why": "The day's job decides which skill earns use XP; skill decides job output.",
+    "how": "SkillDailySystem reads Survivor.CurrentJob → WorkTypeDef.Skill; jobs call SkillService.Level(id, skill) for speed/quality.",
+    "godot": "No direct wiring; both are sim systems ticked by SimHost.",
+    "unity": "No direct wiring; both are sim systems ticked by SimHost."
+   },
+   {
+    "to": "health.medical",
+    "why": "Medics learn Medicine from ward rounds and lessons in a hospital.",
+    "how": "Training calls GainXp(..., XpSource.Ward) with its own daily cap so treatments do not eat it.",
+    "godot": "Hospital panel listens for SkillLeveledUp to show 'graduated'.",
+    "unity": "Hospital panel listens for SkillLeveledUp to show 'graduated'."
+   },
+   {
+    "to": "data.save",
+    "why": "XP, buckets, floors and trait tiers must round-trip.",
+    "how": "SkillState is a plain class serialised with System.Text.Json; a migration step gives old saves tier 1 traits.",
+    "godot": "Nothing engine-side.",
+    "unity": "Nothing engine-side."
+   }
+  ],
+  "godot": {
+   "approach": "All rules stay in the Sim. Godot only draws a skills list: a VBoxContainer of rows (Label + ProgressBar) built from the survivor view-model, rebuilt on the SkillLeveledUp signal. Trait icons come from the ArtCatalog Resource by art key.",
+   "keyApis": [
+    "VBoxContainer",
+    "ProgressBar",
+    "Label",
+    "TooltipText",
+    "Resource (ArtCatalog)"
+   ],
+   "docs": [
+    {
+     "t": "ProgressBar",
+     "u": "https://docs.godotengine.org/en/stable/classes/class_progressbar.html"
+    },
+    {
+     "t": "Using containers",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/ui/gui_containers.html"
+    },
+    {
+     "t": "C# signals",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/scripting/c_sharp/c_sharp_signals.html"
+    }
+   ]
+  },
+  "unity": {
+   "approach": "Same split: a UI Toolkit ListView of skill rows bound to the view-model; trait icons resolved from an ArtCatalog ScriptableObject. The sim assembly has no UnityEngine reference.",
+   "keyApis": [
+    "UI Toolkit ListView",
+    "ProgressBar",
+    "ScriptableObject (ArtCatalog)",
+    "VisualElement.tooltip"
+   ],
+   "docs": [
+    {
+     "t": "UIElements.ListView",
+     "u": "https://docs.unity3d.com/ScriptReference/UIElements.ListView.html"
+    },
+    {
+     "t": "UIElements.ProgressBar",
+     "u": "https://docs.unity3d.com/ScriptReference/UIElements.ProgressBar.html"
+    },
+    {
+     "t": "ScriptableObject (Manual)",
+     "u": "https://docs.unity3d.com/Manual/class-ScriptableObject.html"
+    }
+   ]
+  },
+  "learn": [
+   {
+    "t": "RimWorld wiki: Skills",
+    "u": "https://rimworldwiki.com/wiki/Skills"
+   },
+   {
+    "t": "Game Programming Patterns: Type Object",
+    "u": "https://gameprogrammingpatterns.com/type-object.html"
+   },
+   {
+    "t": "C# records",
+    "u": "https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/builtin-types/record"
+   }
+  ],
+  "newb": [
+   "A cubic XP curve means early levels come fast and mastery takes a game-year; tune it with a spreadsheet or a headless run, not by feel.",
+   "Daily caps per XP source stop the 'grind one task forever' exploit without special cases.",
+   "Put every trait number in one table (TraitFx) so balancing is editing JSON, not hunting through code.",
+   "Store XP as progress inside the current level, not lifetime total, so changing the curve never breaks saves."
+  ],
+  "pitfalls": [
+   "Granting XP inside each system's own loop with no cap: busy jobs snowball.",
+   "Hard-coding trait checks like if (traits.Contains(\"tough\")) all over the code.",
+   "Letting decay drop a skill below the level the survivor joined with: players hate losing what they started with."
+  ],
+  "test": "xUnit: XpCurve.Need matches the prototype table at 0/3/5/10/15/19; 30 days of one job takes a 3 to about 7; caps clamp; decay stops at the floor. Manual: fast-forward a week and watch a farmer's bar fill and a level-up log line.",
+  "size": "M"
+ },
+ {
+  "id": "surv.morale",
+  "title": "Morale, mental breaks & comforts",
+  "summary": "Mood becomes a breakdown of named factors (crowding, beds, leader, comforts, grief…) that moves work speed, and a survivor kept miserable too long can snap: run off, attack someone, set a fire or shut down.",
+  "whyHere": "The slice already has a mood number in surv.needs; M2 gives it causes and consequences, which relations, family and hub events all feed into.",
+  "subsystems": [
+   "Mood factor ledger",
+   "Crowding & bed mood",
+   "Leader lift",
+   "Mood → work curve",
+   "Mental breaks (snap counter)",
+   "Comforts, toiletries & treats",
+   "Desertion warnings"
+  ],
+  "sliceScope": "A MoodFactor list per survivor (source, value, days left) summed into mood each day; crowding and beds as the first two factors; one mental break (shut down for a day) when mood stays under the threshold 3 mornings.",
+  "fullScope": "Beds +1 when all have one; crowding −(2 + 8·over) up to −16; leader +0.15·Leadership (capped at half the crowding hit). Warnings below 30 and 20 mood; snaps after 3 mornings under 10: 12% + 2% per point under, 10-day cooldown, +15 relief; break kinds weighted by place and person (attack 15–35 dmg, arson, wreck stores, walk into the dead, drive off, suicide). Kept comforts up to +1.5/day, toiletries up to +1.2.",
+  "protoRefs": [
+   "prototype/src/sim/morale.js",
+   "prototype/src/sim/mentalbreaks.js",
+   "prototype/src/sim/comforts.js",
+   "prototype/src/sim/relations.js"
+  ],
+  "tasks": {
+   "data": [
+    "MoodFactorDef (key, label, default value, duration, stacks?) for every named line",
+    "MentalBreakDef (key, weight rules, effects, needs: car/burnable/armed…) in content/breaks.json",
+    "ComfortDef on item records (team/self scope, mood/day, uses)",
+    "MoraleConfig: crowding, leader, warning and snap numbers in one JSON"
+   ],
+   "backend": [
+    "MoodLedger: Add/Refresh/Expire factors; Mood = clamp(sum); every system adds factors instead of touching mood directly",
+    "MoraleDailySystem (daily): crowding, beds, leader, comforts, decay of timed factors",
+    "MentalBreakSystem (morning tick): low-days counter, roll with seeded Rng, pick a weighted break, apply, publish MentalBreak",
+    "WorkFactor(mood) curve consumed by base.work output",
+    "Desertion risk + warnings → DesertionWarning events (surv.family does the leaving)"
+   ],
+   "ui": [
+    "Mood breakdown tooltip: each factor with + / − and days left (RimWorld style)",
+    "'May break down' status icon and a break card via core.cards",
+    "Comfort items marked in inventory"
+   ]
+  },
+  "dataModel": "public sealed record MoodFactorDef(string Key, string Label, float Value, int Days, bool Stacks);\npublic sealed class MoodFactor { public string Key; public float Value; public int DaysLeft; public int? SourceId; }\npublic sealed class MoraleState { public List<MoodFactor> Factors = new(); public int LowDays; public int CooldownUntil; }\npublic enum BreakKind { RunOff, Attack, Suicide, Arson, WreckStores, WalkIntoDead, DriveOff, ShutDown }\npublic sealed record MentalBreak(int SurvivorId, BreakKind Kind, int? VictimId) : IDomainEvent;",
+  "dependsOn": [
+   "surv.needs",
+   "surv.model",
+   "core.clock",
+   "core.events",
+   "core.cards",
+   "base.core"
+  ],
+  "connections": [
+   {
+    "to": "surv.needs",
+    "why": "Mood is the slice's need; this card replaces its single number with a sum of factors.",
+    "how": "surv.needs keeps Mood as a read property; MoodLedger becomes its source. Hunger/thirst/sleep systems now add MoodFactors.",
+    "godot": "Needs bars keep working; the mood bar gains a tooltip.",
+    "unity": "Needs bars keep working; the mood bar gains a tooltip."
+   },
+   {
+    "to": "base.work",
+    "why": "Low mood slows work; very low mood takes free time.",
+    "how": "Work output multiplies by MoraleService.WorkFactor(id); the work planner reads IsOnBreak.",
+    "godot": "None (sim to sim).",
+    "unity": "None (sim to sim)."
+   },
+   {
+    "to": "core.cards",
+    "why": "Breaks, warnings and aftermaths are decision cards.",
+    "how": "MentalBreakSystem publishes CardRaised with a CardDef id and context (victim, building).",
+    "godot": "SimHost drains the event queue each frame and re-emits CardRaised as a [Signal] (or plain C# event) on the SimHost autoload; panels connect in _Ready and disconnect in _ExitTree.",
+    "unity": "SimHost MonoBehaviour raises CardRaised as a C# event (UnityEvent only where a designer wires it in the Inspector); UI Toolkit controllers subscribe in OnEnable, unsubscribe in OnDisable."
+   },
+   {
+    "to": "surv.relations",
+    "why": "Friends, partners, rivals and grief are mood factors; attacks pick the person liked least.",
+    "how": "relations adds factors through MoodLedger; breaks query IRelations.LeastLiked(id).",
+    "godot": "None.",
+    "unity": "None."
+   }
+  ],
+  "godot": {
+   "approach": "Draw mood as a ProgressBar with a custom tooltip: override _MakeCustomTooltip on the control to return a VBoxContainer of factor rows. Break cards reuse ui.cards' card scene.",
+   "keyApis": [
+    "Control._MakeCustomTooltip",
+    "ProgressBar",
+    "VBoxContainer",
+    "RichTextLabel (colored +/-)"
+   ],
+   "docs": [
+    {
+     "t": "ProgressBar",
+     "u": "https://docs.godotengine.org/en/stable/classes/class_progressbar.html"
+    },
+    {
+     "t": "RichTextLabel",
+     "u": "https://docs.godotengine.org/en/stable/classes/class_richtextlabel.html"
+    },
+    {
+     "t": "C# signals",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/scripting/c_sharp/c_sharp_signals.html"
+    }
+   ]
+  },
+  "unity": {
+   "approach": "UI Toolkit: a mood ProgressBar; on pointer enter show a small panel listing factors (a ListView bound to the factor list). Break cards reuse ui.cards' card UXML.",
+   "keyApis": [
+    "UI Toolkit ProgressBar",
+    "ListView",
+    "PointerEnterEvent",
+    "UXML templates"
+   ],
+   "docs": [
+    {
+     "t": "UIElements.ProgressBar",
+     "u": "https://docs.unity3d.com/ScriptReference/UIElements.ProgressBar.html"
+    },
+    {
+     "t": "UIElements.ListView",
+     "u": "https://docs.unity3d.com/ScriptReference/UIElements.ListView.html"
+    },
+    {
+     "t": "UI Toolkit",
+     "u": "https://docs.unity3d.com/Manual/UIElements.html"
+    }
+   ]
+  },
+  "learn": [
+   {
+    "t": "RimWorld wiki: Mood",
+    "u": "https://rimworldwiki.com/wiki/Mood"
+   },
+   {
+    "t": "RimWorld wiki: Mental break",
+    "u": "https://rimworldwiki.com/wiki/Mental_break"
+   },
+   {
+    "t": "Game Programming Patterns: Observer",
+    "u": "https://gameprogrammingpatterns.com/observer.html"
+   }
+  ],
+  "newb": [
+   "A mood 'ledger' of named factors is the trick that makes moods readable: the player can always see why someone is sad.",
+   "Systems never write mood directly; they add a factor. That keeps sources independent and testable.",
+   "A 'low for N mornings' counter avoids breaks from one bad day, which feels unfair.",
+   "Roll breaks with the seeded sim Rng so a replay or bug report reproduces the same snap."
+  ],
+  "pitfalls": [
+   "Factors that never expire, so mood drifts to a permanent floor.",
+   "Letting the leader lift fully cancel crowding: the prototype caps it at half for a reason.",
+   "Breaks that destroy unique things with no card or log line: the player must see what happened and why."
+  ],
+  "test": "xUnit: 11 people in 10 beds gives −2.8; leader lift capped; 3 mornings under 10 arms the roll; cooldown blocks a second break; seeded run reproduces the same break. Manual: overcrowd a base with the dev console and watch the warning, then the card.",
+  "size": "M"
+ },
+ {
+  "id": "surv.relations",
+  "title": "Relationships, bonds, grief & memorial",
+  "summary": "Every pair of survivors who share a base, team or fight has one opinion (−100..100) that drifts by chemistry and shared history, giving friends, rivals and partners, buffs in battle and at work, grief when someone dies and a memorial wall.",
+  "whyHere": "Needs the mood ledger (surv.morale) to have effects; family, hub events and mental breaks all read it, so it comes before them.",
+  "subsystems": [
+   "Pair opinion store",
+   "Compatibility & history drift",
+   "Bond levels & reasons",
+   "Buffs (mood, aim, team odds)",
+   "Grief",
+   "Service record",
+   "Memorial wall"
+  ],
+  "sliceScope": "Sparse pair store, daily drift toward a compatibility target for people at the same base, three levels (rival / neutral / friend), friend and rival mood factors, and a grief factor when a friend dies.",
+  "fullScope": "Drift = rate × 5% of the gap (×1 at a base, ×2.5 on a team, +0.6 same job), history fades 1%/day, leader pull 0.6·Leadership. Levels: rival ≤ −30, disliked ≤ −10, friendly 15+, friend 40+, close friend 70+, partner. Friends +0.4 mood each (max +1.2), partner +1.5, rivals −0.6 (max −1.8); +3 aim per friend alongside (max +6), −2 per rival (max −4); grief −(6 + 14·bond). Each pair keeps its top reasons.",
+  "protoRefs": [
+   "prototype/src/sim/relations.js",
+   "prototype/src/sim/bonds.js",
+   "docs/features/survivors.md"
+  ],
+  "tasks": {
+   "data": [
+    "RelationsConfig JSON (drift rates, thresholds, buff numbers)",
+    "BondLevelDef table (min opinion, name, art key, buffs)",
+    "Compatibility inputs on traits (temper, chemistry tags)",
+    "MemorialEntry record (name, days survived, kills, cause, date)"
+   ],
+   "backend": [
+    "PairKey (low id, high id) + Dictionary<PairKey, PairState>: one opinion both ways",
+    "RelationsDailySystem: drift for co-located pairs, history fade, level changes → BondChanged events with reason",
+    "BumpPair(a, b, amount, reason) used by battles, gifts, quarrels, rescues",
+    "Grief on SurvivorDied: mood factors for those bonded; service record + memorial entry",
+    "Buff queries: AimBonus(unit, allies), TeamOddsMult(party), MoodFactors(survivor)"
+   ],
+   "ui": [
+    "Relations tab: list of others with level icon, opinion bar and top reasons",
+    "Memorial wall screen (names, days survived, cause)",
+    "Log lines for 'became friends' / 'became rivals'"
+   ]
+  },
+  "dataModel": "public readonly record struct PairKey(int Lo, int Hi) { public static PairKey Of(int a, int b) => a < b ? new(a, b) : new(b, a); }\npublic sealed class PairState { public float Opinion; public float History; public bool Partners;\n  public List<(string Reason, float Amount)> Why = new(); }\npublic enum BondLevel { Rival, Disliked, Neutral, Friendly, Friend, CloseFriend, Partner }\npublic sealed record BondChanged(PairKey Pair, BondLevel From, BondLevel To, string Reason) : IDomainEvent;",
+  "dependsOn": [
+   "surv.model",
+   "surv.morale",
+   "surv.health",
+   "core.events",
+   "core.clock"
+  ],
+  "connections": [
+   {
+    "to": "surv.morale",
+    "why": "Friends, partners, rivals and grief show up as mood lines.",
+    "how": "RelationsDailySystem adds/refreshes MoodFactors (friends, rival, grieving) via MoodLedger.",
+    "godot": "Mood tooltip shows them automatically.",
+    "unity": "Mood tooltip shows them automatically."
+   },
+   {
+    "to": "combat.los",
+    "why": "Friends fighting alongside aim better, rivals worse.",
+    "how": "Hit chance asks IRelations.AimBonus(unitId, alliedUnitIds) as one more modifier in the to-hit breakdown.",
+    "godot": "Hit % panel lists 'Friend nearby +3'.",
+    "unity": "Hit % panel lists 'Friend nearby +3'."
+   },
+   {
+    "to": "surv.family",
+    "why": "Couples form from close friends; family grief is bigger.",
+    "how": "family reads Opinion and Partners; MakePartners lives in relations.",
+    "godot": "None.",
+    "unity": "None."
+   },
+   {
+    "to": "core.hubevents",
+    "why": "Quarrels, 'two grow close', memorial service and story nights are hub events driven by pairs.",
+    "how": "Hub event conditions query rivals/friends at the hub; their effects call BumpPair.",
+    "godot": "None.",
+    "unity": "None."
+   }
+  ],
+  "godot": {
+   "approach": "A Relations tab inside the hub window: an ItemList or Tree with one row per other survivor (icon by bond level from the ArtCatalog, opinion as a small ProgressBar). The memorial is a ScrollContainer of entry panels.",
+   "keyApis": [
+    "Tree",
+    "ItemList",
+    "ProgressBar",
+    "ScrollContainer"
+   ],
+   "docs": [
+    {
+     "t": "Tree",
+     "u": "https://docs.godotengine.org/en/stable/classes/class_tree.html"
+    },
+    {
+     "t": "ItemList",
+     "u": "https://docs.godotengine.org/en/stable/classes/class_itemlist.html"
+    },
+    {
+     "t": "Using containers",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/ui/gui_containers.html"
+    }
+   ]
+  },
+  "unity": {
+   "approach": "UI Toolkit MultiColumnListView (name, level, opinion, reasons) bound to a view-model list; memorial as a ScrollView of templated entries.",
+   "keyApis": [
+    "MultiColumnListView",
+    "ScrollView",
+    "VisualTreeAsset templates"
+   ],
+   "docs": [
+    {
+     "t": "UIElements.MultiColumnListView",
+     "u": "https://docs.unity3d.com/ScriptReference/UIElements.MultiColumnListView.html"
+    },
+    {
+     "t": "UIElements.ListView",
+     "u": "https://docs.unity3d.com/ScriptReference/UIElements.ListView.html"
+    },
+    {
+     "t": "UI Toolkit",
+     "u": "https://docs.unity3d.com/Manual/UIElements.html"
+    }
+   ]
+  },
+  "learn": [
+   {
+    "t": "RimWorld wiki: Social",
+    "u": "https://rimworldwiki.com/wiki/Social"
+   },
+   {
+    "t": "Dictionary<TKey,TValue>",
+    "u": "https://learn.microsoft.com/en-us/dotnet/api/system.collections.generic.dictionary-2"
+   }
+  ],
+  "newb": [
+   "Store one number per pair in a sparse dictionary, not an N×N matrix: most pairs never meet.",
+   "Normalise the key (smaller id first) so A→B and B→A are the same record.",
+   "'Drift toward a target' (move a % of the gap each day) gives smooth, believable change without random swings.",
+   "Keeping the top reasons per pair costs little and makes the system feel alive in the UI."
+  ],
+  "pitfalls": [
+   "Iterating every pair every hour: do it daily and only for people actually together.",
+   "Forgetting to delete pairs when someone leaves forever: saves grow.",
+   "Grief that stacks without a cap when a team is wiped; cap or merge it."
+  ],
+  "test": "xUnit: PairKey symmetry; drift reaches ~the target over weeks; levels cross at the thresholds; aim bonus capped at +6/−4; grief applied once per death. Manual: put two compatible survivors on the same job for a month and see 'friends' appear with reasons.",
+  "size": "M"
+ },
+ {
+  "id": "surv.family",
+  "title": "Family, recruits & desertion",
+  "summary": "How the headcount changes from inside: couples, pregnancies and children who grow up; newcomers at the gate or on the road offered as choice cards; and the miserable who walk out (and sometimes come back).",
+  "whyHere": "Needs relations (couples), morale (desertion risk) and cards; it is the hub's population flow, which tiers, crowding and disease all react to.",
+  "subsystems": [
+   "Newcomer cards",
+   "Recruit generator",
+   "Desertion & return",
+   "Couples",
+   "Pregnancy & birth",
+   "Children growing up"
+  ],
+  "sliceScope": "Recruits first: a stranger-at-the-gate card with the person's skills and the base's beds/food, options take in / give supplies / turn away; desertion when morale's warning has fired and mood stays very low. Family behind a toggle, off by default.",
+  "fullScope": "Recruit cards for strangers, refugees, loners, rescued people, a lost teen and returning deserters; take in costs 5 food each, giving supplies 3 food + 3 water each for +2 mood and +2 goodwill. Desertion below 15 mood after two warnings, 8%/day + 0.6%/point (leaders never). Couples from close friends (70+, 4%/day), conceive ≤3%/day, carry 56 days, baby → youth → adult at 28/84/112 days; hard births 10%. The prototype ships family switched off.",
+  "protoRefs": [
+   "prototype/src/sim/recruits.js",
+   "prototype/src/sim/family.js",
+   "prototype/src/sim/morale.js"
+  ],
+  "tasks": {
+   "data": [
+    "RecruitArchetypeDef (kind, count range, skill/trait/gear tables, weight by place)",
+    "NewcomerCardDef options with costs/effects in content/cards",
+    "FamilyConfig (chances, stage days, food and chore shares) with an Enabled flag",
+    "LifeStage enum on Survivor (Baby, Child, Youth, Adult)"
+   ],
+   "backend": [
+    "RecruitSystem: rolls arrivals (seeded) and raises a NewcomerCard with a capacity preview (free beds, days of food with them)",
+    "Command AnswerNewcomer(cardId, option) → add survivors, move supplies, or send walkers (arrive after N days or never)",
+    "DesertionSystem: reads morale's warnings; leaving keeps carried gear, may take supplies; queues a possible return as a recruit",
+    "FamilySystem (daily, if enabled): couples, conception factors, due births, ageing; children eat and work a share"
+   ],
+   "ui": [
+    "Newcomer card showing the person (portrait key, skills, traits, health, gear) and the base's capacity",
+    "'Talks about leaving' status icon",
+    "Family line on the survivor sheet (partner, children, expecting)"
+   ]
+  },
+  "dataModel": "public enum LifeStage { Baby, Child, Youth, Adult }\npublic sealed record RecruitArchetypeDef(string Key, int Min, int Max, string SkillTable, string GearTable);\npublic sealed class PendingArrival { public int[] SurvivorIds; public int BaseId; public int ArriveDay; public bool Lost; }\npublic sealed class FamilyState { public int? PartnerId; public int? ExpectingDue; public int[] ChildIds = []; }\npublic sealed record SurvivorJoined(int SurvivorId, int BaseId, string Via) : IDomainEvent;\npublic sealed record SurvivorDeserted(int SurvivorId, int BaseId, string[] Took) : IDomainEvent;",
+  "dependsOn": [
+   "surv.model",
+   "surv.relations",
+   "surv.morale",
+   "core.cards",
+   "base.core",
+   "econ.daily"
+  ],
+  "connections": [
+   {
+    "to": "core.cards",
+    "why": "Every newcomer is a choice card with live numbers.",
+    "how": "RecruitSystem publishes CardRaised(cardDefId, context); the answer comes back as the AnswerNewcomer command.",
+    "godot": "SimHost drains the event queue each frame and re-emits CardRaised as a [Signal] (or plain C# event) on the SimHost autoload; panels connect in _Ready and disconnect in _ExitTree.",
+    "unity": "SimHost MonoBehaviour raises CardRaised as a C# event (UnityEvent only where a designer wires it in the Inspector); UI Toolkit controllers subscribe in OnEnable, unsubscribe in OnDisable."
+   },
+   {
+    "to": "surv.model",
+    "why": "New people need generating like starting survivors.",
+    "how": "Reuses surv.model's SurvivorFactory with an archetype; children become full survivors at the Adult stage.",
+    "godot": "None.",
+    "unity": "None."
+   },
+   {
+    "to": "base.tiers",
+    "why": "Beds and tier limit how many fit; crowding feeds back into morale.",
+    "how": "Card preview asks IBaseCapacity.FreeBeds(baseId) and food days from econ.daily.",
+    "godot": "Card shows the numbers.",
+    "unity": "Card shows the numbers."
+   },
+   {
+    "to": "health.disease",
+    "why": "Newcomers raise the outbreak risk for a while.",
+    "how": "SurvivorJoined events let disease bump the base's 'new arrivals' counter.",
+    "godot": "None.",
+    "unity": "None."
+   }
+  ],
+  "godot": {
+   "approach": "Reuse the ui.cards card scene; the newcomer card adds a portrait TextureRect (art key) and a GridContainer of skills. Status icons sit on the roster row.",
+   "keyApis": [
+    "PanelContainer",
+    "TextureRect",
+    "GridContainer",
+    "Button"
+   ],
+   "docs": [
+    {
+     "t": "GridContainer",
+     "u": "https://docs.godotengine.org/en/stable/classes/class_gridcontainer.html"
+    },
+    {
+     "t": "Using containers",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/ui/gui_containers.html"
+    },
+    {
+     "t": "C# signals",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/scripting/c_sharp/c_sharp_signals.html"
+    }
+   ]
+  },
+  "unity": {
+   "approach": "Reuse the card UXML template; the newcomer card adds a portrait Image (from the ArtCatalog) and a skills grid. Status icons sit on the roster row.",
+   "keyApis": [
+    "UI Toolkit Image",
+    "VisualTreeAsset",
+    "Button.clicked"
+   ],
+   "docs": [
+    {
+     "t": "UI Toolkit",
+     "u": "https://docs.unity3d.com/Manual/UIElements.html"
+    },
+    {
+     "t": "ScriptableObject (Manual)",
+     "u": "https://docs.unity3d.com/Manual/class-ScriptableObject.html"
+    },
+    {
+     "t": "UnityEvent",
+     "u": "https://docs.unity3d.com/ScriptReference/Events.UnityEvent.html"
+    }
+   ]
+  },
+  "learn": [
+   {
+    "t": "Game Programming Patterns: Command",
+    "u": "https://gameprogrammingpatterns.com/command.html"
+   },
+   {
+    "t": "Game Programming Patterns: Event Queue",
+    "u": "https://gameprogrammingpatterns.com/event-queue.html"
+   }
+  ],
+  "newb": [
+   "A card that shows the cost before you choose ('beds 3 → 1, food 12 → 8 days') turns a random event into a real decision.",
+   "Feature flags (Enabled in config) let you merge risky systems like pregnancy without forcing them on every playtest.",
+   "People walking to a base are just a pending record with an arrival day; you do not need to simulate their steps.",
+   "Life stages are an enum plus thresholds; growing up is one comparison in the daily tick."
+  ],
+  "pitfalls": [
+   "Generating recruits with unseeded randomness: the same save would give different people.",
+   "Letting deserters vanish with base stock silently; always log and show what they took.",
+   "Children counted as full workers or eaters: give them shares."
+  ],
+  "test": "xUnit: take-in costs 5 food each; supplies option moves 3+3 and adds +2 mood; desertion never picks a leader and needs two prior warnings; with family off nothing pregnant ever appears. Manual: dev-spawn a stranger card and try each option.",
+  "size": "M"
+ },
+ {
+  "id": "health.medical",
+  "title": "Hospital tiers, medics & training",
+  "summary": "Healing becomes care: hospital buildings in four tiers, medics with limited treatments a day, nightly automatic care worst-first, surgery, admit lines for beds, and a doctor training trainees on ward rounds.",
+  "whyHere": "The slice heals wounds passively (surv.health); after a few raids the hub needs real medicine, and skills (Medicine XP) now exist to grow medics.",
+  "subsystems": [
+   "Hospital tiers (building component)",
+   "Medic capacity",
+   "Nightly auto-care",
+   "Surgery",
+   "Admit line & beds",
+   "Ward rounds & lessons",
+   "Field care (team & battle)"
+  ],
+  "sliceScope": "One Infirmary building with beds and a heal multiplier; a Medic work type giving 3 + Medicine/4 treatments a day; nightly auto-care treats the worst wounds first using meds above a reserve.",
+  "fullScope": "Infirmary → field hospital → clinic → trauma hospital, each with beds, medics needed (understaffed runs at a lower tier), heal mult, teach factor 1 / 1.2 / 1.45 / 1.75 and ward XP cap 4/6/8/10 a day. One treatment per patient per day; surgery takes 3 of a medic's treatments; admit line default 70 health (30–100). Trainees learn from a doctor until they graduate; battlefield medics drag and stabilise the downed.",
+  "protoRefs": [
+   "prototype/src/sim/medical.js",
+   "prototype/src/sim/training.js",
+   "prototype/src/sim/medfinds.js",
+   "docs/features/health.md"
+  ],
+  "tasks": {
+   "data": [
+    "MedBlock component on BuildingDef (tier, beds, medicsNeeded, healMult, teach, wardCap)",
+    "TreatmentDef (wound/illness/surgery: meds used, medic cost, skill min, XP)",
+    "Base settings: AdmitBelow, MedsReserve, AutoTreat",
+    "Medic and Trainee WorkTypeDefs"
+   ],
+   "backend": [
+    "HospitalService: effective tier from staffing, free beds, admit queue",
+    "MedicalCareSystem (nightly): build patient list worst-first, spend medic capacity, consume meds above reserve, publish Treated",
+    "Surgery path for severe wounds; infection chance and spread for untreated wounds",
+    "TrainingSystem (daily): ward points shared by medics, lessons doctor → trainees, graduation",
+    "FieldCare.Treat(party/unit, medic, kit) used by teams and later combat.medics"
+   ],
+   "ui": [
+    "Hospital panel: beds (who, why), medics on duty, meds stock vs reserve, admit slider",
+    "Patient line on survivor sheet ('Treated today', 'Needs surgery')",
+    "Auto-treat toggle"
+   ]
+  },
+  "dataModel": "public sealed record MedBlock(int Tier, int Beds, int MedicsNeeded, float HealMult, float Teach, int WardCap);\npublic sealed record TreatmentDef(string Key, int Meds, int MedicCost, int MinSkill, int Xp);\npublic sealed class BaseMedSettings { public int AdmitBelow = 70; public int MedsReserve = 2; public bool AutoTreat = true; }\npublic sealed record Treated(int PatientId, int MedicId, string Treatment, int BaseId) : IDomainEvent;",
+  "dependsOn": [
+   "surv.health",
+   "base.buildings",
+   "base.work",
+   "surv.skills",
+   "gear.items"
+  ],
+  "connections": [
+   {
+    "to": "surv.health",
+    "why": "Treats the wounds the slice created; boosts their healing.",
+    "how": "Calls IHealth.ApplyTreatment(woundId, quality) and sets HealMult on bedded patients; surv.health's passive heal keeps running.",
+    "godot": "Wound list on the sheet updates on Treated.",
+    "unity": "Wound list on the sheet updates on Treated."
+   },
+   {
+    "to": "base.buildings",
+    "why": "Hospitals are buildings; the tier is data.",
+    "how": "BuildingDef gains an optional MedBlock; no new building code, the HospitalService finds buildings with it.",
+    "godot": "Hospital art by art key.",
+    "unity": "Hospital art by art key."
+   },
+   {
+    "to": "surv.skills",
+    "why": "Medics grow by ward rounds and lessons.",
+    "how": "GainXp(..., XpSource.Ward) with the tier's cap.",
+    "godot": "None.",
+    "unity": "None."
+   },
+   {
+    "to": "combat.medics",
+    "why": "Battlefield stabilising reuses the same treatment rules.",
+    "how": "combat.medics calls FieldCare.Treat with a battle context; no duplicate rules.",
+    "godot": "Battle action bar shows Treat.",
+    "unity": "Battle action bar shows Treat."
+   }
+  ],
+  "godot": {
+   "approach": "A Hospital tab in the hub window: a Tree with beds as rows (patient, worst wound, days in), HSlider for the admit line sending a SetAdmitLine command. All logic in the Sim.",
+   "keyApis": [
+    "Tree",
+    "HSlider",
+    "CheckButton",
+    "Label"
+   ],
+   "docs": [
+    {
+     "t": "Tree",
+     "u": "https://docs.godotengine.org/en/stable/classes/class_tree.html"
+    },
+    {
+     "t": "Using containers",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/ui/gui_containers.html"
+    },
+    {
+     "t": "User interface (UI)",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/ui/index.html"
+    }
+   ]
+  },
+  "unity": {
+   "approach": "UI Toolkit MultiColumnListView for beds, SliderInt for the admit line and a Toggle for auto-treat, each sending a command to SimHost.",
+   "keyApis": [
+    "MultiColumnListView",
+    "SliderInt",
+    "Toggle"
+   ],
+   "docs": [
+    {
+     "t": "UIElements.MultiColumnListView",
+     "u": "https://docs.unity3d.com/ScriptReference/UIElements.MultiColumnListView.html"
+    },
+    {
+     "t": "UI Toolkit",
+     "u": "https://docs.unity3d.com/Manual/UIElements.html"
+    },
+    {
+     "t": "UIElements.ListView",
+     "u": "https://docs.unity3d.com/ScriptReference/UIElements.ListView.html"
+    }
+   ]
+  },
+  "learn": [
+   {
+    "t": "RimWorld wiki: Medicine",
+    "u": "https://rimworldwiki.com/wiki/Medicine"
+   },
+   {
+    "t": "Game Programming Patterns: Component",
+    "u": "https://gameprogrammingpatterns.com/component.html"
+   }
+  ],
+  "newb": [
+   "Treat medic time as a budget (treatments per day) and spend it on a sorted patient list: simple, explainable triage.",
+   "Making 'hospital tier' a data block on a building means a new tier is a JSON row, not a new class.",
+   "A reserve of meds that auto-care never spends gives the player control without micromanagement.",
+   "Running understaffed hospitals at a lower tier is a cheap rule that makes staffing matter."
+  ],
+  "pitfalls": [
+   "Treating the same patient several times a night because two systems both 'treat'.",
+   "Auto-care burning the last meds before a raid: always respect the reserve.",
+   "Training XP sharing the normal use cap, so busy medics never learn from the ward."
+  ],
+  "test": "xUnit: capacity 3 + Medicine/4; one treatment per patient per day; surgery costs 3; reserve never crossed; understaffed clinic reports infirmary tier. Manual: wound three survivors with the dev console, build an infirmary, and watch who gets beds overnight.",
+  "size": "L"
+ },
+ {
+  "id": "health.disease",
+  "title": "Illness, outbreaks & the worm",
+  "summary": "Named conditions people catch from how they live (colds, flu, camp fever, food poisoning, wound fever, pneumonia) treated by courses of meds and rest, outbreaks that grow with headcount and newcomers, and the worm: the dead's tapeworm caught from dirty water and raw meat that kills and raises its host.",
+  "whyHere": "Needs medics and hospitals (health.medical) to treat it and newcomers (surv.family) to drive risk; water and food cards that follow plug the worm's catch chances in.",
+  "subsystems": [
+   "Condition definitions",
+   "Daily severity drift",
+   "Contagion",
+   "Courses of meds",
+   "Sick rest",
+   "Outbreak risk & hub cards",
+   "The worm"
+  ],
+  "sliceScope": "Conditions as data with a severity 0–100 that drifts daily, costs health and work; a cold that spreads between people at the same base; a course of 1–3 doses by severity; the sick rest. The worm as one condition triggered by drinking un-purified water.",
+  "fullScope": "Courses: 1 dose below 35 severity, 2 below 65, else 3 (pneumonia at least 2); after the course it is 'on the mend'. Camp fever and wound fever, risk × headcount and recent newcomers; flu season, bad water and a coughing stranger as hub cards. The worm: eggs in soil and water by tile infection (nothing below 0.1), ~1 case per 10 people per 30 days on raw water even on clean ground; shows in a day, kills in about a week and the body rises; boiling and cooking through make it safe.",
+  "protoRefs": [
+   "prototype/src/sim/health.js",
+   "prototype/src/sim/disease.js",
+   "prototype/src/sim/worm.js",
+   "prototype/src/sim/sickrest.js",
+   "docs/features/health.md"
+  ],
+  "tasks": {
+   "data": [
+    "ConditionDef (key, hp at 100, work/mood/aim factors, drift, contagion, turnsInto, minCourse) in content/conditions.json",
+    "RiskSourceDef (cause → condition, base chance, multipliers: headcount, newcomers, season)",
+    "Worm config (clean threshold, water/raw-meat chances, incubation, days to turn)",
+    "Hub card defs for outbreaks"
+   ],
+   "backend": [
+    "ConditionSystem (daily): drift, costs, progression (cold → pneumonia), recovery, on-the-mend",
+    "ContagionSystem: spread between co-located people with seeded rolls",
+    "Courses: start a course at a severity, one dose a day via medical's auto-care",
+    "IllnessRiskSystem: everyday chances × headcount/newcomers; raises outbreak cards",
+    "WormSystem: exposure from IExposure (water drunk raw, meat undercooked, tile infection) → infection → death → spawn a dead at the base (event)"
+   ],
+   "ui": [
+    "Conditions on the survivor sheet with severity bar and 'course 2/3'",
+    "Outbreak card and a log line per new case",
+    "'Sick: resting' task label"
+   ]
+  },
+  "dataModel": "public sealed record ConditionDef(string Key, string Name, float HpAt100, float WorkMult, float Drift,\n  float Contagion, string? TurnsInto, int MinCourse, bool Rests);\npublic sealed class Condition { public string Key; public float Severity; public int DosesLeft; public bool Mending; }\npublic interface IExposure { float RawWaterShare(int survivorId); float RawMeatShare(int survivorId); float TileInfection(int baseId); }\npublic sealed record SurvivorTurned(int SurvivorId, int BaseId) : IDomainEvent;",
+  "dependsOn": [
+   "surv.health",
+   "health.medical",
+   "surv.family",
+   "dead.population",
+   "core.cards"
+  ],
+  "connections": [
+   {
+    "to": "health.medical",
+    "why": "Doses are treatments given by medics at night.",
+    "how": "medical's auto-care asks ConditionSystem for conditions that need a dose and calls GiveDose.",
+    "godot": "None.",
+    "unity": "None."
+   },
+   {
+    "to": "econ.water",
+    "why": "The worm and bad water come from drinking un-purified water.",
+    "how": "econ.water implements IExposure.RawWaterShare per person per day; until it lands a stub says 0.",
+    "godot": "None.",
+    "unity": "None."
+   },
+   {
+    "to": "dead.population",
+    "why": "Tile infection is how thick the eggs lie.",
+    "how": "IExposure.TileInfection reads the tile's infection value from the dead population card.",
+    "godot": "None.",
+    "unity": "None."
+   },
+   {
+    "to": "def.sieges",
+    "why": "A worm death rises inside the walls: a fight at home.",
+    "how": "SurvivorTurned event spawns a dead unit at the base; guards (watch roster) put it down or a base battle starts.",
+    "godot": "SimHost drains the event queue each frame and re-emits SurvivorTurned as a [Signal] (or plain C# event) on the SimHost autoload; panels connect in _Ready and disconnect in _ExitTree.",
+    "unity": "SimHost MonoBehaviour raises SurvivorTurned as a C# event (UnityEvent only where a designer wires it in the Inspector); UI Toolkit controllers subscribe in OnEnable, unsubscribe in OnDisable."
+   }
+  ],
+  "godot": {
+   "approach": "Only display: a conditions list (ItemList with icon by art key, severity ProgressBar per row). Outbreak cards reuse the card scene.",
+   "keyApis": [
+    "ItemList",
+    "ProgressBar",
+    "Label"
+   ],
+   "docs": [
+    {
+     "t": "ItemList",
+     "u": "https://docs.godotengine.org/en/stable/classes/class_itemlist.html"
+    },
+    {
+     "t": "ProgressBar",
+     "u": "https://docs.godotengine.org/en/stable/classes/class_progressbar.html"
+    },
+    {
+     "t": "C# signals",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/scripting/c_sharp/c_sharp_signals.html"
+    }
+   ]
+  },
+  "unity": {
+   "approach": "Only display: a ListView of conditions with a ProgressBar each; outbreak cards reuse the card template.",
+   "keyApis": [
+    "ListView",
+    "ProgressBar"
+   ],
+   "docs": [
+    {
+     "t": "UIElements.ListView",
+     "u": "https://docs.unity3d.com/ScriptReference/UIElements.ListView.html"
+    },
+    {
+     "t": "UIElements.ProgressBar",
+     "u": "https://docs.unity3d.com/ScriptReference/UIElements.ProgressBar.html"
+    },
+    {
+     "t": "UI Toolkit",
+     "u": "https://docs.unity3d.com/Manual/UIElements.html"
+    }
+   ]
+  },
+  "learn": [
+   {
+    "t": "RimWorld wiki: Disease",
+    "u": "https://rimworldwiki.com/wiki/Disease"
+   },
+   {
+    "t": "Game Programming Patterns: Type Object",
+    "u": "https://gameprogrammingpatterns.com/type-object.html"
+   }
+  ],
+  "newb": [
+   "A condition is data (a ConditionDef) plus a tiny runtime record (severity, doses left); adding a disease is a JSON row.",
+   "Daily 'drift' (severity up or down by rules) is easier to balance than scripted stages.",
+   "Use an interface (IExposure) for causes owned by later cards, and a stub until they exist.",
+   "Contagion by 'who lives or travels together' needs only a list of co-located people, not physics."
+  ],
+  "pitfalls": [
+   "Rolling contagion for every pair every hour: do it once a day per group.",
+   "Courses that restart every day so meds drain endlessly.",
+   "The worm turning someone with no warning: show symptoms a day before."
+  ],
+  "test": "xUnit: dose count 1/2/3 by 35/65 bands; on-the-mend never worsens; contagion only between co-located; worm with clean ground and purified water never catches; a seeded 30-day run with all-raw water gives about the prototype rate. Manual: give someone flu with the dev console and watch it spread and get treated.",
+  "size": "L"
+ },
+ {
+  "id": "base.basemap",
+  "title": "Base map grid: placement, clearing, terraform, move",
+  "summary": "Every base gets its own square grid where the player places every building, field and defence: the land comes pre-scattered with trees, rocks, fences and wrecks that must be cleared, ground can be dug or raised, and buildings can be moved.",
+  "whyHere": "The slice's buildings are a list on plots; furniture, tiers, farming plots, power and base sieges all need real positions, so the grid comes early in M2.",
+  "subsystems": [
+   "Grid & occupancy",
+   "Footprints & placement rules",
+   "Land scatter (deterministic)",
+   "Clearing jobs",
+   "Terraform (dig/raise)",
+   "Move & demolish",
+   "Reachability check"
+  ],
+  "sliceScope": "A 76×76 yard grid per base, buildings with footprints placed by a PlaceBuilding command (validated: in bounds, 5-cell margin, free cells), Move, and a scatter of trees and rocks from the tile seed that block building until a clear job removes them.",
+  "fullScope": "Every map is 500×500 (a 150×150 view); the yard starts 76×76 and grows to 100 (outpost) and 180 (hub) as buildings go up; coordinates are relative to the base centre so growth keeps placements. Scatter by chunk from the tile (trees for wood, rocks/boulders for stone, fences, wrecks); 5-cell no-build edge; rock never walls ground in; Dig a hollow / Raise a hill, one shovel per digger, dirt dug then spent. The same map becomes the battlefield in a siege.",
+  "protoRefs": [
+   "prototype/src/sim/basemap.js",
+   "prototype/src/sim/basescatter.js",
+   "prototype/src/sim/terraform.js",
+   "docs/adr/0002-base-building.md",
+   "docs/features/bases.md"
+  ],
+  "tasks": {
+   "data": [
+    "Footprint on BuildingDef (w, h, indoor cells, door side, soil-only?)",
+    "ScatterDef (kind, blocks, clear hours, yields: wood/stone/scrap, density by terrain)",
+    "Ground enum per cell (grass, dirt, road, paved, soil, water, rock) + height",
+    "BaseMapConfig: map size, yard per tier, margin, chunk size"
+   ],
+   "backend": [
+    "BaseMap: Ground/Height arrays, occupancy index (cell → item id), Place/Remove/Move",
+    "PlacementRules.Problem(def, cell, rot) → null or a reason string (used by UI preview and commands)",
+    "Scatter generation per chunk from (worldSeed, tileId, chunk) and a cleared-cells set stored in the save",
+    "ClearJob / TerraformJob as work orders with progress, tool checks (shovel per person), yields",
+    "Reachability flood fill: every way in stays open after any placement"
+   ],
+   "ui": [
+    "TileMap view of the yard: ground, scatter, buildings as placeholder blocks",
+    "Ghost preview following the mouse, red/green with the reason, R to rotate",
+    "Order chip on selection: Move, Demolish, Clear"
+   ]
+  },
+  "dataModel": "public enum Ground : byte { Grass, Dirt, Road, Paved, Soil, Water, Rock }\npublic readonly record struct Cell(int X, int Y); // relative to base centre\npublic sealed record Footprint(int W, int H, bool SoilOnly, Cell[] Indoor);\npublic sealed class BaseMap { public int Size = 500; public int YardHalf = 38; public Ground[] Ground; public sbyte[] Height;\n  public Dictionary<Cell, int> Occupant = new(); public HashSet<Cell> Cleared = new(); public int Seed; }\npublic sealed record PlaceBuilding(int BaseId, string DefKey, Cell At, int Rot) : ICommand;",
+  "dependsOn": [
+   "base.core",
+   "base.buildings",
+   "base.work",
+   "data.rng",
+   "core.commands",
+   "data.save"
+  ],
+  "connections": [
+   {
+    "to": "base.buildings",
+    "why": "Buildings now need a spot; the construction queue stays the same.",
+    "how": "QueueBuild gains an optional Cell + Rot; base.buildings asks IPlacement.Problem before accepting. Old slice saves get an auto-layout pass.",
+    "godot": "Build menu opens placement mode.",
+    "unity": "Build menu opens placement mode."
+   },
+   {
+    "to": "base.work",
+    "why": "Clearing and terraforming are work done by builders over hours.",
+    "how": "ClearJob/TerraformJob are WorkOrders on the base's job board; the builder work type picks them.",
+    "godot": "Progress ring over the cell.",
+    "unity": "Progress ring over the cell."
+   },
+   {
+    "to": "def.sieges",
+    "why": "A raid on the base is fought on this exact map.",
+    "how": "BaseMap → BattleMap converter (walls, buildings, scatter become cover).",
+    "godot": "Battle scene loads the converted grid.",
+    "unity": "Battle scene loads the converted grid."
+   },
+   {
+    "to": "ui.hub",
+    "why": "The hub screen gains a Base map view.",
+    "how": "View-model exposes visible window cells and items; commands for place/move/clear.",
+    "godot": "TileMapLayer per layer (ground, scatter, buildings) under a Camera2D.",
+    "unity": "Tilemap per layer under a Grid; camera pans/zooms."
+   }
+  ],
+  "godot": {
+   "approach": "Use TileMapLayer nodes (ground, scatter, buildings) with placeholder tiles, a Camera2D for pan/zoom, and LocalToMap to turn the mouse into a Cell. Only draw the visible window (150×150) and update cells from sim diff events, not the whole 500×500.",
+   "keyApis": [
+    "TileMapLayer",
+    "TileSet",
+    "Camera2D",
+    "TileMapLayer.LocalToMap",
+    "Node2D (ghost preview)"
+   ],
+   "docs": [
+    {
+     "t": "Using TileMaps",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/2d/using_tilemaps.html"
+    },
+    {
+     "t": "TileMapLayer",
+     "u": "https://docs.godotengine.org/en/stable/classes/class_tilemaplayer.html"
+    },
+    {
+     "t": "Custom drawing in 2D",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/2d/custom_drawing_in_2d.html"
+    }
+   ]
+  },
+  "unity": {
+   "approach": "A Grid with several Tilemaps (ground, scatter, buildings), GridLayout.WorldToCell for the mouse, and a SpriteRenderer ghost. Only set tiles for the visible window and apply sim diffs.",
+   "keyApis": [
+    "Grid",
+    "Tilemap.SetTile",
+    "GridLayout.WorldToCell",
+    "SpriteRenderer"
+   ],
+   "docs": [
+    {
+     "t": "Tilemaps.Tilemap",
+     "u": "https://docs.unity3d.com/ScriptReference/Tilemaps.Tilemap.html"
+    },
+    {
+     "t": "Grid",
+     "u": "https://docs.unity3d.com/ScriptReference/Grid.html"
+    },
+    {
+     "t": "GridLayout.WorldToCell",
+     "u": "https://docs.unity3d.com/ScriptReference/GridLayout.WorldToCell.html"
+    }
+   ]
+  },
+  "learn": [
+   {
+    "t": "Red Blob Games: Grids and graphs",
+    "u": "https://www.redblobgames.com/pathfinding/grids/graphs.html"
+   },
+   {
+    "t": "Red Blob Games: Introduction to A*",
+    "u": "https://www.redblobgames.com/pathfinding/a-star/introduction.html"
+   }
+  ],
+  "newb": [
+   "500×500 is 250,000 cells: store ground as a flat byte array (index = y*size + x), not a class per cell.",
+   "Regenerate scatter from the seed every load and save only what changed (cleared cells): saves stay tiny and maps are deterministic.",
+   "One PlacementRules.Problem function used by both the ghost preview and the command keeps UI and sim from disagreeing.",
+   "Coordinates relative to the base centre mean the yard can grow without moving anything."
+  ],
+  "pitfalls": [
+   "Letting the engine's TileMap be the source of truth: the sim's arrays are; tiles are just a picture.",
+   "Forgetting the reachability check so a wall of rocks seals a base (and AI raiders can never arrive).",
+   "Redrawing the whole map every tick instead of applying change events."
+  ],
+  "test": "xUnit: same seed + tile gives the same scatter; placement rejects margin, overlap and non-soil for fields; Move keeps id; flood fill finds a way in after every placement; save/load keeps cleared cells. Manual: place, move and demolish a hut; clear a tree and see wood land in stock.",
+  "size": "XL"
+ },
+ {
+  "id": "base.furniture",
+  "title": "Furniture, beds & containers",
+  "summary": "Beds, shelves, crates, sofas and workbenches are items in the stores until set on the indoor floor of a general building, where they add sleepers, storage room, comfort mood or work use; picked up again they return as the same item.",
+  "whyHere": "Needs the base map's indoor cells (base.basemap) and items (gear.items); beds and storage set the limits that tiers, crowding and raids read.",
+  "subsystems": [
+   "Item ↔ placed-piece round trip",
+   "Beds & rough sleeping",
+   "Storage containers",
+   "Comfort pieces",
+   "Work pieces",
+   "Auto-placement"
+  ],
+  "sliceScope": "Cots and beds as items set inside a hut via a SetFurniture command (indoor cells only), counted as the base's beds; shelves adding storage kg; Demolish returns the item with its condition.",
+  "fullScope": "Cot 1×2 (1 sleeper, −1 mood), bed 1×2 (0), bunk bed 1×2 (2 sleepers, −0.5), large bed 2×2 (2 sleepers, +1); one rough-sleeping rule for those without. Shelves 150 kg, lockers 100; found storage, comfort and work pieces (wardrobes, gun racks, sofas, desks, a workbench) from a 248-kind catalogue; containers say where goods are kept and raiders steal from them first.",
+  "protoRefs": [
+   "prototype/src/sim/furniture.js",
+   "prototype/src/sim/beds.js",
+   "prototype/src/sim/data-beds.js",
+   "prototype/src/sim/containers.js",
+   "docs/features/bases.md"
+  ],
+  "tasks": {
+   "data": [
+    "FurnitureUse on item records: Bed(sleepers, mood) | Storage(kg) | Comfort(mood) | Work(station kind)",
+    "Footprint + 'indoor only' on furniture defs (reuse base.basemap Footprint)",
+    "Recipes for cot/bed/bunk via econ.crafting later; found tables via gear.loot",
+    "Container assignment record (container key → supply/item ids)"
+   ],
+   "backend": [
+    "SetFurniture / PickUpFurniture commands: item leaves armory → PlacedPiece record (keeps item instance & condition) and back",
+    "BedService: beds per base, who sleeps where, rough sleepers → mood factor",
+    "Storage room = core + sum(storage pieces) → base.core capacity",
+    "Containers: assign goods, clamp to the books on read (the stock list stays the truth)",
+    "Comfort pieces add a mood factor to residents"
+   ],
+   "ui": [
+    "Furniture group in the Build list with ghost preview inside buildings",
+    "Bed count and 'sleeping rough' on the roster",
+    "Container panel: what is kept where"
+   ]
+  },
+  "dataModel": "public abstract record FurnitureUse;\npublic sealed record BedUse(int Sleepers, float Mood) : FurnitureUse;\npublic sealed record StorageUse(int Kg) : FurnitureUse;\npublic sealed record ComfortUse(float Mood) : FurnitureUse;\npublic sealed class PlacedPiece { public int Id; public int HostBuildingId; public Cell At; public int Rot; public ItemInstance Item; }",
+  "dependsOn": [
+   "base.basemap",
+   "gear.items",
+   "base.buildings",
+   "base.core",
+   "surv.morale"
+  ],
+  "connections": [
+   {
+    "to": "gear.items",
+    "why": "A piece is an item while stored or carried, a placed thing once set.",
+    "how": "PlacedPiece holds the ItemInstance; picking up re-adds it to the armory unchanged.",
+    "godot": "Same art key for the icon and the placed sprite.",
+    "unity": "Same art key for the icon and the placed sprite."
+   },
+   {
+    "to": "base.core",
+    "why": "Storage pieces raise the base's kg limit.",
+    "how": "base.core's capacity query sums StorageUse of placed pieces (IStorageProvider).",
+    "godot": "Stock bar shows the new limit.",
+    "unity": "Stock bar shows the new limit."
+   },
+   {
+    "to": "surv.morale",
+    "why": "Bed quality and rough sleeping are mood lines.",
+    "how": "BedService adds MoodFactors nightly.",
+    "godot": "None.",
+    "unity": "None."
+   },
+   {
+    "to": "travel.carry",
+    "why": "Found furniture is carried home from raids.",
+    "how": "Carry class on the item def; travel.carry handles the hauling.",
+    "godot": "None.",
+    "unity": "None."
+   }
+  ],
+  "godot": {
+   "approach": "Placed pieces are sprites on an 'interior' TileMapLayer or Sprite2D children of the building node, positioned from the sim's cells. Placement reuses the base map ghost.",
+   "keyApis": [
+    "TileMapLayer",
+    "Sprite2D",
+    "Area2D (hover)"
+   ],
+   "docs": [
+    {
+     "t": "TileMapLayer",
+     "u": "https://docs.godotengine.org/en/stable/classes/class_tilemaplayer.html"
+    },
+    {
+     "t": "Using TileMaps",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/2d/using_tilemaps.html"
+    },
+    {
+     "t": "Resources",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/scripting/resources.html"
+    }
+   ]
+  },
+  "unity": {
+   "approach": "Placed pieces are SpriteRenderers on an interior Tilemap or child objects, positioned from sim cells; the same ghost component as the base map.",
+   "keyApis": [
+    "Tilemap",
+    "SpriteRenderer",
+    "ScriptableObject (ArtCatalog)"
+   ],
+   "docs": [
+    {
+     "t": "Tilemaps.Tilemap",
+     "u": "https://docs.unity3d.com/ScriptReference/Tilemaps.Tilemap.html"
+    },
+    {
+     "t": "SpriteRenderer",
+     "u": "https://docs.unity3d.com/ScriptReference/SpriteRenderer.html"
+    },
+    {
+     "t": "ScriptableObject (Manual)",
+     "u": "https://docs.unity3d.com/Manual/class-ScriptableObject.html"
+    }
+   ]
+  },
+  "learn": [
+   {
+    "t": "Game Programming Patterns: Component",
+    "u": "https://gameprogrammingpatterns.com/component.html"
+   },
+   {
+    "t": "Pattern matching (switch on records)",
+    "u": "https://learn.microsoft.com/en-us/dotnet/csharp/fundamentals/functional/pattern-matching"
+   }
+  ],
+  "newb": [
+   "One 'use' field on an item (bed, storage, comfort, work) lets a single set/pick-up mechanism handle every kind of furniture.",
+   "Keeping the original item instance inside the placed record means condition and identity survive the round trip.",
+   "Containers are labels over the base's books, not a second inventory; one source of truth avoids duplication bugs.",
+   "C# pattern matching (switch on BedUse/StorageUse…) reads cleanly for small closed sets of types."
+  ],
+  "pitfalls": [
+   "Two inventories (stock list and container contents) that drift apart.",
+   "Allowing beds outdoors or overlapping walls because the indoor check was skipped.",
+   "Losing item condition when furniture is picked up."
+  ],
+  "test": "xUnit: set then pick up returns an equal item; beds count sleepers right (bunk = 2); storage kg adds; indoor-only enforced. Manual: carry a found shelf home, set it in a hut, watch the storage bar grow.",
+  "size": "M"
+ },
+ {
+  "id": "base.tiers",
+  "title": "Base tiers, camps, tents & the road start",
+  "summary": "Bases grow through tiers: a camp set up anywhere around a fire, a shelter, an outpost and the hub; tents give beds and dry storage at a camp; and the Normal/Hardcore road start begins with no base at all.",
+  "whyHere": "Needs the base map (where the camp goes) and furniture (beds); it turns 'one hub' into 'many places you can live', which hauling and sieges build on.",
+  "subsystems": [
+   "Tier ladder & limits",
+   "Set up / strike camp",
+   "Step-up buildings",
+   "Tents (bags ↔ pitched)",
+   "Camp neglect",
+   "Road start"
+  ],
+  "sliceScope": "Two tiers: Camp (set up by a team order, costs the fire's wood and stone, clears a 5×5, no storage core) and Hub; Strike camp removes it. Tier decides yard size and storage core.",
+  "fullScope": "Camp → shelter → outpost → hub, each a step-up building placed by hand (Shelter shack, Outpost house, Main house). A camp fire takes 5 wood + 8 stone carried; the 5×5 spot is picked on the tile's map, scouted or blind; tents (1-, 2-, 4-person bags) pitch in 30 minutes. Road start: day one on the road with tents and a car, Normal 1–8 people (4), Hardcore 1–4 (3).",
+  "protoRefs": [
+   "prototype/src/sim/staging.js",
+   "prototype/src/sim/tents.js",
+   "prototype/src/sim/buildings.js",
+   "prototype/src/sim/roadstart.js",
+   "docs/features/bases.md"
+  ],
+  "tasks": {
+   "data": [
+    "TierDef (key, yard size, storage core kg, beds cap, allowed building families, step-up building key)",
+    "TentDef (sleepers, storage kg, pitch minutes, bag item key)",
+    "Camp config: fire cost, clearing size, setup hours",
+    "Start config per mode: road start on/off, people range"
+   ],
+   "backend": [
+    "SetUpCamp command (team on tile): validate tile (no crawl tile), pay fire cost from carried, create a tier-0 Base with a BaseMap",
+    "StrikeCamp: pack tents back to bags, leave a cache of the rest",
+    "Step-up: finishing a step-up building raises the tier (event BaseTierChanged)",
+    "Tent system: pitched tents as PlacedPieces (beds + storage), weather on unpitched goods",
+    "Road-start setup path for new games (no hub, tents, a car)"
+   ],
+   "ui": [
+    "'Set up camp' in the team's map menu, spot picker on the 5×5",
+    "Tier badge and next step-up requirements on the base panel",
+    "'No base yet' card for the road start"
+   ]
+  },
+  "dataModel": "public enum BaseTier { Camp = 0, Shelter = 1, Outpost = 2, Hub = 3 }\npublic sealed record TierDef(BaseTier Tier, int Yard, int CoreKg, string? StepUpBuilding);\npublic sealed record TentDef(string Key, int Sleepers, int StorageKg, int PitchMinutes, string BagItem);\npublic sealed record SetUpCamp(int PartyId, Cell Spot) : ICommand;\npublic sealed record BaseTierChanged(int BaseId, BaseTier From, BaseTier To) : IDomainEvent;",
+  "dependsOn": [
+   "base.basemap",
+   "base.furniture",
+   "base.core",
+   "travel.parties",
+   "core.commands"
+  ],
+  "connections": [
+   {
+    "to": "travel.parties",
+    "why": "A team on the map is who sets up or strikes a camp.",
+    "how": "SetUpCamp converts party members into base residents and their carried tents into PlacedPieces.",
+    "godot": "Team right-click menu adds the option.",
+    "unity": "Team right-click menu adds the option."
+   },
+   {
+    "to": "base.core",
+    "why": "Tier sets the storage core and limits.",
+    "how": "base.core reads TierDef for capacity; tier is a field on Base.",
+    "godot": "None.",
+    "unity": "None."
+   },
+   {
+    "to": "meta.modes",
+    "why": "The road start is a mode setting.",
+    "how": "NewGameConfig.RoadStart picks the setup path.",
+    "godot": "New-game screen toggle.",
+    "unity": "New-game screen toggle."
+   },
+   {
+    "to": "econ.hauling",
+    "why": "More bases means goods to move between them.",
+    "how": "Every Base, any tier, is a valid haul endpoint by id.",
+    "godot": "None.",
+    "unity": "None."
+   }
+  ],
+  "godot": {
+   "approach": "Mostly UI reuse: the team context menu (PopupMenu) gains Set up camp; the spot picker reuses the base map view with a 5×5 highlight. Tier shown as a badge Label on the base panel.",
+   "keyApis": [
+    "PopupMenu",
+    "TileMapLayer",
+    "Label",
+    "AcceptDialog"
+   ],
+   "docs": [
+    {
+     "t": "PopupMenu",
+     "u": "https://docs.godotengine.org/en/stable/classes/class_popupmenu.html"
+    },
+    {
+     "t": "TileMapLayer",
+     "u": "https://docs.godotengine.org/en/stable/classes/class_tilemaplayer.html"
+    },
+    {
+     "t": "C# signals",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/scripting/c_sharp/c_sharp_signals.html"
+    }
+   ]
+  },
+  "unity": {
+   "approach": "Team context menu gains Set up camp; the spot picker reuses the base map view with a 5×5 highlight sprite. Tier badge in the base panel UXML.",
+   "keyApis": [
+    "UI Toolkit ContextualMenuManipulator",
+    "Tilemap",
+    "Label"
+   ],
+   "docs": [
+    {
+     "t": "UI Toolkit",
+     "u": "https://docs.unity3d.com/Manual/UIElements.html"
+    },
+    {
+     "t": "Tilemaps.Tilemap",
+     "u": "https://docs.unity3d.com/ScriptReference/Tilemaps.Tilemap.html"
+    },
+    {
+     "t": "UnityEvent",
+     "u": "https://docs.unity3d.com/ScriptReference/Events.UnityEvent.html"
+    }
+   ]
+  },
+  "learn": [
+   {
+    "t": "Game Programming Patterns: State",
+    "u": "https://gameprogrammingpatterns.com/state.html"
+   }
+  ],
+  "newb": [
+   "Treat every place people live as the same Base type with a tier field: one code path for camps and hubs.",
+   "A tier ladder is a small state machine: each state has limits and one way up (the step-up building).",
+   "Tents as items that become placed pieces reuse the furniture round trip for free.",
+   "A road start is just a different new-game setup, not a different game."
+  ],
+  "pitfalls": [
+   "Writing special 'camp' classes that duplicate base logic.",
+   "Losing tents or goods when a camp is struck or overrun: always leave a cache.",
+   "Letting the tier drop when a step-up building is damaged without a rule for it."
+  ],
+  "test": "xUnit: camp needs 5 wood + 8 stone carried; strike returns bags; step-up raises tier and yard; road start has no hub. Manual: start a road game, set up camp, pitch tents, build a shelter shack.",
+  "size": "M"
+ },
+ {
+  "id": "econ.food",
+  "title": "Food types, spoilage, cooking & meals",
+  "summary": "Generic 'food' becomes real foods in kcal with their own shelf life and storage, cooked into meals at stations RimWorld-style, eaten at mealtimes with a mood ladder and a chance of food poisoning.",
+  "whyHere": "The slice's econ.daily eats one 'food' number; once hunting, farming and appliances arrive they need typed food, so it lands at the start of the economy group.",
+  "subsystems": [
+   "Food defs (kcal, shelf)",
+   "Lots & spoilage",
+   "Storage factors",
+   "Preserving",
+   "Cooking recipes & stations",
+   "Mealtimes & meal mood",
+   "Food poisoning"
+  ],
+  "sliceScope": "Four foods (canned, dry goods, fresh meat, berries) with kcal and shelf days, kept as lots that spoil; daily eating draws 2000 kcal per head from the soonest-to-spoil lot; one campfire recipe (raw meat → cooked meal) with a mood bonus.",
+  "fullScope": "A day is 2000 kcal (40 hunger points); a can of beans 400 kcal, an MRE 1250, a kilo of venison 1500. Lots keep {qty, days left, worm eggs}; pantry ×1, cold room, a powered fridge at 0.25× shelf loss; drying, smoking, jarring. Cooking: recipes from ingredients at campfire/kitchen/range, purified water by recipe, poisoning chance from Cooking skill, dirt and cookbooks; 13 cookbooks; mealtimes 06:00, lunch (movable, 12:00) and 20:00.",
+  "protoRefs": [
+   "prototype/src/sim/foods.js",
+   "prototype/src/sim/cooking.js",
+   "prototype/src/sim/meals.js",
+   "prototype/src/sim/eating.js",
+   "prototype/src/sim/storage.js"
+  ],
+  "tasks": {
+   "data": [
+    "FoodDef (key, kcal per unit, kg, shelf days, needs cold?, raw?, vegetarian?)",
+    "CookRecipeDef (station kind, ingredients by tag, output food, hours, min Cooking, water)",
+    "StorageFactor table (pantry, cold room, fridge, freezer)",
+    "MealConfig (hours, mood ladder by meal quality)"
+   ],
+   "backend": [
+    "FoodStock: list of lots per base/party; Add, Take(kcal) soonest-to-spoil first, daily spoil tick",
+    "Replace econ.daily's food line with FoodStock.TakeKcal via the same IFoodSource interface",
+    "CookingSystem: cook works a recipe at a station (hourly), lot carries poison chance and cook id",
+    "MealSystem: eat at mealtimes, meal quality → mood factor, poisoning roll → condition",
+    "FoodIn(stock) = kcal/2000 'days of food' for every planner and forecast"
+   ],
+   "ui": [
+    "Stock tab grouped by food with days-left colour",
+    "Kitchen panel: recipe list and the cook",
+    "'Days of food' figure on the hub header"
+   ]
+  },
+  "dataModel": "public sealed record FoodDef(string Key, int Kcal, float Kg, int ShelfDays, bool Cold, bool Raw, string[] Tags);\npublic sealed class FoodLot { public string Food; public int Qty; public float DaysLeft; public bool Eggs; public float Poison; public int? CookId; }\npublic sealed record CookRecipeDef(string Key, string Station, (string Tag, int Qty)[] In, string Out, int OutQty, float Hours, int MinSkill);\npublic interface IFoodSource { int KcalAvailable(); IReadOnlyList<FoodLot> TakeKcal(int kcal); }",
+  "dependsOn": [
+   "econ.daily",
+   "surv.needs",
+   "gear.items",
+   "base.buildings",
+   "base.core"
+  ],
+  "connections": [
+   {
+    "to": "econ.daily",
+    "why": "Daily consumption now comes from typed lots.",
+    "how": "econ.daily calls IFoodSource.TakeKcal(people × 2000) instead of subtracting a number; its signature stays.",
+    "godot": "Ledger view unchanged.",
+    "unity": "Ledger view unchanged."
+   },
+   {
+    "to": "econ.crafting",
+    "why": "Cooking recipes are bills at stations like any craft.",
+    "how": "Once crafting lands, CookRecipeDef rides the same bill/queue runner (until N meals).",
+    "godot": "Same bill UI.",
+    "unity": "Same bill UI."
+   },
+   {
+    "to": "econ.power",
+    "why": "Fridges and freezers slow spoilage while powered.",
+    "how": "Storage factor per lot comes from IColdStorage (econ.power reports powered fridges).",
+    "godot": "None.",
+    "unity": "None."
+   },
+   {
+    "to": "health.disease",
+    "why": "Raw or dirty food causes food poisoning; raw meat can carry the worm.",
+    "how": "MealSystem applies a condition by the lot's Poison; IExposure.RawMeatShare reads raw lots eaten.",
+    "godot": "None.",
+    "unity": "None."
+   }
+  ],
+  "godot": {
+   "approach": "A Stock tab as a Tree with food rows (icon, qty, days left coloured) and a Kitchen panel (ItemList of recipes). All spoilage and cooking stays in the Sim.",
+   "keyApis": [
+    "Tree",
+    "ItemList",
+    "Label (modulate colour)"
+   ],
+   "docs": [
+    {
+     "t": "Tree",
+     "u": "https://docs.godotengine.org/en/stable/classes/class_tree.html"
+    },
+    {
+     "t": "ItemList",
+     "u": "https://docs.godotengine.org/en/stable/classes/class_itemlist.html"
+    },
+    {
+     "t": "User interface (UI)",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/ui/index.html"
+    }
+   ]
+  },
+  "unity": {
+   "approach": "UI Toolkit MultiColumnListView for food lots and a ListView of recipes; colours via USS classes for 'spoiling soon'.",
+   "keyApis": [
+    "MultiColumnListView",
+    "ListView",
+    "USS classes"
+   ],
+   "docs": [
+    {
+     "t": "UIElements.MultiColumnListView",
+     "u": "https://docs.unity3d.com/ScriptReference/UIElements.MultiColumnListView.html"
+    },
+    {
+     "t": "UIElements.ListView",
+     "u": "https://docs.unity3d.com/ScriptReference/UIElements.ListView.html"
+    },
+    {
+     "t": "UI Toolkit",
+     "u": "https://docs.unity3d.com/Manual/UIElements.html"
+    }
+   ]
+  },
+  "learn": [
+   {
+    "t": "RimWorld wiki: Bills",
+    "u": "https://rimworldwiki.com/wiki/Bills"
+   },
+   {
+    "t": "RimWorld wiki: Food",
+    "u": "https://rimworldwiki.com/wiki/Food"
+   }
+  ],
+  "newb": [
+   "Measure food in kcal internally and show 'days of food' to the player: one honest unit, one friendly display.",
+   "Lots (batches with their own days left) are how spoilage works without tracking every can.",
+   "Eat the soonest-to-spoil first: one sort, and the player wastes less without micromanaging.",
+   "Keep the old interface (IFoodSource) so the slice's economy code never has to change."
+  ],
+  "pitfalls": [
+   "Hundreds of tiny lots: merge lots of the same food with similar days left.",
+   "Planners still counting a flat 'food' number after the switch.",
+   "Spoilage ticking on food carried by teams differently than at bases: use one rule."
+  ],
+  "test": "xUnit: 4 people eat 8000 kcal a day from oldest lots; a lot at 0 days is removed; fridge factor slows spoilage; a cook's poisoning chance falls with skill. Manual: hunt a deer, watch the meat count down, cook it and see the meal mood line.",
+  "size": "L"
+ },
+ {
+  "id": "econ.land",
+  "title": "Farming, hunting, foraging, fishing, wood, stone & job trips",
+  "summary": "Food and materials from the land: crop plots that ripen by season and weather, and five land jobs (hunt, fish, forage, cut wood, gather stone) where workers walk out to nearby tiles on job trips whose land runs thin and grows back.",
+  "whyHere": "Needs typed food (econ.food) and the base map (crop plots, trees, rocks); it is what keeps a hub alive past its first scavenged cans.",
+  "subsystems": [
+   "Crops & plots",
+   "Per-tile abundance & regrowth",
+   "Hunting/snares/fishing",
+   "Foraging",
+   "Woodcutting & felling",
+   "Stone",
+   "Job trips & crews",
+   "Winter yields"
+  ],
+  "sliceScope": "One crop on a 2×2 soil plot that ripens in N days and is harvested by a farmer; Cut wood and Forage as base jobs whose daily yield = abundance × skill, with a per-tile level that drops when used and regrows.",
+  "fullScope": "Crops with growth days, yield, seed, water, seasons, tolerances and a harvest window; care = tending × Farming; frost/storms/drought can kill, rain rots ripe crops; greenhouses add 2 sheltered plots. Abundance by terrain (game: forest 1, hills 0.8 … city 0.03; ×1.1 by water; regrows with a 20-day half-life, fish 10). Job trips go up to 2 tiles out, ~9 work hours of 12 daylight; a base's hour equals a team order's hour on that tile; crews share events; winter yields drop.",
+  "protoRefs": [
+   "prototype/src/sim/farming.js",
+   "prototype/src/sim/hunting.js",
+   "prototype/src/sim/foraging.js",
+   "prototype/src/sim/woodcutting.js",
+   "prototype/src/sim/jobtrips.js"
+  ],
+  "tasks": {
+   "data": [
+    "CropDef (days, yield, seed, water, seasons, frost/heat tolerance, harvest window, food key)",
+    "LandResourceDef per job (terrain abundance table, modifiers, regrowth half-life, yields)",
+    "Job trip config (radius, hours, pack food)",
+    "Winter multipliers per resource"
+   ],
+   "backend": [
+    "CropSystem (daily): growth × weather factor, damage rolls, care averaging, ripe window, harvest → food lots",
+    "LandState per tile (level, last hour) with lazy regrowth math (exp decay toward 1)",
+    "LandYield.Hour(job, tile, worker) shared by base jobs and team orders (parity)",
+    "JobTripSystem (hourly): leave at dawn, work hours, walk back; crews on the same tile share events",
+    "Felling marked trees on the base map → wood; clearing rocks → stone"
+   ],
+   "ui": [
+    "Crop plot tooltip: crop, days to ripe, care, risks",
+    "Tile panel words: plenty / some / scarce / none",
+    "Workers out on trips shown on the State Map"
+   ]
+  },
+  "dataModel": "public sealed record CropDef(string Key, int Days, float Yield, int Seed, float Water, Season[] Seasons, int HarvestWindow, string Food);\npublic sealed class CropPlot { public int PlacedId; public string? Crop; public float Growth; public float CareSum; public int Days; }\npublic sealed class LandState { public float Level = 1f; public int LastHour; }\npublic static class Regrow { public static float Level(float l, int hours, float halfLifeDays) => 1 - (1 - l) * MathF.Pow(0.5f, hours / (24f * halfLifeDays)); }",
+  "dependsOn": [
+   "econ.food",
+   "base.basemap",
+   "base.work",
+   "core.weather",
+   "travel.parties"
+  ],
+  "connections": [
+   {
+    "to": "core.weather",
+    "why": "Season and weather set growth, damage and winter yields.",
+    "how": "Reads IWeather.GrowthFactor(day, tile) and CropDamage rolls.",
+    "godot": "None.",
+    "unity": "None."
+   },
+   {
+    "to": "travel.parties",
+    "why": "A team's Hunt/Forage/Cut order on a tile uses the same yield as a base job.",
+    "how": "Both call LandYield.Hour(job, tile, worker): one function, AI groups too (ADR 0001 parity).",
+    "godot": "Map figures at work on the tile.",
+    "unity": "Map figures at work on the tile."
+   },
+   {
+    "to": "base.basemap",
+    "why": "Crop plots are placed on soil; trees and rocks are cleared for wood and stone.",
+    "how": "CropPlot is a PlacedPiece with Footprint SoilOnly; ClearJob yields feed stock.",
+    "godot": "Crop sprites on a TileMapLayer.",
+    "unity": "Crop sprites on a Tilemap."
+   },
+   {
+    "to": "base.work",
+    "why": "Farm, Hunt, Fish, Forage, Wood, Stone are work types.",
+    "how": "Each is a WorkTypeDef with HasWork/Capacity hooks; base.workgrid later prioritises them.",
+    "godot": "None.",
+    "unity": "None."
+   }
+  ],
+  "godot": {
+   "approach": "Crops drawn as tiles on the base map's TileMapLayer by growth stage; job trips drawn as small markers moving along a Line2D path on the State Map, positions interpolated from sim hours.",
+   "keyApis": [
+    "TileMapLayer",
+    "Line2D",
+    "Tween (marker motion)"
+   ],
+   "docs": [
+    {
+     "t": "TileMapLayer",
+     "u": "https://docs.godotengine.org/en/stable/classes/class_tilemaplayer.html"
+    },
+    {
+     "t": "Line2D",
+     "u": "https://docs.godotengine.org/en/stable/classes/class_line2d.html"
+    },
+    {
+     "t": "Custom drawing in 2D",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/2d/custom_drawing_in_2d.html"
+    }
+   ]
+  },
+  "unity": {
+   "approach": "Crop stage tiles on the base Tilemap; trip markers as sprites moved along a LineRenderer path, positions interpolated from sim hours.",
+   "keyApis": [
+    "Tilemap",
+    "LineRenderer",
+    "SpriteRenderer"
+   ],
+   "docs": [
+    {
+     "t": "Tilemaps.Tilemap",
+     "u": "https://docs.unity3d.com/ScriptReference/Tilemaps.Tilemap.html"
+    },
+    {
+     "t": "LineRenderer",
+     "u": "https://docs.unity3d.com/ScriptReference/LineRenderer.html"
+    },
+    {
+     "t": "SpriteRenderer",
+     "u": "https://docs.unity3d.com/ScriptReference/SpriteRenderer.html"
+    }
+   ]
+  },
+  "learn": [
+   {
+    "t": "RimWorld wiki: Work",
+    "u": "https://rimworldwiki.com/wiki/Work"
+   }
+  ],
+  "newb": [
+   "Lazy regrowth: store the level and the time it was last touched, and compute the regrown value only when you read it. No per-tile daily loop.",
+   "One yield function for a base job and a team order keeps the player and AI groups on the same rules.",
+   "Averaging 'care' over a crop's life rewards steady tending without a farmer needing to be there every hour.",
+   "This card is big: build farming first, then one land job, then copy the pattern for the rest."
+  ],
+  "pitfalls": [
+   "Ticking every tile on the map every day: thousands of tiles, almost all untouched.",
+   "Faster crops from more farmers: the prototype only raises yield, which keeps seasons meaningful.",
+   "Forgetting winter: without lean months food stops being a problem by year two."
+  ],
+  "test": "xUnit: a crop ripens in its days under neutral weather; frost kills it; regrowth halves the gap every half-life; base job hour == team order hour on the same tile. Manual: run a season with two farmers and a forager and compare yields with the prototype's numbers.",
+  "size": "XL"
+ },
+ {
+  "id": "econ.water",
+  "title": "Water: purified, wells & filters",
+  "summary": "Water splits into purified (safe) and un-purified (from wells, streams, rain), with boilers, filters and fires purifying a day's drinking; drinking raw water risks the worm and stomach bugs.",
+  "whyHere": "Small but it closes the loop with health.disease (the worm) and adds the first water buildings; the slice's flat water line is reused.",
+  "subsystems": [
+   "Two water supplies",
+   "Sources (well, spring, stream, rain)",
+   "Purifiers (boiler, filter, fire, tablets)",
+   "Drinking order",
+   "Crop watering",
+   "Exposure report"
+  ],
+  "sliceScope": "Two supply keys (water, rawwater); a well producing raw water daily; a boiler that purifies people × daily need for wood; drink purified first, then raw (with the exposure recorded).",
+  "fullScope": "Sources: a base's well or spring, wells, a stream, rain catchers (no eggs), claims' wells, prisoners hauling it, a team filling at a river; purified = boiled, filtered, tablets, bottled finds. The boiler burns wood per head a day, each filter purifies a fixed amount, a shelter's lit fire works like a boiler; an electric pump adds +8 water a day; crops drink raw first.",
+  "protoRefs": [
+   "prototype/src/sim/water.js",
+   "prototype/src/sim/worm.js",
+   "prototype/src/sim/economy.js"
+  ],
+  "tasks": {
+   "data": [
+    "Supply keys water / rawwater in content/supplies.json (same kg)",
+    "WaterSourceDef on buildings (raw per day, weather mult, eggs share)",
+    "PurifierDef (kind, per day or per head, fuel cost)",
+    "Tablet item (purifies N)"
+   ],
+   "backend": [
+    "WaterProduction (daily): sources add rawwater, rain catchers by weather",
+    "PurifySystem (daily, before drinking): purifiers convert raw → purified, burning fuel",
+    "Drinking in econ.daily: purified first, then raw; record each person's raw share",
+    "Implement IExposure.RawWaterShare for health.disease",
+    "Teams: fill at rivers (raw), tablets in the field"
+   ],
+   "ui": [
+    "Stock shows both waters",
+    "Water panel: sources, purifiers, today's raw share warning",
+    "Warning chip 'Drinking un-purified water'"
+   ]
+  },
+  "dataModel": "public sealed record WaterSourceDef(float RawPerDay, float RainMult, bool CarriesEggs);\npublic sealed record PurifierDef(string Kind, float PerDay, float PerHeadFuel, string FuelKey);\npublic sealed class WaterDay { public float Drunk; public float RawDrunk; public Dictionary<int, float> RawShare = new(); }",
+  "dependsOn": [
+   "econ.daily",
+   "base.buildings",
+   "base.core",
+   "health.disease"
+  ],
+  "connections": [
+   {
+    "to": "health.disease",
+    "why": "Raw water is how the worm and stomach bugs are caught.",
+    "how": "WaterDay.RawShare feeds IExposure.RawWaterShare, replacing the stub.",
+    "godot": "None.",
+    "unity": "None."
+   },
+   {
+    "to": "econ.daily",
+    "why": "Drinking and production already exist as daily lines.",
+    "how": "The daily water step calls WaterService.Drink(base) which applies the purified-first order.",
+    "godot": "Ledger shows both waters.",
+    "unity": "Ledger shows both waters."
+   },
+   {
+    "to": "econ.power",
+    "why": "Electric pumps and powered filters need the grid.",
+    "how": "PumpDef draws power; produces only if IPower.IsPowered(buildingId).",
+    "godot": "None.",
+    "unity": "None."
+   }
+  ],
+  "godot": {
+   "approach": "Display only: a water section in the Stock tab and a warning chip (a Label in a styled PanelContainer) when the raw share is above zero.",
+   "keyApis": [
+    "PanelContainer",
+    "Label",
+    "Theme overrides"
+   ],
+   "docs": [
+    {
+     "t": "Using containers",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/ui/gui_containers.html"
+    },
+    {
+     "t": "User interface (UI)",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/ui/index.html"
+    }
+   ]
+  },
+  "unity": {
+   "approach": "Display only: a water section in the stock UXML and a warning chip shown via a USS class toggle.",
+   "keyApis": [
+    "VisualElement.EnableInClassList",
+    "Label"
+   ],
+   "docs": [
+    {
+     "t": "UI Toolkit",
+     "u": "https://docs.unity3d.com/Manual/UIElements.html"
+    },
+    {
+     "t": "UIElements.ListView",
+     "u": "https://docs.unity3d.com/ScriptReference/UIElements.ListView.html"
+    }
+   ]
+  },
+  "learn": [
+   {
+    "t": "Game Programming Patterns: Update Method",
+    "u": "https://gameprogrammingpatterns.com/update-method.html"
+   }
+  ],
+  "newb": [
+   "Order matters inside a daily tick: purify, then drink, then water crops. Write the order down as a list of steps and test it.",
+   "Two supply keys for 'the same stuff' with different safety is a cheap, readable model.",
+   "Record the exposure as a number (share of raw water drunk) and let the disease card decide what it means."
+  ],
+  "pitfalls": [
+   "Purifying after drinking because of tick order.",
+   "Rain catchers carrying worm eggs (they should not).",
+   "Teams forgetting the rules bases use: same drinking order everywhere."
+  ],
+  "test": "xUnit: with a boiler and enough wood nobody drinks raw; without it the raw share is 1; rain catcher water has no eggs; pump adds 8 only when powered. Manual: let a base's wood run out and see the warning and, days later, a sick survivor.",
+  "size": "S"
+ },
+ {
+  "id": "econ.crafting",
+  "title": "Crafting, production bills, tool requirements & blueprints",
+  "summary": "Survivors make gear and supplies from materials: a craft queue paid up front, quality rolled by Crafting skill, standing station bills (forever / until N / keep N / off) like RimWorld, tool kinds a job needs at the base, and blueprints that must be found and studied to unlock top tiers.",
+  "whyHere": "Needs skills (quality, XP), food (cooking rides the same runner) and stations from buildings; repairs, power machines and furniture recipes all reuse it.",
+  "subsystems": [
+   "Recipe defs",
+   "Craft queue",
+   "Quality & durability",
+   "Station bills",
+   "Tool requirements",
+   "Blueprints & study",
+   "Field crafting"
+  ],
+  "sliceScope": "Recipes with inputs, hours, skill minimum; a craft queue at the base (materials paid when queued, crafters add work-hours, item to the armory); one station with an 'until N' bill; a tool requirement check at queue time.",
+  "fullScope": "Hand crafting anywhere plus workshop recipes; quality rolled around an expected condition narrower for better crafters, setting durability; XP by kind, input worth and quality. Bills: forever, until N (restart below N − 10%), keep N of an input, off; the operator idles or takes a fallback. Tools (hammer, saw, axe, shovel, soldering iron…) checked at queue time, makeshift ones wear. Manuals and blueprints found, studied on the Read role a few hours a day, then known forever; nine electronics recipes.",
+  "protoRefs": [
+   "prototype/src/sim/crafting.js",
+   "prototype/src/sim/production.js",
+   "prototype/src/sim/toolreqs.js",
+   "prototype/src/sim/blueprints.js",
+   "docs/features/economy.md"
+  ],
+  "tasks": {
+   "data": [
+    "RecipeDef (inputs, outputs/stack, hours, skill + min, station kind or none, tools[], blueprint?, field?)",
+    "ToolKind enum + tool items mapping (hammer, saw, axe, shovel, soldering iron)",
+    "BillDef modes and margins",
+    "BlueprintDef (unlocks: building tiers/recipes, study hours, skill min)"
+   ],
+   "backend": [
+    "CraftQueue: Queue(recipe) validates tools/inputs/blueprint, pays inputs; CraftSystem hourly spends crafter hours; finishing rolls quality",
+    "BillSystem per station: decide run/idle each day by mode and stock",
+    "ToolReqs.Missing(baseId, recipe) shared with base.buildings' build checks",
+    "StudySystem: Read role progress per blueprint (shared progress, kept in tech state), Known set",
+    "Field crafting for teams from carried goods"
+   ],
+   "ui": [
+    "Craft tab: recipe list with greyed reasons (missing tool, skill, blueprint)",
+    "Station bill editor: mode dropdown + number",
+    "Queue with progress bars"
+   ]
+  },
+  "dataModel": "public enum BillMode { Forever, UntilN, KeepN, Off }\npublic sealed record RecipeDef(string Key, (string Id, int Qty)[] In, (string Id, int Qty)[] Out, float Hours,\n  string Skill, int Min, string? Station, ToolKind[] Tools, string? Blueprint, bool Field);\npublic sealed class Bill { public string StationId; public BillMode Mode; public int N; public string? Target; }\npublic sealed class CraftJob { public int Id; public string Recipe; public float HoursDone; public bool Paid; }\npublic sealed class TechState { public HashSet<string> Known = new(); public Dictionary<string, float> Progress = new(); }",
+  "dependsOn": [
+   "gear.items",
+   "base.buildings",
+   "base.work",
+   "surv.skills",
+   "econ.food"
+  ],
+  "connections": [
+   {
+    "to": "base.buildings",
+    "why": "Stations are buildings; builds and recipes share tool checks; blueprints unlock building tiers.",
+    "how": "BuildingDef.Station kind; base.buildings.CanBuild calls ToolReqs.Missing and TechState.Known.",
+    "godot": "Build list greys out locked tiers.",
+    "unity": "Build list greys out locked tiers."
+   },
+   {
+    "to": "surv.skills",
+    "why": "Quality, speed and XP come from Crafting.",
+    "how": "Crafting roll uses SkillService.Level; GainXp(Crafting, CraftXp(...)).",
+    "godot": "None.",
+    "unity": "None."
+   },
+   {
+    "to": "econ.food",
+    "why": "Cooking recipes run as bills too.",
+    "how": "CookRecipeDef maps onto RecipeDef with station kitchen/campfire.",
+    "godot": "Same bill UI.",
+    "unity": "Same bill UI."
+   },
+   {
+    "to": "gear.condition",
+    "why": "Crafted quality is item condition; repair/salvage reuse recipes.",
+    "how": "Output ItemInstance.Condition from the quality roll.",
+    "godot": "None.",
+    "unity": "None."
+   }
+  ],
+  "godot": {
+   "approach": "Craft tab: ItemList of recipes (disabled rows with a tooltip reason), a bill editor with OptionButton (mode) and SpinBox (N) sending SetBill commands, queue rows with ProgressBar.",
+   "keyApis": [
+    "ItemList",
+    "OptionButton",
+    "SpinBox",
+    "ProgressBar"
+   ],
+   "docs": [
+    {
+     "t": "ItemList",
+     "u": "https://docs.godotengine.org/en/stable/classes/class_itemlist.html"
+    },
+    {
+     "t": "OptionButton",
+     "u": "https://docs.godotengine.org/en/stable/classes/class_optionbutton.html"
+    },
+    {
+     "t": "SpinBox",
+     "u": "https://docs.godotengine.org/en/stable/classes/class_spinbox.html"
+    },
+    {
+     "t": "ProgressBar",
+     "u": "https://docs.godotengine.org/en/stable/classes/class_progressbar.html"
+    }
+   ]
+  },
+  "unity": {
+   "approach": "UI Toolkit ListView of recipes (SetEnabled(false) + tooltip), DropdownField for bill mode and IntegerField for N sending commands, queue ListView with ProgressBar.",
+   "keyApis": [
+    "ListView",
+    "DropdownField",
+    "IntegerField",
+    "ProgressBar"
+   ],
+   "docs": [
+    {
+     "t": "UIElements.ListView",
+     "u": "https://docs.unity3d.com/ScriptReference/UIElements.ListView.html"
+    },
+    {
+     "t": "UIElements.DropdownField",
+     "u": "https://docs.unity3d.com/ScriptReference/UIElements.DropdownField.html"
+    },
+    {
+     "t": "UIElements.ProgressBar",
+     "u": "https://docs.unity3d.com/ScriptReference/UIElements.ProgressBar.html"
+    }
+   ]
+  },
+  "learn": [
+   {
+    "t": "RimWorld wiki: Bills",
+    "u": "https://rimworldwiki.com/wiki/Bills"
+   },
+   {
+    "t": "Game Programming Patterns: Type Object",
+    "u": "https://gameprogrammingpatterns.com/type-object.html"
+   }
+  ],
+  "newb": [
+   "A 'bill' is a standing order with a stop rule; 'until N with a margin' (hysteresis) stops it flipping on and off every day.",
+   "Pay inputs when a job is queued, not when it finishes: no half-built items stealing materials twice.",
+   "Every 'why can't I craft this?' should come from one Missing(...) function the UI can print.",
+   "Blueprint progress belongs to the group (tech state), so anyone can carry on studying."
+  ],
+  "pitfalls": [
+   "Checking tools only at queue time but forgetting to explain later why a tool left (that is intended: say so in the tooltip).",
+   "Quality rolls with System.Random: use the sim Rng stream.",
+   "Bills reading stock that includes goods promised to another job."
+  ],
+  "test": "xUnit: queue pays inputs once; missing tool blocks queue; until-N stops at N and restarts below N − 10%; study progress persists across survivors. Manual: set an 'until 50 rounds' bill and watch the bench idle at 50.",
+  "size": "L"
+ },
+ {
+  "id": "econ.power",
+  "title": "Power grid & appliances",
+  "summary": "Found or built generators burn fuel by the hour to power lights, a breaker panel's circuits, fridges, pumps, an ammo press and fence chargers; solar and batteries add supply; appliances like freezers and ranges sit on the grid.",
+  "whyHere": "Needs placed pieces (furniture/base map), fuel in the economy and crafting machines; it upgrades food storage, water and defence at once.",
+  "subsystems": [
+   "Generators & fuel tank",
+   "Supply/demand solver",
+   "Switchboard (on/off, priority)",
+   "Breaker circuits & mood",
+   "Appliances",
+   "Solar & batteries",
+   "Refuel chore"
+  ],
+  "sliceScope": "One generator (6 power for 2 fuel a day, burned hourly while something draws), a fridge and lights as users served in priority order, a refuel chore each morning, and switches per user.",
+  "fullScope": "Generator 6 power / 2 fuel a day, tank 3 (1.5 days); found gensets from inverter (3 power) to military (20), at most 4 a base. Spotlights 1 power dusk to dawn (+10 to hit at night at the base); breaker panel lights (+0.5 mood all lit, −1 × share dark), fans/heaters by the day's climate; fridge holds 40 days of food at 0.25× shelf loss; electric pump +8 water; ammo press 2× scrap → 3× rounds; solar arrays, battery banks, perimeter alarm, charging station; ethanol still turns surplus food into fuel.",
+  "protoRefs": [
+   "prototype/src/sim/power.js",
+   "prototype/src/sim/electric.js",
+   "prototype/src/sim/appliances.js",
+   "prototype/src/sim/data-power.js",
+   "docs/features/economy.md"
+  ],
+  "tasks": {
+   "data": [
+    "PowerSupplyDef (output, fuel per hour, tank) and PowerUserDef (draw, hours: always/dusk-dawn/hot/cold, priority)",
+    "ApplianceDef (use: fridge/freezer/stove/oven/microwave, storage factor)",
+    "Circuit defs for the breaker panel",
+    "Solar (output by weather/daylight) and battery (capacity)"
+   ],
+   "backend": [
+    "PowerSystem (hourly): demand list in priority order, run as few generators as needed, burn fuel from tanks, charge/discharge batteries",
+    "IPower.IsPowered(buildingId) for everything else to ask",
+    "Refuel chore at 06:00 for the least busy able person",
+    "Breaker mood factors and climate needs from core.weather",
+    "Appliance effects: cold storage factors for econ.food, cooking stations for econ.crafting"
+   ],
+   "ui": [
+    "Power card (switchboard): supply vs demand bar, users grouped with toggles, All on/off",
+    "Unpowered icon over buildings",
+    "Fuel days-left on the generator tooltip"
+   ]
+  },
+  "dataModel": "public sealed record PowerSupplyDef(float Output, float FuelPerHour, float Tank);\npublic enum DrawWhen { Always, DuskToDawn, HotDay, ColdDay, WhileWorking }\npublic sealed record PowerUserDef(float Draw, DrawWhen When, int Priority);\npublic sealed class GridState { public Dictionary<int, float> Tank = new(); public HashSet<int> Off = new();\n  public float Battery; public HashSet<int> PoweredNow = new(); }\npublic interface IPower { bool IsPowered(int buildingId); }",
+  "dependsOn": [
+   "base.furniture",
+   "base.buildings",
+   "econ.daily",
+   "econ.crafting",
+   "core.clock"
+  ],
+  "connections": [
+   {
+    "to": "econ.food",
+    "why": "Powered fridges and freezers slow spoilage.",
+    "how": "Implements IColdStorage: storage factor per base from powered appliances.",
+    "godot": "None.",
+    "unity": "None."
+   },
+   {
+    "to": "core.clock",
+    "why": "Fuel burns and lights switch by the hour.",
+    "how": "PowerSystem registered as an hourly system; reads the hour for dusk/dawn.",
+    "godot": "None.",
+    "unity": "None."
+   },
+   {
+    "to": "def.walls",
+    "why": "Spotlights, fence chargers and alarms are defence.",
+    "how": "Defence rules ask IPower.IsPowered for those pieces.",
+    "godot": "Light2D on spotlights in night battles.",
+    "unity": "2D lights on spotlights in night battles."
+   },
+   {
+    "to": "base.repairs",
+    "why": "Generators wear and break.",
+    "how": "Generator buildings carry a Wear component; broken = no output.",
+    "godot": "None.",
+    "unity": "None."
+   }
+  ],
+  "godot": {
+   "approach": "A Power card listing groups (VBoxContainer of rows with CheckButton) sending SetPowerSwitch commands, plus a ProgressBar for supply vs demand. In night base battles, PointLight2D nodes stand on powered spotlights.",
+   "keyApis": [
+    "CheckButton",
+    "ProgressBar",
+    "PointLight2D",
+    "CanvasModulate"
+   ],
+   "docs": [
+    {
+     "t": "ProgressBar",
+     "u": "https://docs.godotengine.org/en/stable/classes/class_progressbar.html"
+    },
+    {
+     "t": "2D lights and shadows",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/2d/2d_lights_and_shadows.html"
+    },
+    {
+     "t": "Using containers",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/ui/gui_containers.html"
+    }
+   ]
+  },
+  "unity": {
+   "approach": "A Power card in UI Toolkit (Toggles per user, ProgressBar for load) sending commands; URP 2D lights on powered spotlights in night battles.",
+   "keyApis": [
+    "UI Toolkit Toggle",
+    "ProgressBar",
+    "URP 2D Light"
+   ],
+   "docs": [
+    {
+     "t": "UI Toolkit",
+     "u": "https://docs.unity3d.com/Manual/UIElements.html"
+    },
+    {
+     "t": "UIElements.ProgressBar",
+     "u": "https://docs.unity3d.com/ScriptReference/UIElements.ProgressBar.html"
+    },
+    {
+     "t": "UIElements.ListView",
+     "u": "https://docs.unity3d.com/ScriptReference/UIElements.ListView.html"
+    }
+   ]
+  },
+  "learn": [
+   {
+    "t": "RimWorld wiki: Bills",
+    "u": "https://rimworldwiki.com/wiki/Bills"
+   },
+   {
+    "t": "Game Programming Patterns: Update Method",
+    "u": "https://gameprogrammingpatterns.com/update-method.html"
+   }
+  ],
+  "newb": [
+   "A power grid here is a sorted list problem, not electrical simulation: add up supply, serve users in priority until it runs out.",
+   "Ask 'is this powered?' through one interface so food, water and defence never need to know about generators.",
+   "Burning fuel by the hour only while there is demand makes switches meaningful to the player.",
+   "Keep the chore (refuelling) as a work task so the grid needs people, like RimWorld."
+  ],
+  "pitfalls": [
+   "Every system checking generators directly: tangled code and wrong answers when batteries arrive.",
+   "Recomputing the grid on every UI frame instead of once per sim hour.",
+   "Generators burning fuel with nothing switched on."
+  ],
+  "test": "xUnit: 6 power serves users in priority; with demand 0 no fuel burns; tank 3 lasts 36 h of full running; spotlight draws only dusk to dawn; battery covers a gap. Manual: set a generator and fridge, switch the fridge off and see food spoil faster.",
+  "size": "L"
+ },
+ {
+  "id": "econ.hauling",
+  "title": "Multiple bases, supply runs & hauling",
+  "summary": "Running several bases: a Haul role with standing orders ('send what's over N', 'keep N stocked') moved on round-trip job trips, scheduled supply-run convoys between bases, local hauling and salvage when there is nothing to move, and moving people between bases.",
+  "whyHere": "Once tiers let the player own camps and outposts (base.tiers), goods stuck in the wrong place become the problem; this reuses parties and pathing from the slice.",
+  "subsystems": [
+   "Haul orders (send/stock)",
+   "Round-trip haul trips",
+   "Supply-run convoys",
+   "Local hauling & salvage",
+   "Moving people",
+   "Sender reserve"
+  ],
+  "sliceScope": "Standing haul orders between two bases (what, mode, qty) carried by a Haul worker on a daily round trip (out 06:00, back by 21:00) up to a load limit; a 'send everything' supply run using the slice's party system.",
+  "fullScope": "Orders by food (days), supply, category, all, 'outside' (no room) or surplus; send = over qty at sender, stock = keep qty at receiver, sender keeps its reserve. Trips loaded to the Heavy band, carts and vehicles multiply load; pairs too far for a day are skipped. Supply runs: crew, vehicle, goods both ways, hold/return/disband, once or every X days. Local hauling salvages the base map's wrecks (2 h → 6 scrap + a part), crates, rocks. Governor makes food orders when a base is under 8 days and another has 20+.",
+  "protoRefs": [
+   "prototype/src/sim/hauling.js",
+   "prototype/src/sim/supply.js",
+   "prototype/src/sim/moveout.js",
+   "docs/features/economy.md"
+  ],
+  "tasks": {
+   "data": [
+    "HaulOrder record (from, to, what selector, mode, qty)",
+    "SupplyRunTemplate (crew ids, vehicle, deliver, pick up, at-destination, every X days)",
+    "Salvage defs for base-map scatter (hours, yields)",
+    "Haul WorkTypeDef"
+   ],
+   "backend": [
+    "HaulPlanner: per hauler, the first order with goods to move; load by carry capacity",
+    "HaulTripSystem (hourly): out, travel time from travel.pathing, unload into free room, return",
+    "SupplyRunSystem (daily): dispatch convoys as parties of kind Convoy; arrival unload",
+    "Local hauling fallback: fetch outside goods in, salvage scatter",
+    "MovePeople command between bases (+ overcrowding card)"
+   ],
+   "ui": [
+    "Hauling panel: orders list, Add order form (from/to/what/mode/qty), haulers and what waits",
+    "Haulers drawn moving between bases on the State Map",
+    "Activity line 'Hauling 40 kg scrap to Riverbend'"
+   ]
+  },
+  "dataModel": "public enum HaulMode { Send, Stock }\npublic sealed record HaulOrder(int Id, int From, int To, string What, HaulMode Mode, int Qty);\npublic sealed class HaulTrip { public int SurvivorId; public int OrderId; public Dictionary<string, int> Load = new(); public int BackHour; }\npublic sealed record SupplyRunTemplate(int Id, int From, int To, int[] Crew, int? VehicleId, Dictionary<string,int> Deliver, int EveryDays);",
+  "dependsOn": [
+   "base.tiers",
+   "base.core",
+   "travel.parties",
+   "travel.pathing",
+   "base.work",
+   "gear.items"
+  ],
+  "connections": [
+   {
+    "to": "travel.parties",
+    "why": "Supply-run convoys travel like any team (supplies drain, events, raids).",
+    "how": "Convoy = Party with Kind.Convoy and a route; arrival publishes PartyArrived handled by SupplyRunSystem.",
+    "godot": "Convoy markers like any team.",
+    "unity": "Convoy markers like any team."
+   },
+   {
+    "to": "travel.pathing",
+    "why": "Trip time between bases decides if a haul fits in a day.",
+    "how": "IPathing.TravelHours(from, to, pace) used by the planner.",
+    "godot": "None.",
+    "unity": "None."
+   },
+   {
+    "to": "base.core",
+    "why": "Goods leave and enter stockpiles with room limits.",
+    "how": "IStockpile.Take/Put with free-room check; what does not fit comes back.",
+    "godot": "Stock views update on StockChanged.",
+    "unity": "Stock views update on StockChanged."
+   },
+   {
+    "to": "groups.trade",
+    "why": "AI groups run haul convoys by the same rules (parity).",
+    "how": "Shared convoy party type and unload code.",
+    "godot": "None.",
+    "unity": "None."
+   }
+  ],
+  "godot": {
+   "approach": "Hauling panel with a Tree of orders and a small form (OptionButtons for bases/what/mode, SpinBox for qty) sending AddHaulOrder. Hauler markers move along a Line2D between base hexes on the State Map.",
+   "keyApis": [
+    "Tree",
+    "OptionButton",
+    "SpinBox",
+    "Line2D"
+   ],
+   "docs": [
+    {
+     "t": "Tree",
+     "u": "https://docs.godotengine.org/en/stable/classes/class_tree.html"
+    },
+    {
+     "t": "OptionButton",
+     "u": "https://docs.godotengine.org/en/stable/classes/class_optionbutton.html"
+    },
+    {
+     "t": "SpinBox",
+     "u": "https://docs.godotengine.org/en/stable/classes/class_spinbox.html"
+    },
+    {
+     "t": "Line2D",
+     "u": "https://docs.godotengine.org/en/stable/classes/class_line2d.html"
+    }
+   ]
+  },
+  "unity": {
+   "approach": "Hauling panel with MultiColumnListView of orders and a form (DropdownField, IntegerField) sending commands; hauler sprites along a LineRenderer on the State Map.",
+   "keyApis": [
+    "MultiColumnListView",
+    "DropdownField",
+    "IntegerField",
+    "LineRenderer"
+   ],
+   "docs": [
+    {
+     "t": "UIElements.MultiColumnListView",
+     "u": "https://docs.unity3d.com/ScriptReference/UIElements.MultiColumnListView.html"
+    },
+    {
+     "t": "UIElements.DropdownField",
+     "u": "https://docs.unity3d.com/ScriptReference/UIElements.DropdownField.html"
+    },
+    {
+     "t": "LineRenderer",
+     "u": "https://docs.unity3d.com/ScriptReference/LineRenderer.html"
+    }
+   ]
+  },
+  "learn": [
+   {
+    "t": "Red Blob Games: Introduction to A*",
+    "u": "https://www.redblobgames.com/pathfinding/a-star/introduction.html"
+   },
+   {
+    "t": "RimWorld wiki: Work",
+    "u": "https://rimworldwiki.com/wiki/Work"
+   }
+  ],
+  "newb": [
+   "Standing orders ('keep 20 stocked') are easier for players than one-off trips and easier to automate.",
+   "A 'send' vs 'stock' mode covers most logistics with two numbers.",
+   "Reuse the party system for convoys: same travel, same events, same raids. Do not build a second one.",
+   "Always keep a sender reserve so automation never starves the base it ships from."
+  ],
+  "pitfalls": [
+   "Two orders ping-ponging goods between bases forever.",
+   "Haulers leaving at night or on trips that cannot return by dark.",
+   "Unloading into a full base and silently deleting the rest."
+  ],
+  "test": "xUnit: send keeps qty at sender; stock fills receiver to qty; too-far pairs skipped; leftovers return; convoy arrival unloads exactly. Manual: build an outpost, set 'keep 10 days of food' at it and watch a hauler walk.",
+  "size": "L"
+ },
+ {
+  "id": "base.repairs",
+  "title": "Breakdowns & repairs",
+  "summary": "Fixtures (pumps, wells, generators, stations, walls, gates, roofs) build up wear from use, age, weather and attacks; worn ones may break and stop until a named survivor repairs them from a most-damaged-first repair list.",
+  "whyHere": "After power, water and stations exist there is something worth breaking; it gives builders and mechanics steady work and makes Mechanics matter.",
+  "subsystems": [
+   "Wear accumulation",
+   "Break chance",
+   "Repair orders",
+   "Upkeep by idle builders",
+   "Jury-rigging",
+   "Mechanics & traits modifiers"
+  ],
+  "sliceScope": "A Wear (0–100) value on fixture buildings, +use and +age each day, breaks at 100 (stops output); a Repair job that a mechanic does over hours with parts; the repair list sorted most damaged first.",
+  "fullScope": "Daily wear = use × age (+1/240 per day since built) + weather (frost on pumps, storms on masts/roofs) + attacks, × operator Mechanics (from ×1.15, −2.5% a point, at least ×0.65), × Grease Monkey 0.8 / Handy 0.85 living there, × 1.6 jury-rigged. Breaks at 100, and from 60 with a daily chance ((wear − 60)/40)² × 30%. Idle builders take 1.5 wear off the worst fixture each; upkeep crews do it every day. Parked vehicles wear on frost days unless garaged.",
+  "protoRefs": [
+   "prototype/src/sim/breakdowns.js",
+   "prototype/src/sim/repair.js",
+   "docs/features/bases.md",
+   "docs/adr/0002-base-building.md"
+  ],
+  "tasks": {
+   "data": [
+    "FixtureDef component on BuildingDef (use wear, weather tags, repair hours, parts)",
+    "Repair config (age rate, break curve, upkeep amount, jury-rig mult)",
+    "Trait fx keys for wear (via surv.skills TraitFx)"
+   ],
+   "backend": [
+    "WearSystem (daily): compute wear per fixture with all multipliers, break rolls (seeded), publish FixtureBroke",
+    "IFixture.IsWorking(buildingId) asked by power, water, stations",
+    "RepairOrder(buildingId, survivorId?) command; Repair work type; jury-rig quick fix",
+    "Upkeep: builders with no construction remove wear",
+    "Attack damage hook for sieges"
+   ],
+   "ui": [
+    "Repairs tab: fixtures sorted by wear with bars, assign a named survivor",
+    "Broken icon over buildings; log line on break",
+    "Wear in the building tooltip"
+   ]
+  },
+  "dataModel": "public sealed record FixtureDef(float UseWear, string[] WeatherTags, float RepairHours, int Parts);\npublic sealed class Wear { public float Value; public bool Broken; public bool JuryRigged; public int BuiltDay; }\npublic sealed record RepairOrder(int BaseId, int BuildingId, int? SurvivorId) : ICommand;\npublic sealed record FixtureBroke(int BaseId, int BuildingId) : IDomainEvent;",
+  "dependsOn": [
+   "base.buildings",
+   "base.work",
+   "surv.skills",
+   "core.weather",
+   "econ.power"
+  ],
+  "connections": [
+   {
+    "to": "base.buildings",
+    "why": "Wear lives on building records; broken ones stop.",
+    "how": "Building gets an optional Wear component; the slice's production code asks IFixture.IsWorking.",
+    "godot": "Broken overlay sprite by art key.",
+    "unity": "Broken overlay sprite by art key."
+   },
+   {
+    "to": "base.workgrid",
+    "why": "Repairs are a work type with an emergency boost for wells and walls.",
+    "how": "Repair WorkTypeDef HasWork = any broken/worn fixture; boost rule for critical ones.",
+    "godot": "None.",
+    "unity": "None."
+   },
+   {
+    "to": "def.sieges",
+    "why": "Attacks damage walls and gates.",
+    "how": "Battle results call Wear.AddAttackDamage(buildingId, amount).",
+    "godot": "None.",
+    "unity": "None."
+   }
+  ],
+  "godot": {
+   "approach": "Repairs tab: a Tree sorted by wear (ProgressBar column drawn with a custom cell or a separate row scene) with an OptionButton to pick who repairs, sending RepairOrder.",
+   "keyApis": [
+    "Tree",
+    "ProgressBar",
+    "OptionButton"
+   ],
+   "docs": [
+    {
+     "t": "Tree",
+     "u": "https://docs.godotengine.org/en/stable/classes/class_tree.html"
+    },
+    {
+     "t": "ProgressBar",
+     "u": "https://docs.godotengine.org/en/stable/classes/class_progressbar.html"
+    },
+    {
+     "t": "OptionButton",
+     "u": "https://docs.godotengine.org/en/stable/classes/class_optionbutton.html"
+    }
+   ]
+  },
+  "unity": {
+   "approach": "Repairs tab: MultiColumnListView sorted by wear with a ProgressBar column and a DropdownField for the repairer, sending RepairOrder.",
+   "keyApis": [
+    "MultiColumnListView",
+    "ProgressBar",
+    "DropdownField"
+   ],
+   "docs": [
+    {
+     "t": "UIElements.MultiColumnListView",
+     "u": "https://docs.unity3d.com/ScriptReference/UIElements.MultiColumnListView.html"
+    },
+    {
+     "t": "UIElements.ProgressBar",
+     "u": "https://docs.unity3d.com/ScriptReference/UIElements.ProgressBar.html"
+    },
+    {
+     "t": "UIElements.DropdownField",
+     "u": "https://docs.unity3d.com/ScriptReference/UIElements.DropdownField.html"
+    }
+   ]
+  },
+  "learn": [
+   {
+    "t": "Game Programming Patterns: Component",
+    "u": "https://gameprogrammingpatterns.com/component.html"
+   }
+  ],
+  "newb": [
+   "A breaking curve that starts at 60 (chance rises with the square) gives warning time instead of surprise.",
+   "One IsWorking() question keeps every system honest about broken things.",
+   "Giving idle builders upkeep work turns downtime into value without new UI."
+  ],
+  "pitfalls": [
+   "Wear rolling hourly with System.Random: keep it daily on the sim Rng.",
+   "Breakdowns that cascade with no warning (pump breaks → water gone → deaths) with no card or alert.",
+   "Forgetting to stop wear on unused stations."
+  ],
+  "test": "xUnit: no break below 60; chance at 80 = 7.5%; Mechanics 10 operator gives ×0.9; upkeep removes 1.5 per builder; broken pump yields 0. Manual: dev-set a pump to 95 wear, watch it break and a mechanic repair it.",
+  "size": "M"
+ },
+ {
+  "id": "core.hubevents",
+  "title": "Hub events & the harvest festival",
+  "summary": "Decisions for the days at home: about one card every 3–5 days at a mid-size hub (a fire, a quarrel, a peddler, the dead at the fence, rats in the stores, flu season…), each choice with a real stated effect, plus a yearly harvest festival.",
+  "whyHere": "Needs most hub systems to exist so choices can touch them (mood, relations, disease, stock, repairs); it is content on top of the slice's card engine (core.cards).",
+  "subsystems": [
+   "Event pacing roll",
+   "Weighted event picker",
+   "Conditions (who, what, where)",
+   "Effect commands",
+   "AI scorer for autopilot",
+   "Festival"
+  ],
+  "sliceScope": "The pacing roll and picker with 5 events (fire, quarrel, peddler, stray dog, rats in the stores) as JSON card defs whose options run effect commands (stock ±, mood ±, BumpPair, damage building).",
+  "fullScope": "Daily chance 4% + 2.6% a person (8–40%), up to +30% when overcrowded, never two days running nor while one waits; weighted by season, weather, crowding, mood and size; ~27 events incl. lost teen, preacher, theft, storm damage, feast, errand, two grow close, memorial, dead at the fence, sick traveller, cold snap, music, a wreck to strip, flu season, bad water. Festival on autumn day 22 at 07:00: hold (day off, extra food, bonfire, liquor, mood and a glow for days), small, or skip.",
+  "protoRefs": [
+   "prototype/src/sim/hubevents.js",
+   "prototype/src/sim/festival.js",
+   "prototype/src/sim/disease.js",
+   "docs/features/campaign.md"
+  ],
+  "tasks": {
+   "data": [
+    "HubEventDef: key, weight rules (season, weather, crowd, mood, size), conditions (needs a rival pair, a burnable building…), options",
+    "OptionDef: text template, effect list, ai score hint",
+    "EffectDef vocabulary: stock.add, mood.all, mood.one, pair.bump, building.damage, condition.apply, recruit.card, rest.day",
+    "FestivalConfig (day, hour, food, wood, liquor, mood, glow days)"
+   ],
+   "backend": [
+    "HubEventSystem (daily): pacing roll, filter by conditions, weighted pick with seeded Rng, bind actors, raise card",
+    "EffectRunner: applies an option's effects through existing services (no rules duplicated)",
+    "Preview: each option's text lists its effects with real numbers",
+    "AI chooser: score options for the autopilot/governor",
+    "Festival as a scheduled card on its day"
+   ],
+   "ui": [
+    "Reuse the event card with actor portraits and effect chips",
+    "Festival card with the cost (food, wood, liquor) shown",
+    "Log/diary line for each outcome"
+   ]
+  },
+  "dataModel": "public sealed record EffectDef(string Op, string Target, float Amount, string? Key = null);\npublic sealed record OptionDef(string Text, EffectDef[] Effects, float AiHint);\npublic sealed record HubEventDef(string Key, float Weight, string[] Seasons, ConditionDef[] Needs, OptionDef[] Options);\npublic sealed class HubEventState { public int LastDay = -99; public int? PendingCardId; }\npublic interface IEffectRunner { string Preview(EffectDef e, CardContext c); void Apply(EffectDef e, CardContext c); }",
+  "dependsOn": [
+   "core.cards",
+   "surv.morale",
+   "surv.relations",
+   "base.core",
+   "health.disease",
+   "base.repairs"
+  ],
+  "connections": [
+   {
+    "to": "core.cards",
+    "why": "Hub events are cards; the card engine shows, pauses and answers them.",
+    "how": "HubEventSystem publishes CardRaised with a HubEventDef id and bound actors; answers come back as AnswerCard commands.",
+    "godot": "SimHost drains the event queue each frame and re-emits CardRaised as a [Signal] (or plain C# event) on the SimHost autoload; panels connect in _Ready and disconnect in _ExitTree.",
+    "unity": "SimHost MonoBehaviour raises CardRaised as a C# event (UnityEvent only where a designer wires it in the Inspector); UI Toolkit controllers subscribe in OnEnable, unsubscribe in OnDisable."
+   },
+   {
+    "to": "surv.relations",
+    "why": "Quarrels, couples and memorials need pairs and bump them.",
+    "how": "Conditions query IRelations; effects call BumpPair / MakePartners.",
+    "godot": "None.",
+    "unity": "None."
+   },
+   {
+    "to": "ai.governor",
+    "why": "The autopilot and stewards answer cards too.",
+    "how": "Each option has a score function/hint; governor picks the best.",
+    "godot": "None.",
+    "unity": "None."
+   },
+   {
+    "to": "meta.history",
+    "why": "Outcomes go to the diary and chronicle.",
+    "how": "EffectRunner publishes HubEventResolved for the log.",
+    "godot": "Diary panel listens.",
+    "unity": "Diary panel listens."
+   }
+  ],
+  "godot": {
+   "approach": "No new scenes beyond ui.cards: the card shows actor portraits (TextureRect from art keys) and effect chips (HFlowContainer of Labels). Text uses RichTextLabel with BBCode for coloured numbers.",
+   "keyApis": [
+    "RichTextLabel (BBCode)",
+    "HFlowContainer",
+    "TextureRect"
+   ],
+   "docs": [
+    {
+     "t": "RichTextLabel",
+     "u": "https://docs.godotengine.org/en/stable/classes/class_richtextlabel.html"
+    },
+    {
+     "t": "Using containers",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/ui/gui_containers.html"
+    },
+    {
+     "t": "C# signals",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/scripting/c_sharp/c_sharp_signals.html"
+    }
+   ]
+  },
+  "unity": {
+   "approach": "Reuse the card UXML: portrait Images, effect chips in a flex-wrap row, rich text tags in Labels for coloured numbers.",
+   "keyApis": [
+    "UI Toolkit Label (rich text)",
+    "Image",
+    "flex-wrap"
+   ],
+   "docs": [
+    {
+     "t": "UI Toolkit",
+     "u": "https://docs.unity3d.com/Manual/UIElements.html"
+    },
+    {
+     "t": "ScriptableObject (Manual)",
+     "u": "https://docs.unity3d.com/Manual/class-ScriptableObject.html"
+    },
+    {
+     "t": "UnityEvent",
+     "u": "https://docs.unity3d.com/ScriptReference/Events.UnityEvent.html"
+    }
+   ]
+  },
+  "learn": [
+   {
+    "t": "Game Programming Patterns: Command",
+    "u": "https://gameprogrammingpatterns.com/command.html"
+   },
+   {
+    "t": "Game Programming Patterns: Bytecode (data-driven effects)",
+    "u": "https://gameprogrammingpatterns.com/bytecode.html"
+   }
+  ],
+  "newb": [
+   "Write events as data (JSON) with a small effect vocabulary; designers add events without touching C#.",
+   "Effects call existing services: the event never re-implements 'add mood' or 'damage a building'.",
+   "Pacing rules (never two days running, scale with headcount) matter more for fun than the events themselves.",
+   "Showing each choice's real effect on the card ('−12 food, +3 mood all') makes choices fair."
+  ],
+  "pitfalls": [
+   "Events that fire with no valid actors (a quarrel with one person): check conditions before picking.",
+   "Effects that are hard-coded per event in C#: content becomes code.",
+   "Card spam at big hubs: keep the 40% cap and the 'one waiting' rule."
+  ],
+  "test": "xUnit: chance curve 8–40%; never two days running; conditions filter; seeded run picks the same events; each effect previews and applies the same numbers. Manual: run 60 days at a 10-person hub and count about 12–20 events.",
+  "size": "M"
+ },
+ {
+  "id": "base.workgrid",
+  "title": "Work priorities, schedules, idle work, watch roster & stewards",
+  "summary": "The RimWorld work tab: roles with a 1–5 priority per work type and minimum skills, a 24-hour schedule (work, guard, free, sleep), an hourly planner that assigns each person one job, an 'assign all idle' helper, a named watch roster, and base leaders/stewards who run a base for you.",
+  "whyHere": "Last in M2 because it orchestrates every work type the previous cards added (medic, cook, farm, haul, repair…); it replaces the slice's simple role picker while every system keeps reading the same 'current job'.",
+  "subsystems": [
+   "Roles & priority grid",
+   "Per-person overrides",
+   "Schedules",
+   "Hourly planner",
+   "Emergencies & health first",
+   "Idle-work planner",
+   "Watch roster",
+   "Stewards & leaders"
+  ],
+  "sliceScope": "Priority grid per person (1–5 per work type), an hourly planner (priority 1 first, work type HasWork/Capacity/skill min, best-skilled first) writing Survivor.CurrentJob, plus a 24-letter schedule (w/g/f/s).",
+  "fullScope": "Named roles (base or crew) with priorities, skill minimums and schedules; per-person cell overrides. Each hour: Manual/pinned untouched → health first (beds, wounds, illness rest) → emergencies (raid: all with Guard; horde: enough to hold with a quarter spare) → watch roster shifts → schedule → free time below 25 mood until 40 → priority loop with a small stay-on-job bonus and emergency boosts (patient in danger, broken pump or wall). 'Assign all idle' plans by base needs; watch shifts {name, from, to, ids}; leaders give +Leadership mood and low-Leadership leaders skip some hours.",
+  "protoRefs": [
+   "prototype/src/sim/work.js",
+   "prototype/src/sim/idlework.js",
+   "prototype/src/sim/watch.js",
+   "prototype/src/sim/steward.js",
+   "docs/features/economy.md"
+  ],
+  "tasks": {
+   "data": [
+    "WorkTypeDef (key, name, skill, maps to job, column order) contributed by each card (farm, medic, cook, haul, repair…)",
+    "Role record (name, kind, priorities, minimums, 24-char schedule)",
+    "WatchShift (name, from, to, ids) and base watch preset",
+    "Steward settings per base (leader id, what is handed over)"
+   ],
+   "backend": [
+    "IWorkType interface: HasWork(base, hour), Capacity(base), Eligible(survivor); each card registers its own",
+    "WorkPlanner (hourly, before other hourly systems): the ordered rule chain → CurrentJob + TaskReason",
+    "IdlePlanner.Plan(base) → suggested moves with a 'why' (preview then commit)",
+    "WatchSystem: shifts cover hours; off a night shift sleep in",
+    "StewardSystem: leader pick/deputy, hand-over to the governor's planner, leadership mood"
+   ],
+   "ui": [
+    "Work tab grid: people × work types, click cycles 1–5/blank, colour by priority, skill shown in the cell",
+    "Schedule strip: 24 cells per role, paint w/g/f/s",
+    "Watch roster table and 'Assign all idle' preview dialog"
+   ]
+  },
+  "dataModel": "public interface IWorkType { string Key { get; } string Skill { get; } bool HasWork(Base b, int hour); int Capacity(Base b); }\npublic enum Slot : byte { Work = (byte)'w', Guard = (byte)'g', Free = (byte)'f', Sleep = (byte)'s' }\npublic sealed class Role { public int Id; public string Name; public Dictionary<string, int> Pri = new();\n  public Dictionary<string, int> Min = new(); public string Sched = new string('w', 24); }\npublic sealed class WorkAssign { public int? RoleId; public Dictionary<string, int> Over = new(); }\npublic sealed record WatchShift(string Name, int From, int To, int[] Ids);",
+  "dependsOn": [
+   "base.work",
+   "surv.skills",
+   "surv.morale",
+   "health.medical",
+   "core.clock"
+  ],
+  "connections": [
+   {
+    "to": "base.work",
+    "why": "The slice's job scheduler stays; the grid only decides who does what.",
+    "how": "WorkPlanner writes the same Survivor.CurrentJob/StationId the slice's systems read; Manual people keep the slice behaviour.",
+    "godot": "Hub work screen gains the grid tab.",
+    "unity": "Hub work screen gains the grid tab."
+   },
+   {
+    "to": "def.sieges",
+    "why": "Raids and hordes pull Guards to the walls before anything else.",
+    "how": "Planner reads IThreat (raid warned, horde coming, hold limit) as the emergency step.",
+    "godot": "None.",
+    "unity": "None."
+   },
+   {
+    "to": "ai.governor",
+    "why": "Stewards hand a base to the governor's logic; AI groups use the same planner.",
+    "how": "StewardSystem calls IGovernor.PlanRoles(base) for handed-over parts.",
+    "godot": "Steward toggle on the base panel.",
+    "unity": "Steward toggle on the base panel."
+   },
+   {
+    "to": "ui.hub",
+    "why": "The work grid is the main hub screen of M2.",
+    "how": "Commands SetPriority(survivor, type, n), SetSchedule(role, hour, slot), AssignIdle(base).",
+    "godot": "GridContainer of Buttons.",
+    "unity": "MultiColumnListView with clickable cells."
+   }
+  ],
+  "godot": {
+   "approach": "Work tab as a GridContainer (columns = work types + 1) of small Buttons; left-click raises priority, right-click lowers, each sends a SetPriority command and repaints from the view-model. Schedule as a row of 24 ColorRects you drag-paint.",
+   "keyApis": [
+    "GridContainer",
+    "Button (gui_input)",
+    "ColorRect",
+    "ScrollContainer"
+   ],
+   "docs": [
+    {
+     "t": "GridContainer",
+     "u": "https://docs.godotengine.org/en/stable/classes/class_gridcontainer.html"
+    },
+    {
+     "t": "Using containers",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/ui/gui_containers.html"
+    },
+    {
+     "t": "User interface (UI)",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/ui/index.html"
+    }
+   ]
+  },
+  "unity": {
+   "approach": "UI Toolkit MultiColumnListView with a cell template per work type (a clickable Label), PointerDownEvent for left/right; schedule as 24 VisualElements with drag painting via pointer capture.",
+   "keyApis": [
+    "MultiColumnListView",
+    "PointerDownEvent",
+    "VisualElement",
+    "PointerCaptureHelper"
+   ],
+   "docs": [
+    {
+     "t": "UIElements.MultiColumnListView",
+     "u": "https://docs.unity3d.com/ScriptReference/UIElements.MultiColumnListView.html"
+    },
+    {
+     "t": "UI Toolkit",
+     "u": "https://docs.unity3d.com/Manual/UIElements.html"
+    },
+    {
+     "t": "UIElements.ListView",
+     "u": "https://docs.unity3d.com/ScriptReference/UIElements.ListView.html"
+    }
+   ]
+  },
+  "learn": [
+   {
+    "t": "RimWorld wiki: Work",
+    "u": "https://rimworldwiki.com/wiki/Work"
+   },
+   {
+    "t": "Game Programming Patterns: Update Method",
+    "u": "https://gameprogrammingpatterns.com/update-method.html"
+   },
+   {
+    "t": "Interfaces (C#)",
+    "u": "https://learn.microsoft.com/en-us/dotnet/csharp/fundamentals/types/interfaces"
+   }
+  ],
+  "newb": [
+   "Separate 'who does what' (the planner) from 'what work does' (each system): the planner only writes CurrentJob.",
+   "An ordered rule chain (health → emergency → watch → schedule → priorities) is easy to read, test and explain in a 'why' tooltip.",
+   "Each card adds a work type by implementing one small interface; the grid never needs to know about farming.",
+   "Recomputing every hour from scratch (with a stay-on-job bonus) is simpler and more robust than tracking assignments."
+  ],
+  "pitfalls": [
+   "Two people booked on one station: count capacity including Manual people.",
+   "Ties broken by dictionary order: break ties by id so runs are deterministic.",
+   "Planner running after other hourly systems, so jobs lag an hour."
+  ],
+  "test": "xUnit: priority 1 beats 2; skill minimum enforced; capacity never exceeded; a raid sends all Guards; schedule 's' hours sleep; same inputs give the same plan. Manual: set a medic at priority 1, wound someone, and see the medic switch jobs that hour.",
+  "size": "L"
+ }
+]

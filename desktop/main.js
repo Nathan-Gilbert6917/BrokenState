@@ -8,7 +8,7 @@
 //   packaged build       serves the copy in resources/prototype
 //   --perf               hidden performance test (perf/driver.js), prints JSON and quits
 // The installed build updates itself (updater.js).
-const { app, BrowserWindow, Menu, protocol, screen, session, dialog } = require("electron");
+const { app, BrowserWindow, Menu, protocol, screen, session, dialog, shell } = require("electron");
 const fs = require("fs");
 const path = require("path");
 const updates = require("./updater");
@@ -212,7 +212,11 @@ function createWindow() {
   });
 
   win.on("page-title-updated", (e) => e.preventDefault()); // keep "Broken State", not the page's <title>
-  win.webContents.setWindowOpenHandler(() => ({ action: "deny" })); // the game never opens other windows
+  // The game never opens other windows. The title's Rebuild board (src/ui/title.js BOARD_URL) goes to the browser.
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith("https://nathan-gilbert6917.github.io/BrokenState/board/")) shell.openExternal(url);
+    return { action: "deny" };
+  });
   win.webContents.on("will-navigate", (e, url) => { if (!url.startsWith(ORIGIN + "/")) e.preventDefault(); });
   win.webContents.on("did-finish-load", () => { if (!PERF && st.zoom !== 1) win.webContents.setZoomFactor(st.zoom); });
 

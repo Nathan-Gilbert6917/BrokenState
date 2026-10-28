@@ -1,0 +1,1993 @@
+[
+  {
+    "id": "dead.hordes",
+    "title": "Hordes on the State Map",
+    "summary": "Hordes are crowds of the dead that move as one token across the State Map: hives build them and give each a job (guard, build, roam, attack, border); they merge, split, follow noise and fall on bases.",
+    "whyHere": "First card of the dead milestone: the per-tile dead population is static pressure, hordes make it move. They carry the hives' armies (96) and are what walls and sieges (99, 100) answer.",
+    "subsystems": [
+      "Horde entity & roles",
+      "Daily hex movement",
+      "Merge & split",
+      "Score & special-dead mix",
+      "Target picking (noise, distance)",
+      "Sighting & warning cards",
+      "Border spawns"
+    ],
+    "sliceScope": "Border hordes only: every 5–9 days a horde of 10–25 enters on a border tile, roams up to 2 tiles a day toward the noisiest base it can reach, merges with another it meets; at a base it calls a stub hold check (def.walls replaces it) and raises a warning card when a lookout sees it.",
+    "fullScope": "Sizes small 10–25 / medium 50–80 / large 100–200 (hive cost 3/8/15), score ~3/8/16. At most 2 tiles a day (12 h a tile, slower in snow and deep cold; frozen rivers crossable). Carries a special-dead mix through merges, splits only if each part keeps 10+. Attacks bases up to 45 tiles away, yours weighted 2.5× a group's; generators and shelter heat draw them, silent running hides you.",
+    "protoRefs": [
+      "prototype/src/sim/hordes.js",
+      "prototype/src/sim/hives.js",
+      "prototype/src/sim/defences.js",
+      "docs/features/dead.md",
+      "prototype/tools/hordecensus.js"
+    ],
+    "tasks": {
+      "data": [
+        "hordes.json: size table (min, max, cost) and per-role rules (speed, wander radius, merges with)",
+        "Noise source weights (generator, gunfire, base size, silent running)",
+        "Border spawn config (interval 5–9 days, size odds by game day)",
+        "Horde terrain cost table for the hex pather (river, snow, mountain)"
+      ],
+      "backend": [
+        "Horde record + HordeSystem.DailyTick: accumulate progress hours, step along an A* hex path (travel.pathing) with horde costs",
+        "Merge (same tile, compatible role: counts add, mix weighted by count) and Split (each part ≥10)",
+        "TargetScorer.Score(horde, base): one function for every base, player or group (ADR 0001); the 2.5× player weight is a data value, not an if",
+        "On arrival publish HordeArrivedAtBase(baseId, hordeId); on sighting HordeSighted → warning card",
+        "Unit tests: merge conserves count & mix, split floor, same seed → same positions after 60 days"
+      ],
+      "ui": [
+        "Horde token on the State Map: crowd icon, count label, drift arrow",
+        "Tile panel row 'A horde of ~60 (runners)'",
+        "Warning card: 'The dead are coming' with ETA"
+      ]
+    },
+    "dataModel": "public enum HordeRole { Guard, Build, Roam, Attack, Border }\npublic sealed class Horde {\n  public int Id; public HexCoord Tile; public int Count; public HordeRole Role;\n  public int? HiveId, TargetBaseId; public float ProgressHours;\n  public Dictionary<string, float> Mix = new(); // \"runner\" -> 0.15\n}\npublic record HordeSizeDef(string Key, int Min, int Max, int Cost);",
+    "dependsOn": [
+      "dead.population",
+      "dead.types",
+      "travel.pathing",
+      "travel.fog",
+      "core.clock",
+      "core.events"
+    ],
+    "connections": [
+      {
+        "to": "dead.hives",
+        "why": "Hives spend resources on hordes and receive 'build' hordes at new sites.",
+        "how": "HiveSystem calls HordeFactory.Spawn(hiveId, sizeKey, role, mix); a build horde reaching its site calls HiveSites.Deliver(siteId, horde.Score).",
+        "godot": "SimHost turns HordeSpawned / HordeRemoved events into signals the HordeLayer node listens to.",
+        "unity": "SimHost raises C# events HordeSpawned / HordeRemoved; a HordeLayer MonoBehaviour subscribes in OnEnable."
+      },
+      {
+        "to": "def.walls",
+        "why": "A horde at a base is beaten at the walls or breaks in.",
+        "how": "HordeArrivedAtBase event → DefenceResolver.HoldCheck(base, horde), the same call for player and group bases.",
+        "godot": "Signal opens the warning / deploy dialog when the base is yours.",
+        "unity": "UnityEvent on SimHost opens the deploy panel when the base is yours."
+      },
+      {
+        "to": "ui.statemap",
+        "why": "Players must see hordes drift and judge their size.",
+        "how": "Read-only HordeView DTOs (id, tile, count, heading) built after each tick; the view never touches Horde objects.",
+        "godot": "HordeLayer (Node2D) keeps Dictionary<int, HordeToken>; tweens a token to the new hex centre with Tween.",
+        "unity": "Pooled token prefabs (ObjectPool) keyed by horde id; lerp positions in Update between ticks."
+      },
+      {
+        "to": "ai.governor",
+        "why": "Autopilot and AI groups flee, cull or prepare for hordes.",
+        "how": "Governor reads hordes through its KnowledgeMap (only seen/reported ones), never the true list.",
+        "godot": "No engine code: sim-to-sim.",
+        "unity": "No engine code: sim-to-sim."
+      }
+    ],
+    "godot": {
+      "approach": "Hordes are pure sim data; Godot only draws them. A HordeLayer Node2D under the State Map owns one token per horde, moved by Tween between hex centres (hex→pixel from core.hexgrid) when SimHost signals HordeMoved. For the 'shuffling crowd' draw 5–30 small figures jittered in a circle sized by count, cheaply with a MultiMeshInstance2D.",
+      "keyApis": [
+        "Node2D",
+        "Tween",
+        "MultiMeshInstance2D",
+        "AnimatedSprite2D",
+        "Label"
+      ],
+      "docs": [
+        {
+          "t": "Tween class",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_tween.html"
+        },
+        {
+          "t": "Optimization using MultiMeshes",
+          "u": "https://docs.godotengine.org/en/stable/tutorials/performance/using_multimesh.html"
+        },
+        {
+          "t": "Custom drawing in 2D",
+          "u": "https://docs.godotengine.org/en/stable/tutorials/2d/custom_drawing_in_2d.html"
+        }
+      ]
+    },
+    "unity": {
+      "approach": "A HordeLayer MonoBehaviour pools token prefabs (SpriteRenderer + TextMeshPro count) keyed by horde id and lerps them in Update. For big crowds draw the figures with Graphics.RenderMeshInstanced instead of hundreds of GameObjects. Use a sorting layer so hordes sit above terrain and below UI.",
+      "keyApis": [
+        "MonoBehaviour",
+        "ObjectPool<T>",
+        "SpriteRenderer",
+        "Graphics.RenderMeshInstanced",
+        "Sorting Layers"
+      ],
+      "docs": [
+        {
+          "t": "Pool.ObjectPool<T>",
+          "u": "https://docs.unity3d.com/ScriptReference/Pool.ObjectPool_1.html"
+        },
+        {
+          "t": "Graphics.RenderMeshInstanced",
+          "u": "https://docs.unity3d.com/ScriptReference/Graphics.RenderMeshInstanced.html"
+        },
+        {
+          "t": "2D sorting",
+          "u": "https://docs.unity3d.com/Manual/2DSorting.html"
+        }
+      ]
+    },
+    "learn": [
+      {
+        "t": "Red Blob Games: Introduction to A* (BFS, flood fill)",
+        "u": "https://www.redblobgames.com/pathfinding/a-star/introduction.html"
+      },
+      {
+        "t": "Game Programming Patterns: Type Object",
+        "u": "https://gameprogrammingpatterns.com/type-object.html"
+      }
+    ],
+    "newb": [
+      "A horde is ONE record with a count, not 200 agents. Aggregating like this is 'level of detail' for simulation: thousands of dead cost almost nothing on the strategic map.",
+      "Movement as 'progress hours' toward the next tile (the same pattern as parties) keeps it deterministic and frame-rate independent.",
+      "The view interpolates; the sim jumps tile to tile once per tick. Never let the visual position feed back into the rules.",
+      "Merging needs a weighted average for the mix (60 dead with 10% runners + 40 with none = 6% runners)."
+    ],
+    "pitfalls": [
+      "Simulating every zombie individually on the State Map",
+      "Player-only targeting code: one scoring function for every base keeps AI parity",
+      "Using UnityEngine.Random / GD.Randf in sim code instead of the seeded Rng",
+      "Pathing every horde every hour; plan a path once and re-plan only when blocked or retargeted"
+    ],
+    "test": "xUnit: spawn and move N days = expected tiles along the path; merge sums counts and weights mix; split refuses parts under 10; 60-day run is identical for the same seed; a noisier nearer base wins targeting for player and group alike. Manual: headless 1-year census (like tools/hordecensus.js) and watch hordes drift to bases on a dev overlay.",
+    "size": "M"
+  },
+  {
+    "id": "dead.hives",
+    "title": "Hives, hive birth & hive tech tree",
+    "summary": "Hives are the dead's nests: they earn resources daily, keep a guard horde, spend on hordes and on a tech tree of 'growths' that unlock special dead, found new hives through gatherings you can see and break up, and every one must be destroyed to win.",
+    "whyHere": "Needs hordes to spend on. It is the main win condition (meta.victory) and the engine behind special dead (97), the hive crawl (98) and the counter-dead that read your defences.",
+    "subsystems": [
+      "Hive entity & income (clusters)",
+      "Spending: guard, hordes, Wallbreaker",
+      "Growths (tech tree) & tiers",
+      "Growth wish (hive's mind)",
+      "New hive sites & birth (gathering → mass)",
+      "Held land, infection, red-skull ring",
+      "Destruction & withering"
+    ],
+    "sliceScope": "2–3 hives, income 1 a day (+cluster bonus), each funds its guard horde first, then roaming/attack hordes; one growth (biomass pit, +1 income); destroying a hive (stub: beat its guard by auto-resolve until 98 lands) removes it and runs the victory check.",
+    "fullScope": "A Normal map starts with 5–6 hives (5 at the outbreak origin, 3 per extra hot spot by world size), 5 resources each. Income alone 1/day, two within 5 tiles 3 each, three 6 each, +2 per further hive up to 12. ~25 growths in tiers 0–4 (biomass pit 12 for 10 days … mutation vat 60 for 60) within 2 tiles, burnable and regrowing; Wallbreaker 40 (den, from day 200, 1 per 90 days). New sites: ~a year to the first, then every 4–5 months, 5–8 in three years on big maps; a mass of 1,000 dead at ≤40 a day (~4 weeks). Holds 4 tiles.",
+    "protoRefs": [
+      "prototype/src/sim/hives.js",
+      "prototype/src/sim/hivetech.js",
+      "prototype/src/sim/hivebirth.js",
+      "prototype/src/sim/hiveconst.js",
+      "docs/features/dead.md"
+    ],
+    "tasks": {
+      "data": [
+        "growths.json: id, tier, cost, days, max, unlocks (kind id), income/incomeMult, guard bonus, danger, artKey",
+        "hives.json: income-by-cluster table, horde costs, Wallbreaker rules, tier by game day & hive age",
+        "Site curve: first-site day, gap, NEW_CAP by world size, mass size, daily mass rate",
+        "Rumour / known rules (radio coverage, base and team distances)"
+      ],
+      "backend": [
+        "HiveSystem.Daily: income → fund guard → GrowthWish → buy hordes / growths; hives roll their own Rng stream",
+        "GrowthWish as a small scorer: income while young/poor, brood chamber after an attack, kinds cluster-mates lack, save up to N days",
+        "HiveSites: pick site, hordes within 10 tiles deliver, mass converts ≤40/day, hive stands at 1,000",
+        "HiveBirth watch: rumour, 'dead massing' card, Cull / Break up (setback, pause) via knowledge rules",
+        "Destroy(hiveId): wither growths, fade infection, publish HiveDestroyed; VictoryCheck needs no hive AND no site under way",
+        "Census test: 3 sim years on Large over 3 seeds stays within NEW_CAP"
+      ],
+      "ui": [
+        "Hive and growth icons with tooltips (what it gives)",
+        "Build-site mound with 'stands in ~N days' or '?' when stale",
+        "'The dead are massing near X' card: Break it up / Mark / Ignore"
+      ]
+    },
+    "dataModel": "public sealed class Hive {\n  public int Id; public HexCoord Tile; public float Resources; public int BornDay, Tier;\n  public int GuardHordeId; public List<Growth> Growths = new(); public DefenceRead Adapt = new();\n}\npublic sealed class Growth { public string DefId; public HexCoord Tile; public int DaysLeft; public float Flesh; public bool Withered; }\npublic record GrowthDef(string Id, int Tier, int Cost, int Days, int Max, string? Unlocks, float Income, string ArtKey);\npublic sealed class HiveSite { public int Id; public HexCoord Tile; public float ScoreIn; public int DeadIn; }",
+    "dependsOn": [
+      "dead.hordes",
+      "core.mapgen",
+      "data.rng",
+      "travel.fog",
+      "core.cards"
+    ],
+    "connections": [
+      {
+        "to": "dead.hordes",
+        "why": "Hordes are what hives buy; build hordes feed new sites.",
+        "how": "HordeFactory.Spawn(...) from HiveSystem.Buy; HiveSites.Deliver(siteId, score) from the horde's arrival.",
+        "godot": "No engine code: sim-to-sim.",
+        "unity": "No engine code: sim-to-sim."
+      },
+      {
+        "to": "dead.specials",
+        "why": "Growths unlock the kinds a hive's hordes carry.",
+        "how": "Hive.UnlockedKinds() feeds HordeMix.Build(hive, rng); counter growths gated by hive.Adapt.",
+        "godot": "Codex and tooltips read GrowthDef/ZombieTypeDef from ContentDb.",
+        "unity": "Codex and tooltips read the same ContentDb records."
+      },
+      {
+        "to": "dead.hivecrawl",
+        "why": "A hive is destroyed by killing its Hivemind at the end of the crawl.",
+        "how": "HivemindKilled(hiveId) event → HiveSystem.Destroy(hiveId); the crawl's brood is built from the guard horde.",
+        "godot": "SimHost signal returns from the crawl scene to the State Map with a result card.",
+        "unity": "SimHost C# event unloads the crawl scene and shows the result card."
+      },
+      {
+        "to": "meta.victory",
+        "why": "Destroying every hive is a victory.",
+        "how": "HiveDestroyed → VictoryCheck.Evaluate(world); no hive and no site under way = win.",
+        "godot": "Signal opens the victory screen with 'Keep playing'.",
+        "unity": "Event opens the victory panel with 'Keep playing'."
+      },
+      {
+        "to": "groups.factions",
+        "why": "Hives attack group bases and groups fight nearby hives (parity).",
+        "how": "AttackTarget scoring covers every Base; group governors get a 'hive war' option weighted by type.",
+        "godot": "No engine code: sim-to-sim.",
+        "unity": "No engine code: sim-to-sim."
+      }
+    ],
+    "godot": {
+      "approach": "Hive land and the red-skull ring go on an overlay TileMapLayer; hives and growths are Sprite2D markers looked up by art key. The massing card is a ui.cards dialog. Build an infra.devtools panel listing each hive's resources, tier and current wish: you will tune this system for weeks.",
+      "keyApis": [
+        "TileMapLayer",
+        "Sprite2D",
+        "Control.TooltipText",
+        "PopupPanel"
+      ],
+      "docs": [
+        {
+          "t": "TileMapLayer class",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_tilemaplayer.html"
+        },
+        {
+          "t": "Using TileMaps",
+          "u": "https://docs.godotengine.org/en/stable/tutorials/2d/using_tilemaps.html"
+        },
+        {
+          "t": "Control class (drag & drop, tooltips)",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_control.html"
+        }
+      ]
+    },
+    "unity": {
+      "approach": "An overlay Tilemap paints hive land; growth markers are prefabs whose sprite comes from the ArtCatalog ScriptableObject by art key. Tooltips and the massing card in UI Toolkit. Same dev panel idea for tuning.",
+      "keyApis": [
+        "Tilemap",
+        "ScriptableObject",
+        "UI Toolkit",
+        "SpriteRenderer"
+      ],
+      "docs": [
+        {
+          "t": "Tilemaps",
+          "u": "https://docs.unity3d.com/Manual/Tilemap.html"
+        },
+        {
+          "t": "ScriptableObject",
+          "u": "https://docs.unity3d.com/Manual/class-ScriptableObject.html"
+        },
+        {
+          "t": "UI Toolkit",
+          "u": "https://docs.unity3d.com/Manual/UIElements.html"
+        }
+      ]
+    },
+    "learn": [
+      {
+        "t": "Game Programming Patterns: Type Object",
+        "u": "https://gameprogrammingpatterns.com/type-object.html"
+      },
+      {
+        "t": "Red Blob Games: Hexagonal grids",
+        "u": "https://www.redblobgames.com/grids/hexagons/"
+      }
+    ],
+    "newb": [
+      "A tech tree is just data: nodes with a cost, a tier (prerequisite) and effects. The 'AI' choosing a node is a scorer over the affordable ones.",
+      "Treat hives as a rival economy: income in, purchases out. Making that economy visible (rumours, mounds, growths) is what makes them feel fair.",
+      "Give hives their own Rng stream: then tweaking hive numbers doesn't reshuffle every other random event in a seed.",
+      "You will balance this with headless runs (years in seconds), not by playing: plan for a census tool early."
+    ],
+    "pitfalls": [
+      "Growth effects hard-coded as if-chains per id instead of effect fields",
+      "Unbounded hive spread on big maps: cap with a curve per world size",
+      "Victory check forgetting a hive still being born",
+      "Forgetting to wither a destroyed hive's growths (they keep unlocking kinds)"
+    ],
+    "test": "xUnit: income table values; guard funded before hordes; a growth deducts its cost and completes after its days; new-site cadence within cap over 1,095 days on Large for 3 seeds; Destroy withers growths and the last one wins. Manual: 3-year headless run with the hive dev panel.",
+    "size": "L"
+  },
+  {
+    "id": "dead.specials",
+    "title": "Special dead, counter-dead, bosses & tunnels",
+    "summary": "The dead beyond walkers and runners: brutes, spitters, screamers, crawlers, carriers and worm swarms, dead beasts and more; the counter-dead a hive breeds against the defences it meets (Digger, Melter, Husk, Tripper, Dark-walker); bosses on 2×2 cells; and Digger tunnels that stay on your base map until filled.",
+    "whyHere": "Needs hives (who breed them) and the tactical systems (combat.ai, combat.los, combat.stealth). It sits just before def.walls because the counter-dead read and cut those defences.",
+    "subsystems": [
+      "Zombie type defs (data)",
+      "Behaviour hooks (strategy per kind)",
+      "Horde mix → battle units",
+      "Multi-cell bosses",
+      "Defence read & counter-dead adaptation",
+      "Digger tunnels (battle + base map)",
+      "Era pool widening & dead beasts"
+    ],
+    "sliceScope": "Data-driven kinds brute, spitter, screamer and crawler, each with one behaviour hook, placed in battles from a horde's mix; grid occupancy that supports a 2×2 Broodmother.",
+    "fullScope": "~25 kinds. Runner 6 tiles an action; brute 2.4× hp, takes ¾, hits 1.5×, smashes cover; spitter acid every other turn; screamer calls 1–2 more (6 a battle max); crawler unseen beyond 2.5 tiles unless lit, first bite 1.4×. Counter-dead at most 12% a kind, 20% together, the hive paying 0.25–0.5 each. Digger tunnels up to 8 cells, 3 cells a turn, each open one −8% hold (max 40%), filling 4 + 2 work-hours a cell. From day 60 the pool widens by place and era.",
+    "protoRefs": [
+      "prototype/src/sim/zombietypes.js",
+      "prototype/src/sim/counterdead.js",
+      "prototype/src/sim/tunnels.js",
+      "prototype/src/sim/hiveconst.js",
+      "docs/features/dead.md"
+    ],
+    "tasks": {
+      "data": [
+        "zombietypes.json: hp, dmg, aim, mob, armor, share, wall, breedCost, behaviour key, size (1 or 2), counters, artKey",
+        "Counter table: kind → defence part (walls, trench, wire, mines, light) and its cut",
+        "Dig constants (range, per turn, gain, crawl cost, fill hours)",
+        "Era pool: place × year → extra kinds and shares"
+      ],
+      "backend": [
+        "IZombieBehaviour per behaviour key (Brute.Smash, Spitter.Spit, Screamer.Call, Crawler.Hide, Digger.Dig…) run by combat.ai before the default chase",
+        "Footprint-aware occupancy: a 2×2 unit answers UnitAt on all four cells, range by nearest cell",
+        "DefenceProfile(base) → 0–1 per part for ANY base; hive.Adapt drifts toward it daily and jumps on contact; CounterMix with caps",
+        "Tunnels: dig when the flow field gains ≥4 moves; unit off-map while digging; link ends in combat pathing; persist on Base.Tunnels; FillTunnel construction job",
+        "Per-kind unit tests with a fixed Rng"
+      ],
+      "ui": [
+        "Placeholder silhouette + letter + colour per kind",
+        "Codex row 'what counters it'",
+        "Tunnel hole marker on the base map, click → Fill",
+        "Log: 'The hive near X has begun breeding Diggers'"
+      ]
+    },
+    "dataModel": "public record ZombieTypeDef(string Id, float Hp, float Dmg, int Aim, float Mob, float Armor,\n  float Share, float BreedCost, string Behaviour, string? Counters, int Size = 1, string ArtKey = \"\");\npublic interface IZombieBehaviour { bool TryAct(BattleState b, Unit u, Rng rng); }\npublic sealed class DefenceRead { public float Walls, Trench, Wire, Mines, Light; }\npublic sealed class Tunnel { public int Id; public GridPos A, B; public int Len; public bool Open; }",
+    "dependsOn": [
+      "dead.hives",
+      "dead.types",
+      "combat.ai",
+      "combat.los",
+      "combat.stealth",
+      "combat.pathing"
+    ],
+    "connections": [
+      {
+        "to": "combat.ai",
+        "why": "Special kinds act differently from the plain chase.",
+        "how": "BehaviourRegistry[def.Behaviour].TryAct(battle, unit, rng) runs first; false falls back to the default dead brain.",
+        "godot": "SimHost forwards UnitAbility(unitId, \"shriek\") as a signal → AnimationPlayer / GPUParticles2D.",
+        "unity": "SimHost event → Animator.SetTrigger and a ParticleSystem burst."
+      },
+      {
+        "to": "def.walls",
+        "why": "Counter-dead cut the hold of the defences they answer.",
+        "how": "DefenceResolver asks CounterDead.Cut(horde.Mix, base) and Tunnels.HoldCut(base); hives read DefenceProfile(base).",
+        "godot": "Deploy screen lists the counter-dead icons in the incoming horde.",
+        "unity": "Deploy panel lists the counter-dead icons in the incoming horde."
+      },
+      {
+        "to": "base.basemap",
+        "why": "Open tunnels stay on the base until filled.",
+        "how": "Base.Tunnels list; QueueFillTunnel(baseId, tunnelId) command adds a construction job.",
+        "godot": "Tunnel holes drawn on a TileMapLayer; a click sends QueueFillTunnel.",
+        "unity": "Tunnel tiles on a Tilemap; a click (WorldToCell) sends QueueFillTunnel."
+      },
+      {
+        "to": "combat.pathing",
+        "why": "Tunnels and 2×2 bodies change movement.",
+        "how": "Pathing graph gets extra tunnel edges (cost 1.5 a cell) for units allowed to crawl; footprint check for big units.",
+        "godot": "No engine code: the sim paths.",
+        "unity": "No engine code: the sim paths."
+      }
+    ],
+    "godot": {
+      "approach": "One Unit scene for every kind, sized by the def (a 2×2 boss's sprite is anchored to its footprint centre). Abilities come from sim events and only trigger visuals (AnimationPlayer, GPUParticles2D for acid and shriek rings). A hidden crawler is simply not drawn until the sim says it is revealed: never compute visibility on the engine side.",
+      "keyApis": [
+        "AnimatedSprite2D",
+        "AnimationPlayer",
+        "GPUParticles2D",
+        "PointLight2D",
+        "TileMapLayer"
+      ],
+      "docs": [
+        {
+          "t": "GPUParticles2D class",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_gpuparticles2d.html"
+        },
+        {
+          "t": "AnimationPlayer class",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_animationplayer.html"
+        },
+        {
+          "t": "2D lights and shadows",
+          "u": "https://docs.godotengine.org/en/stable/tutorials/2d/2d_lights_and_shadows.html"
+        }
+      ]
+    },
+    "unity": {
+      "approach": "A unit prefab whose sprite/animator comes from the ArtCatalog by art key; sim events set Animator triggers and fire Particle System bursts. 2D lights (URP) can show floodlit ground for the Dark-walker. Visibility stays in the sim.",
+      "keyApis": [
+        "Animator",
+        "ParticleSystem",
+        "Prefab variants",
+        "ScriptableObject"
+      ],
+      "docs": [
+        {
+          "t": "Animator component",
+          "u": "https://docs.unity3d.com/Manual/class-Animator.html"
+        },
+        {
+          "t": "ParticleSystem (scripting)",
+          "u": "https://docs.unity3d.com/ScriptReference/ParticleSystem.html"
+        },
+        {
+          "t": "ScriptableObject",
+          "u": "https://docs.unity3d.com/Manual/class-ScriptableObject.html"
+        }
+      ]
+    },
+    "learn": [
+      {
+        "t": "Game Programming Patterns: Type Object",
+        "u": "https://gameprogrammingpatterns.com/type-object.html"
+      },
+      {
+        "t": "Game Programming Patterns: Component",
+        "u": "https://gameprogrammingpatterns.com/component.html"
+      },
+      {
+        "t": "Red Blob Games: flow-field pathfinding (tower defense)",
+        "u": "https://www.redblobgames.com/pathfinding/tower-defense/"
+      }
+    ],
+    "newb": [
+      "Stats in JSON, behaviour as small classes picked by a key (the Strategy pattern): a new kind is a JSON row plus, at most, one class. Avoid a deep Zombie → Brute → EliteBrute inheritance tree.",
+      "Adaptation is a feedback loop: the hive reads what you built and breeds against it. Show the read to the player so it feels clever, not unfair.",
+      "'One unit per cell' is an assumption that breaks with 2×2 bosses: design occupancy as a footprint from the start.",
+      "A tunnel is just an extra edge in the pathfinding graph between two cells."
+    ],
+    "pitfalls": [
+      "Special-casing player bases in DefenceProfile (parity: read any base by one rule)",
+      "Counter shares stacking into unbeatable hordes (keep the 12% / 20% caps)",
+      "Tunnel exits onto occupied, mined or unwalkable cells",
+      "Visual-only effects driving rules (e.g. particle collision deciding acid damage)"
+    ],
+    "test": "xUnit: screamer calls cap at 6; crawler unseen beyond 2.5 tiles unless lit; brute smashes cover only with no target; boss occupies 4 cells and is shot at its nearest cell; defence read moves toward a walled base; counter caps hold; Digger digs only when gain ≥4. Manual: dev command spawns each kind in a test battle.",
+    "size": "L"
+  },
+  {
+    "id": "dead.hivecrawl",
+    "title": "The hive crawl",
+    "summary": "Destroying a hive is a crawl through its den chamber by chamber: a round grid of T-shaped chambers with four mouths, read by warmth, drafts and the Hivemind's beat, down to the core where the Broodmother guards the Hivemind.",
+    "whyHere": "Needs hives, the special dead and 2×2 bosses, plus deep tactics (interiors, stealth). It is the mid-to-late game's set piece and the real way to the hive victory.",
+    "subsystems": [
+      "Den generator (rings, chambers, walls, core)",
+      "Chamber kinds & brood scaling",
+      "Clues: warmth, beat, drafts",
+      "Listening check & exact odds",
+      "Crawl session state machine",
+      "Boss fight & hive destruction",
+      "Save mid-crawl"
+    ],
+    "sliceScope": "A 2-ring den (a young hive) from the hive's seed, chambers fought on small maps from 3 templates, brood growing with depth, a core with Broodmother and Hivemind; kill the Hivemind → hive destroyed; leave by the mouth you came in.",
+    "fullScope": "Depth by hive tier 2/3/5/7/9 rings (+1 with a screamer spire). Each chamber open on 3 sides with 1 wall, four mouths (N/E/S/W), the core open on 1–2 sides. Kinds: tunnels, galleries, nurseries, egg chambers, bone pits, worm pools, growth roots, collapses. Listening: (Scouting + Stealth) / 2 + d10 vs DC + perLayer × layer; 3 over exact, 0 rough, −4 a fumble that alerts. The den is the same every visit (seeded), regrown when the tier deepens it.",
+    "protoRefs": [
+      "prototype/src/sim/hivecrawl.js",
+      "docs/features/dead.md",
+      "docs/crawl-balance.md",
+      "docs/multi-storey-crawl.md"
+    ],
+    "tasks": {
+      "data": [
+        "Chamber kinds: battle template ids, brood multiplier, loot",
+        "Depth by tier table and spire bonus",
+        "Listen DC table (base, per layer, thresholds)",
+        "Brood scaling by depth and the hive's guard"
+      ],
+      "backend": [
+        "DenGenerator.Build(hive, seed) deterministic: rings, one wall per chamber, four mouths, core in the inner rings",
+        "CrawlSession state machine: PickMouth → AtChamber → Listening → Fighting → Between → Leaving / Done",
+        "Listen check + odds by enumerating the d10's faces (the prototype once showed 50% for a real 60%)",
+        "Brood builder from the guard horde, mix and era kinds; carry wounds and ammo between chambers",
+        "Test: every mouth reaches the core (BFS) over 1,000 seeds"
+      ],
+      "ui": [
+        "Den map screen: rings of chambers, known/cleared marks, warmth and beat hints",
+        "Passage panel: Listen (with odds) / Go / Leave",
+        "Reuse the battle view for each chamber"
+      ]
+    },
+    "dataModel": "public sealed class Den { public int Seed, Rings, CoreId; public int[] MouthIds = new int[4];\n  public List<Chamber> Chambers = new(); }\npublic sealed class Chamber { public int Id, Ring, Index; public string Kind; public Dir Wall;\n  public float Warmth, Beat; public bool Cleared, Known; }\npublic enum CrawlStep { PickMouth, AtChamber, Listening, Fighting, Between, Leaving, Done }\npublic sealed class CrawlSession { public int HiveId, PartyId, ChamberId; public CrawlStep Step; }",
+    "dependsOn": [
+      "dead.hives",
+      "dead.specials",
+      "combat.interiors",
+      "combat.stealth",
+      "combat.resolve",
+      "travel.parties"
+    ],
+    "connections": [
+      {
+        "to": "combat.map",
+        "why": "Each chamber is a battle.",
+        "how": "BattleSetup.FromChamber(chamber, brood) returns a BattleMap; the result returns to CrawlSession.",
+        "godot": "SimHost swaps the den-map Control for the Battle scene (SceneTree.ChangeSceneToFile or a child swap) and back.",
+        "unity": "SceneManager.LoadScene(\"Battle\", Additive) per chamber, unloaded on result."
+      },
+      {
+        "to": "dead.hives",
+        "why": "The brood comes from the hive; the Hivemind's death destroys it.",
+        "how": "Brood from Hive.GuardHordeId; HivemindKilled(hiveId) → HiveSystem.Destroy.",
+        "godot": "Result card signal back on the State Map.",
+        "unity": "Result card event back on the State Map."
+      },
+      {
+        "to": "data.save",
+        "why": "A crawl can be saved halfway.",
+        "how": "CrawlSession and Den.Seed + cleared flags serialise with the world; the den itself is rebuilt from the seed.",
+        "godot": "No engine code beyond the save menu.",
+        "unity": "No engine code beyond the save menu."
+      },
+      {
+        "to": "travel.parties",
+        "why": "A team enters from the hive's tile and comes back out.",
+        "how": "CrawlSession holds the party id; the party is 'in crawl' (off the map clock's travel).",
+        "godot": "Party token shows a 'crawling' badge.",
+        "unity": "Party token shows a 'crawling' badge."
+      }
+    ],
+    "godot": {
+      "approach": "The den map is a Control drawing rings of chamber arcs in _Draw (polar coordinates: ring = radius, index = angle) or one Polygon2D per chamber for easy clicking. A click on a passage sends a CrawlMove command; each chamber reuses the normal battle scene.",
+      "keyApis": [
+        "Control._Draw",
+        "Polygon2D",
+        "SceneTree.ChangeSceneToFile",
+        "Button"
+      ],
+      "docs": [
+        {
+          "t": "Custom drawing in 2D",
+          "u": "https://docs.godotengine.org/en/stable/tutorials/2d/custom_drawing_in_2d.html"
+        },
+        {
+          "t": "Polygon2D class",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_polygon2d.html"
+        },
+        {
+          "t": "SceneTree class (changing scenes)",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_scenetree.html"
+        }
+      ]
+    },
+    "unity": {
+      "approach": "Draw the den map in UI Toolkit with a custom VisualElement using generateVisualContent and Painter2D arcs, or as sprites on a world-space canvas. Load the battle scene additively for each chamber and return to the den map on the result.",
+      "keyApis": [
+        "VisualElement.generateVisualContent",
+        "Painter2D",
+        "SceneManager.LoadScene (Additive)"
+      ],
+      "docs": [
+        {
+          "t": "UIElements.Painter2D",
+          "u": "https://docs.unity3d.com/ScriptReference/UIElements.Painter2D.html"
+        },
+        {
+          "t": "SceneManager.LoadScene",
+          "u": "https://docs.unity3d.com/ScriptReference/SceneManagement.SceneManager.LoadScene.html"
+        },
+        {
+          "t": "UI Toolkit",
+          "u": "https://docs.unity3d.com/Manual/UIElements.html"
+        }
+      ]
+    },
+    "learn": [
+      {
+        "t": "Game Programming Patterns: State",
+        "u": "https://gameprogrammingpatterns.com/state.html"
+      },
+      {
+        "t": "Red Blob Games: Probability and damage rolls",
+        "u": "https://www.redblobgames.com/articles/probability/damage-rolls.html"
+      },
+      {
+        "t": "Red Blob Games: Introduction to A* (BFS, flood fill)",
+        "u": "https://www.redblobgames.com/pathfinding/a-star/introduction.html"
+      }
+    ],
+    "newb": [
+      "Procedural generation from a seed: save the seed, not the whole den, and the same den comes back every visit.",
+      "The crawl is a state machine wrapped around many small battles: keep the between-chamber state (wounds, ammo, known chambers) in one session object.",
+      "Show odds by counting dice faces exactly (10 faces of a d10), not by running a simulation.",
+      "Test generators with properties ('every mouth reaches the core') over thousands of seeds, not by eyeballing one."
+    ],
+    "pitfalls": [
+      "Off-by-one in shown odds (the prototype's issue #63)",
+      "Using the world Rng to build dens (it reshuffles the rest of the run)",
+      "An unreachable core: validate connectivity in tests",
+      "Losing between-chamber state on save/load"
+    ],
+    "test": "xUnit: BFS from every mouth reaches the core over 1,000 seeds; every chamber has exactly one wall (rim rules aside); listen odds equal brute-force enumeration; killing the Hivemind destroys the hive; save/load mid-crawl round-trips. Manual: dev-spawn a 2-ring hive and crawl it.",
+    "size": "L"
+  },
+  {
+    "id": "def.walls",
+    "title": "Defences: walls, Defenses tab & field works",
+    "summary": "Everything a base builds to hold: wall pieces (1×1, 1×2, 1×4, gates, stands) in materials by base tier, barricades, sandbags, wire, spike pits, trenches, mines, towers, floodlights and the perimeter alarm, field works outside the walls, and the 'hold' maths that decides if a horde is beaten at the walls.",
+    "whyHere": "Hordes now reach bases. It needs base map placement, the build queue and the counter-dead read; sieges (100) are fought on the map these pieces make.",
+    "subsystems": [
+      "Defence piece defs & unlocks by base size",
+      "Placement, rotation & ring closure (flood fill)",
+      "Ring wall planner",
+      "Hold limit & multipliers (by the numbers)",
+      "Wall repair order",
+      "Battle cells: wire, spikes, trench, mines, sandbags",
+      "Field works (roadblock, tower, well, relay)",
+      "Perimeter alarm (power)"
+    ],
+    "sliceScope": "Camp tier: barricades plus wood 1×4 wall pieces and a 1×4 gate placed and rotated on the base map; 'Walled' only when a flood fill from the map edge can't get in; hold limit = 15 + 18 × wall strength + 2 per guard combat point; a horde at or under it is beaten off, above it breaks in; a repair order.",
+    "fullScope": "Camp → shelter → outpost → hub unlocks; materials wood → logs → scrap → metal sheets. Hold 15 + 18 × strength (15/51/87/159/231), multipliers: barricade +12%, trench +25% (second +12%), gate +20%, floodlights +10%, wire +6% a line, concertina +10%, sandbags +5%, towers +8%. Spike pits thin 7% + 4; a minefield 12 mines (2 dead each), two at most; a Wallbreaker cuts to 60%. Repair 1/1.5/2/3 work-hours per 1×4. Alarm 1 power 20:00–06:00. No base gets a wall it did not build.",
+    "protoRefs": [
+      "prototype/src/sim/defences.js",
+      "prototype/src/sim/fieldworks.js",
+      "prototype/src/sim/mines.js",
+      "prototype/src/sim/wire.js",
+      "docs/features/defence.md"
+    ],
+    "tasks": {
+      "data": [
+        "defences.json: piece id, footprint, tab, opens at base size, cost per material, hp per cell, strength, battle cell kind, hold multiplier, artKey",
+        "Materials table (wood, logs, scrap, sheets: cost, hp, strength, skill)",
+        "Hold constants and multiplier list",
+        "Field work kinds (roadblock, well, tower, relay) with cost and hours"
+      ],
+      "backend": [
+        "Placement validator on the base grid (rotation, no-build margin, overlaps) → PlacePiece command",
+        "WallInfo: flood fill from the map edge; a broken piece is a gap",
+        "DefenceResolver.HoldCheck(base, attacker) → HoldResult: ONE function for player and group bases (ADR 0001), with counter-dead and tunnel cuts",
+        "Consumables: spike pits, mines spent, wire cut; Ring wall planner queues every missing piece",
+        "Wall repair order job (broken first, 08:00–20:00); field works as land jobs",
+        "Tests for the hold table and flood fill"
+      ],
+      "ui": [
+        "Defenses tab list with 'Opens at …' locks",
+        "Placement ghost (R to rotate, red when invalid)",
+        "Hold summary 'Holds ~87 dead' with a breakdown tooltip",
+        "'Walled' / 'Not walled: gap at …' indicator"
+      ]
+    },
+    "dataModel": "public record DefencePieceDef(string Id, int W, int H, BaseTier Opens, string BattleCell,\n  float HoldMult, Dictionary<string, MaterialCost> ByMaterial, string ArtKey);\npublic sealed class PlacedPiece { public int Id; public string DefId, Material; public GridPos At; public int Rot, Hp; }\npublic readonly record struct HoldResult(bool Held, float Limit, int Outside, int Inside);\npublic interface IDefenceResolver { HoldResult HoldCheck(Base b, AttackForce a); }",
+    "dependsOn": [
+      "base.basemap",
+      "base.buildings",
+      "base.repairs",
+      "dead.hordes",
+      "dead.specials",
+      "econ.power"
+    ],
+    "connections": [
+      {
+        "to": "def.sieges",
+        "why": "A break-in is fought on a map built from the placed pieces.",
+        "how": "BaseBattleBuilder reads Base.Pieces → battle cells (wall, gate, stand, sandbag, wire, trench, mine).",
+        "godot": "The battle TileMapLayer uses the same art keys as the base map.",
+        "unity": "The battle Tilemap uses the same art keys as the base map."
+      },
+      {
+        "to": "dead.hordes",
+        "why": "A horde at a base runs the hold check.",
+        "how": "HordeArrivedAtBase → HoldCheck; Held → losses at the walls; else BreakIn(inside) → def.sieges.",
+        "godot": "Signal shows 'beaten off at the walls' or opens the deploy step.",
+        "unity": "Event shows the result toast or opens the deploy step."
+      },
+      {
+        "to": "base.basemap",
+        "why": "Pieces are placed and rotated on the base grid.",
+        "how": "PlacePiece(baseId, defId, material, cell, rot) command validated by the sim.",
+        "godot": "Ghost Sprite2D snapped with LocalToMap/MapToLocal; R rotates; click sends the command.",
+        "unity": "Ghost GameObject snapped with Grid.WorldToCell; Input System action rotates; click sends the command."
+      },
+      {
+        "to": "groups.factions",
+        "why": "Group bases defend by the same rules.",
+        "how": "A group base is a Base with pieces built through the same queue; HoldCheck never asks who owns it.",
+        "godot": "No engine code: sim-to-sim.",
+        "unity": "No engine code: sim-to-sim."
+      }
+    ],
+    "godot": {
+      "approach": "Placement happens on the base map's TileMapLayer: a ghost node follows the mouse snapped to cells (LocalToMap / MapToLocal), tinted red when the sim's validator refuses, and a click sends PlacePiece. Use TileSet terrains (autotiling) so sandbags and wall pieces join into continuous walls.",
+      "keyApis": [
+        "TileMapLayer.LocalToMap / MapToLocal",
+        "TileSet terrains",
+        "InputMap actions",
+        "CanvasItem.Modulate"
+      ],
+      "docs": [
+        {
+          "t": "TileMapLayer class",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_tilemaplayer.html"
+        },
+        {
+          "t": "Using TileSets (terrains / autotiling)",
+          "u": "https://docs.godotengine.org/en/stable/tutorials/2d/using_tilesets.html"
+        },
+        {
+          "t": "Using InputEvent",
+          "u": "https://docs.godotengine.org/en/stable/tutorials/inputs/inputevent.html"
+        }
+      ]
+    },
+    "unity": {
+      "approach": "The base map is a Tilemap; a ghost GameObject snaps with GridLayout.WorldToCell and turns on a rotate action. Rule Tiles (2D Tilemap Extras package) give joined sandbags and walls. The sim validates; the ghost only shows the answer.",
+      "keyApis": [
+        "Tilemap",
+        "GridLayout.WorldToCell",
+        "Rule Tile (2D Tilemap Extras)",
+        "Input System actions"
+      ],
+      "docs": [
+        {
+          "t": "Tilemaps",
+          "u": "https://docs.unity3d.com/Manual/Tilemap.html"
+        },
+        {
+          "t": "GridLayout.WorldToCell",
+          "u": "https://docs.unity3d.com/ScriptReference/GridLayout.WorldToCell.html"
+        }
+      ]
+    },
+    "learn": [
+      {
+        "t": "Red Blob Games: Introduction to A* (BFS, flood fill)",
+        "u": "https://www.redblobgames.com/pathfinding/a-star/introduction.html"
+      },
+      {
+        "t": "Game Programming Patterns: Type Object",
+        "u": "https://gameprogrammingpatterns.com/type-object.html"
+      }
+    ],
+    "newb": [
+      "The same fight has two resolutions: 'by the numbers' (a formula) and the tactical map. Keep them in line by running the tactical AI on both sides headless and comparing.",
+      "Flood fill (BFS) from the map edge is the simplest way to know if a wall is closed: if the fill reaches the yard, there is a gap.",
+      "Keep multipliers as a data list, not code: tuning becomes editing JSON.",
+      "Autotiling: the engine picks the right sprite (corner, T, straight) from the neighbours, so art can be drawn once per joint."
+    ],
+    "pitfalls": [
+      "Free walls for a base type (the prototype removed them)",
+      "The hold formula drifting away from real battle outcomes",
+      "Flood fill treating diagonals differently from battle pathing (leaks)",
+      "Engine-side placement checks that disagree with the sim's"
+    ],
+    "test": "xUnit: a closed ring is Walled, one broken piece is not; hold values match the table (15/51/87/159/231); a Wallbreaker cuts to 60%; mines are spent 2 dead each; repair hours per material. Manual: place a ring at a camp, see 'Walled', dev-spawn a horde of 40 and 120.",
+    "size": "L"
+  },
+  {
+    "id": "def.sieges",
+    "title": "Raids & sieges on the base map",
+    "summary": "When attackers come for a base (the dead through the walls, raiders, outsiders, a group freeing its people) the fight is played on the base's own map: a deploy step with drilled defence plans, wall → yard → last-stand tiers, siege kit (ladders, rams, grenades), thieves at the real containers and the locked Armory, plus the watch roster, the alarm and attacks on camps.",
+    "whyHere": "Needs the defences (99), the base map and the tactical systems. Raiders and hordes come first; AI group raids plug in at groups.factions (102) through the same entry point.",
+    "subsystems": [
+      "Attack triggers (camp attacks, raids) & warning",
+      "Watch roster, surprise & lookouts",
+      "Deploy step & defence plans",
+      "Fort / wall / yard map builders",
+      "Tier progression (wall → yard → buildings)",
+      "Siege kit actions",
+      "Theft, Armory locks & keys",
+      "Aftermath: wear, losses, overrun"
+    ],
+    "sliceScope": "One base map type (yard with or without a ring wall); attackers enter from the side they came from; defenders placed by hand; fight until the attackers flee or the base is overrun; wear and losses afterwards; an hourly camp-attack roll from the tile's dead.",
+    "fullScope": "Wall map 18 × 13+ or the fort map (margin, 4 gates, walkway, towers) then yard and buildings. Breaches pre-cut (+1 at 120 and 250 dead, +1 per Wallbreaker, max 4). Ladders (push-off 15–80%), rams (16–24 a carrier, gate 100–180 hp), grenades over walls, rocks from the walkway. Raids sized 0.6–1.0 × your defence × escalation (+25% per raid repelled, up to 2×), 8 hours at the walls. Defence plans tagged who/when (Default, Horde, Night). Camp grounds attack ~every 30 h when full; the tile trickle by fill³.",
+    "protoRefs": [
+      "prototype/src/sim/deploy.js",
+      "prototype/src/sim/fort.js",
+      "prototype/src/sim/siege.js",
+      "prototype/src/sim/defenceplan.js",
+      "prototype/src/sim/campattack.js"
+    ],
+    "tasks": {
+      "data": [
+        "Siege kit items (ladder, ram, frag grenade) and raid preparedness by era",
+        "Defence plan schema (name, who, when, per-map posts by id or role)",
+        "Camp attack constants (grounds, trickle, raiders)",
+        "Map layout params (margin, gate width, wall column, guard rows)"
+      ],
+      "backend": [
+        "AttackSystem hourly: camp attacks with hash dice (seed + tile + hour), raid arrivals, lookouts and surprise (watch, alarm)",
+        "BaseBattleBuilder: fort / wall / yard maps from the base's real pieces and buildings, rotated to the attack side",
+        "DefencePlan.Pick(who, when) and post assignment (by person, else best for role)",
+        "Tier rules; siege actions (SetLadder, PushLadder, Ram, DropRocks) in combat.actions",
+        "Thieves take only real container contents; Armory lock hp; aftermath applies wear, theft and casualties",
+        "Auto-resolve uses the same builder with AI on both sides"
+      ],
+      "ui": [
+        "Deploy screen: drag defenders, pick / save plan",
+        "Watch roster grid (shifts × people)",
+        "Raid warning card with 'Prepare defenses'",
+        "Lock/Unlock buttons in the battle action bar"
+      ]
+    },
+    "dataModel": "public enum AttackerKind { Any, Dead, People }\npublic sealed class DefencePlan { public int Id; public string Name; public AttackerKind Who; public TimeBand When;\n  public Dictionary<string, PlanMap> Maps = new(); } // key: \"fort\" | \"wall\" | \"interior\"\npublic record PlanMap(int W0, int H0, List<Post> Posts);\npublic record Post(int SurvivorId, int X, int Y, PostRole Role);\npublic sealed class WatchShift { public string Name; public int From, To; public List<int> Ids = new(); }",
+    "dependsOn": [
+      "def.walls",
+      "combat.actions",
+      "combat.ai",
+      "combat.doors",
+      "base.basemap",
+      "base.workgrid"
+    ],
+    "connections": [
+      {
+        "to": "groups.factions",
+        "why": "AI groups raid you and each other.",
+        "how": "RaidLaunched(attackerId, targetBaseId) → AttackSystem; the same builder/resolver whoever owns the target.",
+        "godot": "Signal raises the raid warning card.",
+        "unity": "Event raises the raid warning card."
+      },
+      {
+        "to": "combat.resolve",
+        "why": "The battle's outcome changes the base.",
+        "how": "AftermathApplier.Apply(base, BattleResult): wear, stolen items moved to the raiders' inventories, casualties.",
+        "godot": "Result screen then back to the hub view.",
+        "unity": "Result panel then back to the hub scene."
+      },
+      {
+        "to": "ai.governor",
+        "why": "Autopilot and AI groups pick plans, staff the watch and choose fight vs auto-resolve.",
+        "how": "Defence domain options: SetWatch, SavePlan, ChooseResolve; the same commands as the UI.",
+        "godot": "No engine code: sim-to-sim.",
+        "unity": "No engine code: sim-to-sim."
+      },
+      {
+        "to": "base.workgrid",
+        "why": "Watch shifts take people off work and sleep.",
+        "how": "WatchRoster feeds the job scheduler as a higher-priority duty for the shift hours.",
+        "godot": "Roster grid in the hub's Defence tab.",
+        "unity": "Roster grid in the hub's Defence tab."
+      }
+    ],
+    "godot": {
+      "approach": "The deploy step is a mode of the battle scene: defender tokens are draggable only onto cells the sim lists as the zone (Control drag & drop or simple mouse handling on the TileMapLayer). Save sends SaveDefencePlan. The sim has already rotated the map; Godot just draws cells.",
+      "keyApis": [
+        "Control._GetDragData / _CanDropData / _DropData",
+        "TileMapLayer",
+        "Camera2D",
+        "ConfirmationDialog"
+      ],
+      "docs": [
+        {
+          "t": "Control class (drag & drop, tooltips)",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_control.html"
+        },
+        {
+          "t": "Camera2D class",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_camera2d.html"
+        },
+        {
+          "t": "TileMapLayer class",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_tilemaplayer.html"
+        }
+      ]
+    },
+    "unity": {
+      "approach": "In the battle scene, tokens are dragged with pointer events (UI Toolkit PointerManipulator or uGUI drag handlers) and dropped only on sim-approved cells. Save / pick plan in a UI Toolkit side panel.",
+      "keyApis": [
+        "UI Toolkit PointerManipulator",
+        "Tilemap",
+        "Camera",
+        "GridLayout.WorldToCell"
+      ],
+      "docs": [
+        {
+          "t": "UI Toolkit",
+          "u": "https://docs.unity3d.com/Manual/UIElements.html"
+        },
+        {
+          "t": "Tilemaps",
+          "u": "https://docs.unity3d.com/Manual/Tilemap.html"
+        },
+        {
+          "t": "GridLayout.WorldToCell",
+          "u": "https://docs.unity3d.com/ScriptReference/GridLayout.WorldToCell.html"
+        }
+      ]
+    },
+    "learn": [
+      {
+        "t": "Game Programming Patterns: State",
+        "u": "https://gameprogrammingpatterns.com/state.html"
+      },
+      {
+        "t": "Game Programming Patterns: Command",
+        "u": "https://gameprogrammingpatterns.com/command.html"
+      }
+    ],
+    "newb": [
+      "The deploy step is just one more state in the battle's state machine (Setup → PlayerTurn → EnemyTurn …).",
+      "Plans stored by role ('best shooter here') survive deaths and new recruits; plans by person are exact. Keep both.",
+      "Hash dice (seed + tile + hour) for off-screen rolls give the same result whatever order the systems run in.",
+      "Raiders stealing real items from real containers is what makes storage, locks and the Armory matter."
+    ],
+    "pitfalls": [
+      "Raiders spawning loot instead of taking what is in containers",
+      "A base that grew invalidating saved plans silently (fall back to defaults and tell the player)",
+      "Surprise/alarm rules that only apply to the player (the prototype's open parity gap)",
+      "Grenades or ladders needing line-of-sight code the rest of combat doesn't use"
+    ],
+    "test": "xUnit: plan picker precedence (who and when beat 'any'); builder puts attackers outside and gates mid-side; ladder push odds clamp 15–80%; theft moves real items; camp-attack frequency over 10,000 hours matches the expected rate. Manual: dev-trigger a night raid with and without the alarm and a watch.",
+    "size": "L"
+  },
+  {
+    "id": "ai.governor",
+    "title": "Autopilot governor (shared decision AI)",
+    "summary": "One decision AI, a utility-scoring planner, that runs any 'holdout' (a side with bases, people and stores) by issuing the same commands the player's UI sends. It is the player's autopilot, every AI group's brain, and the bot for headless balance runs.",
+    "whyHere": "It opens the Other-groups milestone because groups.factions (102) needs a brain that plays by the player's rules (ADR 0001 'AI parity'). It also unlocks meta.balance (114) and devtools auto-play; a slim version can be pulled earlier to soak-test the slice.",
+    "subsystems": [
+      "Holdout (actor) & controller abstraction",
+      "Knowledge view (fog-honest)",
+      "Option generators per domain",
+      "Considerations & response curves",
+      "Personalities & group type profiles",
+      "Scheduler & LOD budgets",
+      "Decision trace ('Why?')",
+      "Headless runner & parity tests"
+    ],
+    "sliceScope": "IController with PlayerController and GovernorController; for one base: each day set roles by need (food, water, wood days), queue the top building wish, launch one scavenging trip to the best known POI, auto-answer cards with their default; Cautious / Balanced / Aggressive weight sets; a console runner plays 1 year and prints a census.",
+    "fullScope": "The prototype autopilot is ~6,000 lines: roles, building, production, medical, food and defence per base; stewards for safety, supplies, trade, outposts, land and warnings; a 07:00 trip plan; reserves (Cautious); hive campaigns; conquest; power grid wishes. Personalities from Cautious (1 team, range 8, hives from day 150) to Aggressive (3 teams, range 15, hives from day 30). It uses only UI calls, plays on what the player knows and never draws the world's dice.",
+    "protoRefs": [
+      "prototype/src/sim/autopilot.js",
+      "docs/adr/0001-ai-parity.md",
+      "docs/ai-parity-audit.md",
+      "docs/features/ui.md",
+      "prototype/src/sim/groupcare.js"
+    ],
+    "tasks": {
+      "data": [
+        "personalities.json: Cautious / Balanced / Aggressive weights (risk, maxTeams, range, reserves, fightBias, hiveFrom…)",
+        "Group type profiles (raider, expansionist, zealot, military, fortress, traders, commune) as weight sets for the same considerations",
+        "Response curve defs (linear, logistic, step, inverse) by name with parameters",
+        "Reserve targets per supply (days of food, water, meds, rounds)"
+      ],
+      "backend": [
+        "Holdout: every human side, player included; Controller is Player or Governor. Rules are written against Holdout/Base/Survivor and never ask 'is this the player?'",
+        "Option generators per domain (roles, builds, crafts, trips, defence, trade, diplomacy) yield candidate commands that already passed CommandBus validation: the governor cannot do what the player cannot",
+        "Utility scorer: score = product of consideration curves (0–1) × personality weight; best per domain; a DecisionTrace keeps the top options and reasons",
+        "Scheduler: light hourly pass (cards, battles), daily plan at 07:00; distant AI groups run coarser (LOD) but call the same rule functions",
+        "Reads a KnowledgeMap (what this holdout has seen/heard), never the true world; uses hash dice or its own Rng stream",
+        "Headless runner (console app): N seeds × years, CSV census; swapped-sides parity test and conservation ledger test"
+      ],
+      "ui": [
+        "Autopilot toggle + personality picker",
+        "'Why?' panel: the last decisions with their top-3 scored options",
+        "Dev overlay: per-domain option scores for the selected base"
+      ]
+    },
+    "dataModel": "public interface IController { void Hour(SimContext ctx, Holdout me); void Day(SimContext ctx, Holdout me); }\npublic class Holdout { public int Id; public bool IsPlayer; public IController Controller; public string ProfileId;\n  public List<int> BaseIds = new(), PeopleIds = new(); public KnowledgeMap Knows = new(); }\npublic interface IOption { string Domain { get; } ICommand Command { get; } }\npublic interface IConsideration { string Id { get; } float Score(SimContext c, Holdout me, IOption o); } // 0..1\npublic record Personality(string Id, Dictionary<string, float> Weights);\npublic record Decision(string Domain, IOption Chosen, (IOption o, float s)[] Top);",
+    "dependsOn": [
+      "core.commands",
+      "core.cards",
+      "base.work",
+      "econ.daily",
+      "travel.parties",
+      "travel.fog",
+      "combat.resolve",
+      "data.rng"
+    ],
+    "connections": [
+      {
+        "to": "core.commands",
+        "why": "Parity: the governor acts only through player commands.",
+        "how": "ctx.Commands.TryExecute(cmd, actorId: me.Id) with the same validation the UI gets; a refused command is a bug in the generator.",
+        "godot": "Player UI calls SimHost.Send(cmd): the very same path.",
+        "unity": "Player UI calls SimHost.Send(cmd): the very same path."
+      },
+      {
+        "to": "groups.factions",
+        "why": "Every AI group is a Holdout driven by a governor with its type profile.",
+        "how": "Group.Controller = new GovernorController(profiles[\"raider\"]); the world ticks all controllers in a fixed order.",
+        "godot": "No engine code: sim-to-sim.",
+        "unity": "No engine code: sim-to-sim."
+      },
+      {
+        "to": "meta.balance",
+        "why": "Headless runs are the balance lab.",
+        "how": "BrokenState.Headless console project: governors for every holdout, seeds × years, census CSV.",
+        "godot": "Not needed; for engine smoke tests run godot --headless.",
+        "unity": "Not needed; for engine smoke tests run Unity -batchmode -nographics -executeMethod."
+      },
+      {
+        "to": "meta.help",
+        "why": "Players (and you) need to know why the autopilot did something.",
+        "how": "DecisionTrace events with considerations and scores feed the 'Why?' cause chains.",
+        "godot": "RichTextLabel 'Why?' panel fed by a SimHost signal.",
+        "unity": "UI Toolkit 'Why?' panel fed by a SimHost event."
+      },
+      {
+        "to": "travel.fog",
+        "why": "No omniscient AI.",
+        "how": "Option generators query me.Knows (seen tiles, reported hordes, known bases), the player's fog for the player's holdout.",
+        "godot": "No engine code: sim-to-sim.",
+        "unity": "No engine code: sim-to-sim."
+      }
+    ],
+    "godot": {
+      "approach": "The governor lives entirely in BrokenState.Sim; Godot only shows the toggle, a personality OptionButton and a 'Why?' panel fed by DecisionTrace signals. Balance runs need no engine at all: a plain .NET console project references the sim. Use godot --headless only for engine-side smoke tests.",
+      "keyApis": [
+        "OptionButton",
+        "CheckButton",
+        "RichTextLabel",
+        "godot --headless"
+      ],
+      "docs": [
+        {
+          "t": "OptionButton class",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_optionbutton.html"
+        },
+        {
+          "t": "RichTextLabel class",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_richtextlabel.html"
+        },
+        {
+          "t": "Command line tutorial (--headless)",
+          "u": "https://docs.godotengine.org/en/stable/tutorials/editor/command_line_tutorial.html"
+        }
+      ]
+    },
+    "unity": {
+      "approach": "Same split: sim-only logic, a Toggle and DropdownField in UI Toolkit, a 'Why?' panel. Balance runs as a .NET console app; Unity's -batchmode -nographics with -executeMethod only for engine smoke tests in CI.",
+      "keyApis": [
+        "UI Toolkit Toggle / DropdownField",
+        "-batchmode -nographics",
+        "-executeMethod"
+      ],
+      "docs": [
+        {
+          "t": "UI Toolkit",
+          "u": "https://docs.unity3d.com/Manual/UIElements.html"
+        },
+        {
+          "t": "Command line arguments (-batchmode)",
+          "u": "https://docs.unity3d.com/Manual/CommandLineArguments.html"
+        },
+        {
+          "t": "UnityEvents",
+          "u": "https://docs.unity3d.com/Manual/UnityEvents.html"
+        }
+      ]
+    },
+    "learn": [
+      {
+        "t": "Game AI Pro (free chapters: utility theory, planners)",
+        "u": "https://www.gameaipro.com/"
+      },
+      {
+        "t": "Game Programming Patterns: Command",
+        "u": "https://gameprogrammingpatterns.com/command.html"
+      },
+      {
+        "t": "C# interfaces (Microsoft Learn)",
+        "u": "https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/keywords/interface"
+      }
+    ],
+    "newb": [
+      "Utility AI: list what you could do now, score each option 0–1 on a few considerations ('food days low' through a curve, 'risk' through another), multiply, take the best. It suits economy decisions better than behaviour trees, and personalities are just different weights.",
+      "The 'actor' pattern: the player is a holdout whose controller happens to be a human. If a rule contains 'if (isPlayer)', suspect a parity bug.",
+      "Going through commands and validation is what guarantees the AI never cheats, and it turns the autopilot into a free test of your command set.",
+      "Give the AI the fog the player has: decisions on knowledge, not truth.",
+      "Because the sim is engine-free, the governor can play years in seconds: that is how you balance a game this big."
+    ],
+    "pitfalls": [
+      "Reading true world state (an omniscient AI the player can feel)",
+      "Mutating state directly instead of issuing commands",
+      "Drawing from the world Rng, so turning autopilot on changes the world's dice",
+      "One giant file: split by domain from day 1 (the prototype's is 6,000 lines)",
+      "Full planning every hour for 20 groups: plan daily, react hourly, budget per tick"
+    ],
+    "test": "xUnit: each curve; generators yield only commands that validate; same state → same decision; toggling autopilot off leaves state untouched. Integration: headless 1 year × 5 seeds keeps the hub alive above a floor; parity test: swap the player's and a group's controllers and the outcome bands match; conservation ledger shows no goods from nowhere.",
+    "size": "XL"
+  },
+  {
+    "id": "groups.factions",
+    "title": "AI groups: growth, expansion, raids, parity",
+    "summary": "AI groups (raider gang, expansionist hub, zealots, military remnant, fortress hub, traders, farming commune) are full holdouts: real survivor records, real bases built with the player's construction code, real stock and armory. They grow, expand, build, trip, heal, flee hordes, take over empty bases and raid you and each other, run by the governor with their type's profile.",
+    "whyHere": "Needs the governor (101) and every player system they must share (survivors, inventory, bases, combat, sieges). Diplomacy, trade, radio, conflict and nomads all hang off it.",
+    "subsystems": [
+      "Group types & creation",
+      "Members as survivor records",
+      "Group bases as Base objects",
+      "Daily group tick (LOD)",
+      "Knowledge & scouted reach",
+      "Raids: target, size, escalation",
+      "Off-screen fight resolver",
+      "Conservation ledger & parity tests"
+    ],
+    "sliceScope": "2–3 groups, one Base each, 5–10 members from the Survivor constructor under the group's Rng, starting stock and armory; daily they eat, build through the BuildQueue and scavenge by the trip rules (coarse); goodwill toward you; a hostile type raids your base sized to your defence (0.6–1.0×) through def.sieges; the conservation test passes.",
+    "fullScope": "4/7/10/15 groups by world size (up to 24). Type rows: arms 0.6–1.6, raid odds a day (raiders 10.5% after an 8–16 day cooldown), reach 30 tiles; target weight 2.5 × greed × land × grudge × size ÷ (1 + tiles/12); escalation +25% per raid repelled up to 2×. Their works: water, farms, beds, walls, bench, storage and a power grid (solar, batteries, alarm, heaters, charger) on an hourly budget. They learn your bases only by scouting, flee hordes, occupy abandoned bases and keep hidden outposts.",
+    "protoRefs": [
+      "prototype/src/sim/factions.js",
+      "prototype/src/sim/groupworks.js",
+      "prototype/src/sim/groupcare.js",
+      "prototype/src/sim/groupworld.js",
+      "docs/features/groups.md"
+    ],
+    "tasks": {
+      "data": [
+        "group_types.json: label, attitude, starting goodwill, arms, raid odds, names, colour (never the player's blue), priority weights",
+        "World size → group count range and default",
+        "Raid constants (reach, cooldown, sizing band, escalation)",
+        "Starting kit tables per type (the only allowed 'from nowhere' goods)"
+      ],
+      "backend": [
+        "Group : Holdout (IsPlayer = false); members via the shared Survivor constructor under the group's Rng; health and skills tick, needs treated as fed and rested (ADR 0001)",
+        "Group bases are Base objects; works go through the BuildQueue and pay real costs; daily rebalancing between their bases",
+        "GroupDaily on a coarse LOD schedule calling the same economy, health and loadout functions as the player",
+        "KnowledgeMap reach grows by scouting trips; raids only target bases they know",
+        "Raid option scored by profile → RaidParty of real members packed by the loadout manager → def.sieges if watched, OffscreenFightResolver if not (same rules)",
+        "Ledger tags every stock change with a source; a 1-year test allows only start, scavenge, craft, trade, loot and heal"
+      ],
+      "ui": [
+        "Groups tab: a card per known group (type, attitude, size estimate, known bases)",
+        "Territory tint on the State Map in the group's colour",
+        "Raid warning card naming the group"
+      ]
+    },
+    "dataModel": "public record GroupTypeDef(string Id, string Label, Attitude Attitude, int Goodwill, float Arms,\n  float RaidOdds, string Color, Dictionary<string, float> Weights, string[] Names);\npublic sealed class Group : Holdout { public string TypeId; public int Goodwill; public float Escalation, Strife; }\npublic enum LedgerSource { Start, Scavenge, Craft, Trade, Loot, Heal, Consume, Spoil, Lost }\npublic record LedgerEntry(int HoldoutId, string ItemKey, int Delta, LedgerSource Source, int Hour);",
+    "dependsOn": [
+      "ai.governor",
+      "surv.model",
+      "gear.items",
+      "base.buildings",
+      "travel.parties",
+      "def.sieges",
+      "combat.resolve"
+    ],
+    "connections": [
+      {
+        "to": "ai.governor",
+        "why": "Each group's brain is the shared governor with its type profile.",
+        "how": "Group.Controller = GovernorController(profile); same option generators, different weights.",
+        "godot": "No engine code: sim-to-sim.",
+        "unity": "No engine code: sim-to-sim."
+      },
+      {
+        "to": "def.sieges",
+        "why": "Raids on you and between groups.",
+        "how": "RaidLaunched(attackerId, baseId); watched fights use BaseBattleBuilder, unwatched ones the OffscreenFightResolver with the same inputs.",
+        "godot": "Warning card signal; battle scene when it is your base.",
+        "unity": "Warning card event; battle scene when it is your base."
+      },
+      {
+        "to": "groups.diplomacy",
+        "why": "Attitude and relations decide who raids whom.",
+        "how": "RelationsMatrix.Get(a, b) and goodwill toward the player's holdout feed raid and pact options.",
+        "godot": "Groups tab shows the relation bar.",
+        "unity": "Groups tab shows the relation bar."
+      },
+      {
+        "to": "meta.perf",
+        "why": "A Huge world carries thousands of survivor records.",
+        "how": "Lazy per-hour work: AI members tick daily; only people in a watched battle run full detail.",
+        "godot": "No engine code: sim-to-sim.",
+        "unity": "No engine code: sim-to-sim."
+      }
+    ],
+    "godot": {
+      "approach": "Groups are sim-only. Godot draws their land as a tinted overlay TileMapLayer (one tile per owned hex, colour from the type def) and lists known groups in a Groups tab (Tree or ItemList inside a TabContainer). Group base markers open the group's card.",
+      "keyApis": [
+        "TileMapLayer",
+        "TabContainer",
+        "Tree",
+        "Control.TooltipText"
+      ],
+      "docs": [
+        {
+          "t": "TileMapLayer class",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_tilemaplayer.html"
+        },
+        {
+          "t": "Tree class",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_tree.html"
+        },
+        {
+          "t": "User interface (UI) docs",
+          "u": "https://docs.godotengine.org/en/stable/tutorials/ui/index.html"
+        }
+      ]
+    },
+    "unity": {
+      "approach": "Land overlay as a Tilemap with tinted tiles (Tilemap.SetColor, with the tile's colour lock flag cleared); the Groups tab is a UI Toolkit ListView of group cards bound to sim view models.",
+      "keyApis": [
+        "Tilemap.SetColor",
+        "UI Toolkit ListView",
+        "TileFlags"
+      ],
+      "docs": [
+        {
+          "t": "Tilemap.SetColor",
+          "u": "https://docs.unity3d.com/ScriptReference/Tilemaps.Tilemap.SetColor.html"
+        },
+        {
+          "t": "UIElements.ListView",
+          "u": "https://docs.unity3d.com/ScriptReference/UIElements.ListView.html"
+        },
+        {
+          "t": "UI Toolkit",
+          "u": "https://docs.unity3d.com/Manual/UIElements.html"
+        }
+      ]
+    },
+    "learn": [
+      {
+        "t": "Game Programming Patterns: Update Method",
+        "u": "https://gameprogrammingpatterns.com/update-method.html"
+      },
+      {
+        "t": "Game AI Pro (free chapters: utility theory, planners)",
+        "u": "https://www.gameaipro.com/"
+      }
+    ],
+    "newb": [
+      "AI parity in one line: one rule set, many actors. Write every rule against Holdout, Base and Survivor; the player is just holdout 0.",
+      "Level of detail for simulation: the same functions on a coarser schedule for far-away groups, not different, simpler rules.",
+      "A conservation ledger turns 'the AI got 500 rounds from nowhere' from a hunch into a failing test.",
+      "Group types are data (weights), not subclasses: a raider and a commune run the same code with different numbers."
+    ],
+    "pitfalls": [
+      "Head-count shortcuts (group.Pop as an int): the prototype later had to move hundreds of readers to real people",
+      "Compensating cheats when groups are weak: fix starting gear and recruitment instead (ADR 0001 §8)",
+      "AI targeting from true state instead of what it scouted",
+      "Ticking every AI member hourly on a Huge map"
+    ],
+    "test": "Conservation run (1 year, 3 seeds): no unallowed ledger sources. Swapped-sides fight parity. Raid size within 0.6–1.0 × defence × escalation. A group's wall exists only after its build job is paid. A starving group loses people by the player's rules. Manual: follow one group in a dev overlay for a season.",
+    "size": "XL"
+  },
+  {
+    "id": "groups.diplomacy",
+    "title": "Diplomacy, blocs, wars & the Calder Coalition",
+    "summary": "Relations between every pair of groups (−100..100) and toward you, pacts, AI blocs that ally by type, wars (between groups and on you, with goals, grievances and peace terms), and the Calder Coalition you lead: invitations, a seasonal council, standing with fading modifiers, asks, refusal fatigue and the alliance victory at over half the land.",
+    "whyHere": "Needs groups (102). Trade, radio and envoys (104, 105) carry its offers; conflict (106) carries out its wars.",
+    "subsystems": [
+      "Relations matrix & drift",
+      "Goodwill & grievances",
+      "Pacts",
+      "AI blocs",
+      "Wars & peace terms",
+      "Coalition membership & council",
+      "Standing modifiers & asks",
+      "Land claims & alliance victory"
+    ],
+    "sliceScope": "A relations matrix with resting values by type pair and 2% daily drift toward them; goodwill toward you moved by named events (a raid −12…); pacts at 28+ (5% a day) that break under 10; wars declared by temper and ended when one side wears out; relation bars on the Groups tab.",
+    "fullScope": "Resting relations by type (raider −44 with all, traders/communes +30 with peaceful groups) minus neighbour friction (1 a tile under 12) ± 8. Events: raid −12, war −30, peace −15. Blocs by type fit (Syndicate, Compact, Covenant). Grievances by reason fading 1% a day, a peace settles 60%. Coalition: invite at goodwill 50+ with a pact and a job done or a council vote; standing = goodwill + named fading modifiers; asks by card (default refuse); leave under 20; alliance victory over 50% of the land, with claims on adjacent tiles.",
+    "protoRefs": [
+      "prototype/src/sim/diplomacy.js",
+      "prototype/src/sim/blocs.js",
+      "prototype/src/sim/alliance.js",
+      "prototype/src/sim/coalition.js",
+      "prototype/src/sim/playerwars.js"
+    ],
+    "tasks": {
+      "data": [
+        "Type-pair resting relation table and friction constants",
+        "Event delta table (raid, war, peace, aid, theft, execution…)",
+        "Modifier kinds: fade days, caps, the share kept for good",
+        "War goals and peace terms; bloc names by type"
+      ],
+      "backend": [
+        "RelationsMatrix keyed by an ordered pair; daily drift and event deltas; the player is a node in it (goodwill = relation with holdout 0)",
+        "Pact, Bloc and War as small state machines; group decisions read their KnowledgeMap",
+        "Grievance ledger per group; war declaration and peace-terms options for the governor",
+        "Coalition: membership rules, seasonal council vote, standing = base + modifiers, asks through core.cards with auto-answers",
+        "Claims and land share; VictoryCheck for the coalition"
+      ],
+      "ui": [
+        "Diplomacy window: relations grid, wars list",
+        "Coalition standing bars with leave and hostile lines, modifiers in tooltips",
+        "Ask cards (mediate, favour, aid, military aid)"
+      ]
+    },
+    "dataModel": "public sealed class RelationsMatrix {\n  readonly Dictionary<(int, int), float> _rel = new();\n  static (int, int) K(int a, int b) => a < b ? (a, b) : (b, a);\n  public float Get(int a, int b) => _rel.GetValueOrDefault(K(a, b)); }\npublic record Modifier(string Kind, float Value, int StartDay, int FadeDays);\npublic sealed class War { public int Id, A, B; public WarGoal Goal; public float WearA, WearB; public int StartDay; }\npublic sealed class Coalition { public List<int> Members = new(); public int NextCouncilDay; }",
+    "dependsOn": [
+      "groups.factions",
+      "ai.governor",
+      "core.cards",
+      "core.events"
+    ],
+    "connections": [
+      {
+        "to": "groups.radio",
+        "why": "Offers, invitations and terms travel by radio or envoy.",
+        "how": "Messaging.Send(from, to, Message{Kind = PactOffer…}); delivery triggers the diplomacy handler.",
+        "godot": "Envoy ETA shown in the Diplomacy window.",
+        "unity": "Envoy ETA shown in the Diplomacy window."
+      },
+      {
+        "to": "groups.conflict",
+        "why": "Wars become raids, assaults and captives.",
+        "how": "War state feeds raid odds and assault options; captives and executions feed grievances.",
+        "godot": "No engine code: sim-to-sim.",
+        "unity": "No engine code: sim-to-sim."
+      },
+      {
+        "to": "meta.victory",
+        "why": "The coalition can win with over half the land.",
+        "how": "LandShare(coalition) from claims and base ranges → VictoryCheck.",
+        "godot": "Victory screen signal.",
+        "unity": "Victory panel event."
+      },
+      {
+        "to": "core.cards",
+        "why": "Asks and council votes are decision cards.",
+        "how": "Coalition raises AskCard with a default answer; card rules pause or auto-answer.",
+        "godot": "ui.cards dialog.",
+        "unity": "ui.cards panel."
+      }
+    ],
+    "godot": {
+      "approach": "The relations grid is a GridContainer of ColorRect cells (or one Control drawing it in _Draw); standing bars are ProgressBars with marker lines for leave/hostile thresholds; tooltips list the named modifiers. All numbers come from sim view models.",
+      "keyApis": [
+        "GridContainer",
+        "ColorRect",
+        "ProgressBar",
+        "TabContainer"
+      ],
+      "docs": [
+        {
+          "t": "GridContainer class",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_gridcontainer.html"
+        },
+        {
+          "t": "ProgressBar class",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_progressbar.html"
+        },
+        {
+          "t": "User interface (UI) docs",
+          "u": "https://docs.godotengine.org/en/stable/tutorials/ui/index.html"
+        }
+      ]
+    },
+    "unity": {
+      "approach": "UI Toolkit: a grid of VisualElements coloured by relation, ProgressBar controls with absolutely-positioned threshold markers, tooltips with the modifier list.",
+      "keyApis": [
+        "UI Toolkit VisualElement",
+        "UIElements.ProgressBar",
+        "USS styles"
+      ],
+      "docs": [
+        {
+          "t": "UI Toolkit",
+          "u": "https://docs.unity3d.com/Manual/UIElements.html"
+        },
+        {
+          "t": "UIElements.ProgressBar",
+          "u": "https://docs.unity3d.com/ScriptReference/UIElements.ProgressBar.html"
+        }
+      ]
+    },
+    "learn": [
+      {
+        "t": "Game Programming Patterns: State",
+        "u": "https://gameprogrammingpatterns.com/state.html"
+      },
+      {
+        "t": "Game Programming Patterns: Observer",
+        "u": "https://gameprogrammingpatterns.com/observer.html"
+      }
+    ],
+    "newb": [
+      "Diplomacy is numbers + thresholds + memory. Fading named modifiers ('Sent aid +9, fading') make it readable and alive, as in Civilization.",
+      "Store a relation once per pair with an ordered key; a (a,b) vs (b,a) mismatch is the classic bug.",
+      "Resting values pull relations back, so the world doesn't drift into total war or total peace.",
+      "The player is one more node in the same matrix: groups judge you by the same rules they judge each other."
+    ],
+    "pitfalls": [
+      "Asymmetric matrix bugs",
+      "Every group at war within a year (no restoring force)",
+      "Card spam from asks (respect pacing and pause rules)",
+      "Group decisions made on true info instead of their knowledge"
+    ],
+    "test": "xUnit: drift converges to resting value; pact forms at 28+ and breaks under 10; a modifier fades leaving its kept share; coalition victory at >50%; leave under 20. Headless 3-year census: wars and pacts fall in expected bands. Manual: Diplomacy window in a dev run.",
+    "size": "L"
+  },
+  {
+    "id": "groups.trade",
+    "title": "Trade, caravans & meeting to trade",
+    "summary": "Barter with groups, nomads and outsiders through one price model (hidden base value × condition × the buyer's need and mood), in one trade window, by team visits, their caravans at your gates, radio deals, routes and meeting points; caravans are real parties with guards that can be robbed.",
+    "whyHere": "Needs groups' real stock (trade is one of the few legitimate ways goods move under ADR 0001), item condition and valuation, and parties. Radio deals (105) build on it.",
+    "subsystems": [
+      "Valuation & price model",
+      "Trade session & window",
+      "Caravans (theirs and yours)",
+      "Meeting points (base, halfway, tile)",
+      "Group-to-group convoys & routes",
+      "Caravan raids & escorts",
+      "AI trade decisions (reserves)"
+    ],
+    "sliceScope": "A team visits a group's base; the trade window barters the team's inventory against the group's shelf; price = base value × condition × need × attitude; the group never sells below its reserve; items move between real inventories (ledger: Trade).",
+    "fullScope": "Their caravans: guards 2 + 1 per 12 people (max 5), carry 60 + 15 a guard, stay 24 h; an unfilled radio deal costs 3 goodwill. Meetings: halfway or a picked tile (land, no base, hive or horde), waiting 48 h, no fee. Groups' convoys swap both ways, meeting halfway when far. Food valued by kcal, shelf life and quality; gear by condition and uses left; prices explained ('At war: rifles wanted').",
+    "protoRefs": [
+      "prototype/src/sim/trade.js",
+      "prototype/src/sim/caravans.js",
+      "prototype/src/sim/trademeet.js",
+      "prototype/src/sim/valuation.js",
+      "docs/features/groups.md"
+    ],
+    "tasks": {
+      "data": [
+        "Hidden base values per item and food value formula inputs",
+        "Demand by group type and state (at war, hungry, winter)",
+        "Caravan and meeting constants (guards, carry, stay, wait)",
+        "Reserve rules per category (meds, rounds, food days)"
+      ],
+      "backend": [
+        "Valuation.Worth(stack, holdout): ONE price function for every side and context",
+        "TradeSession: two offers, balance, AI accept rule; carry limits by the team rule",
+        "Caravan : Party from real members and goods (they leave the store); meet tile validation and pathing",
+        "Group convoys between groups; a raided caravan goes through the off-screen resolver",
+        "Tests: buy-then-sell-back loses value; conservation through trades"
+      ],
+      "ui": [
+        "Trade window: two columns, drag to offer, balance bar, 'why this price' tooltip",
+        "Caravan stop card",
+        "Meet picker on the State Map"
+      ]
+    },
+    "dataModel": "public enum TradeContext { Visit, CaravanAtGate, Meet, Radio, Route }\npublic sealed class TradeSession { public int A, B; public TradeContext Ctx;\n  public List<ItemStack> OfferA = new(), OfferB = new(); }\npublic interface IValuation { float Worth(ItemStack s, Holdout to); string Why(ItemStack s, Holdout to); }\npublic sealed class Caravan : Party { public int OwnerId; public HexCoord? MeetTile; public int StayHours; }",
+    "dependsOn": [
+      "groups.factions",
+      "gear.items",
+      "gear.condition",
+      "travel.parties",
+      "ui.inventory"
+    ],
+    "connections": [
+      {
+        "to": "ui.inventory",
+        "why": "The trade window is the inventory transfer UI with prices.",
+        "how": "Same ItemStack views; TradeSession replaces a container as the other side.",
+        "godot": "Reuse the transfer panels; Accept sends ProposeTrade and shows the sim's answer.",
+        "unity": "Reuse the transfer ListViews; Accept sends ProposeTrade."
+      },
+      {
+        "to": "groups.radio",
+        "why": "Deals can be agreed over the radio and filled by a caravan.",
+        "how": "RadioDeal stores the agreed offers; the caravan's arrival opens a pre-filled session.",
+        "godot": "Radio panel opens the trade window.",
+        "unity": "Radio panel opens the trade window."
+      },
+      {
+        "to": "groups.nomads",
+        "why": "Bands and outsiders trade through the same window.",
+        "how": "Band is a Holdout; its shelf = what its people carry.",
+        "godot": "No extra wiring.",
+        "unity": "No extra wiring."
+      },
+      {
+        "to": "ai.governor",
+        "why": "Autopilot and groups decide what to sell and buy.",
+        "how": "Trade domain options keep reserves; offers go through TradeSession like the player's.",
+        "godot": "No engine code: sim-to-sim.",
+        "unity": "No engine code: sim-to-sim."
+      }
+    ],
+    "godot": {
+      "approach": "Two inventory panels (ItemList or GridContainer of slots) with Control drag & drop; a ProgressBar shows the balance; hovering an item shows the sim's 'why' text. Accept sends a ProposeTrade command and displays the result.",
+      "keyApis": [
+        "Control drag & drop",
+        "ItemList",
+        "ProgressBar",
+        "PopupPanel"
+      ],
+      "docs": [
+        {
+          "t": "Control class (drag & drop, tooltips)",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_control.html"
+        },
+        {
+          "t": "ItemList class",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_itemlist.html"
+        },
+        {
+          "t": "ProgressBar class",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_progressbar.html"
+        }
+      ]
+    },
+    "unity": {
+      "approach": "UI Toolkit: two ListViews of item rows with a PointerManipulator for dragging, a ProgressBar for the balance, tooltips with the 'why'.",
+      "keyApis": [
+        "UIElements.ListView",
+        "PointerManipulator",
+        "UIElements.ProgressBar"
+      ],
+      "docs": [
+        {
+          "t": "UIElements.ListView",
+          "u": "https://docs.unity3d.com/ScriptReference/UIElements.ListView.html"
+        },
+        {
+          "t": "UIElements.ProgressBar",
+          "u": "https://docs.unity3d.com/ScriptReference/UIElements.ProgressBar.html"
+        },
+        {
+          "t": "UI Toolkit",
+          "u": "https://docs.unity3d.com/Manual/UIElements.html"
+        }
+      ]
+    },
+    "learn": [
+      {
+        "t": "C# records (Microsoft Learn)",
+        "u": "https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/builtin-types/record"
+      },
+      {
+        "t": "Game Programming Patterns: Command",
+        "u": "https://gameprogrammingpatterns.com/command.html"
+      }
+    ],
+    "newb": [
+      "One price function for everyone and every context: inconsistent prices between screens are exploits waiting to happen.",
+      "Hide the raw values but always explain the price: players accept 'they're at war, rifles cost more'.",
+      "A caravan is just a party with cargo, so hordes, raiders and you can meet it on the road like any other.",
+      "Trade is a legitimate source of AI goods: log every trade in the ledger so conservation tests stay green."
+    ],
+    "pitfalls": [
+      "Arbitrage loops (buy low, sell high to the same group): keep a buy/sell spread",
+      "Float rounding that creates value over many trades",
+      "Caravans teleporting goods instead of carrying them",
+      "The AI selling its last meds or rounds (respect reserves)"
+    ],
+    "test": "xUnit: round trip loses value; AI refuses below reserve; a raided caravan's real cargo changes hands; meet tile validation (no water, base, hive or horde); ledger balances after 100 random trades. Manual: trade with a Traders group and with a caravan at your gate.",
+    "size": "L"
+  },
+  {
+    "id": "groups.radio",
+    "title": "Radio network, envoys & intel",
+    "summary": "Radio stations (12 tiles), military sets (24), relays (6) and powered towers (30) form a network that lets you talk and deal with groups at a distance; without a link every message, yours or theirs, goes by envoy, a real person on the road. Others listen in, and intel is what they learn.",
+    "whyHere": "Needs groups and diplomacy (messages to carry), buildings and power (stations, towers). It gates trade deals (104) and the coalition's reach.",
+    "subsystems": [
+      "Transmitter nodes & coverage",
+      "Link check between holdouts",
+      "Radio calls & deals",
+      "Envoys as parties",
+      "Listening in & intel",
+      "Radio towers & fuel",
+      "Coverage map layer"
+    ],
+    "sliceScope": "A radio station building (12 tiles), coverage as the union of nodes, CanRadio(a, b) = coverage + 6 reaches their base AND they have a set; otherwise an Envoy party (1+ survivor) walks there, delivers, and walks back with the answer; coverage rings on a map layer.",
+    "fullScope": "Radios are mid game (year 5 or the Radio Engineering Handbook). Relays must link to a station by a chain and use 1 part every 10 days; +2 range on generator power. Towers: 2 fuel a day for 30 tiles, wrecked in raids, sabotage 3% a day per hostile base within 12 (max 15%). Envoys can be met, robbed or lost. Intel: your traffic kept for days, stations traced, radio discipline, decoys, captured scouts questioned; listening in on group channels.",
+    "protoRefs": [
+      "prototype/src/sim/radio.js",
+      "prototype/src/sim/envoys.js",
+      "prototype/src/sim/intel.js",
+      "prototype/src/sim/radiotower.js",
+      "docs/features/groups.md"
+    ],
+    "tasks": {
+      "data": [
+        "Node kinds (station, military set, relay, tower): range, upkeep, power",
+        "Message kinds (aid, trade, pact, invite, request, warning, news)",
+        "Intel constants (keep days, trace odds, listener skill)",
+        "Tower constants (fuel, range, raid and sabotage odds)"
+      ],
+      "backend": [
+        "RadioNetwork.Rebuild(holdout): BFS from stations over relays in range; cached, rebuilt on a dirty flag",
+        "Messaging.Send(from, to, msg): radio if linked, else spawn an Envoy party; the SAME path for groups talking to you and to each other",
+        "Envoy arrival / interception handlers",
+        "Intel: an air log per holdout; listeners overhear by skill; decoys and discipline lower it",
+        "Tower daily fuel and dark/raided/sabotaged states",
+        "Tests: relay chain links, a broken link drops coverage, envoy timing"
+      ],
+      "ui": [
+        "Radio coverage layer: dashed ring per node with its reach",
+        "Radio panel: call, deals, offers",
+        "Envoys tab with ETA and status"
+      ]
+    },
+    "dataModel": "public enum RadioKind { Station, MilitarySet, Relay, Tower }\npublic record RadioNode(int HoldoutId, HexCoord Tile, RadioKind Kind, int Range, bool Linked);\npublic sealed class Message { public int Id, From, To; public MessageKind Kind; public string PayloadJson; public int SentHour; }\npublic sealed class Envoy : Party { public int MessageId; public bool Returning; }",
+    "dependsOn": [
+      "groups.diplomacy",
+      "groups.factions",
+      "base.buildings",
+      "econ.power",
+      "travel.parties"
+    ],
+    "connections": [
+      {
+        "to": "groups.diplomacy",
+        "why": "Radio and envoys carry every offer, invitation and term.",
+        "how": "Delivered Message → DiplomacyHandlers[msg.Kind](world, msg).",
+        "godot": "Message arrival raises a card through SimHost.",
+        "unity": "Message arrival raises a card through SimHost."
+      },
+      {
+        "to": "groups.trade",
+        "why": "Radio deals are agreed remotely and filled by caravan.",
+        "how": "RadioDeal booked → Caravan dispatched or meet tile set.",
+        "godot": "Radio panel → trade window.",
+        "unity": "Radio panel → trade window."
+      },
+      {
+        "to": "ui.statemap",
+        "why": "Coverage is a map layer.",
+        "how": "RadioNodes view list (tile, range, linked) after Rebuild.",
+        "godot": "Node2D layer draws arcs in _Draw; a Layers CheckBox toggles it.",
+        "unity": "LineRenderer ring per node, toggled by a UI Toggle."
+      },
+      {
+        "to": "dead.hives",
+        "why": "Hive birth rumours reach you inside coverage.",
+        "how": "HiveBirth asks RadioNetwork.InCoverage(player, tile).",
+        "godot": "No engine code: sim-to-sim.",
+        "unity": "No engine code: sim-to-sim."
+      }
+    ],
+    "godot": {
+      "approach": "Coverage rings are drawn by a Node2D layer in _Draw (DrawArc in short segments for a dashed look) at hex centres, with the range as a label; a Layers CheckBox toggles visibility. Envoys are ordinary party tokens.",
+      "keyApis": [
+        "CanvasItem._Draw / DrawArc",
+        "Node2D",
+        "CheckBox",
+        "Label"
+      ],
+      "docs": [
+        {
+          "t": "Custom drawing in 2D",
+          "u": "https://docs.godotengine.org/en/stable/tutorials/2d/custom_drawing_in_2d.html"
+        },
+        {
+          "t": "CanvasItem class (draw_arc etc.)",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_canvasitem.html"
+        },
+        {
+          "t": "C# signals",
+          "u": "https://docs.godotengine.org/en/stable/tutorials/scripting/c_sharp/c_sharp_signals.html"
+        }
+      ]
+    },
+    "unity": {
+      "approach": "One LineRenderer circle per node (or a ring shader on a quad), coloured by owner and linked state, toggled from the Layers panel. Envoys reuse party tokens.",
+      "keyApis": [
+        "LineRenderer",
+        "UI Toolkit Toggle",
+        "Material color"
+      ],
+      "docs": [
+        {
+          "t": "LineRenderer",
+          "u": "https://docs.unity3d.com/ScriptReference/LineRenderer.html"
+        },
+        {
+          "t": "UI Toolkit",
+          "u": "https://docs.unity3d.com/Manual/UIElements.html"
+        }
+      ]
+    },
+    "learn": [
+      {
+        "t": "Red Blob Games: Introduction to A* (BFS, flood fill)",
+        "u": "https://www.redblobgames.com/pathfinding/a-star/introduction.html"
+      },
+      {
+        "t": "Red Blob Games: Hexagonal grids",
+        "u": "https://www.redblobgames.com/grids/hexagons/"
+      }
+    ],
+    "newb": [
+      "Coverage is a union of circles (in hex distance); 'is this relay linked?' is graph reachability, a BFS from the stations.",
+      "Envoys turn communication into a physical cost: a person, days on the road and a risk. Radio is a mid-game upgrade that removes it.",
+      "Cache derived data (the network) and rebuild on a dirty flag when something is built, destroyed or runs out of fuel, never every frame.",
+      "Intel is just knowledge flowing between holdouts: it updates someone's KnowledgeMap."
+    ],
+    "pitfalls": [
+      "Recomputing coverage every frame",
+      "Player-only messaging code (groups must use envoys too: parity)",
+      "Mixing pixel distance with hex distance",
+      "Envoys that can't be intercepted (then they are just a delay)"
+    ],
+    "test": "xUnit: a relay out of range of any station is unlinked; a chain links; coverage + 6 rule; an envoy arrives after its path time and an intercepted one loses its message; a tower goes dark without fuel. Manual: toggle the Radio layer and send an envoy.",
+    "size": "M"
+  },
+  {
+    "id": "groups.conflict",
+    "title": "Conquest, occupation, prisoners, ransom & rescue",
+    "summary": "Taking and losing bases (assaults, garrisons, retaking), moving into abandoned bases, captives and jails (yours and the AI's), ransom talks, and rescue raids to free your people from a group's cells.",
+    "whyHere": "Needs groups, diplomacy (grievances, wars) and the siege map builder (100). Taking people alive needs combat.medics; locked cells need combat.doors.",
+    "subsystems": [
+      "Assault & conquest",
+      "Base ownership transfer & garrisons",
+      "Abandoned bases & occupation",
+      "Prisoners & jails",
+      "Prisoner choices (release, execute, recruit, hold)",
+      "Ransom pricing & haggling",
+      "Rescue raids (sneak / storm)"
+    ],
+    "sliceScope": "Assault a group's base on the def.sieges map built from their real pieces and stores; a win transfers the base to you; enemies knocked out become prisoners walking home to a jail with a capacity; settle card: release, recruit, hold.",
+    "fullScope": "Defenders: 60% of the people at that base fight (3–16), × (1 + 0.05 a wall point); a taken base keeps a garrison and patches its walls. Abandoned bases hold drifted dead or squatters. Jails: makeshift 2, holding cells 3, jailhouse 8; prisoners slow a team 10%, eat 1 food and 1 water, slip away 5% a day (2% in a vehicle). Ransom: base + per skill × attitude (hostile 1.5 … allied 0.5), paid in what they want, haggle −20% / +10%. Rescue map: the cell, a jailer with keys, the armory.",
+    "protoRefs": [
+      "prototype/src/sim/conquest.js",
+      "prototype/src/sim/occupy.js",
+      "prototype/src/sim/prisoners.js",
+      "prototype/src/sim/ransom.js",
+      "prototype/src/sim/rescueraid.js"
+    ],
+    "tasks": {
+      "data": [
+        "Jail tiers (capacity, lock difficulty, art)",
+        "Ransom pricing and wants by group type",
+        "AI jail behaviour by type (labour, sell, kill, turn)",
+        "Assault constants (fighting share, wall bonus, garrison share)"
+      ],
+      "backend": [
+        "Conquest.Assault → BaseBattleBuilder(target) with their real pieces and stores",
+        "TransferBase(base, newOwner): ONE tested function (stock, buildings, people inside, orders, party homes)",
+        "Abandoned registry and Occupy mission (clear-out fight first)",
+        "Prisoner = Survivor + status (captor, jail, since); daily tick (eat, escape); the AI holds your people by the same jail code",
+        "Ransom offer, haggle (Speech check), payment through the trade ledger",
+        "Rescue raid setup: locked cell (combat.doors), jailer with keys"
+      ],
+      "ui": [
+        "People tab: captives list (theirs and yours)",
+        "Negotiate dialog",
+        "Prisoner settle card",
+        "Map recolour + log on base ownership change"
+      ]
+    },
+    "dataModel": "public sealed class Prisoner { public int SurvivorId, CaptorId; public int? JailBaseId; public int SinceDay; }\npublic record JailTierDef(string Id, int Capacity, int LockDifficulty, string ArtKey);\npublic sealed class AbandonedBase { public int BaseId, LeftDay, DeadInside; public int? SquatterBandId; }\npublic record RansomOffer(int GroupId, List<int> Captives, Dictionary<string, int> Price);",
+    "dependsOn": [
+      "groups.factions",
+      "groups.diplomacy",
+      "def.sieges",
+      "combat.medics",
+      "combat.doors"
+    ],
+    "connections": [
+      {
+        "to": "def.sieges",
+        "why": "An assault is a siege seen from outside.",
+        "how": "BaseBattleBuilder(target, attackers: you) with the staging zone in the margin.",
+        "godot": "Same battle scene; deploy zone is the margin.",
+        "unity": "Same battle scene; deploy zone is the margin."
+      },
+      {
+        "to": "groups.diplomacy",
+        "why": "Executions, prisoners held and assaults become grievances.",
+        "how": "Grievances.Add(groupId, reason, amount) from each act.",
+        "godot": "No engine code: sim-to-sim.",
+        "unity": "No engine code: sim-to-sim."
+      },
+      {
+        "to": "groups.radio",
+        "why": "Ransom talks go by radio or envoy.",
+        "how": "Messaging.Send(player, group, Message{Kind = Ransom}).",
+        "godot": "Negotiate dialog shows the envoy ETA.",
+        "unity": "Negotiate dialog shows the envoy ETA."
+      },
+      {
+        "to": "combat.medics",
+        "why": "Prisoners come from people taken alive.",
+        "how": "BattleResult.Subdued list → Prisoner records on the winning holdout.",
+        "godot": "Result screen lists the captives.",
+        "unity": "Result panel lists the captives."
+      }
+    ],
+    "godot": {
+      "approach": "Mostly sim. The settle card and negotiate dialog are AcceptDialogs with custom buttons (AddButton) built from the sim's option list; the captives list is a Tree with columns. Ownership changes recolour the territory layer through the normal map refresh.",
+      "keyApis": [
+        "AcceptDialog / ConfirmationDialog",
+        "Tree",
+        "Button",
+        "Label"
+      ],
+      "docs": [
+        {
+          "t": "AcceptDialog class",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_acceptdialog.html"
+        },
+        {
+          "t": "Tree class",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_tree.html"
+        }
+      ]
+    },
+    "unity": {
+      "approach": "UI Toolkit modal panels for settle and negotiate built from the sim's option list; the captives list is a ListView.",
+      "keyApis": [
+        "UI Toolkit",
+        "UIElements.ListView",
+        "Button"
+      ],
+      "docs": [
+        {
+          "t": "UI Toolkit",
+          "u": "https://docs.unity3d.com/Manual/UIElements.html"
+        },
+        {
+          "t": "UIElements.ListView",
+          "u": "https://docs.unity3d.com/ScriptReference/UIElements.ListView.html"
+        }
+      ]
+    },
+    "learn": [
+      {
+        "t": "Game Programming Patterns: State",
+        "u": "https://gameprogrammingpatterns.com/state.html"
+      },
+      {
+        "t": "C# records (Microsoft Learn)",
+        "u": "https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/builtin-types/record"
+      }
+    ],
+    "newb": [
+      "Ownership transfer touches many systems: make it one well-tested function and route every capture, loss and occupation through it.",
+      "A prisoner is still the same Survivor record with a status, never a copy: they can be ransomed, rescued or recruited without losing who they are.",
+      "Choices with consequences: executing or holding people feeds grievances, which the diplomacy layer turns into wars later."
+    ],
+    "pitfalls": [
+      "Duplicating survivors on capture",
+      "Dangling references after a base changes hands (party homes, haul orders, watch roster)",
+      "AI jails as special code instead of the same jail rules",
+      "Ransom that creates goods instead of moving them"
+    ],
+    "test": "xUnit: TransferBase keeps stock and clears orders; jail capacity enforced; escape rate over many days near 5%; ransom price formula by attitude; the rescue map's cell opens with the jailer's keys. Manual: assault a weak group's base and capture people.",
+    "size": "L"
+  },
+  {
+    "id": "groups.nomads",
+    "title": "Nomads, visitors, splinter bands & posted jobs",
+    "summary": "Humans who are not map groups: nomad bands (Drifters, Looters, Survivalists, Preppers) that camp, raid places and move on; outsiders from beyond the border (raiders, merchants, explorers); splinter bands torn off a group by strife; and jobs groups post over the radio or at their gates.",
+    "whyHere": "Needs groups, trade and the governor; it rounds out the Other-groups milestone with the roaming humans and the quests that make the map feel populated.",
+    "subsystems": [
+      "Band model & band code (carry, food, care, recruit)",
+      "Nomad tiers & respawn",
+      "Outsiders: enter, travel, leave",
+      "Splinter strife & split",
+      "Posted jobs (offer, accept, track, deadline)",
+      "Meeting cards by tier"
+    ],
+    "sliceScope": "Nomad bands only: Drifters and Looters spawn, camp 2–5 days, raid a POI within 3 tiles (taking what is in its containers), move 4–8 tiles; a meeting card (trade / fight / leave); band members are survivor records with real inventories.",
+    "fullScope": "Bands of 3–10 in four tiers unlocked by era, each with its kit (makeshift, melee, hunting rifles, rifles + plate + a vehicle); a slow respawn holds them at about half the group count; they leave after 1–2 years; never in diplomacy or the coalition. Outsiders: raiders from day 20–26 then every clamp(30 − 0.06 × day, 10, 30) × 0.75–1.25 days, merchants every 10–16, explorers every 6–12. Jobs: 6% a day (traders 8%), 6 under way at most, decline −1, fail −4 goodwill.",
+    "protoRefs": [
+      "prototype/src/sim/nomads.js",
+      "prototype/src/sim/visitors.js",
+      "prototype/src/sim/splinters.js",
+      "prototype/src/sim/jobs.js",
+      "docs/features/groups.md"
+    ],
+    "tasks": {
+      "data": [
+        "nomad_tiers.json: pop range, kit table, attitude, era unlock, art keys",
+        "Outsider kinds and spawn curves",
+        "Strife constants (decay, pressure, split threshold)",
+        "Job templates (cull a horde, deliver goods, escort, scout) with rewards and deadlines"
+      ],
+      "backend": [
+        "Band : Holdout without bases, sharing a BandCode: carry by the team rule, eat and drink from stores, care by the health code, recruit",
+        "NomadSystem daily: camp, survey, raid, move, recruit, respawn (own Rng stream)",
+        "Visitors: enter on a border tile ≥6 from your bases, route, exit",
+        "Splinters: strife builds, split creates a new Group from real members and a share of goods",
+        "Jobs: offer → accept → hourly predicate → reward / fail at deadline"
+      ],
+      "ui": [
+        "Camp markers once seen",
+        "Meeting card by tier",
+        "Jobs list in the Groups tab"
+      ]
+    },
+    "dataModel": "public enum NomadTier { Drifters, Looters, Survivalists, Preppers }\npublic sealed class Band : Holdout { public NomadTier Tier; public HexCoord? Camp; public int CampDaysLeft; public bool Outsider; }\npublic enum JobState { Offered, Active, Done, Failed, Void }\npublic sealed class PostedJob { public int Id, GroupId, DeadlineHour; public string Template; public JobState State; public string TargetJson; }",
+    "dependsOn": [
+      "groups.factions",
+      "groups.trade",
+      "ai.governor",
+      "travel.pois",
+      "gear.loot"
+    ],
+    "connections": [
+      {
+        "to": "groups.trade",
+        "why": "Bands and merchants trade through the same window.",
+        "how": "Band is a Holdout; its shelf is what its people carry.",
+        "godot": "Meeting card opens the trade window.",
+        "unity": "Meeting card opens the trade window."
+      },
+      {
+        "to": "travel.pois",
+        "why": "Bands raid places and take what you left in containers.",
+        "how": "The shared container ledger: Band raids call Containers.Take(poiId, …).",
+        "godot": "No engine code: sim-to-sim.",
+        "unity": "No engine code: sim-to-sim."
+      },
+      {
+        "to": "ai.governor",
+        "why": "A band's choices (where to camp, flee, fight) use the shared governor.",
+        "how": "Band.Controller = GovernorController(\"band-survive\") with only band domains enabled.",
+        "godot": "No engine code: sim-to-sim.",
+        "unity": "No engine code: sim-to-sim."
+      },
+      {
+        "to": "combat.factions",
+        "why": "Bands are met as a side in raids and on the road.",
+        "how": "Battle setup builds units from the band's survivors by the shared unit builder.",
+        "godot": "Battle scene as usual.",
+        "unity": "Battle scene as usual."
+      }
+    ],
+    "godot": {
+      "approach": "Nothing special on the engine side: camp markers are Sprite2D nodes shown when the player's knowledge says seen, meeting cards are ui.cards dialogs, the Jobs list is an ItemList in the Groups tab.",
+      "keyApis": [
+        "Sprite2D",
+        "AcceptDialog",
+        "ItemList"
+      ],
+      "docs": [
+        {
+          "t": "ItemList class",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_itemlist.html"
+        },
+        {
+          "t": "AcceptDialog class",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_acceptdialog.html"
+        }
+      ]
+    },
+    "unity": {
+      "approach": "Camp markers as pooled sprite prefabs toggled by knowledge; meeting cards and the Jobs list in UI Toolkit.",
+      "keyApis": [
+        "SpriteRenderer",
+        "ObjectPool<T>",
+        "UIElements.ListView"
+      ],
+      "docs": [
+        {
+          "t": "Pool.ObjectPool<T>",
+          "u": "https://docs.unity3d.com/ScriptReference/Pool.ObjectPool_1.html"
+        },
+        {
+          "t": "UIElements.ListView",
+          "u": "https://docs.unity3d.com/ScriptReference/UIElements.ListView.html"
+        }
+      ]
+    },
+    "learn": [
+      {
+        "t": "Game Programming Patterns: Component",
+        "u": "https://gameprogrammingpatterns.com/component.html"
+      },
+      {
+        "t": "Game Programming Patterns: Type Object",
+        "u": "https://gameprogrammingpatterns.com/type-object.html"
+      }
+    ],
+    "newb": [
+      "Not everything needs to be a full group: a Band reuses the Holdout pieces (people, inventory, care) and skips bases and diplomacy. Composition beats one giant class.",
+      "Spawn curves as data: you'll tune 'how often raiders come' many times.",
+      "A posted job is a small quest: a predicate checked each hour plus a deadline and a reward."
+    ],
+    "pitfalls": [
+      "Bands with an infinite shelf (their shelf is only what their people can carry)",
+      "Outsiders spawning next to your base",
+      "Bands drawing the world's Rng",
+      "Splits that create or lose people or goods"
+    ],
+    "test": "xUnit: camp/move cycle lengths; respawn holds about half the group count over 3 years; a split conserves members and goods; a job fails at its deadline and costs 4 goodwill. Manual: meet a Drifter band and trade.",
+    "size": "M"
+  }
+]
