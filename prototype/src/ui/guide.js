@@ -179,7 +179,7 @@ const STEPS = {
     show: (state, ui, act) => (openHub(state, ui, act, "construction") ? ['[data-action="queuebuild"][data-type="farm_plot"]', '[data-action="basetab"][data-tab="construction"]'] : noCamp(state, ui, act)),
   },
   boiler: {
-    title: "Build a water boiler", get why() { return `Water from a river, a lake or a rain catcher is raw and can carry the worm. The camp fire boils a little at a time; a Water boiler (Construction tab: ${costText(BUILDINGS.boiler.cost)}, and a wrench at the base: a pipe wrench or a toolkit, found in garages, hardware stores, car dealers and tool boxes) boils everything the base draws before it is drunk, for a little wood a day a head.`; },
+    title: "Build a water boiler", get why() { return `Water from a river, a lake or a rain catcher is raw and can carry the worm. The camp fire boils a little at a time; a Water boiler (Construction tab: ${costText(BUILDINGS.boiler.cost)}, no tools needed) boils everything the base draws before it is drunk, for a little wood a day a head.`; },
     done: (state, g) => countAt(state, (t) => t === "boiler") > (g.w0 || 0), // queued or standing, more than at the start
     show: (state, ui, act) => (openHub(state, ui, act, "construction") ? ['[data-action="queuebuild"][data-type="boiler"]', '[data-action="basetab"][data-tab="construction"]'] : noCamp(state, ui, act)),
   },

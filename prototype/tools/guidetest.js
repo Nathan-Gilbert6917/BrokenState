@@ -20,6 +20,7 @@ import { createWorld, tickHour, hub, day, alive } from "../src/sim/world.js";
 import { launchExpedition, startReturn, partyTile, partyMembers, giveOrder } from "../src/sim/parties.js";
 import { queueBuild, BUILDINGS, CAMP, canBuild, tierUpJob, tierUpType } from "../src/sim/buildings.js";
 import { newItem } from "../src/sim/inventory.js";
+import { BUILD_TOOLS } from "../src/sim/data-tools.js";
 import { putBack } from "../src/sim/deadpop.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
 import { roadTeam } from "../src/sim/hardcore-start.js";
@@ -205,9 +206,8 @@ section("Hub start: the base list, day by day, ticks off from the state");
   check(/queued/.test(queueBuild(st, hub(st), "farm_plot")) && guideCheck(st, ui).some((x) => x.id === "farm"), "farm: a farm plot queued (more than the hub's own)");
   const def = Object.keys(BUILDINGS).find((k) => BUILDINGS[k].tab === "defenses" && canBuild(st, hub(st), k).ok);
   check(!!def && /queued/.test(queueBuild(st, hub(st), def)) && guideCheck(st, ui).some((x) => x.id === "defence"), `defence: a first defence queued (${def})`);
-  // Day 2's water boiler (the user's request 2026-10-28: "build a boiler to purify the water").
-  check(guideSteps(g).find((x) => x.id === "boiler").why.includes("wrench") && GUIDE_PHASES.base[3].ids.includes("boiler") && GUIDE_PHASES.road[3].ids.includes("boiler"), "boiler: on day 4 of both lists (after the first raids bring scrap; the playtest 2026-10-28), and it names the wrench it needs");
-  hub(st).armory.push(newItem("toolkit"));
+  // Day 4's water boiler (the user's request 2026-10-28: "build a boiler to purify the water"; "The boiler does not need tools").
+  check(/no tools/.test(guideSteps(g).find((x) => x.id === "boiler").why) && !BUILD_TOOLS.boiler && GUIDE_PHASES.base[3].ids.includes("boiler") && GUIDE_PHASES.road[3].ids.includes("boiler"), "boiler: on day 4 of both lists (after the first raids bring scrap; the playtest 2026-10-28), no tools needed");
   Object.assign(hub(st).stock, { scrap: (hub(st).stock.scrap || 0) + 10, stone: (hub(st).stock.stone || 0) + 10 });
   check(/queued/.test(queueBuild(st, hub(st), "boiler")) && guideCheck(st, ui).some((x) => x.id === "boiler"), "boiler: a water boiler queued");
   // Day 7: the diary; the nights to the sixth.
@@ -381,7 +381,7 @@ section(`Road start (${mode}): the road list day by day, the shelter on day ${GU
   const def = Object.keys(BUILDINGS).find((k) => BUILDINGS[k].tab === "defenses" && canBuild(st, hub(st), k).ok);
   check(!!def && /queued/.test(queueBuild(st, hub(st), def)) && guideCheck(st, ui).some((x) => x.id === "defence"), `defence: a first defence queued at the shelter (${def})`);
   Object.assign(hub(st).stock, { scrap: (hub(st).stock.scrap || 0) + 10, stone: (hub(st).stock.stone || 0) + 10 });
-  check(/queued/.test(queueBuild(st, hub(st), "boiler")) && guideCheck(st, ui).some((x) => x.id === "boiler"), "boiler: a water boiler queued at the shelter (the toolkit's wrench)");
+  check(/queued/.test(queueBuild(st, hub(st), "boiler")) && guideCheck(st, ui).some((x) => x.id === "boiler"), "boiler: a water boiler queued at the shelter");
   check(g.on && !g.done.diary, "still on until the diary and the nights");
   // A road guide over (the hub stands) and closed: the menu starts the base list.
   GUIDE_ACTIONS["gd-close"](st, ui, {});
