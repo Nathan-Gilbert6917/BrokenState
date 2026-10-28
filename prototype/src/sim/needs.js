@@ -82,9 +82,10 @@ import { heatUse, HEAT } from "./upkeep.js";
 import { shelterFire } from "./woodcutting.js";
 import { econStats } from "./farming.js";
 import { conditionsOf } from "./health.js";
-import { eatRawCargo, eatRawForageCargo, drinkHour } from "./worm.js";
+import { eatRawCargo, eatRawForageCargo, drinkHour, teamTreatsWater } from "./worm.js";
 import { teamPoisonHour } from "./cooking.js"; // wave 2 cooking: food poisoning from what the team ate this hour
-import { teamWaterIn, takeTeamWater, drawWater, waterIn, RAW } from "./water.js"; // purified and un-purified water
+import { teamWaterIn, takeTeamWater, drawWater, waterIn, teamRawIn, RAW } from "./water.js"; // purified and un-purified water
+import { mayDrinkRaw, rawAskHour } from "./rawdrink.js"; // un-purified water: the base's and the team's rule, the card that asks
 import { baseEatHour, eatingDaily, eatTarget, noteEat, eatPack, drinkPack, packFood, packWater, rationOf, emptyPack, PACK, teamMeal, roomU } from "./eating.js";
 import { mealOf } from "./meals.js"; // a team eats at breakfast, lunch and dinner too (eating.js teamMeal: a shared pot) // meal breaks and the carried rations (wave 2)
 import { cfgOf } from "./worldcfg.js"; // the run's dials: Hunger
@@ -165,11 +166,11 @@ export function takeFood(p, want) {
   return got.units;
 }
 // Takes up to `want` water: purified first (packed, then found), then un-purified (packed, then found). p.rawDrunk adds
-// up the un-purified share for worm.js drinkHour.
-export function takeWater(p, want) {
+// up the un-purified share for worm.js drinkHour. pureOnly: purified water only (rawdrink.js).
+export function takeWater(p, want, pureOnly = false) {
   if (!(want > 0)) return 0;
   p.cargo = p.cargo || { supplies: {}, gear: [] };
-  const d = takeTeamWater(p, want);
+  const d = takeTeamWater(p, want, { pureOnly });
   if (d.raw > 0) p.rawDrunk = (p.rawDrunk || 0) + d.raw;
   return d.got;
 }
@@ -289,11 +290,23 @@ export function teamNeedsHour(state, p, members) {
   teamPoisonHour(state, p, members); // cooking.js: lots another module took through takeFood this hour (p.ateLots; the meals above roll per person in eating.js noteEat)
   const water0 = teamWater(p);
   p.rawDrunk = 0;
-  const shortWater = feed(members, "thirst", NEEDS.drink, NEEDS.water, water0, (q) => takeWater(p, q), share);
+  // Un-purified water as it is (rawdrink.js): only once the purified water will not cover the drinks, and not when the
+  // team makes it safe as it drinks (a filter, a fed camp fire, tablets). Asked at most once an hour.
+  let rawOk = null;
+  const rawAllowed = () => { if (rawOk === null) rawOk = teamTreatsWater(state, p) || mayDrinkRaw(state, p, "team", teamName(state, p)); return rawOk; };
+  const wantW = members.reduce((a, s2) => a + (s2.thirst < NEEDS.drink[0] ? (NEEDS.drink[1] - s2.thirst) / NEEDS.water : 0), 0);
+  const pureW = water0 - teamRawIn(p);
+  const pureOnly = wantW > pureW + 1e-9 && teamRawIn(p) > 0 && !rawAllowed();
+  const shortWater = feed(members, "thirst", NEEDS.drink, NEEDS.water, pureOnly ? pureW : water0, (q) => takeWater(p, q, pureOnly), share);
   drinkHour(state, p, members, water0 - teamWater(p), p.rawDrunk); // worm.js: un-purified water (filter, fire, tablets, or as it is)
   delete p.rawDrunk;
-  // The team's water gone: their own pack's.
-  if (shortWater) for (const s2 of members) if (s2.thirst < NEEDS.drink[0] && packWater(s2) > 1e-6) s2.thirst = clamp(s2.thirst + drinkPack(s2, (NEEDS.drink[1] - s2.thirst) / NEEDS.water) * NEEDS.water);
+  // The team's water gone: their own pack's (its un-purified water by the same rule).
+  if (shortWater) for (const s2 of members) {
+    if (!(s2.thirst < NEEDS.drink[0]) || !(packWater(s2) > 1e-6)) continue;
+    const q = (NEEDS.drink[1] - s2.thirst) / NEEDS.water, pk = s2.ration.supplies;
+    const only = q > Math.max(0, pk.water || 0) + 1e-9 && (pk[RAW] || 0) > 0 && !rawAllowed();
+    s2.thirst = clamp(s2.thirst + drinkPack(s2, q, only) * NEEDS.water);
+  }
   // Empty gauges: health (raw: armor and toughness do not help); low ones: mood. The cold without a fire: mood.
   const tile = partyTile(p);
   for (const s of members) {
@@ -347,9 +360,14 @@ function baseHour(state, base, people) {
   // nobody drinks and the gauge falls.
   for (const s of people) { ensureNeeds(s); s.thirst = clamp(s.thirst - wr); }
   const acc = base.drinkAcc || (base.drinkAcc = { units: 0, pure: 0, raw: 0 });
+  // Un-purified water (rawdrink.js): only once the purified water will not cover this hour's drinks, by the base's
+  // rule (Ask: the card, and they hold off until it is answered).
+  const want = people.reduce((a, s) => a + (s.thirst < NEEDS.drink[0] ? (NEEDS.drink[1] - s.thirst) / NEEDS.water : 0), 0);
+  const pure = Math.max(0, base.stock.water || 0);
+  const pureOnly = want > pure + 1e-9 && (base.stock[RAW] || 0) > 0 && !mayDrinkRaw(state, base, "base", base.name);
   // drawWater keeps the stock to the hundredth: a drink it covered fills the gauge in full.
-  const drink = (q) => { const d = drawWater(base.stock, q); acc.units += d.got; acc.pure += d.pure; acc.raw += d.raw; return d.got >= q - 0.01 ? q : d.got; };
-  feed(people, "thirst", NEEDS.drink, NEEDS.water, waterIn(base.stock), drink, base.share === "even" ? "even" : "hurt");
+  const drink = (q) => { const d = drawWater(base.stock, q, { pureOnly }); acc.units += d.got; acc.pure += d.pure; acc.raw += d.raw; return d.got >= q - 0.01 ? q : d.got; };
+  feed(people, "thirst", NEEDS.drink, NEEDS.water, pureOnly ? pure : waterIn(base.stock), drink, base.share === "even" ? "even" : "hurt");
   for (const s of people) warnPerson(state, s);
 }
 
@@ -387,6 +405,7 @@ function errandHour(state, s) {
 
 // Hourly (world.js tickHour): people at bases and on errands (teams eat in parties.js), then the teams' treats.
 export function needsHour(state) {
+  rawAskHour(state); // rawdrink.js: an "Out of purified water" card left unanswered takes its default
   for (const base of state.bases) {
     if (base.owner != null && base.owner !== "player") continue;
     shelterFire(state, base); // woodcutting.js: a lit camp or shelter fire burns its wood, or goes out

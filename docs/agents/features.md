@@ -91,7 +91,7 @@ Base detail: [bases.md](../features/bases.md). Economy detail: [economy.md](../f
 - **Work priorities** (RimWorld-style): roles, a 1–5 grid and an hourly scheduler [work]; idle-worker assignment [idlework], watch roster [watch], stewards and leaders [steward], bulk roster actions [bulk].
 - **No idle workers**: anyone whose job has no work helps elsewhere and keeps their role [noidle, autopilot] `tools/noidletest.js`. [details](../features/economy.md#no-idle-workers)
 - **Daily economy and upkeep per head** [economy, upkeep].
-- **Water**: purified vs un-purified, wells and filters [water, claims].
+- **Water**: purified vs un-purified, wells and filters; un-purified drinking by each base's and team's rule (Ask, Allow, Never) [water, claims, rawdrink] `tools/watertest.js`. [details](../features/survivors.md#un-purified-water-ask-allow-never)
 - **Food**: types with their own shelf life, spoiling, storage, preserving and jarring [foods, storage]; mealtimes [meals], food chain and ledger views [foodchain, foodlog].
 - **Cooking**: Rimworld-style recipes from ingredients, food poisoning and the kitchen [cooking, kitchen].
 - **Farming**: crops, seasons, greenhouses; crop plots are 2 × 2 pieces placed on soil [farming, buildings, basemap]. [details](../features/economy.md#farming-placed-crop-plots)

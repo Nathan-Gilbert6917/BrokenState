@@ -238,7 +238,7 @@ const HOW_TO_PLAY = [
   }],
 
   ["Keeping people alive", () => say(`<p class="lead">Most first runs are lost to thirst, hunger, cold and sickness, not to the dead.</p>${list("ul", [
-      `<b>Water first.</b> Thirst kills in days. Wells, rain catchers and rivers keep it coming; boil raw water.`,
+      `<b>Water first.</b> Thirst kills in days. Wells, rain catchers and rivers keep it coming; boil raw water. When the clean water runs out, a card asks if they may drink raw water: change the answer on the base's Overview or the team panel.`,
       `<b>Food.</b> Farm, forage, hunt, fish and scavenge. Lay food by for the winter, when little grows.`,
       `<b>Wood.</b> It builds, cooks, boils water and heats. Keep someone on <i>Cut wood</i> and fill the pile before the cold.`,
       `<b>Jobs.</b> Give each person a job (beside their name), or put everyone on <i>work priorities</i> and they pick the most urgent work each hour.`,

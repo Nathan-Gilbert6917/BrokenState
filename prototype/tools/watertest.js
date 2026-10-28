@@ -11,6 +11,7 @@
 // - save/load, an old save without rawwater.
 // Usage: node tools/watertest.js [seed]
 import { createWorld, hub, atBase, residents, day } from "../src/sim/world.js";
+const rd2 = (v) => Math.round(v * 100) / 100;
 import { SUPPLIES, SUPPLY_KEYS, GEAR } from "../src/sim/data.js";
 import { newItem } from "../src/sim/inventory.js";
 import { addBuilding } from "../src/sim/buildings.js";
@@ -18,7 +19,10 @@ import { launchExpedition, carriedAny, takeAny } from "../src/sim/parties.js";
 import { basesDaily, waterNeed, waterOutlook, waterProduction, waterCapacity } from "../src/sim/economy.js";
 import { WORM, baseWater, purifyCap, purifyDaily, drinkHour, addWormWater, teamWaterHow, wormTeamHour, wormDaily, baseTabCount, teamTabCount, packTablets, TABS_TRIP_DAYS, boilerUse } from "../src/sim/worm.js";
 import { RAW, waterIn, drawWater, takeTeamWater, moveWater, teamWaterIn, stockHas, useStock } from "../src/sim/water.js";
-import { teamNeedsHour, teamWater } from "../src/sim/needs.js";
+import { teamNeedsHour, teamWater, needsHour } from "../src/sim/needs.js";
+import { rawDrinkOf, setRawDrink } from "../src/sim/rawdrink.js";
+import { TRAY_HOURS, trayStale } from "../src/sim/cardrules.js";
+import { rawDrinkRow, teamNeedsBlock, NEEDS_ACTIONS } from "../src/ui/needs.js";
 import { fetchWater, besideWater } from "../src/sim/orders.js";
 import { sellPrice, buyPrice, available, marketLists, poolKey } from "../src/sim/trade.js";
 import { serializeState, deserializeState } from "../src/sim/save.js";
@@ -201,6 +205,7 @@ section("A team: purified first; filter, tablets, camp fire or nothing for the u
   for (const s of members) s.thirst = 20;
   Object.assign(p.supplies, { water: 1, [RAW]: 10 }); p.wormEggs = 1;
   check(teamWater(p) === 11 && carriedAny(p, "water") === 11 && teamWaterIn(p) === 11, "the team's water counts both kinds (gauges, checks)");
+  p.rawDrink = "yes"; // rawdrink.js: allowed (the rule itself: "Un-purified water: Ask, Allow, Never" below)
   withNums(WORM, { WATER: 0 }, () => teamNeedsHour(st, p, members));
   check(p.supplies.water === 0 && p.supplies[RAW] < 10, `teamNeedsHour drank the purified water first, then un-purified (${p.supplies.water} / ${p.supplies[RAW].toFixed(2)} left)`);
   // The order for un-purified water: filter → camp fire → tablets → as it is.
@@ -244,6 +249,86 @@ section("A team: purified first; filter, tablets, camp fire or nothing for the u
   const pp = { supplies: { water: 1, [RAW]: 5 }, cargo: { supplies: {} } };
   takeAny(pp, "water", 3);
   check(pp.supplies.water === 0 && pp.supplies[RAW] === 3, "a cost paid in water (sharing, prisoners): purified first");
+}
+
+// ---------- 5b. un-purified water: the rule (rawdrink.js) ----------
+section("Un-purified water: Ask, Allow, Never (a base's and a team's rule, the card)");
+{
+  const { st, h } = world(0);
+  const people = residents(st, h.id);
+  const card = () => st.cards.find((c) => c.rawFor && c.rawFor.kind === "base" && c.rawFor.id === h.id);
+  // Ask (the default): plenty of purified water, no question.
+  Object.assign(h.stock, { water: 50, [RAW]: 50 });
+  for (const s of people) s.thirst = 60;
+  st.hour++; needsHour(st);
+  check(!card() && people.every((s) => s.thirst > 90) && h.stock[RAW] === 50, "purified water in store: they drink it, nothing asked, the un-purified water untouched");
+  // The purified water gone: the card asks once, and they hold off until it is answered.
+  Object.assign(h.stock, { water: 0, [RAW]: 50 });
+  for (const s of people) s.thirst = 60;
+  const t0 = st.hour;
+  st.hour++; needsHour(st);
+  st.hour++; needsHour(st);
+  check(card() && st.cards.filter((c) => c.rawFor).length === 1 && card().choices[0].default && /Let them drink it/.test(card().choices[0].label), `only un-purified water: one card asks ("${card() && card().title}"), its default is to let them drink it`);
+  check(h.stock[RAW] === 50 && people.every((s) => s.thirst < 60), `while it waits nobody drinks it (thirst ${people.map((s) => Math.round(s.thirst)).join(", ")})`);
+  // Left unanswered TRAY_HOURS: it takes its default (cardrules.js autoAnswer), the rule becomes Allow.
+  const asked = card() ? card().rawFor.at : t0;
+  while (st.hour < asked + TRAY_HOURS) { st.hour++; needsHour(st); }
+  check(!card() && rawDrinkOf(h) === "yes" && h.stock[RAW] < 50 && people.every((s) => s.thirst > 90), `left ${TRAY_HOURS} hours it took its default: Allow, and they drank (${rd2(50 - h.stock[RAW])} un-purified water)`);
+  check(st.log.some((l) => /Left unanswered .*"Out of purified water".*Let them drink it/.test(l.text)), "a log line says it took its default");
+  // Never: purified water only; the day's reckoning counts the base out of water, with the un-purified water in store.
+  check(setRawDrink(st, h, "no", h.name) !== "" && rawDrinkOf(h) === "no", "set to Never (the Overview's buttons, setRawDrink)");
+  Object.assign(h.stock, { water: 0, [RAW]: 80 }); h.drinkCredit = 0; h.drinkAcc = null;
+  for (const s of people) s.thirst = 60;
+  for (let i = 0; i < 6; i++) { st.hour++; needsHour(st); }
+  check(!card() && h.stock[RAW] === 80 && people.every((s) => s.thirst < 50), "Never: no card, nobody drinks the un-purified water, the gauges fall");
+  basesDaily(st);
+  check(h.thirstDays > 0 && h.drank.raw === 0 && st.log.some((l) => /out of water.*set to Never/.test(l.text)), `and at midnight the base is out of water (day ${h.thirstDays}; the log says the un-purified water is set to Never)`);
+  // Choosing "Purified water only" on the card sets Never; the setting back to Ask asks again.
+  setRawDrink(st, h, "ask", h.name);
+  Object.assign(h.stock, { water: 0, [RAW]: 50 });
+  for (const s of people) s.thirst = 60;
+  st.hour++; needsHour(st);
+  const c = card();
+  check(!!c, "back to Ask: the card asks again");
+  st.cards.splice(st.cards.indexOf(c), 1); c.choices[1].resolve(st);
+  check(rawDrinkOf(h) === "no", "\"Purified water only\" sets the rule to Never");
+  // A team: its own rule; a filter makes the water safe, so nothing is asked.
+  const tile = st.grid.neighbors(h.tile).find((id) => st.tiles[id].terrain !== "water") ?? h.tile;
+  const { p, members } = team(st, h, tile, 2);
+  const tcard = () => st.cards.find((x) => x.rawFor && x.rawFor.kind === "team" && x.rawFor.id === p.id);
+  for (const s of members) s.thirst = 40;
+  Object.assign(p.supplies, { water: 0, [RAW]: 10 });
+  p.cargo.gear.push(newItem("waterfilter"));
+  withNums(WORM, { WATER: 0 }, () => teamNeedsHour(st, p, members));
+  check(!tcard() && p.supplies[RAW] < 10 && members.every((s) => s.thirst > 90), "a team with a water filter drinks its un-purified water, nothing asked (it is made safe)");
+  p.cargo.gear = [];
+  for (const s of members) s.thirst = 40;
+  Object.assign(p.supplies, { water: 0, [RAW]: 10 });
+  withNums(WORM, { WATER: 0 }, () => teamNeedsHour(st, p, members));
+  check(tcard() && p.supplies[RAW] === 10 && !(p.cargo.gear.length) && tcard().partyId == null, "without a filter, fire or tablets: the team's card asks (the team keeps moving: no partyId), it holds off");
+  for (const s of members) s.ration = { supplies: { water: 0, [RAW]: 2 } };
+  withNums(WORM, { WATER: 0 }, () => teamNeedsHour(st, p, members));
+  check(members.every((s) => s.ration.supplies[RAW] === 2), "and the packs' un-purified water waits too");
+  setRawDrink(st, p, "yes", "the team");
+  withNums(WORM, { WATER: 0 }, () => teamNeedsHour(st, p, members));
+  check(p.supplies[RAW] < 10 && members.every((s) => s.thirst > 90), "Allow: the team drinks it");
+  setRawDrink(st, p, "no", "the team");
+  for (const s of members) s.thirst = 40;
+  Object.assign(p.supplies, { water: 1, [RAW]: 10 });
+  withNums(WORM, { WATER: 0 }, () => teamNeedsHour(st, p, members));
+  check(p.supplies.water === 0 && p.supplies[RAW] === 10 && members.every((s) => s.ration.supplies[RAW] === 2), "Never: the purified water only (packed or in the packs), the un-purified water kept");
+  // The screens: the base's Overview row and the team panel's Eating card, Ask / Allow / Never, and their buttons.
+  const row = rawDrinkRow(st, h);
+  check(/Un-purified water/.test(row) && (row.match(/data-action="nd-raw-base"/g) || []).length === 3 && /class="mini active"[^>]*data-v="no"/.test(row), "the Overview's Un-purified water row: Ask, Allow, Never (Never lit)");
+  NEEDS_ACTIONS["nd-raw-base"](st, {}, { base: String(h.id), v: "yes" });
+  check(rawDrinkOf(h) === "yes" && /un-purified water allowed/.test(st.log[0].text), `its button sets the base's rule ("${st.log[0].text}")`);
+  const blk = teamNeedsBlock(st, p, true);
+  check((blk.match(/data-action="nd-raw-team"/g) || []).length === 3 && /Un-purified/.test(blk), "the team panel's Eating card: Ask, Allow, Never");
+  NEEDS_ACTIONS["nd-raw-team"](st, {}, { id: String(p.id), v: "ask" });
+  check(rawDrinkOf(p) === "ask" && /Un-purified water: Ask/.test(teamNeedsBlock(st, p, false)), "its button sets the team's rule; a team out of contact shows it as text");
+  // The team's card is out of date once the team is gone.
+  st.parties = st.parties.filter((x) => x !== p);
+  check(/team is gone/.test(trayStale(st, tcard())), "a team's card is out of date when the team is gone (the tray drops it)");
 }
 
 // ---------- 6. Fetch water, wells ----------

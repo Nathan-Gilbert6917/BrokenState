@@ -33,6 +33,7 @@ import { foodUse, mouthsAt, prisonersAt, guestsAt, crewAt } from "./upkeep.js";
 import { takeEatAcc } from "./eating.js"; // people eat by the hour (meal breaks): the day's eating counted here
 import { rationKey, RATION_LEVELS } from "./meals.js"; // the ration levels (lean, a feast day)
 import { heatDaily, starvingDaily, takeDrinkAcc } from "./needs.js";
+import { rawDrinkOf } from "./rawdrink.js"; // un-purified water: the base's rule (Never: purified water only)
 import { stoneDaily } from "./stone.js"; // the Gather stone job (the user's request 2026-10-23)
 import { woodDaily, fireDayBurn, WOOD } from "./woodcutting.js"; // fireDayBurn, WOOD: a camp's fire's pile kept (shipFromOutposts)
 import { prisonWater } from "./prisoners.js"; // prisoners-tab: water hauled by prisoners (waterProduction)
@@ -465,12 +466,12 @@ export function summerWarningDaily(state) {
 /** @param {number} days */
 export const thirstDamage = (days) => Math.min(25, 6 + 4 * Math.max(1, days));
 /** @param {State} state @param {Base} base */
-function thirst(state, base, mouths, short) {
+function thirst(state, base, mouths, short, note = "") {
   base.thirstDays = (base.thirstDays || 0) + 1;
   econStats(state).thirstDays++;
   const dmg = Math.round(thirstDamage(base.thirstDays) * Math.max(0.35, short) * 10) / 10;
   for (const s of mouths) hurt(state, s, dmg, base.tile, `of thirst at ${base.name}`, { raw: true }); // mood: needs.js starvingDaily (parched, worse each day)
-  log(state, `${base.name} is out of water (${Math.round(short * 100)}% short${base.thirstDays > 1 ? `, day ${base.thirstDays}` : ""}): everyone there loses ${dmg} health and nobody heals.`, "danger");
+  log(state, `${base.name} is out of water (${Math.round(short * 100)}% short${base.thirstDays > 1 ? `, day ${base.thirstDays}` : ""}): everyone there loses ${dmg} health and nobody heals.${note}`, "danger");
 }
 
 // ---------- food ----------
@@ -609,14 +610,18 @@ function baseDaily(state, base) {
   const paid = sipped.units + (base.drinkCredit || 0);
   const owed = Math.max(0, need.people - paid);
   base.drinkCredit = Math.round(Math.min(need.people, Math.max(0, paid - need.people)) * 100) / 100;
-  const have = waterIn(st);
+  // A base that never drinks un-purified water (rawdrink.js) pays with purified water only: short of it, it is out
+  // of water however much un-purified water it holds. A question still waiting holds back only the hours' drinks.
+  const pureOnly = rawDrinkOf(base) === "no";
+  const have = pureOnly ? Math.max(0, st.water || 0) : waterIn(st);
   let drank;
   if (mouths.length && have + 1e-9 < owed) {
     const short = (owed - have) / need.people;
-    drank = drawWater(st, have);
-    thirst(state, base, mouths, short);
+    drank = drawWater(st, have, { pureOnly });
+    const raw = pureOnly ? Math.floor(st[RAW] || 0) : 0;
+    thirst(state, base, mouths, short, raw > 0 ? ` ${raw} un-purified water is in store, but un-purified water is set to Never (the Overview).` : "");
   } else {
-    drank = drawWater(st, owed);
+    drank = drawWater(st, owed, { pureOnly });
     base.thirstDays = 0;
   }
   base.drank = { day: day(state), pure: drank.pure + sipped.pure, raw: drank.raw + sipped.raw }; // worm.js baseWormDaily: the share drunk un-purified

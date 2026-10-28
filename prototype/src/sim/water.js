@@ -32,12 +32,13 @@ export const teamWaterIn = (p) => (p ? waterIn(p.supplies) + waterIn(p.cargo && 
 export const teamRawIn = (p) => (p ? pos(p.supplies && p.supplies[RAW]) + pos(p.cargo && p.cargo.supplies && p.cargo.supplies[RAW]) : 0);
 
 // Takes up to `qty` water from a stock: purified first (drinking), or un-purified first (rawFirst: crops, a fire, a
-// still or the preserving room, where it is boiled anyway). Never below zero. Returns { pure, raw, got }.
-export function drawWater(o, qty, { rawFirst = false } = {}) {
+// still or the preserving room, where it is boiled anyway). pureOnly: purified water only (drinking where un-purified
+// water is not allowed: rawdrink.js). Never below zero. Returns { pure, raw, got }.
+export function drawWater(o, qty, { rawFirst = false, pureOnly = false } = {}) {
   const out = { pure: 0, raw: 0, got: 0 };
   let want = pos(qty);
   if (!o || !(want > 0)) return out;
-  for (const k of rawFirst ? [RAW, "water"] : ["water", RAW]) {
+  for (const k of pureOnly ? ["water"] : rawFirst ? [RAW, "water"] : ["water", RAW]) {
     const q = Math.min(want, pos(o[k]));
     if (!(q > 0)) continue;
     o[k] = r2(pos(o[k]) - q);
@@ -47,13 +48,13 @@ export function drawWater(o, qty, { rawFirst = false } = {}) {
   out.pure = r2(out.pure); out.raw = r2(out.raw); out.got = r2(out.pure + out.raw);
   return out;
 }
-// Takes water from a team: the packed supplies, then the cargo, purified first (both places) unless rawFirst.
-// Returns { pure, raw, got }.
-export function takeTeamWater(p, qty, { rawFirst = false } = {}) {
+// Takes water from a team: the packed supplies, then the cargo, purified first (both places) unless rawFirst
+// (pureOnly: purified water only, as drawWater). Returns { pure, raw, got }.
+export function takeTeamWater(p, qty, { rawFirst = false, pureOnly = false } = {}) {
   const out = { pure: 0, raw: 0, got: 0 };
   if (!p || !(qty > 0)) return out;
   const cargo = p.cargo && p.cargo.supplies;
-  for (const k of rawFirst ? [RAW, "water"] : ["water", RAW]) {
+  for (const k of pureOnly ? ["water"] : rawFirst ? [RAW, "water"] : ["water", RAW]) {
     for (const o of [p.supplies, cargo]) {
       if (!o) continue;
       const q = Math.min(qty - out.got, pos(o[k]));
