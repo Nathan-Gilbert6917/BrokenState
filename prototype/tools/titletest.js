@@ -2,17 +2,17 @@
 // Usage: node tools/titletest.js
 // - The menu: New game first and highlighted with no saves, Load game disabled; with saves Continue comes first
 //   (the latest save's name), Load game is enabled; Quit only in the desktop app. Clean HTML, every button has a handler.
-// - New game hides the title; Load game, Settings and How to play open the menu at the right tab over it; Hall of fame
-//   opens its window (ui/halloffame.js) over it; the title
-//   is never covered by the new-run screen (ui.js) while it is up.
+// - New game hides the title; Load game, Settings and How to play open the menu at the right tab over it; Rebuild
+//   board opens the board in the browser (and the desktop app lets that address out); no Hall of fame on the menu
+//   (the end screens have it); the title is never covered by the new-run screen (ui.js) while it is up.
 // - The backgrounds take turns: three scenes, each held and then cross-faded into the next, round and round.
 // - The prototype banner: says AI music and sprites, testing the fun and the features, Unity or Godot next.
 // - main.js: opens on the title (unless ?notitle), hands Esc and the map keys to it, loading a game closes it, and the
 //   menu's Exit / Save and exit go back to it (settings.js).
 import { readFileSync } from "node:fs";
-import { TITLE_ACTIONS, titleMenuHTML, initTitle, titleCovers, PROTOTYPE_NOTE } from "../src/ui/title.js";
+import { TITLE_ACTIONS, titleMenuHTML, initTitle, titleCovers, PROTOTYPE_NOTE, BOARD_URL } from "../src/ui/title.js";
 import { SETTINGS_ACTIONS } from "../src/ui/settings.js";
-import { HALL_ACTIONS } from "../src/ui/halloffame.js"; // the title's Hall of fame
+import { HALL_ACTIONS } from "../src/ui/halloffame.js"; // the window the title opens over (from an end screen)
 
 let fails = 0, passes = 0;
 const check = (ok, what) => { if (ok) passes++; else { fails++; console.log("FAIL", what); } };
@@ -38,7 +38,12 @@ check(actionsOf(html).every(known), `every button has a handler (${actionsOf(htm
 check(!/undefined|NaN|null/.test(html), "no undefined / NaN / null");
 const opened = (html.match(/<button/g) || []).length, closed = (html.match(/<\/button>/g) || []).length;
 check(opened === closed && opened === 5, `five buttons, balanced (${opened}/${closed})`);
-{ const u = {}; HALL_ACTIONS["hall-open"]({}, u, {}); check(/data-action="hall-open"/.test(html) && u.hall && u.hall.ending === "all" && !u.hall.sel, "Hall of fame opens its window, the whole list"); }
+check(!/hall-open|Hall of fame/.test(html), "no Hall of fame on the title menu");
+{ const opens = []; globalThis.open = (...a) => { opens.push(a); return null; };
+  check(/data-action="title-board"[^>]*>Rebuild board</.test(html) && actionsOf(html).indexOf("title-board") === actionsOf(html).indexOf("title-help") + 1, "Rebuild board comes after How to play");
+  TITLE_ACTIONS["title-board"]({}, {}, {});
+  check(opens.length === 1 && opens[0][0] === BOARD_URL && opens[0][1] === "_blank", "Rebuild board opens the board in a new tab");
+  delete globalThis.open; }
 check(/data-action="title-quit"/.test(titleMenuHTML({}, { ...api, desktop: true })), "in the desktop app: Quit");
 
 // ---------- with saves ----------
@@ -85,6 +90,8 @@ check(/syncTitle\(state, ui\)/.test(main) && /titleFrame\(state, ui, now\)/.test
 check(/if \(ui\.title\) return null;/.test(uiSrc) && uiSrc.indexOf("if (ui.title) return null;") < uiSrc.indexOf('if (!ui.started) return ["newrun"'), "ui.js: no new-run screen while the title is up (the menu still opens over it)");
 check((settings.match(/api\.toTitle\(\)/g) || []).length >= 3, "settings.js: Exit and Save and exit go back to the title");
 check(/toTitle:/.test(main), "main.js gives the menu toTitle");
+{ const desk = readFileSync(new URL("../../desktop/main.js", import.meta.url), "utf8");
+  check(desk.includes(`url.startsWith("${BOARD_URL}")`) && /shell\.openExternal\(url\)/.test(desk) && /return \{ action: "deny" \}/.test(desk), "the desktop app opens the board in the browser, and no other window"); }
 
 console.log(`titletest: ${passes} passed, ${fails} failed`);
 process.exit(fails ? 1 : 0);

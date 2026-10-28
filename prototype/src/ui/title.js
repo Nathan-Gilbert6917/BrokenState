@@ -1,7 +1,8 @@
 // The title screen: what the game opens on (main.js showTitle), in front of everything else. Continue (the latest
-// save), New game (the new-run screen), Load game (the menu's save list), Hall of fame (ui/halloffame.js: past runs),
-// Settings (the menu's Options tab), How to play (its Help tab) and, in the desktop app, Quit. The menu itself
-// (ui/settings.js) and the Hall of fame open over the title.
+// save), New game (the new-run screen), Load game (the menu's save list), Settings (the menu's Options tab), How to
+// play (its Help tab), Rebuild board (the plan for the real game, board/README.md, in the browser) and, in the desktop
+// app, Quit. The menu itself (ui/settings.js) opens over the title; the Hall of fame (ui/halloffame.js) is reached from
+// the end screens.
 //
 // A banner (PROTOTYPE_NOTE) says what this build is for: a prototype with AI-generated music and sprites, to find out
 // whether the game is fun and which features to make, before the real game is made in Unity or Godot.
@@ -47,6 +48,10 @@ export const newRunUp = (ui) => !ui.title && !ui.started && !ui.nrMap;
 export const titleCovers = (ui) => !!ui.title || newRunUp(ui);
 
 // ---------- the menu ----------
+// The rebuild board (board/ in the repo, published beside the game). The desktop app opens it in the browser
+// (desktop/main.js lets this address alone out).
+export const BOARD_URL = "https://nathan-gilbert6917.github.io/BrokenState/board/";
+
 export function titleMenuHTML(ui, api = API) {
   const last = latestSave();
   const n = listSaves().length;
@@ -54,9 +59,9 @@ export function titleMenuHTML(ui, api = API) {
   if (last) items.push(`<button class="tt-item primary" data-action="set-continue"${tip(`Load the latest save: ${last.name}`)}>Continue<small>${esc(last.name)}${/\bday \d/i.test(last.name || "") ? "" : ` · day ${esc(last.day ?? "?")}`}</small></button>`);
   items.push(`<button class="tt-item${last ? "" : " primary"}" data-action="title-new"${tip("Pick the map, the mode and your people, then start")}>New game</button>`);
   items.push(`<button class="tt-item" data-action="title-load"${n ? "" : " disabled"}${tip(n ? `Pick one of your ${n} save${n === 1 ? "" : "s"}, or load a save file` : "No saves yet")}>Load game</button>`);
-  items.push(`<button class="tt-item" data-action="hall-open"${tip("Your past runs: every ending you reached, how long, who, what kind of victory (ui/halloffame.js)")}>Hall of fame</button>`);
   items.push(`<button class="tt-item" data-action="title-settings"${tip("Autosave, confirmations, display, the keys")}>Settings</button>`);
   items.push(`<button class="tt-item" data-action="title-help"${tip("How the game works, one topic at a time")}>How to play</button>`);
+  items.push(`<button class="tt-item" data-action="title-board"${tip("The plan for making the real game in Godot or Unity: every feature in build order, with priorities. Opens in your browser.")}>Rebuild board</button>`);
   if (api && api.desktop) items.push(`<button class="tt-item" data-action="title-quit">Quit</button>`);
   return items.join("");
 }
@@ -69,6 +74,7 @@ export const TITLE_ACTIONS = {
   "title-settings": (state, ui) => openSettings(ui, "options"),
   "title-help": (state, ui) => openSettings(ui, "help"),
   "title-quit": (state, ui, d, api = API) => api.quit(),
+  "title-board": () => { globalThis.open?.(BOARD_URL, "_blank", "noopener"); },
 };
 
 // Up and down move between the buttons, Enter presses one (the browser's own). Returns true when it used the key.
