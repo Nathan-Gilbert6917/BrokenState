@@ -48,7 +48,7 @@ import { traitsHelp } from "./traitpick.js"; // every trait, its tiers and point
 import { fieldWorksHelp } from "../sim/fieldworks.js"; // roadblocks, towers, stockpiles, blinds, snares, caches, spikes
 import { devText } from "./hints.js"; // How to play in the words of the device in use (tap, Ⓐ…)
 import { inputMode, keyHint } from "./inputmode.js";
-import { CAMP } from "../sim/buildings.js"; // the camp fire's cost (Your first week)
+import { CAMP, BUILDINGS } from "../sim/buildings.js"; // the camp fire's cost, the shelter shack's and the walls' (Your first week, Raiding for supplies)
 import { ESTABLISH_LABEL } from "../sim/staging.js";
 import { GUIDE } from "./guide.js";
 
@@ -149,8 +149,10 @@ const list = (tag, items) => `<${tag} class="howto">${items.filter(Boolean).map(
 const key = (id, d) => `<b>${esc(keyLabel(id, 1) || d)}</b>`;
 const say = (html) => devText(html);
 const fireCost = () => Object.entries(CAMP.fireCost).map(([k, n]) => `${n} ${k}`).join(" and ");
+// The scrap the shelter shack takes in all: its own and the building materials' (each made from CAMP.matScrap scrap).
+const shackScrap = () => (BUILDINGS.camp_up.cost.scrap || 0) + (BUILDINGS.camp_up.cost.buildmat || 0) * CAMP.matScrap;
 
-// The pages in order: [title, html()]. Their ids are the titles' slugs (start-here, your-first-week, basic-controls…).
+// The pages in order: [title, html()]. Their ids are the titles' slugs (start-here, your-first-week, raiding-for-supplies, basic-controls…).
 const HOW_TO_PLAY = [
   ["Start here", () => say(`<p class="lead">You lead a handful of survivors through the fall of the State of Calder. Keep them alive, give them a home, and in time push back the dead.</p>
     <h3>The game in five lines</h3>${list("ul", [
@@ -167,6 +169,7 @@ const HOW_TO_PLAY = [
     ])}
     <h3>Read next</h3>${list("ul", [
       `${link("your-first-week", "Your first week")}: from the road to a shelter, step by step.`,
+      `${link("raiding-for-supplies", "Raiding for supplies")}: where the scrap for your shelter and walls comes from.`,
       `${link("basic-controls", "Basic controls")}: what to press, and where.`,
       `${link("keeping-people-alive", "Keeping people alive")}, ${link("teams-and-missions", "Teams and missions")} and ${link("fights-and-danger", "Fights and danger")}.`,
       `${link("map", "The State Map")}: what bright, dim and dark land mean.`,
@@ -179,11 +182,28 @@ const HOW_TO_PLAY = [
       `<b>Gather a camp fire.</b> It takes ${fireCost()}. Click your team to open its panel and use <i>Cut wood…</i> and <i>Gather stone…</i> (by daylight; stone is easiest in the hills).`,
       `<b>Set up camp.</b> Pick a spot near water and trees, with places to scavenge close by and few of the dead. Give the team the order <i>${ESTABLISH_LABEL}</i>: the camp is your first home.`,
       `<b>Build the shelter shack.</b> On the camp's <i>Camp</i> tab press <i>Place the shelter shack</i> and click where it goes. The tab lists what it still needs: bring it in.`,
+      `<b>Raid for scrap.</b> The shack takes ${shackScrap()} scrap besides its wood, and only the ruins have it. Send a small team to the places near the camp: ${link("raiding-for-supplies", "Raiding for supplies")}.`,
       `<b>Keep wood coming.</b> Put someone on <i>Cut wood</i> (the job beside their name). Wood builds, cooks, boils water and heats.`,
       `<b>Get through the nights.</b> Night runs from 20:00 to 06:00. The fire keeps your people warm, but its light can draw the dead.`,
     ])}
     <p>Once the shack stands, the camp is a shelter and later your hub: farm, build, and send teams out to scavenge. (A Custom run starts with a hub already built; the guide's steps change to match.)</p>
     ${see(["water-and-the-summer", "Water"], ["wood", "Wood"], ["bases-manage", "Bases"], ["night-on-the-map", "Night"])}`)],
+
+  ["Raiding for supplies", () => {
+    const sh = BUILDINGS.camp_up.cost;
+    return say(`<p class="lead">Wood you can cut, but scrap, tools, meds and ammo only come from the ruins. In the first week a few small raids pay for the shelter and the camp's first defenses.</p>
+    <h3>What you need</h3>${list("ul", [
+      `<b>The shelter shack:</b> ${sh.wood} wood, ${sh.scrap} scrap and ${sh.buildmat} building materials, which the builders make from ${CAMP.matScrap} scrap each: ${shackScrap()} scrap in all.`,
+      `<b>Defenses:</b> walls take only wood (${BUILDINGS.wall1.cost.wood} a tile, on the camp's <i>Defenses</i> tab), but a gate or a wall stand needs building materials too: bring home more scrap than the shack needs.`,
+    ])}
+    <h3>How to raid</h3>${list("ol", [
+      `<b>Start close and small.</b> The houses, sheds and shops on the tiles round the camp are quick raids with few of the dead (a <i>Survey</i> of a tile finds the places you don't know yet). A town has more scrap and food, and more of the dead; leave cities for later.`,
+      `<b>Send a few, keep a few.</b> Click the site, pick <i>Scavenge / raid</i> and choose who goes; the planner packs their food and water. Leave people at the camp to cut wood and build.`,
+      `<b>In the raid,</b> move your people from room to room and search the containers (Shift+S). Take scrap, tools, meds and food first; scrap is heavy, so packs and more hands bring more home.`,
+      `<b>Get out in time.</b> Every turn and every noise adds to the Heat, and Heat brings more of the dead. Leave by a green exit (X) with what you carry.`,
+      `<b>Bring it home.</b> Back at the camp the haul goes into the stores, and the shack takes what it still needs as it comes in. Then go again.`,
+    ])}${see(["raids-scavenging-a-site", "Raids"], ["places-on-a-tile-surveys-and-raids", "Places and surveys"], ["what-you-find", "What you find"], ["defending-your-base", "Defending your base"])}`);
+  }],
 
   ["Basic controls", () => {
     const pad = inputMode() === "pad", touch = inputMode() === "touch";

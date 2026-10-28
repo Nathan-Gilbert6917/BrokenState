@@ -18,7 +18,7 @@ import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from ".
 import { readFileSync } from "node:fs";
 import { createWorld, tickHour, hub, day, alive } from "../src/sim/world.js";
 import { launchExpedition, startReturn, partyTile, partyMembers, giveOrder } from "../src/sim/parties.js";
-import { queueBuild, BUILDINGS, canBuild, tierUpJob, tierUpType } from "../src/sim/buildings.js";
+import { queueBuild, BUILDINGS, CAMP, canBuild, tierUpJob, tierUpType } from "../src/sim/buildings.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
 import { roadTeam } from "../src/sim/hardcore-start.js";
 import { setAutopilot } from "../src/sim/autopilot.js";
@@ -485,6 +485,11 @@ section("Help: Start here; README and main.js");
   check(how.length >= 5 && how.length <= 8 && topics.slice(0, how.length).every((t) => t.group === "how"), `How to play: ${how.length} pages, before the Reference`);
   check(how.every((t) => strip(t.html).length < 1600 && clean(t.html)), `each page is short (${how.map((t) => strip(t.html).length).join(", ")} characters)`);
   check(how.every((t) => [...t.html.matchAll(/data-sec="([^"]+)"/g)].every((m) => ids.has(m[1]))), "their links lead to topics that exist");
+  // Raiding in the first week (the user's request 2026-10-28: "Add raiding for your first week help to find supplies to build you base shelter and defenses").
+  const raid = how.find((t) => t.id === "raiding-for-supplies"), week = how.find((t) => t.id === "your-first-week");
+  const shackScrap = BUILDINGS.camp_up.cost.scrap + BUILDINGS.camp_up.cost.buildmat * CAMP.matScrap;
+  check(!!raid && /Scavenge \/ raid/.test(raid.html) && strip(raid.html).includes(`${shackScrap} scrap in all`) && /Defenses/.test(raid.html) && /wall stand/.test(raid.html), `Raiding for supplies: how to raid, the shack's ${shackScrap} scrap and the defenses'`);
+  check(!!week && /data-sec="raiding-for-supplies"/.test(week.html) && /data-sec="raiding-for-supplies"/.test(start.html), "Your first week and Start here point at it");
   check(topics.every((t) => t.group === "how" || HELP_GROUPS.some(([g]) => g === t.group)), `every Reference topic is in an area (${topics.filter((t) => t.group === "more").map((t) => t.id).join(", ") || "none left over"})`);
   const nav = (h) => h.split('<div class="helpbody">')[0];
   const shown = (h) => [...nav(h).matchAll(/data-action="set-help" data-sec="([^"]+)"/g)].map((m) => m[1]);
