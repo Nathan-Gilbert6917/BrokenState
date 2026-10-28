@@ -110,7 +110,7 @@ export const BUILD_TOOLS = {
   shed: ["hammer", "saw"], storehouse: ["hammer", "saw"], warehouse: ["hammer", "wrench"],
   armory: ["drill", "welder"],
   // water
-  well: ["dig", "wrench"], cistern: ["dig"], boiler: ["wrench"],
+  well: ["dig", "wrench"], cistern: ["dig"], // the water boiler: no tools (a drum over a fire pit; the user's word 2026-10-28)
   // jails and the radio
   lockup: ["pliers"], cells: ["drill", "wrench"], jailhouse: ["hammer", "drill", "welder"],
   radio: ["drill", "wrench", "pliers"], relay: ["drill", "wrench", "pliers"],

@@ -19,6 +19,9 @@ import { readFileSync } from "node:fs";
 import { createWorld, tickHour, hub, day, alive } from "../src/sim/world.js";
 import { launchExpedition, startReturn, partyTile, partyMembers, giveOrder } from "../src/sim/parties.js";
 import { queueBuild, BUILDINGS, CAMP, canBuild, tierUpJob, tierUpType } from "../src/sim/buildings.js";
+import { newItem } from "../src/sim/inventory.js";
+import { BUILD_TOOLS } from "../src/sim/data-tools.js";
+import { putBack } from "../src/sim/deadpop.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
 import { roadTeam } from "../src/sim/hardcore-start.js";
 import { setAutopilot } from "../src/sim/autopilot.js";
@@ -30,7 +33,7 @@ import { helpTopics, helpTab, HELP_GROUPS } from "../src/ui/help.js";
 import { addCard } from "../src/sim/world.js";
 import { loadOptions, saveOptions } from "../src/ui/saves.js";
 import {
-  GUIDE, GUIDE_LISTS, GUIDE_PHASES, GUIDE_ACTIONS, GUIDE_MENU_ACTIONS, guideSteps, startGuide, guideCheck, renderGuide, guidePulse, guideDefault, guideMenuRow,
+  GUIDE, GUIDE_LISTS, GUIDE_PHASES, GUIDE_READY, GUIDE_ACTIONS, GUIDE_MENU_ACTIONS, guideSteps, guideDay, startGuide, guideCheck, renderGuide, guidePulse, guideDefault, guideMenuRow,
   POPUP_TIPS, ALERT_TIPS, popupOf, renderGuideTip,
 } from "../src/ui/guide.js";
 
@@ -93,100 +96,147 @@ function run(st, hours, done = () => false, rework = null) {
   }
 }
 
-// ---------- a normal start ----------
-section("Normal start: the base list ticks off from the state");
+// The dawn that ends the guide's night n (ui/guide.js nightDawn).
+const dawnOf = (g, n) => (Math.floor(g.h0 / 24) + n) * 24 + 6;
+const NIGHTS = ["first", "second", "third", "fourth", "fifth", "sixth", "seventh"];
+
+// ---------- a hub start ----------
+section("Hub start: the base list, day by day, ticks off from the state");
 {
   const st = createWorld({ seed, factionCount: 5 });
   st.noWanderers = true;
   const ui = freshUi();
   check(startGuide(st, false) === null && !st.guide, "box off: no guide is made");
   const g = startGuide(st, true);
-  check(g && g.kind === "base" && g.on && guideSteps(g).map((x) => x.id).join() === GUIDE_LISTS.base.join(), `the base list (${GUIDE_LISTS.base.join(", ")})`);
-  check(GUIDE_LISTS.base.length >= 6 && GUIDE_LISTS.base.length <= 11 && GUIDE_LISTS.road.length >= 6 && GUIDE_LISTS.road.length <= 11, "6–11 steps a list");
-  check(Object.values(GUIDE_PHASES).every((ph) => ph.length === 2 && ph[0].label === "Day 1" && ph.every((x) => x.label && x.sub && x.ids.length)), "each list in two parts: Day 1, then the rest of the week");
+  check(g && g.kind === "base" && g.on && guideSteps(g).map((x) => x.id).join() === GUIDE_LISTS.base.filter((id) => id !== "hold").join(), `the base list (${GUIDE_LISTS.base.join(", ")})`);
+  for (const [kind, ph] of Object.entries(GUIDE_PHASES)) {
+    check(ph.length === GUIDE.DAYS && ph.every((x, i) => x.label === `Day ${i + 1}` && x.sub && x.ids.length >= 2 && x.ids.length <= 6 && x.ids[x.ids.length - 1] === (i ? `night${i + 1}` : "night")), `${kind}: a day for each of the ${GUIDE.DAYS}, each ending with its night (the user's request 2026-10-28)`);
+    check(new Set(GUIDE_LISTS[kind]).size === GUIDE_LISTS[kind].length, `${kind}: no step twice`);
+    check(["scavenge", "raid", "work", "food", "farm", "defence"].every((id) => GUIDE_LISTS[kind].includes(id)), `${kind}: the week has a raid, work at the base, food, farming and a defence`);
+  }
+  check(guideSteps(g).filter((x) => /^night/.test(x.id)).map((x) => x.title).join("|") === NIGHTS.map((n) => `Get through the ${n} night`).join("|"), "the nights by name, first to seventh");
   check(guideSteps(g).every((x) => x.title && x.why && x.why.length > 30 && typeof x.done === "function" && typeof x.show === "function"), "every step has a title, a why line, a test and a Show me");
+  check(new Set(guideSteps(g).filter((x) => /^night/.test(x.id)).map((x) => x.why)).size === GUIDE.DAYS, "each night says something of its own");
   const cards0 = st.cards.length, log0 = st.log.length, hour0 = st.hour;
-  check(guideCheck(st, ui).length === 0 && !Object.keys(g.done).length, "nothing is ticked at the start");
+  check(guideCheck(st, ui).length === 0 && !Object.keys(g.done).length, "nothing is ticked at the start (the hub's own farmers and guard do not count)");
   check(st.cards.length === cards0 && st.log.length === log0 && st.hour === hour0, "the check adds no cards or log lines and moves no clock");
+  const day1 = GUIDE_PHASES.base[0].ids;
   let html = renderGuide(st, ui);
-  check(g.fold && clean(html) && /class="guide folded"/.test(html) && /Next:/.test(html) && !/gd-show/.test(html), "the card starts folded to its next step (the user's request 2026-10-24: the alerts' corner takes less of the map)");
+  check(g.fold && clean(html) && /class="guide folded"/.test(html) && /Next:/.test(html) && !/gd-show/.test(html) && html.includes(`Day 1 · 0/${day1.length}`), "the card starts folded to its next step, with today's count (the user's request 2026-10-24: the alerts' corner takes less of the map)");
   GUIDE_ACTIONS["gd-fold"](st, ui, {}); // ▾ opens it
   html = renderGuide(st, ui);
-  check(clean(html) && /First week/.test(html) && html.includes(`0/${GUIDE_LISTS.base.length}`), `the card: clean, 0 of ${GUIDE_LISTS.base.length}`);
-  check((html.match(/data-action="gd-show"/g) || []).length === GUIDE_LISTS.base.length && /class="gd-why"/.test(html) && /▶/.test(html), "a Show me on every open step, the next one with its why line");
-  check((html.match(/class="gd-phase/g) || []).length === 2 && /class="gd-phase first"><b>Day 1<\/b>/.test(html) && html.indexOf("gd-phase first") < html.indexOf('data-id="stores"') && html.lastIndexOf("gd-phase") < html.indexOf('data-id="scavenge"'), "the steps under their two headings, Day 1 first");
+  check(clean(html) && /First week/.test(html) && /<b>Day 1<\/b>[^<]*<span class="gd-today">today/.test(html), "the card: clean, Day 1 marked today");
+  check((html.match(/data-action="gd-show"/g) || []).length === day1.length && /class="gd-why"/.test(html) && /▶/.test(html), "a Show me on each of today's steps, the next one with its why line");
+  check((html.match(/data-action="gd-day"/g) || []).length === GUIDE.DAYS - 1 && !/data-id="raid"/.test(html), "the later days one line each, their steps not shown");
+  GUIDE_ACTIONS["gd-day"](st, ui, { day: "3" });
+  html = renderGuide(st, ui);
+  check(clean(html) && /data-action="gd-show" data-id="raid"/.test(html) && /data-action="gd-show" data-id="night3"/.test(html), "a click on Day 3's line shows its steps");
+  GUIDE_ACTIONS["gd-day"](st, ui, { day: "3" });
+  check(!/data-id="raid"/.test(renderGuide(st, ui)), "and again folds it");
+  GUIDE_ACTIONS["gd-day"](st, ui, { day: "7" });
+  html = renderGuide(st, ui);
+  check(/data-id="night7"/.test(html) && !/data-id="hold"/.test(html) && GUIDE_PHASES.base[6].ids.includes("hold"), "day 7 peeked: no Hold off the attack step until the attack comes (the user's request 2026-10-28)");
+  GUIDE_ACTIONS["gd-day"](st, ui, { day: "7" });
   check(renderGuide(st, { ...ui, started: false }) === "" && renderGuide(st, { ...ui, timelapse: {} }) === "", "hidden before the start and in the timelapse");
 
   // Show me for each step points at what the screen has.
-  for (const id of GUIDE_LISTS.base) {
+  for (const id of guideSteps(g).map((x) => x.id)) {
     const u = freshUi();
     const r = showMe(st, u, id);
-    if (id === "night") check(r.act.calls.some((c) => c[0] === "panel" && c[1] === "left") && u.tab === "bases" && /class="tabs"[\s\S]*?<\/div><div class="card">/.test(renderLeft(st, u)), "Show me (night): the Bases tab, the hub's card first");
+    if (/^night/.test(id)) check(r.act.calls.some((c) => c[0] === "panel" && c[1] === "left") && u.tab === "bases" && /class="tabs"[\s\S]*?<\/div><div class="card">/.test(renderLeft(st, u)), `Show me (${id}): the Bases tab, the hub's card first`);
     else check(r.hit.length > 0, `Show me (${id}): ${r.sels.join(" | ")} found on screen (calls ${r.act.calls.map((c) => c[0]).join(", ")})`);
   }
   { const u = freshUi(); showMe(st, u, "stores"); check(u.baseView && u.baseView.tab === "farming", "Show me (stores) opens the Farming tab"); }
   { const u = freshUi(); const r = showMe(st, u, "scavenge"); check(u.selected >= 0 && st.tiles[u.selected].loc && r.act.calls.some((c) => c[0] === "panel" && c[1] === "right"), `Show me (scavenge) picks a site near the hub (${st.tiles[u.selected] && st.tiles[u.selected].loc ? st.tiles[u.selected].loc.name : "none"}) and shows the right panel`); }
   { const u = freshUi(); GUIDE_ACTIONS["gd-show"](st, u, { id: "nope" }, fakeAct(u)); check(!u.guidePulse, "an unknown step does nothing"); }
 
-  // stores: the Farming tab looked at.
+  // Day 1: stores, work, the clock.
   ui.baseView = { id: hub(st).id, tab: "farming" };
   let fresh = guideCheck(st, ui);
-  check(fresh.length === 1 && fresh[0].id === "stores" && g.done.stores === st.hour && ui.flash && /First week/.test(ui.flash.text) && new RegExp(`1 of ${GUIDE_LISTS.base.length}`).test(ui.flash.text), `stores ticks off with a toast (${ui.flash && ui.flash.text})`);
+  check(fresh.length === 1 && fresh[0].id === "stores" && g.done.stores === st.hour && ui.flash && /First week/.test(ui.flash.text) && ui.flash.text.includes(`Day 1: 1 of ${day1.length}`), `stores ticks off with a toast and today's count (${ui.flash && ui.flash.text})`);
   ui.baseView = null;
-  // wood: nobody starts on Cut wood.
   check(!g.done.wood && !alive(st).some((s) => s.role === "wood"), "nobody starts on Cut wood");
-  // work: everyone on priorities.
   WORK_ACTIONS.weveryone(st, ui, { base: String(hub(st).id) });
   check(guideCheck(st, ui).some((x) => x.id === "work"), "work: everyone on priorities");
-  // build: something queued.
-  const type = Object.keys(BUILDINGS).find((k) => canBuild(st, hub(st), k).ok);
+  // Day 2's, done early: a building, wood. Steps tick on any day.
+  const type = Object.keys(BUILDINGS).find((k) => canBuild(st, hub(st), k).ok && !BUILDINGS[k].tab && k !== "farm_plot");
   check(!!type && /queued/.test(queueBuild(st, hub(st), type)), `a building queued (${type})`);
-  check(guideCheck(st, ui).some((x) => x.id === "build"), "build: a building queued");
-  // wood: on priorities, the hour's job picked may already be Cut wood (work.js sets s.role to it), and that ticks it
-  // (seed 42 since d0adaca, whose rolled vehicle backs fill the stores: two go on it). Else someone put on Cut wood
-  // (a fixed job) ticks it; that path is also played on a world of its own below, so it is checked on every seed.
+  check(guideCheck(st, ui).some((x) => x.id === "build") && !g.done.farm, "build: a building queued (on day 1: steps tick on any day)");
+  // wood: on priorities, the hour's job picked may already be Cut wood (work.js sets s.role to it), and that ticks it.
+  // Else someone put on Cut wood (a fixed job) ticks it; that path is also played on a world of its own below.
   const byWork = alive(st).some((s) => s.role === "wood" && s.location.kind === "base");
   check(!!g.done.wood === byWork, `wood: ticked with everyone on priorities only when the hour's job is Cut wood (${byWork ? "someone is on it" : "nobody is"})`);
-  const fixedWood = (s0, ui0) => { const w = alive(s0).find((s) => s.location.kind === "base"); w.role = "wood"; if (w.work) w.work.role = null; return guideCheck(s0, ui0).some((x) => x.id === "wood"); };
-  if (!byWork) check(fixedWood(st, ui), "wood: someone on Cut wood");
+  const fixedRole = (s0, ui0, role, id) => { const w = alive(s0).find((s) => s.location.kind === "base" && s.role !== role); w.role = role; if (w.work) w.work.role = null; return guideCheck(s0, ui0).some((x) => x.id === id); };
+  if (!byWork) check(fixedRole(st, ui, "wood", "wood"), "wood: someone on Cut wood");
   {
     const s2 = createWorld({ seed, factionCount: 5 });
     s2.noWanderers = true;
     const u2 = freshUi();
     const g2 = startGuide(s2, true);
-    check(guideCheck(s2, u2).length === 0 && !g2.done.wood && fixedWood(s2, u2) && !!g2.done.wood, "wood: someone put on Cut wood (a fixed job) ticks it");
+    check(guideCheck(s2, u2).length === 0 && !g2.done.wood && fixedRole(s2, u2, "wood", "wood") && !!g2.done.wood, "wood: someone put on Cut wood (a fixed job) ticks it");
+    check(!g2.done.food && fixedRole(s2, u2, "forage", "food") && !!g2.done.food, "food: someone put on Forage ticks it");
+    // The first dawn: night 1 over, Day 2's toast says what the day is about.
+    s2.hour = dawnOf(g2, 1);
+    const f2 = guideCheck(s2, u2);
+    check(f2.some((x) => x.id === "night") && guideDay(s2, g2) === 2 && u2.flash.text.includes(`Day 2: ${GUIDE_PHASES.base[1].sub}`), `the first dawn: the first night ticked, day 2 begins (${u2.flash.text})`);
+    check(guideDay({ hour: dawnOf(g2, 1) - 1 }, g2) === 1 && guideDay({ hour: dawnOf(g2, 3) }, g2) === 4 && guideDay({ hour: dawnOf(g2, 20) }, g2) === GUIDE.DAYS, "the guide's day turns at each dawn and stops at day 7");
   }
-  // scavenge: a team out (any mission), then home.
+  // Day 3: a team out (any mission), then home; a raid.
   check(!g.done.scavenge && !g.done.home, "no team out yet");
   const h = hub(st);
   const near = st.grid.within(h.tile, 3).find((id) => id !== h.tile && st.tiles[id].terrain !== "water" && st.grid.distance(id, h.tile) >= 2);
   const crew = alive(st).slice(0, 2).map((s) => s.id);
   const res = launchExpedition(st, { memberIds: crew, dest: near, mission: "recon", stance: "normal", vehicleId: null, supplies: { food: 4, water: 4 } });
   check(!res.error, `a team launched (${res.error || "ok"})`);
-  check(guideCheck(st, ui).some((x) => x.id === "scavenge") && g.sent.length === 1, "scavenge: the team that set out is noted");
+  check(guideCheck(st, ui).some((x) => x.id === "scavenge") && g.sent.length === 1 && g.sent[0].mission === "recon", "scavenge: the team that set out is noted, with its mission");
   check(!g.done.clock && !g.done.night, "the clock has not run yet");
   tickHour(st); st.cards.length = 0;
   check(guideCheck(st, ui).some((x) => x.id === "clock"), "clock: an hour went by");
   const p = st.parties.find((x) => x.id === g.sent[0].id);
   run(st, 200, () => { guideCheck(st, ui); return !!g.done.home && !!g.done.night; }, () => { if (st.parties.includes(p) && p.phase === "waiting") startReturn(st, p); });
-  check(!!g.done.night && g.done.night >= (Math.floor(g.h0 / 24) + 1) * 24 + 6, `night: ticked at the first dawn (hour ${g.done.night})`);
+  check(!!g.done.night && g.done.night >= dawnOf(g, 1), `night: ticked at the first dawn (hour ${g.done.night})`);
   check(!!g.done.home && !st.parties.includes(p) && crew.some((id) => st.survivors.find((s) => s.id === id).location.kind === "base"), `home: the team got back (hour ${g.done.home})`);
-  check(g.on && !g.done.diary, "still on: the diary is left");
-  html = renderGuide(st, ui);
-  check(clean(html) && (html.match(/gd-step done/g) || []).length === GUIDE_LISTS.base.length - 1 && (html.match(/data-action="gd-show"/g) || []).length === 1, "the card: all but one ticked, one Show me left");
+  check(!g.done.raid, "raid: a recon team home is not a raid");
+  st.combat = { raid: {}, setup: {} }; // a raid's map up
+  guideCheck(st, ui);
+  st.combat = null;
+  check(g.done.raid != null && g.raided != null, "raid: a raid's map came up");
+  // Day 4 to 6: food, a farm plot, a first defence.
+  if (!g.done.food) check(fixedRole(st, ui, "fish", "food") || fixedRole(st, ui, "forage", "food"), "food: someone on Fish or Forage");
+  check(/queued/.test(queueBuild(st, hub(st), "farm_plot")) && guideCheck(st, ui).some((x) => x.id === "farm"), "farm: a farm plot queued (more than the hub's own)");
+  const def = Object.keys(BUILDINGS).find((k) => BUILDINGS[k].tab === "defenses" && canBuild(st, hub(st), k).ok);
+  check(!!def && /queued/.test(queueBuild(st, hub(st), def)) && guideCheck(st, ui).some((x) => x.id === "defence"), `defence: a first defence queued (${def})`);
+  // Day 4's water boiler (the user's request 2026-10-28: "build a boiler to purify the water"; "The boiler does not need tools").
+  check(/no tools/.test(guideSteps(g).find((x) => x.id === "boiler").why) && !BUILD_TOOLS.boiler && GUIDE_PHASES.base[3].ids.includes("boiler") && GUIDE_PHASES.road[3].ids.includes("boiler"), "boiler: on day 4 of both lists (after the first raids bring scrap; the playtest 2026-10-28), no tools needed");
+  Object.assign(hub(st).stock, { scrap: (hub(st).stock.scrap || 0) + 10, stone: (hub(st).stock.stone || 0) + 10 });
+  check(/queued/.test(queueBuild(st, hub(st), "boiler")) && guideCheck(st, ui).some((x) => x.id === "boiler"), "boiler: a water boiler queued");
+  // Day 7: the diary; the nights to the sixth.
   ui.diary = { day: 1 };
-  guideCheck(st, ui);
-  check(g.on && g.stepsDone === st.hour && !g.ended && /every step done/.test(ui.flash.text) && renderGuide(st, ui) === "", "all done in the first week: the checklist steps aside with a toast, the notes go on");
-  ui.alertList = [{ kind: "nowork" }];
-  guideCheck(st, ui);
-  html = renderGuide(st, ui);
-  check(clean(html) && /New:/.test(html) && !/gd-step/.test(html), "after the steps: a new alert still gets its note (and no checklist)");
-  ui.alertList = [];
+  check(guideCheck(st, ui).some((x) => x.id === "diary"), "diary: opened");
   ui.diary = null;
-  // The menu hides it; again brings it back: a fresh list (the old one was finished), kept past day 7.
+  st.hour = dawnOf(g, 6);
+  guideCheck(st, ui);
+  check(g.on && ["night2", "night3", "night4", "night5", "night6"].every((id) => g.done[id] != null) && g.done.night7 == null && guideDay(st, g) === 7, "the nights tick at their dawns; day 7, its night still ahead");
+  check(g.ready != null && g.ready <= st.hour && GUIDE_READY.base.every((id) => g.done[id] != null && g.done[id] <= g.ready) && !GUIDE_READY.base.includes("boiler") && !GUIDE_READY.base.includes("farm") && !GUIDE_READY.road.includes("boiler") && !GUIDE_READY.road.includes("farm"), `ready for the seventh day's attack once the steps it waits for were done (hour ${g.ready}); no tool-bound step among them (the playtest 2026-10-28)`);
+  GUIDE_ACTIONS["gd-fold"](st, ui, {}); GUIDE_ACTIONS["gd-fold"](st, ui, {}); // as it was: open
+  html = renderGuide(st, ui);
+  check(clean(html) && (html.match(/class="gd-phase gd-dayline past/g) || []).length === GUIDE.DAYS - 1 && /<b>Day 7<\/b>[^<]*<span class="gd-today">today/.test(html) && (html.match(/data-action="gd-show"/g) || []).length === 1 && !/data-id="hold"/.test(html) && /data-id="night7"/.test(html), "day 7: the six days behind it one line each; its night left (the attack not shown before it comes)");
+  // The seventh day's attack (sim/firstweekattack.js), played through the hours: Defend, played out headless.
+  for (const s of alive(st)) s.health = 100;
+  st.cards.length = 0;
+  let atk = null;
+  for (let i = 0; i < 22 && !atk; i++) { tickHour(st); guideCheck(st, ui); atk = st.cards.find((c) => c.campAttack === hub(st).id || c.firstWeek === hub(st).id); if (!atk) st.cards.length = 0; }
+  check(!!atk && g.attack && !g.attack.quiet && g.done.hold == null && st.log.some((l) => /something is coming/.test(l.text)), `day 7: warned, then the attack at ${g.attack && g.attack.hour % 24}:00 (${atk ? atk.title : "none"}); not held yet`);
+  check(guideSteps(g).some((x) => x.id === "hold") && ui.flash && /Hold off the attack/.test(ui.flash.text) && ui.guideSel === "hold", `its step shows from now, with a toast (${ui.flash && ui.flash.text})`);
+  if (atk) { st.cards.splice(st.cards.indexOf(atk), 1); atk.choices.find((x) => x.default).resolve(st); }
+  st.cards.length = 0;
+  guideCheck(st, ui);
+  check(g.done.hold != null && g.on, "hold: the fight over, the step ticked");
+  st.hour = dawnOf(g, 7);
+  guideCheck(st, ui);
+  check(!g.on && g.ended === "done" && g.done.night7 != null && /every step done/.test(ui.flash.text) && renderGuide(st, ui) === "", "the seventh night over and every step done: the guide steps aside with a toast");
+  // The menu brings a finished one back fresh, kept past the week; again hides it.
   openSettings(ui, "game");
-  SETTINGS_ACTIONS["gd-toggle"](st, ui, {});
-  check(!st.guide.on && st.guide.ended === "closed", "Menu → Hide (the notes too)");
   SETTINGS_ACTIONS["gd-toggle"](st, ui, {});
   check(st.guide.on && st.guide.keep && !Object.keys(st.guide.done).length && /back/.test(ui.settings.msg), "Menu → Show: a fresh guide, kept past day 7");
   SETTINGS_ACTIONS["gd-toggle"](st, ui, {});
@@ -194,21 +244,31 @@ section("Normal start: the base list ticks off from the state");
 }
 
 // ---------- the week, ✕, fold, saves ----------
-section("Off after day 7, ✕ and fold, saved with the world");
+section("Off after the seventh night, ✕ and fold, saved with the world");
 {
   const st = createWorld({ seed: seed + 1, factionCount: 5 });
   const ui = freshUi();
   const g = startGuide(st, true);
-  st.hour = GUIDE.DAYS * 24 + 2; // day 8
-  check(day(st) === GUIDE.DAYS + 1, "day 8");
+  // Days left behind: their open steps under "still to do", the next one the first of them.
+  st.hour = dawnOf(g, 2); // day 3
   guideCheck(st, ui);
-  check(!g.on && g.ended === "days" && /day 7/.test(ui.flash.text), "after day 7 it steps aside by itself");
+  GUIDE_ACTIONS["gd-fold"](st, ui, {});
+  let html = renderGuide(st, ui);
+  check(clean(html) && (html.match(/still to do/g) || []).length === 2 && /<b>Day 3<\/b>[^<]*<span class="gd-today">today/.test(html) && /gd-step cur"><button class="gd-go" data-action="gd-pick" data-id="stores"/.test(html) && !/data-id="night2"[^>]*>[^<]*<span class="gd-mark">○/.test(html), "day 3 with nothing done: days 1 and 2's open steps under still to do, the next the first of them");
+  GUIDE_ACTIONS["gd-fold"](st, ui, {});
+  st.hour = dawnOf(g, GUIDE.DAYS) - 1;
+  guideCheck(st, ui);
+  check(g.on && day(st) === GUIDE.DAYS + 1, "day 8 before dawn: the seventh night not over, still on");
+  st.hour = dawnOf(g, GUIDE.DAYS);
+  guideCheck(st, ui);
+  check(!g.on && g.ended === "days" && /day 7/.test(ui.flash.text), "the dawn after the seventh night: it steps aside by itself");
   openSettings(ui, "game");
   SETTINGS_ACTIONS["gd-toggle"](st, ui, {});
   check(st.guide === g && g.on && g.keep && g.done.clock != null, "Menu → Show on day 8: the same list (its progress kept), kept on");
+  st.hour += 48;
   guideCheck(st, ui);
   check(g.on, "brought back by hand: not switched off again by the day");
-  let html = renderGuide(st, ui);
+  html = renderGuide(st, ui);
   check(g.fold && clean(html) && /class="guide folded"/.test(html) && /Next:/.test(html) && !/gd-show/.test(html), "folded: one line with the next step (as it starts; ▾ toggles it)");
   GUIDE_ACTIONS["gd-fold"](st, ui, {});
   check(!g.fold && /gd-show/.test(renderGuide(st, ui)), "▾ opens it: the steps with their Show me");
@@ -237,27 +297,28 @@ section("Off after day 7, ✕ and fold, saved with the world");
 // ---------- the road start ----------
 // Normal and Hardcore both open on the road (issue #79): the road list, founded for real.
 for (const [mode, seed0] of [["normal", 77], ["hardcore", 77]]) {
-section(`Road start (${mode}): the road list, the shelter by day ${GUIDE.DAYS}`);
+section(`Road start (${mode}): the road list day by day, the shelter on day ${GUIDE.DAYS}`);
 {
   const st = createWorld({ seed: seed0, factionCount: 7, mode, roadStart: true });
   st.noWanderers = true;
   const ui = freshUi();
   const g = startGuide(st, true);
-  check(g.kind === "road" && guideSteps(g).map((x) => x.id).join() === GUIDE_LISTS.road.join(), `the road list (${GUIDE_LISTS.road.join(", ")})`);
-  const day1 = GUIDE_PHASES.road[0].ids, week = GUIDE_PHASES.road[1].ids;
-  check(["team", "water", "fire", "camp", "night"].every((id) => day1.includes(id)) && ["needs", "found"].every((id) => week.includes(id)) && GUIDE_PHASES.road[1].label === `By day ${GUIDE.DAYS}`, "day 1: off the road, into a camp, through the night; the shelter is for the rest of the week (the user's request 2026-10-28)");
+  check(g.kind === "road" && guideSteps(g).map((x) => x.id).join() === GUIDE_LISTS.road.filter((id) => id !== "hold").join(), `the road list (${GUIDE_LISTS.road.join(", ")})`);
+  const ph = GUIDE_PHASES.road;
+  check(["team", "water", "fire", "camp", "night"].every((id) => ph[0].ids.includes(id)) && ["found", "night7"].every((id) => ph[GUIDE.DAYS - 1].ids.includes(id)) && ph[2].ids.includes("raid"), "day 1: off the road, into a camp, through the night; a raid on day 3; the shelter on day 7 (the user's request 2026-10-28)");
   check(/by day 7/.test(guideSteps(g).find((x) => x.id === "found").title), "the shelter's step says it is the week's goal");
   const p = roadTeam(st);
   const fireHeld = () => ["wood", "stone"].every((k) => ((p.supplies[k] || 0) + ((p.cargo && p.cargo.supplies[k]) || 0)) >= 8);
   check(guideCheck(st, ui).length === 0 || (fireHeld() && Object.keys(g.done).join() === "fire"), "nothing ticked at the start");
-  for (const id of GUIDE_LISTS.road) {
+  for (const id of guideSteps(g).map((x) => x.id)) {
     const u = freshUi();
     const r = showMe(st, u, id);
     check(r.hit.length > 0, `Show me (${id}, on the road): ${r.sels.join(" | ")} found on screen`);
   }
+  { const u = freshUi(); const r = showMe(st, u, "farm"); check(r.sels.some((x) => /establish/.test(x)), "Show me (a step for the camp, before it): the team's Establish base"); }
   GUIDE_ACTIONS["gd-fold"](st, ui, {});
   let html = renderGuide(st, ui);
-  check(clean(html) && (html.match(/class="gd-phase/g) || []).length === 2 && html.includes(`<b>By day ${GUIDE.DAYS}</b>`) && html.indexOf("<b>By day") < html.indexOf('data-id="found"') && html.indexOf("<b>By day") > html.indexOf('data-id="night"'), "the card: Day 1's steps, then By day 7's");
+  check(clean(html) && /<b>Day 1<\/b>[^<]*<span class="gd-today">today/.test(html) && (html.match(/data-action="gd-show"/g) || []).length === ph[0].ids.length && (html.match(/data-action="gd-day"/g) || []).length === GUIDE.DAYS - 1, "the card: Day 1's steps, the six days after one line each");
   GUIDE_ACTIONS["gd-fold"](st, ui, {});
   ui.expedition = p.id;
   check(guideCheck(st, ui).some((x) => x.id === "team"), "team: its panel opened");
@@ -280,30 +341,48 @@ section(`Road start (${mode}): the road list, the shelter by day ${GUIDE.DAYS}`)
   st.nameAsk = []; // the naming popup answered
   check(!!hub(st) && hub(st).camp === true && guideCheck(st, ui).some((x) => x.id === "camp"), "camp: the camp is set up (a base)");
   check(g.woodLow === (hub(st).stock.wood || 0) && !g.done.wood, `wood: counted from the camp's own pile (${g.woodLow}), not ticked by setting it up`);
-  for (const id of ["wood", "scavenge", "needs", "found"]) {
+  for (const id of ["work", "boiler", "wood", "food", "scavenge", "raid", "place", "needs", "farm", "defence", "found"]) {
     const u = freshUi();
     const r = showMe(st, u, id);
     check(r.hit.length > 0, `Show me (${id}, at the camp): ${r.sels.join(" | ")} found on screen`);
   }
   { const u = freshUi(); showMe(st, u, "scavenge"); check(u.selected >= 0 && st.tiles[u.selected].loc, "Show me (scavenge, at the camp) picks a site near it"); }
-  check(!g.done.needs, "the camp still needs its materials");
-  check(guideSteps(g).find((x) => x.id === "needs").why.includes("200 wood") && guideSteps(g).find((x) => x.id === "wood").why.includes("200 wood"), "needs and wood: the steps name the wood the step up takes");
-  check(!tierUpJob(hub(st)) && !guideCheck(st, ui).some((x) => x.id === "needs"), "needs: nothing placed for the player (the user's request 2026-10-23: no shelter set when the camp is established)");
-  // A team out from the camp (any mission).
+  // Day 2: the camp at work.
+  WORK_ACTIONS.weveryone(st, ui, { base: String(hub(st).id) });
+  check(guideCheck(st, ui).some((x) => x.id === "work"), "work: the camp on priorities");
+  if (!g.done.food) { const w = alive(st).find((s) => s.location.kind === "base"); w.role = "forage"; if (w.work) w.work.role = null; check(guideCheck(st, ui).some((x) => x.id === "food"), "food: someone on Forage at the camp"); }
+  // Day 3: a team out from the camp, a raid.
   const camp = hub(st);
   const near = st.grid.within(camp.tile, 3).find((id) => id !== camp.tile && st.tiles[id].terrain !== "water" && st.grid.distance(id, camp.tile) >= 2);
   const crew = alive(st).filter((s) => s.location.kind === "base").slice(0, 1).map((s) => s.id);
   const res = launchExpedition(st, { memberIds: crew, dest: near, mission: "recon", stance: "normal", vehicleId: null, supplies: { food: 2, water: 2 } });
   check(!res.error && guideCheck(st, ui).some((x) => x.id === "scavenge") && g.sent.length === 1, `scavenge: a team set out from the camp (${res.error || "ok"})`);
+  st.combat = { raid: {}, setup: {} };
+  guideCheck(st, ui);
+  st.combat = null;
+  check(g.done.raid != null, "raid: a raid's map came up");
+  // Day 4: the shack placed; day 5: its needs, a farm plot; day 6: a defence.
+  check(!g.done.needs && !g.done.place, "the shack not placed yet");
+  check(guideSteps(g).find((x) => x.id === "needs").why.includes("200 wood") && guideSteps(g).find((x) => x.id === "wood").why.includes("200 wood"), "needs and wood: the steps name the wood the step up takes");
+  check(!tierUpJob(hub(st)) && !guideCheck(st, ui).some((x) => x.id === "place"), "place: nothing placed for the player (the user's request 2026-10-23: no shelter set when the camp is established)");
   queueBuild(st, hub(st), tierUpType(hub(st))); // the Camp tab's Place the shelter shack
-  Object.assign(hub(st).stock, { scrap: 30, buildmat: 2, wood: 300 }); // a trip home with the rest (the wood: a Cut wood order)
+  check(guideCheck(st, ui).some((x) => x.id === "place") && !g.done.needs, "place: the shack placed, its needs not in");
+  Object.assign(hub(st).stock, { scrap: 30, buildmat: 2, wood: 400 }); // a trip home with the rest (the wood: a Cut wood order)
   const fresh = guideCheck(st, ui);
-  check(fresh.some((x) => x.id === "needs") && fresh.some((x) => x.id === "wood"), "needs: everything is in; wood: the pile grew");
+  check(fresh.some((x) => x.id === "needs") && g.done.wood != null, "needs: everything is in; wood: someone on it or the pile grew");
   run(st, 24 * 8, () => { guideCheck(st, ui); return !!hub(st) && hub(st).camp !== true; });
-  run(st, 30, () => { guideCheck(st, ui); return !!g.done.night; }); // the shelter can stand within a day now (20 work-hours): its first night after it
+  run(st, 30, () => { guideCheck(st, ui); return !!g.done.night; }); // the shelter can stand within a day (20 work-hours): its first night after it
   guideCheck(st, ui);
   check(!!hub(st) && !!g.done.found && !!g.done.clock && !!g.done.night, `found: the shelter stands (day ${day(st)}), the clock and the first night ticked`);
-  check(g.on && !g.done.diary, "still on until the diary");
+  // Days 5, 6 and 2's builds, at the shelter (queued after the shack: the builders take the queue in order).
+  check(!/queued/.test(queueBuild(st, hub(st), "farm_plot")) && guideSteps(g).find((x) => x.id === "farm").why.includes("shovel"), "farm: no plot without a shovel, and the step says so");
+  hub(st).armory.push(newItem("shovel"), newItem("toolkit")); // found on a raid
+  check(/queued/.test(queueBuild(st, hub(st), "farm_plot")) && guideCheck(st, ui).some((x) => x.id === "farm"), "farm: a farm plot queued at the shelter");
+  const def = Object.keys(BUILDINGS).find((k) => BUILDINGS[k].tab === "defenses" && canBuild(st, hub(st), k).ok);
+  check(!!def && /queued/.test(queueBuild(st, hub(st), def)) && guideCheck(st, ui).some((x) => x.id === "defence"), `defence: a first defence queued at the shelter (${def})`);
+  Object.assign(hub(st).stock, { scrap: (hub(st).stock.scrap || 0) + 10, stone: (hub(st).stock.stone || 0) + 10 });
+  check(/queued/.test(queueBuild(st, hub(st), "boiler")) && guideCheck(st, ui).some((x) => x.id === "boiler"), "boiler: a water boiler queued at the shelter");
+  check(g.on && !g.done.diary, "still on until the diary and the nights");
   // A road guide over (the hub stands) and closed: the menu starts the base list.
   GUIDE_ACTIONS["gd-close"](st, ui, {});
   openSettings(ui, "game");
@@ -311,7 +390,7 @@ section(`Road start (${mode}): the road list, the shelter by day ${GUIDE.DAYS}`)
   check(st.guide.on && st.guide.kind === "base", "Menu → Show once the hub stands: the base list");
 }
 }
-section("Road start: a camp but no shelter by day 7");
+section("Road start: a camp but no shelter by the end of the week");
 {
   const st = createWorld({ seed: 78, factionCount: 5, mode: "normal", roadStart: true });
   st.noWanderers = true;
@@ -322,9 +401,18 @@ section("Road start: a camp but no shelter by day 7");
   check(!!hub(st) && startGuide(st, true).kind === "road", "a guide started at the camp is still the road list (the camp is not the shelter)");
   const g = st.guide;
   guideCheck(st, ui);
-  st.hour = GUIDE.DAYS * 24 + 2;
+  // Keep watch: a lookout work priorities picked by themselves does not count; one set on Guard by hand does (the
+  // playtest 2026-10-28 saw it tick with nobody asked to).
+  const w = alive(st).find((s) => s.location.kind === "base");
+  w.work = { ...(w.work || {}), role: "build" }; w.role = "guard"; // on priorities, the hour's job Guard
   guideCheck(st, ui);
-  check(!g.on && g.ended === "days" && /No shelter yet/.test(ui.flash.text) && /Camp tab/.test(ui.flash.text), `after day 7 it steps aside, saying where the shelter stands (${ui.flash.text})`);
+  check(g.done.defence == null, "Keep watch: not ticked by the lookout priorities picked");
+  w.work.role = null; // set on Guard by hand
+  guideCheck(st, ui);
+  check(g.done.defence != null, "Keep watch: ticked by someone set on Guard");
+  st.hour = dawnOf(g, GUIDE.DAYS);
+  guideCheck(st, ui);
+  check(!g.on && g.ended === "days" && /No shelter yet/.test(ui.flash.text) && /Camp tab/.test(ui.flash.text), `after the seventh night it steps aside, saying where the shelter stands (${ui.flash.text})`);
 }
 
 // ---------- the autopilot ignores it ----------

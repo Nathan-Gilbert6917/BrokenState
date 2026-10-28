@@ -177,16 +177,17 @@ const HOW_TO_PLAY = [
     ])}
     <p class="muted">Everything else is in the Reference below the pages, by area. You never need to read it all.</p>`)],
 
-  ["Your first week", () => say(`<p class="lead">A new game starts on the road the day Calder falls: one team, what they carry, and no home. The goal for the week is a shelter by day ${GUIDE.DAYS}. There is no rush on day 1.</p>${list("ol", [
-      `<b>Find water.</b> Thirst kills in days. Fetch water from a river or lake, or search a shop or diner on the way. Raw water can carry the worm: boil it on a fire.`,
+  ["Your first week", () => say(`<p class="lead">A new game starts on the road the day Calder falls: one team, what they carry, and no home. The goal for the week is a shelter by day ${GUIDE.DAYS}; the First-week guide takes it a day at a time, each day ending with its night.</p>${list("ol", [
+      `<b>Find water.</b> Thirst kills in days. Fetch it from a river or lake, or search a shop or diner. Raw water can carry the worm.`,
       `<b>Gather a camp fire.</b> It takes ${fireCost()}. Click your team to open its panel and use <i>Cut wood…</i> and <i>Gather stone…</i> (by daylight; stone is easiest in the hills).`,
       `<b>Set up camp.</b> Pick a spot near water and trees, with places to scavenge close by and few of the dead. Give the team the order <i>${ESTABLISH_LABEL}</i>: the camp is your first home.`,
       `<b>Build the shelter shack.</b> On the camp's <i>Camp</i> tab press <i>Place the shelter shack</i> and click where it goes. The tab lists what it still needs: bring it in.`,
       `<b>Raid for scrap.</b> The shack takes ${shackScrap()} scrap besides its wood, and only the ruins have it. Send a small team to the places near the camp: ${link("raiding-for-supplies", "Raiding for supplies")}.`,
       `<b>Keep wood coming.</b> Put someone on <i>Cut wood</i> (the job beside their name). Wood builds, cooks, boils water and heats.`,
-      `<b>Get through the nights.</b> Night runs from 20:00 to 06:00. The fire keeps your people warm, but its light can draw the dead.`,
+      `<b>Boil the water.</b> A <i>Water boiler</i> (${BUILDINGS.boiler.cost.scrap} scrap, ${BUILDINGS.boiler.cost.stone} stone) makes all the camp's water safe.`,
+      `<b>Be ready on day 7.</b> Follow the guide's first six days and expect trouble: nomads by day, the dead by night. A wall and a guard help.`,
     ])}
-    <p>Once the shack stands, the camp is a shelter and later your hub: farm, build, and send teams out to scavenge. (A Custom run starts with a hub already built; the guide's steps change to match.)</p>
+    <p>Night runs 20:00 to 06:00; the fire warms, but its light draws the dead. Once the shack stands, the camp is a shelter and later your hub. (A Custom run starts at a hub.)</p>
     ${see(["water-and-the-summer", "Water"], ["wood", "Wood"], ["bases-manage", "Bases"], ["night-on-the-map", "Night"])}`)],
 
   ["Raiding for supplies", () => {

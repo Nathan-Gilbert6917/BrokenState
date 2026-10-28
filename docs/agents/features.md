@@ -331,7 +331,7 @@ Detail: [ui.md](../features/ui.md).
 - **Autopilot governor**, also used headless for balance runs; fells for wood and staffs the felling [autopilot, noidle]. [details](../features/ui.md#autopilot-governor-wood)
 - **Save/load and save list** [save, savesummary, ui/saves].
 - **Diary, Ledger charts, history and chronicle**, and the **timelapse viewer** [diary, history, ui/ledger, chronicle, ui/timelapse].
-- **Codex** encyclopedia, first-week guide and help [ui/codex, ui/guide, ui/help] `tools/guidetest.js`. [details](../features/ui.md#first-week-guide)
+- **Codex** encyclopedia, first-week guide (day by day, the seventh night's attack) and help [ui/codex, ui/guide, ui/help, firstweekattack] `tools/guidetest.js`, `tools/firstweekattacktest.js`. [details](../features/ui.md#first-week-guide)
 - **How to play**: eight short pages for a new player, then the full reference folded into ten areas [ui/help, ui/settings, ui/title] `tools/guidetest.js`. [details](../features/ui.md#how-to-play)
 - **The dead on the land on screen**: tile panel rows, POI dialogue, map layer, raid Earshot [ui/threatui, ui/poiview, ui/render] `tools/threatknowtest.js`. [details](../features/ui.md#the-dead-on-the-land-on-screen)
 - **Command palette (Ctrl+K)**, minimap, watch list, map notes, threat bar [ui/cmdpalette, ui/minimap, watchlist, mapnotes, ui/threatbar].

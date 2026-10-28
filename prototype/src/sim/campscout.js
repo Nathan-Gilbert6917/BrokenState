@@ -56,6 +56,7 @@ import { partyMembers, partyTile, tileLabel, teamName, awaitOrders, wipeIfEmpty 
 import { startTask } from "./orders.js";
 import { firstHubPending } from "./hardcore-start.js";
 import { campAttackHour } from "./campattack.js"; // issue #69: the attacks on a camp by the dead and raiders nearby
+import { firstWeekHour } from "./firstweekattack.js"; // the first week's attack while the first-week guide is on
 import { scaleFood } from "./foods.js";
 import { roomsCleared } from "./poirooms.js"; // #71: a POI camp's grounds are its Not cleared rooms (call-time only)
 import { startScavenge } from "./scavenge.js"; // #71: clearing a POI camp's grounds is a raid on its POI map (call-time only)
@@ -203,6 +204,7 @@ export const groundsWord = (state, tile) => PLACE_WORD[terrainOf(state, { tile }
 /** @param {any} state */
 export function groundsHour(state) {
   campAttackHour(state);
+  firstWeekHour(state);
 }
 // The old attack's card (an older save's battle in flight, the "groundsDead" handler below); new attacks use
 // campattack.js attackCard.

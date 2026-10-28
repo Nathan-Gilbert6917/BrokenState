@@ -404,6 +404,23 @@ export function attackCard(state, base, w) {
     ],
   };
 }
+/**
+ * A wave made elsewhere and sent at your base whatever the dice and the walls (sim/firstweekattack.js: the first week's
+ * attack): always its card (Defend or hide), the cooldown and the count as any attack. `extra` is laid over the card
+ * (its title; a lead line before its text, or a text of its own). Returns the card. @param {any} state @param {any} base @param {any} w @param {any} [extra]
+ */
+export function scriptedWave(state, base, w, extra = {}) {
+  const s = ca(base);
+  s.wave = w;
+  s.after = state.hour + C.COOLDOWN;
+  s.n = (s.n || 0) + 1;
+  const card = attackCard(state, base, w);
+  if (extra.text) card.text = extra.text;
+  else if (extra.lead) card.text = `${extra.lead} ${card.text}`;
+  if (extra.title) card.title = extra.title;
+  addCard(state, card);
+  return card;
+}
 /** Defend: the base defence battle (headless played out). @param {any} state @param {number} baseId */
 export function defendWave(state, baseId) {
   const base = (state.bases || []).find((b) => b.id === baseId);

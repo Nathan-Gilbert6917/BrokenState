@@ -147,7 +147,7 @@ camp.stock.scrap = (camp.stock.scrap || 0) + 30; camp.stock.wood = (camp.stock.w
 check(canBuild(st, camp, "barricades").ok && /queued/.test(queueBuild(st, camp, "barricades")), "a barricade can be built at a camp");
 // BASE-03 (2026-10-12): the crafting bench, water boiler, cook fire and drying rack are camp buildings too; they share
 // the camp's two utility plots with the rain catcher, crates and barrel.
-stockTools(camp); // the bench and the boiler need tools (toolreqs.js); the plots are the subject here
+stockTools(camp); // the bench needs tools (toolreqs.js); the plots are the subject here
 camp.stock.stone = (camp.stock.stone || 0) + 40; // the boiler's and the cook fire's stone (stone.js, 2026-10-23)
 check(["rain_catcher", "smoker", "craftbench", "boiler", "cookhouse"].every((k) => canBuild(st, camp, k).ok), "two utility plots: a rain catcher, drying rack, crafting bench, water boiler or cook fire fits");
 {

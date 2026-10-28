@@ -2,22 +2,28 @@
 // A handful of steps a new player needs in the first days, each with a line on why it matters and a "Show me" that
 // opens the right screen and pulses the button to press. Steps tick off from the state of the game (a team really
 // out, a building really queued, the clock really past the first dawn), never by clicking them; a small toast says so.
-// - Two lists, each in two parts (GUIDE_PHASES: Day 1, then the rest of the week):
-//   - the road start (Normal and Hardcore since issue #79, and Crashlanding: no base yet): on day 1 the team, the clock,
-//     water, the camp fire's wood and stone, the camp (Establish base) and the first night; by day 7 wood for the
-//     shelter, a team out to scavenge, the shelter shack placed and its needs in, the shelter founded, the diary (the
-//     user's request 2026-10-28: the shelter is the first week's goal, not the first day's);
-//   - a hub start (Custom): on day 1 the stores, work priorities, a building, wood, the clock and the first night; then
-//     a team out and home, the diary.
+// - Two lists, day by day (GUIDE_PHASES: Day 1 to Day 7, a few steps each, every day ending with "Get through the
+//   Nth night", ticked at its dawn; the user's request 2026-10-28):
+//   - the road start (Normal and Hardcore since issue #79, and Crashlanding: no base past a camp yet): 1 off the road
+//     (the team, the clock, water, the camp fire's wood and stone, Establish base); 2 the camp at work (priorities, wood,
+//     food, a water boiler); 3 into the ruins (a team out, a raid); 4 home, and the shelter shack placed; 5 its needs in, a farm plot;
+//     6 a first defence; 7 the shelter founded, the diary, the attack held off;
+//   - a hub start (Custom): 1 the stores, the clock, priorities; 2 a building, wood, a water boiler; 3 a team out, a raid; 4 home, food;
+//     5 a farm plot; 6 a first defence; 7 the diary, the attack held off.
 //   Which one is picked when the guide starts: no base past a camp yet = the road list. A step can read differently
-//   on the road (ROAD_WORDS: the night, wood, scavenging from the camp).
-// - state.guide = { kind: "base" | "road", on, keep, fold, done: { step id: hour }, h0, b0, sent: [{ id, who }], wLow,
-//   woodLow, seen: { tip id: hour }, stepsDone, ended }. Saved with the world (sim/save.js writes the whole state); an older save has none and shows nothing.
-//   h0: the hour it started (the clock and the first dawn count from it); b0: buildings then; sent: player teams seen
-//   leaving a base (for "bring them home"); wLow: the least water held so far (for "find water"); woodLow: the least
-//   wood at the hub so far (for "wood coming in"; null until there is a hub); stepsDone: the hour every step was done (tips only from then).
-// - Off by itself once every step is done or after day GUIDE.DAYS (not when brought back by hand from the menu:
-//   keep), or with its ✕. The menu's Game tab brings it back or hides it (gd-toggle).
+//   on the road (ROAD_WORDS). The card shows today in full, an earlier day's open steps under "still to do", a later
+//   day as one line (a click shows its steps: ui.guidePeek); the guide's day (guideDay) turns at each dawn.
+// - state.guide = { kind: "base" | "road", on, keep, fold, done: { step id: hour }, h0, b0, p0, d0, w0, sent: [{ id,
+//   who, mission }], wLow, woodLow, fLow, raided, ready, warned, attack, seen: { tip id: hour }, ended }. Saved with the world (sim/save.js writes
+//   the whole state); an older save has none and shows nothing.
+//   h0: the hour it started (the nights count from it); b0, p0, d0: buildings, farm plots and defences then; sent:
+//   player teams seen leaving a base (for "bring them home" and a raid); wLow, fLow: the least water and food held so
+//   far (for "find water", "food coming in"); woodLow: the least wood at the hub so far (for "wood coming in"; null
+//   until there is a hub); raided: the hour a raid's map first came up; w0: water boilers then; ready: the hour the steps
+//   the attack waits for (GUIDE_READY) were all done; attackAt, warned, attack, attackTold: the seventh day's attack
+//   (sim/firstweekattack.js).
+// - Off by itself once every step is done or at the dawn after the seventh night (not when brought back by hand from
+//   the menu: keep), or with its ✕. The menu's Game tab brings it back or hides it (gd-toggle).
 // - The new-run screen's "First-week guide" box (ui/newgame.js, ui.guide): on by default for the first campaign on
 //   this machine (no saves, options.guideSeen unset), off after that (main.js begin).
 // - New things (tips): the first time each kind of window comes up while the guide is on (the raid's plan, the raid
@@ -25,16 +31,20 @@
 //   (#guidetip: the guide's card is under the windows and the battle), saying what it is and what to press, with a "?" to
 //   its Help topic. The first alert of each kind (a team waiting, no work, food low, the worm…) gets a "New" line at the
 //   top of the card. Each is told once a run: g.seen = { tip id: hour }.
-// - All the steps done before day GUIDE.DAYS: the checklist steps aside but the tips go on to the end of the week.
-// - Purely the player's: it never pauses the clock, adds cards or touches the simulation; the autopilot and the
-//   headless tools never start it.
-import { day, hub, alive } from "../sim/world.js";
+// - The player's: it never pauses the clock, adds cards or touches the simulation itself; the autopilot and the
+//   headless tools never start it. The one thing the game does for it: the seventh day's attack (sim/firstweekattack.js,
+//   while the guide is on and once the steps it waits for are done (GUIDE_READY), g.ready: a warning, then at an hour of day 7 a
+//   nomad band by day or a horde of the dead by night, made for it; the user's requests 2026-10-28), whose "Hold off the
+//   attack" step on day 7 is hidden (st.hidden) until it comes (g.attack).
+import { hub, alive } from "../sim/world.js";
 import { partyTile, partyMembers, carried } from "../sim/parties.js";
 import { teamWaterIn, waterIn } from "../sim/water.js";
+import { foodIn } from "../sim/foods.js";
 import { waterSource, ESTABLISH_LABEL } from "../sim/staging.js";
 import { isCamp, tierUpJob, gatherRows, BUILDINGS, CAMP } from "../sim/buildings.js";
 import { SUPPLIES } from "../sim/data.js";
 import { roadTeam } from "../sim/hardcore-start.js";
+import { nightDawn } from "../sim/firstweekattack.js"; // the dawn that ends the guide's night n; the seventh day's attack
 import { tileActions, modalKind } from "./ui.js";
 import { cardKind } from "../sim/cardrules.js";
 import { listSaves } from "./saves.js";
@@ -52,6 +62,7 @@ export const GUIDE = {
   WATER_GAIN: 3,    // water held above the lowest seen that counts as "found water"
   SITE_REACH: 8,    // how far from the hub "Show me" looks for a site to scavenge
   WOOD_GAIN: 30,    // wood at the hub above the lowest seen that counts as "wood coming in"
+  FOOD_GAIN: 3,     // days of food held above the lowest seen that counts as "food coming in"
 };
 
 // ---------- what counts ----------
@@ -71,8 +82,23 @@ const costText = (cost) => Object.entries(cost).map(([k, n]) => `${n} ${String(S
 const fireText = () => Object.entries(CAMP.fireCost).map(([k, n]) => `${n} ${k}`).join(" and ");
 // A team of yours carrying the camp fire's wood and stone (sim/staging.js fireCostProblem).
 const fireCarried = (state) => mine(state).some((p) => Object.entries(CAMP.fireCost).every(([k, n]) => carried(p, k) >= n));
-// The first dawn after the guide started (06:00 of the next day).
-const firstDawn = (g) => (Math.floor(g.h0 / 24) + 1) * 24 + 6;
+// Food the player holds anywhere, in days: every team, the bases.
+function foodHeld(state) {
+  let f = 0;
+  for (const p of mine(state)) f += carried(p, "food");
+  for (const b of state.bases) f += foodIn(b.stock);
+  return f;
+}
+// Buildings of some kinds at your bases, standing or queued.
+const countAt = (state, test) => state.bases.reduce((a, b) => a + [...(b.buildings || []), ...(b.construction || [])].filter((x) => x && test(x.type)).length, 0);
+const plotCount = (state) => countAt(state, (t) => t === "farm_plot");
+const isDefence = (t) => !!(BUILDINGS[t] && BUILDINGS[t].tab === "defenses");
+// People set on Guard by hand at a base (a fixed job: not the lookout work priorities pick by themselves; the playtest
+// 2026-10-28 saw that tick Keep watch with nobody asked to).
+const guardsAt = (state) => alive(state).filter((s) => s.role === "guard" && !(s.work && s.work.role != null) && s.location && s.location.kind === "base").length;
+const atBaseAs = (state, roles) => alive(state).some((s) => roles.includes(s.role) && s.location && s.location.kind === "base");
+// The guide's day: 1 until the first dawn, then one more each dawn, up to GUIDE.DAYS.
+export const guideDay = (state, g) => Math.max(1, Math.min(GUIDE.DAYS, Math.floor((state.hour - 6) / 24) - Math.floor(g.h0 / 24) + 1));
 const homeTeams = (state, g) => g.sent.filter((x) => !state.parties.some((p) => p.id === x.id));
 
 // ---------- the steps ----------
@@ -87,7 +113,7 @@ const STEPS = {
   work: {
     title: "Put your people on work priorities", why: "On priorities everyone picks the most urgent job they are set for, hour by hour: farming, building, cutting wood, guarding when the dead come. One click sets everyone up. Anyone left on a fixed job with nothing to do helps elsewhere for the hour (the 💤 No work alert says who).",
     done: (state) => alive(state).some((s) => s.work && s.work.role != null),
-    show: (state, ui, act) => { openHub(state, ui, act, "work"); return ['[data-action="weveryone"]', '[data-action="basetab"][data-tab="work"]']; },
+    show: (state, ui, act) => (openHub(state, ui, act, "work") ? ['[data-action="weveryone"]', '[data-action="basetab"][data-tab="work"]'] : noCamp(state, ui, act)),
   },
   build: {
     title: "Queue a building", why: "Your hub starts bare: the main house with its well, a lodge with four beds, a two-person tent and eight crop plots, no wall, and nothing else is built. Anyone without a bed sleeps rough (mood every night, worse in the wet and the cold, and a chance of a chest cold). What goes up first is your call: a bunkhouse (six beds) or makeshift tents, a crafting bench for gear, farm plots, walls on the Defenses tab. Wood pays for most of it (you start with 1,000), with a little scrap and a part or two; most builds open the base map to place them (R turns them), and your builders do the work.",
@@ -112,18 +138,6 @@ const STEPS = {
     done: (state, g) => state.hour > g.h0,
     show: (state, ui) => { closeWindows(ui); return ['#tb-speed [data-action="speed"][data-speed="1"]', '#banner [data-action="speed"]']; },
   },
-  night: {
-    title: "Get through the first night", why: "Night runs from 20:00 to 06:00, and a team out sees only the tile it stands on. Your hub has no wall yet: its guards hold it through the night. A team in the field can set up camp (the barest base: its people rest there; a fire warms them and boils water, burns wood, and its light draws trouble).",
-    done: (state, g) => state.hour >= firstDawn(g),
-    show: (state, ui, act) => {
-      const p = state.bases.length ? null : openTeam(state, ui, act);
-      if (p) return ['[data-action="xp-order"][data-mission="camp"]', '[data-action="campfire"]'];
-      closeWindows(ui);
-      ui.tab = "bases";
-      act["panel-toggle"]({ p: "left", v: "0" });
-      return ["#left .tabs + .card", "#tb-clock"];
-    },
-  },
   home: {
     title: "Bring a team home", why: "What a team finds is only yours to use once it is home: then it goes into the base's stores and armory (or the team keeps it for the next trip). Every team of yours reports what it sees as it goes and takes orders anywhere; Return home calls it in.",
     done: (state, g) => homeTeams(state, g).some((x) => x.who.some((id) => { const s = state.survivors.find((y) => y.id === id); return s && s.alive && s.location && s.location.kind === "base"; })),
@@ -143,6 +157,45 @@ const STEPS = {
     done: (state, g, ui) => !!ui.diary,
     show: (state, ui) => { closeWindows(ui); return ['[data-action="dy-open"]']; },
   },
+  raid: {
+    title: "Raid a place", why: "When a team reaches a site, pick the place to go into (one not found yet needs a survey first) and play it turn by turn on its map: search the containers, keep the noise down (every turn and every noise raises Heat, and Heat brings the dead) and leave from a green exit with what you carry. Shift+A lets the AI play your side.",
+    touch: "When a team reaches a site, pick the place to go into (one not found yet needs a survey first) and play it turn by turn on its map: search the containers, keep the noise down (every turn and every noise raises Heat, and Heat brings the dead) and leave from a green exit with what you carry. AI plays my side lets the AI play it.",
+    done: (state, g) => g.raided != null || homeTeams(state, g).some((x) => x.mission === "scavenge"),
+    show: (state, ui, act, g) => {
+      const out = g.sent.map((x) => state.parties.find((p) => p.id === x.id)).find(Boolean);
+      if (!out) return showSite(state, ui, act); // nobody out yet: send one first
+      openTeam(state, ui, act, out);
+      return ['[data-action="xp-order"][data-mission="scavenge"]', '[data-action="xp-order"][data-type="mission"]', '[data-action="xp-move"]'];
+    },
+  },
+  food: {
+    title: "Get food coming in", why: "What you carried from home runs out within days. Put someone on Forage, Hunt or Fish (the job drop-down beside their name: wild food within 2 tiles, game at dawn and dusk, fish on a river or lake), or send a team out to forage or hunt, or scavenge a grocery or a farm. The Food tab shows what you have by kind and how long it keeps.",
+    done: (state, g) => atBaseAs(state, ["forage", "hunt", "fish"]) || foodHeld(state) >= (g.fLow ?? Infinity) + GUIDE.FOOD_GAIN, // on such a job this hour, or food held up on the least seen
+    show: (state, ui, act) => (openHub(state, ui, act, "overview") ? ['[data-action="role"]', '[data-action="basetab"][data-tab="food"]'] : openTeam(state, ui, act) ? ['[data-action="xp-order"][data-type="forage"]'] : []),
+  },
+  farm: {
+    title: "Dig a farm plot", get why() { return `Foraging and hunting thin the land out; crops are what feed a holdout through the winter. Queue a Farm plot on the Construction tab (${costText(BUILDINGS.farm_plot.cost)}, and a shovel at the base to dig it: scavenge one or craft a makeshift one), place it on good soil on the base map and put someone on Farm: crops take weeks to ripen, so the sooner the better.`; },
+    done: (state, g) => plotCount(state) > (g.p0 || 0), // a plot more than the base started with
+    show: (state, ui, act) => (openHub(state, ui, act, "construction") ? ['[data-action="queuebuild"][data-type="farm_plot"]', '[data-action="basetab"][data-tab="construction"]'] : noCamp(state, ui, act)),
+  },
+  boiler: {
+    title: "Build a water boiler", get why() { return `Water from a river, a lake or a rain catcher is raw and can carry the worm. The camp fire boils a little at a time; a Water boiler (Construction tab: ${costText(BUILDINGS.boiler.cost)}, no tools needed) boils everything the base draws before it is drunk, for a little wood a day a head.`; },
+    done: (state, g) => countAt(state, (t) => t === "boiler") > (g.w0 || 0), // queued or standing, more than at the start
+    show: (state, ui, act) => (openHub(state, ui, act, "construction") ? ['[data-action="queuebuild"][data-type="boiler"]', '[data-action="basetab"][data-tab="construction"]'] : noCamp(state, ui, act)),
+  },
+  hold: {
+    title: "Hold off the attack", why: "Something has come for the camp: a band of nomads by day, a horde of the dead by night, a few more than your people. Defend opens the fight on the base's map: place your people (the wounded back, the guns where they can see the way in), then start it. Your first defence and someone on Guard help; hiding instead costs you some of the stores.",
+    touch: "Something has come for the camp: a band of nomads by day, a horde of the dead by night, a few more than your people. Defend opens the fight on the base's map: place your people (the wounded back, the guns where they can see the way in), then Start the fight. Your first defence and someone on Guard help; hiding instead costs you some of the stores.",
+    done: (state, g) => { const a = g.attack; if (!a || a.quiet) return false; const b = state.bases.find((x) => x.id === a.base); return !b || (!(b.campAttack && b.campAttack.wave) && !state.combat && !(state.cards || []).some((c) => c.campAttack === b.id || c.firstWeek === b.id)); }, // fought or hidden from, and over
+    hidden: (g) => !(g.attack && !g.attack.quiet), // not shown (or counted) until it comes (sim/firstweekattack.js)
+    show: (state, ui, act) => (openHub(state, ui, act, "construction") ? ['[data-action="cxtab"][data-tab="defenses"]', '[data-action="basetab"][data-tab="work"]'] : noCamp(state, ui, act)),
+  },
+  defence: {
+    title: "Keep watch: a lookout or a first defence", get why() { return `The dead wander in, and raiders come for what you hold; something has been watching you all week, and it will come before the week is out. Put someone on Guard (the job drop-down beside their name): a guard meets trouble first and counts 1.5× in a fight. With the tools for it, the Construction tab's Defenses list has more: the ring wall's stake fence (${costText(BUILDINGS.walls.cost)}, a hammer and a saw), barbed wire, spike pits.`; },
+    done: (state, g) => countAt(state, isDefence) > (g.d0 || 0) || guardsAt(state) > (g.gd0 || 0), // a defence queued or standing, or a guard more than at the start
+    show: (state, ui, act) => (openHub(state, ui, act, "overview") ? ['[data-action="role"]', '[data-action="basetab"][data-tab="construction"]'] : noCamp(state, ui, act)),
+  },
+
   // The road start (Normal and Hardcore): no base yet.
   team: {
     title: "Meet your team", why: "These are the people who got out with you, on the road with no home yet. Click the team on the map (or find it on the Teams tab) to open its panel: its orders, its people and everything they carry. What they carry is all you have for now: some food and water, a tent bag each.",
@@ -170,8 +223,13 @@ const STEPS = {
     done: (state) => state.bases.length > 0,
     show: (state, ui, act) => (openTeam(state, ui, act) ? ['[data-action="xp-order"][data-mission="establish"]', '[data-action="xp-move"]'] : []),
   },
+  place: {
+    title: "Place the shelter shack", get why() { return `The camp becomes a shelter once its Shelter shack stands, and it is yours to put where you want it: on the Camp tab press Place the shelter shack, then click its spot on the build map (R turns it; nothing is placed for you). It takes ${costText(BUILDINGS.camp_up.cost)}, gathered over the next days.`; },
+    done: (state) => { const h = hub(state); return !!h && (!isCamp(h) || !!tierUpJob(h)); },
+    show: (state, ui, act) => { const h = hub(state); if (h && isCamp(h)) { closeWindows(ui); act.openbase({ id: h.id, tab: "camp" }); return ['[data-action="tier-pick"]:not([disabled])', '[data-action="basetab"][data-tab="camp"]']; } return openTeam(state, ui, act) ? ['[data-action="xp-order"][data-mission="establish"]'] : []; },
+  },
   needs: {
-    title: "Place the shelter shack and bring in what it needs", get why() { return `The camp becomes a shelter once its Shelter shack stands. On the Camp tab press Place the shelter shack, then click where it goes on the build map (nothing is placed for you). It takes ${costText(BUILDINGS.camp_up.cost)}; the builders make the building materials from scrap (${CAMP.matScrap} each). Whatever reaches the camp's stores goes into it as it comes in, and the Camp tab lists what is still missing.`; },
+    title: "Bring in what the shelter needs", get why() { return `The shack takes ${costText(BUILDINGS.camp_up.cost)}. The builders make the building materials from scrap (${CAMP.matScrap} each); wood comes from your woodcutters and teams, scrap from the ruins. Whatever reaches the camp's stores goes into it as it comes in, and the Camp tab lists what is still missing.`; },
     done: (state) => { const h = hub(state); if (!h) return false; const job = isCamp(h) ? tierUpJob(h) : null; return !isCamp(h) || (!!job && gatherRows(job).every((r) => r.have + (h.stock[r.key] || 0) >= r.need - 1e-9)); }, // taken by the step up or waiting in the stores
     show: (state, ui, act) => { const h = hub(state); if (h && isCamp(h)) { closeWindows(ui); act.openbase({ id: h.id, tab: "camp" }); return [...(tierUpJob(h) ? [] : ['[data-action="tier-pick"]:not([disabled])']), '[data-action="tf-open"]', '[data-action="basetab"][data-tab="camp"]']; } return openTeam(state, ui, act) ? ['[data-action="xp-order"][data-mission="establish"]'] : []; },
   },
@@ -181,33 +239,86 @@ const STEPS = {
     show: (state, ui, act) => { const h = hub(state); if (h && isCamp(h)) { closeWindows(ui); act.openbase({ id: h.id, tab: "camp" }); return ['[data-action="basetab"][data-tab="camp"]', '[data-action="basetab"][data-tab="construction"]']; } return openTeam(state, ui, act) ? ['[data-action="xp-order"][data-mission="establish"]'] : []; },
   },
 };
+// Night n (1 to GUIDE.DAYS): each day of the week ends with one, ticked at its dawn. Night 1 keeps the id "night".
+const ORDINAL = ["", "first", "second", "third", "fourth", "fifth", "sixth", "seventh"];
+const NIGHT_WHY = [
+  "",
+  "Night runs from 20:00 to 06:00, and a team out sees only the tile it stands on. Your hub has no wall yet: its guards hold it through the night. A team in the field can set up camp (the barest base: its people rest there; a fire warms them and boils water, burns wood, and its light draws trouble).",
+  "Everyone sleeps at night. Anyone without a bed or a tent sleeps rough: their mood drops every night, worse in the wet and the cold. A tired, unhappy holdout works slowly; the People tab shows how each one is.",
+  "A team still out at dusk gets a choice: make camp and rest until morning, or push on tired and half blind. Teams that rest come home in better shape.",
+  "A lit fire warms your people and boils the water, but its light can draw trouble at night. Its button puts it out when the dead are close.",
+  "Watch the top bar's food and water days. People who go hungry or thirsty lose health every day and nobody heals until they eat and drink.",
+  "If the dead come in the night, the people on Guard meet them first. Keep the wounded back and the gaps covered; a fight at the base opens its own map.",
+  "The last night of your first week. Get through it and the week is yours: from here the alerts on the right keep telling you what needs you, and Help (?) has the rest.",
+];
+for (let n = 1; n <= GUIDE.DAYS; n++) {
+  STEPS[n === 1 ? "night" : `night${n}`] = {
+    title: `Get through the ${ORDINAL[n] || `${n}th`} night`, why: NIGHT_WHY[n] || NIGHT_WHY[NIGHT_WHY.length - 1],
+    done: (state, g) => state.hour >= nightDawn(g, n),
+    show: (state, ui, act) => {
+      const p = state.bases.length ? null : openTeam(state, ui, act);
+      if (p) return ['[data-action="xp-order"][data-mission="camp"]', '[data-action="campfire"]'];
+      closeWindows(ui);
+      ui.tab = "bases";
+      act["panel-toggle"]({ p: "left", v: "0" });
+      return ["#left .tabs + .card", "#tb-clock"];
+    },
+  };
+}
 // The same steps in the road's words (guideSteps): the night out or at the camp, wood for the shelter, a team sent
 // from the camp.
 const ROAD_WORDS = {
   night: { why: "Night runs from 20:00 to 06:00 and nobody sees far in the dark. At the camp the fire keeps your people warm and boils the water, but its light can draw the dead. Still on the road at dusk? Set up camp where you stand: a night's camp with the tents, struck again in the morning." },
-  wood: { title: "Cut wood for the shelter", get why() { return `The shelter shack takes ${BUILDINGS.camp_up.cost.wood} wood, and the fire burns more every night. At the camp, put someone on Cut wood (the job drop-down beside their name) or mark trees to fell on the build map; a team out can cut wood and bring it home too.`; } },
+  work: { title: "Put the camp on work priorities", why: "At the camp everyone starts on Build. On work priorities each person picks the most urgent job they are set for, hour by hour: the shelter, wood, water, wild food, a lookout when the dead come. One click sets everyone up; the Work tab sets who does what first." },
+  wood: { get title() { return `Cut ${BUILDINGS.camp_up.cost.wood} wood for the shelter`; }, get why() { return `The shelter shack takes ${BUILDINGS.camp_up.cost.wood} wood, and the fire burns more every night: this ticks once the camp holds that much (or the shack has it). Put someone on Cut wood (the job drop-down beside their name) or mark trees to fell on the build map; a team out can cut wood and bring it home too.`; },
+    done: (state) => { const h = hub(state); if (!h) return false; if (!isCamp(h)) return true; const need = BUILDINGS.camp_up.cost.wood, job = tierUpJob(h), row = job ? gatherRows(job).find((r) => r.key === "wood") : null; return (h.stock.wood || 0) + (row ? row.have : 0) >= need; } }, // the shack's wood in the stores or taken by it
   scavenge: {
     get why() { return `The shelter needs ${BUILDINGS.camp_up.cost.scrap} scrap and more, and scrap, parts, meds and ammo all come from the ruins. From the camp, click a site nearby, pick Scavenge / raid, choose who goes and launch; leave someone at the camp to work it. What they find is yours once they are back.`; },
     get pad() { return `The shelter needs ${BUILDINGS.camp_up.cost.scrap} scrap and more, and scrap, parts, meds and ammo all come from the ruins. ${PAD.X} on a site near the camp opens its menu: pick Scavenge / raid, choose who goes and launch; leave someone at the camp to work it. What they find is yours once they are back.`; },
   },
 };
-// The lists in two parts, in the order they are shown: what day 1 needs, then the rest of the week. Steps can be done
-// in any order; the first one not done is "next".
+// The lists day by day (the user's request 2026-10-28: "is there something for each day up to the end of the first
+// week? ... raids, setting work orders in the base etc; at the end of each day is get through the X night"): a few
+// steps a day, each day ending with its night. Steps can be done in any order and on any day; the first one not done
+// up to today is "next".
 export const GUIDE_PHASES = {
   base: [
-    { label: "Day 1", sub: "set the hub to work", ids: ["stores", "clock", "work", "build", "wood", "night"] },
-    { label: "This week", sub: "out into the ruins", ids: ["scavenge", "home", "diary"] },
+    { label: "Day 1", sub: "find your feet", ids: ["stores", "clock", "work", "night"] },
+    { label: "Day 2", sub: "build and gather", ids: ["build", "wood", "night2"] },
+    { label: "Day 3", sub: "into the ruins", ids: ["scavenge", "raid", "night3"] },
+    { label: "Day 4", sub: "bring it home", ids: ["home", "food", "boiler", "night4"] },
+    { label: "Day 5", sub: "food that lasts", ids: ["farm", "night5"] },
+    { label: "Day 6", sub: "get ready", ids: ["defence", "night6"] },
+    { label: "Day 7", sub: "look back on the week", ids: ["diary", "hold", "night7"] },
   ],
   road: [
     { label: "Day 1", sub: "off the road and through the night", ids: ["team", "clock", "water", "fire", "camp", "night"] },
-    { label: `By day ${GUIDE.DAYS}`, sub: "a shelter of your own", ids: ["wood", "scavenge", "needs", "found", "diary"] },
+    { label: "Day 2", sub: "set the camp to work", ids: ["work", "wood", "food", "night2"] },
+    { label: "Day 3", sub: "into the ruins", ids: ["scavenge", "raid", "night3"] },
+    { label: "Day 4", sub: "bring it home, plan the shelter", ids: ["home", "place", "boiler", "night4"] },
+    { label: "Day 5", sub: "gather what the shelter needs", ids: ["needs", "farm", "night5"] },
+    { label: "Day 6", sub: "get ready", ids: ["defence", "night6"] },
+    { label: "Day 7", sub: "a roof at last", ids: ["found", "diary", "hold", "night7"] },
   ],
+};
+// What the attack waits for (sim/firstweekattack.js reads g.ready): the steps no missing tool can hold up (the
+// playtest 2026-10-28: the boiler's wrench and the farm plot's shovel never turned up, and the attack never came).
+export const GUIDE_READY = {
+  base: ["stores", "clock", "work", "build", "scavenge", "raid", "home", "defence"],
+  road: ["team", "clock", "water", "fire", "camp", "work", "scavenge", "raid", "home", "place", "defence"],
 };
 export const GUIDE_LISTS = Object.fromEntries(Object.entries(GUIDE_PHASES).map(([k, ph]) => [k, ph.flatMap((x) => x.ids)]));
 const phasesOf = (g) => GUIDE_PHASES[g && g.kind] || GUIDE_PHASES.base;
-// A step with its words (a getter's text read now) and its part of the week (phase: an index into GUIDE_PHASES).
+// A step with its words (a getter's text read now) and its day (phase: an index into GUIDE_PHASES, day phase + 1).
 const stepOf = (id, kind, phase) => ({ id, ...STEPS[id], ...(kind === "road" ? ROAD_WORDS[id] : null), phase });
-export const guideSteps = (g) => phasesOf(g).flatMap((ph, i) => ph.ids.map((id) => stepOf(id, g && g.kind, i)));
+// A step that is hidden (the attack before it comes) is left out: not shown, not counted.
+export const guideSteps = (g) => phasesOf(g).flatMap((ph, i) => ph.ids.map((id) => stepOf(id, g && g.kind, i))).filter((st) => !(st.hidden && g && st.hidden(g)));
+// Today's steps done of today's (the 🧭 First week button, the phone's chip, the card's count): { day, done, total }.
+export function guideProgress(state, g) {
+  const d = Math.min(guideDay(state, g), phasesOf(g).length);
+  const ids = guideSteps(g).filter((st) => st.phase === d - 1).map((st) => st.id);
+  return { day: d, done: ids.filter((id) => g.done[id] != null).length, total: ids.length };
+}
 export const guideStep = (id, kind = "base") => (STEPS[id] ? stepOf(id, kind, null) : null);
 
 // ---------- show-me helpers ----------
@@ -223,6 +334,8 @@ function openHub(state, ui, act, tab) {
   act.openbase({ id: h.id, tab });
   return true;
 }
+// No camp yet for a step that needs one: the team's Establish base comes first.
+const noCamp = (state, ui, act) => (openTeam(state, ui, act) ? ['[data-action="xp-order"][data-mission="establish"]', '[data-action="xp-move"]'] : []);
 // A team's panel (the road team, or the given one), centered, the right panel shown. Returns the team or null.
 function openTeam(state, ui, act, p = null) {
   const team = p || roadTeam(state) || mine(state)[0];
@@ -259,7 +372,7 @@ export function startGuide(state, on = true, { keep = false } = {}) {
   if (!on) return null;
   state.guide = {
     kind: roadOver(state) ? "base" : "road", on: true, keep: !!keep, fold: true, done: {}, // folded to its Next line until opened (the user's request 2026-10-24: the alerts' corner takes less of the map)
-    h0: state.hour, b0: buildingCount(state), sent: [], wLow: waterHeld(state), woodLow: hubWood(state), seen: {}, stepsDone: null, ended: null,
+    h0: state.hour, b0: buildingCount(state), p0: plotCount(state), d0: countAt(state, isDefence), gd0: guardsAt(state), w0: countAt(state, (t) => t === "boiler"), sent: [], wLow: waterHeld(state), woodLow: hubWood(state), fLow: foodHeld(state), raided: null, seen: {}, ended: null,
   };
   return state.guide;
 }
@@ -281,10 +394,12 @@ export function guideCheck(state, ui) {
   // Teams that set out from a base (any mission; on the road, from the camp), remembered by who is on them.
   for (const p of mine(state)) {
     if (p.homeBaseId == null || g.sent.some((x) => x.id === p.id)) continue;
-    g.sent.push({ id: p.id, who: partyMembers(state, p).map((s) => s.id) });
+    g.sent.push({ id: p.id, who: partyMembers(state, p).map((s) => s.id), mission: p.mission || null });
     if (g.sent.length > GUIDE.SENT_MAX) g.sent.shift();
   }
   if (g.kind === "road") g.wLow = Math.min(g.wLow ?? Infinity, waterHeld(state));
+  g.fLow = Math.min(g.fLow ?? Infinity, foodHeld(state));
+  if (g.raided == null && state.combat && state.combat.raid && !state.combat.drill) g.raided = state.hour; // a raid's map is up: a place raided
   const steps = guideSteps(g);
   const fresh = [];
   for (const st of steps) {
@@ -294,16 +409,22 @@ export function guideCheck(state, ui) {
     if (ok) { g.done[st.id] = state.hour; fresh.push(st); }
   }
   const n = steps.filter((st) => g.done[st.id] != null).length;
+  if (g.attack && !g.attack.quiet && g.attackTold == null) { // the attack has come: its step shows from now
+    g.attackTold = state.hour;
+    ui.guideSel = "hold";
+    ui.flash = { text: `⚔ First week: ${g.attack.kind === "nomads" ? "nomads are at the camp" : "a horde of the dead is at the camp"}. A new step: Hold off the attack.`, at: now() };
+  }
+  // The steps it waits for done: the seventh day's attack may come (sim/firstweekattack.js reads g.ready).
+  if (g.ready == null && (GUIDE_READY[g.kind] || GUIDE_READY.base).every((id) => g.done[id] != null)) g.ready = state.hour;
   if (fresh.length) {
     if (ui.guidePulse && fresh.some((st) => st.id === ui.guidePulse.step)) ui.guidePulse.until = 0;
-    ui.flash = { text: `✔ First week: ${fresh.map((st) => st.title).join("; ")} (${n} of ${steps.length})`, at: now() };
+    const pr = guideProgress(state, g), ph = phasesOf(g)[pr.day - 1];
+    const dawn = fresh.some((st) => /^night\d*$/.test(st.id)); // a night just over: the new day says what it is about
+    ui.flash = { text: `✔ First week: ${fresh.map((st) => st.title).join("; ")} (${ph.label}: ${dawn ? `${ph.sub}, ${pr.done} of ${pr.total} done` : `${pr.done} of ${pr.total}`})`, at: now() };
   }
-  const over = !g.keep && day(state) > GUIDE.DAYS;
-  if (n === steps.length && (over || g.keep)) endGuide(state, ui, "done", "✔ First week: every step done. The guide steps aside; the menu brings it back.");
-  else if (n === steps.length && g.stepsDone == null) {
-    g.stepsDone = state.hour;
-    ui.flash = { text: `✔ First week: every step done. The checklist steps aside; notes on new things go on to day ${GUIDE.DAYS}.`, at: now() };
-  } else if (over) endGuide(state, ui, n === steps.length ? "done" : "days", `The first-week guide steps aside after day ${GUIDE.DAYS}.${g.kind === "road" && g.done.found == null && isCamp(hub(state)) ? " No shelter yet: the camp's Camp tab shows what it still needs." : ""} The menu (Game tab) brings it back.`);
+  const over = !g.keep && state.hour >= nightDawn(g, GUIDE.DAYS); // the dawn after the seventh night
+  if (n === steps.length) endGuide(state, ui, "done", "✔ First week: every step done, the seventh night behind you. The guide steps aside; the menu brings it back.");
+  else if (over) endGuide(state, ui, n === steps.length ? "done" : "days", `The first week is over: the guide steps aside after day ${GUIDE.DAYS}.${g.ready == null ? " Some of the week's steps were left undone, so nothing came for the camp." : ""}${g.kind === "road" && g.done.found == null && isCamp(hub(state)) ? " No shelter yet: the camp's Camp tab shows what it still needs." : ""} The menu (Game tab) brings it back.`);
   return fresh;
 }
 function endGuide(state, ui, why, text) {
@@ -461,21 +582,22 @@ function noteHTML(g, ui) {
 export function guideTab(state, ui) {
   const g = state && state.guide;
   if (!g || !g.on || !ui.started || state.gameOver || state.combat || ui.timelapse) return "";
-  const steps = guideSteps(g), n = steps.filter((st) => g.done[st.id] != null).length;
-  return panelTab({ icon: "🧭", title: "First week", badges: [{ text: `${n}/${steps.length}`, tip: `${n} of ${steps.length} steps done` }], action: "panel-toggle", data: { p: "guide", v: "0" }, tip: "Show the first-week guide" });
+  const pr = guideProgress(state, g);
+  return panelTab({ icon: "🧭", title: "First week", badges: [{ text: `Day ${pr.day} · ${pr.done}/${pr.total}`, tip: `Day ${pr.day}: ${pr.done} of ${pr.total} steps done` }], action: "panel-toggle", data: { p: "guide", v: "0" }, tip: "Show the first-week guide" });
 }
 export function renderGuide(state, ui) {
   const g = state && state.guide;
   if (!g || !g.on || !ui.started || state.gameOver || state.combat || ui.timelapse) return "";
   const note = noteHTML(g, ui);
-  if (g.stepsDone != null) return note ? `<div class="guide">${note}</div>` : ""; // every step done: only the notes, to day 7
   const steps = guideSteps(g);
-  const open = steps.filter((st) => g.done[st.id] == null);
-  const cur = open.find((st) => st.id === ui.guideSel) || open[0];
-  const n = steps.length - open.length;
   const phases = phasesOf(g);
-  const head = `<div class="gd-head"><span class="gd-title"${tip(`The first-week guide: ${phases.map((ph) => `${ph.label}, ${ph.sub}`).join("; ")}. Steps tick off by themselves as you do them, in any order. Show me opens the screen and pulses the button to press.`)}>🧭 First week</span>
-    <span class="gd-count"${tip(`${n} of ${steps.length} steps done · day ${day(state)} of ${GUIDE.DAYS}`)}>${n}/${steps.length}</span>
+  const today = guideDay(state, g), pr = guideProgress(state, g);
+  const open = steps.filter((st) => g.done[st.id] == null);
+  // Next: the step picked, else the first one open up to today, else the first one open.
+  const cur = open.find((st) => st.id === ui.guideSel) || open.find((st) => st.phase < today) || open[0];
+  const n = steps.length - open.length;
+  const head = `<div class="gd-head"><span class="gd-title"${tip("The first-week guide: a few steps a day, each day ending with its night. Steps tick off by themselves as you do them, in any order and on any day. Show me opens the screen and pulses the button to press.")}>🧭 First week</span>
+    <span class="gd-count"${tip(`Day ${pr.day}: ${pr.done} of ${pr.total} steps done · the week: ${n} of ${steps.length}`)}>Day ${pr.day} · ${pr.done}/${pr.total}</span>
     <button class="gd-btn" data-action="help-open" data-sec="start-here"${tip("Help: Start here, the game in a few lines")}>?</button>
     <button class="gd-btn" data-action="gd-fold"${tip(g.fold ? "Show the steps" : "Fold the guide to one line")}>${g.fold ? "▸" : "▾"}</button>
     <button class="gd-btn" data-action="gd-close"${tip("Hide the guide (⚙ Menu → Game brings it back)")}>✕</button></div>`;
@@ -487,13 +609,19 @@ export function renderGuide(state, ui) {
       `<button class="gd-show" data-action="gd-show" data-id="${st.id}"${tip("Open the screen for this step and point at the button to press")}>Show me</button></div>` +
       (on ? `<div class="gd-why">${padHtml(esc(sayFor(st, "why")))}</div>` : "");
   };
-  // Each part of the week under its heading (Day 1, then the rest of the week), ✔ once its steps are all done.
-  const phaseHead = (i) => {
-    const ph = phases[i], left = ph.ids.some((id) => g.done[id] == null);
-    return `<div class="gd-phase${i ? "" : " first"}"><b>${esc(ph.label)}</b> · ${esc(ph.sub)}${left ? "" : " ✔"}</div>`;
-  };
-  const rows = steps.map((st, i) => (i === 0 || steps[i - 1].phase !== st.phase ? phaseHead(st.phase) : "") + row(st)).join("");
-  return `<div class="guide">${head}${note}${rows}</div>`;
+  // A day: today in full; an earlier day only what is still open on it (one line once it is all done); a later day one
+  // line, opened by a click (ui.guidePeek) to see what is coming.
+  const days = phases.map((ph, i) => {
+    const d = i + 1, its = steps.filter((st) => st.phase === i), left = its.filter((st) => g.done[st.id] == null);
+    const peek = ui.guidePeek === d;
+    const label = `<b>${esc(ph.label)}</b> · ${esc(ph.sub)}`;
+    const line = (cls, extra, t) => `<button class="gd-phase gd-dayline${cls}${i ? "" : " first"}" data-action="gd-day" data-day="${d}"${tip(t)}>${peek ? "▾" : "▸"} ${label}${extra}</button>`;
+    if (d === today) return `<div class="gd-phase today${i ? "" : " first"}">${label} <span class="gd-today">today</span>${left.length ? "" : " ✔"}</div>${its.map(row).join("")}`;
+    if (d < today && left.length && !peek) return `<div class="gd-phase${i ? "" : " first"}">${label} <span class="gd-late">still to do</span></div>${left.map(row).join("")}`;
+    if (d < today) return line(" past", left.length ? "" : " ✔", peek ? "Fold this day" : "Show this day's steps") + (peek ? its.map(row).join("") : "");
+    return line(" later", its.length - left.length ? ` <span class="gd-late">${its.length - left.length}/${its.length}</span>` : "", peek ? "Fold this day" : "What this day is about: its steps, ready whenever you are") + (peek ? its.map(row).join("") : "");
+  }).join("");
+  return `<div class="guide">${head}${note}${days}</div>`;
 }
 
 // Pulses what "Show me" points at (main.js calls it after each redraw; the panels are HTML strings, so the class is
@@ -521,6 +649,7 @@ export const GUIDE_ACTIONS = {
     ui.guidePulse = { step: st.id, sels, until: now() + GUIDE.PULSE_MS, fresh: true };
   },
   "gd-pick": (state, ui, d) => { ui.guideSel = d.id; },
+  "gd-day": (state, ui, d) => { ui.guidePeek = ui.guidePeek === Number(d.day) ? null : Number(d.day); }, // a day's line: its steps shown or folded
   "gd-fold": (state) => { if (state.guide) state.guide.fold = !state.guide.fold; },
   "gd-close": (state, ui) => { if (state.guide) endGuide(state, ui, "closed", "First-week guide hidden. ⚙ Menu → Game brings it back."); },
   "gd-tip-ok": (state, ui) => { ui.guideTip = ui.guideTip ? { ...ui.guideTip, hide: true } : null; }, // ✕ on a window's note: hidden until the next one
