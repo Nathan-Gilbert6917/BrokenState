@@ -4,8 +4,9 @@
    portrait was still a 2xY grid and in landscape the top and bottom were cut off"). The box (.nrscreen) fills #modal,
    keeps its border and grips off, and scrolls as a whole (main.js refreshModal keeps a box's scroll through a redraw),
    with the header (◀ the title, the name, ⚙ Menu, 🎲 Random run, 🗺 View map, ▶ Start, the last notice) stuck to the
-   top. The settings sit in three labelled groups, the crew cards in a grid that takes the columns the screen has room
-   for: three on a wide desktop, two on a normal one or a phone on its side, one on a phone held upright.
+   top. The settings sit in three labelled groups, the crew cards in a grid of two columns on a desktop or a tablet and
+   one on a phone, upright or on its side (the user's request 2026-10-28: "For starting survivors on desktop show
+   column of 2 and phone column of one").
    Phone and tablet rules sit inside the same media queries as responsive.css (a desktop window with a mouse matches
    none): phone (max-width: 759px); a short touch screen (pointer: coarse) and (min-width: 760px) and (max-height: 500px);
    tablet (pointer: coarse) and (min-width: 760px). */
@@ -44,8 +45,8 @@ body:has(#modal:not(.hidden) .box.nrscreen) #rs-close { display: none; }
 .nrgroup .nrfleet { margin-top: 0.5rem; padding-top: 0.4rem; border-top: 1px solid var(--line); }
 .nrgroup .nrveh { margin-top: 0.3rem; }
 
-/* The crew: as many columns as 24rem cards fit; a label on a card is a plain label, not .crew's pick box. */
-.crew.nrcrew { grid-template-columns: repeat(auto-fill, minmax(24rem, 1fr)); gap: 0.5rem; }
+/* The crew: two columns (one on a phone, below); a label on a card is a plain label, not .crew's pick box. */
+.crew.nrcrew { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.5rem; }
 .nrcrew label { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0; background: none; border: none; cursor: default; white-space: nowrap; }
 .nrmain { flex: 1 1 0; min-width: 0; }
 .nrname { flex-wrap: nowrap; }
@@ -72,6 +73,8 @@ body:has(#modal:not(.hidden) .box.nrscreen) #rs-close { display: none; }
   .nrbody { padding: 0.5rem 0.6rem 1rem; }
   .nrgroup { padding: 0.4rem 0.55rem 0.5rem; }
   .nrg-b { gap: 0.4rem 0.7rem; }
+  /* The crew one card a row, upright or on its side. */
+  .crew.nrcrew { grid-template-columns: minmax(0, 1fr); }
   /* The groups' buttons share the rows out evenly (two to a row where two fit). */
   .nrg-btns button, .nrg-crew > .nrg-b > button { flex: 1 1 auto; }
   /* A skill's − and + a little smaller than a phone's other buttons (responsive.css): twelve rows of them a card. */
@@ -81,7 +84,6 @@ body:has(#modal:not(.hidden) .box.nrscreen) #rs-close { display: none; }
 /* ================= phone held upright ================= */
 @media (max-width: 759px) {
   .nrgroups { grid-template-columns: minmax(0, 1fr); gap: 0.5rem; }
-  .crew.nrcrew { grid-template-columns: minmax(0, 1fr); }
   .nrgroup label { white-space: normal; }
 }
 
