@@ -20,7 +20,7 @@
 //   player teams seen leaving a base (for "bring them home" and a raid); wLow, fLow: the least water and food held so
 //   far (for "find water", "food coming in"); woodLow: the least wood at the hub so far (for "wood coming in"; null
 //   until there is a hub); raided: the hour a raid's map first came up; w0: water boilers then; ready: the hour days 1
-//   to 6 were all done; warned, attack: the seventh night's attack
+//   to 6 were all done; attackAt, warned, attack, attackTold: the seventh day's attack
 //   (sim/firstweekattack.js).
 // - Off by itself once every step is done or at the dawn after the seventh night (not when brought back by hand from
 //   the menu: keep), or with its ✕. The menu's Game tab brings it back or hides it (gd-toggle).
@@ -32,10 +32,10 @@
 //   its Help topic. The first alert of each kind (a team waiting, no work, food low, the worm…) gets a "New" line at the
 //   top of the card. Each is told once a run: g.seen = { tip id: hour }.
 // - The player's: it never pauses the clock, adds cards or touches the simulation itself; the autopilot and the
-//   headless tools never start it. The one thing the game does for it: the seventh night's attack (sim/firstweekattack.js,
-//   while the guide is on and once every step of days 1 to 6 is done, g.ready: a warning, then a nomad band on your trail
-//   or a horde of the dead at the hub; the user's requests 2026-10-28), which its "Hold off the attack" step on day 7
-//   reads (g.attack) and shows locked (🔒) until then.
+//   headless tools never start it. The one thing the game does for it: the seventh day's attack (sim/firstweekattack.js,
+//   while the guide is on and once every step of days 1 to 6 is done, g.ready: a warning, then at an hour of day 7 a
+//   nomad band by day or a horde of the dead by night, made for it; the user's requests 2026-10-28), whose "Hold off the
+//   attack" step on day 7 is hidden (st.hidden) until it comes (g.attack).
 import { hub, alive } from "../sim/world.js";
 import { partyTile, partyMembers, carried } from "../sim/parties.js";
 import { teamWaterIn, waterIn } from "../sim/water.js";
@@ -44,7 +44,7 @@ import { waterSource, ESTABLISH_LABEL } from "../sim/staging.js";
 import { isCamp, tierUpJob, gatherRows, BUILDINGS, CAMP } from "../sim/buildings.js";
 import { SUPPLIES } from "../sim/data.js";
 import { roadTeam } from "../sim/hardcore-start.js";
-import { nightDawn } from "../sim/firstweekattack.js"; // the dawn that ends the guide's night n; the seventh night's attack
+import { nightDawn } from "../sim/firstweekattack.js"; // the dawn that ends the guide's night n; the seventh day's attack
 import { tileActions, modalKind } from "./ui.js";
 import { cardKind } from "../sim/cardrules.js";
 import { listSaves } from "./saves.js";
@@ -181,10 +181,10 @@ const STEPS = {
     show: (state, ui, act) => (openHub(state, ui, act, "construction") ? ['[data-action="queuebuild"][data-type="boiler"]', '[data-action="basetab"][data-tab="construction"]'] : noCamp(state, ui, act)),
   },
   hold: {
-    title: "Hold off the attack on the seventh night", why: "Once every step of days 1 to 6 is done, whoever has been watching comes on the seventh night: a band of nomads on your trail, or a horde of the dead from round about, a few more than you. Defend opens the fight on the base's map: place your people (the wounded back, the guns where they can see the way in), then start it. Your first defence and someone on Guard help; hiding instead costs you some of the stores.",
-    touch: "Once every step of days 1 to 6 is done, whoever has been watching comes on the seventh night: a band of nomads on your trail, or a horde of the dead from round about, a few more than you. Defend opens the fight on the base's map: place your people (the wounded back, the guns where they can see the way in), then Start the fight. Your first defence and someone on Guard help; hiding instead costs you some of the stores.",
-    done: (state, g) => { const a = g.attack; if (!a) return false; if (a.quiet) return true; const b = state.bases.find((x) => x.id === a.base); return !b || (!(b.campAttack && b.campAttack.wave) && !state.combat && !(state.cards || []).some((c) => c.campAttack === b.id || c.firstWeek === b.id)); }, // fought or hidden from, and over
-    locked: (state, g) => g.ready == null, // the attack comes only once days 1 to 6 are done (sim/firstweekattack.js)
+    title: "Hold off the attack", why: "Something has come for the camp: a band of nomads by day, a horde of the dead by night, a few more than your people. Defend opens the fight on the base's map: place your people (the wounded back, the guns where they can see the way in), then start it. Your first defence and someone on Guard help; hiding instead costs you some of the stores.",
+    touch: "Something has come for the camp: a band of nomads by day, a horde of the dead by night, a few more than your people. Defend opens the fight on the base's map: place your people (the wounded back, the guns where they can see the way in), then Start the fight. Your first defence and someone on Guard help; hiding instead costs you some of the stores.",
+    done: (state, g) => { const a = g.attack; if (!a || a.quiet) return false; const b = state.bases.find((x) => x.id === a.base); return !b || (!(b.campAttack && b.campAttack.wave) && !state.combat && !(state.cards || []).some((c) => c.campAttack === b.id || c.firstWeek === b.id)); }, // fought or hidden from, and over
+    hidden: (g) => !(g.attack && !g.attack.quiet), // not shown (or counted) until it comes (sim/firstweekattack.js)
     show: (state, ui, act) => (openHub(state, ui, act, "construction") ? ['[data-action="cxtab"][data-tab="defenses"]', '[data-action="basetab"][data-tab="work"]'] : noCamp(state, ui, act)),
   },
   defence: {
@@ -245,7 +245,7 @@ const NIGHT_WHY = [
   "A lit fire warms your people and boils the water, but its light can draw trouble at night. Its button puts it out when the dead are close.",
   "Watch the top bar's food and water days. People who go hungry or thirsty lose health every day and nobody heals until they eat and drink.",
   "If the dead come in the night, the people on Guard meet them first. Keep the wounded back and the gaps covered; a fight at the base opens its own map.",
-  "The last night of your first week, and the one the watchers come on. Get through it and the week is yours: from here the alerts on the right keep telling you what needs you, and Help (?) has the rest.",
+  "The last night of your first week. Get through it and the week is yours: from here the alerts on the right keep telling you what needs you, and Help (?) has the rest.",
 ];
 for (let n = 1; n <= GUIDE.DAYS; n++) {
   STEPS[n === 1 ? "night" : `night${n}`] = {
@@ -284,7 +284,7 @@ export const GUIDE_PHASES = {
     { label: "Day 4", sub: "bring it home", ids: ["home", "food", "night4"] },
     { label: "Day 5", sub: "food that lasts", ids: ["farm", "night5"] },
     { label: "Day 6", sub: "get ready", ids: ["defence", "night6"] },
-    { label: "Day 7", sub: "the attack", ids: ["diary", "hold", "night7"] },
+    { label: "Day 7", sub: "look back on the week", ids: ["diary", "hold", "night7"] },
   ],
   road: [
     { label: "Day 1", sub: "off the road and through the night", ids: ["team", "clock", "water", "fire", "camp", "night"] },
@@ -293,18 +293,19 @@ export const GUIDE_PHASES = {
     { label: "Day 4", sub: "bring it home, plan the shelter", ids: ["home", "place", "night4"] },
     { label: "Day 5", sub: "gather what the shelter needs", ids: ["needs", "farm", "night5"] },
     { label: "Day 6", sub: "get ready", ids: ["defence", "night6"] },
-    { label: "Day 7", sub: "a roof, and the attack", ids: ["found", "diary", "hold", "night7"] },
+    { label: "Day 7", sub: "a roof at last", ids: ["found", "diary", "hold", "night7"] },
   ],
 };
 export const GUIDE_LISTS = Object.fromEntries(Object.entries(GUIDE_PHASES).map(([k, ph]) => [k, ph.flatMap((x) => x.ids)]));
 const phasesOf = (g) => GUIDE_PHASES[g && g.kind] || GUIDE_PHASES.base;
 // A step with its words (a getter's text read now) and its day (phase: an index into GUIDE_PHASES, day phase + 1).
 const stepOf = (id, kind, phase) => ({ id, ...STEPS[id], ...(kind === "road" ? ROAD_WORDS[id] : null), phase });
-export const guideSteps = (g) => phasesOf(g).flatMap((ph, i) => ph.ids.map((id) => stepOf(id, g && g.kind, i)));
+// A step that is hidden (the attack before it comes) is left out: not shown, not counted.
+export const guideSteps = (g) => phasesOf(g).flatMap((ph, i) => ph.ids.map((id) => stepOf(id, g && g.kind, i))).filter((st) => !(st.hidden && g && st.hidden(g)));
 // Today's steps done of today's (the 🧭 First week button, the phone's chip, the card's count): { day, done, total }.
 export function guideProgress(state, g) {
-  const ph = phasesOf(g), d = Math.min(guideDay(state, g), ph.length);
-  const ids = ph[d - 1].ids;
+  const d = Math.min(guideDay(state, g), phasesOf(g).length);
+  const ids = guideSteps(g).filter((st) => st.phase === d - 1).map((st) => st.id);
   return { day: d, done: ids.filter((id) => g.done[id] != null).length, total: ids.length };
 }
 export const guideStep = (id, kind = "base") => (STEPS[id] ? stepOf(id, kind, null) : null);
@@ -397,7 +398,12 @@ export function guideCheck(state, ui) {
     if (ok) { g.done[st.id] = state.hour; fresh.push(st); }
   }
   const n = steps.filter((st) => g.done[st.id] != null).length;
-  // Days 1 to 6 all done: the seventh night's attack may come (sim/firstweekattack.js reads g.ready).
+  if (g.attack && !g.attack.quiet && g.attackTold == null) { // the attack has come: its step shows from now
+    g.attackTold = state.hour;
+    ui.guideSel = "hold";
+    ui.flash = { text: `⚔ First week: ${g.attack.kind === "nomads" ? "nomads are at the camp" : "a horde of the dead is at the camp"}. A new step: Hold off the attack.`, at: now() };
+  }
+  // Days 1 to 6 all done: the seventh day's attack may come (sim/firstweekattack.js reads g.ready).
   if (g.ready == null && steps.filter((st) => st.phase < GUIDE.DAYS - 1).every((st) => g.done[st.id] != null)) g.ready = state.hour;
   if (fresh.length) {
     if (ui.guidePulse && fresh.some((st) => st.id === ui.guidePulse.step)) ui.guidePulse.until = 0;
@@ -407,7 +413,7 @@ export function guideCheck(state, ui) {
   }
   const over = !g.keep && state.hour >= nightDawn(g, GUIDE.DAYS); // the dawn after the seventh night
   if (n === steps.length) endGuide(state, ui, "done", "✔ First week: every step done, the seventh night behind you. The guide steps aside; the menu brings it back.");
-  else if (over) endGuide(state, ui, n === steps.length ? "done" : "days", `The first week is over: the guide steps aside after day ${GUIDE.DAYS}.${g.ready == null ? " The watchers never came: some steps of days 1 to 6 were left undone." : ""}${g.kind === "road" && g.done.found == null && isCamp(hub(state)) ? " No shelter yet: the camp's Camp tab shows what it still needs." : ""} The menu (Game tab) brings it back.`);
+  else if (over) endGuide(state, ui, n === steps.length ? "done" : "days", `The first week is over: the guide steps aside after day ${GUIDE.DAYS}.${g.ready == null ? " Some steps of days 1 to 6 were left undone, so nothing came for the camp." : ""}${g.kind === "road" && g.done.found == null && isCamp(hub(state)) ? " No shelter yet: the camp's Camp tab shows what it still needs." : ""} The menu (Game tab) brings it back.`);
   return fresh;
 }
 function endGuide(state, ui, why, text) {
@@ -587,9 +593,8 @@ export function renderGuide(state, ui) {
   if (g.fold) return `<div class="guide folded">${head}${note}${cur ? `<div class="gd-next small">Next: ${esc(cur.title)}</div>` : ""}</div>`;
   const row = (st) => {
     if (g.done[st.id] != null) return `<div class="gd-step done"${tip(sayFor(st, "why"))}><span class="gd-mark">✔</span><span class="gd-name">${esc(st.title)}</span></div>`;
-    const on = cur && st.id === cur.id, locked = !!(st.locked && st.locked(state, g));
-    const left = locked ? steps.filter((x) => x.phase < GUIDE.DAYS - 1 && g.done[x.id] == null).length : 0;
-    return `<div class="gd-step${on ? " cur" : ""}${locked ? " locked" : ""}"><button class="gd-go" data-action="gd-pick" data-id="${st.id}"${tip(locked ? `Comes once every step of days 1 to 6 is done (${left} left). ${sayFor(st, "why")}` : sayFor(st, "why"))}><span class="gd-mark">${locked ? "🔒" : on ? "▶" : "○"}</span>${esc(st.title)}</button>` +
+    const on = cur && st.id === cur.id;
+    return `<div class="gd-step${on ? " cur" : ""}"><button class="gd-go" data-action="gd-pick" data-id="${st.id}"${tip(sayFor(st, "why"))}><span class="gd-mark">${on ? "▶" : "○"}</span>${esc(st.title)}</button>` +
       `<button class="gd-show" data-action="gd-show" data-id="${st.id}"${tip("Open the screen for this step and point at the button to press")}>Show me</button></div>` +
       (on ? `<div class="gd-why">${padHtml(esc(sayFor(st, "why")))}</div>` : "");
   };

@@ -107,7 +107,7 @@ section("Hub start: the base list, day by day, ticks off from the state");
   const ui = freshUi();
   check(startGuide(st, false) === null && !st.guide, "box off: no guide is made");
   const g = startGuide(st, true);
-  check(g && g.kind === "base" && g.on && guideSteps(g).map((x) => x.id).join() === GUIDE_LISTS.base.join(), `the base list (${GUIDE_LISTS.base.join(", ")})`);
+  check(g && g.kind === "base" && g.on && guideSteps(g).map((x) => x.id).join() === GUIDE_LISTS.base.filter((id) => id !== "hold").join(), `the base list (${GUIDE_LISTS.base.join(", ")})`);
   for (const [kind, ph] of Object.entries(GUIDE_PHASES)) {
     check(ph.length === GUIDE.DAYS && ph.every((x, i) => x.label === `Day ${i + 1}` && x.sub && x.ids.length >= 2 && x.ids.length <= 6 && x.ids[x.ids.length - 1] === (i ? `night${i + 1}` : "night")), `${kind}: a day for each of the ${GUIDE.DAYS}, each ending with its night (the user's request 2026-10-28)`);
     check(new Set(GUIDE_LISTS[kind]).size === GUIDE_LISTS[kind].length, `${kind}: no step twice`);
@@ -134,12 +134,12 @@ section("Hub start: the base list, day by day, ticks off from the state");
   check(!/data-id="raid"/.test(renderGuide(st, ui)), "and again folds it");
   GUIDE_ACTIONS["gd-day"](st, ui, { day: "7" });
   html = renderGuide(st, ui);
-  check(/gd-step locked"><button class="gd-go" data-action="gd-pick" data-id="hold"[^>]*data-tip="Comes once every step of days 1 to 6 is done/.test(html) && /🔒/.test(html), "day 7's attack: locked until days 1 to 6 are done, its hover says so");
+  check(/data-id="night7"/.test(html) && !/data-id="hold"/.test(html) && GUIDE_PHASES.base[6].ids.includes("hold"), "day 7 peeked: no Hold off the attack step until the attack comes (the user's request 2026-10-28)");
   GUIDE_ACTIONS["gd-day"](st, ui, { day: "7" });
   check(renderGuide(st, { ...ui, started: false }) === "" && renderGuide(st, { ...ui, timelapse: {} }) === "", "hidden before the start and in the timelapse");
 
   // Show me for each step points at what the screen has.
-  for (const id of GUIDE_LISTS.base) {
+  for (const id of guideSteps(g).map((x) => x.id)) {
     const u = freshUi();
     const r = showMe(st, u, id);
     if (/^night/.test(id)) check(r.act.calls.some((c) => c[0] === "panel" && c[1] === "left") && u.tab === "bases" && /class="tabs"[\s\S]*?<\/div><div class="card">/.test(renderLeft(st, u)), `Show me (${id}): the Bases tab, the hub's card first`);
@@ -220,15 +220,14 @@ section("Hub start: the base list, day by day, ticks off from the state");
   check(g.ready === st.hour, "days 1 to 6 all done: ready for the seventh night's attack (g.ready)");
   GUIDE_ACTIONS["gd-fold"](st, ui, {}); GUIDE_ACTIONS["gd-fold"](st, ui, {}); // as it was: open
   html = renderGuide(st, ui);
-  check(clean(html) && (html.match(/class="gd-phase gd-dayline past/g) || []).length === GUIDE.DAYS - 1 && /<b>Day 7<\/b>[^<]*<span class="gd-today">today/.test(html) && (html.match(/data-action="gd-show"/g) || []).length === 2 && /data-id="hold"/.test(html) && /data-id="night7"/.test(html), "day 7: the six days behind it one line each; the attack and the night left");
-  // The seventh night's attack (sim/firstweekattack.js), played through the hours: Defend, played out headless.
-  putBack(st, hub(st).tile, null, 12); // the dead about, so it comes
+  check(clean(html) && (html.match(/class="gd-phase gd-dayline past/g) || []).length === GUIDE.DAYS - 1 && /<b>Day 7<\/b>[^<]*<span class="gd-today">today/.test(html) && (html.match(/data-action="gd-show"/g) || []).length === 1 && !/data-id="hold"/.test(html) && /data-id="night7"/.test(html), "day 7: the six days behind it one line each; its night left (the attack not shown before it comes)");
+  // The seventh day's attack (sim/firstweekattack.js), played through the hours: Defend, played out headless.
   for (const s of alive(st)) s.health = 100;
-  st.hour = dawnOf(g, 7) - 10; // 20:00 of day 7
   st.cards.length = 0;
   let atk = null;
-  for (let i = 0; i < 9 && !atk; i++) { tickHour(st); guideCheck(st, ui); atk = st.cards.find((c) => c.campAttack === hub(st).id || c.firstWeek === hub(st).id); if (!atk) st.cards.length = 0; }
-  check(!!atk && g.attack && !g.attack.quiet && g.done.hold == null && st.log.some((l) => /watching/.test(l.text)), `the seventh night: warned, then the attack (${atk ? atk.title : "none"}); not held yet`);
+  for (let i = 0; i < 22 && !atk; i++) { tickHour(st); guideCheck(st, ui); atk = st.cards.find((c) => c.campAttack === hub(st).id || c.firstWeek === hub(st).id); if (!atk) st.cards.length = 0; }
+  check(!!atk && g.attack && !g.attack.quiet && g.done.hold == null && st.log.some((l) => /something is coming/.test(l.text)), `day 7: warned, then the attack at ${g.attack && g.attack.hour % 24}:00 (${atk ? atk.title : "none"}); not held yet`);
+  check(guideSteps(g).some((x) => x.id === "hold") && ui.flash && /Hold off the attack/.test(ui.flash.text) && ui.guideSel === "hold", `its step shows from now, with a toast (${ui.flash && ui.flash.text})`);
   if (atk) { st.cards.splice(st.cards.indexOf(atk), 1); atk.choices.find((x) => x.default).resolve(st); }
   st.cards.length = 0;
   guideCheck(st, ui);
@@ -304,14 +303,14 @@ section(`Road start (${mode}): the road list day by day, the shelter on day ${GU
   st.noWanderers = true;
   const ui = freshUi();
   const g = startGuide(st, true);
-  check(g.kind === "road" && guideSteps(g).map((x) => x.id).join() === GUIDE_LISTS.road.join(), `the road list (${GUIDE_LISTS.road.join(", ")})`);
+  check(g.kind === "road" && guideSteps(g).map((x) => x.id).join() === GUIDE_LISTS.road.filter((id) => id !== "hold").join(), `the road list (${GUIDE_LISTS.road.join(", ")})`);
   const ph = GUIDE_PHASES.road;
   check(["team", "water", "fire", "camp", "night"].every((id) => ph[0].ids.includes(id)) && ["found", "night7"].every((id) => ph[GUIDE.DAYS - 1].ids.includes(id)) && ph[2].ids.includes("raid"), "day 1: off the road, into a camp, through the night; a raid on day 3; the shelter on day 7 (the user's request 2026-10-28)");
   check(/by day 7/.test(guideSteps(g).find((x) => x.id === "found").title), "the shelter's step says it is the week's goal");
   const p = roadTeam(st);
   const fireHeld = () => ["wood", "stone"].every((k) => ((p.supplies[k] || 0) + ((p.cargo && p.cargo.supplies[k]) || 0)) >= 8);
   check(guideCheck(st, ui).length === 0 || (fireHeld() && Object.keys(g.done).join() === "fire"), "nothing ticked at the start");
-  for (const id of GUIDE_LISTS.road) {
+  for (const id of guideSteps(g).map((x) => x.id)) {
     const u = freshUi();
     const r = showMe(st, u, id);
     check(r.hit.length > 0, `Show me (${id}, on the road): ${r.sels.join(" | ")} found on screen`);

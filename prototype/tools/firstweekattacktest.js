@@ -1,24 +1,22 @@
-// The first week's attack (sim/firstweekattack.js; the user's request 2026-10-28: "add a scripted raid on the base of a
-// nomad group or horde at the end of the week"), without a browser.
+// The first week's attack (sim/firstweekattack.js; the user's requests 2026-10-28), without a browser.
 // Usage: node tools/firstweekattacktest.js
 // - only while the first-week guide is on (not brought back by hand, not beside the autopilot), once a guide, and only
-//   once its steps of days 1 to 6 are all done (g.ready, set by ui/guide.js guideCheck; the user's request 2026-10-28)
-// - the warning, the attack in the seventh night (21:00 to 03:00), the first hour the hub is ready
-// - a nomad band on your trail first (drifters or looters, not friendly, within reach): it comes beside the base, a
-//   raiding party of its own people; Defend (the band's dead off it) or Hide (a share of the stores carried off into
-//   its own); it moves on after
-// - else a horde of the dead (the people at home + 2, 3 to 8) or the land's raiders, drawn out of the land round the
-//   base (nothing made), the base's card whatever the walls; the guide's "Hold off the attack" step ticks once it is over
-// - nothing within reach, or the night gone by: a quiet night; saved with the guide; hooked into the hour
-import { createWorld, tickHour, hub, homeAt, alive } from "../src/sim/world.js";
+//   once its steps of days 1 to 6 are all done (g.ready, set by ui/guide.js guideCheck)
+// - its hour picked on day 7 (from the seventh dawn, never before the guide is ready, LAST hours before the eighth),
+//   with a warning; nothing before it
+// - by day a nomad band made for it (looters, beside the base, half the people at home + 1): its card, Defend (the
+//   base defence against the band's people) and Hide (a share of the stores carried off into its own), the band moving on
+// - by night a horde of the dead made for it (the people at home + 3), the camp-attack card; Defend played out
+// - waits while the hub is not ready; the window closed: a quiet night; the guide's step shown only once it comes;
+//   saved with the guide; hooked into the hour
+import { createWorld, tickHour, hub, homeAt, alive, isNight } from "../src/sim/world.js";
 import "../src/ui/ui.js"; // the UI's modules in their usual order (ui/guide.js after it)
 import { giveOrder } from "../src/sim/parties.js";
 import { roadTeam } from "../src/sim/hardcore-start.js";
-import { openDead, openRaiders, putBack, putBackRaiders, drawFromTile, drawRaiders } from "../src/sim/deadpop.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
 import { FIRST_ATTACK, firstWeekHour, nightDawn } from "../src/sim/firstweekattack.js";
-import { startGuide, guideCheck, guideSteps, GUIDE_PHASES, GUIDE } from "../src/ui/guide.js";
-import { nomadsOf, spawnNomads } from "../src/sim/nomads.js";
+import { startGuide, guideCheck, guideSteps, GUIDE } from "../src/ui/guide.js";
+import { nomadsOf } from "../src/sim/nomads.js";
 import { readFileSync } from "node:fs";
 
 let fails = 0, passes = 0;
@@ -26,8 +24,7 @@ const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FA
 const section = (t) => console.log(t);
 const freshUi = () => ({ started: true, speed: 0, tab: "bases", selected: -1, baseView: null, expedition: null, diary: null });
 
-// A Normal road start with its camp set up and the guide on from the first hour (ready: days 1 to 6 taken as done), no
-// nomad band on the map.
+// A Normal road start with its camp set up and the guide on from the first hour (ready: days 1 to 6 taken as done).
 function camp(seed, { guide = true, ready = true } = {}) {
   const st = createWorld({ seed, factionCount: 5, mode: "normal", roadStart: true });
   st.noWanderers = true;
@@ -43,189 +40,126 @@ function camp(seed, { guide = true, ready = true } = {}) {
   if (g && ready) g.ready = st.hour;
   return { st, g, b: hub(st) };
 }
-const reach = (st, b) => st.grid.within(b.tile, FIRST_ATTACK.REACH);
-const deadNear = (st, b) => reach(st, b).reduce((a, t) => a + openDead(st, t), 0);
-const raidersNear = (st, b) => reach(st, b).reduce((a, t) => a + openRaiders(st, t), 0);
-const clearDead = (st, b) => { for (const t of reach(st, b)) drawFromTile(st, t, openDead(st, t)); };
-const clearRaiders = (st, b) => { for (const t of reach(st, b)) drawRaiders(st, t, openRaiders(st, t)); };
-const at = (g, h) => nightDawn(g, FIRST_ATTACK.NIGHT) - 24 + (h - 6) + (h < 6 ? 24 : 0); // an hour of the seventh day / night
-const attackCard = (st, b) => st.cards.find((c) => c.campAttack === b.id);
+const day7 = (g, h) => nightDawn(g, FIRST_ATTACK.NIGHT) - 24 + (h - 6) + (h < 6 ? 24 : 0); // an hour of the seventh day (and its night)
+const cardAt = (st, b) => st.cards.find((c) => c.campAttack === b.id || c.firstWeek === b.id);
+const holdShown = (g) => guideSteps(g).some((x) => x.id === "hold");
+const holdDone = (st, g) => { const h = guideSteps(g).find((x) => x.id === "hold"); return !!h && h.done(st, g, freshUi()); };
+// Run the hours with firstWeekHour alone, from one hour of day 7 to another (or until a card comes).
+function hours(st, b, from, to) { for (st.hour = from; st.hour <= to; st.hour++) { firstWeekHour(st); if (cardAt(st, b)) return cardAt(st, b); } return null; }
 
 section("Only while the guide is on, once");
 {
   const { st, b } = camp(31, { guide: false });
-  putBack(st, b.tile, null, 10);
-  st.hour = 7 * 24 + 22;
-  firstWeekHour(st);
-  check(!attackCard(st, b) && !st.guide, "no guide: no attack");
+  check(!hours(st, b, 7 * 24, 8 * 24) && !st.guide, "no guide: no attack");
   const c2 = camp(31);
   c2.g.keep = true; // brought back by hand
-  putBack(c2.st, c2.b.tile, null, 10);
-  c2.st.hour = at(c2.g, 22);
-  firstWeekHour(c2.st);
-  check(!attackCard(c2.st, c2.b) && !c2.g.attack, "a guide brought back by hand from the menu: no attack");
+  check(!hours(c2.st, c2.b, day7(c2.g, 6), day7(c2.g, 2)) && !c2.g.attack, "a guide brought back by hand from the menu: no attack");
   const c3 = camp(31);
   c3.st.autopilot = { on: true };
-  c3.st.hour = at(c3.g, 22);
-  firstWeekHour(c3.st);
-  check(!c3.g.attack, "beside the autopilot: no attack");
+  check(!hours(c3.st, c3.b, day7(c3.g, 6), day7(c3.g, 2)) && !c3.g.attack, "beside the autopilot: no attack");
 }
 
-section("Only once the steps of days 1 to 6 are done");
+section("Only once the steps of days 1 to 6 are done, on day 7");
 {
   const { st, g, b } = camp(37, { ready: false });
-  putBack(st, b.tile, null, 10);
   const log0 = st.log.length;
-  for (const h of [6, 12, 21, 23, 2]) { st.hour = at(g, h); firstWeekHour(st); }
-  check(!g.attack && g.warned == null && st.log.length === log0 && !attackCard(st, b), "not ready: no warning and no attack through the seventh day and night");
-  st.hour = at(g, 3);
-  firstWeekHour(st);
-  check(!g.attack, "the night gone by: none after it either");
+  check(!hours(st, b, day7(g, 6), day7(g, 3)) && !g.attack && g.attackAt == null && st.log.length === log0, "not ready: no warning and no attack all day 7 and its night");
   // The guide marks ready when every step of days 1 to 6 is done, and not before.
   const ui = freshUi();
-  const steps = guideSteps(g), early = steps.filter((x) => x.phase < GUIDE.DAYS - 1);
-  check(early.length && steps.filter((x) => x.phase === GUIDE.DAYS - 1).every((x) => ["found", "diary", "hold", "night7"].includes(x.id)), "day 7's own steps (the shelter, the diary, the attack, the night) are not needed");
-  for (const x of early.slice(1)) g.done[x.id] = 0;
-  st.hour = at(g, 7);
-  guideCheck(st, ui);
-  check(g.ready == null || early.every((x) => g.done[x.id] != null), "one step of days 1 to 6 open: not ready");
-  for (const x of early) g.done[x.id] = 0;
-  guideCheck(st, ui);
-  check(g.ready === st.hour, "all done: ready");
+  const early = guideSteps(g).filter((x) => x.phase < GUIDE.DAYS - 1);
+  check(early.length && !early.some((x) => x.id === "hold") && guideSteps(g).filter((x) => x.phase === GUIDE.DAYS - 1).every((x) => ["found", "diary", "night7"].includes(x.id)), "day 7's own steps (the shelter, the diary, the night) are not needed");
+  const c2 = camp(37, { ready: false });
+  for (const x of early.slice(1)) c2.g.done[x.id] = 0;
+  guideCheck(c2.st, ui);
+  check(c2.g.ready == null, "one step of days 1 to 6 open: not ready");
+  for (const x of early) c2.g.done[x.id] = 0;
+  guideCheck(c2.st, ui);
+  check(c2.g.ready === c2.st.hour, "all done: ready");
+  // Ready before day 7: nothing until the seventh dawn, then the hour is picked, with a warning.
+  const c3 = camp(41);
+  check(!hours(c3.st, c3.b, day7(c3.g, 6) - 30, day7(c3.g, 6) - 1) && c3.g.attackAt == null, "ready on day 5 or 6: nothing before the seventh dawn");
+  c3.st.hour = day7(c3.g, 6);
+  firstWeekHour(c3.st);
+  const [lo, hi] = [day7(c3.g, 6), nightDawn(c3.g, 7) - FIRST_ATTACK.LAST];
+  check(c3.g.attackAt >= lo && c3.g.attackAt < hi && c3.g.warned === c3.st.hour && c3.st.log.some((l) => /something is coming/.test(l.text) && l.kind === "danger"), `the seventh dawn: its hour picked (${c3.g.attackAt % 24}:00, day 7 or its night) and a warning`);
+  const at = c3.g.attackAt;
+  check(!hours(c3.st, c3.b, c3.st.hour + 1, at - 1) && !c3.g.attack, "nothing before its hour");
+  check(!!hours(c3.st, c3.b, at, at) && c3.g.attack.hour === at && c3.g.attack.kind === (isNight({ hour: at }) ? "dead" : "nomads"), `at its hour: ${c3.g.attack.kind} (${isNight({ hour: at }) ? "night" : "day"})`);
+  // Readied late on day 7: the hour is picked from then.
+  const c4 = camp(42, { ready: false });
+  c4.st.hour = day7(c4.g, 15);
+  c4.g.ready = c4.st.hour;
+  firstWeekHour(c4.st);
+  check(c4.g.attackAt >= c4.st.hour && c4.g.attackAt < nightDawn(c4.g, 7) - FIRST_ATTACK.LAST, `ready at 15:00 on day 7: picked for ${c4.g.attackAt % 24}:00, not before`);
 }
 
-section("The warning, then a pack of the dead in the seventh night");
-{
-  const { st, g, b } = camp(32);
-  clearRaiders(st, b);
-  putBack(st, b.tile, null, 12);
-  const people = homeAt(st, b.id).length;
-  const log0 = st.log.length;
-  st.hour = nightDawn(g, 6) - 1;
-  firstWeekHour(st);
-  check(g.warned == null && st.log.length === log0, "before the seventh dawn: nothing");
-  st.hour = nightDawn(g, 6);
-  firstWeekHour(st);
-  const warn = st.log.find((l) => /watching/.test(l.text));
-  check(g.warned === st.hour && !!warn && warn.kind === "danger" && !g.attack, `the seventh dawn: the warning ("${warn ? warn.text.slice(0, 70) : "none"}…")`);
-  st.hour = at(g, 20);
-  firstWeekHour(st);
-  check(!g.attack && !attackCard(st, b), "20:00: not yet");
-  const near0 = deadNear(st, b);
-  st.hour = at(g, 21);
-  firstWeekHour(st);
-  const want = Math.max(FIRST_ATTACK.DEAD[0], Math.min(FIRST_ATTACK.DEAD[1], people + 2));
-  const card = attackCard(st, b);
-  check(g.attack && g.attack.kind === "dead" && g.attack.n === want && g.attack.base === b.id, `21:00, no nomads near: a horde of ${g.attack && g.attack.n} dead for ${people} at home (want ${want})`);
-  check(!!card && /A horde of the dead/.test(card.title) && /gathering/.test(card.text) && card.choices.length === 2 && /Defend/.test(card.choices[0].label), `the base's card: "${card && card.title}"`);
-  check(deadNear(st, b) === near0 - g.attack.n && b.campAttack.wave.d === g.attack.n, `drawn out of the land round the base (${near0} → ${deadNear(st, b)}): nothing made`);
-  const n = st.cards.length;
-  st.hour += 1;
-  firstWeekHour(st);
-  check(st.cards.length === n, "once a guide");
-  const hold = () => guideSteps(g).find((x) => x.id === "hold").done(st, g, freshUi());
-  check(GUIDE_PHASES.road[6].ids.includes("hold") && !hold(), "the guide's Hold off the attack: not while the card waits");
-  st.cards.splice(st.cards.indexOf(card), 1);
-  card.choices.find((x) => x.default).resolve(st); // Defend: the base defence, played out headless
-  check(!st.combat && !(b.campAttack && b.campAttack.wave) && hold(), "defended: the fight over, the step ticks");
-  check(deadNear(st, b) <= near0, `nothing from nowhere: the land round the base ${near0} → ${deadNear(st, b)}`);
-  const ld = loadFromString(saveToString(st));
-  check(JSON.stringify(ld.guide.attack) === JSON.stringify(g.attack) && ld.guide.warned === g.warned, "saved with the guide");
-}
-
-section("A nomad band on your trail comes first");
+section("By day: a nomad band made for it");
 {
   const { st, g, b } = camp(38);
-  putBack(st, b.tile, null, 10); // the dead about too: the band still comes first
-  const far = st.grid.within(b.tile, 20).find((t) => st.grid.distance(b.tile, t) === 20 && st.tiles[t].terrain !== "water");
-  const band = spawnNomads(st, { tier: 1, tile: far, pop: 5 });
-  band.goodwill = -50;
-  const people = homeAt(st, b.id).length, dead0 = deadNear(st, b);
-  st.hour = at(g, 21);
-  firstWeekHour(st);
-  const want = Math.min(5, Math.max(FIRST_ATTACK.NOMADS[0], Math.min(FIRST_ATTACK.NOMADS[1], Math.ceil(people / 2) + 1)));
-  const card = st.cards.find((c) => c.firstWeek === b.id);
-  check(g.attack && g.attack.kind === "nomads" && g.attack.band === band.id && g.attack.n === want, `the looters come: ${g.attack && g.attack.n} of them for ${people} at home (want ${want})`);
-  check(st.grid.distance(band.tile, b.tile) <= 1 && band.phase === "battle" && deadNear(st, b) === dead0, `the band beside the base (${st.grid.distance(band.tile, b.tile)} away), held for the raid; the dead left where they are`);
-  check(!!card && card.title.includes(band.name.charAt(0).toUpperCase() + band.name.slice(1)) && /following your trail/.test(card.text) && /Defend/.test(card.choices[0].label) && /Hide/.test(card.choices[1].label) && card.raidReport, `the card: "${card && card.title}"`);
-  const hold = () => guideSteps(g).find((x) => x.id === "hold").done(st, g, freshUi());
-  check(!hold(), "not held while the card waits");
+  b.stock.scrap = 40;
+  const people = homeAt(st, b.id).length, bands0 = nomadsOf(st).length;
+  g.attackAt = day7(g, 13); g.warned = g.attackAt;
+  const card = hours(st, b, day7(g, 13), day7(g, 13));
+  const n = Math.max(FIRST_ATTACK.NOMADS[0], Math.min(FIRST_ATTACK.NOMADS[1], Math.ceil(people / 2) + 1));
+  const band = nomadsOf(st).find((x) => x.id === (g.attack && g.attack.band));
+  check(g.attack && g.attack.kind === "nomads" && g.attack.n === n && nomadsOf(st).length === bands0 + 1 && band && band.tier === 1 && band.pop === n, `13:00: a band of ${n} looters made for it, for ${people} at home (none on the map before)`);
+  check(st.grid.distance(band.tile, b.tile) <= 1 && band.phase === "battle" && band.goodwill <= -50, `beside the base (${st.grid.distance(band.tile, b.tile)} away), hostile, held for the raid`);
+  check(!!card && /^Nomads at /.test(card.title) && /broad daylight/.test(card.text) && /Defend/.test(card.choices[0].label) && /Hide/.test(card.choices[1].label) && card.raidReport, `the card: "${card && card.title}"`);
+  check(holdShown(g) && !holdDone(st, g), "the guide's Hold off the attack: shown now, not done while the card waits");
   st.cards.splice(st.cards.indexOf(card), 1);
-  const pop0 = band.pop;
   card.choices.find((x) => x.default).resolve(st); // Defend: played out headless
   const gone = !nomadsOf(st).includes(band);
-  check(!st.combat && hold() && (gone || (band.pop < pop0 || band.pop === pop0) && band.phase !== "battle"), `defended: the fight over (the band ${gone ? "broken up" : `${pop0} → ${band.pop}, ${band.phase}`}), the step ticks`);
+  check(!st.combat && holdDone(st, g) && (gone || band.phase !== "battle"), `defended: the fight over (the band ${gone ? "broken up" : `${band.pop} left, ${band.phase}`}), the step done`);
   // Hide: they carry off a share of the stores into their own, and move on.
   const c2 = camp(39);
-  const far2 = c2.st.grid.within(c2.b.tile, 15).find((t) => c2.st.grid.distance(c2.b.tile, t) === 15 && c2.st.tiles[t].terrain !== "water");
-  const band2 = spawnNomads(c2.st, { tier: 0, tile: far2, pop: 4 });
-  band2.goodwill = 0;
   c2.b.stock.scrap = 40;
+  c2.g.attackAt = day7(c2.g, 10);
+  const card2 = hours(c2.st, c2.b, day7(c2.g, 10), day7(c2.g, 10));
+  const band2 = nomadsOf(c2.st).find((x) => x.id === c2.g.attack.band);
   const bs0 = band2.stock.scrap || 0;
-  c2.st.hour = at(c2.g, 22);
-  firstWeekHour(c2.st);
-  const card2 = c2.st.cards.find((c) => c.firstWeek === c2.b.id);
-  check(c2.g.attack && c2.g.attack.kind === "nomads" && !!card2, "drifters come too (not friendly)");
   c2.st.cards.splice(c2.st.cards.indexOf(card2), 1);
   card2.choices[1].resolve(c2.st);
-  check(c2.b.stock.scrap === 30 && band2.stock.scrap === bs0 + 10 && band2.phase !== "battle" && c2.st.log.some((l) => /hid while/.test(l.text)), `hidden from: 10 of 40 scrap carried off into the band's own (${c2.b.stock.scrap}, theirs ${band2.stock.scrap}), the band moves on (${band2.phase})`);
-  // Friendly bands and survivalists keep away: the dead come instead.
-  const c3 = camp(40);
-  putBack(c3.st, c3.b.tile, null, 10);
-  const t3 = c3.st.grid.within(c3.b.tile, 6).find((t) => c3.st.grid.distance(c3.b.tile, t) === 6 && c3.st.tiles[t].terrain !== "water");
-  const f1 = spawnNomads(c3.st, { tier: 1, tile: t3, pop: 4 }); f1.goodwill = 30;
-  spawnNomads(c3.st, { tier: 2, tile: t3, pop: 5 });
-  c3.st.hour = at(c3.g, 21);
-  firstWeekHour(c3.st);
-  check(c3.g.attack && c3.g.attack.kind === "dead", "a friendly band and survivalists near: the dead come instead");
+  check(c2.b.stock.scrap === 30 && band2.stock.scrap === bs0 + 10 && band2.phase !== "battle" && c2.st.log.some((l) => /hid while/.test(l.text)) && holdDone(c2.st, c2.g), `hidden from: 10 of 40 scrap carried off into the band's own (theirs ${band2.stock.scrap}), the band moves on (${band2.phase}), the step done`);
 }
 
-section("A raider band when there are raiders about");
+section("By night: a horde of the dead made for it");
 {
-  const { st, g, b } = camp(33);
-  clearDead(st, b); // no dead and no nomads: the land's raiders
-  putBackRaiders(st, b.tile, null, 6);
-  const people = homeAt(st, b.id).length, r0 = raidersNear(st, b);
-  st.hour = at(g, 23);
-  firstWeekHour(st);
-  const want = Math.max(FIRST_ATTACK.RAIDERS[0], Math.min(FIRST_ATTACK.RAIDERS[1], Math.ceil(people / 2)));
-  const card = attackCard(st, b);
-  check(g.attack && g.attack.kind === "raiders" && g.attack.n === want && raidersNear(st, b) === r0 - want, `${want} raiders for ${people} at home, drawn from the land (${r0} → ${raidersNear(st, b)})`);
-  check(!!card && /raiders at/.test(card.title) && /watching the camp/.test(card.text) && /Hide/.test(card.choices[1].label), `the card: "${card && card.title}"`);
+  const { st, g, b } = camp(32);
+  const people = homeAt(st, b.id).length;
+  g.attackAt = day7(g, 22);
+  const card = hours(st, b, day7(g, 22), day7(g, 22));
+  const n = Math.max(FIRST_ATTACK.DEAD[0], Math.min(FIRST_ATTACK.DEAD[1], people + 3));
+  check(g.attack && g.attack.kind === "dead" && g.attack.n === n && b.campAttack.wave.d === n, `22:00: a horde of ${n} dead for ${people} at home`);
+  check(!!card && /A horde of the dead/.test(card.title) && /after dark/.test(card.text) && /Defend/.test(card.choices[0].label), `the camp-attack card: "${card && card.title}"`);
   st.cards.splice(st.cards.indexOf(card), 1);
-  card.choices[1].resolve(st); // hide
-  check(!(b.campAttack && b.campAttack.wave) && raidersNear(st, b) === r0 && guideSteps(g).find((x) => x.id === "hold").done(st, g, freshUi()), "hidden from: the band back on the land, the step ticks");
+  card.choices.find((x) => x.default).resolve(st);
+  check(!st.combat && !(b.campAttack && b.campAttack.wave) && holdDone(st, g), "defended: the fight over, the step done");
+  const ld = loadFromString(saveToString(st));
+  check(JSON.stringify(ld.guide.attack) === JSON.stringify(g.attack) && ld.guide.attackAt === g.attackAt, "saved with the guide");
 }
 
 section("Waits for the hub to be ready; a quiet night otherwise");
 {
   const { st, g, b } = camp(34);
-  putBack(st, b.tile, null, 10);
+  g.attackAt = day7(g, 12);
   st.combat = { setup: {} };
-  st.hour = at(g, 21);
-  firstWeekHour(st);
-  check(!g.attack, "a fight on: it waits");
+  check(!hours(st, b, day7(g, 12), day7(g, 14)) && !g.attack, "a fight on: it waits");
   st.combat = null;
-  st.hour = at(g, 3);
-  firstWeekHour(st);
-  check(g.attack && g.attack.quiet && !attackCard(st, b), "03:00 with nothing yet: the night passed quietly");
-  check(guideSteps(g).find((x) => x.id === "hold").done(st, g, freshUi()), "a quiet night ticks the step");
+  check(!!hours(st, b, day7(g, 15), day7(g, 15)), "the fight over: it comes the next hour");
   const c2 = camp(35);
-  clearDead(c2.st, c2.b); clearRaiders(c2.st, c2.b);
-  c2.st.hour = at(c2.g, 21);
-  firstWeekHour(c2.st);
-  check(c2.g.attack && c2.g.attack.quiet && !attackCard(c2.st, c2.b), "nothing within reach: a quiet night, nothing made");
+  c2.g.attackAt = day7(c2.g, 23);
+  c2.st.combat = { setup: {} };
+  hours(c2.st, c2.b, day7(c2.g, 23), day7(c2.g, 3));
+  check(c2.g.attack && c2.g.attack.quiet && !cardAt(c2.st, c2.b) && !holdShown(c2.g), "never ready until the window closed: a quiet night, and no step shown");
 }
 
 section("Hooked into the hour");
 {
   const { st, g, b } = camp(36);
-  clearRaiders(st, b);
-  putBack(st, b.tile, null, 12);
-  st.hour = at(g, 20);
+  st.hour = day7(g, 6) - 1;
   let card = null;
-  for (let i = 0; i < 8 && !card; i++) { tickHour(st); card = attackCard(st, b); if (!card) st.cards.length = 0; }
-  check(!!card && g.attack && !g.attack.quiet, `the hour brings it (${card ? card.title : "none"}, at ${g.attack && g.attack.hour % 24}:00)`);
+  for (let i = 0; i < 24 && !card; i++) { tickHour(st); card = cardAt(st, b); if (!card) st.cards.length = 0; }
+  check(!!card && g.attack && !g.attack.quiet, `the hours bring it (${card ? card.title : "none"}, at ${g.attack && g.attack.hour % 24}:00)`);
   const src = readFileSync(new URL("../src/sim/campscout.js", import.meta.url), "utf8");
   check(/firstWeekHour\(state\)/.test(src), "campscout.js groundsHour calls it");
 }

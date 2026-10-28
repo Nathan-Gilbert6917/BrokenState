@@ -984,19 +984,8 @@ function onNomadFight(state, result, setup) {
 registerCombatHandler("nomadFight", onNomadFight);
 
 // ---------- the first week's raid on your hub (firstweekattack.js) ----------
-// The band that has picked up your trail: drifters or looters (the hungry and the hostile; survivalists and preppers keep
-// their distance), not friendly to you, big enough to send a raiding party, the nearest within reach. Or null.
-/** @param {any} state @param {any} base @param {number} reach */
-export function bandToRaid(state, base, reach) {
-  let best = null, bd = Infinity;
-  for (const b of nomadsOf(state)) {
-    if (b.tier > 1 || b.pop < N.MIN_POP || b.phase === "battle" || ["Friendly", "Allied"].includes(attitude(b))) continue;
-    const d = state.grid.distance(b.tile, base.tile);
-    if (d <= reach && d < bd) { best = b; bd = d; }
-  }
-  return best;
-}
-// The band comes to the base: on the tile beside it (or the base's own), its camp struck, held there for the raid.
+// A band made for the raid (firstweekattack.js spawnNomads) comes to the base: on the tile beside it (or the base's
+// own), its camp struck, held there for the raid.
 /** @param {any} state @param {any} b @param {any} base */
 export function bandAtBase(state, b, base) {
   const near = state.grid.within(base.tile, 1).filter((t) => t !== base.tile && state.tiles[t] && state.tiles[t].terrain !== "water");
