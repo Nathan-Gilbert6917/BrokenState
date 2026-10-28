@@ -1,0 +1,2226 @@
+[
+  {
+    "id": "travel.parties",
+    "title": "Teams & expeditions on the State Map",
+    "summary": "A Party is a team of survivors (plus packed supplies and later a vehicle) that leaves a base, moves hex by hex across the State Map, eats its supplies hour by hour, does a job at the target and comes home or waits for orders.",
+    "whyHere": "It is the bridge between the hub and everything outside it: pathing, fog, POIs, travel events and battles all act on a Party, so it must exist before any of them.",
+    "subsystems": [
+      "Party entity & roster",
+      "Forming a team at a base",
+      "Hourly travel step",
+      "Supply drain & rations",
+      "Party state machine",
+      "Arrival, waiting & return home",
+      "Party domain events"
+    ],
+    "sliceScope": "One or more player teams formed at the hub from idle survivors with packed food/water; send to a tile, walk the planned path hourly, drain 1 food + 1 water per person per day, arrive, do one job (raid a POI), then return home and unpack cargo into the stockpile.",
+    "fullScope": "The prototype's parties.js (~3000 lines) moves player expeditions, convoys and AI raids with one shared rule set (ADR 0001): foot, bike or vehicle, stances, night rules, weather slow-downs, team inventory, meeting other teams, wiped teams leaving their vehicles behind with cargo.",
+    "protoRefs": [
+      "prototype/src/sim/parties.js",
+      "prototype/src/sim/orders.js",
+      "docs/features/travel.md",
+      "docs/adr/0001-ai-parity.md"
+    ],
+    "tasks": {
+      "data": [
+        "Define Party, PartyState enum and PartyId in the runtime state model",
+        "Add supply ration rates (food/water per person per day) to content JSON",
+        "Add Party list to World and to the save schema"
+      ],
+      "backend": [
+        "FormParty command: validate members are at the base and idle, move supplies from stockpile into the party",
+        "Hourly TickParty: advance along path by travel time, drain supplies, raise PartyArrived/PartyStarving events",
+        "Party state machine: Forming → Travelling → AtTarget/Working → Returning → Disbanded",
+        "ReturnHome: unpack supplies and cargo into the base stockpile, members back on the roster",
+        "xUnit tests: a 3-tile trip takes the expected hours and food; starving raises an event"
+      ],
+      "ui": [
+        "Placeholder team marker (coloured circle) on the hex map that slides between tiles",
+        "Simple team panel: members, supplies, state, ETA"
+      ]
+    },
+    "dataModel": "public enum PartyState { Forming, Travelling, Working, Waiting, Returning, Disbanded }\npublic sealed class Party {\n  public int Id; public string Owner;      // \"player\" or faction id\n  public List<int> Members = new();        // survivor ids\n  public int Tile; public int HomeBaseId;\n  public List<int> Path = new(); public int PathIdx; public float Progress; // 0..1 into next tile\n  public Dictionary<string, float> Supplies = new(); // \"food\", \"water\"\n  public Inventory Cargo = new();\n  public PartyState State;\n}",
+    "dependsOn": [
+      "data.state",
+      "core.clock",
+      "core.commands",
+      "core.events",
+      "core.hexgrid",
+      "surv.model",
+      "gear.items",
+      "base.core"
+    ],
+    "connections": [
+      {
+        "to": "travel.pathing",
+        "why": "A party needs a path and a time per step before it can move",
+        "how": "Party calls IPathfinder.FindPath(from, to, TravelMode) and stores the tile list; TickParty asks StepHours(from,to,mode) for each step",
+        "godot": "SimHost emits PathChanged(partyId) as a signal; the map view redraws the route Line2D",
+        "unity": "SimHost raises a C# event; a RouteView MonoBehaviour redraws a LineRenderer"
+      },
+      {
+        "to": "econ.daily",
+        "why": "Supplies leaving with a team must come out of the stockpile and the team's rations stop counting against the base",
+        "how": "FormParty moves amounts from Base.Stock to Party.Supplies in one command; daily upkeep only counts survivors whose PartyId is null",
+        "godot": "Hub stock labels refresh on a StockChanged signal",
+        "unity": "Hub UI listens to the StockChanged C# event"
+      },
+      {
+        "to": "travel.events",
+        "why": "Events roll each time a party enters a tile",
+        "how": "TickParty raises PartyEnteredTile(partyId, tile); the travel-event roller subscribes on the sim bus",
+        "godot": "No engine work: cards reach the UI through the card queue",
+        "unity": "Same: cards come through the card queue"
+      },
+      {
+        "to": "combat.resolve",
+        "why": "A raid at a POI becomes a battle; its result changes the party",
+        "how": "Party enters Working with a pending BattleRequest; combat.resolve writes back casualties and loot to Party.Cargo by party id",
+        "godot": "SimHost switches scene to the battle scene on BattleStarted, back on BattleEnded",
+        "unity": "SimHost loads the battle scene additively on BattleStarted"
+      },
+      {
+        "to": "ui.team",
+        "why": "Players form teams and give orders from the map",
+        "how": "UI sends FormParty / SendParty commands; the sim validates and returns a result with a reason",
+        "godot": "Team panel Control calls SimHost.Send(cmd)",
+        "unity": "UI Toolkit panel calls SimHost.Send(cmd)"
+      }
+    ],
+    "godot": {
+      "approach": "Keep all party logic in BrokenState.Sim. In Godot a PartyMarker scene (Node2D + Sprite2D + Label) is instanced per party by a MapPartiesLayer that listens to SimHost signals (PartyCreated, PartyMoved, PartyRemoved) and tweens the marker between hex centres so hourly moves look smooth.",
+      "keyApis": [
+        "Node2D",
+        "Sprite2D",
+        "Tween",
+        "PackedScene.Instantiate",
+        "[Signal] delegates"
+      ],
+      "docs": [
+        {
+          "t": "C# signals",
+          "u": "https://docs.godotengine.org/en/stable/tutorials/scripting/c_sharp/c_sharp_signals.html"
+        },
+        {
+          "t": "Tween",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_tween.html"
+        },
+        {
+          "t": "Using signals",
+          "u": "https://docs.godotengine.org/en/stable/getting_started/step_by_step/signals.html"
+        }
+      ]
+    },
+    "unity": {
+      "approach": "A PartyMarker prefab (SpriteRenderer + TextMeshPro label) spawned by a PartiesLayer MonoBehaviour that subscribes to SimHost C# events; it lerps the marker between cell centres in Update using the sim's Progress value.",
+      "keyApis": [
+        "MonoBehaviour",
+        "Instantiate",
+        "SpriteRenderer",
+        "Grid.CellToWorld",
+        "C# events"
+      ],
+      "docs": [
+        {
+          "t": "MonoBehaviour",
+          "u": "https://docs.unity3d.com/ScriptReference/MonoBehaviour.html"
+        },
+        {
+          "t": "SpriteRenderer",
+          "u": "https://docs.unity3d.com/ScriptReference/SpriteRenderer.html"
+        },
+        {
+          "t": "UnityEvents",
+          "u": "https://docs.unity3d.com/Manual/UnityEvents.html"
+        }
+      ]
+    },
+    "learn": [
+      {
+        "t": "Game Programming Patterns: State",
+        "u": "https://gameprogrammingpatterns.com/state.html"
+      },
+      {
+        "t": "Game Programming Patterns: Event Queue",
+        "u": "https://gameprogrammingpatterns.com/event-queue.html"
+      }
+    ],
+    "newb": [
+      "A state machine is just an enum plus rules for which state can follow which: it stops bugs like a team that is both 'travelling' and 'at home'.",
+      "The sim moves the party in whole hours; the engine only animates between the last and next position. Never move game state from the animation.",
+      "Reference survivors by id (int), not by object, so saves and AI groups stay simple.",
+      "Write the party rules once and use them for AI groups too (the prototype's AI parity rule): AI raids are just parties with another owner."
+    ],
+    "pitfalls": [
+      "Letting the UI write Party.Tile directly: always go through a command so rules run.",
+      "Draining supplies per frame instead of per game hour: results change with frame rate.",
+      "Forgetting to remove members from base work assignments when they leave."
+    ],
+    "test": "xUnit: form a 2-person team with 3 days of food, send it 4 tiles; assert arrival hour, remaining food and that a PartyArrived event fired; a team with no food raises PartyStarving. Manual: send a team, watch the marker step tile by tile at 5× speed and the stock change on return.",
+    "size": "L"
+  },
+  {
+    "id": "travel.pathing",
+    "title": "State-map pathfinding (A* on hexes) & travel time",
+    "summary": "Finds the cheapest route between two hexes for a travel mode (foot, bike, vehicle) and says how many game-hours each step takes, so teams avoid water, prefer roads and the planner can show an ETA.",
+    "whyHere": "Parties cannot move without it, and travel time drives supply drain, events per tile and the trip planner; it only needs hexgrid and the generated terrain.",
+    "subsystems": [
+      "Hex neighbour graph",
+      "Terrain/road cost table",
+      "A* search with min-heap",
+      "Travel modes (foot/bike/vehicle)",
+      "Travel-time estimate & ETA",
+      "Path cache & invalidation"
+    ],
+    "sliceScope": "A* over the hex map with terrain step costs (water blocked, roads cheaper), foot and vehicle modes, returning the path and total hours; an ETA used by the send-team dialog.",
+    "fullScope": "The prototype runs A* (hex.js findPath, admissible heuristic = hex distance × cheapest step) with parties.js moveCost: foot 1 h/tile, roads 1 for walkers and 0.25 for cars, cars 0.5 off-road, mountains closed to cars, rivers only at bridges (or on winter ice), held bridges, weather and load slow-downs, fuel stepping hour by hour (travelHours).",
+    "protoRefs": [
+      "prototype/src/sim/hex.js",
+      "prototype/src/sim/parties.js",
+      "prototype/src/sim/data.js",
+      "prototype/src/sim/rivers.js"
+    ],
+    "tasks": {
+      "data": [
+        "terrain.json: walk and vehicle cost per terrain (water = blocked, mountain blocked to cars)",
+        "Road cost entry (walk 1, vehicle 0.25) and bridge flags on tiles",
+        "TravelMode enum and mode speed multipliers"
+      ],
+      "backend": [
+        "Generic AStar<TNode> over an IGraph (neighbours + cost + heuristic) using .NET PriorityQueue",
+        "HexTravelGraph: MoveCost(from,to,mode,hour) from terrain, roads, rivers",
+        "TravelHours(path, mode): sums step costs, returns total and per-step hours",
+        "Tests: path avoids water, prefers a road, returns null when unreachable, heuristic never overestimates"
+      ],
+      "ui": [
+        "Route preview line from the selected team to the hovered hex with an 'ETA 6h' label"
+      ]
+    },
+    "dataModel": "public enum TravelMode { Foot, Bike, Vehicle }\npublic interface IGraph<T> {\n  IEnumerable<T> Neighbours(T n);\n  float Cost(T from, T to);       // float.PositiveInfinity = blocked\n  float Heuristic(T a, T goal);   // must never overestimate\n}\npublic sealed record PathResult(IReadOnlyList<int> Tiles, float Hours);\npublic sealed record TerrainDef(string Id, float WalkCost, float VehicleCost, string ArtKey);",
+    "dependsOn": [
+      "core.hexgrid",
+      "core.mapgen",
+      "data.content"
+    ],
+    "connections": [
+      {
+        "to": "travel.parties",
+        "why": "Parties ask for routes and step times",
+        "how": "IPathfinder.FindPath(start, goal, mode) → PathResult; Party stores the tile list",
+        "godot": "None: purely sim; SimHost exposes a PreviewPath(partyId, tile) call for the UI",
+        "unity": "Same: SimHost.PreviewPath used by the map UI"
+      },
+      {
+        "to": "core.weather",
+        "why": "Rain, snow and mud slow travel and frozen rivers open new routes",
+        "how": "MoveCost takes the hour and reads a WeatherAt(tile, hour) multiplier; a weather change raises an event that invalidates cached paths",
+        "godot": "No engine wiring",
+        "unity": "No engine wiring"
+      },
+      {
+        "to": "combat.pathing",
+        "why": "The tactical grid also needs A*",
+        "how": "Share the generic AStar<TNode> class; combat supplies its own square-grid IGraph",
+        "godot": "Same sim code in both modes",
+        "unity": "Same sim code in both modes"
+      },
+      {
+        "to": "ui.statemap",
+        "why": "Players see the route and ETA before they commit",
+        "how": "UI calls PreviewPath and draws the tile list; nothing is committed until SendParty",
+        "godot": "Line2D points from TileMapLayer.MapToLocal for each tile",
+        "unity": "LineRenderer positions from Grid.CellToWorld"
+      }
+    ],
+    "godot": {
+      "approach": "Do not use Godot's AStar2D for the game rules: the sim must be engine-free and deterministic. Write A* in C# in the sim; Godot just converts tile ids to positions (TileMapLayer.MapToLocal) and draws a Line2D for the route preview.",
+      "keyApis": [
+        "TileMapLayer.MapToLocal / LocalToMap",
+        "Line2D",
+        "Label"
+      ],
+      "docs": [
+        {
+          "t": "TileMapLayer",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_tilemaplayer.html"
+        },
+        {
+          "t": "Line2D",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_line2d.html"
+        },
+        {
+          "t": "AStar2D",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_astar2d.html"
+        }
+      ]
+    },
+    "unity": {
+      "approach": "Same: A* lives in the sim, not in NavMesh (NavMesh is for 3D walking, not hex strategy maps). Unity converts tile ids to world positions with a hexagonal Grid/Tilemap and draws the route with a LineRenderer.",
+      "keyApis": [
+        "Grid (Hexagon layout)",
+        "Tilemap.CellToWorld",
+        "GridLayout.WorldToCell",
+        "LineRenderer"
+      ],
+      "docs": [
+        {
+          "t": "Hexagonal Tilemaps",
+          "u": "https://docs.unity3d.com/Manual/Tilemap-Hexagonal.html"
+        },
+        {
+          "t": "GridLayout.WorldToCell",
+          "u": "https://docs.unity3d.com/ScriptReference/GridLayout.WorldToCell.html"
+        },
+        {
+          "t": "LineRenderer",
+          "u": "https://docs.unity3d.com/ScriptReference/LineRenderer.html"
+        }
+      ]
+    },
+    "learn": [
+      {
+        "t": "Red Blob Games: Introduction to A*",
+        "u": "https://www.redblobgames.com/pathfinding/a-star/introduction.html"
+      },
+      {
+        "t": "Red Blob Games: Implementation of A*",
+        "u": "https://www.redblobgames.com/pathfinding/a-star/implementation.html"
+      },
+      {
+        "t": "Red Blob Games: Hexagonal Grids",
+        "u": "https://www.redblobgames.com/grids/hexagons/"
+      }
+    ],
+    "newb": [
+      "A* is Dijkstra plus a guess (the heuristic) of the remaining cost; the guess makes it search toward the goal instead of in every direction.",
+      "The heuristic must never be bigger than the real cost, or A* can return a worse path. On hexes use hex distance × the cheapest possible step (e.g. a road by car).",
+      "Costs are game-hours, so the path's total cost is the ETA for free.",
+      "A min-heap (PriorityQueue in .NET 6+) is what makes A* fast: it always hands you the most promising tile next."
+    ],
+    "pitfalls": [
+      "Using a heuristic of plain hex distance when roads cost 0.25: it overestimates and breaks optimality.",
+      "Allocating new dictionaries per search on a 500×300 map: reuse arrays indexed by tile id.",
+      "Forgetting that blocked must be Infinity, not a big number, or teams will swim rivers."
+    ],
+    "test": "xUnit on hand-made 5×5 maps: straight line cost, detour round water, road preferred when cheaper, unreachable returns null, same result each run. Manual: hover tiles with a team selected and check the line and ETA look sensible near rivers and roads.",
+    "size": "M"
+  },
+  {
+    "id": "travel.fog",
+    "title": "Discovery & fog of war",
+    "summary": "Tracks what the player knows about each tile: never seen, seen before (a remembered snapshot with a 'last seen' time) or seen now; and which hidden sites have been discovered.",
+    "whyHere": "Exploring is the point of sending teams out, and POIs, dead counts and AI groups must be shown through what the player knows, so fog lands right after parties can move.",
+    "subsystems": [
+      "Per-tile knowledge state",
+      "Sight radius per team/base",
+      "Live vision update each hour",
+      "Remembered snapshots",
+      "Hidden-site discovery rules",
+      "Fog rendering layer"
+    ],
+    "sliceScope": "Three tile states (Unknown, Remembered, Visible); bases and teams see radius 1 (2 with good scouting); visible tiles store a snapshot; hidden POIs appear once their tile has been seen.",
+    "fullScope": "In the prototype (discovery.js, world.js updateVision) towns and cities are public from day 1, farms and cabins are known only near roads, crash sites stay secret until found; teams out of radio range bring their sightings home; night sight is 0 without night vision goggles; fog and blizzards cut sight by a tile; knowledge is never lost and is saved.",
+    "protoRefs": [
+      "prototype/src/sim/discovery.js",
+      "prototype/src/sim/world.js",
+      "prototype/src/sim/markers.js",
+      "docs/features/travel.md"
+    ],
+    "tasks": {
+      "data": [
+        "Knowledge record per tile (seen hour, snapshot of terrain/site/dead estimate)",
+        "Discovery class on site kinds in content: public / road / secret",
+        "Add knowledge array to save schema"
+      ],
+      "backend": [
+        "SightRadius(observer): base and party rules (scouting, night, weather)",
+        "UpdateVision each hour: mark live tiles, write snapshots",
+        "DiscoverSites: reveal hidden POIs on tiles with knowledge",
+        "Query API: IsKnown(tile), Snapshot(tile), IsLive(tile) used by UI and target pickers",
+        "Tests: a team walking a line reveals a corridor; secret site stays hidden until in sight"
+      ],
+      "ui": [
+        "Fog overlay: black for unknown, grey tint for remembered, clear for live"
+      ]
+    },
+    "dataModel": "public enum TileVis : byte { Unknown, Remembered, Visible }\npublic sealed record TileSnapshot(int Hour, string Terrain, int? SiteId, int DeadBand);\npublic sealed class Knowledge {\n  public TileSnapshot?[] Seen;     // index = tile id\n  public BitArray LiveNow;          // recomputed each hour, not saved\n  public HashSet<int> FoundSites = new();\n}",
+    "dependsOn": [
+      "core.hexgrid",
+      "core.mapgen",
+      "travel.parties",
+      "data.state"
+    ],
+    "connections": [
+      {
+        "to": "ui.statemap",
+        "why": "The map must only draw what the player knows",
+        "how": "Map view reads Knowledge via a read-only IKnowledgeView; a VisionChanged(tiles) event lists changed tiles",
+        "godot": "FogLayer TileMapLayer redraws only the changed cells on the VisionChanged signal",
+        "unity": "Fog Tilemap SetTile on changed cells when the C# event fires"
+      },
+      {
+        "to": "travel.pois",
+        "why": "Hidden POIs show only once discovered",
+        "how": "POI generator marks Hidden; DiscoverSites flips them into FoundSites; target pickers filter by IsKnown",
+        "godot": "POI icons layer checks the known flag",
+        "unity": "POI icon pool checks the known flag"
+      },
+      {
+        "to": "data.save",
+        "why": "Knowledge must survive save/load",
+        "how": "Serialize Seen[] snapshots and FoundSites; LiveNow is recomputed after load",
+        "godot": "No engine work",
+        "unity": "No engine work"
+      },
+      {
+        "to": "travel.survey",
+        "why": "Surveys and rumours add knowledge beyond plain sight",
+        "how": "Survey code calls Knowledge.Reveal(tile, source) through the same API",
+        "godot": "No engine work",
+        "unity": "No engine work"
+      }
+    ],
+    "godot": {
+      "approach": "Use a second TileMapLayer above the terrain with a black and a translucent grey hex tile; update only changed cells when SimHost signals VisionChanged. Later a CanvasItem shader can soften the fog edge.",
+      "keyApis": [
+        "TileMapLayer.SetCell / EraseCell",
+        "CanvasItem.Modulate",
+        "ShaderMaterial (later)"
+      ],
+      "docs": [
+        {
+          "t": "TileMapLayer",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_tilemaplayer.html"
+        },
+        {
+          "t": "Using TileMaps",
+          "u": "https://docs.godotengine.org/en/stable/tutorials/2d/using_tilemaps.html"
+        },
+        {
+          "t": "CanvasItem shaders",
+          "u": "https://docs.godotengine.org/en/stable/tutorials/shaders/shader_reference/canvas_item_shader.html"
+        }
+      ]
+    },
+    "unity": {
+      "approach": "A separate fog Tilemap (higher sorting order) with black and grey hex tiles, updated with SetTile on changed cells; later swap for a shader-driven fog texture.",
+      "keyApis": [
+        "Tilemap.SetTile",
+        "TilemapRenderer sorting order",
+        "Tile asset"
+      ],
+      "docs": [
+        {
+          "t": "Tilemaps",
+          "u": "https://docs.unity3d.com/Manual/Tilemap.html"
+        },
+        {
+          "t": "Tilemap.SetTile",
+          "u": "https://docs.unity3d.com/ScriptReference/Tilemaps.Tilemap.SetTile.html"
+        },
+        {
+          "t": "Hexagonal Tilemaps",
+          "u": "https://docs.unity3d.com/Manual/Tilemap-Hexagonal.html"
+        }
+      ]
+    },
+    "learn": [
+      {
+        "t": "Red Blob Games: Hexagonal Grids",
+        "u": "https://www.redblobgames.com/grids/hexagons/"
+      },
+      {
+        "t": "BitArray (.NET)",
+        "u": "https://learn.microsoft.com/en-us/dotnet/api/system.collections.bitarray"
+      }
+    ],
+    "newb": [
+      "Separate truth from belief: the World holds what is really on a tile; Knowledge holds what the player last saw. The UI only reads belief.",
+      "Remembered tiles are snapshots: if the dead moved in after you left, the map should still show the old picture until someone looks again.",
+      "Hex 'range N' is all tiles within hex distance N: Red Blob's range formula gives it without a search."
+    ],
+    "pitfalls": [
+      "Leaking truth through tooltips or target lists (an enemy base name in a hover on an unknown tile).",
+      "Recomputing the whole fog layer every frame instead of only on change.",
+      "Saving LiveNow: it is derived and makes saves big and stale."
+    ],
+    "test": "xUnit: team at a tile with radius 1 makes 7 tiles Visible; after it leaves they become Remembered with the right hour; a 'secret' site is undiscovered until a team stands next to it. Manual: start a run, see only the base surroundings, walk a team and watch the fog peel back.",
+    "size": "M"
+  },
+  {
+    "id": "travel.pois",
+    "title": "Points of interest & loot pools",
+    "summary": "Each land tile holds 0–4 places (a house, a gas station, a farm, a police station) with its own kind, loot pool, danger and visit history; teams pick one POI to raid.",
+    "whyHere": "POIs are the reason to travel and the input to battles: combat.map builds its map from a POI kind and gear.loot fills its containers, so they come after fog and before loot/battle cards.",
+    "subsystems": [
+      "POI kinds (content)",
+      "POI generation per tile",
+      "Per-POI loot pool & depletion",
+      "Visit history",
+      "POI pick for a raid",
+      "Hidden vs known POIs"
+    ],
+    "sliceScope": "5–8 POI kinds in JSON (house, gas station, grocery, police station, farm); mapgen places 0–2 per land tile; each has a remaining-loot value that drops when raided; the send-team flow lets the player pick one known POI.",
+    "fullScope": "The prototype (pois.js) gives mountains 0–1, forest/hills 0–2, farmland 0–3, suburbs 1–4 POIs (max 4 a tile, up to 2 hidden near roads), dozens of kinds incl. franchised shops, a placement table by tile class, per-POI threat estimates, containers that persist between visits and a POI walk of 5–60 minutes inside the tile.",
+    "protoRefs": [
+      "prototype/src/sim/pois.js",
+      "prototype/src/sim/poiraid.js",
+      "prototype/src/sim/poiwalk.js",
+      "prototype/src/sim/data.js",
+      "docs/features/travel.md"
+    ],
+    "tasks": {
+      "data": [
+        "poi_kinds.json: id, name, artKey, terrains allowed, danger, loot table id, building template id",
+        "POI runtime record: kind, tile, hidden flag, lootLeft 0..1, visits",
+        "Per-terrain POI count ranges"
+      ],
+      "backend": [
+        "GeneratePois(world, rng) during mapgen with per-terrain counts",
+        "PoiPick: list known POIs on a tile with visit history and 'picked-over' band",
+        "Raid result reduces lootLeft and records a visit",
+        "Tests: counts stay within ranges; same seed gives same POIs; picked clean blocks further loot"
+      ],
+      "ui": [
+        "Tile panel listing POIs with placeholder icon, name and Rich/Some/Little/Picked clean",
+        "POI pick dialog when sending a raid"
+      ]
+    },
+    "dataModel": "public sealed record PoiKindDef(string Id, string Name, string ArtKey, string[] Terrains,\n  int Danger, string LootTable, string BuildingTemplate);\npublic sealed class Poi {\n  public int Id; public int Tile; public string Kind;\n  public bool Hidden; public float LootLeft = 1f;\n  public List<int> VisitHours = new();\n}",
+    "dependsOn": [
+      "data.content",
+      "core.mapgen",
+      "travel.fog"
+    ],
+    "connections": [
+      {
+        "to": "gear.loot",
+        "why": "A POI's kind chooses which loot table fills its containers",
+        "how": "PoiKindDef.LootTable is a content id; the loot roller takes (table, lootLeft, rng)",
+        "godot": "No engine work",
+        "unity": "No engine work"
+      },
+      {
+        "to": "combat.map",
+        "why": "The raid map is built from the POI's building template",
+        "how": "BattleRequest carries PoiId; combat.map reads Kind → BuildingTemplate",
+        "godot": "Battle scene reads the template through SimHost",
+        "unity": "Battle scene reads the template through SimHost"
+      },
+      {
+        "to": "dead.population",
+        "why": "Each POI has its own count of the dead inside",
+        "how": "DeadPop keeps PoiDead[poiId]; the battle spawns that many",
+        "godot": "No engine work",
+        "unity": "No engine work"
+      },
+      {
+        "to": "ui.statemap",
+        "why": "POIs appear as icons on known tiles",
+        "how": "IKnowledgeView lists known POIs per tile; art key per kind",
+        "godot": "ArtCatalog Resource maps artKey → Texture2D for icons",
+        "unity": "ArtCatalog ScriptableObject maps artKey → Sprite"
+      }
+    ],
+    "godot": {
+      "approach": "Draw the top POI icon per known tile as a Sprite2D (or one MultiMeshInstance2D later for big maps) looked up by art key from the ArtCatalog Resource; the tile panel is a VBoxContainer of buttons built from the sim's POI list.",
+      "keyApis": [
+        "Sprite2D",
+        "VBoxContainer",
+        "Button",
+        "Resource (ArtCatalog)"
+      ],
+      "docs": [
+        {
+          "t": "Resources",
+          "u": "https://docs.godotengine.org/en/stable/tutorials/scripting/resources.html"
+        },
+        {
+          "t": "User interface (UI)",
+          "u": "https://docs.godotengine.org/en/stable/tutorials/ui/index.html"
+        },
+        {
+          "t": "Optimization using MultiMeshes",
+          "u": "https://docs.godotengine.org/en/stable/tutorials/performance/using_multimesh.html"
+        }
+      ]
+    },
+    "unity": {
+      "approach": "Pooled SpriteRenderer icons placed at cell centres, sprite from an ArtCatalog ScriptableObject; a UI Toolkit panel lists the tile's POIs with a button each.",
+      "keyApis": [
+        "ScriptableObject",
+        "SpriteRenderer",
+        "UI Toolkit ListView",
+        "Object pooling"
+      ],
+      "docs": [
+        {
+          "t": "ScriptableObject",
+          "u": "https://docs.unity3d.com/Manual/class-ScriptableObject.html"
+        },
+        {
+          "t": "UI Toolkit",
+          "u": "https://docs.unity3d.com/Manual/UIElements.html"
+        },
+        {
+          "t": "SpriteRenderer",
+          "u": "https://docs.unity3d.com/ScriptReference/SpriteRenderer.html"
+        }
+      ]
+    },
+    "learn": [
+      {
+        "t": "Game Programming Patterns: Type Object",
+        "u": "https://gameprogrammingpatterns.com/type-object.html"
+      }
+    ],
+    "newb": [
+      "A 'kind' (content) and an 'instance' (runtime) are different: PoiKindDef is shared and immutable, Poi is one place with its own loot left. This is the Type Object pattern.",
+      "Keep POI generation inside mapgen with the world's seed so the same seed always makes the same places.",
+      "Loot as a 0..1 'left' value is enough for the slice; real per-container contents can come later."
+    ],
+    "pitfalls": [
+      "Putting POIs on water, hive or city-centre tiles (the prototype excludes those).",
+      "Storing loot as items at generation time for every POI: huge saves. Roll contents on first visit.",
+      "Showing hidden POIs in the pick dialog."
+    ],
+    "test": "xUnit: generate a 32×24 map twice with one seed and compare POIs; every count is in range; raiding to empty sets 'Picked clean' and further raids find nothing. Manual: open a tile panel, pick a POI, raid it, return, see its band drop.",
+    "size": "M"
+  },
+  {
+    "id": "dead.population",
+    "title": "The dead on the land (per-tile counts, spread)",
+    "summary": "Every land tile and every POI holds a real count of the dead: cities hold hundreds, deep countryside a few dozen; kills lower them, and once a day the dead slowly leak from towns and cities into neighbouring tiles up to each tile's cap.",
+    "whyHere": "Battles need to know how many dead are at a POI, and travel events and danger estimates read the same counts, so this lands before the travel-event and battle cards consume it.",
+    "subsystems": [
+      "Tile caps by land class",
+      "Seeding default counts",
+      "POI vs open-ground counts",
+      "Kills feedback",
+      "Daily spread (leech)",
+      "Danger bands for UI"
+    ],
+    "sliceScope": "Per-tile and per-POI dead counts seeded from tile class (city > town > rural); a battle spawns from the POI count and kills subtract; a simple daily spread: each tile moves 1% of the gap toward its strongest neighbour, never over its cap.",
+    "fullScope": "deadpop.js caps tiles at centre 600, city 320, suburb 140, town 100, highway 50, rural 36, coast 32, scenic 24 (×1.5 on hive land), fills 15–45% by class plus infection; deadspread.js spreads ring by ring from towns, cities and hives at LEECH 0.01 of the gap a day, ×(1+2×infection), slowed by recent kills and rivers, with a reach falloff to a 12% floor.",
+    "protoRefs": [
+      "prototype/src/sim/deadpop.js",
+      "prototype/src/sim/deadspread.js",
+      "docs/features/travel.md"
+    ],
+    "tasks": {
+      "data": [
+        "dead_caps.json: cap and default fill per land class",
+        "Spread constants (leech rate, infection factor, kill damping)",
+        "Runtime arrays: OpenDead[tile], PoiDead[poi] in World and save"
+      ],
+      "backend": [
+        "SeedDead(world, rng) at world creation",
+        "TileDead(tile) = open + Σ POI counts; Kill(tile, poi, n)",
+        "SpreadDaily(world): one pass using a double buffer, capped",
+        "DangerBand(count, cap) for UI words (Quiet / Some / Many / Swarming)",
+        "Tests: rural cap < city cap; spread never exceeds cap; kills lower both levels; deterministic"
+      ],
+      "ui": [
+        "Debug heat overlay of dead per tile (dev toggle)",
+        "Danger word on the tile panel (from knowledge, not truth)"
+      ]
+    },
+    "dataModel": "public enum LandClass { Centre, City, Suburb, Town, Highway, Rural, Coast, Scenic }\npublic sealed record DeadCapDef(LandClass Class, int Cap, float Fill);\npublic sealed class DeadPopulation {\n  public int[] OpenDead;                 // by tile id\n  public Dictionary<int, int> PoiDead = new(); // by poi id\n  public int TileDead(int tile, IEnumerable<int> poiIds) => OpenDead[tile] + poiIds.Sum(p => PoiDead.GetValueOrDefault(p));\n}",
+    "dependsOn": [
+      "core.mapgen",
+      "travel.pois",
+      "core.clock",
+      "data.rng",
+      "data.content"
+    ],
+    "connections": [
+      {
+        "to": "combat.map",
+        "why": "The battle spawns the dead a POI really holds",
+        "how": "BattleSetup reads PoiDead[poiId] (scaled to the map) and picks dead types",
+        "godot": "No engine work",
+        "unity": "No engine work"
+      },
+      {
+        "to": "combat.resolve",
+        "why": "Kills in battle must lower the land's counts",
+        "how": "BattleResult.Kills → DeadPopulation.Kill(tile, poi, n)",
+        "godot": "No engine work",
+        "unity": "No engine work"
+      },
+      {
+        "to": "travel.events",
+        "why": "'The dead ahead' and similar cards scale with the count nearby",
+        "how": "Event conditions read TileDead and DangerBand",
+        "godot": "No engine work",
+        "unity": "No engine work"
+      },
+      {
+        "to": "dead.hordes",
+        "why": "Hordes later form from and drain into tile populations",
+        "how": "Horde spawning draws from OpenDead; the same Kill/Add API",
+        "godot": "No engine work",
+        "unity": "No engine work"
+      },
+      {
+        "to": "core.clock",
+        "why": "Spread runs once a day",
+        "how": "Clock's DailyTick calls SpreadDaily after the daily economy",
+        "godot": "No engine work",
+        "unity": "No engine work"
+      }
+    ],
+    "godot": {
+      "approach": "Pure sim. For debugging, add a heatmap overlay: build an Image (one pixel per tile), colour by count/cap, show it as an ImageTexture under a dev toggle.",
+      "keyApis": [
+        "Image.SetPixel",
+        "ImageTexture.CreateFromImage",
+        "TextureRect"
+      ],
+      "docs": [
+        {
+          "t": "Image",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_image.html"
+        },
+        {
+          "t": "TileMapLayer",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_tilemaplayer.html"
+        }
+      ]
+    },
+    "unity": {
+      "approach": "Pure sim. Debug overlay: fill a Texture2D with SetPixels32 (one pixel per tile, point filtering) and show it on a quad or tint the hex Tilemap cells with SetColor.",
+      "keyApis": [
+        "Texture2D.SetPixels32",
+        "Texture2D.Apply",
+        "Tilemap.SetColor"
+      ],
+      "docs": [
+        {
+          "t": "Texture2D.SetPixels32",
+          "u": "https://docs.unity3d.com/ScriptReference/Texture2D.SetPixels32.html"
+        },
+        {
+          "t": "Tilemaps",
+          "u": "https://docs.unity3d.com/Manual/Tilemap.html"
+        }
+      ]
+    },
+    "learn": [
+      {
+        "t": "Red Blob Games: Making maps with noise",
+        "u": "https://www.redblobgames.com/maps/terrain-from-noise/"
+      }
+    ],
+    "newb": [
+      "Use a double buffer for spread: read all of today's counts, write tomorrow's into a second array, then swap. Otherwise tiles updated early leak twice.",
+      "Two levels that add up (open ground + each POI) means one kill always lowers both: no separate bookkeeping to get out of sync.",
+      "A cap per land class is what keeps the countryside safer than the city forever; tune caps, not spawn rates."
+    ],
+    "pitfalls": [
+      "Spawning new dead from nothing each day ('just a number going up'): the user explicitly rejected that in the prototype.",
+      "Showing the true count to the player: show the band from Knowledge.",
+      "Float drift: keep counts as ints and carry fractional spread in a separate float accumulator."
+    ],
+    "test": "xUnit: seed a map and assert every tile ≤ cap and city tiles > rural; run 100 daily spreads and assert caps hold and totals rise only toward caps; killing 10 at a POI lowers both POI and tile by 10. Manual: dev heatmap shows rings forming round towns over a sped-up month.",
+    "size": "M"
+  },
+  {
+    "id": "travel.events",
+    "title": "Travel event cards",
+    "summary": "As a team enters each tile, a chance rolls for a road event (the dead ahead, a swollen creek, wolves, a lonely farmhouse, a stranger, a car breakdown) shown as a decision card whose choices change the team.",
+    "whyHere": "It is the slice's main source of surprise on the road and uses the card system, parties and dead counts that are now in place.",
+    "subsystems": [
+      "Event definitions (content)",
+      "Per-tile chance roll",
+      "Conditions (terrain, season, night, dead)",
+      "Weighted pick",
+      "Choices & outcomes",
+      "Stale-card cleanup"
+    ],
+    "sliceScope": "6–8 events in JSON with conditions and 2–3 choices each (loot, injury, delay, lose supplies, fight); roll on tile entry with chance 5% + infection + terrain traffic; one card per team per hour; card pauses per core.cards rules.",
+    "fullScope": "events.js has ~35 travel events (blocked highway, storm, ankle, creek, animals, straggler, warning, traders, hiker, cache, farmhouse, convoy of 9 kinds, hardcore-only ones), rolled by ground, season, weather, night (×1.2, ×1.8 on a night march), stance and the dead nearby, with hordes and breakdowns taking priority.",
+    "protoRefs": [
+      "prototype/src/sim/events.js",
+      "prototype/src/sim/nightmarch.js",
+      "docs/features/travel.md"
+    ],
+    "tasks": {
+      "data": [
+        "travel_events.json: id, weight, conditions (terrain, season, night, minDead), text, choices",
+        "Outcome vocabulary: addLoot, hurt, delayHours, loseSupply, startBattle, revealTile",
+        "Event chance constants"
+      ],
+      "backend": [
+        "RollTravelEvent(party, tile): chance, filter by conditions, weighted pick with the seeded RNG",
+        "Build Card from the def with the party id; resolve choice → apply outcomes",
+        "Drop cards whose party died or disbanded",
+        "Tests: conditions filter correctly; same seed same events; outcomes change party state"
+      ],
+      "ui": [
+        "Reuse the event-card window from ui.cards: title, text, choice buttons"
+      ]
+    },
+    "dataModel": "public sealed record TravelEventDef(string Id, float Weight, EventCond When,\n  string TitleKey, string TextKey, ChoiceDef[] Choices);\npublic sealed record EventCond(string[]? Terrains, int? Season, bool? Night, int MinDead = 0);\npublic sealed record ChoiceDef(string LabelKey, OutcomeDef[] Outcomes, float? SkillCheck = null);\npublic sealed record OutcomeDef(string Op, string? Arg, float Amount);",
+    "dependsOn": [
+      "core.cards",
+      "travel.parties",
+      "core.weather",
+      "dead.population",
+      "data.content"
+    ],
+    "connections": [
+      {
+        "to": "core.cards",
+        "why": "Travel events are cards in the shared card queue",
+        "how": "RollTravelEvent returns a Card(ownerPartyId, choices) pushed to CardQueue; pause rules apply",
+        "godot": "Card window listens to CardRaised signal",
+        "unity": "Card window listens to CardRaised C# event"
+      },
+      {
+        "to": "travel.parties",
+        "why": "Rolled when entering a tile; outcomes change the party",
+        "how": "Subscribes to PartyEnteredTile; outcomes call Party APIs (Hurt, Delay, AddCargo)",
+        "godot": "No engine work",
+        "unity": "No engine work"
+      },
+      {
+        "to": "combat.map",
+        "why": "Some choices start a fight on open ground",
+        "how": "Outcome 'startBattle' emits BattleRequest(partyId, tile, enemies)",
+        "godot": "SimHost changes to the battle scene",
+        "unity": "SimHost loads the battle scene"
+      },
+      {
+        "to": "dead.population",
+        "why": "Danger of 'the dead ahead' depends on the tile's count",
+        "how": "EventCond.MinDead and outcome scaling read TileDead",
+        "godot": "No engine work",
+        "unity": "No engine work"
+      }
+    ],
+    "godot": {
+      "approach": "No new engine work beyond ui.cards: the card window shows text from the sim card. Keep event text in content/translation files so writers can add events without code.",
+      "keyApis": [
+        "PanelContainer",
+        "RichTextLabel",
+        "Button",
+        "TranslationServer (later)"
+      ],
+      "docs": [
+        {
+          "t": "RichTextLabel",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_richtextlabel.html"
+        },
+        {
+          "t": "User interface (UI)",
+          "u": "https://docs.godotengine.org/en/stable/tutorials/ui/index.html"
+        }
+      ]
+    },
+    "unity": {
+      "approach": "No new engine work beyond ui.cards. Event text in content JSON (or Unity Localization later); the card panel is UI Toolkit.",
+      "keyApis": [
+        "UI Toolkit VisualElement",
+        "Label",
+        "Button"
+      ],
+      "docs": [
+        {
+          "t": "UI Toolkit",
+          "u": "https://docs.unity3d.com/Manual/UIElements.html"
+        },
+        {
+          "t": "UnityEvents",
+          "u": "https://docs.unity3d.com/Manual/UnityEvents.html"
+        }
+      ]
+    },
+    "learn": [
+      {
+        "t": "Game Programming Patterns: Command",
+        "u": "https://gameprogrammingpatterns.com/command.html"
+      },
+      {
+        "t": "Game Programming Patterns: Type Object",
+        "u": "https://gameprogrammingpatterns.com/type-object.html"
+      }
+    ],
+    "newb": [
+      "Data-driven events: the code knows how to check conditions and apply outcomes; the events themselves are JSON. Adding the 40th event should need no C#.",
+      "Keep a small, fixed list of outcome 'ops' (like a mini scripting language); it is easy to test each one once.",
+      "Roll events with the sim's seeded RNG so a bug report with a seed can be replayed."
+    ],
+    "pitfalls": [
+      "Firing a card every tile: cap one per party per hour and tune chances low (5–15%).",
+      "Cards that outlive their team: drop or neutralize them when the party is gone.",
+      "Hard-coding English text in C#."
+    ],
+    "test": "xUnit: force an event with a fixed seed, pick each choice and assert the outcome; a forest-only event never rolls on farmland; a dead party's card is pruned. Manual: send a team across 10 tiles at 5× and see 1–2 cards appear and pause the game.",
+    "size": "M"
+  },
+  {
+    "id": "world.mapgen",
+    "title": "Full world gen: rivers, roads, cities, unique names, world sizes",
+    "summary": "Grows the slice's small map into the full State of Calder: noise terrain, rivers to the coast, two cities with suburbs, towns, roads and highways linking them, countryside sites and landmarks, unique place names, and size presets up to 500 × 300.",
+    "whyHere": "Every M3 system (weather fronts, vehicles on roads, crawls in cities, crash sites) needs a real world to run on; it builds on the slice mapgen, pathing and POIs.",
+    "subsystems": [
+      "Height/moisture noise → terrain",
+      "Rivers & bridges",
+      "Cities, suburbs & towns",
+      "Road network",
+      "Countryside sites & landmarks",
+      "Unique name generator",
+      "World size presets & AI-group counts"
+    ],
+    "sliceScope": "First version: rivers flowing downhill to the map edge, one city + 6 towns joined by roads (A* with road-friendly costs), farms off-road, names from a list with no repeats, and the Small preset 150 × 75.",
+    "fullScope": "mapgen.js builds Calder City in the south and a second city far from it, sparse towns (centre, police, auto shop, 0–2 shops, 1–2 satellites), farms/cabins/lodges/quarries, truck stops on highways, at least one Guard base, a prison, dam and airport, ponds on 1 open tile in 20, infection; presets Small 150×75, Normal 250×150, Large 300×200, Huge 500×300, every name unique.",
+    "protoRefs": [
+      "prototype/src/sim/mapgen.js",
+      "prototype/src/sim/worldsize.js",
+      "prototype/src/sim/hex.js",
+      "docs/features/campaign.md"
+    ],
+    "tasks": {
+      "data": [
+        "world_sizes.json: presets (w, h, AI groups, town count)",
+        "names.json: town, district and site name pools",
+        "Settlement templates (city radius 4/3, town suburb ring 2)",
+        "Landmark list with placement rules"
+      ],
+      "backend": [
+        "Terrain from seeded noise (own simplex/value noise in C#)",
+        "Rivers: from high tiles follow steepest descent to sea; mark bridges where roads cross",
+        "Place cities/towns with spacing; roads via A* with terrain costs that like flat ground and existing roads",
+        "UniqueNamer: draw without replacement, numeral suffix on exhaustion",
+        "Golden tests: a seed → a stable map hash; all towns reachable by road; no duplicate names",
+        "Perf test: Huge map in under a few seconds"
+      ],
+      "ui": [
+        "Dev 'map gen viewer' scene: seed field, size dropdown, regenerate button, layer toggles"
+      ]
+    },
+    "dataModel": "public sealed record WorldSizeDef(string Id, int W, int H, int AiGroups, int Towns);\npublic sealed class WorldGenParams { public int Seed; public string Size; public float Water, Forest, Hills; }\npublic sealed class Settlement { public int Id; public string Name; public int Tile; public SettlementKind Kind; public List<int> Tiles = new(); }\npublic enum SettlementKind { City, Suburb, Town }\npublic sealed class Road { public List<int> Tiles = new(); public bool Highway; }",
+    "dependsOn": [
+      "core.mapgen",
+      "core.hexgrid",
+      "travel.pathing",
+      "travel.pois",
+      "data.rng"
+    ],
+    "connections": [
+      {
+        "to": "core.mapgen",
+        "why": "Replaces the slice generator behind the same interface",
+        "how": "IWorldGenerator.Generate(WorldGenParams) → World; slice and full gens are two implementations",
+        "godot": "No engine work",
+        "unity": "No engine work"
+      },
+      {
+        "to": "travel.pathing",
+        "why": "Roads are routed with A* and make travel faster",
+        "how": "Mapgen reuses AStar<T> with a road-building cost graph; tiles get Road flags read by MoveCost",
+        "godot": "No engine work",
+        "unity": "No engine work"
+      },
+      {
+        "to": "travel.pois",
+        "why": "Placement of POIs depends on tile class (city centre to rural)",
+        "how": "Mapgen tags each tile's LandClass, then GeneratePois uses a placement table",
+        "godot": "No engine work",
+        "unity": "No engine work"
+      },
+      {
+        "to": "meta.modes",
+        "why": "Modes and Custom pick sizes, town and city counts",
+        "how": "WorldGenParams come from the mode's world config",
+        "godot": "New-game menu writes the params",
+        "unity": "New-game menu writes the params"
+      },
+      {
+        "to": "meta.perf",
+        "why": "Huge maps (150k tiles) stress gen, pathing and rendering",
+        "how": "Gen runs off the main thread; arrays by tile id, not objects",
+        "godot": "Run Generate in a Task; show a progress bar",
+        "unity": "Run Generate in a Task or Job; show a progress bar"
+      }
+    ],
+    "godot": {
+      "approach": "Generation is sim code. Godot's FastNoiseLite is tempting but keep noise in C# for engine-free determinism. The dev viewer draws terrain into an Image (pixel per tile) for speed, and the real map uses TileMapLayer chunks; run Generate on a background Task and call back with CallDeferred.",
+      "keyApis": [
+        "Image / ImageTexture",
+        "TileMapLayer",
+        "Task.Run + CallDeferred",
+        "OptionButton, SpinBox"
+      ],
+      "docs": [
+        {
+          "t": "Image",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_image.html"
+        },
+        {
+          "t": "Using multiple threads",
+          "u": "https://docs.godotengine.org/en/stable/tutorials/performance/using_multiple_threads.html"
+        },
+        {
+          "t": "FastNoiseLite",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_fastnoiselite.html"
+        }
+      ]
+    },
+    "unity": {
+      "approach": "Sim code generates; Unity draws the viewer as a Texture2D and the map as hex Tilemaps (consider chunking for Huge). Avoid Mathf.PerlinNoise in the sim (engine reference); use your own noise.",
+      "keyApis": [
+        "Texture2D.SetPixels32",
+        "Tilemap.SetTiles (batch)",
+        "Task / Awaitable",
+        "UI Toolkit DropdownField"
+      ],
+      "docs": [
+        {
+          "t": "Texture2D.SetPixels32",
+          "u": "https://docs.unity3d.com/ScriptReference/Texture2D.SetPixels32.html"
+        },
+        {
+          "t": "Tilemaps",
+          "u": "https://docs.unity3d.com/Manual/Tilemap.html"
+        },
+        {
+          "t": "Mathf.PerlinNoise",
+          "u": "https://docs.unity3d.com/ScriptReference/Mathf.PerlinNoise.html"
+        }
+      ]
+    },
+    "learn": [
+      {
+        "t": "Red Blob Games: Making maps with noise",
+        "u": "https://www.redblobgames.com/maps/terrain-from-noise/"
+      },
+      {
+        "t": "Red Blob Games: mapgen4",
+        "u": "https://www.redblobgames.com/maps/mapgen4/"
+      },
+      {
+        "t": "Red Blob Games: Hexagonal Grids",
+        "u": "https://www.redblobgames.com/grids/hexagons/"
+      }
+    ],
+    "newb": [
+      "Generate in layers: height → water → rivers → settlements → roads → sites → names. Each layer only reads the ones before it, so bugs are easy to isolate.",
+      "A 'golden test' hashes the generated map for a fixed seed; if the hash changes, you changed generation on purpose or by accident.",
+      "Use separate RNG streams per layer so adding a new layer does not reshuffle all the others."
+    ],
+    "pitfalls": [
+      "Rivers that loop or end inland: always flow strictly downhill (or carve) to the edge.",
+      "Towns unreachable by road: test connectivity after placement.",
+      "Using engine noise or System.Random's default seeding: different results per platform."
+    ],
+    "test": "xUnit: golden hash per seed and size; all settlements connected; names unique; rivers reach water. Manual: dev viewer, roll 20 seeds, eyeball rivers, cities and road spread for each preset.",
+    "size": "XL"
+  },
+  {
+    "id": "world.weather",
+    "title": "Full weather: rain waves, fog, ponds, seasonal ground, winter",
+    "summary": "Weather becomes regional: rain belts, storms and blizzards move across the map as fronts, fog banks cut sight, ponds fill and freeze in hollows, rivers freeze in deep winter, and the season changes the ground in battles.",
+    "whyHere": "With the full world in place, weather can vary across it; it feeds vehicles (mud, fuel), travel speed, fog of war and later tactical terrain.",
+    "subsystems": [
+      "Seasonal calendar & temperatures",
+      "Moving weather fronts",
+      "Per-tile weather query",
+      "Ground state (mud, snow cover)",
+      "Ponds & river ice",
+      "Effects on sight, travel & battles"
+    ],
+    "sliceScope": "First version: fronts as circles with position, heading, speed, radius and lifetime that cross the map; WeatherAt(tile, hour) returns the front's type or the day's sky; rain slows off-road travel, fog cuts sight by one tile.",
+    "fullScope": "weather.js: 4 seasons of 28 days, day 1 = spring day 15; types clear, rain, storm, fog, heat wave, snow, blizzard; a rain day sends 3–4 belts (storm 2–3) from any edge, radius 7–12, 0.9–1.5 tiles/h, scaled by √(map area); ponds.js fills hollows, dries to mud, freezes; rivers.js freezes rivers north to south so people and the dead can cross; seasonfx.js: ice slips, rain muffles noise, spring mud +0.5 a step.",
+    "protoRefs": [
+      "prototype/src/sim/weather.js",
+      "prototype/src/sim/ponds.js",
+      "prototype/src/sim/rivers.js",
+      "prototype/src/sim/seasonfx.js",
+      "docs/features/campaign.md"
+    ],
+    "tasks": {
+      "data": [
+        "weather_types.json: id, icon art key, travel/sight/noise modifiers, season chances",
+        "Front kinds (radius range, speed range, lifetime)",
+        "Season table (temperatures, day lengths)"
+      ],
+      "backend": [
+        "Daily weather generation from its own RNG stream, stored per day",
+        "Front simulation per hour; WeatherAt(tile, hour)",
+        "Ground and pond state stepped daily per tile; river ice by latitude and cold",
+        "Expose modifiers: TravelFactor, SightCut, NoiseMuffle, BattleGround",
+        "Tests: fronts enter from an edge and leave; rain never covers the whole state; ice only in winter"
+      ],
+      "ui": [
+        "Weather overlay: rain/fog sprites on live tiles, a weather icon in the top bar",
+        "Forecast tooltip (placeholder)"
+      ]
+    },
+    "dataModel": "public enum Wx { Clear, Rain, Storm, Fog, Heat, Snow, Blizzard }\npublic sealed class Front { public Wx Type; public float X, Y, Dx, Dy, Radius; public int EndHour; }\npublic sealed class WeatherState {\n  public List<DayWeather> Days = new(); public List<Front> Fronts = new();\n  public byte[] Mud, Snow;              // per tile\n  public PondState[] Ponds;\n}\npublic readonly record struct PondState(int Day, int Dry, bool Ice);",
+    "dependsOn": [
+      "core.weather",
+      "world.mapgen",
+      "travel.pathing",
+      "travel.fog"
+    ],
+    "connections": [
+      {
+        "to": "travel.pathing",
+        "why": "Mud, snow and storms change step costs; ice opens river crossings",
+        "how": "MoveCost multiplies by Weather.TravelFactor(tile, hour); ice raises RiverFrozen/Thawed events that invalidate paths",
+        "godot": "No engine work",
+        "unity": "No engine work"
+      },
+      {
+        "to": "travel.fog",
+        "why": "Fog and blizzards cut sight by a tile",
+        "how": "SightRadius adds Weather.SightCut(tile, hour)",
+        "godot": "No engine work",
+        "unity": "No engine work"
+      },
+      {
+        "to": "travel.vehicles",
+        "why": "Mud bogs cars down, cold burns more fuel and stalls starts",
+        "how": "Vehicle fuel and stuck rolls read weather modifiers",
+        "godot": "No engine work",
+        "unity": "No engine work"
+      },
+      {
+        "to": "combat.terrain",
+        "why": "The battle's tile weather and season set the ground (snow cost, ponds, fog sight)",
+        "how": "BattleSetup copies a WeatherSnapshot for the fight",
+        "godot": "Battle scene adds GPUParticles2D rain/snow",
+        "unity": "Battle scene adds a ParticleSystem for rain/snow"
+      }
+    ],
+    "godot": {
+      "approach": "Draw rain and fog on the State Map with a CanvasItem shader or GPUParticles2D per visible front, clipped to live tiles; a CanvasModulate can darken the scene for storms. Keep particle counts low on Huge maps.",
+      "keyApis": [
+        "GPUParticles2D",
+        "ShaderMaterial",
+        "CanvasModulate",
+        "TileMapLayer (fog bank layer)"
+      ],
+      "docs": [
+        {
+          "t": "2D particle systems",
+          "u": "https://docs.godotengine.org/en/stable/tutorials/2d/particle_systems_2d.html"
+        },
+        {
+          "t": "CanvasItem shaders",
+          "u": "https://docs.godotengine.org/en/stable/tutorials/shaders/shader_reference/canvas_item_shader.html"
+        },
+        {
+          "t": "Shaders",
+          "u": "https://docs.godotengine.org/en/stable/tutorials/shaders/index.html"
+        }
+      ]
+    },
+    "unity": {
+      "approach": "Use a ParticleSystem per front (or one screen-space rain shader) and a fog Tilemap layer for fog banks; a global light tint for storms. Drive positions from the sim each frame.",
+      "keyApis": [
+        "ParticleSystem",
+        "Shader Graph / Shaders",
+        "Tilemap",
+        "MaterialPropertyBlock"
+      ],
+      "docs": [
+        {
+          "t": "ParticleSystem",
+          "u": "https://docs.unity3d.com/ScriptReference/ParticleSystem.html"
+        },
+        {
+          "t": "Shaders",
+          "u": "https://docs.unity3d.com/Manual/Shaders.html"
+        },
+        {
+          "t": "MaterialPropertyBlock",
+          "u": "https://docs.unity3d.com/ScriptReference/MaterialPropertyBlock.html"
+        }
+      ]
+    },
+    "learn": [
+      {
+        "t": "Red Blob Games: Making maps with noise",
+        "u": "https://www.redblobgames.com/maps/terrain-from-noise/"
+      }
+    ],
+    "newb": [
+      "Give weather its own RNG stream: then adding a travel event never changes tomorrow's weather.",
+      "A front is just a moving circle; 'is tile X in rain?' is a distance check. Simple models feel rich when they move.",
+      "The sim decides weather effects; the engine only draws pretty rain. If you remove the particles, the game rules must not change."
+    ],
+    "pitfalls": [
+      "Global weather on a 500×300 map: players see it is fake. Fronts fix that.",
+      "Fronts sized for a small map look tiny on Huge maps: scale radius and speed by √(area ratio) as the prototype does.",
+      "Particles for every front, everywhere: only draw on visible tiles."
+    ],
+    "test": "xUnit: 112-day year has 4 seasons; fronts start at an edge and expire; WeatherAt is deterministic; rivers freeze only in winter; ponds dry after N dry days. Manual: speed up a month on the map and watch rain belts sweep across and fog banks hide tiles.",
+    "size": "L"
+  },
+  {
+    "id": "travel.vehicles",
+    "title": "Vehicles: fuel, condition, breakdowns, found cars, trade",
+    "summary": "Teams can drive: each vehicle has a type, fuel tank, payload, condition and breakdown chance; cars are found on raid maps (keys, hotwiring), repaired, abandoned and recovered, and traded.",
+    "whyHere": "Vehicles change the economy of travel (speed, carrying, fuel as a resource) and are needed before carry rules, road events and city crawls get their vehicle variants.",
+    "subsystems": [
+      "Vehicle types (content)",
+      "Fuel use per tile",
+      "Payload & overload",
+      "Condition & breakdowns",
+      "Found cars & hotwiring",
+      "Abandon / recover",
+      "Bicycles"
+    ],
+    "sliceScope": "First version: 2–3 vehicle types, a team may take one; fuel per tile (road 0.6, off-road 1.5); faster travel on roads; payload limits cargo; a small breakdown chance by condition that costs hours to fix.",
+    "fullScope": "vehicles.js: pickup (30 L tank, 650 kg), sedan (18, 400), SUV, Hummer, work van (800 kg), Army truck (150 L, 2500 kg, 12 seats, loud, slow), bike stacks; fuel ×1→×1.3 as it fills, overload to 125% (×1.6 fuel, 15% slower); foundcars.js lock/keys/hotwire on maps; roadblocks; lost teams leave vehicles with cargo; vehicle trade; weather mud and cold starts.",
+    "protoRefs": [
+      "prototype/src/sim/vehicles.js",
+      "prototype/src/sim/foundcars.js",
+      "prototype/src/sim/roadblocks.js",
+      "docs/features/travel.md"
+    ],
+    "tasks": {
+      "data": [
+        "vehicle_types.json: tank, payload, seats, speed, fuel mult, offroad, loud, art key",
+        "Vehicle runtime record (fuel, condition, cargo, location)",
+        "Fuel as a supply item; repair part items"
+      ],
+      "backend": [
+        "Travel mode Vehicle in MoveCost; fuel drain per step with fill multiplier",
+        "Breakdown roll per tile by condition; field repair order",
+        "Abandon when out of fuel; parked vehicles as map objects; recover order",
+        "Found cars: lock, keys search, hotwire (Mechanics check) on battle maps",
+        "Tests: fuel math, overload limits, out-of-fuel stops the team"
+      ],
+      "ui": [
+        "Vehicles tab in the hub (list, fuel, condition)",
+        "Vehicle pick in team forming; parked-car marker on the map"
+      ]
+    },
+    "dataModel": "public sealed record VehicleTypeDef(string Id, string Name, float Tank, float PayloadKg, int Seats,\n  float Speed = 1, float FuelMult = 1, float Offroad = 1, bool Loud = false, string ArtKey = \"\");\npublic sealed class Vehicle {\n  public int Id; public string Type; public float Fuel; public float Condition; // 0..1\n  public int? PartyId; public int? ParkedTile; public int? BaseId;\n  public Inventory Cargo = new();\n}",
+    "dependsOn": [
+      "travel.parties",
+      "travel.pathing",
+      "gear.items",
+      "base.core"
+    ],
+    "connections": [
+      {
+        "to": "travel.carry",
+        "why": "A vehicle carries the load so riders feel none of it",
+        "how": "Load calculator puts cargo into Vehicle.Cargo first, up to payload × 1.25",
+        "godot": "No engine work",
+        "unity": "No engine work"
+      },
+      {
+        "to": "combat.vehicles",
+        "why": "Vehicles appear on raid maps and can be driven there",
+        "how": "BattleSetup places the party's vehicles; foundcars logic is a battle action",
+        "godot": "Battle scene spawns a vehicle node by art key",
+        "unity": "Battle scene spawns a vehicle prefab by art key"
+      },
+      {
+        "to": "world.weather",
+        "why": "Mud and cold affect fuel, speed and starting",
+        "how": "Fuel/speed formula multiplies by Weather.VehicleFactor(tile, hour)",
+        "godot": "No engine work",
+        "unity": "No engine work"
+      },
+      {
+        "to": "groups.trade",
+        "why": "Vehicles can be bought and sold",
+        "how": "Vehicle is a tradeable entity with a value function",
+        "godot": "Trade window lists vehicles",
+        "unity": "Trade window lists vehicles"
+      },
+      {
+        "to": "travel.road",
+        "why": "Roadblocks and breakdown cards happen on the move",
+        "how": "Road events check Party.VehicleId and call Vehicle APIs",
+        "godot": "No engine work",
+        "unity": "No engine work"
+      }
+    ],
+    "godot": {
+      "approach": "Vehicles on the State Map just change the party marker's sprite (art key per type); parked vehicles are their own small markers. The Vehicles tab is a Tree or ItemList with fuel ProgressBars.",
+      "keyApis": [
+        "Sprite2D",
+        "ItemList / Tree",
+        "ProgressBar"
+      ],
+      "docs": [
+        {
+          "t": "ItemList",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_itemlist.html"
+        },
+        {
+          "t": "User interface (UI)",
+          "u": "https://docs.godotengine.org/en/stable/tutorials/ui/index.html"
+        }
+      ]
+    },
+    "unity": {
+      "approach": "Swap the party marker's sprite from the ArtCatalog by vehicle type; a UI Toolkit ListView with ProgressBar elements for fuel and condition in the Vehicles tab.",
+      "keyApis": [
+        "SpriteRenderer.sprite",
+        "UI Toolkit ListView",
+        "ProgressBar"
+      ],
+      "docs": [
+        {
+          "t": "UI Toolkit",
+          "u": "https://docs.unity3d.com/Manual/UIElements.html"
+        },
+        {
+          "t": "ScriptableObject",
+          "u": "https://docs.unity3d.com/Manual/class-ScriptableObject.html"
+        }
+      ]
+    },
+    "learn": [
+      {
+        "t": "Game Programming Patterns: Type Object",
+        "u": "https://gameprogrammingpatterns.com/type-object.html"
+      }
+    ],
+    "newb": [
+      "A vehicle is an entity with its own id that can be at a base, with a party or parked on a tile: exactly one of those at a time.",
+      "Fuel turns travel into a resource decision; show the fuel the trip will use before the player commits.",
+      "Model breakdowns as a per-tile probability scaled by condition: easy to tune, easy to explain in a tooltip."
+    ],
+    "pitfalls": [
+      "Letting a vehicle be in two places (with a party and at a base).",
+      "Estimates that differ from the real trip: compute ETA and fuel with the same function the trip uses.",
+      "Forgetting the vehicle when a team is wiped: leave it parked with its cargo."
+    ],
+    "test": "xUnit: a 10-road-tile trip uses 6 L; overload limited to 125%; empty tank stops the party and parks the car; recovery returns it. Manual: drive a team, watch fuel drop, run dry and walk home, then recover the car.",
+    "size": "L"
+  },
+  {
+    "id": "travel.orders",
+    "title": "Order queue, trip planner, templates, detached members",
+    "summary": "Teams take queued orders (move, look around, scavenge, rest, gather, return) run one after another; a trip planner builds the plan before leaving with ETA and rations; trips can be saved as templates and repeated; some members can split off on a side job.",
+    "whyHere": "Once the world is big, single 'go there' commands are tedious; the order queue is also the shared vocabulary the autopilot and AI groups use.",
+    "subsystems": [
+      "Order types & order queue",
+      "Trip planner & estimate",
+      "Plan conditions (come home if…)",
+      "Templates & repeat trips",
+      "Right-click order menu",
+      "Detached members & rejoin"
+    ],
+    "sliceScope": "First version: a queue of Move, Scavenge, Rest N hours, Return Home; the planner shows total ETA and food needed using the same step function as the real trip; Shift+right-click appends.",
+    "fullScope": "orders.js/plans.js: timed orders (move, look around, camp, field repairs, treat, mission, go home), plan steps and 'If … then come home' conditions (hurt below N, food below N days, cargo full), cards when a horde or rich site is seen; trips.js templates with crew substitution; detach.js members off on their own order; right-click menu grouped Go/Base/Site/Land/Camp/Team/Field work.",
+    "protoRefs": [
+      "prototype/src/sim/orders.js",
+      "prototype/src/sim/plans.js",
+      "prototype/src/sim/trips.js",
+      "docs/features/travel.md"
+    ],
+    "tasks": {
+      "data": [
+        "Order record (type, target, hours, params) and Plan (orders + conditions)",
+        "TripTemplate (crew roles, vehicle, supplies, steps)",
+        "Save schema for queues and templates"
+      ],
+      "backend": [
+        "OrderRunner: pop next order when current finishes; raise OrdersDone card when empty",
+        "EstimatePlan: simulate the plan hour by hour without mutating state",
+        "Conditions checked hourly; auto-return with an undoable card",
+        "Templates: save, apply with substitutions and a 'what changed' report",
+        "Detach: split members into a sub-party with its own order, rejoin when done"
+      ],
+      "ui": [
+        "Right-click PopupMenu with orders and times, greyed with reasons",
+        "Trip planner window: steps list, ETA, rations, save template"
+      ]
+    },
+    "dataModel": "public enum OrderType { Move, LookAround, Scavenge, Rest, Gather, Wait, ReturnHome }\npublic sealed record Order(OrderType Type, int? Tile, int? PoiId, float Hours);\npublic sealed class Plan {\n  public Queue<Order> Steps = new();\n  public float ReturnIfHealthBelow = 0; public float ReturnIfFoodDaysBelow = 0; public bool ReturnIfFull;\n}\npublic sealed record TripTemplate(string Name, string[] Roles, string? VehicleType, Dictionary<string,float> Supplies, Order[] Steps);",
+    "dependsOn": [
+      "travel.parties",
+      "core.commands",
+      "travel.pathing",
+      "econ.daily",
+      "core.cards"
+    ],
+    "connections": [
+      {
+        "to": "ui.team",
+        "why": "Orders are given from the right-click menu and the planner",
+        "how": "UI requests OrderOptions(partyId, tile) → list with hours and disabled reasons; then sends QueueOrder commands",
+        "godot": "PopupMenu built from OrderOptions; Shift checked via Input",
+        "unity": "Context menu VisualElement built from OrderOptions"
+      },
+      {
+        "to": "ai.governor",
+        "why": "The autopilot and AI groups issue the same orders",
+        "how": "Governor produces Order lists through the same command API",
+        "godot": "No engine work",
+        "unity": "No engine work"
+      },
+      {
+        "to": "travel.scavenge",
+        "why": "Scavenge is an order type",
+        "how": "OrderRunner calls IScavenge.Start(party, poi) and waits for completion",
+        "godot": "No engine work",
+        "unity": "No engine work"
+      },
+      {
+        "to": "core.cards",
+        "why": "Finished queues and triggered conditions raise cards",
+        "how": "OrderRunner pushes OrdersDone / ComingHome cards",
+        "godot": "Card UI as usual",
+        "unity": "Card UI as usual"
+      }
+    ],
+    "godot": {
+      "approach": "The right-click menu is a PopupMenu filled from the sim's order options (disabled items with tooltips for reasons). The planner is a Window with an ItemList of steps and Labels for ETA/rations recomputed when steps change.",
+      "keyApis": [
+        "PopupMenu",
+        "Window",
+        "ItemList",
+        "Input.IsKeyPressed(Key.Shift)"
+      ],
+      "docs": [
+        {
+          "t": "PopupMenu",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_popupmenu.html"
+        },
+        {
+          "t": "ItemList",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_itemlist.html"
+        },
+        {
+          "t": "User interface (UI)",
+          "u": "https://docs.godotengine.org/en/stable/tutorials/ui/index.html"
+        }
+      ]
+    },
+    "unity": {
+      "approach": "A UI Toolkit context menu (or a positioned VisualElement list) built from order options; the planner as a UI Toolkit window with a ListView of steps; read Shift through the Input System.",
+      "keyApis": [
+        "UI Toolkit ListView",
+        "ContextualMenuManipulator",
+        "Input System"
+      ],
+      "docs": [
+        {
+          "t": "UI Toolkit",
+          "u": "https://docs.unity3d.com/Manual/UIElements.html"
+        },
+        {
+          "t": "UnityEvents",
+          "u": "https://docs.unity3d.com/Manual/UnityEvents.html"
+        }
+      ]
+    },
+    "learn": [
+      {
+        "t": "Game Programming Patterns: Command",
+        "u": "https://gameprogrammingpatterns.com/command.html"
+      }
+    ],
+    "newb": [
+      "An order is data (a Command object), not a method call: that is what lets you queue, save, preview and repeat it.",
+      "Estimates should run the real simulation on a copy or in dry-run mode; two separate formulas always drift apart.",
+      "Always show why an option is disabled; players learn the rules from those reasons."
+    ],
+    "pitfalls": [
+      "Estimate code that mutates real state (eats food during preview).",
+      "Templates storing survivor objects: store ids and roles, substitute when someone died.",
+      "Orders that silently fail: every rejection needs a reason string."
+    ],
+    "test": "xUnit: a 3-step plan runs in order and ends with a card; EstimatePlan equals the real run's hours and food (same seed); a 'food below 2 days' condition turns the team home. Manual: right-click a far tile, Shift+add a rest and a scavenge, check the planner's ETA matches the trip.",
+    "size": "L"
+  },
+  {
+    "id": "travel.carry",
+    "title": "Carry weight, load bands, carrying furniture",
+    "summary": "Everything has kilograms: each survivor's load (worn + share of supplies and cargo) falls into a band that slows the team and makes it eat more; in battles, hands can be full of supplies or furniture carried alone or by two tethered survivors.",
+    "whyHere": "With vehicles in, weight decides what a trip can bring home; it is the bridge between inventory, travel speed and tactical actions.",
+    "subsystems": [
+      "Item & supply weights",
+      "Per-survivor load & max",
+      "Load bands (speed, rations)",
+      "Team pool sharing",
+      "Where supplies are held (pocket/pack/hands/car)",
+      "Furniture lifting & tethered carry"
+    ],
+    "sliceScope": "First version: kg on every item and supply; survivor max 40 kg; team load shared out evenly; four bands (Light ≤18, Medium ≤28, Heavy ≤38, Overloaded) with slow and extra-ration modifiers applied to travel.",
+    "fullScope": "load.js bands: Light 0/0, Medium −10% pace/+15% food, Heavy −25%/+35%, Overloaded −45%/+60%; bad back 28 kg, Packrat +8, scouting eases up to 50%, bikes take 55% off; carry.js places supplies in pocket/pack/hands (hands 25 kg, two hands); furnicarry.js lifts 248 furniture kinds (2 actions, 'one'/'two'/'fixed' classes, two carriers tethered at half weight).",
+    "protoRefs": [
+      "prototype/src/sim/load.js",
+      "prototype/src/sim/carry.js",
+      "prototype/src/sim/furnicarry.js",
+      "docs/features/travel.md"
+    ],
+    "tasks": {
+      "data": [
+        "Weight on item and supply defs; load band table",
+        "Furniture carry class and kg in furniture content",
+        "Survivor hold record (pocket/pack/hands)"
+      ],
+      "backend": [
+        "TeamLoad(party): share the pool to equal felt load, each up to their max",
+        "Band → pace and ration multipliers used by pathing and upkeep",
+        "Hold placement: what is in hands blocks shooting; drop/pick up actions",
+        "Furniture lift/set down actions; tethered pair movement rules in battle",
+        "Tests: band thresholds, sharing, vehicle takes the load first"
+      ],
+      "ui": [
+        "Team load bar per survivor coloured by band",
+        "Battle: 'hands full' badge and Set down button"
+      ]
+    },
+    "dataModel": "public sealed record LoadBand(string Key, float UpToKg, float Slow, float Eat);\npublic sealed class Hold {\n  public Dictionary<string, float> Pocket = new(), Pack = new(), Hands = new();\n  public int? CarryingPieceId; public int? TetheredTo; // another survivor's id\n}\npublic enum CarryClass { One, Two, Fixed }",
+    "dependsOn": [
+      "gear.items",
+      "travel.parties",
+      "travel.vehicles",
+      "combat.actions",
+      "base.furniture"
+    ],
+    "connections": [
+      {
+        "to": "travel.pathing",
+        "why": "Heavy loads slow the team",
+        "how": "TravelHours multiplies foot steps by the team's worst band Slow",
+        "godot": "No engine work",
+        "unity": "No engine work"
+      },
+      {
+        "to": "econ.daily",
+        "why": "Heavier loads eat more rations on the road",
+        "how": "Party ration drain × (1 + band Eat)",
+        "godot": "No engine work",
+        "unity": "No engine work"
+      },
+      {
+        "to": "combat.actions",
+        "why": "Full hands block shooting; furniture costs actions",
+        "how": "Action validation checks Hold.Hands / CarryingPieceId; Lift costs 2 AP",
+        "godot": "Battle action bar greys buttons with a reason",
+        "unity": "Battle action bar greys buttons with a reason"
+      },
+      {
+        "to": "econ.hauling",
+        "why": "Supply runs between bases use the same weight rules",
+        "how": "Hauling parties reuse TeamLoad",
+        "godot": "No engine work",
+        "unity": "No engine work"
+      }
+    ],
+    "godot": {
+      "approach": "A per-survivor ProgressBar coloured by band (theme overrides) in the team panel; in battle, an extra Sprite2D on the unit for the carried piece and a Line2D between tethered carriers as a placeholder.",
+      "keyApis": [
+        "ProgressBar",
+        "Theme overrides",
+        "Sprite2D",
+        "Line2D"
+      ],
+      "docs": [
+        {
+          "t": "User interface (UI)",
+          "u": "https://docs.godotengine.org/en/stable/tutorials/ui/index.html"
+        },
+        {
+          "t": "Line2D",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_line2d.html"
+        }
+      ]
+    },
+    "unity": {
+      "approach": "UI Toolkit ProgressBar per survivor with a USS class per band; in battle a child SpriteRenderer for the carried piece and a LineRenderer between tethered carriers.",
+      "keyApis": [
+        "UI Toolkit ProgressBar",
+        "USS classes",
+        "SpriteRenderer",
+        "LineRenderer"
+      ],
+      "docs": [
+        {
+          "t": "UI Toolkit",
+          "u": "https://docs.unity3d.com/Manual/UIElements.html"
+        },
+        {
+          "t": "LineRenderer",
+          "u": "https://docs.unity3d.com/ScriptReference/LineRenderer.html"
+        }
+      ]
+    },
+    "learn": [],
+    "newb": [
+      "One system, weight: slots are only where things are; kilograms decide what can be carried. Fewer rules, fewer edge cases.",
+      "Share the team's load so everyone is equally burdened; the best carrier takes more automatically.",
+      "Bands (steps) are easier to read and balance than a smooth formula, and they make good tooltips."
+    ],
+    "pitfalls": [
+      "Counting supplies twice (once in the pool and once in someone's hands).",
+      "Letting riders in a car count their load: the vehicle carries it.",
+      "Tethered carriers drifting apart on a move: validate adjacency in the move command."
+    ],
+    "test": "xUnit: a survivor with 30 kg is Heavy; two survivors share 50 kg as 25/25; tethered piece halves weight; a full-hands unit cannot Shoot. Manual: pack a team heavy and see the ETA grow; in a raid, lift a fridge with two people and walk it to the car.",
+    "size": "L"
+  },
+  {
+    "id": "travel.scavenge",
+    "title": "Abstract scavenging & heat",
+    "summary": "A quick, no-battle way to search a POI: the team searches hour by hour, finding loot from the POI's pool while Heat rises from noise; at higher Heat stages fights and losses become likely, so the player decides when to extract.",
+    "whyHere": "Full battles for every raid are slow on a big map; abstract scavenging lets the autopilot, crews and the player resolve raids fast, using POIs, loot and the dead counts already built.",
+    "subsystems": [
+      "Hourly search loop",
+      "Finds from POI pool",
+      "Heat stages",
+      "Fight chance & escalation to battle",
+      "Extract",
+      "Field heat for teams that stay put"
+    ],
+    "sliceScope": "First version: Scavenge order searches N hours; each hour rolls finds from the POI loot table scaled by LootLeft; Heat +10/h; stages Quiet (0) / Stirring (25) / Swarming (50) / Overrun (75) with fight chance 5/15/35/60%; a fight becomes an auto-resolve or a battle.",
+    "fullScope": "scavenge.js searches the picked POI, records visits, moves on when picked clean, adds guards on an enemy base tile; heat comes from the dead's noise (deadpop earshot); fieldheat.js adds Heat for teams camping/working in place (fishing 0.7 … wood 1.3, decays 8/h when moving, 12% trouble at 100); AI groups scavenge the same shared loot (aiscav).",
+    "protoRefs": [
+      "prototype/src/sim/scavenge.js",
+      "prototype/src/sim/fieldheat.js",
+      "prototype/src/sim/deadpop.js",
+      "docs/features/travel.md"
+    ],
+    "tasks": {
+      "data": [
+        "heat_stages.json: min heat, fight chance, text",
+        "Heat gain per activity and decay constants"
+      ],
+      "backend": [
+        "ScavengeTick per hour: finds, heat, fight roll",
+        "Extract: end, cargo to party, heat leaves noise on the tile",
+        "Escalation: fight → BattleRequest or AutoResolve",
+        "Field heat for stationary orders",
+        "Tests: heat stages thresholds; loot depletes; same seed same finds"
+      ],
+      "ui": [
+        "Scavenge progress card: hours, heat meter with stage name, finds list, Extract button"
+      ]
+    },
+    "dataModel": "public sealed record HeatStage(string Name, int Min, float Fight, string DescKey);\npublic sealed class ScavengeRun {\n  public int PartyId, PoiId; public int Hours; public float Heat;\n  public Inventory Found = new();\n}",
+    "dependsOn": [
+      "travel.pois",
+      "gear.loot",
+      "dead.population",
+      "travel.orders",
+      "combat.resolve"
+    ],
+    "connections": [
+      {
+        "to": "combat.resolve",
+        "why": "A fight during a search is auto-resolved or opens a battle",
+        "how": "ScavengeRun emits BattleRequest or calls AutoResolve(party, enemies)",
+        "godot": "Ask the player via a card; on Fight load the battle scene",
+        "unity": "Same via card and battle scene"
+      },
+      {
+        "to": "dead.population",
+        "why": "Heat draws the dead; kills lower counts",
+        "how": "Fight enemies drawn from PoiDead; noise added to the tile",
+        "godot": "No engine work",
+        "unity": "No engine work"
+      },
+      {
+        "to": "groups.factions",
+        "why": "AI groups scavenge the same finite loot",
+        "how": "AI calls the same ScavengeTick with their party",
+        "godot": "No engine work",
+        "unity": "No engine work"
+      },
+      {
+        "to": "travel.carry",
+        "why": "Finds must fit the team's carry and vehicle",
+        "how": "Finds stop or overflow when the team is Overloaded",
+        "godot": "No engine work",
+        "unity": "No engine work"
+      }
+    ],
+    "godot": {
+      "approach": "A card-like PanelContainer with a ProgressBar for Heat (colour by stage), a RichTextLabel for finds, and Extract/Continue buttons, updated from a ScavengeTicked signal.",
+      "keyApis": [
+        "PanelContainer",
+        "ProgressBar",
+        "RichTextLabel"
+      ],
+      "docs": [
+        {
+          "t": "User interface (UI)",
+          "u": "https://docs.godotengine.org/en/stable/tutorials/ui/index.html"
+        },
+        {
+          "t": "RichTextLabel",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_richtextlabel.html"
+        }
+      ]
+    },
+    "unity": {
+      "approach": "UI Toolkit panel with ProgressBar and a ListView of finds; subscribe to a ScavengeTicked C# event from SimHost.",
+      "keyApis": [
+        "UI Toolkit ProgressBar",
+        "ListView",
+        "C# events"
+      ],
+      "docs": [
+        {
+          "t": "UI Toolkit",
+          "u": "https://docs.unity3d.com/Manual/UIElements.html"
+        },
+        {
+          "t": "UnityEvents",
+          "u": "https://docs.unity3d.com/Manual/UnityEvents.html"
+        }
+      ]
+    },
+    "learn": [],
+    "newb": [
+      "Abstract resolution is a statistical stand-in for a battle: tune it so its average matches what a real battle would give, or players will always pick one.",
+      "Heat stages are a classic push-your-luck mechanic: every extra hour is a decision.",
+      "Reuse the same loot and dead data as real battles so both paths stay consistent."
+    ],
+    "pitfalls": [
+      "Abstract scavenging that is strictly better than playing the battle (or much worse).",
+      "Forgetting that AI groups deplete the same pools.",
+      "Heat that never decays."
+    ],
+    "test": "xUnit: 5 hours at +10/h reaches Stirring then Swarming at the right hours; LootLeft drops; fight chance matches stage. Manual: scavenge a grocery, push into Swarming, extract and compare the cargo.",
+    "size": "M"
+  },
+  {
+    "id": "travel.survey",
+    "title": "Survey, threat knowledge, markers, rumours",
+    "summary": "Teams can spend time to learn more: a Survey (8 h) finds hidden POIs and estimates the dead on a tile, a Quick look (2 h) is faster and rougher, Sweep area covers a radius; map markers keep 'last seen' times and rumours point to hidden places.",
+    "whyHere": "On a full-size map, plain sight is not enough; this turns information into a resource and builds on fog, POIs and dead counts.",
+    "subsystems": [
+      "Survey & Quick look orders",
+      "Odds (skill, terrain, light, weather, optics)",
+      "Threat estimate with error",
+      "Map markers & last seen",
+      "Rumours",
+      "Stale knowledge"
+    ],
+    "sliceScope": "First version: Survey order 8 h reveals hidden POIs on the tile with odds by scouting skill; stamps an estimated dead count ±30%; markers show 'seen 3d ago'.",
+    "fullScope": "survey.js: Survey 8 h with odds compounded over hours, ring of six tiles with optics; Quick look 2 h own tile only; Sweep 2–4 tiles 12–48 h; threatknow.js estimate = truth ± error (smaller with optics, bigger at night), live when on the tile; rumours last 20 days within 3 tiles, max 3, from radio, visitors and news; markers.js perception rolls while travelling.",
+    "protoRefs": [
+      "prototype/src/sim/survey.js",
+      "prototype/src/sim/threatknow.js",
+      "prototype/src/sim/markers.js",
+      "prototype/src/sim/discovery.js"
+    ],
+    "tasks": {
+      "data": [
+        "Survey constants (hours, odds factors, error sizes)",
+        "ThreatStamp record (hour, estimate, error, source)",
+        "Marker types and Rumour record"
+      ],
+      "backend": [
+        "Survey and QuickLook orders with odds rolled from hash dice",
+        "Threat estimate: truth × (1 ± error), stored in Knowledge",
+        "Rumours: generated from sources, expire, reveal on visit",
+        "Markers updated by perception rolls while travelling",
+        "Tests: optics shrink error; failed survey can miss POIs; estimates never leak exact counts"
+      ],
+      "ui": [
+        "Tile panel 'Threat: ~40 dead (2d ago)' with skulls",
+        "Rumour marker icon with a '?' and expiry"
+      ]
+    },
+    "dataModel": "public sealed record ThreatStamp(int Hour, int DeadEst, int RaidersEst, float Err, string Source);\npublic sealed record Rumour(int Tile, int Radius, int ExpiresDay, string Source);\npublic sealed class Marker { public int Tile; public string Type; public int LastSeenHour; public string? Note; }",
+    "dependsOn": [
+      "travel.fog",
+      "travel.pois",
+      "dead.population",
+      "travel.orders"
+    ],
+    "connections": [
+      {
+        "to": "travel.fog",
+        "why": "Survey results are knowledge",
+        "how": "Writes into Knowledge (found sites, threat stamps) through its API",
+        "godot": "No engine work",
+        "unity": "No engine work"
+      },
+      {
+        "to": "dead.population",
+        "why": "Estimates are made from the true counts",
+        "how": "ThreatStamp computed from TileDead/PoiDead with error",
+        "godot": "No engine work",
+        "unity": "No engine work"
+      },
+      {
+        "to": "groups.radio",
+        "why": "Intel and rumours arrive over the radio",
+        "how": "Radio events create Rumour or Knowledge entries",
+        "godot": "No engine work",
+        "unity": "No engine work"
+      },
+      {
+        "to": "travel.sites",
+        "why": "Crash-site search circles shrink with looks",
+        "how": "Survey/LookAround reports cleared tiles to the crash search",
+        "godot": "No engine work",
+        "unity": "No engine work"
+      },
+      {
+        "to": "meta.qol",
+        "why": "Map notes and watch lists build on markers",
+        "how": "Marker entity shared",
+        "godot": "Marker layer",
+        "unity": "Marker layer"
+      }
+    ],
+    "godot": {
+      "approach": "Markers and rumours are small Sprite2D/Label nodes on a map overlay layer, pooled; the threat line in the tile panel is a Label with skull icons (TextureRects) from the ArtCatalog.",
+      "keyApis": [
+        "Node2D overlay",
+        "Label",
+        "TextureRect",
+        "Tooltip text"
+      ],
+      "docs": [
+        {
+          "t": "User interface (UI)",
+          "u": "https://docs.godotengine.org/en/stable/tutorials/ui/index.html"
+        },
+        {
+          "t": "Resources",
+          "u": "https://docs.godotengine.org/en/stable/tutorials/scripting/resources.html"
+        }
+      ]
+    },
+    "unity": {
+      "approach": "Pooled marker prefabs on an overlay sorting layer; UI Toolkit Label and icons for threat in the tile panel; tooltips via the tooltip property.",
+      "keyApis": [
+        "SpriteRenderer",
+        "Sorting layers",
+        "UI Toolkit Label",
+        "VisualElement.tooltip"
+      ],
+      "docs": [
+        {
+          "t": "UI Toolkit",
+          "u": "https://docs.unity3d.com/Manual/UIElements.html"
+        },
+        {
+          "t": "SpriteRenderer",
+          "u": "https://docs.unity3d.com/ScriptReference/SpriteRenderer.html"
+        }
+      ]
+    },
+    "learn": [],
+    "newb": [
+      "Store estimates with their age and error: 'about 40, two days ago' is honest information design.",
+      "Use hash-based dice (seed + tile + hour + team) for one-off rolls so they do not shift the main RNG.",
+      "Every intel source (survey, radio, prisoner) should write through one Knowledge API."
+    ],
+    "pitfalls": [
+      "Leaking exact truth through estimates (e.g. error 0 when no optics).",
+      "Rumours that never expire and clutter the map.",
+      "Survey odds so high that the cheap Quick look is pointless (or the reverse)."
+    ],
+    "test": "xUnit: forced success reveals all hidden POIs; estimate within error; rumour expires on day+20. Manual: survey a tile with and without binoculars and compare estimates and found POIs.",
+    "size": "M"
+  },
+  {
+    "id": "travel.road",
+    "title": "Night march, crossings, roadblocks, field heat, wanderers",
+    "summary": "The texture of being on the road: at nightfall a team makes camp or pushes on; water can be crossed by building a boat; cars meet roadblocks; teams that stay put draw attention; and neutral survivors, bandits and soldiers are met on the way.",
+    "whyHere": "These are smaller road systems that depend on parties, events, vehicles and weather; together they make long trips feel alive.",
+    "subsystems": [
+      "Night falls card (camp/push on)",
+      "Boat crossings",
+      "Roadblocks & delays",
+      "Field heat & trouble",
+      "Wanderers (neutral, aggressive, military)",
+      "Encounter cards"
+    ],
+    "sliceScope": "First version: 'Night falls' card at 22:00 (camp until 06:00 or push on with ×1.8 event chance and lost sleep); roadblocks delay cars by minutes; neutral wanderers can be talked to and may join.",
+    "fullScope": "nightmarch.js (22:00–06:00, events ×1.8, conflicts ×1.6 cap 0.45, 4 sleep debt/h); crossing.js one-use boats over one water tile (scrap + hours by load, raft for a vehicle); roadblocks.js hash-dice delays; fieldheat.js heat per hour on the spot; wanderers.js neutrals (talk/recruit), bands of 2–5 aggressive survivors, 3–5-soldier military squads using their group's goodwill.",
+    "protoRefs": [
+      "prototype/src/sim/nightmarch.js",
+      "prototype/src/sim/crossing.js",
+      "prototype/src/sim/roadblocks.js",
+      "prototype/src/sim/fieldheat.js",
+      "prototype/src/sim/wanderers.js"
+    ],
+    "tasks": {
+      "data": [
+        "Night march constants; roadblock kinds and delay ranges",
+        "Boat cost formula constants",
+        "Wanderer group archetypes (size, gear, attitude)"
+      ],
+      "backend": [
+        "NightFalls check in the party hour; camp as a rest order",
+        "Cross order: build hours, then move two tiles across water",
+        "Roadblock roll on entering a road tile by car",
+        "Wanderer groups as lightweight entities that move and are met; talk/recruit outcomes",
+        "Tests: night march raises event chance and sleep debt; crossing cost grows with load"
+      ],
+      "ui": [
+        "Night falls and wanderer cards (reuse card UI)",
+        "'Road blocked' floating label over the team"
+      ]
+    },
+    "dataModel": "public sealed record NightMarchRules(int From = 22, int To = 6, float Events = 1.8f, float Conflict = 1.6f);\npublic sealed class WandererGroup {\n  public int Id; public WandererKind Kind; public int Tile;\n  public List<int> Members = new(); public float Mood;\n}\npublic enum WandererKind { Neutral, Aggressive, Military }",
+    "dependsOn": [
+      "travel.parties",
+      "travel.events",
+      "travel.vehicles",
+      "world.weather",
+      "surv.needs"
+    ],
+    "connections": [
+      {
+        "to": "travel.events",
+        "why": "Night marches and wanderers change and add event rolls",
+        "how": "RollTravelEvent multiplies chance by NightMarch and checks wanderers first",
+        "godot": "No engine work",
+        "unity": "No engine work"
+      },
+      {
+        "to": "surv.needs",
+        "why": "Marching at night costs sleep",
+        "how": "Each night hour on the move adds sleep debt",
+        "godot": "No engine work",
+        "unity": "No engine work"
+      },
+      {
+        "to": "groups.nomads",
+        "why": "Wanderers can join bands or groups or settle",
+        "how": "Wanderer daily sim hands off to nomad/group systems by id",
+        "godot": "No engine work",
+        "unity": "No engine work"
+      },
+      {
+        "to": "travel.pathing",
+        "why": "Water blocks paths unless a boat is built",
+        "how": "Cross order is a special move outside A*; pathing never routes over water",
+        "godot": "No engine work",
+        "unity": "No engine work"
+      }
+    ],
+    "godot": {
+      "approach": "Mostly cards and labels. A floating Label (with a Tween fade) above the party marker for 'Road blocked'; wanderer groups drawn as small grey markers only on live tiles.",
+      "keyApis": [
+        "Label",
+        "Tween",
+        "Node2D markers"
+      ],
+      "docs": [
+        {
+          "t": "Tween",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_tween.html"
+        },
+        {
+          "t": "C# signals",
+          "u": "https://docs.godotengine.org/en/stable/tutorials/scripting/c_sharp/c_sharp_signals.html"
+        }
+      ]
+    },
+    "unity": {
+      "approach": "World-space TextMeshPro label above the party marker with a coroutine fade; wanderer markers pooled and shown only on visible tiles.",
+      "keyApis": [
+        "TextMeshPro",
+        "Coroutines",
+        "Object pooling"
+      ],
+      "docs": [
+        {
+          "t": "Coroutines",
+          "u": "https://docs.unity3d.com/Manual/Coroutines.html"
+        },
+        {
+          "t": "SpriteRenderer",
+          "u": "https://docs.unity3d.com/ScriptReference/SpriteRenderer.html"
+        }
+      ]
+    },
+    "learn": [
+      {
+        "t": "Game Programming Patterns: Event Queue",
+        "u": "https://gameprogrammingpatterns.com/event-queue.html"
+      }
+    ],
+    "newb": [
+      "Many small systems hook into one place (the party's hourly step). Keep that step a clear list of calls so you can see the order things happen in.",
+      "Wanderers should be real entities (with ids) so you can meet the same person twice; that memory is what makes the world feel alive.",
+      "Delays with no decision (roadblocks) should just be a log line, not a card: save cards for real choices."
+    ],
+    "pitfalls": [
+      "Too many cards at night: a night card plus events plus wanderers every hour is spam.",
+      "Boats that let A* route across lakes: crossings are explicit orders only.",
+      "Wanderers simulated in full detail map-wide: keep them lightweight."
+    ],
+    "test": "xUnit: a party moving at 22:00 gets one Night falls card; choosing camp stops it until 06:00; a car crossing builds a raft and costs more; wanderers met can join. Manual: run a long trip through a night and across a river.",
+    "size": "L"
+  },
+  {
+    "id": "travel.citycrawl",
+    "title": "City crawl & multi-storey buildings",
+    "summary": "Cities and towns are not one raid: the team enters a round grid of city blocks at the rim and works inward block by block like a roguelike extraction, each block a card of places and street events, while the city's Alert rises; getting back out to the rim is the gamble.",
+    "whyHere": "It is the late-game reason to risk the cities, and needs POIs, scavenging, battle maps and building interiors to already exist.",
+    "subsystems": [
+      "City block grid",
+      "Block cards (places, events, threat)",
+      "Alert & trail heat",
+      "Entering places (battle or quick search)",
+      "Walking out",
+      "Multi-storey floors & who lives there"
+    ],
+    "sliceScope": "First version: a 9×9 round grid of blocks for a town; each block has 2–3 places and a threat by depth (1–8); Move costs 1 h; Alert +noise and per hour; leaving only from a rim block; places resolved by abstract scavenge.",
+    "fullScope": "citycrawl.js: cities 15–30 blocks across, towns 9–12; blocks 2–4 places (12% shut this visit), up to two street events, slip away, lie low 1 h; the dead fill the streets at high Alert; floorfolk.js barricaded survivors upstairs (talk, recruit, trade) and raiders by floor; stairwells by building kind; furniture carried block to block.",
+    "protoRefs": [
+      "prototype/src/sim/citycrawl.js",
+      "prototype/src/sim/floorfolk.js",
+      "docs/multi-storey-crawl.md",
+      "docs/crawl-balance.md",
+      "docs/features/travel.md"
+    ],
+    "tasks": {
+      "data": [
+        "Crawl constants (grid sizes, places per block, move hours, alert rates)",
+        "Block place pools by district class",
+        "Floor occupant archetypes"
+      ],
+      "backend": [
+        "GenerateCityGrid(settlement, seed) with depth levels",
+        "CrawlState machine: Entering → OnBlock → InPlace → Leaving/Out",
+        "Alert/trail model and per-block trouble roll",
+        "Enter place: battle via combat.interiors or quick search",
+        "Floor folk: occupants per floor, talk/recruit outcomes",
+        "Tests: depth raises threat and loot; leaving only from rim; deterministic grid"
+      ],
+      "ui": [
+        "Crawl screen: grid of block buttons, current block card, Alert bar, carried load"
+      ]
+    },
+    "dataModel": "public sealed class CityCrawl {\n  public int PartyId, SettlementId; public int Radius;\n  public Block[] Blocks; public int Current; public float Alert;\n}\npublic sealed class Block { public int Q, R, Level; public List<int> Places = new(); public float Trail; public bool Visited; }\npublic enum CrawlPhase { Entering, OnBlock, InPlace, Leaving, Out }",
+    "dependsOn": [
+      "travel.pois",
+      "travel.scavenge",
+      "combat.map",
+      "combat.interiors",
+      "dead.population"
+    ],
+    "connections": [
+      {
+        "to": "combat.interiors",
+        "why": "Entering a place opens its procedural interior",
+        "how": "EnterPlace builds a BattleRequest with the building template and floor",
+        "godot": "Battle scene loaded from the crawl, back to crawl screen on end",
+        "unity": "Additive battle scene, back to crawl on end"
+      },
+      {
+        "to": "combat.resolve",
+        "why": "Results feed the crawl (loot, wounded, Alert)",
+        "how": "BattleResult routed back to CityCrawl by party id",
+        "godot": "No engine work",
+        "unity": "No engine work"
+      },
+      {
+        "to": "travel.carry",
+        "why": "Load slows walking out",
+        "how": "Leave rolls read the team's band",
+        "godot": "No engine work",
+        "unity": "No engine work"
+      },
+      {
+        "to": "surv.family",
+        "why": "Survivors met upstairs can be recruited",
+        "how": "Recruit outcome creates a recruit card through the shared flow",
+        "godot": "Card UI",
+        "unity": "Card UI"
+      }
+    ],
+    "godot": {
+      "approach": "A separate CrawlScreen scene: a GridContainer (or Node2D with hex/circle buttons) for blocks, a side PanelContainer for the block card and an Alert ProgressBar; switch scenes through SimHost when the crawl starts and ends.",
+      "keyApis": [
+        "GridContainer",
+        "Button",
+        "PanelContainer",
+        "SceneTree.ChangeSceneToFile"
+      ],
+      "docs": [
+        {
+          "t": "User interface (UI)",
+          "u": "https://docs.godotengine.org/en/stable/tutorials/ui/index.html"
+        },
+        {
+          "t": "C# signals",
+          "u": "https://docs.godotengine.org/en/stable/tutorials/scripting/c_sharp/c_sharp_signals.html"
+        }
+      ]
+    },
+    "unity": {
+      "approach": "A CrawlScreen built in UI Toolkit (a grid of buttons plus a card panel), loaded as a scene or overlay when the crawl starts; SimHost events drive refreshes.",
+      "keyApis": [
+        "UI Toolkit",
+        "SceneManager.LoadScene",
+        "C# events"
+      ],
+      "docs": [
+        {
+          "t": "UI Toolkit",
+          "u": "https://docs.unity3d.com/Manual/UIElements.html"
+        },
+        {
+          "t": "UnityEvents",
+          "u": "https://docs.unity3d.com/Manual/UnityEvents.html"
+        }
+      ]
+    },
+    "learn": [
+      {
+        "t": "Game Programming Patterns: State",
+        "u": "https://gameprogrammingpatterns.com/state.html"
+      }
+    ],
+    "newb": [
+      "A crawl is a state machine inside a state machine (the party is 'Working', the crawl has its own phases). Keep each one small and explicit.",
+      "Roguelike extraction tension comes from making the way out cost something; don't auto-walk the player home.",
+      "Prototype it abstractly first (no battles, just rolls) to tune Alert and depth before wiring real interiors."
+    ],
+    "pitfalls": [
+      "Building the full multi-storey interiors first: start with abstract places.",
+      "Alert that only rises with time, never with noise: players can't affect it.",
+      "Huge interior maps loaded for every place: generate on enter only."
+    ],
+    "test": "xUnit: grid size by settlement; threat and loot rise with level; Leave refused off the rim; Alert rises per hour. Manual: crawl a town, go 3 blocks deep, walk out heavy at night and feel the risk.",
+    "size": "XL"
+  },
+  {
+    "id": "travel.sites",
+    "title": "Crash sites, supply drops, campsites",
+    "summary": "Temporary and special sites: every 10–20 days a helicopter, plane or supply drop comes down inside a search circle that teams narrow down while other groups race for it; campsites of tents round a fire can be abandoned, overrun or held by raiders.",
+    "whyHere": "These give the wider world goals that move and compete, and they reuse POIs, surveys, events and battles already built.",
+    "subsystems": [
+      "Crash/drop scheduler",
+      "Search circle & narrowing",
+      "Contested by AI groups",
+      "Wreck POI & loot",
+      "Campsite states",
+      "Tents as loot"
+    ],
+    "sliceScope": "First version: one crash every 10–20 days (first on day 8–14) somewhere on land; a card and a radius-4 search circle; teams within 1 tile see the smoke; look-arounds shrink the circle; the found wreck is a temporary POI with rich loot.",
+    "fullScope": "crashes.js: Army heli, supply plane, medevac, news chopper, parachute drop; circle radius 4 (3 from a watchtower, 5 by radio); look finds within 2 tiles (3 with Scouting 8+); a 'Search the area' plan step; other groups contest it. campsite.js: forest and roadside campsites, states abandoned / overrun / raider camp changing by epoch, tents to take down and steal.",
+    "protoRefs": [
+      "prototype/src/sim/crashes.js",
+      "prototype/src/sim/campsite.js",
+      "docs/features/travel.md"
+    ],
+    "tasks": {
+      "data": [
+        "crash_kinds.json: loot table, danger, art key",
+        "Crash scheduler constants; campsite state weights",
+        "Tent items in three sizes"
+      ],
+      "backend": [
+        "Scheduler on the daily tick; pick a hidden land tile; create a secret temporary POI",
+        "SearchCircle: centre offset from the wreck, shrinks when looks clear tiles",
+        "AI groups send parties to the circle (same orders)",
+        "Campsite POI state by period hash; raider camp spawns a fight",
+        "Tests: circle always contains the wreck; schedule intervals; campsite states deterministic"
+      ],
+      "ui": [
+        "Dashed search circle on the map; crash card",
+        "Campsite POI icons by state"
+      ]
+    },
+    "dataModel": "public sealed record CrashKindDef(string Id, string LootTable, int Danger, string ArtKey);\npublic sealed class CrashSite {\n  public int Id; public string Kind; public int WreckTile; public int DayFell;\n  public int CircleCentre; public int CircleRadius; public HashSet<int> Cleared = new();\n  public bool Found; public string? ClaimedBy;\n}\npublic enum CampState { Abandoned, Overrun, RaiderCamp }",
+    "dependsOn": [
+      "travel.pois",
+      "travel.survey",
+      "core.cards",
+      "travel.events",
+      "gear.loot"
+    ],
+    "connections": [
+      {
+        "to": "travel.survey",
+        "why": "Looks inside the circle clear tiles and shrink it",
+        "how": "Survey/LookAround report cleared tiles to CrashSite.Clear(tiles)",
+        "godot": "No engine work",
+        "unity": "No engine work"
+      },
+      {
+        "to": "groups.factions",
+        "why": "AI groups race for the same wreck",
+        "how": "AI planner sees CrashSite (via their own knowledge) and issues the same orders",
+        "godot": "No engine work",
+        "unity": "No engine work"
+      },
+      {
+        "to": "combat.map",
+        "why": "A raider camp or a contested wreck means a fight",
+        "how": "BattleRequest with the site's template and enemies",
+        "godot": "Battle scene",
+        "unity": "Battle scene"
+      },
+      {
+        "to": "ui.statemap",
+        "why": "The search circle is drawn on the map",
+        "how": "Read-only CrashSite view: centre and radius",
+        "godot": "Line2D ring of hex outlines or a draw_arc in _Draw",
+        "unity": "LineRenderer ring or a highlighted Tilemap layer"
+      }
+    ],
+    "godot": {
+      "approach": "Draw the search circle in a Node2D's _Draw (draw_arc or hex outline polylines) on the overlay layer, redrawn when it shrinks (QueueRedraw on a signal); wreck and campsite icons via the ArtCatalog.",
+      "keyApis": [
+        "CanvasItem._Draw / DrawArc",
+        "QueueRedraw",
+        "Sprite2D"
+      ],
+      "docs": [
+        {
+          "t": "Line2D",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_line2d.html"
+        },
+        {
+          "t": "C# signals",
+          "u": "https://docs.godotengine.org/en/stable/tutorials/scripting/c_sharp/c_sharp_signals.html"
+        }
+      ]
+    },
+    "unity": {
+      "approach": "A LineRenderer ring (or a tinted overlay Tilemap of the circle's hexes) updated when the circle shrinks; icons from the ArtCatalog ScriptableObject.",
+      "keyApis": [
+        "LineRenderer",
+        "Tilemap.SetColor",
+        "ScriptableObject"
+      ],
+      "docs": [
+        {
+          "t": "LineRenderer",
+          "u": "https://docs.unity3d.com/ScriptReference/LineRenderer.html"
+        },
+        {
+          "t": "Tilemaps",
+          "u": "https://docs.unity3d.com/Manual/Tilemap.html"
+        }
+      ]
+    },
+    "learn": [
+      {
+        "t": "Red Blob Games: Hexagonal Grids",
+        "u": "https://www.redblobgames.com/grids/hexagons/"
+      }
+    ],
+    "newb": [
+      "A search circle that always contains the target but is not centred on it is a fair, readable puzzle.",
+      "Temporary POIs are normal POIs with an expiry flag: reuse, don't fork, the POI code.",
+      "Hash-based states by period (seed + tile + epoch) let a campsite change over time without storing a history."
+    ],
+    "pitfalls": [
+      "A circle that can shrink past the wreck.",
+      "AI groups that know where the wreck is without searching (breaks parity).",
+      "Crash sites spawning on water or inside cities."
+    ],
+    "test": "xUnit: 200 days produce crashes every 10–20 days; after any sequence of looks the circle contains the wreck; campsite state stable within an epoch. Manual: see a crash card, send a team to search, watch the circle shrink and find the wreck.",
+    "size": "M"
+  }
+]

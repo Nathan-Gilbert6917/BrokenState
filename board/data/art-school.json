@@ -1,0 +1,1176 @@
+{
+ "intro": "You do not need talent to make Broken State's art. You need one style, one palette and a set of fixed sizes, used the same way every time: a plain set that hangs together looks better than a skilled one that doesn't. The prototype already sets the look: gritty, muted pixel art, low-poly figures in a 2:1 isometric view, a 16 × 16 icon per item. So the shortest route is to keep that look. Learn pixel art for icons, hex tiles and raid tiles, and learn just enough Blender to build low-poly figures and render them to sprites. Work in this order: tiny items, then tiles, then characters, then animation. Every piece goes into the game straight away under its art key, so you can see it in place. Draw and import placeholders early, and replace them one at a time.",
+ "styleChoices": [
+  {
+   "style": "Pixel art (2D)",
+   "good": "Cheap tools, small canvases and quick wins. It matches the prototype exactly (16 × 16 icons, 32 × 16 iso tiles, nearest-neighbour scaling) and stays crisp at every zoom.",
+   "hard": "Every facing and every frame is drawn by hand: 8 directions × 6 walk frames adds up fast. Turning the camera multiplies the work.",
+   "fit": "Best for icons, hex tiles, raid floors and walls, and the map's markers. This is the recommended base style."
+  },
+  {
+   "style": "Hand-painted 2D",
+   "good": "Soft, rich and painterly, like style C in the tile study (docs/tile-designs). It hides rough drawing well.",
+   "hard": "Hard to keep consistent across hundreds of assets. It needs higher resolutions (2× the specs below), and it clashes with pixel icons unless everything is painted.",
+   "fit": "Possible for the State Map's ground. Risky for a beginner across the whole game."
+  },
+  {
+   "style": "Low-poly 3D rendered to sprites",
+   "good": "Model it once, then render every facing and frame from Blender automatically. Turning the camera costs nothing. The prototype's figures, weapons and vehicles are already built this way (ui/figures.js).",
+   "hard": "You learn Blender (modelling, UVs, rigging, a camera set to the exact iso angle) plus a clean-up pass to make the renders pixel-crisp.",
+   "fit": "Recommended for survivors, the dead, weapons in hand and vehicles: the many-direction, many-frame assets."
+  },
+  {
+   "style": "Low-poly 3D in engine",
+   "good": "Free rotation, real lighting, and the cutaway and roofs come from geometry. glTF files drop straight into Godot or Unity.",
+   "hard": "It changes the battle view's tech (3D camera, sorting, shaders) and is less forgiving of rough models. You also lose the pixel look unless you add a pixelation shader.",
+   "fit": "A later option for the battle view. Keep the same models so you can switch from pre-rendered sprites to real 3D without remodelling."
+  }
+ ],
+ "tools": [
+  {
+   "name": "Aseprite",
+   "cost": "US$19.99 (free if you compile it from source)",
+   "for": "Pixel art and animation: layers, onion skin, palettes, sprite-sheet + JSON export. The standard tool.",
+   "u": "https://www.aseprite.org/"
+  },
+  {
+   "name": "LibreSprite",
+   "cost": "Free, open source",
+   "for": "Free fork of an older Aseprite. Same workflow, fewer features.",
+   "u": "https://libresprite.github.io/"
+  },
+  {
+   "name": "Pixelorama",
+   "cost": "Free, open source",
+   "for": "Pixel art and animation, built in Godot. Good free Aseprite alternative.",
+   "u": "https://orama-interactive.itch.io/pixelorama"
+  },
+  {
+   "name": "Krita",
+   "cost": "Free, open source",
+   "for": "Painting (hand-painted tiles, concept sketches) with an animation timeline.",
+   "u": "https://krita.org/"
+  },
+  {
+   "name": "GIMP",
+   "cost": "Free, open source",
+   "for": "Photo-style editing: batch resizing, palette conversion, cleaning up renders.",
+   "u": "https://www.gimp.org/"
+  },
+  {
+   "name": "Blender",
+   "cost": "Free, open source",
+   "for": "Low-poly modelling, UVs, rigging, animation, rendering to iso sprites, glTF export.",
+   "u": "https://www.blender.org/"
+  },
+  {
+   "name": "MagicaVoxel",
+   "cost": "Free",
+   "for": "Voxel models: an easy route into 3D props (crates, cars, furniture) you can render to sprites.",
+   "u": "https://ephtracy.github.io/"
+  },
+  {
+   "name": "Tiled",
+   "cost": "Free (pay what you want)",
+   "for": "Test-assembling hex and isometric tile sets to check seams and variants before importing.",
+   "u": "https://www.mapeditor.org/"
+  },
+  {
+   "name": "LDtk",
+   "cost": "Free",
+   "for": "Level editor for square grids only. Handy for sketching room layouts, not for hex or iso.",
+   "u": "https://ldtk.io/"
+  },
+  {
+   "name": "TexturePacker",
+   "cost": "Paid (free basic mode)",
+   "for": "Packs many sprites into atlases. Free alternative: Aseprite's sheet export plus the engine's own atlas (Godot TileSet/AtlasTexture, Unity Sprite Atlas).",
+   "u": "https://www.codeandweb.com/texturepacker"
+  },
+  {
+   "name": "Material Maker",
+   "cost": "Free, open source",
+   "for": "Optional: node-based procedural textures (ground, rust, concrete) like the prototype's procedural floors.",
+   "u": "https://www.materialmaker.org/"
+  }
+ ],
+ "tracks": [
+  {
+   "id": "sprites2d",
+   "title": "2D sprites",
+   "for": "Survivors, raiders, the dead (walker, runner, bloated, brute and the specials), corpses and the downed, every item icon in the inventory, the State Map's markers, bases and sites.",
+   "spec": [
+    {
+     "k": "Item icon",
+     "v": "16 × 16 px drawing plus a 1 px dark outline = 18 × 18, shown at 3× (the prototype's ui/itemart.js: ART_SIZE 16, ICON_UP 3)."
+    },
+    {
+     "k": "Character canvas",
+     "v": "48 × 52 px, the figure about 30 px tall (the prototype's ui/figures.js BW × BH). Bosses and the brute scale the canvas up."
+    },
+    {
+     "k": "Pivot / origin",
+     "v": "At the feet: pixel (24, 43), 9 px above the bottom edge, so the feet land on the tile centre. Use the same pivot on every frame."
+    },
+    {
+     "k": "Facings",
+     "v": "4 diagonals minimum: SE, SW, NW, NE (the prototype's FACINGS). 8 if you keep its straight camera views (add S, W, N, E). Mirroring SE↔SW halves the work but swaps the gun hand."
+    },
+    {
+     "k": "Palette",
+     "v": "One shared 32–48 colour file for the whole game, muted and gritty. Start from the terrain colours (water #2c4f6b, farmland #7d8a4f, forest #3f5e3a, hills #7a7152, mountain #6d6a66, suburb #8a8378, city #5f5a57) or Lospec's Resurrect 64."
+    },
+    {
+     "k": "Outline and light",
+     "v": "1 px near-black #0b0c0e around the whole sprite (the prototype's OUTLINE). Use no outline inside it, only darker shades. Light from the top left, as the prototype lights it: tops brightest, faces turning to the screen's right darker."
+    },
+    {
+     "k": "File naming",
+     "v": "The art key: char.survivor.idle.se, dead.walker.shamble.sw, item.beans_tin, corpse.walker. Sheets: one PNG per action and facing, frames left to right."
+    },
+    {
+     "k": "Export",
+     "v": "PNG, RGBA, 1× (never upscale in the file). Aseprite: File › Export Sprite Sheet, by rows, with a JSON data file."
+    },
+    {
+     "k": "Godot import",
+     "v": "Project Settings › Rendering › Textures › Default Texture Filter = Nearest. Import with Lossless compression and no mipmaps. Use Stretch Mode canvas_items with integer scaling."
+    },
+    {
+     "k": "Unity import",
+     "v": "Texture Type Sprite (2D and UI), Filter Mode Point, Compression None, Pixels Per Unit 32 (an iso tile = 1 unit wide), Pivot Custom at the feet. Add a Pixel Perfect Camera."
+    }
+   ],
+   "lessons": [
+    {
+     "t": "Set up and draw your first icon",
+     "steps": [
+      "Install Aseprite (or Pixelorama).",
+      "New sprite 16 × 16, RGBA. Turn on the 1 px grid.",
+      "Load a palette (Lospec Resurrect 64) and limit yourself to 6 colours.",
+      "Draw a tin of beans: silhouette first, then a flat fill, then one shadow and one highlight.",
+      "Zoom to 1× to see it at real size, then export a PNG."
+     ],
+     "tip": "Judge an icon at 1× and 3×: if you can't name the item at 1×, simplify the silhouette.",
+     "links": [
+      {
+       "t": "Aseprite docs",
+       "u": "https://www.aseprite.org/docs/"
+      },
+      {
+       "t": "Lospec pixel art tutorials",
+       "u": "https://lospec.com/pixel-art-tutorials"
+      }
+     ]
+    },
+    {
+     "t": "Silhouette and readability",
+     "steps": [
+      "Fill 10 item ideas as solid black 16 × 16 shapes only.",
+      "Show them to someone and ask them to name each one.",
+      "Fix the ones they can't name by exaggerating the defining part (a pistol's grip, a can's rim).",
+      "Then add the 1 px #0b0c0e outline around the outside."
+     ],
+     "tip": "Shape carries meaning, and colour only confirms it: a red can and a red book must still differ in black.",
+     "links": [
+      {
+       "t": "Brandon James Greer (YouTube)",
+       "u": "https://www.youtube.com/@BrandonJamesGreer"
+      }
+     ]
+    },
+    {
+     "t": "Colour ramps and a game palette",
+     "steps": [
+      "Make one ramp of 4–5 shades per material: skin, cloth, metal, wood, rot.",
+      "Shift the hue as you go: shadows cooler and bluer, highlights warmer.",
+      "Save every ramp into one .gpl or .ase palette file named brokenstate.pal.",
+      "Repaint your beans tin using only that file."
+     ],
+     "tip": "Hue-shifted ramps are the single biggest jump from 'beginner' to 'looks pro'.",
+     "links": [
+      {
+       "t": "Lospec palette list",
+       "u": "https://lospec.com/palette-list"
+      },
+      {
+       "t": "Slynyrd Pixelblog",
+       "u": "https://www.slynyrd.com/"
+      }
+     ]
+    },
+    {
+     "t": "Shading and anti-aliasing basics",
+     "steps": [
+      "Pick the light direction (top left) and keep it for every asset.",
+      "Shade with flat bands, never gradients or soft brushes.",
+      "Remove 'pillow shading' (dark all around the edge).",
+      "Smooth a jagged curve with one mid-tone pixel in the corner (manual anti-aliasing), only inside the outline."
+     ],
+     "tip": "At 16 px, every pixel is a decision. Delete any pixel that doesn't help the read.",
+     "links": [
+      {
+       "t": "Saint11 pixel art tutorials",
+       "u": "https://saint11.art/"
+      }
+     ]
+    },
+    {
+     "t": "A survivor standing, 4 facings",
+     "steps": [
+      "New 48 × 52 canvas. Mark the feet pivot at (24, 43) on a guide layer.",
+      "Draw the SE facing: head about 6 px, body 30 px tall, a rifle low and ready.",
+      "Turn it for SW, then NE and NW (back views: less face, more pack).",
+      "Keep the height, head size and pivot identical across all four.",
+      "Export as char.survivor.idle.se.png and so on."
+     ],
+     "tip": "Draw the SE facing first and trace its proportions onto a reference layer for the others.",
+     "links": [
+      {
+       "t": "AdamCYounis (YouTube)",
+       "u": "https://www.youtube.com/@AdamCYounis"
+      }
+     ]
+    },
+    {
+     "t": "The dead: same body, wrong",
+     "steps": [
+      "Duplicate your survivor's SE frame.",
+      "Desaturate the skin toward grey-green and drop the shoulders.",
+      "Tilt the head and add torn cloth and dark wounds with 2 colours.",
+      "Make the variants: a runner (lean), bloated (wide), brute (scaled canvas)."
+     ],
+     "tip": "Players read the dead by posture before colour: change the spine first.",
+     "links": [
+      {
+       "t": "MortMort (YouTube)",
+       "u": "https://www.youtube.com/@MortMort"
+      }
+     ]
+    },
+    {
+     "t": "Corpses and the downed",
+     "steps": [
+      "Rotate the body to lie along the ground diagonal (the prototype lays the fallen along the world's x axis).",
+      "Use a wide, low canvas (48 × 42) with the pivot at the body's middle.",
+      "Add a dark pool shape under it on its own layer.",
+      "Make a 'searched' version with the weapon gone."
+     ],
+     "tip": "A corpse must not read as a standing unit: flatten it hard and darken it.",
+     "links": [
+      {
+       "t": "Lospec pixel art tutorials",
+       "u": "https://lospec.com/pixel-art-tutorials"
+      }
+     ]
+    },
+    {
+     "t": "Into the engine under an art key",
+     "steps": [
+      "Copy the PNG into art/char/ (or art/items/).",
+      "Set the import settings from the Spec table (Nearest / Point).",
+      "Add an entry to the ArtCatalog: key → texture.",
+      "Run the game: the placeholder is replaced with no code change.",
+      "Check it at 1× and at full zoom."
+     ],
+     "tip": "Test inside the game early: a sprite that looks good on its own can vanish on a busy floor.",
+     "links": [
+      {
+       "t": "Godot: importing images",
+       "u": "https://docs.godotengine.org/en/stable/tutorials/assets_pipeline/importing_images.html"
+      },
+      {
+       "t": "Unity 2D manual",
+       "u": "https://docs.unity3d.com/Manual/Unity2D.html"
+      }
+     ]
+    }
+   ],
+   "practice": [
+    "A 16 × 16 tin of beans icon in 8 colours.",
+    "A 9mm pistol, a crowbar and a med kit icon that read as black silhouettes.",
+    "A 5-shade ramp each for skin, rotting skin, denim and gunmetal, saved into the palette file.",
+    "A survivor in 4 facings on the 48 × 52 canvas, all with the feet on (24, 43).",
+    "A walker made from that survivor in under 30 minutes.",
+    "A corpse of the walker, plus its searched version."
+   ],
+   "engine": {
+    "godot": "Drop PNGs into res://art/. Set the project's Default Texture Filter to Nearest. Use a Sprite2D for still sprites and an AnimatedSprite2D with a SpriteFrames resource for animated ones (Add Frames from Sprite Sheet slices a sheet). Use Offset to put the feet pivot on the node's origin. Icons go into TextureRect controls in the inventory. An ArtCatalog Resource maps art keys to Texture2D or SpriteFrames.",
+    "unity": "Drop PNGs into Assets/Art/. Use Sprite Mode Multiple and slice the sheet in the Sprite Editor (Grid by cell size 48 × 52, Custom pivot). Pack characters and icons into a Sprite Atlas. Use a SpriteRenderer in the world and an Image in the UI. An ArtCatalog ScriptableObject maps art keys to Sprite or AnimationClip."
+   },
+   "mistakes": [
+    "Drawing big (256 px) and shrinking it down: it blurs. Draw at the final size.",
+    "A new palette for every asset, so nothing matches.",
+    "Moving the pivot between frames or facings, so units jitter or float.",
+    "Soft brushes, gradients and blurred import filters on pixel art.",
+    "Too much detail at 16 px instead of a strong silhouette."
+   ]
+  },
+  {
+   "id": "models3d",
+   "title": "3D low-poly models",
+   "for": "Survivors and the dead as low-poly figures (the prototype's ui/figures.js), every weapon in their hands (ui/weaponmodels.js), cars, trucks and carts (ui/vehiclemodel.js), plus bulky props. Render them to iso sprites, or import them as real 3D later.",
+   "spec": [
+    {
+     "k": "Scale",
+     "v": "1 Blender unit = 1 m = one raid cell. A survivor is about 1.8 m. A car covers 2 × 3–5 cells, as in the prototype."
+    },
+    {
+     "k": "Poly budget",
+     "v": "Figure 300–800 triangles, weapon 50–200, car 400–1,200. Low poly is the look, not a limitation."
+    },
+    {
+     "k": "Texture",
+     "v": "No painted textures: one shared 256 × 256 palette PNG (a grid of flat colour squares from the game palette). UV each face onto a colour square."
+    },
+    {
+     "k": "Iso camera",
+     "v": "Orthographic, Rotation X 60°, Y 0°, Z 45°: a flat 1 m square renders as a 2:1 diamond (the prototype's projection). Test with a 1 m cube: its top must be 32 × 16 px."
+    },
+    {
+     "k": "Ortho scale",
+     "v": "Sensor Fit Horizontal, Orthographic Scale = render width × 1.414 / 32. For a 48 px wide render that is 2.12, so one cell is 32 px wide."
+    },
+    {
+     "k": "Render size",
+     "v": "Characters 48 × 52 px with the feet at (24, 43). Weapons are rendered in hand, not separately. Render at 1× with Film Filter Size 0 px, or at 4× and reduce with nearest-neighbour."
+    },
+    {
+     "k": "Facings",
+     "v": "Rotate the model (a parent Empty) in 45° steps, never the camera: 4 diagonals (SE 0°, SW 90°, NW 180°, NE 270°, the prototype's YAW) or all 8."
+    },
+    {
+     "k": "Rig",
+     "v": "Simple: about 15 bones (hips, spine, neck, head, upper arm, forearm, hand, thigh, shin, foot ×2), or Rigify's basic human. Name the actions idle, walk, shamble, attack, hit, death."
+    },
+    {
+     "k": "File naming",
+     "v": "Source: models/char_survivor.blend. Exports: char.survivor.glb, or rendered sheets char.survivor.walk.se.png."
+    },
+    {
+     "k": "Export",
+     "v": "glTF 2.0 binary (.glb), +Y up, apply transforms, include animations. Godot and Unity both read it."
+    }
+   ],
+   "lessons": [
+    {
+     "t": "Blender survival basics",
+     "steps": [
+      "Install Blender. Learn to orbit (middle mouse), pan (Shift+MMB) and zoom.",
+      "Learn G, R, S (move, rotate, scale) and Tab (Edit Mode).",
+      "Add a cube, scale it to 1 m and save it as cell.blend.",
+      "Follow the first two parts of Blender Guru's donut series to learn the interface."
+     ],
+     "tip": "Learn the shortcuts for 10 operations and ignore the rest of Blender for now.",
+     "links": [
+      {
+       "t": "Blender Guru (YouTube)",
+       "u": "https://www.youtube.com/@blenderguru"
+      },
+      {
+       "t": "Blender manual",
+       "u": "https://docs.blender.org/manual/en/latest/"
+      }
+     ]
+    },
+    {
+     "t": "Low-poly props: a crate and a wrecked car",
+     "steps": [
+      "Model a crate from a cube with Inset (I) and Extrude (E).",
+      "Model a sedan from one box: loop cuts (Ctrl+R) and extrusions for the cab.",
+      "Add wheels as 8-sided cylinders, like the prototype's.",
+      "Keep it under 1,000 triangles. Check with the Statistics overlay."
+     ],
+     "tip": "Model the silhouette that reads from the iso camera. Ignore the underside nobody sees.",
+     "links": [
+      {
+       "t": "Grant Abbitt (YouTube)",
+       "u": "https://www.youtube.com/@grabbitt"
+      },
+      {
+       "t": "Imphenzia (YouTube)",
+       "u": "https://www.youtube.com/@Imphenzia"
+      }
+     ]
+    },
+    {
+     "t": "Flat colour with a palette texture",
+     "steps": [
+      "Make a 256 × 256 PNG of 16 × 16 colour squares from brokenstate.pal.",
+      "Give the model one material with that image.",
+      "In UV Editing, select faces, then scale their UVs tiny and drop them on a colour square.",
+      "Reuse the same material and image on every model."
+     ],
+     "tip": "One palette texture for every model keeps the 3D and 2D art in the same colours.",
+     "links": [
+      {
+       "t": "Blender manual: UVs",
+       "u": "https://docs.blender.org/manual/en/latest/modeling/meshes/uv/index.html"
+      }
+     ]
+    },
+    {
+     "t": "A low-poly survivor",
+     "steps": [
+      "Block out the body from tapered cylinders (8 sides), like the prototype's limbs: head, torso, arms, legs.",
+      "Use the Mirror modifier so you model one side.",
+      "Keep the proportions slightly chunky: big head and hands read better at 30 px.",
+      "Make a dead variant: drop the shoulders, tilt the head, use a grey-green skin square."
+     ],
+     "tip": "Check the model through the iso camera at 48 × 52 px often: detail you can't see there is wasted.",
+     "links": [
+      {
+       "t": "Grant Abbitt (YouTube)",
+       "u": "https://www.youtube.com/@grabbitt"
+      }
+     ]
+    },
+    {
+     "t": "Rigging basics",
+     "steps": [
+      "Add an Armature and build about 15 bones up the body (or enable the Rigify add-on and use its Basic Human).",
+      "Parent the mesh to it With Automatic Weights.",
+      "Pose-test: bend an arm and a knee and fix bad weights with Weight Paint.",
+      "Parent the weapon to the right-hand bone."
+     ],
+     "tip": "Low-poly figures can be rigid-skinned: give each body part 100% weight to one bone and skip weight painting.",
+     "links": [
+      {
+       "t": "Blender manual: armatures",
+       "u": "https://docs.blender.org/manual/en/latest/animation/armatures/index.html"
+      }
+     ]
+    },
+    {
+     "t": "The iso sprite camera rig",
+     "steps": [
+      "Add a camera: Orthographic, Rotation 60° / 0° / 45°, Sensor Fit Horizontal, Ortho Scale 2.12.",
+      "Set the output to 48 × 52 px, transparent Film, Filter Size 0 px.",
+      "Light with one Sun from the top left plus soft world light, to match the item art's light.",
+      "Put the model under an Empty at the origin. Turn the Empty 0/90/180/270° for SE/SW/NW/NE.",
+      "Render, then compare with a hand-drawn sprite at 1×."
+     ],
+     "tip": "Save this as a template .blend and only ever swap the model, so every render matches.",
+     "links": [
+      {
+       "t": "Blender manual: cameras",
+       "u": "https://docs.blender.org/manual/en/latest/render/cameras.html"
+      }
+     ]
+    },
+    {
+     "t": "Batch-render facings and frames",
+     "steps": [
+      "Keyframe the Empty's Z rotation per facing, or use a small Python script that loops the angles.",
+      "Render the animation frames to char.survivor.walk.se_####.png.",
+      "Pack the frames into one sheet with Aseprite (Import Sprite Sheet / Export) or TexturePacker.",
+      "Touch up the outline and stray pixels by hand in Aseprite."
+     ],
+     "tip": "A 5-minute pixel clean-up after rendering makes 3D renders look hand-drawn.",
+     "links": [
+      {
+       "t": "Blender manual",
+       "u": "https://docs.blender.org/manual/en/latest/"
+      }
+     ]
+    },
+    {
+     "t": "Or: export glTF for real 3D",
+     "steps": [
+      "Apply all transforms (Ctrl+A) with the feet at the origin.",
+      "File › Export › glTF 2.0 (.glb) with animations included.",
+      "In Godot, drop it in res:// and open it as a scene. In Unity, drop it in Assets/ (Unity 6 imports glTF with the glTFast package).",
+      "Check the scale: a 1 m cube is one battle cell."
+     ],
+     "tip": "Keep the same .blend for both paths. Real 3D later is then an export, not a remodel.",
+     "links": [
+      {
+       "t": "Blender manual: glTF",
+       "u": "https://docs.blender.org/manual/en/latest/addons/import_export/scene_gltf2.html"
+      },
+      {
+       "t": "Godot: importing 3D scenes",
+       "u": "https://docs.godotengine.org/en/stable/tutorials/assets_pipeline/importing_3d_scenes/index.html"
+      }
+     ]
+    }
+   ],
+   "practice": [
+    "A 1 m crate that renders as exactly a 32 × 16 top diamond.",
+    "A 9mm pistol under 80 triangles, coloured from the palette texture.",
+    "A pickup truck covering 2 × 4 cells, rendered in 4 facings.",
+    "A rigid-skinned survivor posed with a rifle at the low ready.",
+    "The same survivor as a walker: change only the pose and two colour squares."
+   ],
+   "engine": {
+    "godot": "Sprites path: import the rendered sheets like the 2D track (Nearest, AnimatedSprite2D). Real 3D path: .glb files import as scenes. Use a MeshInstance3D, and an AnimationPlayer holds the Blender actions. Use a Camera3D with Projection Orthogonal at the same 60°/45° to match the sprite look.",
+    "unity": "Sprites path: as in the 2D track (Sprite Editor, Point filter). Real 3D path: import the .glb (glTFast package) or .fbx. The Animator uses the actions as clips. Use an orthographic Camera rotated (30°, 45°, 0°) for the same view; Unity measures X as the tilt down from horizontal, so it is 30° rather than Blender's 60°."
+   },
+   "mistakes": [
+    "Rotating the camera instead of the model for facings, so the light changes per facing.",
+    "A perspective camera: the iso grid stops lining up.",
+    "Unapplied scale (a model at 0.01 or 100×), so it imports the wrong size.",
+    "Modelling detail smaller than one pixel at the render size.",
+    "Anti-aliased renders dropped in raw: soft edges against crisp pixel tiles."
+   ]
+  },
+  {
+   "id": "worldtiles",
+   "title": "World tiles (hex State Map)",
+   "for": "The State of Calder's hex map: terrain (water, farmland, forest, hills, mountains, suburbs, city), plus overlays on top: roads, rivers and bridges, towns and cities, sites, hives and infection, snow and weather, fog of war.",
+   "spec": [
+    {
+     "k": "Orientation",
+     "v": "Pointy-top hexes, odd-r offset rows: the prototype's sim/hex.js. Keep it, because the sim's coordinates assume it."
+    },
+    {
+     "k": "Hex size",
+     "v": "48 × 56 px canvas, pointy top. Vertical sides 28 px, top and bottom slopes 14 px tall, rows stepping 42 px (¾ of the height, as Godot and Unity place them). Close to the prototype's hex (HEX = 26: 45 × 52)."
+    },
+    {
+     "k": "Template",
+     "v": "Make one hex outline PNG on a guide layer and start every tile from it. Draw ground to the hex edge, 1 px past for safety. Tall things (trees, peaks, towers) may rise above the top into a 48 × 72 canvas."
+    },
+    {
+     "k": "Layers",
+     "v": "Draw in separate layers, each its own sprite: (1) ground, (2) decals (trees, rocks, houses), (3) roads and rivers, (4) sites and towns, (5) weather and fog. The engine stacks them."
+    },
+    {
+     "k": "Roads and rivers",
+     "v": "6 'spoke' pieces, centre to each edge (e, ne, nw, w, sw, se), plus a centre hub. Any road shape is a combination, so 7 sprites cover all 64 cases."
+    },
+    {
+     "k": "Variants",
+     "v": "3–4 versions per terrain (hex.forest.0–3), picked by a per-tile seed, as the prototype's decals are."
+    },
+    {
+     "k": "Seasons",
+     "v": "Palette swaps of the same sprites: summer, autumn (gold forest), winter (snow caps), with the snow drawn as its own overlay where possible."
+    },
+    {
+     "k": "Palette",
+     "v": "Start from the prototype's terrain colours (water #2c4f6b, farmland #7d8a4f, forest #3f5e3a, hills #7a7152, mountain #6d6a66, suburb #8a8378, city #5f5a57). Overlays use palette.js's colour-blind-safe set."
+    },
+    {
+     "k": "File naming",
+     "v": "hex.<terrain>.<n>, hex.road.<edge>, hex.river.<edge>, hex.overlay.snow, site.<type>, hive.<stage>."
+    },
+    {
+     "k": "Readability",
+     "v": "The ground stays low-contrast and unoutlined. Sites, teams and hordes keep the dark outline so they pop (the conclusion of the tile study, style B)."
+    }
+   ],
+   "lessons": [
+    {
+     "t": "Understand hex grids",
+     "steps": [
+      "Read Red Blob Games' hex guide: pointy vs flat top, offset vs axial coordinates.",
+      "Find 'odd-r': that is the prototype's layout.",
+      "Sketch a 5 × 4 patch of pointy-top hexes on paper and number the tiles."
+     ],
+     "tip": "Art only cares about size and orientation, but knowing odd-r stops you building the TileSet the wrong way round.",
+     "links": [
+      {
+       "t": "Red Blob Games: hexagonal grids",
+       "u": "https://www.redblobgames.com/grids/hexagons/"
+      }
+     ]
+    },
+    {
+     "t": "Build the hex template",
+     "steps": [
+      "New 48 × 56 canvas. Draw the pointy-top outline: 28 px vertical sides, 14 px tall slopes.",
+      "Fill it with one colour. Copy it into a 3 × 3 grid with odd rows shifted 24 px right and rows 42 px apart.",
+      "Fix any gaps or overlaps until it tiles perfectly.",
+      "Save it as hex_template.aseprite with the outline on a locked guide layer."
+     ],
+     "tip": "Test the template in Tiled (a hexagonal map, staggered) before drawing any terrain.",
+     "links": [
+      {
+       "t": "Tiled documentation",
+       "u": "https://doc.mapeditor.org/en/stable/"
+      }
+     ]
+    },
+    {
+     "t": "Seamless ground",
+     "steps": [
+      "Paint farmland as a texture that wraps: anything crossing the left edge reappears on the right.",
+      "In Aseprite, turn on View › Tiled Mode to see the repeats live.",
+      "Keep the contrast low and the pattern small: the ground sits under icons.",
+      "Clip the result to the hex template."
+     ],
+     "tip": "World-anchored textures, where one forest spans five hexes, read better than five stickers (style A in the tile study).",
+     "links": [
+      {
+       "t": "Slynyrd Pixelblog",
+       "u": "https://www.slynyrd.com/"
+      }
+     ]
+    },
+    {
+     "t": "Seven terrains, one family",
+     "steps": [
+      "Draw water, farmland, forest, hills, mountains, suburbs and city on the template.",
+      "Use the same light (top left) and the same 2–3 shade steps on each.",
+      "Place them side by side in a test map and squint: each must be recognisable as a colour blob.",
+      "Then make 3 variants of each."
+     ],
+     "tip": "If two terrains look alike when you squint, change their value (lightness), not their hue.",
+     "links": [
+      {
+       "t": "Lospec palette list",
+       "u": "https://lospec.com/palette-list"
+      }
+     ]
+    },
+    {
+     "t": "Decals: trees, rocks, houses",
+     "steps": [
+      "On a separate layer, draw 4–6 small tree sprites (8–12 px), a rock, a peak and a house.",
+      "Give them soft shadows and no black outline.",
+      "Scatter 5–9 per forest hex in a test map, keeping the hex centre clear for site icons.",
+      "Draw a snow-capped version of each."
+     ],
+     "tip": "Decals over flat colour was the cheapest and most readable style in the prototype's study.",
+     "links": [
+      {
+       "t": "Kenney assets (reference)",
+       "u": "https://kenney.nl/assets"
+      }
+     ]
+    },
+    {
+     "t": "Roads and rivers as spokes",
+     "steps": [
+      "Draw a centre hub and 6 spokes from the centre to each edge midpoint.",
+      "Make each spoke meet the edge at the same width and position, so neighbours line up.",
+      "Draw a river the same way, wider, with a bank colour, plus a bridge sprite.",
+      "Combine spokes in a test map: a straight road, a bend, a junction."
+     ],
+     "tip": "Edges must match pixel for pixel: an edge midpoint is a fixed spot in the template, so mark it on the guide layer.",
+     "links": [
+      {
+       "t": "Red Blob Games: hexagonal grids",
+       "u": "https://www.redblobgames.com/grids/hexagons/"
+      }
+     ]
+    },
+    {
+     "t": "Overlays: sites, hives, infection, weather",
+     "steps": [
+      "Draw town and city as stacks of tiny roofs. Draw sites as outlined icons (16–24 px).",
+      "Draw hive stages from a stain to a fleshy mound.",
+      "Draw infection as a translucent red overlay with veins, and a purple version for the colour-blind set.",
+      "Draw rain and snow as semi-transparent pattern tiles, and fog as soft grey."
+     ],
+     "tip": "Overlays sit on top of the ground: test each one on all 7 terrains.",
+     "links": [
+      {
+       "t": "Lospec pixel art tutorials",
+       "u": "https://lospec.com/pixel-art-tutorials"
+      }
+     ]
+    },
+    {
+     "t": "Seasons by palette swap",
+     "steps": [
+      "Duplicate the palette file as summer, autumn and winter.",
+      "Shift greens to gold and brown for autumn, and to grey for winter.",
+      "Recolour with Aseprite's Replace Colour, or in the engine with a palette-swap shader."
+     ],
+     "tip": "Palette swaps quadruple your tiles for almost no drawing.",
+     "links": [
+      {
+       "t": "Aseprite docs",
+       "u": "https://www.aseprite.org/docs/"
+      }
+     ]
+    }
+   ],
+   "practice": [
+    "A hex template that tiles 3 × 3 with no gaps in Tiled.",
+    "A seamless farmland hex in 6 colours.",
+    "A forest hex with 6 scattered trees and a clear centre.",
+    "7 road pieces (hub + 6 spokes) that join into a straight road, a bend and a T junction.",
+    "An autumn and a winter palette swap of your forest."
+   ],
+   "engine": {
+    "godot": "TileSet with Tile Shape Hexagon, Tile Offset Axis Horizontal (pointy-top rows), Tile Layout Stacked (every other row shifted, the sim's odd-r; if neighbours come out wrong try Stacked Offset), Tile Size 48 × 56. Use one TileMapLayer per layer: ground, decals, roads, overlays, weather. Variants via alternative tiles or the scatter option, and seasons via a CanvasItem shader.",
+    "unity": "Create › 2D › Tilemap › Hexagonal - Pointed-Top. PPU 56, so the Cell Size is about 0.857 × 1. Use one Tilemap per layer, sorted by Order in Layer. Random variants via Random Tile (2D Tilemap Extras), and seasons by swapping the Tile assets or a palette shader."
+   },
+   "mistakes": [
+    "Flat-top art for a pointy-top map.",
+    "Drawing roads into the ground tile, so you need a tile for every road shape.",
+    "High-contrast ground that drowns the icons.",
+    "One version per terrain, so the repetition shows across the map.",
+    "Edges that don't meet pixel-perfectly, so seams show between hexes."
+   ]
+  },
+  {
+   "id": "raidtiles",
+   "title": "Raid tiles (isometric battle maps)",
+   "for": "The XCOM-style battles: floors (grass, dirt, gravel, asphalt, floorboards, concrete, rubble, water, mud, blood), walls and fences, doors and windows, furniture and containers, half and full cover (rocks, crates, cars, boulders), roofs and the cutaway.",
+   "spec": [
+    {
+     "k": "Floor tile",
+     "v": "2:1 diamond, 32 × 16 px = one 1 m cell (the prototype's isoview.js; old X-COM used the same width). Paint at 64 × 32 only if you go hand-painted or high-res."
+    },
+    {
+     "k": "Heights",
+     "v": "One storey wall 34 px tall, a cut-away stub 7 px, one height level (walkway, flat roof) 20 px up, two storeys 54 px (the prototype's WALL1, STUB, LV, WALL2)."
+    },
+    {
+     "k": "Wall pieces",
+     "v": "Walls sit on a cell's edge, not its middle. Make 2 directions (u and v edges) × full / stub / damaged. Canvas 32 × 50 with the pivot at the floor diamond's centre."
+    },
+    {
+     "k": "Cover read",
+     "v": "Half cover is knee-to-waist high (about 10–15 px: rocks, crates, fences, car bodies). Full cover is head height and blocks sight (34 px+). They must differ at a glance by height, not colour."
+    },
+    {
+     "k": "Doors and windows",
+     "v": "States: closed, open, broken, boarded, barred; doors also locked. Each a separate sprite: raid.door.wood.open.u."
+    },
+    {
+     "k": "Furniture",
+     "v": "Footprints in whole cells (a bed 1 × 2, a car 2 × 4). Cut multi-cell pieces into one sprite per cell for sorting, as the prototype cuts its cars."
+    },
+    {
+     "k": "Camera turns",
+     "v": "The prototype turns the view in 45° steps. Budget 4 diagonal views per wall and prop (or lock the camera and draw 1–2)."
+    },
+    {
+     "k": "Sorting",
+     "v": "Back to front by u + v, then height: y-sort by the cell's bottom vertex. Units stand on the floor diamond's centre."
+    },
+    {
+     "k": "File naming",
+     "v": "raid.floor.<surface>.<n>, raid.wall.<material>.<u|v>.<full|stub|dmg>, raid.door.<kind>.<state>.<u|v>, raid.prop.<name>.<cell>."
+    },
+    {
+     "k": "Import",
+     "v": "As the 2D track: Nearest / Point, no compression. Unity PPU 32, so a tile is 1 unit wide."
+    }
+   ],
+   "lessons": [
+    {
+     "t": "The 2:1 diamond",
+     "steps": [
+      "New 32 × 16 canvas. Draw the diamond with 2-across, 1-down pixel steps.",
+      "Copy it into a 4 × 4 grid: each step is 16 px across and 8 px down.",
+      "Fix the joins until no gaps or double lines show.",
+      "Save it as iso_template.aseprite."
+     ],
+     "tip": "Clean 2:1 lines are the backbone of iso pixel art. Never freehand a diagonal.",
+     "links": [
+      {
+       "t": "Slynyrd Pixelblog",
+       "u": "https://www.slynyrd.com/"
+      },
+      {
+       "t": "Lospec pixel art tutorials",
+       "u": "https://lospec.com/pixel-art-tutorials"
+      }
+     ]
+    },
+    {
+     "t": "Floors that tile",
+     "steps": [
+      "Make floorboards: planks running along one diamond axis.",
+      "Make concrete, asphalt, grass, dirt and rubble from the same template.",
+      "Test each in a 6 × 6 patch and remove any pattern that forms visible stripes.",
+      "Make blood and mud as overlays, not new floors."
+     ],
+     "tip": "Keep floors darker and calmer than units: the floor is the stage, not the actor.",
+     "links": [
+      {
+       "t": "Tiled documentation",
+       "u": "https://doc.mapeditor.org/en/stable/"
+      }
+     ]
+    },
+    {
+     "t": "Walls with height",
+     "steps": [
+      "On a 32 × 50 canvas, draw a wall along the u edge: a 16 px long top edge, 34 px tall.",
+      "Shade the two visible faces differently (one lit, one in shade).",
+      "Mirror it for the v edge and adjust the light.",
+      "Draw the 7 px stub version for the cutaway."
+     ],
+     "tip": "The stub is what players see most when inside: make it readable on its own (top cap plus material).",
+     "links": [
+      {
+       "t": "AdamCYounis (YouTube)",
+       "u": "https://www.youtube.com/@AdamCYounis"
+      }
+     ]
+    },
+    {
+     "t": "Doors and windows in all states",
+     "steps": [
+      "Cut a door gap into a wall piece. Draw closed, open (swung 90°), broken and boarded.",
+      "Draw a window: glass, broken glass, boarded, barred.",
+      "Keep the frame identical across states so only the door or glass changes.",
+      "Check the open door doesn't hide a unit standing in the doorway."
+     ],
+     "tip": "State changes must read from across the map: the boarded state gets bright plank highlights.",
+     "links": [
+      {
+       "t": "Brandon James Greer (YouTube)",
+       "u": "https://www.youtube.com/@BrandonJamesGreer"
+      }
+     ]
+    },
+    {
+     "t": "Half vs full cover",
+     "steps": [
+      "Draw half cover: a crate stack, a rock heap and a fence, all about 12 px high.",
+      "Draw full cover: a boulder, a shelf and a wall, 34 px.",
+      "Put a 30 px survivor behind each in a mock-up.",
+      "Show it to someone and ask 'which protects more?'"
+     ],
+     "tip": "Height is the signal: half cover must never reach the figure's chest.",
+     "links": [
+      {
+       "t": "Lospec pixel art tutorials",
+       "u": "https://lospec.com/pixel-art-tutorials"
+      }
+     ]
+    },
+    {
+     "t": "Furniture and multi-cell props",
+     "steps": [
+      "Model or draw a bed on a 1 × 2 cell footprint.",
+      "Slice it into one sprite per cell along the cell boundary.",
+      "Give each slice the pivot of its own cell.",
+      "Test that a unit standing beside the far end sorts correctly."
+     ],
+     "tip": "Rendering props in Blender (the models3d track) and slicing them gives you all 4 views for free.",
+     "links": [
+      {
+       "t": "Kenney assets (reference)",
+       "u": "https://kenney.nl/assets"
+      }
+     ]
+    },
+    {
+     "t": "Assemble a room and sort it",
+     "steps": [
+      "Build a 6 × 6 room in the engine: floor, walls, a door, a window, two props.",
+      "Turn on y-sort and walk a placeholder unit around and behind things.",
+      "Fix any tile whose pivot makes it pop in front of the unit.",
+      "Toggle the near walls to stubs and check you see the unit."
+     ],
+     "tip": "Most iso bugs are pivots: put every tall sprite's pivot at its floor cell's bottom vertex.",
+     "links": [
+      {
+       "t": "Godot: using TileSets",
+       "u": "https://docs.godotengine.org/en/stable/tutorials/2d/using_tilesets.html"
+      },
+      {
+       "t": "Godot: using TileMaps",
+       "u": "https://docs.godotengine.org/en/stable/tutorials/2d/using_tilemaps.html"
+      }
+     ]
+    }
+   ],
+   "practice": [
+    "A floorboards tile that tiles 6 × 6 with no stripes.",
+    "A brick wall in u and v, full and stub.",
+    "A wooden door: closed, open, broken, boarded.",
+    "A crate (half cover) and a filing cabinet (full cover) that read apart in black silhouette.",
+    "A 2 × 4 cell wrecked car sliced into per-cell sprites."
+   ],
+   "engine": {
+    "godot": "TileSet with Tile Shape Isometric, Tile Layout Diamond Down, Tile Size 32 × 16. Use TileMapLayer nodes: floors on one layer, walls and props on a y-sorted layer (Y Sort Enabled, units as children of the same y-sorted parent). Set each tall tile's Texture Origin and Y Sort Origin so it sorts by its base. Swap door and window states by changing the cell's tile.",
+    "unity": "Create › 2D › Tilemap › Isometric (or Isometric Z as Y for heights). Grid Cell Size 1 × 0.5. Transparency Sort Mode Custom Axis (0, 1, 0), set in the URP Renderer 2D asset. Tilemap Renderer Mode Individual so units sort between props. Use Rule Tiles for wall joins, and swap door states with SetTile."
+   },
+   "mistakes": [
+    "Pivots at the sprite's centre instead of the floor cell, so units walk 'through' walls.",
+    "Walls drawn in the middle of a cell rather than on its edge.",
+    "Half and full cover told apart only by colour.",
+    "Freehand diagonals instead of clean 2:1 steps.",
+    "No stub or cutaway pieces, so units vanish inside buildings."
+   ]
+  },
+  {
+   "id": "animation",
+   "title": "Animation",
+   "for": "Survivors (idle, walk, run, crouch, shoot, reload, melee, hit, death), the dead (shamble, lunge, bite, hit, fall, crawl), the map's walkers and vehicles, and animated tiles: water, fire, smoke, rain and snow, lights at night.",
+   "spec": [
+    {
+     "k": "Idle",
+     "v": "2–4 frames at 250–400 ms each: breathing, a weight shift. The dead: a slow sway."
+    },
+    {
+     "k": "Walk",
+     "v": "Survivor: 6–8 frames at 90–120 ms. Contact, down, passing and up poses each side."
+    },
+    {
+     "k": "Shamble",
+     "v": "The dead: 6–8 frames at 150–200 ms with uneven holds (one frame held twice as long), a dragged foot and a lurch. A runner: 6 frames at 60–80 ms."
+    },
+    {
+     "k": "Attack",
+     "v": "Melee: 2 anticipation frames (150 ms), 1 strike (60 ms), 2 recovery. Shoot: aim, recoil plus muzzle flash (50 ms), settle. Bite: lunge, hold, pull back."
+    },
+    {
+     "k": "Hit and death",
+     "v": "Hit: 2–3 frames at 80 ms (a flinch back). Death: 5–8 frames at 100 ms, the last held, then swapped for the corpse sprite."
+    },
+    {
+     "k": "Facings",
+     "v": "Every action in every facing (4 or 8), so 3D renders pay off here. Save sheets per action per facing: char.survivor.walk.se."
+    },
+    {
+     "k": "Tile animation",
+     "v": "Water 4 frames at 250 ms, fire 4–6 at 80–100 ms, smoke 6 at 120 ms. Loop seamlessly: the last frame must lead back into the first."
+    },
+    {
+     "k": "Events",
+     "v": "Mark the frames where something happens (footstep, muzzle flash, hit): the engine fires sounds and effects from them."
+    },
+    {
+     "k": "Export",
+     "v": "Aseprite: one sheet per tag (idle, walk...) with JSON frame durations. Blender: one action per move, exported in the .glb or rendered to sheets."
+    }
+   ],
+   "lessons": [
+    {
+     "t": "The principles, lightly",
+     "steps": [
+      "Read the 12 principles and pick the 4 that matter at 30 px: timing, anticipation, squash & stretch, follow-through.",
+      "Draw a 16 × 16 bouncing ball: 8 frames, squash on contact.",
+      "Play it at 80 ms, then 120 ms, and feel the difference."
+     ],
+     "tip": "At small sizes, timing does more than drawing: the same frames feel heavy or light from the ms alone.",
+     "links": [
+      {
+       "t": "Twelve basic principles of animation",
+       "u": "https://en.wikipedia.org/wiki/Twelve_basic_principles_of_animation"
+      }
+     ]
+    },
+    {
+     "t": "Onion skin and an idle",
+     "steps": [
+      "Open your SE survivor and turn on Onion Skin.",
+      "Make frame 2: drop the shoulders and chest 1 px.",
+      "Set both frames to 350 ms in the timeline and loop.",
+      "Do the same for the walker with a 1 px head tilt."
+     ],
+     "tip": "Moving one pixel is often enough. Bigger idles look twitchy.",
+     "links": [
+      {
+       "t": "Aseprite docs",
+       "u": "https://www.aseprite.org/docs/"
+      },
+      {
+       "t": "MortMort (YouTube)",
+       "u": "https://www.youtube.com/@MortMort"
+      }
+     ]
+    },
+    {
+     "t": "A survivor's walk cycle",
+     "steps": [
+      "Draw the 4 key poses: contact, down, passing, up.",
+      "Mirror the legs for the other step to make 8 frames.",
+      "Bob the head 1 px down on 'down' and up on 'up'.",
+      "Play it at 100 ms and check it from 1× zoom.",
+      "Repeat for the other facings."
+     ],
+     "tip": "Keep the feet pivot fixed. The engine moves the unit, the sprite only moves its legs.",
+     "links": [
+      {
+       "t": "Saint11 pixel art tutorials",
+       "u": "https://saint11.art/"
+      },
+      {
+       "t": "AdamCYounis (YouTube)",
+       "u": "https://www.youtube.com/@AdamCYounis"
+      }
+     ]
+    },
+    {
+     "t": "The dead's shamble",
+     "steps": [
+      "Start from the walk's poses, but drag one foot (no lift on that side).",
+      "Lean the torso forward and let the arms swing late (follow-through).",
+      "Hold the 'down' frame twice as long for a lurch.",
+      "Time it at 150–200 ms and compare it side by side with the survivor walk."
+     ],
+     "tip": "Irregular timing is what makes the dead feel dead. A smooth, even cycle reads as a person.",
+     "links": [
+      {
+       "t": "Brandon James Greer (YouTube)",
+       "u": "https://www.youtube.com/@BrandonJamesGreer"
+      }
+     ]
+    },
+    {
+     "t": "Attacks, hits and deaths",
+     "steps": [
+      "Melee: wind up (2 frames), strike (1 fast frame with a smear), recover (2).",
+      "Shoot: 3 frames, with the muzzle flash on its own layer.",
+      "Hit: a 2-frame flinch away from the hit.",
+      "Death: a fall over 6 frames that ends exactly on the corpse sprite's pose."
+     ],
+     "tip": "Hold anticipation longer than the action: the player needs to see a bite coming.",
+     "links": [
+      {
+       "t": "Saint11 pixel art tutorials",
+       "u": "https://saint11.art/"
+      }
+     ]
+    },
+    {
+     "t": "Animation in Blender",
+     "steps": [
+      "Pose the rig on frames 1, 5, 9 (the key poses) and let Blender fill in between.",
+      "In the Dope Sheet's Action Editor, name the action walk. Make shamble, attack and death the same way.",
+      "Push actions down into the NLA editor so each is kept.",
+      "Render each action from each facing with the sprite camera, or export all actions in the .glb."
+     ],
+     "tip": "For a pixel look, set the interpolation to Constant and animate on twos: smooth tweens look floaty at 30 px.",
+     "links": [
+      {
+       "t": "Blender manual: NLA editor",
+       "u": "https://docs.blender.org/manual/en/latest/editors/nla/index.html"
+      },
+      {
+       "t": "Grant Abbitt (YouTube)",
+       "u": "https://www.youtube.com/@grabbitt"
+      }
+     ]
+    },
+    {
+     "t": "Animated tiles: water, fire, rain",
+     "steps": [
+      "Water: 4 frames of ripple dashes shifting 1 px, at 250 ms.",
+      "Fire: 5 frames of flame shapes on 3 hot colours, at 90 ms.",
+      "Rain: a transparent streak pattern tile that scrolls, rather than frames per hex.",
+      "Loop-test each one in a 3 × 3 patch."
+     ],
+     "tip": "Offset each tile's animation start (by seed) so a lake doesn't ripple in lockstep.",
+     "links": [
+      {
+       "t": "Slynyrd Pixelblog",
+       "u": "https://www.slynyrd.com/"
+      }
+     ]
+    },
+    {
+     "t": "Wire it into the engine",
+     "steps": [
+      "Import the sheet and slice the frames (see Engine below).",
+      "Create one animation per action and facing: walk_se, walk_sw...",
+      "Have the bridge pick action + facing from the sim's unit state.",
+      "Hook footstep and hit sounds to event frames."
+     ],
+     "tip": "Name the animations exactly like the art keys, so the ArtCatalog can find them by string.",
+     "links": [
+      {
+       "t": "Godot: 2D sprite animation",
+       "u": "https://docs.godotengine.org/en/stable/tutorials/2d/2d_sprite_animation.html"
+      },
+      {
+       "t": "Unity 2D manual",
+       "u": "https://docs.unity3d.com/Manual/Unity2D.html"
+      }
+     ]
+    }
+   ],
+   "practice": [
+    "A 2-frame breathing idle for your survivor at 350 ms.",
+    "An 8-frame survivor walk in the SE facing.",
+    "A walker's 6-frame shamble with one frame held double.",
+    "A 6-frame death that ends on the corpse sprite.",
+    "A 4-frame looping water hex and a 5-frame fire overlay."
+   ],
+   "engine": {
+    "godot": "2D: an AnimatedSprite2D with a SpriteFrames resource, with one animation per action_facing and its FPS or per-frame duration set. Import Aseprite sheets with Add Frames from Sprite Sheet. 3D: the .glb's actions arrive in an AnimationPlayer (AnimationTree to blend). Animated tiles: in the TileSet atlas, set the tile's Animation Columns and Frame Durations. Events: AnimationPlayer call-method tracks, or the frame_changed signal.",
+    "unity": "2D: slice the sheet in the Sprite Editor, then drag a facing's frames into the scene to create an Animation clip. An Animator Controller switches clips by parameters (action, facing). The 2D Animation package's Sprite Library swaps outfits on one rig. 3D: imported clips go into the same Animator. Animated tiles: Animated Tile from 2D Tilemap Extras. Events: Animation Events on frames."
+   },
+   "mistakes": [
+    "The same timing for the dead and the living, so they feel alike.",
+    "Animating the whole sprite sliding instead of the limbs: the engine already moves the unit.",
+    "Forgetting facings: a walk drawn only for SE.",
+    "Smooth Bezier tweens on a pixel figure, so it looks floaty.",
+    "Tile loops that pop on the last frame."
+   ]
+  }
+ ],
+ "pipeline": [
+  "Sketch: rough thumbnails on paper or a quick layer. Check the silhouette at final size.",
+  "Name it by its art key before you draw (item.beans_tin, char.survivor.walk.se, hex.forest.2) from the content JSON.",
+  "Draw or render at the spec size with the shared palette file and the right template (16 × 16, 48 × 52, 48 × 56 hex, 32 × 16 iso).",
+  "Export a 1× PNG (plus the JSON frame data for sheets) named after the key, e.g. char.survivor.walk.se.png.",
+  "Drop it into the matching art/ folder (art/items, art/char, art/hex, art/raid). Import settings come from a preset: Nearest / Point, no compression.",
+  "Add or point the ArtCatalog entry: key → texture, SpriteFrames or clip. The engine's placeholder shows until the key exists.",
+  "Run the game: the placeholder is replaced with no code change. Check it at 1× and full zoom, on several floors or terrains and in each facing.",
+  "Fix it in the source file (.aseprite / .blend) and re-export. Never edit the exported PNG.",
+  "Commit the source and exports with Git LFS (track *.png, *.aseprite, *.blend, *.glb) on an art branch, then merge."
+ ],
+ "commissioning": [
+  "Write a spec sheet first: this tab's sizes, pivots, facings, palette file, naming by art key and frame counts. Artists quote better against a clear brief.",
+  "Send the palette file, the templates (hex, iso, character canvas) and screenshots of the prototype as the style reference.",
+  "Start with a small paid test piece (one survivor in 4 facings, or 5 icons) before a big order.",
+  "Get the licence in writing: full commercial rights or an ownership transfer, credit terms, and the source files (.aseprite / .blend) included.",
+  "Batch the work by track (all icons, then all hex tiles) so one artist keeps one style across a set.",
+  "Pay by milestone (sketch, final, delivered sources), not everything up front.",
+  "Check every delivery in the game under its art key before approving it.",
+  "Keep one artist per style, or one art lead who reviews the others for consistency."
+ ],
+ "learnLinks": [
+  {
+   "t": "Lospec: palettes and pixel art tutorials",
+   "u": "https://lospec.com/pixel-art-tutorials"
+  },
+  {
+   "t": "Saint11 (Pedro Medeiros): pixel art tutorials",
+   "u": "https://saint11.art/"
+  },
+  {
+   "t": "Slynyrd: Pixelblog (iso, tiles, palettes)",
+   "u": "https://www.slynyrd.com/"
+  },
+  {
+   "t": "AdamCYounis: pixel art (YouTube)",
+   "u": "https://www.youtube.com/@AdamCYounis"
+  },
+  {
+   "t": "Brandon James Greer: pixel art (YouTube)",
+   "u": "https://www.youtube.com/@BrandonJamesGreer"
+  },
+  {
+   "t": "MortMort: pixel art (YouTube)",
+   "u": "https://www.youtube.com/@MortMort"
+  },
+  {
+   "t": "Blender Guru: the donut series (YouTube)",
+   "u": "https://www.youtube.com/@blenderguru"
+  },
+  {
+   "t": "Grant Abbitt: low-poly Blender (YouTube)",
+   "u": "https://www.youtube.com/@grabbitt"
+  },
+  {
+   "t": "Blender manual",
+   "u": "https://docs.blender.org/manual/en/latest/"
+  },
+  {
+   "t": "Red Blob Games: hexagonal grids",
+   "u": "https://www.redblobgames.com/grids/hexagons/"
+  },
+  {
+   "t": "Godot docs: 2D",
+   "u": "https://docs.godotengine.org/en/stable/tutorials/2d/index.html"
+  },
+  {
+   "t": "Unity manual: 2D",
+   "u": "https://docs.unity3d.com/Manual/Unity2D.html"
+  }
+ ]
+}

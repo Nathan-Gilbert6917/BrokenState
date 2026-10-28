@@ -1,0 +1,622 @@
+<title>Broken State Rebuild Board</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;800&family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: a field-manual planning board for the State of Calder rebuild. Sticky header with view tabs; the board is
+   a row of lanes that scrolls sideways inside its own frame; a card opens a drawer with the build notes.
+   Colours are the prototype design doc's own: hub blue, hive red, merchant gold on a slate-green ground. */
+:root {
+  --bg: #eef1ed; --panel: #f8faf7; --sunk: #e2e8e2; --ink: #17201c; --muted: #56645d; --rule: #cfd8d1;
+  --accent: #2f6fb3; --accent-soft: #dbe7f4; --hive: #b8332b; --hive-soft: #f5dcd9; --gold: #8a6408; --gold-soft: #f3e7c6;
+  --built: #2c7a4b; --built-soft: #d8ecdf; --planned: #6b5a92; --planned-soft: #e6e0f2;
+  --code-bg: #e4eae5; --shadow: 0 1px 2px rgba(23,32,28,.08), 0 2px 8px rgba(23,32,28,.06); --scrim: rgba(18,24,21,.45);
+  --display: "Big Shoulders Display", "Arial Narrow", "Roboto Condensed", Impact, sans-serif;
+  --body: "Source Sans 3", "Segoe UI", system-ui, sans-serif;
+  --mono: "JetBrains Mono", Consolas, "Cascadia Mono", monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #121815; --panel: #19211d; --sunk: #0f1411; --ink: #e3e9e4; --muted: #95a39b; --rule: #2c3832;
+  --accent: #6aa8ea; --accent-soft: #1d3046; --hive: #e2675d; --hive-soft: #3d201d; --gold: #e0b44a; --gold-soft: #3a2f14;
+  --built: #5cc489; --built-soft: #183526; --planned: #ad9bd6; --planned-soft: #2b2540;
+  --code-bg: #0f1512; --shadow: 0 1px 2px rgba(0,0,0,.4); --scrim: rgba(0,0,0,.6); color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #121815; --panel: #19211d; --sunk: #0f1411; --ink: #e3e9e4; --muted: #95a39b; --rule: #2c3832;
+  --accent: #6aa8ea; --accent-soft: #1d3046; --hive: #e2675d; --hive-soft: #3d201d; --gold: #e0b44a; --gold-soft: #3a2f14;
+  --built: #5cc489; --built-soft: #183526; --planned: #ad9bd6; --planned-soft: #2b2540;
+  --code-bg: #0f1512; --shadow: 0 1px 2px rgba(0,0,0,.4); --scrim: rgba(0,0,0,.6); color-scheme: dark; }
+
+* { box-sizing: border-box; }
+html, body { min-height: 100%; }
+body { background: var(--bg); color: var(--ink); font: 400 1rem/1.5 var(--body); margin: 0; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 30; background: var(--panel); }
+a { color: var(--accent); text-underline-offset: 2px; }
+button, select, input { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+code, pre, .mono { font-family: var(--mono); font-size: .82em; }
+h1, h2, h3 { text-wrap: balance; }
+.wrap { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+
+/* header */
+header.top { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20; background: var(--panel); border-bottom: 1px solid var(--rule); }
+.top-in { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 20px; padding-block: 12px; }
+.brand { display: flex; flex-direction: column; min-width: 0; margin-right: auto; }
+.brand b { font: 800 1.55rem/1 var(--display); letter-spacing: .03em; text-transform: uppercase; }
+.brand span { font: 600 .7rem/1.4 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+nav.tabs { display: flex; gap: 2px; flex-wrap: wrap; }
+nav.tabs a { text-decoration: none; color: var(--muted); padding: 6px 12px; border-radius: 6px; font-weight: 600; font-size: .95rem; }
+nav.tabs a:hover { color: var(--ink); background: var(--sunk); }
+nav.tabs a[aria-current="page"] { color: var(--accent); background: var(--accent-soft); }
+.seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 7px; overflow: hidden; }
+.seg button { border: 0; background: transparent; padding: 5px 11px; cursor: pointer; font-size: .88rem; font-weight: 600; color: var(--muted); }
+.seg button + button { border-left: 1px solid var(--rule); }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--panel); }
+.engine-pick { display: flex; align-items: center; gap: 8px; font: 600 .7rem var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+
+/* toolbar */
+.toolbar { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; padding-block: 14px 10px; }
+.toolbar input[type=search] { flex: 1 1 220px; min-width: 0; max-width: 360px; padding: 7px 10px; border: 1px solid var(--rule); border-radius: 7px; background: var(--panel); }
+.progress { display: flex; align-items: center; gap: 10px; font-size: .88rem; color: var(--muted); font-variant-numeric: tabular-nums; margin-left: auto; }
+.bar { width: 140px; height: 8px; border-radius: 4px; background: var(--sunk); overflow: hidden; display: flex; }
+.bar i { display: block; height: 100%; }
+.bar .d { background: var(--built); } .bar .w { background: var(--gold); }
+.btn.small { padding: 3px 9px; font-size: .8rem; }
+.move .box { margin-bottom: 12px; }
+.move-h { margin: 0; font: 800 1.15rem var(--display); text-transform: uppercase; letter-spacing: .02em; }
+.move textarea { width: 100%; font: .78rem/1.4 var(--mono); padding: 8px; border: 1px solid var(--rule); border-radius: 7px; background: var(--sunk); color: var(--ink); resize: vertical; }
+.sync { font: 600 .68rem var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+
+/* board */
+.board-frame { overflow-x: auto; padding-bottom: 18px; scroll-snap-type: x proximity; }
+.board { display: flex; gap: 14px; align-items: flex-start; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); width: max-content; }
+.lane { width: 292px; flex: none; background: var(--sunk); border-radius: 10px; padding: 10px; scroll-snap-align: start; display: flex; flex-direction: column; gap: 8px; }
+.lane-h { display: flex; flex-direction: column; gap: 3px; padding: 2px 4px 6px; border-bottom: 2px solid var(--lane-c, var(--accent)); }
+.lane-k { font: 600 .66rem var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--lane-c, var(--accent)); display: flex; justify-content: space-between; gap: 8px; }
+.lane-t { font: 800 1.2rem/1.1 var(--display); letter-spacing: .02em; text-transform: uppercase; }
+.lane-d { font-size: .82rem; color: var(--muted); line-height: 1.35; }
+.lane.slice { --lane-c: var(--accent); }
+.lane.post { --lane-c: var(--planned); }
+.lane.art { --lane-c: var(--gold); }
+.lane.infra { --lane-c: var(--built); }
+
+.card { background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; padding: 9px 10px 9px; box-shadow: var(--shadow); cursor: pointer; text-align: left; width: 100%; display: flex; flex-direction: column; gap: 6px; position: relative; }
+.card:hover { border-color: var(--lane-c, var(--accent)); }
+.card .row { display: flex; align-items: baseline; gap: 8px; }
+.card .n { font: 600 .72rem var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; min-width: 2.2em; }
+.card .t { font-weight: 700; font-size: .96rem; line-height: 1.25; flex: 1; min-width: 0; }
+.card .s { font-size: .82rem; color: var(--muted); line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.card .meta { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.chip { font: 600 .64rem/1 var(--mono); letter-spacing: .05em; text-transform: uppercase; padding: 4px 6px; border-radius: 4px; background: var(--sunk); color: var(--muted); white-space: nowrap; }
+.chip.size { background: var(--accent-soft); color: var(--accent); }
+.chip.pr-P0 { background: var(--hive); color: var(--panel); } .chip.pr-P1 { background: var(--hive-soft); color: var(--hive); }
+.chip.pr-P2 { background: var(--gold-soft); color: var(--gold); } .chip.pr-P3 { background: var(--sunk); color: var(--muted); border: 1px dashed var(--rule); }
+section.prio { border-radius: 8px; padding: 10px 12px; background: var(--sunk); gap: 4px !important; border-left: 4px solid var(--rule); }
+section.prio.pr-P0 { border-color: var(--hive); } section.prio.pr-P1 { border-color: var(--hive); background: var(--hive-soft); } section.prio.pr-P2 { border-color: var(--gold); background: var(--gold-soft); }
+section.prio b { font-weight: 700; } section.prio span { font-size: .88rem; color: var(--muted); }
+.chip.deps { background: transparent; border: 1px solid var(--rule); }
+.st { font: 600 .64rem/1 var(--mono); letter-spacing: .05em; text-transform: uppercase; padding: 4px 6px; border-radius: 4px; margin-left: auto; }
+.st-todo { background: var(--sunk); color: var(--muted); }
+.st-doing { background: var(--gold-soft); color: var(--gold); }
+.st-done { background: var(--built-soft); color: var(--built); }
+.card.is-done .t { text-decoration: line-through; text-decoration-color: var(--muted); }
+.card.is-done { opacity: .78; }
+.card.hl-dep { outline: 2px solid var(--gold); outline-offset: 1px; }
+.card.hl-sel { outline: 2px solid var(--accent); outline-offset: 1px; }
+.card.hl-next { outline: 2px dashed var(--planned); outline-offset: 1px; }
+.board.focus .card:not(.hl-dep):not(.hl-sel):not(.hl-next) { opacity: .35; }
+.legend { display: flex; flex-wrap: wrap; gap: 12px; font-size: .8rem; color: var(--muted); align-items: center; }
+.legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -2px; margin-right: 5px; }
+.empty-lane { font-size: .82rem; color: var(--muted); padding: 6px 4px; }
+
+/* drawer */
+.scrim { position: fixed; inset: 0; background: var(--scrim); z-index: 40; }
+aside.drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(780px, 100%); background: var(--panel); z-index: 41; overflow-y: auto; box-shadow: -4px 0 24px rgba(0,0,0,.18); padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); padding-right: env(safe-area-inset-right, 0px); }
+.dr-h { position: sticky; top: 0; background: var(--panel); border-bottom: 1px solid var(--rule); padding: 14px 20px 12px; display: flex; flex-direction: column; gap: 8px; z-index: 2; }
+.dr-k { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font: 600 .7rem var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.dr-h h2 { margin: 0; font: 800 1.8rem/1.05 var(--display); letter-spacing: .02em; text-transform: uppercase; }
+.dr-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.btn { border: 1px solid var(--rule); background: var(--panel); border-radius: 7px; padding: 5px 11px; cursor: pointer; font-weight: 600; font-size: .88rem; }
+.btn:hover { border-color: var(--accent); color: var(--accent); }
+.btn.x { margin-left: auto; font-size: 1.1rem; line-height: 1; padding: 6px 10px; }
+.dr-b { padding: 16px 20px 40px; display: flex; flex-direction: column; gap: 22px; }
+.dr-b section { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.dr-b h3 { margin: 0; font: 600 .72rem var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--rule); padding-bottom: 5px; }
+.dr-b p { margin: 0; max-width: 68ch; }
+.lead { font-size: 1.08rem; }
+.dr-b ul { margin: 0; padding-left: 1.2em; display: flex; flex-direction: column; gap: 4px; }
+.scope { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.scope > div { background: var(--sunk); border-radius: 8px; padding: 10px 12px; min-width: 0; }
+.scope b { display: block; font: 600 .68rem var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
+.tasks { display: grid; gap: 10px; }
+.tasks .layer { border-left: 3px solid var(--rule); padding-left: 12px; }
+.tasks .layer.data { border-color: var(--built); } .tasks .layer.backend { border-color: var(--accent); } .tasks .layer.ui { border-color: var(--gold); }
+.tasks .layer > b { font: 600 .7rem var(--mono); letter-spacing: .08em; text-transform: uppercase; }
+.tasks .layer.data > b { color: var(--built); } .tasks .layer.backend > b { color: var(--accent); } .tasks .layer.ui > b { color: var(--gold); }
+.tasks label { display: flex; gap: 8px; align-items: flex-start; font-size: .94rem; padding: 2px 0; cursor: pointer; }
+.tasks input { margin-top: 4px; accent-color: var(--built); }
+pre.code { background: var(--code-bg); border-radius: 8px; padding: 12px 14px; overflow-x: auto; margin: 0; line-height: 1.45; }
+.links { display: flex; flex-wrap: wrap; gap: 6px; }
+.linkchip { border: 1px solid var(--rule); background: var(--panel); border-radius: 999px; padding: 3px 10px; font-size: .86rem; cursor: pointer; display: inline-flex; gap: 6px; align-items: baseline; }
+.linkchip:hover { border-color: var(--accent); color: var(--accent); }
+.linkchip .mono { color: var(--muted); }
+.conn { border: 1px solid var(--rule); border-radius: 8px; overflow: hidden; }
+.conn + .conn { margin-top: 8px; }
+.conn-h { padding: 8px 12px; background: var(--sunk); display: flex; flex-direction: column; gap: 2px; }
+.conn-h button { all: unset; cursor: pointer; font-weight: 700; color: var(--accent); }
+.conn-h button:focus-visible { outline: 2px solid var(--accent); }
+.conn-b { padding: 8px 12px; display: grid; gap: 6px; font-size: .92rem; }
+.conn-b div { min-width: 0; }
+.tag { font: 600 .64rem var(--mono); letter-spacing: .08em; text-transform: uppercase; padding: 2px 6px; border-radius: 4px; margin-right: 6px; }
+.tag.g { background: var(--accent-soft); color: var(--accent); }
+.tag.u { background: var(--planned-soft); color: var(--planned); }
+.tag.s { background: var(--built-soft); color: var(--built); }
+.eng { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
+.eng > div { border: 1px solid var(--rule); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.eng h4 { margin: 0; font: 800 1.15rem var(--display); text-transform: uppercase; letter-spacing: .03em; }
+.eng .g h4 { color: var(--accent); } .eng .u h4 { color: var(--planned); }
+.apis { display: flex; flex-wrap: wrap; gap: 4px; }
+.apis code { background: var(--sunk); padding: 2px 6px; border-radius: 4px; }
+.doclist { margin: 0; padding-left: 1.1em; font-size: .92rem; }
+.tips li::marker { color: var(--built); }
+.pits li::marker { color: var(--hive); }
+body.eng-godot .only-unity, body.eng-unity .only-godot { display: none !important; }
+
+/* pages */
+.page { padding-block: 22px 60px; display: flex; flex-direction: column; gap: 28px; max-width: 1180px; }
+.page h2 { margin: 0; font: 800 2rem/1.05 var(--display); text-transform: uppercase; letter-spacing: .02em; }
+.page h3 { margin: 0 0 6px; font: 800 1.3rem/1.1 var(--display); text-transform: uppercase; letter-spacing: .02em; }
+.page p { margin: 0; max-width: 72ch; }
+.intro { display: flex; flex-direction: column; gap: 10px; }
+.kicker { font: 600 .72rem var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; counter-reset: s; }
+.steps li { background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; padding: 10px 12px; counter-increment: s; display: flex; flex-direction: column; gap: 4px; }
+.steps li::before { content: counter(s, decimal-leading-zero); font: 600 .72rem var(--mono); color: var(--accent); }
+.steps li b { font-weight: 700; }
+.steps li span { font-size: .88rem; color: var(--muted); }
+.steps .links { margin-top: 2px; }
+table.t { border-collapse: collapse; width: 100%; font-size: .93rem; }
+table.t th, table.t td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid var(--rule); }
+table.t th { font: 600 .7rem var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); background: var(--sunk); }
+table.t td:first-child { font-weight: 700; white-space: nowrap; }
+.tscroll { overflow-x: auto; border: 1px solid var(--rule); border-radius: 8px; background: var(--panel); }
+.layers { display: grid; gap: 8px; }
+.layers > div { display: grid; grid-template-columns: 210px 1fr; gap: 14px; background: var(--panel); border: 1px solid var(--rule); border-left: 4px solid var(--lc, var(--accent)); border-radius: 8px; padding: 10px 14px; }
+.layers > div > div { min-width: 0; }
+.layers b.name { font: 800 1.1rem var(--display); text-transform: uppercase; letter-spacing: .02em; }
+.layers small { display: block; color: var(--muted); font-size: .86rem; margin-top: 4px; }
+@media (max-width: 640px) { .layers > div { grid-template-columns: 1fr; gap: 4px; } }
+.flow { display: flex; flex-wrap: wrap; gap: 6px; align-items: stretch; }
+.flow .node { background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; padding: 8px 10px; font-size: .88rem; max-width: 180px; }
+.flow .node b { display: block; font-size: .92rem; }
+.flow .arrow { align-self: center; color: var(--muted); font-family: var(--mono); }
+.glossary { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; }
+.glossary div { background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; padding: 10px 12px; }
+.glossary dt { font-weight: 700; }
+.glossary dd { margin: 4px 0 0; font-size: .9rem; color: var(--muted); }
+.cols2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 18px; }
+.cols2 > * { min-width: 0; }
+.box { background: var(--panel); border: 1px solid var(--rule); border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
+.note { font-size: .88rem; color: var(--muted); }
+.callout { background: var(--accent-soft); border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 6px; }
+.callout b { font: 800 1.1rem var(--display); text-transform: uppercase; letter-spacing: .02em; color: var(--accent); }
+/* art school */
+.seg.wide { flex-wrap: wrap; }
+.seg button[aria-selected="true"] { background: var(--accent); color: var(--panel); }
+.trackpane { display: flex; flex-direction: column; gap: 14px; margin-top: 12px; }
+.track-h { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.btn.primary { background: var(--accent); color: var(--panel); border-color: var(--accent); }
+.btn.primary:hover { color: var(--panel); filter: brightness(1.08); }
+h4.bx { margin: 4px 0 0; font: 600 .7rem var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+dl.spec { margin: 0; display: grid; gap: 0; }
+dl.spec div { display: grid; grid-template-columns: minmax(110px, 38%) 1fr; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--rule); }
+dl.spec dt { font-weight: 700; font-size: .9rem; } dl.spec dd { margin: 0; font-size: .9rem; min-width: 0; }
+.practice { display: flex; flex-direction: column; gap: 4px; }
+.practice label, .toggles label, .nums label { display: flex; gap: 8px; align-items: flex-start; font-size: .92rem; cursor: pointer; }
+.practice input { margin-top: 4px; accent-color: var(--built); }
+.lessons { display: flex; flex-direction: column; gap: 6px; }
+.lessons details { background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; }
+.lessons summary { cursor: pointer; padding: 9px 12px; font-weight: 700; display: flex; gap: 10px; align-items: baseline; }
+.lessons summary .mono { color: var(--accent); }
+.lesson-b { padding: 0 14px 12px 34px; display: flex; flex-direction: column; gap: 8px; }
+.lesson-b ol { margin: 0; padding-left: 1.1em; display: flex; flex-direction: column; gap: 3px; }
+.tipline { font-size: .9rem; background: var(--built-soft); color: var(--ink); border-radius: 6px; padding: 6px 10px; }
+.tool { background: var(--panel); border: 1px solid var(--rule); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+.tool-h { display: flex; flex-direction: column; gap: 4px; }
+.studio { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 20px; }
+@media (max-width: 860px) { .studio { grid-template-columns: minmax(0, 1fr); } }
+.studio-l, .studio-r { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.ctl { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: .9rem; }
+.ctl label { font-weight: 600; }
+.ctl select, .nums input, .ctl input[type=file] { padding: 5px 8px; border: 1px solid var(--rule); border-radius: 6px; background: var(--panel); max-width: 100%; }
+.wrapctl > * { flex: 0 1 auto; }
+.toggles { display: flex; flex-wrap: wrap; gap: 6px 16px; }
+.palette { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.palette .sw { width: 26px; height: 26px; border-radius: 5px; border: 2px solid var(--rule); cursor: pointer; padding: 0; }
+.palette .sw[aria-pressed="true"] { border-color: var(--ink); box-shadow: 0 0 0 2px var(--panel) inset; }
+.palette input[type=color] { width: 34px; height: 28px; border: 1px solid var(--rule); border-radius: 5px; background: var(--panel); padding: 1px; }
+.cv-wrap { overflow-x: auto; max-width: 100%; }
+.studio-cv { display: block; touch-action: none; cursor: crosshair; border: 1px solid var(--rule); border-radius: 4px; image-rendering: pixelated; }
+.frames { display: flex; gap: 6px; flex-wrap: wrap; }
+.fr { border: 2px solid var(--rule); background: var(--sunk); border-radius: 6px; padding: 3px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 2px; font: 600 .65rem var(--mono); color: var(--muted); }
+.fr[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+.fr .thumb { width: 40px; height: 40px; object-fit: contain; image-rendering: pixelated; }
+.row-btns { display: flex; gap: 6px; flex-wrap: wrap; }
+canvas.pv { display: block; max-width: 100%; border-radius: 8px; border: 1px solid var(--rule); image-rendering: pixelated; }
+.sheet { max-width: 100%; image-rendering: pixelated; border: 1px solid var(--rule); border-radius: 6px; background: var(--sunk); }
+.nums { display: flex; flex-wrap: wrap; gap: 8px 14px; }
+.nums label { flex-direction: column; gap: 2px; font-size: .8rem; color: var(--muted); }
+.nums input { width: 92px; }
+.sheetwrap { padding: 6px; max-height: 340px; }
+.sheetcv { border: 0; }
+.olist { margin: 0; padding-left: 1.3em; display: flex; flex-direction: column; gap: 5px; }
+pre.mermaid { background: var(--panel); border: 1px solid var(--rule); border-radius: 10px; padding: 12px; overflow-x: auto; margin: 0; }
+@media (prefers-reduced-motion: no-preference) { aside.drawer { animation: slide .18s ease-out; } @keyframes slide { from { transform: translateX(24px); opacity: .6; } } }
+@media (max-width: 560px) { header.top { position: static; } .progress { margin-left: 0; width: 100%; } .lane { width: 82vw; max-width: 300px; } .dr-h h2 { font-size: 1.5rem; } }
+</style>
+
+<header class="top">
+  <div class="top-in wrap">
+    <div class="brand"><b>Broken State · Rebuild Board</b><span>From the JS prototype to Godot or Unity</span></div>
+    <nav class="tabs" aria-label="Views">
+      <a href="#board" data-view="board">Board</a>
+      <a href="#slice" data-view="slice">Vertical slice</a>
+      <a href="#stack" data-view="stack">Infrastructure</a>
+      <a href="#learn" data-view="learn">Learn</a>
+      <a href="#art" data-view="art">Art school</a>
+    </nav>
+    <div class="engine-pick">Engine
+      <div class="seg" role="group" aria-label="Engine notes to show">
+        <button type="button" data-eng="both" aria-pressed="true">Both</button>
+        <button type="button" data-eng="godot" aria-pressed="false">Godot</button>
+        <button type="button" data-eng="unity" aria-pressed="false">Unity</button>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div id="view-board" data-viewpane="board">
+    <div class="toolbar wrap">
+      <input type="search" id="q" placeholder="Search cards: hex, ammo, save…" aria-label="Search cards">
+      <div class="seg" role="group" aria-label="Phase filter" id="phase">
+        <button type="button" data-ph="all" aria-pressed="true">All</button>
+        <button type="button" data-ph="slice" aria-pressed="false">Vertical slice</button>
+        <button type="button" data-ph="post" aria-pressed="false">After the slice</button>
+      </div>
+      <div class="seg" role="group" aria-label="Status filter" id="stf">
+        <button type="button" data-st="any" aria-pressed="true">Any</button>
+        <button type="button" data-st="todo" aria-pressed="false">To do</button>
+        <button type="button" data-st="doing" aria-pressed="false">Doing</button>
+        <button type="button" data-st="done" aria-pressed="false">Done</button>
+      </div>
+      <div class="seg" role="group" aria-label="Priority filter" id="prf">
+        <button type="button" data-pr="any" aria-pressed="true">Any priority</button>
+        <button type="button" data-pr="P0" aria-pressed="false" title="Must have: the game does not work without it">P0</button>
+        <button type="button" data-pr="P1" aria-pressed="false" title="High: core fun and utility">P1</button>
+        <button type="button" data-pr="P2" aria-pressed="false" title="Medium: good depth for its cost">P2</button>
+        <button type="button" data-pr="P3" aria-pressed="false" title="Low: much work for little extra fun; do last or cut">P3</button>
+      </div>
+      <div class="progress"><span id="prog-txt">0 of 0 done</span><span class="bar" aria-hidden="true"><i class="d" id="prog-d"></i><i class="w" id="prog-w"></i></span><span class="sync" id="sync">Saved on this device</span><button type="button" class="btn small" id="move-btn" aria-expanded="false" aria-controls="move">Move progress</button></div>
+    </div>
+    <div class="move wrap" id="move" hidden>
+      <div class="box">
+        <h3 class="move-h">Move your progress</h3>
+        <p class="note">Progress is kept where you use the board: in the Claude page, and separately in the installed app on each device. To carry it over, copy the code here and load it on the other side. Loading replaces the progress there.</p>
+        <textarea id="move-text" rows="4" spellcheck="false" aria-label="Progress code"></textarea>
+        <div class="row-btns"><button type="button" class="btn primary" id="move-copy">Copy this board's progress</button><button type="button" class="btn" id="move-load">Load the pasted progress</button><span class="note" id="move-note" role="status"></span></div>
+      </div>
+    </div>
+    <div class="legend wrap" style="padding-bottom:10px">
+      <span>Numbers are the build order; P0–P3 is the priority (P0 must have, P3 much work for little fun). Lanes run left to right. Open a card for its tasks and engine notes.</span>
+      <span><i style="background:var(--gold)"></i>needs first</span><span><i style="background:var(--planned)"></i>unlocks next</span>
+    </div>
+    <div class="board-frame"><div class="board" id="board"></div></div>
+  </div>
+
+  <div id="view-slice" data-viewpane="slice" hidden><div class="page wrap" id="slice-page"></div></div>
+  <div id="view-stack" data-viewpane="stack" hidden><div class="page wrap" id="stack-page"></div></div>
+  <div id="view-learn" data-viewpane="learn" hidden><div class="page wrap" id="learn-page"></div></div>
+  <div id="view-art" data-viewpane="art" hidden><div class="page wrap" id="art-page"></div></div>
+</main>
+
+<div class="scrim" id="scrim" hidden></div>
+<aside class="drawer" id="drawer" hidden aria-modal="true" role="dialog" aria-labelledby="dr-title"></aside>
+
+<script>
+const DATA = /*__DATA__*/null;
+</script>
+<script>/*__ART__*/</script>
+<script>
+(function () {
+  const { lanes, cards, guide } = DATA;
+  const byId = Object.fromEntries(cards.map(c => [c.id, c]));
+  const unlocks = {};
+  for (const c of cards) for (const d of (c.dependsOn || [])) (unlocks[d] = unlocks[d] || []).push(c.id);
+  const $ = (s, r = document) => r.querySelector(s);
+  const el = (tag, attrs = {}, ...kids) => {
+    const n = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs)) {
+      if (v == null || v === false) continue;
+      if (k === "class") n.className = v; else if (k === "text") n.textContent = v;
+      else if (k.startsWith("on")) n.addEventListener(k.slice(2), v); else n.setAttribute(k, v === true ? "" : v);
+    }
+    for (const k of kids.flat()) if (k != null && k !== false) n.append(k.nodeType ? k : document.createTextNode(String(k)));
+    return n;
+  };
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+    set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+  };
+
+  // ---- status: the artifact's database when it is there, this browser otherwise ----
+  let status = store.get("bs-status", {});   // id -> todo|doing|done
+  let ticks = store.get("bs-ticks", {});     // "id|layer|i" -> true
+  let db = null, canWrite = true;
+  const safe = id => id.replace(/[^A-Za-z0-9_-]/g, "_");
+  const unsafe = {}; for (const c of cards) unsafe[safe(c.id)] = c.id;
+  function setSync(t) { $("#sync").textContent = t; }
+  async function connect() {
+    try {
+      if (!window.claude || !window.claude.use) return;
+      db = await window.claude.use("db");
+      if (!db) return;
+      const user = await window.claude.use("user");
+      if (user) { const w = await user.can("data.write"); if (w === false) canWrite = false; }
+      setSync(canWrite ? "Saved to this board" : "Read only");
+      db.collection("progress").onSnapshot(snap => {
+        const s = {}, t = {};
+        snap.forEach(d => { const id = unsafe[d.id]; if (!id) return; const v = d.data() || {}; if (v.status) s[id] = v.status; for (const k of (v.ticks || [])) t[id + "|" + k] = true; });
+        status = s; ticks = t; renderBoard(); if (openId) renderDrawer(openId);
+      }, err => { setSync("Saved on this device"); db = null; });
+    } catch (e) { db = null; }
+  }
+  const pending = {};
+  function persist(id) {
+    store.set("bs-status", status); store.set("bs-ticks", ticks);
+    if (!db || !canWrite) return;
+    clearTimeout(pending[id]);
+    pending[id] = setTimeout(() => {
+      const tk = Object.keys(ticks).filter(k => k.startsWith(id + "|") && ticks[k]).map(k => k.slice(id.length + 1));
+      db.collection("progress").doc(safe(id)).set({ status: status[id] || "todo", ticks: tk })
+        .catch(e => { if (e && e.code === "invalid_argument") { canWrite = false; setSync("Read only"); } });
+    }, 400);
+  }
+  const ST = { todo: "To do", doing: "Doing", done: "Done" };
+  // ---- moving progress between the Claude page and the installed app ----
+  const moveBox = $("#move"), moveText = $("#move-text"), moveNote = $("#move-note");
+  const progressCode = () => JSON.stringify({ board: "broken-state-rebuild", v: 1, status, ticks: Object.keys(ticks).filter(k => ticks[k]) });
+  $("#move-btn").addEventListener("click", e => {
+    moveBox.hidden = !moveBox.hidden; e.currentTarget.setAttribute("aria-expanded", String(!moveBox.hidden));
+    if (!moveBox.hidden) { moveText.value = progressCode(); moveNote.textContent = ""; }
+  });
+  $("#move-copy").addEventListener("click", () => {
+    moveText.value = progressCode();
+    const done = () => moveNote.textContent = "Copied. Paste it into the board on your other device.";
+    try { navigator.clipboard.writeText(moveText.value).then(done, () => { moveText.select(); moveNote.textContent = "Selected: copy it with your keyboard or the share menu."; }); }
+    catch (e) { moveText.select(); moveNote.textContent = "Selected: copy it with your keyboard or the share menu."; }
+  });
+  $("#move-load").addEventListener("click", () => {
+    let p; try { p = JSON.parse(moveText.value.trim()); } catch (e) { p = null; }
+    if (!p || p.board !== "broken-state-rebuild" || typeof p.status !== "object") { moveNote.textContent = "That isn't a progress code from this board. Copy it again with the button on the other side."; return; }
+    if (db && !canWrite) { moveNote.textContent = "This board is read only for you, so progress can't be loaded here."; return; }
+    const before = new Set([...Object.keys(status), ...Object.keys(ticks).map(k => k.split("|")[0])]);
+    status = {}; for (const [id, s] of Object.entries(p.status)) if (byId[id] && ST[s]) status[id] = s;
+    ticks = {}; for (const k of p.ticks || []) if (byId[k.split("|")[0]]) ticks[k] = true;
+    const touched = new Set([...before, ...Object.keys(status), ...Object.keys(ticks).map(k => k.split("|")[0])]);
+    touched.forEach(id => persist(id));
+    renderBoard();
+    moveNote.textContent = "Loaded: " + Object.values(status).filter(s => s === "done").length + " done, " + Object.values(status).filter(s => s === "doing").length + " in progress.";
+  });
+  const PR = { P0: "P0 · Must have: the game does not work without it", P1: "P1 · High: core fun and utility", P2: "P2 · Medium: good depth for its cost", P3: "P3 · Low: much work for little extra fun; do last or cut" };
+  const stOf = id => status[id] || "todo";
+
+  // ---- engine toggle ----
+  let eng = store.get("bs-eng", "both");
+  function applyEng() {
+    document.body.classList.toggle("eng-godot", eng === "godot");
+    document.body.classList.toggle("eng-unity", eng === "unity");
+    document.querySelectorAll("[data-eng]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.eng === eng)));
+  }
+  document.querySelectorAll("[data-eng]").forEach(b => b.addEventListener("click", () => { eng = b.dataset.eng; store.set("bs-eng", eng); applyEng(); }));
+
+  // ---- board ----
+  let phase = "all", stFilter = "any", prFilter = "any", q = "", focusId = null;
+  function matches(c) {
+    if (phase !== "all" && c.phase !== phase) return false;
+    if (stFilter !== "any" && stOf(c.id) !== stFilter) return false;
+    if (prFilter !== "any" && c.priority !== prFilter) return false;
+    if (!q) return true;
+    const hay = (c.id + " " + c.title + " " + (c.summary || "") + " " + (c.subsystems || []).join(" ")).toLowerCase();
+    return q.split(/\s+/).every(w => hay.includes(w));
+  }
+  function renderBoard() {
+    const b = $("#board"); b.textContent = "";
+    const depSet = new Set(focusId ? (byId[focusId].dependsOn || []) : []);
+    const nextSet = new Set(focusId ? (unlocks[focusId] || []) : []);
+    b.classList.toggle("focus", !!focusId);
+    for (const L of lanes) {
+      const list = cards.filter(c => c.lane === L.key);
+      const shown = list.filter(matches);
+      const done = list.filter(c => stOf(c.id) === "done").length;
+      const lane = el("section", { class: "lane " + L.kind, "aria-label": L.title },
+        el("div", { class: "lane-h" },
+          el("div", { class: "lane-k" }, el("span", { text: L.tag }), el("span", { text: done + "/" + list.length })),
+          el("div", { class: "lane-t", text: L.title }),
+          el("div", { class: "lane-d", text: L.desc })));
+      if (!shown.length) lane.append(el("div", { class: "empty-lane", text: "No cards match the filters." }));
+      for (const c of shown) {
+        const s = stOf(c.id);
+        const nd = (c.dependsOn || []).length, nu = (unlocks[c.id] || []).length;
+        const cls = ["card", s === "done" ? "is-done" : "", c.id === focusId ? "hl-sel" : "", depSet.has(c.id) ? "hl-dep" : "", nextSet.has(c.id) ? "hl-next" : ""].join(" ");
+        lane.append(el("button", { type: "button", class: cls, onclick: () => openCard(c.id), "aria-label": c.order + ". " + c.title + ", " + ST[s] },
+          el("div", { class: "row" }, el("span", { class: "n", text: String(c.order).padStart(3, "0") }), el("span", { class: "t", text: c.title })),
+          el("div", { class: "s", text: c.summary || "" }),
+          el("div", { class: "meta" },
+            c.priority ? el("span", { class: "chip pr pr-" + c.priority, title: PR[c.priority], text: c.priority }) : null,
+            c.size ? el("span", { class: "chip size", title: "Size: S a weekend, M 1–2 weeks, L 3–6 weeks, XL 2+ months", text: c.size }) : null,
+            el("span", { class: "chip", text: c.id }),
+            nd ? el("span", { class: "chip deps", title: "Needs " + nd + " cards first, unlocks " + nu, text: "↑" + nd + " ↓" + nu }) : (nu ? el("span", { class: "chip deps", text: "↓" + nu }) : null),
+            el("span", { class: "st st-" + s, text: ST[s] }))));
+      }
+      b.append(lane);
+    }
+    const total = cards.length, d = cards.filter(c => stOf(c.id) === "done").length, w = cards.filter(c => stOf(c.id) === "doing").length;
+    $("#prog-txt").textContent = d + " of " + total + " done" + (w ? ", " + w + " in progress" : "");
+    $("#prog-d").style.width = (100 * d / total) + "%"; $("#prog-w").style.width = (100 * w / total) + "%";
+  }
+  $("#q").addEventListener("input", e => { q = e.target.value.trim().toLowerCase(); renderBoard(); });
+  for (const [grp, key, set] of [["#phase", "ph", v => phase = v], ["#stf", "st", v => stFilter = v], ["#prf", "pr", v => prFilter = v]]) {
+    $(grp).querySelectorAll("button").forEach(btn => btn.addEventListener("click", () => {
+      set(btn.dataset[key]); $(grp).querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", String(x === btn))); renderBoard();
+    }));
+  }
+
+  // ---- drawer ----
+  let openId = null, lastFocus = null;
+  function link(id) {
+    const c = byId[id]; if (!c) return el("span", { class: "linkchip", text: id });
+    return el("button", { type: "button", class: "linkchip", onclick: () => openCard(id) }, el("span", { class: "mono", text: String(c.order).padStart(3, "0") }), c.title,
+      el("span", { class: "st st-" + stOf(id), text: ST[stOf(id)] }));
+  }
+  function docs(list) {
+    if (!list || !list.length) return null;
+    return el("ul", { class: "doclist" }, list.map(d => el("li", {}, el("a", { href: d.u, target: "_blank", rel: "noopener", text: d.t }))));
+  }
+  function bullets(list, cls) { return list && list.length ? el("ul", { class: cls || "" }, list.map(x => el("li", { text: x }))) : null; }
+  function sec(title, ...kids) { const k = kids.flat().filter(Boolean); return k.length ? el("section", {}, el("h3", { text: title }), ...k) : null; }
+  function renderDrawer(id) {
+    const c = byId[id], L = lanes.find(l => l.key === c.lane), dr = $("#drawer");
+    dr.textContent = "";
+    const s = stOf(id);
+    const stSel = el("div", { class: "seg", role: "group", "aria-label": "Card status" },
+      ["todo", "doing", "done"].map(k => el("button", { type: "button", "aria-pressed": String(s === k), disabled: !canWrite && db ? true : null,
+        onclick: () => { status[id] = k; persist(id); renderBoard(); renderDrawer(id); } , text: ST[k] })));
+    dr.append(el("div", { class: "dr-h" },
+      el("div", { class: "dr-k" }, el("span", { text: "#" + String(c.order).padStart(3, "0") }), el("span", { text: "·" }), el("span", { text: L.tag + " " + L.title }), el("span", { text: "·" }), el("span", { text: c.id }), c.priority ? el("span", { class: "chip pr pr-" + c.priority, text: c.priority }) : null, c.size ? el("span", { class: "chip size", text: "Size " + c.size }) : null),
+      el("h2", { id: "dr-title", text: c.title }),
+      el("div", { class: "dr-actions" }, stSel,
+        el("button", { type: "button", class: "btn", onclick: () => { focusId = focusId === id ? null : id; closeDrawer(); renderBoard(); }, text: focusId === id ? "Clear highlight" : "Highlight on board" }),
+        el("button", { type: "button", class: "btn x", onclick: closeDrawer, "aria-label": "Close", text: "✕" }))));
+    const tasks = c.tasks || {};
+    const layerBox = (key, label) => (tasks[key] && tasks[key].length) ? el("div", { class: "layer " + key }, el("b", { text: label }),
+      tasks[key].map((t, i) => { const tk = id + "|" + key + i; return el("label", {}, el("input", { type: "checkbox", id: "tk-" + safe(tk), checked: ticks[tk] ? true : null, disabled: !canWrite && db ? true : null,
+        onchange: e => { if (e.target.checked) ticks[tk] = true; else delete ticks[tk]; if (e.target.checked && status[id] !== "done") status[id] = "doing"; persist(id); renderBoard(); } }), el("span", { text: t })); })) : null;
+    const g = c.godot || {}, u = c.unity || {};
+    const engBox = (o, cls, name) => el("div", { class: cls + (cls === "g" ? " only-godot" : " only-unity") }, el("h4", { text: name }), o.approach ? el("p", { text: o.approach }) : null,
+      o.keyApis && o.keyApis.length ? el("div", { class: "apis" }, o.keyApis.map(a => el("code", { text: a }))) : null, docs(o.docs));
+    const body = el("div", { class: "dr-b" },
+      el("section", {}, el("p", { class: "lead", text: c.summary || "" }), c.whyHere ? el("p", { class: "note", text: "Why here: " + c.whyHere }) : null),
+      c.priority ? el("section", { class: "prio pr-" + c.priority }, el("b", { text: PR[c.priority] }),
+        el("span", { text: [c.value ? "Fun and utility: " + c.value : "", c.effort ? "Effort: " + c.effort : ""].filter(Boolean).join(" · ") }), c.priorityWhy ? el("p", { text: c.priorityWhy }) : null) : null,
+      el("section", {}, el("div", { class: "scope" },
+        el("div", {}, el("b", { text: c.phase === "slice" ? "In the vertical slice" : "First version to build" }), el("span", { text: c.sliceScope || "" })),
+        el("div", {}, el("b", { text: "The full game (prototype)" }), el("span", { text: c.fullScope || "" })))),
+      sec("Subsystems", c.subsystems && c.subsystems.length ? el("div", { class: "apis" }, c.subsystems.map(x => el("code", { text: x }))) : null),
+      sec("Tasks · data first, then backend, then UI", el("div", { class: "tasks" }, layerBox("data", "1 · Data (database)"), layerBox("backend", "2 · Backend (sim)"), layerBox("ui", "3 · UI (placeholder)"))),
+      sec("Data model sketch (C#, shared by both engines)", c.dataModel ? el("pre", { class: "code" }, el("code", { text: c.dataModel })) : null),
+      sec("Needs first", (c.dependsOn || []).length ? el("div", { class: "links" }, c.dependsOn.map(link)) : el("p", { class: "note", text: "Nothing: this can start right away." })),
+      sec("Unlocks", (unlocks[id] || []).length ? el("div", { class: "links" }, unlocks[id].map(link)) : null),
+      sec("How it connects", (c.connections || []).map(cn => el("div", { class: "conn" },
+        el("div", { class: "conn-h" }, el("button", { type: "button", onclick: () => byId[cn.to] && openCard(cn.to), text: "→ " + (byId[cn.to] ? byId[cn.to].title : cn.to) }), el("span", { class: "note", text: cn.why })),
+        el("div", { class: "conn-b" },
+          cn.how ? el("div", {}, el("span", { class: "tag s", text: "Sim" }), cn.how) : null,
+          cn.godot ? el("div", { class: "only-godot" }, el("span", { class: "tag g", text: "Godot" }), cn.godot) : null,
+          cn.unity ? el("div", { class: "only-unity" }, el("span", { class: "tag u", text: "Unity" }), cn.unity) : null)))),
+      sec("Building it in the engine", el("div", { class: "eng" }, engBox(g, "g", "Godot 4 · .NET"), engBox(u, "u", "Unity 6"))),
+      sec("Newcomer notes", bullets(c.newb, "tips")),
+      sec("Pitfalls", bullets(c.pitfalls, "pits")),
+      sec("How to know it works", c.test ? el("p", { text: c.test }) : null),
+      sec("Further learning", docs(c.learn)),
+      sec("In the prototype", (c.protoRefs || []).length ? el("div", { class: "apis" }, c.protoRefs.map(p => el("code", { text: p }))) : null));
+    dr.append(body);
+  }
+  function openCard(id) {
+    if (!byId[id]) return;
+    if (!openId) lastFocus = document.activeElement;
+    openId = id; renderDrawer(id);
+    $("#drawer").hidden = false; $("#scrim").hidden = false; $("#drawer").scrollTop = 0;
+    const x = $("#drawer .btn.x"); if (x) x.focus();
+  }
+  function closeDrawer() { openId = null; $("#drawer").hidden = true; $("#scrim").hidden = true; if (lastFocus && lastFocus.focus) lastFocus.focus(); }
+  $("#scrim").addEventListener("click", closeDrawer);
+  document.addEventListener("keydown", e => { if (e.key === "Escape" && openId) closeDrawer(); });
+
+  // ---- slice page ----
+  function renderSlice() {
+    const p = $("#slice-page"); const sl = cards.filter(c => c.phase === "slice");
+    const loop = [
+      ["New run", "A seed builds a small hex map: terrain, a town, POIs, the dead on each tile.", ["core.mapgen", "data.rng"]],
+      ["The hub", "Four survivors at one base. Hunger, thirst, sleep and mood tick every hour.", ["surv.model", "surv.needs", "base.core"]],
+      ["Run the base", "Assign jobs, queue a building, watch food, water and wood rise and fall each day.", ["base.work", "base.buildings", "econ.daily"]],
+      ["Form a team", "Pick people and supplies. Plot a route across the State Map.", ["travel.parties", "travel.pathing"]],
+      ["On the road", "Supplies drain by the hour, fog lifts, a travel card asks for a decision.", ["travel.fog", "travel.events", "core.cards"]],
+      ["Pick a POI", "A house or shop with its own loot pool and the dead inside.", ["travel.pois", "dead.population"]],
+      ["The raid", "Turn-based battle in one building: move, shoot, melee, reload, search containers.", ["combat.map", "combat.turns", "combat.actions", "combat.los"]],
+      ["The dead react", "They hear shots, path toward noise and attack in melee.", ["dead.types", "combat.ai", "combat.pathing"]],
+      ["Get out", "Extract by an edge, or retreat and auto-resolve. Wounds, deaths and loot go back to the campaign.", ["combat.resolve", "gear.loot"]],
+      ["Home again", "Loot lands in the stockpile, the wounded heal, the week goes on.", ["surv.health", "base.core"]],
+      ["Save and load", "Quit mid-week, load, and the world is exactly as it was.", ["data.save"]]
+    ];
+    p.append(...[
+      el("div", { class: "intro" }, el("div", { class: "kicker", text: "Milestone 1 · " + sl.length + " cards · lanes L0–L4" }), el("h2", { text: "One week in Calder" }),
+        el("p", { text: "The vertical slice is the smallest build that plays the whole loop of Broken State end to end: hub, State Map, raid, home. Each system is in at its thinnest. It proves the architecture and the fun before content is added, and every later card plugs into what it builds." })),
+      el("section", {}, el("h3", { text: "The loop the slice must play" }),
+        el("ol", { class: "steps" }, loop.map(([t, d, ids]) => el("li", {}, el("b", { text: t }), el("span", { text: d }), el("div", { class: "links" }, ids.map(link)))))),
+      el("section", { class: "cols2" },
+        el("div", { class: "box" }, el("h3", { text: "In the slice" }), bullets(["One small map (about 40 × 30 hexes), one season, simple daily weather", "Four survivors, about six skills, three needs plus mood", "One hub base, four or five buildings, simple roles instead of the priority grid", "A few guns and melee weapons, ammo as a count", "One simple building template for raids; walkers and runners", "Event cards with pause, 1×, 2× and 5×; save and load", "Placeholder art only: shapes, labels and CC0 packs"])),
+        el("div", { class: "box" }, el("h3", { text: "Left for later" }), bullets(["Full world sizes, rivers, roads, cities (M3)", "Morale, bonds, families, disease, farming, crafting, power (M2)", "Procedural interiors, stealth, physical rounds, armour, gun builder (M4)", "Hordes, hives, sieges and walls (M5)", "AI groups, diplomacy, trade, radio (M6)", "Game modes, codex, balance tools (M7)", "Human-made sprites, UI skin, music and SFX (M8)", "Controller support, far future; no phone or touch build"]))),
+      el("section", {}, el("h3", { text: "How the layers talk" }),
+        el("div", { class: "flow" },
+          ...[["content/*.json", "The database: items, terrain, buildings, the dead"], ["ContentDb", "Loads and validates content into C# records"], ["World state", "Survivors, tiles, bases, parties by ID"], ["Systems on the clock", "Needs, economy, travel, AI tick each hour"], ["Event queue", "SurvivorDied, PartyArrived, CardRaised"], ["SimHost bridge", "Godot autoload or Unity MonoBehaviour"], ["UI", "Reads state, draws placeholders, sends commands"]]
+            .flatMap(([t, d], i) => [i ? el("span", { class: "arrow", text: "→" }) : null, el("div", { class: "node" }, el("b", { text: t }), d)]).filter(Boolean)),
+        el("p", { class: "note", text: "The other way round, the UI never edits state: it sends a command (SendParty, QueueBuild, MoveUnit), the sim checks it and applies it on its next step." })),
+      el("section", {}, el("h3", { text: "Slice cards in build order" }),
+        el("div", { class: "links" }, sl.map(c => link(c.id))))
+    ].filter(Boolean));
+  }
+
+  // ---- stack page ----
+  function table(cols, rows) {
+    return el("div", { class: "tscroll" }, el("table", { class: "t" }, el("thead", {}, el("tr", {}, cols.map(c => el("th", { text: c.h, class: c.cls || null })))),
+      el("tbody", {}, rows.map(r => el("tr", {}, cols.map(c => el("td", { text: r[c.k] || "", class: c.cls || null })))))));
+  }
+  function renderStack() {
+    const p = $("#stack-page"); const G = guide || {};
+    const lc = ["var(--built)", "var(--accent)", "var(--planned)", "var(--gold)", "var(--hive)"];
+    p.append(...[
+      el("div", { class: "intro" }, el("div", { class: "kicker", text: "Infrastructure" }), el("h2", { text: "The setup for this project" }),
+        G.recommendation ? el("div", { class: "callout" }, el("b", { text: "Recommendation" }), el("p", { text: G.recommendation })) : null),
+      G.layers ? el("section", {}, el("h3", { text: "Five layers, built in this order" }), el("div", { class: "layers" }, G.layers.map((l, i) => el("div", { style: "--lc:" + lc[i % lc.length] },
+        el("div", {}, el("b", { class: "name", text: l.name })), el("div", {}, el("span", { text: l.what }), el("small", { text: l.rules })))))) : null,
+      G.stack ? el("section", {}, el("h3", { text: "The stack" }), table([{ h: "Area", k: "area" }, { h: "Pick", k: "pick" }, { h: "Why", k: "why" }, { h: "Alternative", k: "alt" }], G.stack)) : null,
+      G.godotVsUnity ? el("section", {}, el("h3", { text: "Godot or Unity for Broken State" }), table([{ h: "Topic", k: "topic" }, { h: "Godot 4 .NET", k: "godot", cls: "only-godot" }, { h: "Unity 6", k: "unity", cls: "only-unity" }], G.godotVsUnity)) : null,
+      el("section", { class: "cols2" },
+        G.repoLayout ? el("div", { class: "box" }, el("h3", { text: "Repository layout" }), el("pre", { class: "code" }, el("code", { text: G.repoLayout }))) : null,
+        G.workflow ? el("div", { class: "box" }, el("h3", { text: "The daily loop" }), el("ol", { style: "margin:0;padding-left:1.3em;display:flex;flex-direction:column;gap:5px" }, G.workflow.map(w => el("li", { text: w })))) : null),
+      el("section", {}, el("h3", { text: "Foundation cards" }), el("div", { class: "links" }, cards.filter(c => c.lane === "L0" || c.lane === "L1").map(c => link(c.id))))].filter(Boolean));
+  }
+
+  // ---- learn page ----
+  function renderLearn() {
+    const p = $("#learn-page"); const G = guide || {};
+    p.append(...[
+      el("div", { class: "intro" }, el("div", { class: "kicker", text: "Learning game development on this project" }), el("h2", { text: "Learn as you build" }),
+        el("p", { text: "Each card has newcomer notes, pitfalls and links for its own topic. This page holds what applies everywhere: an order to learn things in, the words you will meet, and how to use the prototype as your spec." })),
+      G.learningPath ? el("section", {}, el("h3", { text: "Learning path" }), el("ol", { class: "steps" }, G.learningPath.map(s => el("li", {}, el("b", { text: s.step }), docs(s.resources))))) : null,
+      G.portingFromPrototype ? el("section", { class: "box" }, el("h3", { text: "Using the JS prototype as the spec" }), bullets(G.portingFromPrototype, "tips")) : null,
+      G.glossary ? el("section", {}, el("h3", { text: "Glossary" }), el("dl", { class: "glossary" }, G.glossary.map(g => el("div", {}, el("dt", { text: g.term }), el("dd", { text: g.def }))))) : null].filter(Boolean));
+  }
+
+  // ---- views ----
+  const VIEWS = ["board", "slice", "stack", "learn", "art"];
+  function route() {
+    const v = VIEWS.includes(location.hash.slice(1)) ? location.hash.slice(1) : "board";
+    document.querySelectorAll("[data-viewpane]").forEach(n => n.hidden = n.dataset.viewpane !== v);
+    document.querySelectorAll("nav.tabs a").forEach(a => { if (a.dataset.view === v) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current"); });
+  }
+  window.addEventListener("hashchange", route);
+  applyEng(); renderBoard(); renderSlice(); renderStack(); renderLearn(); if (window.renderArt) window.renderArt({ el, link, docs, bullets, store, ST }); route();
+  connect();
+})();
+</script>

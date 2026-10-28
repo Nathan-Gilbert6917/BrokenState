@@ -1,0 +1,540 @@
+{
+ "stack": [
+  {
+   "area": "Engine",
+   "pick": "Godot 4.x .NET edition (latest stable)",
+   "why": "Free (MIT), small download, opens in seconds, excellent 2D/UI tooling and a hex/iso-capable TileMapLayer; C# is first-class on desktop.",
+   "alt": "Unity 6 LTS: bigger ecosystem and asset store, heavier editor."
+  },
+  {
+   "area": "Language",
+   "pick": "C# (sim targets netstandard2.1 + C# 9; Godot side .NET 8)",
+   "why": "One language for sim, tools, tests and engine glue; C# 9 keeps the sim compilable by Unity too.",
+   "alt": "GDScript for throwaway Godot UI glue only; never for rules."
+  },
+  {
+   "area": "IDE",
+   "pick": "JetBrains Rider (free for non-commercial use) or VS Code + C# Dev Kit",
+   "why": "Debugger attaches to Godot and Unity, refactoring, test runner built in.",
+   "alt": "Visual Studio 2022 Community on Windows."
+  },
+  {
+   "area": "Sim tests",
+   "pick": "xUnit + dotnet test (+ Verify for golden snapshots)",
+   "why": "Runs headless in seconds without any engine; standard in .NET; CI-friendly.",
+   "alt": "NUnit if you go Unity and want one framework everywhere."
+  },
+  {
+   "area": "Engine tests",
+   "pick": "gdUnit4 (C#) for a few smoke tests",
+   "why": "Runs scenes headless in CI; keep engine tests few because rules are tested in the sim.",
+   "alt": "Chickensoft GoDotTest; Unity Test Framework (PlayMode) on the Unity path."
+  },
+  {
+   "area": "Version control",
+   "pick": "Git + GitHub (main / dev / feat/<card-id>)",
+   "why": "Free, history and undo, PRs and CI in one place; the prototype already lives there.",
+   "alt": "Plastic SCM / Unity Version Control if you go Unity with large binary art."
+  },
+  {
+   "area": "Large files",
+   "pick": "Git LFS for png/psd/aseprite/wav/ogg/glb/blend",
+   "why": "Keeps the repo fast once human art arrives; set up before the first binary is committed.",
+   "alt": "Keep raw art sources (PSD/Blend) in a separate cloud folder; only exports in LFS."
+  },
+  {
+   "area": "CI",
+   "pick": "GitHub Actions: dotnet test on every push/PR, Godot headless export on dev, nightly soak run",
+   "why": "Free minutes for public repos, YAML in the repo, setup-dotnet action.",
+   "alt": "GameCI actions for Unity builds/tests (need a license secret)."
+  },
+  {
+   "area": "Issue board",
+   "pick": "GitHub Issues + GitHub Projects (board view), one issue per card, lane and size fields",
+   "why": "Linked to commits/PRs; uses the repo's existing triage labels.",
+   "alt": "Trello (import the cards' JSON) if you prefer a separate board."
+  },
+  {
+   "area": "Content format",
+   "pick": "JSON files in content/ + JSON Schema, loaded into immutable C# records by ContentDb, validated by tests",
+   "why": "Human-readable, diffable in Git, editable without code, engine-free; gives a database's guarantees through tests.",
+   "alt": "Spreadsheets exported to JSON for big balance tables; SQLite only if a huge queried catalogue ever needs it."
+  },
+  {
+   "area": "Save format",
+   "pick": "gzip JSON (System.Text.Json) with header, schemaVersion and migration steps",
+   "why": "Whole-game read/write is simple and fast; readable when debugging; migrations keep old saves alive.",
+   "alt": "MessagePack for size/speed later; SQLite only for partial loading of very large saves."
+  },
+  {
+   "area": "Placeholder art",
+   "pick": "Kenney.nl CC0 packs (hexagon, isometric, UI, game-icons), coloured hex shapes, a magenta 'missing' sprite",
+   "why": "Free for any use, consistent style, lets every screen be built before human art (M8).",
+   "alt": "game-icons.net (CC BY: credit needed), OpenGameArt (check each licence), your own coloured rectangles."
+  },
+  {
+   "area": "Map / level tools",
+   "pick": "None for the State Map (procedural); simple JSON or a Tiled/LDtk export for hand-made battle building templates",
+   "why": "Calder is generated; only battle templates (the slice's one simple building) benefit from a visual editor.",
+   "alt": "Godot's own TileMap editor or Unity Tile Palette to paint a template, exported to JSON by a small tool."
+  },
+  {
+   "area": "Profiling",
+   "pick": "Your sim's per-system stopwatch + dotnet-counters/dotnet-trace; Godot Profiler & Monitors; BenchmarkDotNet for hot functions",
+   "why": "Most cost will be in the sim (pathing, AI, big maps), which is profiled outside the engine.",
+   "alt": "Unity Profiler and Profile Analyzer on the Unity path; Rider's built-in profiler."
+  }
+ ],
+ "godotVsUnity": [
+  {
+   "topic": "Cost & licence",
+   "godot": "MIT licence, free forever, no royalties, no account.",
+   "unity": "Unity Personal free below a revenue threshold; paid tiers above (the 2023 runtime fee was cancelled in 2024). Check unity.com/pricing."
+  },
+  {
+   "topic": "C# support",
+   "godot": "Separate '.NET' editor build; modern .NET 8, C# 12 on the Godot side. Docs and examples are often GDScript first.",
+   "unity": "C# is the only scripting language; Unity's compiler is C# 9 on a .NET Standard 2.1 profile (a move to modern .NET/CoreCLR is in progress)."
+  },
+  {
+   "topic": "Target platforms",
+   "godot": "Windows, Linux and macOS desktop builds with C# are solid. Desktop is all this game needs.",
+   "unity": "Same for desktop. Its web and mobile strengths don't matter here: no phone or browser build is planned."
+  },
+  {
+   "topic": "2D / iso / hex tools",
+   "godot": "TileMapLayer + TileSet support hexagon and isometric shapes natively; 2D renderer is first-class (pixel units, Camera2D).",
+   "unity": "Tilemap with Hexagonal and Isometric grids; 2D is a mode on a 3D engine (works well, a few more settings)."
+  },
+  {
+   "topic": "UI system",
+   "godot": "Control nodes with containers, themes and anchors; very good for menu-heavy strategy UIs; fast to iterate.",
+   "unity": "UI Toolkit (UXML/USS, web-like) recommended for new projects; uGUI (Canvas) older and widely documented."
+  },
+  {
+   "topic": "Data assets",
+   "godot": "Resource (.tres): a saveable data object with [Export] fields, editable in the inspector; [GlobalClass] makes custom ones creatable.",
+   "unity": "ScriptableObject (.asset): an inspector-editable data object. Both are best for engine-side lookups (ArtCatalog), not game rules."
+  },
+  {
+   "topic": "Messaging",
+   "godot": "Signals (built-in observer, connectable in editor) plus normal C# events.",
+   "unity": "C# events/Action, UnityEvent for inspector-wired callbacks; SendMessage (avoid)."
+  },
+  {
+   "topic": "Scene model",
+   "godot": "Everything is a tree of Nodes; a Scene is a saved branch you instance (like a prefab).",
+   "unity": "GameObjects with MonoBehaviour components in Scenes; Prefabs are reusable GameObject templates."
+  },
+  {
+   "topic": "Editor speed & size",
+   "godot": "~100 MB download, starts in seconds, near-instant script reloads for C# builds of small projects.",
+   "unity": "Multi-GB install, longer startup and domain reloads (can be tuned: Enter Play Mode options)."
+  },
+  {
+   "topic": "Testing",
+   "godot": "Community: gdUnit4 (C#), GoDotTest; headless mode for CI.",
+   "unity": "Official Unity Test Framework (NUnit) with EditMode/PlayMode; GameCI for CI."
+  },
+  {
+   "topic": "Learning resources",
+   "godot": "Good official docs and 'Your first 2D/3D game'; GDQuest; fewer C#-specific tutorials (translate from GDScript).",
+   "unity": "Huge: Unity Learn pathways, years of tutorials and answers, asset store examples."
+  },
+  {
+   "topic": "Community & ecosystem",
+   "godot": "Fast-growing, open development, smaller asset library.",
+   "unity": "Very large; Asset Store has ready-made systems (but avoid them for the sim)."
+  },
+  {
+   "topic": "Source access",
+   "godot": "Full engine source; you can read/fix the engine.",
+   "unity": "Closed source (C# reference source viewable)."
+  },
+  {
+   "topic": "Fit for Broken State",
+   "godot": "Excellent for a 2D hex map, iso battle view and dense menus, on desktop.",
+   "unity": "Equally capable; better if 3D figures become central."
+  }
+ ],
+ "recommendation": "Pick Godot 4 .NET. For a new developer building a menu-heavy 2D strategy game for desktop, Godot is free, light and quick to iterate in, its Control/container UI suits the roster, stock, build and card screens, and TileMapLayer handles both the hex State Map and the isometric battle grid. Its weak spots for this project (fewer C# tutorials, C# web export not yet available) do not matter for a desktop-only game. The decision stays reversible because everything that is hard (the 410-module sim's rules, AI, content, saves, determinism) lives in an engine-free C# library with its own tests, written to C# 9/netstandard2.1 so Unity can compile it too: the Godot project is only a thin SimHost bridge plus screens. If you ever prefer Unity, you rewrite the bridge and the screens (cards in L4) and keep the sim, content and save files untouched.",
+ "repoLayout": "BrokenState/\n├── BrokenState.sln                 # one solution: sim, tests, tools, engine project\n├── global.json                     # pins the .NET SDK version (CI uses the same)\n├── Directory.Build.props           # shared C# settings (nullable, LangVersion 9 for Sim)\n├── src/\n│   └── BrokenState.Sim/            # engine-free class library: NO Godot/Unity references\n│       ├── Content/                # *Def records, ContentDb, validation\n│       ├── State/                  # World, Survivor, Base, Party, Tile, BattleState...\n│       ├── Systems/                # hourly/daily rules (needs, economy, travel, weather...)\n│       ├── Commands/               # ICommand records + handlers (validate/apply)\n│       ├── Events/                 # IGameEvent records, EventQueue, GameLog\n│       ├── Ai/                     # dead behaviour, governor, factions\n│       ├── Battle/                 # turn-based tactical mode\n│       ├── Core/                   # Rng, HexGrid, HexPath, Calendar, Ids\n│       ├── Save/                   # SaveService, migrations, converters\n│       └── Game.cs                 # facade: Execute, AdvanceHours, DrainEvents, queries\n├── tests/\n│   ├── BrokenState.Sim.Tests/      # xUnit: unit, determinism, save round-trip\n│   └── golden/                     # approved digests/snapshots\n├── content/                        # THE DATABASE (static): JSON definitions\n│   ├── items.json  terrain.json  buildings.json  dead.json  loot.json\n│   ├── cards/                      # event card definitions\n│   ├── schemas/                    # JSON Schemas for editor autocomplete + CI\n│   └── test/                       # tiny fixture content used by unit tests\n├── tools/\n│   ├── Headless/                   # console runner: --seed --days --autopilot\n│   └── ContentCheck/               # validates content/ (run in CI)\n├── godot/                          # Godot 4 .NET project (the presentation)\n│   ├── project.godot\n│   ├── BrokenState.Godot.csproj    # ProjectReference -> src/BrokenState.Sim\n│   ├── Bridge/                     # SimHost autoload, InputRouter, view-model mappers\n│   ├── Screens/                    # Title, StateMap, Hub, Team, Battle, Saves (scenes + scripts)\n│   ├── Widgets/                    # reusable Controls (card window, stock row, tooltip)\n│   ├── Art/                        # ArtCatalog.tres + placeholder/ (Kenney CC0) + final/ (M8)\n│   ├── Audio/\n│   └── tests/                      # gdUnit4 smoke tests\n├── (unity/ instead of godot/ on the Unity path: Assets/Sim.asmdef 'No Engine References' or Plugins/BrokenState.Sim.dll, Assets/Bridge, Assets/Screens, Assets/Art)\n├── docs/\n│   ├── adr/                        # decisions: engine, architecture, save format...\n│   └── board/                      # these cards\n├── prototype/                      # the existing JS prototype: the living spec (read-only reference)\n├── .github/workflows/\n│   ├── sim-tests.yml               # dotnet test on push/PR\n│   ├── build.yml                   # Godot headless export on dev\n│   └── nightly.yml                 # slow + soak tests, 1-year autopilot run\n├── .gitattributes                  # LF + LFS rules\n└── .gitignore                      # .godot/ bin/ obj/ (Unity: Library/ Temp/ Logs/)",
+ "workflow": [
+  "Pick the next card on the board, move it to Doing, and create a branch: git switch -c feat/core.clock",
+  "Data first: add or extend the JSON content and its C# record (e.g. a building's cost in buildings.json + BuildingDef), and run the content validation test",
+  "Write a failing xUnit test that states the rule in plain terms ('a Lodge with 12 wood queued finishes after 8 work-hours')",
+  "Implement the sim rule (a system or command handler) until the test passes; keep it engine-free",
+  "Run the fast tests (dotnet test --filter Category!=Slow) and the determinism/save tests for the area you touched",
+  "Try it headless: tools/Headless --seed 42 --days 7 and read the daily summary/log for nonsense",
+  "Wire a placeholder UI: a command button (with Check() reason tooltip) and a label/list driven by an event or query via SimHost",
+  "Playtest for 10 minutes in the engine with dev tools (give, step, reveal); write any surprise as a new test",
+  "Commit in small steps with clear messages; push the branch",
+  "Open a PR into dev with the card's checklist; CI must be green; review your own diff",
+  "Merge, move the card to Done, update the card if the real numbers differ from the plan"
+ ],
+ "layers": [
+  {
+   "name": "Data (database)",
+   "what": "Static content in content/*.json (items, terrain, buildings, dead, loot tables, cards) loaded into immutable C# records by ContentDb, plus the runtime World model that a save file stores. Together: the game's database, with no server.",
+   "rules": "No logic beyond validation. IDs are forever. Every reference checked by tests. Art only as string art keys. Per-game values (condition, ammo left) live in state, never in definitions."
+  },
+  {
+   "name": "Backend (sim)",
+   "what": "BrokenState.Sim: systems run hourly/daily in a fixed order, command handlers validate and apply player/AI intents, AI and battle rules, seeded RNG streams, saves.",
+   "rules": "No engine references (enforced by a test). Deterministic: only sim Rng, ordered iteration, no wall-clock time. Changes only through commands and ticks; reports only through events and queries. Unit-tested before any UI."
+  },
+  {
+   "name": "Bridge",
+   "what": "SimHost (Godot autoload / Unity MonoBehaviour): owns the Game, converts real time to game hours at the chosen speed, drains events into signals/C# events, turns input into commands, builds view models.",
+   "rules": "Thin: no game rules. One instance. Does not cache sim objects across frames; re-queries by ID. Engine pause is separate from sim pause."
+  },
+  {
+   "name": "UI / presentation",
+   "what": "Screens and widgets (State Map, hub, team, cards, inventory, battle) that read view models and send commands; placeholder visuals via the ArtCatalog.",
+   "rules": "Never mutates World. Buttons call Check() for disabled-reason tooltips and Send() to act. Subscribes/unsubscribes to events with the node/component lifetime. Cosmetic randomness only."
+  },
+  {
+   "name": "Art & audio (human-made, late)",
+   "what": "Final sprites, tiles, icons, UI skin, fonts, music and SFX made by humans in M8, slotted into the ArtCatalog/audio map under the same keys as the placeholders.",
+   "rules": "Zero code change to swap: same art keys, same sizes/pivots as agreed in the style guide. Stored via Git LFS. Licences recorded per asset. Placeholders (Kenney CC0) until then."
+  }
+ ],
+ "glossary": [
+  {
+   "term": "Node (Godot)",
+   "def": "The basic building block in Godot: everything (a sprite, a button, a timer) is a node in a tree. Scripts attach to nodes."
+  },
+  {
+   "term": "Scene (Godot)",
+   "def": "A saved tree of nodes (.tscn) you can instance many times, like a prefab; a whole screen or a single button can be a scene."
+  },
+  {
+   "term": "Autoload (Godot)",
+   "def": "A node or script Godot creates at startup and keeps alive across scene changes: Godot's singleton. SimHost is one."
+  },
+  {
+   "term": "Signal (Godot)",
+   "def": "Godot's built-in observer: a node emits a named signal and connected methods run. Like a C# event, also connectable in the editor."
+  },
+  {
+   "term": "Resource (Godot)",
+   "def": "A data object saved as .tres/.res with inspector-editable fields (textures, themes, custom data). Here: the ArtCatalog, not game rules."
+  },
+  {
+   "term": "GameObject (Unity)",
+   "def": "Unity's basic object in a scene; on its own it does nothing until components are added."
+  },
+  {
+   "term": "MonoBehaviour (Unity)",
+   "def": "The base class for Unity scripts attached to GameObjects, with lifecycle methods (Awake, Start, Update, OnEnable, OnDestroy)."
+  },
+  {
+   "term": "Prefab (Unity)",
+   "def": "A saved, reusable GameObject template (with its children and components) you instantiate at runtime."
+  },
+  {
+   "term": "ScriptableObject (Unity)",
+   "def": "An asset that holds data editable in the inspector, not attached to a scene. Here: art lookups and engine config, not game state."
+  },
+  {
+   "term": "asmdef (Unity)",
+   "def": "Assembly Definition file: makes a folder compile into its own DLL; 'No Engine References' forbids UnityEngine, keeping the sim pure."
+  },
+  {
+   "term": "Delta time",
+   "def": "Seconds since the last frame. Used to turn frame time into game time in the bridge; never used inside sim rules."
+  },
+  {
+   "term": "Tick",
+   "def": "One step of the simulation. In Broken State the campaign ticks one game-hour at a time, with a daily pass at midnight."
+  },
+  {
+   "term": "Deterministic",
+   "def": "Same seed + same commands = exactly the same game. Makes bugs reproducible and tests meaningful."
+  },
+  {
+   "term": "Seed",
+   "def": "The number that starts a pseudo-random sequence; a run's seed rebuilds its map and dice."
+  },
+  {
+   "term": "RNG stream",
+   "def": "A separate seeded generator per system (map, weather, loot, battle) so one system's dice don't shift another's."
+  },
+  {
+   "term": "A* (A-star)",
+   "def": "A pathfinding algorithm that finds the cheapest route by exploring tiles ordered by cost so far + an estimate to the goal."
+  },
+  {
+   "term": "Hex axial coordinates",
+   "def": "Two numbers (q, r) on a hex grid where neighbour and distance math is simple; stored maps often use offset (column, row) and convert."
+  },
+  {
+   "term": "Offset coordinates (odd-r)",
+   "def": "Hexes stored in rows like a 2D array, every odd row shifted half a hex; how the prototype stores tiles (id = y × width + x)."
+  },
+  {
+   "term": "State machine",
+   "def": "Something that is always in exactly one named state (e.g. a battle: PlayerTurn, EnemyTurn, Resolving, Ended) with clear rules for moving between states."
+  },
+  {
+   "term": "ECS",
+   "def": "Entity-Component-System: data stored in packed component arrays processed by systems; great for tens of thousands of moving things. Not needed here: hundreds of survivors work fine as plain classes."
+  },
+  {
+   "term": "Event bus / event queue",
+   "def": "A place where the sim posts facts ('SurvivorDied') for others to react to later, so producers don't need to know who listens."
+  },
+  {
+   "term": "Command pattern",
+   "def": "Representing an action as an object (QueueBuild) that can be validated, applied, logged, replayed or sent by AI."
+  },
+  {
+   "term": "Serialization",
+   "def": "Turning objects into text/bytes (JSON) and back; how saves and content files work."
+  },
+  {
+   "term": "Schema migration",
+   "def": "A step that upgrades an old save (or content) from version n to n+1 when the data shape changes, so old saves still load."
+  },
+  {
+   "term": "Git LFS",
+   "def": "Large File Storage: Git keeps small pointers in the repo and stores big binaries (art, audio) separately."
+  },
+  {
+   "term": "CI",
+   "def": "Continuous Integration: a server that builds and tests every push automatically."
+  },
+  {
+   "term": "Unit test",
+   "def": "A small automated check of one piece of logic in isolation (one rule, one function)."
+  },
+  {
+   "term": "Golden test",
+   "def": "A test that compares output to a saved, approved result (e.g. a world digest after 7 days); changes must be re-approved on purpose."
+  },
+  {
+   "term": "Digest",
+   "def": "A short fingerprint (rounded numbers or a hash) of a world's state, used to compare two runs quickly."
+  },
+  {
+   "term": "Vertical slice",
+   "def": "A thin but complete version of the game through every layer (map, base, travel, battle, save), playable end to end, before widening any one part."
+  },
+  {
+   "term": "Placeholder art",
+   "def": "Temporary visuals (coloured hexes, Kenney CC0 sprites) used until human-made art is ready."
+  },
+  {
+   "term": "Art key",
+   "def": "A string like 'item.pistol_9mm' that content refers to; the engine's ArtCatalog maps it to the current sprite, so art swaps need no code."
+  },
+  {
+   "term": "Isometric projection",
+   "def": "Drawing a square grid rotated 45° and squashed (typically 2:1) to look 3D from above; used for the battle view."
+  },
+  {
+   "term": "Fog of war",
+   "def": "Hiding tiles the player hasn't seen (or can't currently see); the sim tracks knowledge, the UI draws the fog."
+  },
+  {
+   "term": "Utility AI",
+   "def": "AI that scores each possible action (attack, flee, eat) with formulas and picks the best; good for survival needs and the dead's choices."
+  },
+  {
+   "term": "Behaviour tree",
+   "def": "AI as a tree of tasks and conditions evaluated top-down (sequence, selector); readable for scripted enemy behaviour."
+  },
+  {
+   "term": "Data-driven design",
+   "def": "Putting what varies (items, numbers, cards) in data files so designers change the game without changing code."
+  },
+  {
+   "term": "View model",
+   "def": "A small read-only record built for a screen (e.g. SurvivorRow: name, health %, job) so UI never touches the live state."
+  },
+  {
+   "term": "Bridge / SimHost",
+   "def": "The thin engine-side layer that owns the sim, ticks it, forwards input as commands and events as signals."
+  },
+  {
+   "term": "Headless",
+   "def": "Running the game logic without graphics or a window, e.g. in tests, CI or balance runs."
+  },
+  {
+   "term": "Interpolation",
+   "def": "Drawing between two known sim states (a party at 14:00 and 15:00) so movement looks smooth while rules stay in whole hours."
+  }
+ ],
+ "learningPath": [
+  {
+   "step": "1. C# basics: types, classes, records, collections, LINQ, nullable references",
+   "resources": [
+    {
+     "t": "Learn C# (Microsoft)",
+     "u": "https://dotnet.microsoft.com/en-us/learn/csharp"
+    },
+    {
+     "t": "Tour of C#",
+     "u": "https://learn.microsoft.com/en-us/dotnet/csharp/tour-of-csharp/"
+    },
+    {
+     "t": "Records",
+     "u": "https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/builtin-types/record"
+    }
+   ]
+  },
+  {
+   "step": "2. .NET projects and tests: solutions, class libraries, xUnit, dotnet test",
+   "resources": [
+    {
+     "t": "Unit testing C# with xUnit",
+     "u": "https://learn.microsoft.com/en-us/dotnet/core/testing/unit-testing-csharp-with-xunit"
+    },
+    {
+     "t": "Testing in .NET",
+     "u": "https://learn.microsoft.com/en-us/dotnet/core/testing/"
+    }
+   ]
+  },
+  {
+   "step": "3. Git and GitHub: commits, branches, PRs, LFS",
+   "resources": [
+    {
+     "t": "Pro Git book",
+     "u": "https://git-scm.com/book/en/v2"
+    },
+    {
+     "t": "Git LFS",
+     "u": "https://git-lfs.com/"
+    },
+    {
+     "t": "GitHub Actions docs",
+     "u": "https://docs.github.com/en/actions"
+    }
+   ]
+  },
+  {
+   "step": "4. Game architecture patterns: game loop, command, observer, event queue, type object",
+   "resources": [
+    {
+     "t": "Game Programming Patterns (free online)",
+     "u": "https://gameprogrammingpatterns.com/contents.html"
+    },
+    {
+     "t": "Game Loop",
+     "u": "https://gameprogrammingpatterns.com/game-loop.html"
+    },
+    {
+     "t": "Command",
+     "u": "https://gameprogrammingpatterns.com/command.html"
+    }
+   ]
+  },
+  {
+   "step": "5. Engine basics: nodes/scenes, signals, autoloads, C# in Godot (or Unity Essentials)",
+   "resources": [
+    {
+     "t": "Godot: Your first 2D game",
+     "u": "https://docs.godotengine.org/en/stable/getting_started/first_2d_game/index.html"
+    },
+    {
+     "t": "Godot: C# basics",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/scripting/c_sharp/c_sharp_basics.html"
+    },
+    {
+     "t": "Unity Learn: Unity Essentials",
+     "u": "https://learn.unity.com/pathway/unity-essentials"
+    }
+   ]
+  },
+  {
+   "step": "6. Build the data + sim core headless (cards 7–18): content, state, RNG, saves, clock, events, commands, hexes, mapgen",
+   "resources": [
+    {
+     "t": "System.Text.Json overview",
+     "u": "https://learn.microsoft.com/en-us/dotnet/standard/serialization/system-text-json/overview"
+    },
+    {
+     "t": "Red Blob Games: Hexagonal Grids",
+     "u": "https://www.redblobgames.com/grids/hexagons/"
+    },
+    {
+     "t": "Red Blob Games: Introduction to A*",
+     "u": "https://www.redblobgames.com/pathfinding/a-star/introduction.html"
+    }
+   ]
+  },
+  {
+   "step": "7. Engine UI and 2D: Control containers, themes, TileMapLayer for hex and iso, Camera2D",
+   "resources": [
+    {
+     "t": "Godot UI docs",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/ui/index.html"
+    },
+    {
+     "t": "Godot: Using TileMaps",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/2d/using_tilemaps.html"
+    },
+    {
+     "t": "Unity: UI Toolkit",
+     "u": "https://docs.unity3d.com/Manual/UIElements.html"
+    }
+   ]
+  },
+  {
+   "step": "8. Game AI and tactics: state machines, utility scoring, line of sight",
+   "resources": [
+    {
+     "t": "State pattern",
+     "u": "https://gameprogrammingpatterns.com/state.html"
+    },
+    {
+     "t": "Red Blob Games: 2D visibility",
+     "u": "https://www.redblobgames.com/articles/visibility/"
+    }
+   ]
+  },
+  {
+   "step": "9. Debugging, profiling and performance",
+   "resources": [
+    {
+     "t": "Godot: debugging tools overview",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/scripting/debug/overview_of_debugging_tools.html"
+    },
+    {
+     "t": ".NET diagnostics",
+     "u": "https://learn.microsoft.com/en-us/dotnet/core/diagnostics/"
+    },
+    {
+     "t": "Unity Profiler",
+     "u": "https://docs.unity3d.com/Manual/Profiler.html"
+    }
+   ]
+  },
+  {
+   "step": "10. Ship the slice: integrate, playtest checklist, export a build, collect feedback",
+   "resources": [
+    {
+     "t": "Godot: Exporting projects",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/export/exporting_projects.html"
+    },
+    {
+     "t": "Kenney CC0 assets (placeholders)",
+     "u": "https://kenney.nl/assets"
+    }
+   ]
+  }
+ ],
+ "portingFromPrototype": [
+  "Treat the prototype as the spec, not the code to translate: read a module's header comment (the first 20–40 lines explain the rules and numbers) and the matching docs/features/<area>.md section, then design the C# version cleanly.",
+  "Its tests in prototype/tools/*test*.js are acceptance criteria: each header lists what it checks (e.g. weathertest: 28-day seasons, determinism, ETA exactness; savetest: save at half time, load, identical ending). Rewrite the important checks as xUnit tests, smaller and faster.",
+  "Copy the numbers, not the formulas' tangles: TERRAIN costs (walk 1 h/tile, vehicle 0.5, road 0.25), 1× = 20 s per game hour, speeds 0.5/1/2/3/5, TRAY_HOURS = 8, 4 × 28-day seasons with day 1 = spring day 15, map sizes 150 × 75 to 500 × 300. Put them in content JSON so they can be retuned.",
+  "Keep the same tick order for the systems you port (world.js hourOfWorld lists every hourly and daily step with a reason); the order encodes many hard-won fixes.",
+  "Keep determinism habits: separate RNG streams (weather never draws from the main dice), hash dice for per-tile features, IDs local to the world. Porting mulberry32 bit-for-bit lets you compare sequences with the prototype if useful.",
+  "Do NOT port: closures in event cards (they make open cards unsaveable: use effect records), the graph-shaped save with shared references (use IDs and a tree), process-wide id counters, the HTML-string UI and the giant main.js dispatcher (use commands + view models), call-time-only imports used to dodge cycles (use clear layers).",
+  "Run the prototype (node prototype/server.cjs or the GitHub Pages build) side by side with your build to compare feel: speed, pacing, how a week plays out.",
+  "Use the prototype's headless tools and autopilot as a baseline: e.g. how many survivors and how much food after 7 or 30 days on a seed; your sim should land in the same range for the slice systems.",
+  "Port slice-sized first: the prototype has 410 sim modules and ~208k lines grown over many features (malls, zoos, stadiums). The slice needs perhaps 25 of its ideas; the rest are later cards.",
+  "Respect the ADRs: AI groups follow the same rules as the player (0001) and base building decisions (0002) are already made; design commands and systems so AI can use them from the start."
+ ]
+}

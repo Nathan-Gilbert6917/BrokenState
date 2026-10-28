@@ -1,0 +1,8 @@
+{"palette": ["#0b0c0e","#2c3832","#3c4734","#5d6b4f","#7a8f4e","#c2b280","#6b4f35","#8a6a48","#8b938c","#c9cfc9","#3f6f8f","#2f6fb3","#b8332b","#e0b44a","#d9a37a","#eef1ed"],
+ "presets": {
+  "icon16": {"label": "Item icon · 16 × 16", "w": 16, "h": 16, "shape": "free", "seed": "beans", "key": "item.beans_tin", "tileScale": 3, "note": "Inventory and loot icons, drawn at 16 × 16 and shown at 3× (the prototype's size)."},
+  "char": {"label": "Character · 48 × 52, feet at (24, 43)", "w": 48, "h": 52, "shape": "char", "pivotY": 43, "seed": "survivor", "key": "char.survivor.idle.se", "tileScale": 2, "note": "A survivor or one of the dead for the raid map: about 30 px tall, feet on the pivot, facing SE first (then SW, NW, NE)."},
+  "hex": {"label": "State Map hex · pointy top · 48 × 56", "w": 48, "h": 56, "shape": "hexpointy", "seed": "hexgrass", "key": "tile.hex.plains", "tileScale": 1, "note": "One terrain tile for the State Map, pointy top in odd-r rows like the prototype. Rows overlap by a quarter of the height."},
+  "isofloor": {"label": "Raid floor · iso 2:1 · 32 × 16 (1 m)", "w": 32, "h": 16, "shape": "diamond", "seed": "isofloor", "key": "raid.floor.concrete", "tileScale": 2, "note": "One 1 m cell of floor for raid maps. Draw edges 2 across for 1 down so neighbours meet cleanly."},
+  "isoblock": {"label": "Raid wall cell · 32 × 50 (34 px wall)", "w": 32, "h": 50, "shape": "block", "seed": "isoblock", "key": "raid.wall.brick_full", "tileScale": 2, "note": "A full-height cell: a 32 × 16 top face over a 34 px wall, the prototype's wall height. Top face first, then the two sides."}
+ }}

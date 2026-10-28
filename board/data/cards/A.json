@@ -1,0 +1,2583 @@
+[
+ {
+  "id": "infra.engine",
+  "title": "Engine choice & project setup",
+  "summary": "Pick Godot 4 .NET (recommended) or Unity 6 LTS, install the .NET SDK and an IDE, and create the solution: an engine-free sim library, its test project and one engine project that references it.",
+  "whyHere": "Card 1: nothing can be built, tested or run until the tools are installed and the solution compiles. The solution layout decided here is what every later card's files slot into.",
+  "subsystems": [
+   "Engine + .NET SDK install",
+   "Solution & csproj layout",
+   "Target framework / C# version",
+   "IDE & debugger",
+   "Hello-sim spike",
+   "Engine decision record (ADR)"
+  ],
+  "sliceScope": "Godot 4.x .NET + .NET 8 SDK installed; BrokenState.sln with BrokenState.Sim (class library), BrokenState.Sim.Tests (xUnit) and the Godot project (ProjectReference to Sim). One scene shows a Label reading a value from the sim (e.g. \"Day 1, 06:00\"); `dotnet test` passes one test. A one-page ADR says why Godot and how to switch.",
+  "fullScope": "The prototype is a browser JS game (~410 sim modules, ~208k lines) whose sim/ folder already has no DOM: that split is what you port. The rebuild targets desktop only (Windows first, Linux/macOS later); no phone or tablet build. The sim is big enough (Huge map 500 × 300 hexes) that the engine must stay out of the hot loops.",
+  "protoRefs": [
+   "prototype/README.md",
+   "prototype/src/main.js",
+   "prototype/src/sim/world.js",
+   "docs/agents/features.md"
+  ],
+  "tasks": {
+   "data": [
+    "Decide the sim's target: `netstandard2.1` + `LangVersion 9` keeps Unity 6 open; `net8.0` only if you commit to Godot (or multi-target both)",
+    "Create `content/` (JSON) and `docs/adr/` folders; write ADR-0001 'Engine: Godot 4 .NET, sim engine-free'",
+    "Add `Directory.Build.props` with shared settings (Nullable enable, TreatWarningsAsErrors for Sim, LangVersion)"
+   ],
+   "backend": [
+    "`dotnet new classlib -n BrokenState.Sim` and `dotnet new xunit -n BrokenState.Sim.Tests`; add both to `BrokenState.sln`",
+    "Write `World` with one field (`int Hour`) and a `Tick()`; one xUnit test asserts Tick advances the hour",
+    "Prove the sim has no engine dependency: Sim.csproj has no Godot/Unity package; CI later enforces it",
+    "Unity alt: make `Assets/Sim/BrokenState.Sim.asmdef` with 'No Engine References' ticked, or build the DLL into Assets/Plugins"
+   ],
+   "ui": [
+    "Create the Godot project (.NET edition) next to the solution; add `<ProjectReference>` to Sim in its .csproj",
+    "Main scene: a Control with a Label showing `World.Hour`, and a Button calling `Tick()`"
+   ]
+  },
+  "dataModel": "// BrokenState.Sim.csproj (engine-free)\n<TargetFrameworks>netstandard2.1;net8.0</TargetFrameworks>\n<LangVersion>9.0</LangVersion> <Nullable>enable</Nullable>\n\n// BrokenState.Godot.csproj\n<ProjectReference Include=\"../src/BrokenState.Sim/BrokenState.Sim.csproj\" />\n\npublic sealed class World { public int Hour; public void Tick() => Hour++; }",
+  "dependsOn": [],
+  "connections": [
+   {
+    "to": "infra.architecture",
+    "why": "The engine project is only the presentation half; the architecture card defines how it talks to the sim.",
+    "how": "Sim is a ProjectReference/assembly; the engine side only calls its public API (World, commands, events).",
+    "godot": "Godot .csproj references Sim.csproj; an autoload SimHost node is added later.",
+    "unity": "Sim compiled by its own asmdef (No Engine References) or as a DLL in Assets/Plugins; SimHost MonoBehaviour later."
+   },
+   {
+    "to": "infra.testing",
+    "why": "The test project is created here and must compile against the same Sim.",
+    "how": "BrokenState.Sim.Tests references Sim; `dotnet test BrokenState.sln` runs headless without the engine.",
+    "godot": "The Godot project is not referenced by the tests at all.",
+    "unity": "Sim tests still run via dotnet test outside Unity; Unity Test Framework only for engine-side tests."
+   },
+   {
+    "to": "infra.vcs",
+    "why": "The engine decides the .gitignore and which files go to LFS.",
+    "how": "Commit the solution skeleton as the first commit.",
+    "godot": "Ignore `.godot/`, `bin/`, `obj/`; commit `project.godot`, `*.tscn`, `*.tres`, `*.import`.",
+    "unity": "Ignore `Library/`, `Temp/`, `Obj/`, `Logs/`, `UserSettings/`; set Asset Serialization = Force Text and Visible Meta Files."
+   }
+  ],
+  "godot": {
+   "approach": "Download the '.NET' build of Godot 4 (the plain build has no C#) and install the .NET 8 SDK. Create the project, add one C# script so Godot generates the .csproj/.sln, then add your Sim project to that solution. Set the external editor (Rider or VS Code) in Editor Settings > Dotnet so double-clicking a script opens your IDE and breakpoints work.",
+   "keyApis": [
+    "Godot .NET editor",
+    "Node / Control / Label",
+    "GodotSharp (Godot.NET.Sdk)",
+    "Editor Settings > Dotnet > Editor",
+    "project.godot"
+   ],
+   "docs": [
+    {
+     "t": "C# / .NET in Godot",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/scripting/c_sharp/index.html"
+    },
+    {
+     "t": "C# basics (setup, IDEs)",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/scripting/c_sharp/c_sharp_basics.html"
+    },
+    {
+     "t": "Project organization",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/best_practices/project_organization.html"
+    }
+   ]
+  },
+  "unity": {
+   "approach": "Install Unity Hub and a Unity 6 LTS editor with your target build modules. Unity compiles its own C# (C# 9, .NET Standard 2.1 profile), so the sim must stay within that: no C# 10+ features unless you multi-target and keep a C# 9 build. Put the sim under an assembly definition with 'No Engine References' so the compiler rejects any accidental UnityEngine use.",
+   "keyApis": [
+    "Unity Hub",
+    "Assembly Definition (.asmdef)",
+    "No Engine References",
+    "Assets/Plugins",
+    "Project Settings > Player > Api Compatibility Level"
+   ],
+   "docs": [
+    {
+     "t": "Assembly definitions",
+     "u": "https://docs.unity3d.com/Manual/ScriptingAssemblies.html"
+    },
+    {
+     "t": "Plug-ins (managed DLLs)",
+     "u": "https://docs.unity3d.com/Manual/Plugins.html"
+    },
+    {
+     "t": "C# compiler in Unity",
+     "u": "https://docs.unity3d.com/Manual/csharp-compiler.html"
+    }
+   ]
+  },
+  "learn": [
+   {
+    "t": "Learn C# (Microsoft)",
+    "u": "https://dotnet.microsoft.com/en-us/learn/csharp"
+   },
+   {
+    "t": "Tour of C#",
+    "u": "https://learn.microsoft.com/en-us/dotnet/csharp/tour-of-csharp/"
+   },
+   {
+    "t": "Your first 2D game (Godot)",
+    "u": "https://docs.godotengine.org/en/stable/getting_started/first_2d_game/index.html"
+   }
+  ],
+  "newb": [
+   "A 'solution' (.sln) is a box of projects; a 'project' (.csproj) builds one DLL. Your game is three projects: Sim (rules), Sim.Tests (proof), Godot (pictures and input).",
+   "Engine-free sim means the rules never say 'Node' or 'GameObject'. That is what lets you run 1,000 simulated days in a test in seconds and switch engine later.",
+   "Godot ships two downloads; only the '.NET' one runs C#. Unity's C# is a little older than mainstream .NET, which is why the sim targets C# 9.",
+   "Do a 1-hour spike in the engine you did not pick: open it, make a button. Knowing both a bit makes the choice feel safe."
+  ],
+  "pitfalls": [
+   "Downloading standard Godot instead of Godot .NET, then wondering why C# scripts are ignored.",
+   "Letting the sim reference GodotSharp 'just for Vector2': copy a tiny struct instead, or the split is gone.",
+   "Using C# 10–12 features (file-scoped namespaces, record structs with `required`) in the sim, then finding Unity cannot compile it.",
+   "Spending weeks choosing: the sim is the hard part and is engine-free, so the choice is reversible."
+  ],
+  "test": "`dotnet build` and `dotnet test` pass from the repo root on a clean clone; pressing Play in Godot shows the hour from the sim and the Tick button changes it; deleting the engine project still lets the Sim build.",
+  "size": "S"
+ },
+ {
+  "id": "infra.vcs",
+  "title": "Git, Git LFS, branching & issue board",
+  "summary": "Version control for code, content JSON and (later) art: Git with LFS for big binaries, a simple dev/feature-branch flow, the engine's .gitignore, and the Trello-like board as GitHub Issues + Projects.",
+  "whyHere": "From the first commit you want history, undo and backups; LFS must be set up before any binary is committed, because moving files into LFS later rewrites history.",
+  "subsystems": [
+   ".gitignore / .gitattributes",
+   "Git LFS tracking",
+   "Branch flow (main/dev/feature)",
+   "Commit & PR conventions",
+   "Issue board & labels",
+   "Backups/remote"
+  ],
+  "sliceScope": "A GitHub repo with main + dev, feature branches per card, PRs into dev; the official Godot (or Unity) .gitignore; `.gitattributes` with LF line endings and LFS for png/psd/wav/ogg/glb/blend; a GitHub Project board whose columns are the lanes and whose issues are these cards, labelled with the triage set.",
+  "fullScope": "The prototype repo keeps LF everywhere (`* text=auto eol=lf`, `*.png binary`), works on dev with a merge gate, and tracks work in GitHub Issues with the labels needs-triage, needs-info, ready-for-agent, ready-for-human, wontfix. Human art (M8) will add hundreds of MB of sprites and audio: LFS territory.",
+  "protoRefs": [
+   ".gitattributes",
+   ".gitignore",
+   "docs/agents/issue-tracker.md",
+   "docs/agents/triage-labels.md",
+   "docs/agents/testing.md"
+  ],
+  "tasks": {
+   "data": [
+    "`.gitattributes`: `* text=auto eol=lf`, `*.cmd eol=crlf`, LFS lines (`*.png *.psd *.wav *.ogg *.glb *.blend *.aseprite filter=lfs diff=lfs merge=lfs -text`)",
+    "Labels: the five triage labels + one per lane (L0…L11) + size S/M/L/XL",
+    "Issue template: the card fields (summary, slice scope, data/backend/ui tasks, test)"
+   ],
+   "backend": [
+    "`git lfs install` and commit `.gitattributes` BEFORE the first image",
+    "Branch rule: `dev` is integration, `main` is releases; one `feat/<card-id>` branch per card; protect dev (PR + green CI)",
+    "Write a CONTRIBUTING note: commit message style (e.g. Conventional Commits), 'tests pass before merge'"
+   ],
+   "ui": [
+    "GitHub Project (board view) with columns Backlog / Next / Doing / Review / Done and a 'Lane' field",
+    "Import the 122 cards as issues (gh CLI script) so the board mirrors this plan"
+   ]
+  },
+  "dataModel": "# .gitattributes\n* text=auto eol=lf\n*.png  filter=lfs diff=lfs merge=lfs -text\n*.ogg  filter=lfs diff=lfs merge=lfs -text\n*.psd  filter=lfs diff=lfs merge=lfs -text\n# Unity only: *.unity *.prefab *.asset merge=unityyamlmerge eol=lf\n\n# branches: main (releases) <- dev (integration) <- feat/core.clock",
+  "dependsOn": [
+   "infra.engine"
+  ],
+  "connections": [
+   {
+    "to": "infra.ci",
+    "why": "CI runs on every push/PR and is what 'protect dev' checks.",
+    "how": "Branch protection requires the `sim-tests` workflow to pass before a PR merges.",
+    "godot": "Export templates are downloaded in CI, not committed.",
+    "unity": "Library/ is never committed; CI rebuilds it (cache it)."
+   },
+   {
+    "to": "art.direction",
+    "why": "Human-made art arrives late and is large; LFS rules and folder names must already exist.",
+    "how": "Art lives under `art/` and engine import folders; ArtCatalog keys stay text so diffs are reviewable.",
+    "godot": "Commit `.import` files, never `.godot/imported`.",
+    "unity": "Commit `.meta` files with every asset or references break."
+   },
+   {
+    "to": "slice.playtest",
+    "why": "The board is how you see the slice's definition of done.",
+    "how": "A milestone 'Slice' groups every L0–L4 issue.",
+    "godot": "n/a",
+    "unity": "n/a"
+   }
+  ],
+  "godot": {
+   "approach": "Godot projects are text-friendly (.tscn/.tres are text), so plain Git works well. Use the official Godot .gitignore (ignores `.godot/` cache, `bin/`, `obj/`). Commit `.import` sidecar files but not the imported cache.",
+   "keyApis": [
+    ".godot/ (cache, ignored)",
+    "*.tscn / *.tres (text)",
+    "*.import sidecars",
+    "project.godot"
+   ],
+   "docs": [
+    {
+     "t": "Version control systems",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/best_practices/version_control_systems.html"
+    },
+    {
+     "t": "Project organization",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/best_practices/project_organization.html"
+    }
+   ]
+  },
+  "unity": {
+   "approach": "Set Edit > Project Settings > Editor: Version Control 'Visible Meta Files' and Asset Serialization 'Force Text', so scenes and prefabs are YAML you can diff. Use the official Unity .gitignore and configure UnityYAMLMerge (Smart Merge) as the merge tool for scenes/prefabs.",
+   "keyApis": [
+    ".meta files",
+    "Force Text serialization",
+    "UnityYAMLMerge / Smart Merge",
+    "Library/ (ignored)"
+   ],
+   "docs": [
+    {
+     "t": "Smart Merge",
+     "u": "https://docs.unity3d.com/Manual/SmartMerge.html"
+    },
+    {
+     "t": "Version control",
+     "u": "https://docs.unity3d.com/Manual/VersionControl.html"
+    }
+   ]
+  },
+  "learn": [
+   {
+    "t": "Pro Git (free book)",
+    "u": "https://git-scm.com/book/en/v2"
+   },
+   {
+    "t": "Git LFS",
+    "u": "https://git-lfs.com/"
+   },
+   {
+    "t": "GitHub's .gitignore templates",
+    "u": "https://github.com/github/gitignore"
+   }
+  ],
+  "newb": [
+   "Git stores snapshots; a branch is a movable label. Work on `feat/x`, merge to `dev` when tests pass: dev is always playable.",
+   "LFS swaps big binaries for small pointer files so the repo stays fast; the real files live on the LFS server.",
+   "Small commits with clear messages are your undo history: 'Add Survivor record + needs test' beats 'stuff'.",
+   "An issue per card with a checklist of its tasks turns this plan into a to-do list you can actually finish."
+  ],
+  "pitfalls": [
+   "Committing PNGs before enabling LFS (then `git lfs migrate` rewrites history).",
+   "Unity: forgetting .meta files, or Binary serialization, which makes every scene merge a conflict.",
+   "Two people (or you on two machines) editing the same scene at once: scenes merge badly; split UI into small scenes/prefabs.",
+   "Using GitHub's free LFS quota for raw art source files (PSD/Blend can be huge): keep sources in a separate store if needed."
+  ],
+  "test": "Fresh clone on another machine (or folder) builds and runs; `git lfs ls-files` lists a test PNG; a PR to dev is blocked until CI is green; the board shows all cards by lane.",
+  "size": "S"
+ },
+ {
+  "id": "infra.architecture",
+  "title": "Architecture: sim/presentation split & the SimHost bridge",
+  "summary": "The shape of the whole program: an engine-free sim (state + rules + AI) that only changes through commands and only speaks through events, and a thin engine bridge (SimHost) that ticks it, forwards input as commands and turns events into signals for the UI.",
+  "whyHere": "Every gameplay card plugs into this. Fixing the boundaries now (who may change state, how the UI learns of changes) prevents the classic beginner tangle where UI scripts edit game data directly.",
+  "subsystems": [
+   "Sim facade (Game/World API)",
+   "SimHost bridge (autoload / MonoBehaviour)",
+   "Command in, event out",
+   "Read-only view models / queries",
+   "Services (ContentDb, SaveService, ArtCatalog, Clock)",
+   "Folder & namespace layout",
+   "Dependency rules"
+  ],
+  "sliceScope": "`Game` facade in the sim with `Execute(ICommand)`, `AdvanceHours(n)`, `DrainEvents()` and read-only queries; a `SimHost` Godot autoload that owns one Game, ticks it from `_Process`, emits C# events/signals per sim event, and exposes queries to screens. Folders: Sim/{Content,State,Systems,Commands,Events,Ai}, Godot/{Bridge,Screens,Widgets,Art}.",
+  "fullScope": "The prototype's main.js (3,156 lines) is 'game loop, input, and the action dispatcher that connects the UI to the simulation'; its sim modules are 'pure simulation: no DOM'. ADR 0001 (AI parity) requires AI groups to use the same rules as the player, so commands/rules must not be player-only. 410 sim modules with call-time-only imports to dodge import cycles show why systems need clear layers.",
+  "protoRefs": [
+   "prototype/src/main.js",
+   "prototype/src/sim/world.js",
+   "docs/adr/0001-ai-parity.md",
+   "prototype/src/sim/types.d.ts"
+  ],
+  "tasks": {
+   "data": [
+    "Define the layer rule in an ADR: Content (immutable) <- State (mutable data) <- Systems (rules) <- Game facade <- Bridge <- UI",
+    "List the services and their interfaces: IContentDb, ISaveStore, IClock, IEventSink, IRng provider",
+    "Decide the 'world snapshot' queries the UI may read (e.g. `GetBaseSummary(baseId)` returning a record)"
+   ],
+   "backend": [
+    "`Game` facade: owns World, ContentDb, EventQueue, Scheduler; the only public mutator is `Execute(cmd)` / `Advance()`",
+    "Systems as plain classes with `Hour(World)` / `Day(World)` methods, registered in a fixed order (see core.clock)",
+    "Architecture test: reflect over Sim assembly and fail if any type references Godot or UnityEngine namespaces",
+    "Composition root: one `GameFactory.NewGame(seed, config, content)` used by tests, the headless runner and SimHost"
+   ],
+   "ui": [
+    "Godot: `SimHost` autoload (Node) with C# events or [Signal]s per event type; screens subscribe in `_Ready` and unsubscribe in `_ExitTree`",
+    "Screens only call `SimHost.Send(command)` and read queries; never touch World fields directly"
+   ]
+  },
+  "dataModel": "public interface ICommand { }\npublic interface IGameEvent { int Hour { get; } }\npublic sealed class Game {\n  public World World { get; }            // read via queries only\n  public CommandResult Execute(ICommand c);\n  public void AdvanceHours(int n);\n  public IReadOnlyList<IGameEvent> DrainEvents();\n}\n// Godot: public partial class SimHost : Node { public static SimHost I; public Game Game; }",
+  "dependsOn": [
+   "infra.engine"
+  ],
+  "connections": [
+   {
+    "to": "core.commands",
+    "why": "Commands are the only way in.",
+    "how": "`Game.Execute(ICommand)` validates then applies; returns ok or a reason.",
+    "godot": "Buttons call `SimHost.I.Send(new QueueBuild(...))`.",
+    "unity": "UI Toolkit/uGUI callbacks call `SimHost.Instance.Send(...)`."
+   },
+   {
+    "to": "core.events",
+    "why": "Events are the only way out.",
+    "how": "Systems push IGameEvent into EventQueue; SimHost drains it once per frame.",
+    "godot": "SimHost re-emits as signals or C# events (`event Action<SurvivorDied>`).",
+    "unity": "SimHost raises C# events or UnityEvents; views subscribe in OnEnable/OnDisable."
+   },
+   {
+    "to": "core.clock",
+    "why": "SimHost drives time; the sim decides what a tick does.",
+    "how": "`Game.AdvanceHours(n)` from the bridge's accumulated real time.",
+    "godot": "`_Process(double delta)` accumulates delta × speed.",
+    "unity": "`Update()` accumulates `Time.unscaledDeltaTime` × speed."
+   },
+   {
+    "to": "data.state",
+    "why": "The model the facade owns.",
+    "how": "World holds lists/dictionaries of records by ID; systems mutate, UI reads.",
+    "godot": "Never store Godot Nodes in World.",
+    "unity": "Never store GameObjects/MonoBehaviours in World."
+   },
+   {
+    "to": "ai.governor",
+    "why": "AI parity: AI groups and autopilot act through the same commands/rules.",
+    "how": "AI produces ICommand objects the same validator checks.",
+    "godot": "No engine involvement.",
+    "unity": "No engine involvement."
+   }
+  ],
+  "godot": {
+   "approach": "Make SimHost a C# script on a Node registered under Project Settings > Autoload so it lives across scene changes. Expose plain C# events (simplest, type-safe in C#) or [Signal] delegates if you also want to connect in the editor. Screens are scenes with a root Control script that subscribes on _Ready and unsubscribes on _ExitTree to avoid calls into freed nodes.",
+   "keyApis": [
+    "Autoload (singleton)",
+    "Node._Process",
+    "[Signal] delegate / EmitSignal",
+    "C# event Action<T>",
+    "SceneTree.ChangeSceneToFile"
+   ],
+   "docs": [
+    {
+     "t": "Singletons (Autoload)",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/scripting/singletons_autoload.html"
+    },
+    {
+     "t": "C# signals",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/scripting/c_sharp/c_sharp_signals.html"
+    },
+    {
+     "t": "Scene organization",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/best_practices/scene_organization.html"
+    }
+   ]
+  },
+  "unity": {
+   "approach": "A SimHost MonoBehaviour in a bootstrap scene marked DontDestroyOnLoad (or created by RuntimeInitializeOnLoadMethod) owns the Game. Views are MonoBehaviours that subscribe to SimHost's C# events in OnEnable and unsubscribe in OnDisable. Keep ScriptableObjects for art/config lookups, not game state.",
+   "keyApis": [
+    "MonoBehaviour",
+    "Object.DontDestroyOnLoad",
+    "RuntimeInitializeOnLoadMethod",
+    "C# events / UnityEvent",
+    "Assembly Definitions"
+   ],
+   "docs": [
+    {
+     "t": "MonoBehaviour",
+     "u": "https://docs.unity3d.com/Manual/class-MonoBehaviour.html"
+    },
+    {
+     "t": "Order of execution",
+     "u": "https://docs.unity3d.com/Manual/ExecutionOrder.html"
+    },
+    {
+     "t": "Object.DontDestroyOnLoad",
+     "u": "https://docs.unity3d.com/ScriptReference/Object.DontDestroyOnLoad.html"
+    }
+   ]
+  },
+  "learn": [
+   {
+    "t": "Command pattern",
+    "u": "https://gameprogrammingpatterns.com/command.html"
+   },
+   {
+    "t": "Event Queue",
+    "u": "https://gameprogrammingpatterns.com/event-queue.html"
+   },
+   {
+    "t": "Service Locator",
+    "u": "https://gameprogrammingpatterns.com/service-locator.html"
+   }
+  ],
+  "newb": [
+   "Think 'board game': the sim is the board and rulebook, the engine is the table lamp and your hands. You can photograph the board (save) or play it blindfolded (tests) without the lamp.",
+   "One-way flow: input -> command -> sim changes state -> sim emits events -> UI redraws. If a UI script ever writes `survivor.Hunger = 0`, the flow is broken.",
+   "An autoload/singleton is fine for exactly one thing here (SimHost). Everything else gets what it needs passed in.",
+   "Queries return small read-only records (view models), so the UI cannot accidentally mutate state and the sim can change internals freely."
+  ],
+  "pitfalls": [
+   "Putting rules in UI scripts because 'it is only a button' (the button's logic then cannot be tested or used by the AI).",
+   "Engine objects inside the world model (Node references, Vector2 from Godot) that break saves and tests.",
+   "Forgetting to unsubscribe events: Godot throws 'object disposed', Unity calls into destroyed objects.",
+   "A 'God' manager that every system calls; prefer systems that take World + services as parameters."
+  ],
+  "test": "Architecture unit test: no type in BrokenState.Sim references Godot/UnityEngine. Integration test: `GameFactory.NewGame(42)` + 48 hours advanced + a command executed, all headless. Manual: a screen shows data only via SimHost and updates on an event.",
+  "size": "M"
+ },
+ {
+  "id": "infra.testing",
+  "title": "Test harness: xUnit sim tests, golden & determinism tests, engine tests",
+  "summary": "Automated proof that the rules work: fast xUnit unit tests for every sim rule, golden/determinism tests that replay seeded runs and compare digests, scripted playthroughs, and a few engine-side smoke tests (gdUnit4 or Unity Test Framework).",
+  "whyHere": "Data and backend come before UI, so tests are your 'screen' for the first months. Setting the categories and speed budget now avoids the prototype's fate (a suite that takes hours).",
+  "subsystems": [
+   "xUnit unit tests",
+   "Test builders / fixtures",
+   "Golden digest & determinism tests",
+   "Save round-trip tests",
+   "Scripted playthroughs",
+   "Slow-test categories & quick mode",
+   "Engine smoke tests"
+  ],
+  "sliceScope": "Sim.Tests with: unit tests per system; `WorldBuilder` helper to make tiny worlds; a determinism test (same seed + same commands for 7 days => identical digest, run twice in one process and once fresh); a save round-trip test; tests tagged `[Trait(\"Category\",\"Slow\")]` excluded by default. One gdUnit4 smoke test opens the main scene.",
+  "fullScope": "The prototype has ~370 `*test*.js` files that take hours in full, so it needs `--quick` (BS_QUICK=1: fewer seeds/days), an affected-tests picker (tools/affected.js) and a merge gate (tools/gate.js) that compares FAIL lines to a baseline that only shrinks. Its dettest + digest.js compare whole worlds; savetest saves at half time and requires identical endings; scripted playthroughs print transcripts.",
+  "protoRefs": [
+   "docs/agents/testing.md",
+   "prototype/tools/gate.js",
+   "prototype/tools/digest.js",
+   "prototype/tools/dettest.js",
+   "prototype/tools/savetest.js"
+  ],
+  "tasks": {
+   "data": [
+    "Test content: a tiny `content/test/` set (2 terrains, 3 items, 1 building) so tests do not break when real balance changes",
+    "Define the `WorldDigest` record: rounded stocks, survivors' health/needs, positions, RNG positions, log hash",
+    "Golden files folder `tests/golden/` with approved digests (Verify-style snapshots)"
+   ],
+   "backend": [
+    "`WorldBuilder` fluent helper: `.WithHub().WithSurvivors(4).WithStock(\"food\",20).Build()`",
+    "Determinism test: run seed 42 for 168 hours with a scripted command list twice; assert digests equal; compare to golden",
+    "Categories: Unit (default, < 1 s each), Slow, Soak (multi-year autopilot); `dotnet test --filter Category!=Slow` is the everyday run",
+    "Property/fuzz tests for invariants: no negative stock, no NaN, every ID reference resolves",
+    "A `tools/affected` equivalent later: keep test namespaces mirroring sim namespaces so you can run one area"
+   ],
+   "ui": [
+    "Godot: gdUnit4 (C# via gdUnit4Net) smoke test that loads Main.tscn and checks SimHost exists",
+    "Unity alt: Unity Test Framework PlayMode test that loads the bootstrap scene"
+   ]
+  },
+  "dataModel": "public sealed record WorldDigest(int Hour, string StocksHash, string PeopleHash, ulong RngState, string LogHash);\n\n[Fact] public void SameSeedSameWeek() {\n  var a = Run(seed: 42, hours: 168, Script.Basic);\n  var b = Run(seed: 42, hours: 168, Script.Basic);\n  Assert.Equal(a.Digest(), b.Digest());\n}\n[Fact, Trait(\"Category\", \"Slow\")] public void OneYearAutopilotNoNaN() { ... }",
+  "dependsOn": [
+   "infra.engine",
+   "infra.architecture"
+  ],
+  "connections": [
+   {
+    "to": "data.rng",
+    "why": "Determinism tests only mean something if all randomness flows from seeded streams.",
+    "how": "Digest includes each Rng stream's position; a mismatch points at the stream that diverged.",
+    "godot": "Never GD.Randf in sim.",
+    "unity": "Never UnityEngine.Random in sim."
+   },
+   {
+    "to": "data.save",
+    "why": "Save → load → continue must equal never saving.",
+    "how": "Test: run 84 h, save to string, load into a fresh Game, run both 84 h more, compare digests.",
+    "godot": "n/a (pure sim).",
+    "unity": "n/a (pure sim)."
+   },
+   {
+    "to": "infra.ci",
+    "why": "CI runs the fast set on every push and the slow set nightly.",
+    "how": "`dotnet test --filter Category!=Slow` on PR; nightly cron runs everything.",
+    "godot": "gdUnit4 headless via command line in CI.",
+    "unity": "GameCI test-runner action."
+   },
+   {
+    "to": "meta.balance",
+    "why": "Long headless runs grow from the same harness.",
+    "how": "Soak tests reuse GameFactory + autopilot.",
+    "godot": "n/a",
+    "unity": "n/a"
+   }
+  ],
+  "godot": {
+   "approach": "Most tests never touch Godot: that is the point. For the few engine checks use gdUnit4 (C# support) or Chickensoft GoDotTest; run them headless with `godot --headless` in CI. Keep them to smoke tests (scene loads, SimHost wires up, a button sends a command).",
+   "keyApis": [
+    "gdUnit4 / gdUnit4Net",
+    "godot --headless",
+    "SceneTree",
+    "Chickensoft GoDotTest (alt)"
+   ],
+   "docs": [
+    {
+     "t": "Command line tutorial",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/editor/command_line_tutorial.html"
+    },
+    {
+     "t": "Overview of debugging tools",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/scripting/debug/overview_of_debugging_tools.html"
+    }
+   ]
+  },
+  "unity": {
+   "approach": "Unity Test Framework (NUnit) has EditMode and PlayMode tests; use PlayMode only for bridge/UI smoke tests. The sim tests stay in a plain dotnet xUnit project outside Unity so they run in seconds. If you want one test framework everywhere, NUnit works for both.",
+   "keyApis": [
+    "Unity Test Framework",
+    "EditMode / PlayMode tests",
+    "[UnityTest] coroutines",
+    "Test Runner window"
+   ],
+   "docs": [
+    {
+     "t": "Unity Test Framework manual",
+     "u": "https://docs.unity3d.com/Packages/com.unity.test-framework@1.4/manual/index.html"
+    },
+    {
+     "t": "Assembly definitions (test asmdefs)",
+     "u": "https://docs.unity3d.com/Manual/ScriptingAssemblies.html"
+    }
+   ]
+  },
+  "learn": [
+   {
+    "t": "Unit testing C# with xUnit",
+    "u": "https://learn.microsoft.com/en-us/dotnet/core/testing/unit-testing-csharp-with-xunit"
+   },
+   {
+    "t": "Testing in .NET",
+    "u": "https://learn.microsoft.com/en-us/dotnet/core/testing/"
+   },
+   {
+    "t": "Verify (snapshot/golden testing)",
+    "u": "https://github.com/VerifyTests/Verify"
+   }
+  ],
+  "newb": [
+   "A unit test is a tiny program that sets up a situation, runs one rule and checks the result. It is how you 'play' a system before any UI exists.",
+   "A golden test saves a known-good output (a digest of the world after a week) and fails if it ever changes. When you change balance on purpose, you re-approve the golden.",
+   "Deterministic means same seed + same inputs = same game. It makes bugs reproducible: 'seed 42, day 3' is a bug report you can replay.",
+   "Write the failing test first, then the rule: it forces you to decide what 'working' means."
+  ],
+  "pitfalls": [
+   "Tests that use real content: every balance tweak breaks 30 tests. Use test content for rules, real content only in validation tests.",
+   "Slow tests in the default run: the prototype's suite takes hours. Budget: the everyday run under 60 s.",
+   "Weakening a test to make it pass (the prototype's rule: never skip or weaken; fix the cause).",
+   "Comparing floats exactly in digests: round to 3 decimals as the prototype's digest does."
+  ],
+  "test": "`dotnet test` green in < 60 s; deliberately add `new Random()` in a system and watch the determinism test fail; break a save field and watch the round-trip fail; the gdUnit4 smoke test passes headless.",
+  "size": "M"
+ },
+ {
+  "id": "infra.ci",
+  "title": "CI: GitHub Actions for tests and builds",
+  "summary": "Automation on GitHub that runs the sim tests on every push and PR, and builds a playable export (Windows/Linux, later web) on dev, so 'it works on my machine' becomes 'it works'.",
+  "whyHere": "Cheap to add once tests exist, and it protects dev from day one; later cards add more tests and the CI simply runs them.",
+  "subsystems": [
+   "sim-tests workflow (dotnet test)",
+   "Engine export workflow",
+   "Caching (NuGet, Library/)",
+   "Artifacts & releases",
+   "Nightly slow tests",
+   "Branch protection"
+  ],
+  "sliceScope": "`.github/workflows/sim-tests.yml`: checkout, setup-dotnet 8, `dotnet test --filter Category!=Slow`, on push and PR. `build.yml` on dev: Godot headless export of a Windows and Linux build uploaded as an artifact. Branch protection on dev requires sim-tests.",
+  "fullScope": "The prototype's only workflow (pages.yml) publishes the browser build to GitHub Pages on every push to dev; its tests and gate run by hand (17–35 minutes on 4 cores). The rebuild should automate tests from the start and add a nightly job for soak/balance runs and store-ready builds by M8.",
+  "protoRefs": [
+   ".github/workflows/pages.yml",
+   "prototype/tools/gate.js",
+   "docs/agents/testing.md"
+  ],
+  "tasks": {
+   "data": [
+    "Pin versions in one place: .NET SDK (global.json), Godot version in the workflow env, Unity version in ProjectSettings/ProjectVersion.txt",
+    "Export presets committed (`export_presets.cfg`) without secrets"
+   ],
+   "backend": [
+    "sim-tests.yml: `actions/setup-dotnet`, cache NuGet, `dotnet test --logger trx`, upload results",
+    "Content validation step: `dotnet run --project tools/ContentCheck` fails the build on bad JSON",
+    "Nightly cron job: Slow + Soak categories and a 1-year headless autopilot run; post a summary",
+    "Architecture check runs here too (no engine refs in Sim)"
+   ],
+   "ui": [
+    "build.yml: download Godot .NET + export templates (or a godot-ci container), `godot --headless --export-release \"Windows Desktop\" build/BrokenState.exe`",
+    "Unity alt: GameCI unity-builder with license secrets; cache Library/"
+   ]
+  },
+  "dataModel": "# .github/workflows/sim-tests.yml\non: [push, pull_request]\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - uses: actions/setup-dotnet@v4\n        with: { dotnet-version: '8.0.x' }\n      - run: dotnet test --filter \"Category!=Slow\"",
+  "dependsOn": [
+   "infra.vcs",
+   "infra.testing"
+  ],
+  "connections": [
+   {
+    "to": "infra.testing",
+    "why": "CI is just a robot that runs the harness.",
+    "how": "Test categories decide which job runs what.",
+    "godot": "gdUnit4 headless job (optional).",
+    "unity": "GameCI test-runner (needs a Unity license secret)."
+   },
+   {
+    "to": "data.content",
+    "why": "Bad content should fail before a human plays it.",
+    "how": "ContentDb.LoadAndValidate in a CI step and an xUnit test.",
+    "godot": "n/a",
+    "unity": "n/a"
+   },
+   {
+    "to": "release.ship",
+    "why": "The release pipeline grows out of the export job.",
+    "how": "Tagging `v*` on main builds and attaches binaries.",
+    "godot": "Export presets per platform.",
+    "unity": "Build profiles per platform."
+   }
+  ],
+  "godot": {
+   "approach": "Godot exports from the command line with `--headless --export-release <preset> <path>`; CI needs the matching .NET export templates. Community containers/actions (e.g. abarichello/godot-ci) package the editor; for .NET make sure you use the mono/.NET variant.",
+   "keyApis": [
+    "godot --headless --export-release",
+    "export_presets.cfg",
+    "Export templates (.NET)"
+   ],
+   "docs": [
+    {
+     "t": "Exporting projects",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/export/exporting_projects.html"
+    },
+    {
+     "t": "Command line tutorial",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/editor/command_line_tutorial.html"
+    }
+   ]
+  },
+  "unity": {
+   "approach": "Unity in CI needs a license (Personal works via activation) and is slow to boot; GameCI provides Docker images and GitHub Actions for test and build. Cache the Library folder or each run reimports everything. Build from a static method with BuildPipeline.BuildPlayer for reproducible builds.",
+   "keyApis": [
+    "GameCI unity-builder / unity-test-runner",
+    "BuildPipeline.BuildPlayer",
+    "-batchmode -nographics",
+    "Library cache"
+   ],
+   "docs": [
+    {
+     "t": "GameCI docs",
+     "u": "https://game.ci/docs/"
+    },
+    {
+     "t": "BuildPipeline.BuildPlayer",
+     "u": "https://docs.unity3d.com/ScriptReference/BuildPipeline.BuildPlayer.html"
+    }
+   ]
+  },
+  "learn": [
+   {
+    "t": "GitHub Actions docs",
+    "u": "https://docs.github.com/en/actions"
+   },
+   {
+    "t": "Create a test validation GitHub workflow",
+    "u": "https://learn.microsoft.com/en-us/dotnet/devops/dotnet-test-github-action"
+   },
+   {
+    "t": "actions/setup-dotnet",
+    "u": "https://github.com/actions/setup-dotnet"
+   }
+  ],
+  "newb": [
+   "CI = a clean computer that clones your repo and runs your commands on every push. If it passes there, it is not your laptop's leftovers making it work.",
+   "Start with just tests; add builds once you have something worth downloading.",
+   "A green check on the PR is your permission to merge; red means 'not done' (the prototype's gate rule).",
+   "Workflows are YAML files in the repo, versioned like code."
+  ],
+  "pitfalls": [
+   "Running slow soak tests on every push and burning free minutes; put them on a nightly schedule.",
+   "Version drift: CI uses .NET 9 while you use 8. Pin with global.json.",
+   "Committing Unity license files or store keys; use repository secrets.",
+   "Godot exports failing because the .NET export templates are missing or a different version than the editor."
+  ],
+  "test": "Open a PR with a deliberately failing test: CI goes red and dev blocks the merge. Fix it: green. Download the Windows artifact from the dev build and run it on a machine without Godot.",
+  "size": "S"
+ },
+ {
+  "id": "infra.devtools",
+  "title": "Dev tools: console, cheats, debug overlays, headless runner",
+  "summary": "Tools for you, not the player: an in-game console (`give food 50`, `tp party 3 12,8`, `speed 300`), reveal-map and inspect overlays, an FPS/tick-time readout, a crash-save on exceptions, and a command-line headless runner that plays N days on a seed.",
+  "whyHere": "Before gameplay systems pile up you need ways to get into a situation fast and see hidden state; the headless runner is also the backbone of balance runs and bug repro.",
+  "subsystems": [
+   "Dev console & command parser",
+   "Cheat commands (as sim commands)",
+   "Debug overlays (fog off, IDs, tile info)",
+   "Dev speeds & step-one-hour",
+   "Headless runner CLI",
+   "Crash handler & crash save",
+   "Perf readout"
+  ],
+  "sliceScope": "Toggle with backtick: console with `help`, `give`, `heal`, `kill`, `reveal`, `speed`, `step N`, `seed`, `save`; overlay showing tile id/coords under the mouse; FPS + ms per tick; `dotnet run --project tools/Headless -- --seed 42 --days 7` prints a daily summary; unhandled exceptions write `crash-<time>.bsave` and pause.",
+  "fullScope": "The prototype's ui/devtools.js lifts the fog and shows faction/hive trackers without changing the sim, offers dev speeds 60×/300×/1200× (a day in ~0.4 s), and an Autopilot governor that plays for you (also used headless for balance runs and censuses). An FPS overlay, `window.game` handle and an error screen (ui/crash.js) that writes a crash save complete the kit; tools/ holds dozens of headless runners (balancesim, hordecensus, bigmapbench).",
+  "protoRefs": [
+   "prototype/src/ui/devtools.js",
+   "prototype/src/main.js",
+   "prototype/src/sim/autopilot.js",
+   "prototype/tools/balancesim.js"
+  ],
+  "tasks": {
+   "data": [
+    "Cheat command records (`DevGive(itemId, qty, baseId)`, `DevReveal`, `DevSetSpeed`) flagged `IsDevOnly`, refused when dev mode is off",
+    "Console command registry: name, args schema, help text"
+   ],
+   "backend": [
+    "Cheats go through `Game.Execute` like any command, so they are logged and replays stay deterministic",
+    "Headless runner console app: args seed, days, size, autopilot on/off; prints digest + daily summary; exit code 1 on invariant failure",
+    "Global exception guard in the tick: catch, write crash save (last good state + exception text), stop the clock",
+    "Tick profiler: time each system's Hour/Day step; expose the slowest 5"
+   ],
+   "ui": [
+    "Console overlay (LineEdit + RichTextLabel) on a CanvasLayer above everything, with history and autocompletion",
+    "Overlay toggles: fog off (display only), tile ids, party paths, dead counts",
+    "Perf label: FPS, ms per tick, events per frame"
+   ]
+  },
+  "dataModel": "public sealed record DevGive(string ItemId, int Qty, int BaseId) : ICommand;\npublic sealed record DevStep(int Hours) : ICommand;\npublic sealed record ConsoleCmd(string Name, string Help, Func<string[], ICommand?> Parse);\n\n// tools/Headless: dotnet run -- --seed 42 --days 7 --autopilot\nvar game = GameFactory.NewGame(seed, cfg, content);\nfor (int h = 0; h < days * 24; h++) game.AdvanceHours(1);",
+  "dependsOn": [
+   "infra.architecture",
+   "infra.testing"
+  ],
+  "connections": [
+   {
+    "to": "core.commands",
+    "why": "Cheats are commands with a dev flag, so they share validation, logging and replay.",
+    "how": "`IsDevOnly` commands rejected unless `GameConfig.DevMode`.",
+    "godot": "Console parses text into commands and calls SimHost.Send.",
+    "unity": "Same, from a UI Toolkit TextField."
+   },
+   {
+    "to": "core.clock",
+    "why": "Dev speeds and single-step are clock features.",
+    "how": "`SetSpeed(300)` allowed only in dev mode; `DevStep(n)` advances n hours while paused.",
+    "godot": "Keys mapped in InputMap.",
+    "unity": "Input System actions."
+   },
+   {
+    "to": "meta.balance",
+    "why": "Headless runner + autopilot become the balance census.",
+    "how": "Same runner with many seeds and CSV output.",
+    "godot": "n/a",
+    "unity": "n/a"
+   },
+   {
+    "to": "data.save",
+    "why": "Crash saves and 'save before repro' need the save service.",
+    "how": "Crash handler calls SaveService.Write(path, game).",
+    "godot": "Writes to user://crash/.",
+    "unity": "Writes to Application.persistentDataPath/crash/."
+   }
+  ],
+  "godot": {
+   "approach": "Build the console as its own scene on a CanvasLayer with a high layer number so it draws over everything, added by SimHost only in debug builds (`OS.IsDebugBuild()`). Use the built-in debugger, remote scene tree and Profiler/Monitors panels for engine-side issues; your own tick profiler covers the sim.",
+   "keyApis": [
+    "CanvasLayer",
+    "LineEdit / RichTextLabel",
+    "OS.IsDebugBuild",
+    "InputMap",
+    "Debugger > Profiler / Monitors"
+   ],
+   "docs": [
+    {
+     "t": "Overview of debugging tools",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/scripting/debug/overview_of_debugging_tools.html"
+    },
+    {
+     "t": "Debugger panel",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/scripting/debug/debugger_panel.html"
+    },
+    {
+     "t": "CanvasLayer",
+     "u": "https://docs.godotengine.org/en/stable/classes/class_canvaslayer.html"
+    }
+   ]
+  },
+  "unity": {
+   "approach": "Make a DevConsole prefab with a UI Toolkit panel, enabled only in Development builds (`Debug.isDebugBuild`). Use Gizmos/Handles for scene-view overlays and the Profiler window for frame timing; your tick profiler covers the sim.",
+   "keyApis": [
+    "UI Toolkit TextField / ListView",
+    "Debug.isDebugBuild",
+    "Gizmos",
+    "Profiler window",
+    "Application.logMessageReceived"
+   ],
+   "docs": [
+    {
+     "t": "Profiler",
+     "u": "https://docs.unity3d.com/Manual/Profiler.html"
+    },
+    {
+     "t": "Gizmos",
+     "u": "https://docs.unity3d.com/ScriptReference/Gizmos.html"
+    },
+    {
+     "t": "Log files",
+     "u": "https://docs.unity3d.com/Manual/LogFiles.html"
+    }
+   ]
+  },
+  "learn": [
+   {
+    "t": "Game Loop",
+    "u": "https://gameprogrammingpatterns.com/game-loop.html"
+   },
+   {
+    "t": "Command",
+    "u": "https://gameprogrammingpatterns.com/command.html"
+   }
+  ],
+  "newb": [
+   "Dev tools are a multiplier: a 'give 100 wood' command saves you an hour every time you test building.",
+   "Make cheats real commands, not direct field edits: then a bug found with cheats can still be replayed from the command log.",
+   "A headless runner is just your sim in a console app. It is the fastest way to see if a year of play explodes.",
+   "Overlays that only change what is drawn (fog off) are safe; anything that changes the world must be a logged command."
+  ],
+  "pitfalls": [
+   "Shipping the console enabled; gate it behind debug builds or a launch flag.",
+   "Cheats editing state directly so saves/replays diverge.",
+   "Catching exceptions and continuing silently: stop the clock and show it, as the prototype's crash screen does.",
+   "Overlays that cost more than the game (draw tile ids only for visible tiles)."
+  ],
+  "test": "Unit tests: each console string parses to the right command; dev commands refused when DevMode=false. Headless runner exits 0 for 7 days on seed 42 and prints the same digest twice. Manual: `give food 50` changes the stock panel; throwing in a system writes a crash save and pauses.",
+  "size": "M"
+ },
+ {
+  "id": "data.ids",
+  "title": "Stable IDs, registries & references",
+  "summary": "How things point at each other: string IDs for content ('item.pistol_9mm', 'terrain.forest'), typed integer IDs for runtime entities (SurvivorId 12, BaseId 3, TileId = y × width + x), and registries that look them up.",
+  "whyHere": "Content, state and saves all depend on references that survive saving, loading and content updates. Choosing ID rules first avoids object-reference spaghetti that cannot be saved.",
+  "subsystems": [
+   "Content IDs (namespaced strings)",
+   "Entity IDs (typed int structs)",
+   "ID allocator (saved counter)",
+   "Registries / lookups",
+   "Tile IDs & coords",
+   "Reference validation"
+  ],
+  "sliceScope": "`readonly record struct` IDs for Survivor, Base, Party, Faction, Battle, Unit, Card; one `IdAllocator` per World whose next value is saved; `TileId` from coords; content IDs as lowercase dotted strings validated at load; `Registry<TId,T>` (dictionary) for each entity list.",
+  "fullScope": "The prototype uses a process-wide counter (`newId`) saved with the world, plus `localId(state, id)` (offset from `state.idBase`) because ids from two worlds in one process differ and must not feed dice. Tiles are `y * width + x`; content keys are plain strings ('pistol', 'huntrifle'); lookups like `survivorById` are linear scans over arrays.",
+  "protoRefs": [
+   "prototype/src/sim/world.js",
+   "prototype/src/sim/hex.js",
+   "prototype/src/sim/save.js",
+   "prototype/src/sim/data.js"
+  ],
+  "tasks": {
+   "data": [
+    "Naming rule for content IDs: `<kind>.<snake_name>` (item.pistol_9mm, building.lodge, dead.walker); never renamed once shipped (add an alias table if you must)",
+    "Typed ID structs: `SurvivorId`, `BaseId`, `PartyId`, `FactionId`, `TileId` with JSON converters (serialize as plain numbers)",
+    "Art keys reuse content IDs ('item.pistol_9mm') so the ArtCatalog needs no extra mapping"
+   ],
+   "backend": [
+    "`IdAllocator` owned by World (not static), saved and restored; tests: two worlds in one process hand out the same IDs",
+    "`Registry<TId,T>`: Add, Get, TryGet, Remove, ordered iteration by ID (deterministic)",
+    "Validation pass: every ID field in state resolves (dead references found after load or after a removal)"
+   ],
+   "ui": [
+    "Debug overlay shows entity IDs on hover (infra.devtools)"
+   ]
+  },
+  "dataModel": "public readonly record struct SurvivorId(int Value);\npublic readonly record struct TileId(int Value) {\n  public static TileId Of(int x, int y, int w) => new(y * w + x);\n}\npublic sealed class IdAllocator { public int Next = 1; public int Take() => Next++; }\npublic sealed class Registry<TId, T> where TId : struct {\n  readonly SortedDictionary<TId, T> _byId = new();\n  public T Get(TId id) => _byId[id];\n}",
+  "dependsOn": [
+   "infra.architecture"
+  ],
+  "connections": [
+   {
+    "to": "data.content",
+    "why": "Content records are keyed by string IDs and referenced by them from other content.",
+    "how": "ContentDb.Get<ItemDef>(\"item.pistol_9mm\"); loot tables list item IDs.",
+    "godot": "ArtCatalog Resource maps the same IDs to textures.",
+    "unity": "ArtCatalog ScriptableObject maps the same IDs to sprites."
+   },
+   {
+    "to": "data.state",
+    "why": "Entities reference each other by ID, never by object pointer.",
+    "how": "Survivor.BaseId, Party.MemberIds; resolved through registries.",
+    "godot": "Views keep the ID and look up fresh data on each event.",
+    "unity": "Same; never cache a stale Survivor object in a MonoBehaviour."
+   },
+   {
+    "to": "data.save",
+    "why": "IDs make the save a flat, tree-shaped JSON with no cycles.",
+    "how": "Saved counter keeps new IDs unique after load.",
+    "godot": "n/a",
+    "unity": "n/a"
+   },
+   {
+    "to": "core.hexgrid",
+    "why": "TileId is the grid's index.",
+    "how": "HexGrid converts TileId <-> (x,y) <-> axial.",
+    "godot": "TileMapLayer cell coords converted via HexGrid.",
+    "unity": "Tilemap cell coords converted via HexGrid."
+   }
+  ],
+  "godot": {
+   "approach": "The engine side stores only IDs: a SurvivorCard scene has `SurvivorId Id` and asks SimHost for the current view model. When you need a mapping from IDs to nodes (e.g. unit sprites), keep a Dictionary<UnitId, Node2D> in the view and rebuild it from events.",
+   "keyApis": [
+    "Dictionary<TId, Node>",
+    "Node.QueueFree",
+    "[Export] string (art key)"
+   ],
+   "docs": [
+    {
+     "t": "C# basics",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/scripting/c_sharp/c_sharp_basics.html"
+    },
+    {
+     "t": "Godot interfaces (getting references)",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/best_practices/godot_interfaces.html"
+    }
+   ]
+  },
+  "unity": {
+   "approach": "Same rule: MonoBehaviours hold IDs, not sim objects, and a view registry maps IDs to GameObjects. Avoid Unity's InstanceID for anything saved; it changes every session.",
+   "keyApis": [
+    "Dictionary<TId, GameObject>",
+    "Object.Destroy",
+    "[SerializeField] string artKey"
+   ],
+   "docs": [
+    {
+     "t": "Script serialization",
+     "u": "https://docs.unity3d.com/Manual/script-Serialization.html"
+    },
+    {
+     "t": "GameObjects",
+     "u": "https://docs.unity3d.com/Manual/GameObjects.html"
+    }
+   ]
+  },
+  "learn": [
+   {
+    "t": "Records (C# reference)",
+    "u": "https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/builtin-types/record"
+   },
+   {
+    "t": "Type Object",
+    "u": "https://gameprogrammingpatterns.com/type-object.html"
+   }
+  ],
+  "newb": [
+   "An ID is a name tag. Object references are like holding someone's hand: fine in memory, impossible to write in a save file. IDs can be written down.",
+   "Typed IDs (`SurvivorId` instead of `int`) make the compiler stop you passing a base ID where a survivor ID belongs.",
+   "Content IDs are forever: saves and other content refer to them. Rename the display name freely, never the ID.",
+   "Iterate registries in ID order, not hash order, or your game becomes non-deterministic."
+  ],
+  "pitfalls": [
+   "A static global ID counter (the prototype needed localId to work around two worlds in one process).",
+   "Feeding IDs into random seeds or `id % n` math, so a different creation order changes the dice.",
+   "Iterating `Dictionary`/`HashSet` and rolling dice inside the loop (order is not guaranteed).",
+   "Reusing a dead survivor's ID for a newborn: old log lines and memorials then point at the wrong person."
+  ],
+  "test": "Unit: two worlds created in one test process hand out identical IDs; save/load keeps the allocator; removing a survivor and validating finds every dangling reference; content with an unknown referenced ID fails validation with the file and field named.",
+  "size": "S"
+ },
+ {
+  "id": "data.content",
+  "title": "Static content: JSON definitions, ContentDb, validation & art keys",
+  "summary": "The game's 'database': every item, terrain, building, recipe, dead type, loot table and event card defined as JSON in `content/`, loaded into immutable C# records by a ContentDb, cross-checked by validation tests, with visuals looked up by art key.",
+  "whyHere": "The user's order is database first. Every system reads definitions (what a pistol is, what a Lodge costs), so the format, loader and validation must exist before the rules that use them.",
+  "subsystems": [
+   "JSON schemas per content type",
+   "C# definition records",
+   "ContentDb loader & index",
+   "Validation (refs, ranges, uniqueness)",
+   "Art keys & ArtCatalog seam",
+   "Hot reload (dev)",
+   "Mod/patch layering (later)"
+  ],
+  "sliceScope": "content/terrain.json (7 terrains), items.json (~20: food, water, wood, 3 guns, ammo, 2 melee, bandage), buildings.json (4–5), dead.json (walker, runner), loot.json (3 tables), cards.json (4–6 event cards), poi_types.json (3). Records + ContentDb.Load(folder) + one validation test that loads the real content and fails with a precise message on any bad reference.",
+  "fullScope": "The prototype's content is JS objects: data.js (841 lines: TERRAIN, SUPPLIES, GEAR, LOCATIONS, SKILLS, TRAITS, FACTION_TYPES, names) plus 34 data-*.js files (guns, ammo, gun mods, furniture catalogue of 248 kinds with cell rules, hp, kg, carry class and sprites; shops, hotels, power, tools). Moving it to JSON makes it editable without code and checkable by tools.",
+  "protoRefs": [
+   "prototype/src/sim/data.js",
+   "prototype/src/sim/data-furniture.js",
+   "prototype/src/sim/data-guns.js",
+   "prototype/src/sim/hiveconst.js",
+   "docs/features/gear.md"
+  ],
+  "tasks": {
+   "data": [
+    "What 'database' means here: for a single-player game the database is (1) static content definitions (this card) and (2) the save file (data.save). There is no server DB",
+    "One JSON file per content type (or a folder per type for big sets), each entry with `id`, display `name`, `art` key and fields; write a JSON Schema per type so editors autocomplete and CI validates",
+    "C# `record` per type (ItemDef, TerrainDef, BuildingDef, LootTableDef, CardDef) with immutable collections",
+    "Port the slice's numbers from data.js (TERRAIN walk/vehicle costs, SUPPLIES weights/values, a few GEAR entries)"
+   ],
+   "backend": [
+    "`ContentDb.Load(path)`: read every file with System.Text.Json, build `IReadOnlyDictionary<string, T>` per type, then freeze",
+    "Validation: unique IDs, every referenced ID exists and is the right kind, numbers in range, required art key present; collect ALL errors, then throw one report",
+    "Typed accessors: `db.Items[\"item.pistol_9mm\"]`, `db.Get<BuildingDef>(id)`; queries like `db.ItemsWithTag(\"food\")` built once at load",
+    "Content hash (SHA of all files) stored in saves, so a load can warn when content changed",
+    "Dev hot reload: reload ContentDb on file change in the editor (sim restarts or definitions swap between ticks)"
+   ],
+   "ui": [
+    "ArtCatalog (Godot Resource / Unity ScriptableObject) mapping art key -> texture/icon with a magenta 'missing' fallback",
+    "Debug 'Content browser' panel listing items with their placeholder icons"
+   ]
+  },
+  "dataModel": "public sealed record ItemDef(string Id, string Name, string Art, ItemKind Kind, float Kg,\n  int Value, ImmutableArray<string> Tags, WeaponStats? Weapon = null);\npublic sealed record LootEntry(string ItemId, int Weight, int Min, int Max);\npublic sealed record LootTableDef(string Id, ImmutableArray<LootEntry> Entries);\npublic sealed class ContentDb {\n  public IReadOnlyDictionary<string, ItemDef> Items { get; }\n  public IReadOnlyDictionary<string, LootTableDef> Loot { get; }\n  public static ContentDb Load(string dir); // throws ContentError with every problem\n}\n// items.json: [{\"id\":\"item.pistol_9mm\",\"name\":\"9mm pistol\",\"art\":\"item.pistol_9mm\",\"kind\":\"Gun\",\"kg\":0.9}]",
+  "dependsOn": [
+   "data.ids",
+   "infra.testing"
+  ],
+  "connections": [
+   {
+    "to": "data.state",
+    "why": "Runtime state stores content IDs, never copies of definitions.",
+    "how": "ItemStack { string ItemId; int Qty } resolves via ContentDb when rules need stats.",
+    "godot": "n/a",
+    "unity": "n/a"
+   },
+   {
+    "to": "ui.placeholders",
+    "why": "Art keys are the seam where placeholder art becomes human art.",
+    "how": "Every def has `Art`; the sim never loads images.",
+    "godot": "ArtCatalog.tres: Dictionary<string, Texture2D>; missing key -> magenta square.",
+    "unity": "ArtCatalog ScriptableObject list of (key, Sprite); missing -> magenta."
+   },
+   {
+    "to": "gear.items",
+    "why": "Items are the biggest content set and the first consumer.",
+    "how": "Inventory rules read ItemDef.Kg/Kind/Tags.",
+    "godot": "Inventory icons by art key.",
+    "unity": "Same."
+   },
+   {
+    "to": "data.save",
+    "why": "Together they are the whole 'database': definitions + one game's state.",
+    "how": "Saves store IDs + content hash; a removed ID is handled by a migration or alias table.",
+    "godot": "n/a",
+    "unity": "n/a"
+   },
+   {
+    "to": "infra.ci",
+    "why": "Content errors fail CI, not a playtest.",
+    "how": "Validation test loads real content/ on every PR.",
+    "godot": "n/a",
+    "unity": "n/a"
+   }
+  ],
+  "godot": {
+   "approach": "Keep JSON as the source of truth (loaded by the sim with System.Text.Json from `res://content` or a path you copy next to the build) and use Godot Resources only for engine-side lookups like the ArtCatalog. Resources (.tres) are great for editor-tweaked visual data but they tie data to the engine, which is why game rules data stays JSON.",
+   "keyApis": [
+    "Resource / [GlobalClass]",
+    "[Export] Godot.Collections.Dictionary",
+    "FileAccess (res://)",
+    "ResourceLoader",
+    "Texture2D"
+   ],
+   "docs": [
+    {
+     "t": "Resources",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/scripting/resources.html"
+    },
+    {
+     "t": "Data preferences",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/best_practices/data_preferences.html"
+    },
+    {
+     "t": "C# global classes",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/scripting/c_sharp/c_sharp_global_classes.html"
+    }
+   ]
+  },
+  "unity": {
+   "approach": "Load the same JSON from StreamingAssets (or a TextAsset) into the sim. Unity has no System.Text.Json built in: either ship its NuGet DLLs (netstandard2.0) in Assets/Plugins, or hide serialization behind an interface and use the Newtonsoft package in Unity. Use ScriptableObjects for the ArtCatalog only.",
+   "keyApis": [
+    "StreamingAssets",
+    "TextAsset",
+    "ScriptableObject",
+    "Sprite",
+    "com.unity.nuget.newtonsoft-json (alt)"
+   ],
+   "docs": [
+    {
+     "t": "ScriptableObject",
+     "u": "https://docs.unity3d.com/Manual/class-ScriptableObject.html"
+    },
+    {
+     "t": "StreamingAssets",
+     "u": "https://docs.unity3d.com/Manual/StreamingAssets.html"
+    },
+    {
+     "t": "JSON Serialization (JsonUtility)",
+     "u": "https://docs.unity3d.com/Manual/JSONSerialization.html"
+    }
+   ]
+  },
+  "learn": [
+   {
+    "t": "System.Text.Json overview",
+    "u": "https://learn.microsoft.com/en-us/dotnet/standard/serialization/system-text-json/overview"
+   },
+   {
+    "t": "SQLite: appropriate uses",
+    "u": "https://www.sqlite.org/whentouse.html"
+   },
+   {
+    "t": "JSON Schema",
+    "u": "https://json-schema.org/"
+   }
+  ],
+  "newb": [
+   "Why not a real database server? Nobody else queries your data, it is read once at startup and never changes during play. JSON files + C# records give you what a DB gives (one source of truth, typed rows, IDs as keys, referential integrity via validation tests, history via Git diffs) with nothing to install.",
+   "When would SQLite be worth it? A huge read-only catalogue you query in many ad-hoc ways, a mod tool, or saves of hundreds of MB with partial loading. Broken State's content (a few thousand rows) loads in milliseconds as JSON; SQLite would add a native library per platform and make diffs unreadable. Revisit only if load time or save size hurts.",
+   "Data-driven design: a new gun is a JSON entry, not new code. Code handles kinds of things (guns), data handles which ones (a 9mm pistol).",
+   "Records are immutable: once loaded, a definition cannot be changed by accident at runtime. Per-game changes (a worn pistol) live in state, not in the definition.",
+   "Validation tests are your foreign-key constraints: 'every loot entry's itemId exists' is a test, so a typo fails CI instead of crashing on day 40."
+  ],
+  "pitfalls": [
+   "Putting runtime values in definitions (current condition, ammo left) so every pistol shares one magazine.",
+   "Loading content lazily from many places; load once into ContentDb and pass it in.",
+   "Stopping validation at the first error: report every problem with file + id + field so fixing is one pass.",
+   "Letting the engine editor become the source of truth for rules (Resources/ScriptableObjects for stats): then the sim tests need the engine."
+  ],
+  "test": "xUnit: real content loads with zero errors; a broken fixture (duplicate id, unknown loot item, negative weight, missing art key) produces exactly those errors; ContentDb is immutable (no setters). Manual: the content browser shows every item with a placeholder icon, and a missing art key shows magenta.",
+  "size": "L"
+ },
+ {
+  "id": "data.state",
+  "title": "Runtime world-state model",
+  "summary": "The plain C# classes that hold one game in progress: World (clock, seed, RNG streams, map tiles), survivors, bases with stockpiles, parties, factions, POIs, the dead per tile, open cards, the log and an active battle, all linked by IDs.",
+  "whyHere": "Rules (backend) operate on this model and saves serialize it, so its shape must settle early; later cards add fields to it rather than inventing parallel stores.",
+  "subsystems": [
+   "World root & config",
+   "Map state (tiles, knowledge)",
+   "Entities: survivors, bases, parties, factions",
+   "Stockpiles & inventories",
+   "Cards & log",
+   "Battle state (separate mode)",
+   "Invariants & validation"
+  ],
+  "sliceScope": "World { Hour, Seed, Config, Rngs, Map(tiles: terrain id, POIs, dead count, fog), Survivors, Bases(1 hub: stock, buildings, queue), Parties, Cards, Log, Battle? }. Mutable classes with ID references; content referenced by ID; a `WorldValidator` that checks invariants after every tick in tests.",
+  "fullScope": "The prototype's State (types.d.ts) holds hour, seed, rng, grid, tiles (terrain, infection, owner, loc), survivors (skills, traits, health, needs, inventory, location), bases (stock, buildings, furniture, base map 500 × 500), parties, factions with their own people (ADR 0001), hordes, hives, weather days and fronts, knowledge, markers, cards, a 200-line log and a diary, battles and raids mid-turn. createWorld builds it.",
+  "protoRefs": [
+   "prototype/src/sim/types.d.ts",
+   "prototype/src/sim/world.js",
+   "docs/adr/0001-ai-parity.md",
+   "docs/features/survivors.md"
+  ],
+  "tasks": {
+   "data": [
+    "Write the class diagram for the slice entities and their ID links (Survivor.Location -> BaseId or PartyId)",
+    "Decide mutable classes vs records: state = mutable classes (systems update fields each hour); events/view models = records",
+    "Stockpile as `Dictionary<string itemId, int qty>` (sorted for determinism) plus item instances only where per-item data exists (condition, rounds)",
+    "Location as a small tagged type: AtBase(BaseId) | InParty(PartyId) | InBattle(BattleId) | Dead"
+   ],
+   "backend": [
+    "`GameFactory.NewGame(seed, config, content)` creates map, hub, 4 survivors, starting stock",
+    "Helpers on World: Alive(), AtBase(baseId), TileAt(id); keep them pure queries",
+    "`WorldValidator`: no negative stock, every ID resolves, a survivor is in exactly one place, no NaN; run in tests after each tick",
+    "Read-only view model builders (BaseSummary, SurvivorRow) for the UI"
+   ],
+   "ui": [
+    "Debug inspector panel: a tree of World (counts, selected entity's fields) for dev builds"
+   ]
+  },
+  "dataModel": "public sealed class World {\n  public int Hour; public int Seed; public GameConfig Config = default!;\n  public RngStreams Rng = default!; public MapState Map = default!;\n  public Registry<SurvivorId, Survivor> Survivors = new();\n  public Registry<BaseId, Base> Bases = new();\n  public Registry<PartyId, Party> Parties = new();\n  public List<CardInstance> Cards = new(); public GameLog Log = new();\n  public BattleState? Battle; public IdAllocator Ids = new();\n}\npublic sealed class Base { public BaseId Id; public TileId Tile; public SortedDictionary<string,int> Stock = new(); }",
+  "dependsOn": [
+   "data.ids",
+   "data.content"
+  ],
+  "connections": [
+   {
+    "to": "data.save",
+    "why": "The save is this model written to JSON.",
+    "how": "Design every field to be serializable: no delegates, no engine types, no cyclic object refs.",
+    "godot": "n/a",
+    "unity": "n/a"
+   },
+   {
+    "to": "core.clock",
+    "why": "Systems mutate state once per hour/day in a fixed order.",
+    "how": "Scheduler calls each system with World.",
+    "godot": "SimHost advances, views re-query.",
+    "unity": "Same."
+   },
+   {
+    "to": "surv.model",
+    "why": "Survivors are the richest entity and grow over many cards.",
+    "how": "Survivor class gets fields from surv.needs, surv.health, gear.items.",
+    "godot": "Roster rows bound to SurvivorRow view models.",
+    "unity": "Same."
+   },
+   {
+    "to": "combat.turns",
+    "why": "A battle is a separate state machine stored on World while active.",
+    "how": "World.Battle != null pauses the campaign clock.",
+    "godot": "Battle scene loaded when BattleStarted event fires.",
+    "unity": "Battle scene loaded additively."
+   },
+   {
+    "to": "infra.architecture",
+    "why": "Only the sim mutates this model.",
+    "how": "UI receives view models, not the classes.",
+    "godot": "n/a",
+    "unity": "n/a"
+   }
+  ],
+  "godot": {
+   "approach": "Godot never owns this data. Views are rebuilt from view models when events arrive (or once per frame for cheap labels). If you want editor-inspectable debug, mirror small pieces into a debug panel, not into Resources.",
+   "keyApis": [
+    "Tree (debug inspector)",
+    "Label / ItemList",
+    "SimHost queries"
+   ],
+   "docs": [
+    {
+     "t": "Godot interfaces",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/best_practices/godot_interfaces.html"
+    },
+    {
+     "t": "UI index",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/ui/index.html"
+    }
+   ]
+  },
+  "unity": {
+   "approach": "Do not make World a MonoBehaviour or ScriptableObject: ScriptableObject edits in Play mode persist into the asset and confuse beginners. Views read view models from SimHost; a custom EditorWindow can show a debug tree.",
+   "keyApis": [
+    "Plain C# classes",
+    "EditorWindow (debug)",
+    "UI Toolkit ListView"
+   ],
+   "docs": [
+    {
+     "t": "Script serialization (why not to rely on it for state)",
+     "u": "https://docs.unity3d.com/Manual/script-Serialization.html"
+    },
+    {
+     "t": "UI Toolkit",
+     "u": "https://docs.unity3d.com/Manual/UIElements.html"
+    }
+   ]
+  },
+  "learn": [
+   {
+    "t": "Type Object",
+    "u": "https://gameprogrammingpatterns.com/type-object.html"
+   },
+   {
+    "t": "Component (and why you may not need it)",
+    "u": "https://gameprogrammingpatterns.com/component.html"
+   }
+  ],
+  "newb": [
+   "Definition vs instance: ItemDef 'pistol' is the catalogue page (content); ItemInstance #87 with 60% condition is the pistol in Maria's hand (state).",
+   "State is just data. Rules live in systems that take World as a parameter. That makes each rule testable on a tiny hand-built world.",
+   "ECS (entity-component-system) is a popular pattern for thousands of moving objects; a strategy sim with hundreds of survivors does fine with plain classes and lists.",
+   "If a field is hard to save (a delegate, an engine object), it is a sign it does not belong in state."
+  ],
+  "pitfalls": [
+   "Storing derived values (total weight, mood) that drift from their inputs; compute them, or recompute them in one place each tick.",
+   "Lambdas in state: the prototype's event cards hold choice closures and therefore cannot be saved while open.",
+   "Two sources of truth (survivor list on the base AND survivor.BaseId); keep one and derive the other.",
+   "Giant 'Survivor' class with 150 fields; group into components (Needs, Health, Skills, Inventory) as plain sub-objects."
+  ],
+  "test": "Unit: NewGame(seed) builds a valid world (validator passes); every system test runs the validator after its tick; a 7-day headless run has zero invariant violations. Manual: debug inspector shows 4 survivors at the hub with stock.",
+  "size": "M"
+ },
+ {
+  "id": "data.rng",
+  "title": "Seeded RNG streams & determinism",
+  "summary": "One seed rebuilds the same world: a small hand-written RNG class with saved state, split into named streams (map, weather, events, loot, combat, AI) so one system drawing more dice never changes another's results.",
+  "whyHere": "Mapgen, weather, events and combat all roll dice; if they do not share one deterministic source from the start, determinism tests and bug reproduction are impossible to retrofit.",
+  "subsystems": [
+   "Rng class (PCG/xorshift/mulberry32)",
+   "Named streams",
+   "Hash dice (stateless per-tile rolls)",
+   "Helpers: Range, Int, Chance, Pick, Shuffle, Weighted",
+   "Saved RNG state",
+   "Determinism rules & tests"
+  ],
+  "sliceScope": "`Rng` with `ulong State`, `NextDouble/Int/Chance/Pick/Shuffle/Weighted`; `RngStreams` { Map, Weather, Events, Loot, Battle, Ai, Crew } each seeded from the world seed + a constant; `Hash01(seed, key, a, b)` for per-tile dice; all saved; a test that the same seed gives the same first 1,000 values on every platform.",
+  "fullScope": "The prototype's Rng is mulberry32 (`state` saved in saves); the weather has its own streams (rs, fs) so 'weather never draws from state.rng'; map dice use hash01 so 'a seed builds the same map' whatever else rolls; crew dice are separate (crewDice); tools/mapdeterminismtest.js and dettest guard it. The prototype also warns never to feed process-wide ids into dice (localId).",
+  "protoRefs": [
+   "prototype/src/sim/rng.js",
+   "prototype/src/sim/weather.js",
+   "prototype/src/sim/mapgen.js",
+   "prototype/tools/mapdeterminismtest.js",
+   "prototype/tools/dettest.js"
+  ],
+  "tasks": {
+   "data": [
+    "List the streams and their seed salts in one file (`RngSalts`), never reorder them",
+    "Rng state is part of the save (one ulong per stream)"
+   ],
+   "backend": [
+    "Implement Rng yourself (do not use System.Random: its algorithm is not guaranteed stable across .NET versions, and Unity's runtime differs)",
+    "Helpers: Int(min,max inclusive), Range(min,max), Chance(p), Pick(list), Shuffle(list), Weighted(entries)",
+    "`Hash01(uint seed, string key, int a, int b=0)` for stateless dice: per-tile features that must not depend on roll order",
+    "Port mulberry32 bit-for-bit if you want the prototype's seeds to produce comparable sequences (optional, useful for cross-checking)",
+    "Lint/test: grep the Sim assembly for `System.Random`, `Guid.NewGuid`, `DateTime.Now` in rule code"
+   ],
+   "ui": [
+    "New-game screen shows and accepts the seed; a 'Copy seed' button for bug reports"
+   ]
+  },
+  "dataModel": "public sealed class Rng {\n  public ulong State;\n  public Rng(ulong seed) => State = seed;\n  public uint NextU32() { /* PCG32 or mulberry32 step */ }\n  public double Next01() => NextU32() / 4294967296.0;\n  public int Int(int min, int maxIncl) => min + (int)(Next01() * (maxIncl - min + 1));\n  public bool Chance(double p) => Next01() < p;\n}\npublic sealed class RngStreams { public Rng Map, Weather, Events, Loot, Battle, Ai; }",
+  "dependsOn": [
+   "infra.testing"
+  ],
+  "connections": [
+   {
+    "to": "core.mapgen",
+    "why": "The map must be identical for a seed.",
+    "how": "Mapgen uses Rng.Map + Hash01 for per-tile details.",
+    "godot": "Map view just draws the result.",
+    "unity": "Same."
+   },
+   {
+    "to": "core.weather",
+    "why": "Weather is fixed ahead per seed so travel estimates hold.",
+    "how": "Weather stream generates days in order, untouched by other systems.",
+    "godot": "n/a",
+    "unity": "n/a"
+   },
+   {
+    "to": "combat.los",
+    "why": "Hit rolls must replay identically for save/load mid-battle.",
+    "how": "Battle stream stored on BattleState and saved.",
+    "godot": "Never GD.Randf in sim.",
+    "unity": "Never UnityEngine.Random in sim."
+   },
+   {
+    "to": "infra.testing",
+    "why": "Determinism tests compare stream positions.",
+    "how": "Digest includes each stream's State.",
+    "godot": "n/a",
+    "unity": "n/a"
+   }
+  ],
+  "godot": {
+   "approach": "Use Godot's RandomNumberGenerator only for cosmetic effects (particle jitter, idle animation offsets) that never affect the game. All gameplay dice come from the sim's Rng.",
+   "keyApis": [
+    "RandomNumberGenerator (cosmetic only)",
+    "GD.Randf (never in sim)"
+   ],
+   "docs": [
+    {
+     "t": "Random number generation",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/math/random_number_generation.html"
+    },
+    {
+     "t": "RandomNumberGenerator class",
+     "u": "https://docs.godotengine.org/en/stable/classes/class_randomnumbergenerator.html"
+    }
+   ]
+  },
+  "unity": {
+   "approach": "UnityEngine.Random is a global static: any script calling it shifts everyone's sequence, so it must never be used for gameplay. Keep it for cosmetic randomness only.",
+   "keyApis": [
+    "UnityEngine.Random (cosmetic only)",
+    "Random.InitState"
+   ],
+   "docs": [
+    {
+     "t": "Random (scripting API)",
+     "u": "https://docs.unity3d.com/ScriptReference/Random.html"
+    },
+    {
+     "t": "Random.InitState",
+     "u": "https://docs.unity3d.com/ScriptReference/Random.InitState.html"
+    }
+   ]
+  },
+  "learn": [
+   {
+    "t": "System.Random (and its caveats)",
+    "u": "https://learn.microsoft.com/en-us/dotnet/api/system.random"
+   },
+   {
+    "t": "Red Blob Games: terrain from noise (seeded generation)",
+    "u": "https://www.redblobgames.com/maps/terrain-from-noise/"
+   }
+  ],
+  "newb": [
+   "A pseudo-random generator is a deterministic sequence that looks random. Same seed, same sequence, every time.",
+   "Streams are separate dice cups. If the loot cup is shared with weather, adding one loot roll changes tomorrow's weather. Separate cups keep systems independent.",
+   "Hash dice (hash of seed + tile id) answer 'is there a pond on tile 512?' without rolling in order, so generating tiles in a different order gives the same map.",
+   "Determinism also needs ordered loops: sort by ID before rolling for each item in a collection."
+  ],
+  "pitfalls": [
+   "Using System.Random, UnityEngine.Random or GD.Randf in rules.",
+   "Rolling dice inside UI code paths (a tooltip that previews an outcome by rolling).",
+   "Floating-point differences: fine on one platform, but keep dice decisions on doubles compared against thresholds, not accumulated float chains.",
+   "Forgetting to save stream state so a loaded game rolls differently from the original."
+  ],
+  "test": "Unit: fixed seed gives a known first 10 values (hard-coded); two streams from one seed differ; saving and restoring State continues the sequence; Pick/Shuffle distribution roughly uniform over 100k draws; determinism test for mapgen (same seed => identical tile hash).",
+  "size": "S"
+ },
+ {
+  "id": "data.save",
+  "title": "Save/load, versioning & migration",
+  "summary": "Write the whole World to a gzip-compressed JSON file with a header (schemaVersion, game version, content hash, summary line), read it back exactly, upgrade old saves through numbered migration steps, and manage slots and rotating autosaves.",
+  "whyHere": "The slice ends with 'save, quit, load and keep playing'. Building saves right after the state model forces every later field to be saveable, which is far cheaper than retrofitting.",
+  "subsystems": [
+   "Serializer (System.Text.Json + converters)",
+   "Save header & summary",
+   "Compression (gzip)",
+   "Schema versions & migrations",
+   "Slots, autosave rotation, Ironman later",
+   "Save blockers",
+   "Round-trip & corruption tests"
+  ],
+  "sliceScope": "SaveService.Save(game, path) / Load(path) using System.Text.Json with converters for IDs and polymorphic types; header { format, schemaVersion: 1, gameVersion, contentHash, seed, day, summary, timestamp }; gzip; 3 manual slots + 1 autosave each dawn; MIGRATIONS dictionary from day one (empty); a damaged or newer save is refused with a clear message.",
+  "fullScope": "The prototype's save.js writes the state as a graph (shared objects written once, Maps/Sets/typed arrays tagged), keeps the id counter and RNG positions, SAVE_VERSION 1 with a MIGRATIONS table plus many field-level migrations (ammo by calibre, food by type, wood units); an open event card cannot be saved because its choices are closures. ui/saves.js stores gzip-packed saves in IndexedDB/localStorage, .bsave files, rotating autosaves at days 1, 2, 3, 5, 7; savesummary.js writes 'Day 143 · 31 people · winter · at war with Iron Jackals' (≤ 72 chars).",
+  "protoRefs": [
+   "prototype/src/sim/save.js",
+   "prototype/src/sim/savesummary.js",
+   "prototype/src/ui/saves.js",
+   "prototype/tools/savetest.js"
+  ],
+  "tasks": {
+   "data": [
+    "The save is the second half of the 'database': content (data.content) says what things are, the save says what happened in this run. Keep it a tree of records with IDs (no shared object graph needed)",
+    "SaveHeader record (read without loading the body, for the save list) and SaveFile { Header, World }",
+    "JSON converters: typed IDs as numbers, Location union with a `$type` discriminator, SortedDictionary for stock",
+    "Migration contract: `Func<JsonNode, JsonNode>` per version step (v1->v2...), operating on JSON before deserializing"
+   ],
+   "backend": [
+    "Save: serialize -> gzip -> write to temp file -> atomic rename (no half-written saves)",
+    "Load: read header, check format/version (refuse newer, migrate older), deserialize, validate with WorldValidator",
+    "SaveBlocker: refuse while something unsaveable is open (should be nothing if cards are data)",
+    "Autosave policy: at dawn, before a battle, rotating N slots; Ironman (one slot, save on quit) is a later flag",
+    "Round-trip test: run 84 h, save, load, run 84 h; digest equals the unsaved run (the prototype's savetest pattern)"
+   ],
+   "ui": [
+    "Save/Load list showing header summary lines ('Day 6 · 4 people · spring'), newest first; delete; 'Load' disabled with the reason for unloadable saves",
+    "Saving toast and an error dialog for failures"
+   ]
+  },
+  "dataModel": "public sealed record SaveHeader(string Format, int SchemaVersion, string GameVersion,\n  string ContentHash, int Seed, int Day, string Summary, DateTime SavedUtc);\npublic sealed record SaveFile(SaveHeader Header, World World);\npublic static class Migrations {\n  public const int Current = 1;\n  public static readonly Dictionary<int, Func<JsonNode, JsonNode>> Steps = new(); // [n] upgrades n -> n+1\n}\npublic interface ISaveStore { void Write(string slot, byte[] gz); byte[]? Read(string slot); IEnumerable<SaveHeader> List(); }",
+  "dependsOn": [
+   "data.state",
+   "data.rng",
+   "data.ids"
+  ],
+  "connections": [
+   {
+    "to": "data.content",
+    "why": "Saves hold content IDs; content can change between versions.",
+    "how": "Header stores ContentHash; a migration or alias table maps renamed/removed IDs.",
+    "godot": "n/a",
+    "unity": "n/a"
+   },
+   {
+    "to": "core.cards",
+    "why": "Open cards must be saveable.",
+    "how": "CardInstance holds CardDefId + context IDs + chosen option, never lambdas.",
+    "godot": "n/a",
+    "unity": "n/a"
+   },
+   {
+    "to": "ui.menus",
+    "why": "The save/load screens show slots and summaries.",
+    "how": "SaveService.List() returns headers only.",
+    "godot": "ItemList of headers; files in user://saves.",
+    "unity": "UI Toolkit ListView; files in Application.persistentDataPath/saves."
+   },
+   {
+    "to": "infra.testing",
+    "why": "Round-trip determinism is the save's real acceptance test.",
+    "how": "Save mid-run, load, continue, compare digests.",
+    "godot": "n/a",
+    "unity": "n/a"
+   }
+  ],
+  "godot": {
+   "approach": "The sim writes bytes; the bridge decides where. Resolve `user://saves/` with ProjectSettings.GlobalizePath and hand the absolute path to the sim (or wrap FileAccess in an ISaveStore). Do not use Godot's ResourceSaver for game state: it couples saves to engine classes.",
+   "keyApis": [
+    "user:// path",
+    "ProjectSettings.GlobalizePath",
+    "FileAccess",
+    "DirAccess"
+   ],
+   "docs": [
+    {
+     "t": "Saving games",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/io/saving_games.html"
+    },
+    {
+     "t": "File paths in Godot projects",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/io/data_paths.html"
+    },
+    {
+     "t": "FileAccess",
+     "u": "https://docs.godotengine.org/en/stable/classes/class_fileaccess.html"
+    }
+   ]
+  },
+  "unity": {
+   "approach": "Write under Application.persistentDataPath with System.IO. JsonUtility cannot handle dictionaries or polymorphism, so use the sim's serializer (System.Text.Json DLLs or Newtonsoft package behind ISaveSerializer). Never use PlayerPrefs for saves.",
+   "keyApis": [
+    "Application.persistentDataPath",
+    "System.IO.File",
+    "System.IO.Compression.GZipStream",
+    "Newtonsoft Json (package) as alt"
+   ],
+   "docs": [
+    {
+     "t": "Application.persistentDataPath",
+     "u": "https://docs.unity3d.com/ScriptReference/Application-persistentDataPath.html"
+    },
+    {
+     "t": "JSON Serialization (limits of JsonUtility)",
+     "u": "https://docs.unity3d.com/Manual/JSONSerialization.html"
+    }
+   ]
+  },
+  "learn": [
+   {
+    "t": "System.Text.Json polymorphism",
+    "u": "https://learn.microsoft.com/en-us/dotnet/standard/serialization/system-text-json/polymorphism"
+   },
+   {
+    "t": "GZipStream",
+    "u": "https://learn.microsoft.com/en-us/dotnet/api/system.io.compression.gzipstream"
+   },
+   {
+    "t": "SQLite as an application file format",
+    "u": "https://www.sqlite.org/appfileformat.html"
+   }
+  ],
+  "newb": [
+   "Serialization = turning objects into text/bytes and back. If your state is plain data with IDs, a save is one Serialize call.",
+   "schemaVersion is a promise: when you change the shape (rename a field, split 'ammo' into calibres), bump it and write a step that upgrades old files. Players never lose a save.",
+   "Why JSON and not SQLite for saves? A save is written whole and read whole; gzip JSON is small (the prototype's year-long saves are a few MB), human-readable for debugging and trivial to diff. SQLite pays off only if you need to load part of a huge save or query it.",
+   "Write to a temp file and rename: if the game crashes mid-save, the old save survives."
+  ],
+  "pitfalls": [
+   "Saving engine objects or delegates (the prototype cannot save an open card because its choices are closures).",
+   "No version field in v1 'because there is only one version': you will need it within weeks.",
+   "Loading without validating, so a corrupted save crashes on day 40 instead of on load with a message.",
+   "Dictionary iteration order changing after load and breaking determinism (use sorted collections)."
+  ],
+  "test": "xUnit: round-trip equality (serialize -> deserialize -> serialize gives identical bytes); save-at-half-time digest test; a v0 fixture migrates to v1; a newer-version save is refused with a reason; a truncated gzip is refused. Manual: save on day 3, quit the app, relaunch, load, keep playing; the slot list shows the summary line.",
+  "size": "M"
+ },
+ {
+  "id": "core.clock",
+  "title": "Game clock, hourly/daily tick scheduler, speeds & pause",
+  "summary": "Time in Calder: the campaign advances in whole game-hours, each hour running every system in a fixed order, with a daily pass at midnight; the bridge turns real seconds into hours at pause/0.5×/1×/2×/3×/5× and interpolates minutes for smooth movement.",
+  "whyHere": "Every system (needs, building, travel, weather) is 'something that happens each hour or day'. The scheduler and its fixed order are the spine they hang on.",
+  "subsystems": [
+   "Hour/day/season calendar",
+   "System scheduler (ordered Hour/Day steps)",
+   "Speeds & pause",
+   "Real-time accumulator & catch-up cap",
+   "Sub-hour fraction for animation",
+   "Auto-pause rules hook",
+   "Per-system timing"
+  ],
+  "sliceScope": "Calendar (hour -> day, hour of day, season); `Scheduler` with ordered `IHourly`/`IDaily` systems; `Game.AdvanceHours(n)`; speeds pause/1×/2×/5× (+0.5×); 1× = 20 real seconds per game hour (prototype value); at most N ticks per frame, drop backlog; `ClockFrac` 0–1 for UI interpolation; pause when a card/battle needs the player.",
+  "fullScope": "The prototype's world.js tickHour runs hourOfWorld: ~60 ordered hourly steps (weather, parties move, needs, hordes, construction except at meal hours, crafting, medical, diplomacy…) and at hour % 24 == 0 ~45 daily steps (weather, bases, factions, hordes, skills, family, dead population and spread…), then vision, work, autopilot. main.js: HOURS_PER_SECOND = 1/20, speeds 0.5/1/2/3/5 (keys 1–5, key 0 = 0.25×), dev 60/300/1200×, max 12 ticks a frame, the clock stops for cards, battles, trades and crawls.",
+  "protoRefs": [
+   "prototype/src/sim/world.js",
+   "prototype/src/main.js",
+   "prototype/src/ui/pacing.js",
+   "prototype/src/sim/weather.js"
+  ],
+  "tasks": {
+   "data": [
+    "Calendar constants: 24 h/day, 28 days/season, 4 seasons (112-day year), day 1 = day 15 of spring (prototype), start hour 06:00",
+    "System order list in one place (`SystemOrder.cs`) mirroring the prototype's hourOfWorld order for the slice systems",
+    "Speed table: [0, 0.5, 1, 2, 3, 5] and dev [60, 300, 1200]"
+   ],
+   "backend": [
+    "`Calendar` helpers: Day(hour), HourOfDay, Season, IsNight, IsMealHour",
+    "`Scheduler.RunHour(world)`: hour += 1, call each hourly system in order, then daily systems if HourOfDay == 0, then post-steps (vision, invariants)",
+    "`Game.AdvanceHours(n)` that stops early if a 'needs player' condition arises (card raised, battle started)",
+    "Per-system stopwatch (dev) to find the slow step",
+    "Tests: 24 ticks trigger exactly one daily pass; order is respected (a fake system log); a blocking card stops AdvanceHours"
+   ],
+   "ui": [
+    "Time controls in the top bar: pause, 1×, 2×, 5× buttons and keys Space, 1–5; clock label 'Day 3 · 14:20 · Spring'",
+    "Bridge accumulator: acc += delta × speed / 20; while acc ≥ 1 and ticks < 12: AdvanceHours(1)"
+   ]
+  },
+  "dataModel": "public interface IHourly { void Hour(World w, SimContext ctx); }\npublic interface IDaily  { void Day(World w, SimContext ctx); }\npublic sealed class Scheduler {\n  readonly List<IHourly> _hourly; readonly List<IDaily> _daily;\n  public void RunHour(World w, SimContext ctx) {\n    w.Hour++; foreach (var s in _hourly) s.Hour(w, ctx);\n    if (w.Hour % 24 == 0) foreach (var d in _daily) d.Day(w, ctx);\n  }\n}\npublic enum Speed { Paused = 0, Half, X1, X2, X3, X5 }",
+  "dependsOn": [
+   "data.state",
+   "infra.architecture"
+  ],
+  "connections": [
+   {
+    "to": "core.events",
+    "why": "Ticks produce events; the bridge drains them after each advance.",
+    "how": "Systems push into ctx.Events during RunHour.",
+    "godot": "SimHost drains after its _Process tick loop.",
+    "unity": "SimHost drains in Update after ticking."
+   },
+   {
+    "to": "core.cards",
+    "why": "Cards decide whether the clock may keep running.",
+    "how": "AdvanceHours checks `PacingRules.ShouldPause(world)` after each hour.",
+    "godot": "Speed buttons show paused state from SimHost.",
+    "unity": "Same."
+   },
+   {
+    "to": "econ.daily",
+    "why": "Daily economy is a daily system.",
+    "how": "Registered as IDaily in SystemOrder.",
+    "godot": "n/a",
+    "unity": "n/a"
+   },
+   {
+    "to": "ui.cards",
+    "why": "Time controls live with the card tray.",
+    "how": "Commands SetSpeed / Pause.",
+    "godot": "HBoxContainer of Buttons + InputMap actions.",
+    "unity": "UI Toolkit buttons + Input System actions."
+   },
+   {
+    "to": "combat.turns",
+    "why": "A battle is turn-based and stops the campaign clock.",
+    "how": "World.Battle != null => AdvanceHours returns 0.",
+    "godot": "Battle scene replaces map scene.",
+    "unity": "Battle scene loaded; campaign time frozen."
+   }
+  ],
+  "godot": {
+   "approach": "In SimHost._Process(delta) accumulate `delta * speed / SecondsPerHour` and call Game.AdvanceHours(1) in a capped loop; keep the leftover fraction as ClockFrac for smooth party movement. Do not use SceneTree.Paused for the sim clock (it freezes your UI too unless process modes are set); keep sim pause separate from engine pause.",
+   "keyApis": [
+    "Node._Process(double delta)",
+    "Engine.TimeScale (avoid for sim)",
+    "Node.ProcessMode",
+    "InputMap actions"
+   ],
+   "docs": [
+    {
+     "t": "Idle and physics processing",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/scripting/idle_and_physics_processing.html"
+    },
+    {
+     "t": "Pausing games",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/scripting/pausing_games.html"
+    }
+   ]
+  },
+  "unity": {
+   "approach": "In SimHost.Update use Time.unscaledDeltaTime (so pausing via timeScale does not freeze your own clock math) and the same capped accumulator. Leave Time.timeScale for cosmetic animation speed only.",
+   "keyApis": [
+    "MonoBehaviour.Update",
+    "Time.unscaledDeltaTime",
+    "Time.timeScale (cosmetic)",
+    "Input System actions"
+   ],
+   "docs": [
+    {
+     "t": "Time.deltaTime",
+     "u": "https://docs.unity3d.com/ScriptReference/Time-deltaTime.html"
+    },
+    {
+     "t": "Time.timeScale",
+     "u": "https://docs.unity3d.com/ScriptReference/Time-timeScale.html"
+    },
+    {
+     "t": "Order of execution",
+     "u": "https://docs.unity3d.com/Manual/ExecutionOrder.html"
+    }
+   ]
+  },
+  "learn": [
+   {
+    "t": "Game Loop",
+    "u": "https://gameprogrammingpatterns.com/game-loop.html"
+   },
+   {
+    "t": "Update Method",
+    "u": "https://gameprogrammingpatterns.com/update-method.html"
+   }
+  ],
+  "newb": [
+   "Two clocks: the engine's frame clock (60 times a second, for drawing) and the game clock (whole hours, for rules). The bridge converts one into the other.",
+   "Fixed order matters: if needs run before travel, a team that arrives home this hour eats at home. Write the order down once; the prototype comments every step's reason.",
+   "Interpolation: the sim says 'party is on tile A at 14:00 and tile B at 15:00'; the UI draws it 30% of the way at 14:18. Smooth on screen, simple in rules.",
+   "Catch-up cap: if the game hitches, don't run 50 hours at once; drop the backlog (the prototype caps at 12 ticks a frame)."
+  ],
+  "pitfalls": [
+   "Using frame delta inside rules (hunger -= 0.01 * delta) so results depend on frame rate.",
+   "Freezing the whole engine with SceneTree.Paused / timeScale = 0 and then the pause menu stops working.",
+   "Systems that silently depend on each other's order without a test.",
+   "Doing a daily pass at 'hour 24' and again at 'hour 0' after a load (off-by-one)."
+  ],
+  "test": "xUnit: 48 RunHour calls give exactly 2 daily passes; a recording fake shows the configured order; AdvanceHours(10) stops at the hour a card is raised; calendar: hour 0 is day 1 spring day 15. Manual: at 1× an hour passes in about 20 s, 5× in 4 s; Space pauses and resumes at the previous speed.",
+  "size": "M"
+ },
+ {
+  "id": "core.events",
+  "title": "Domain event bus & game log",
+  "summary": "How the sim tells the world what happened: typed domain events (SurvivorDied, PartyArrived, BuildingFinished, CardRaised…) queued during a tick and drained by the bridge, plus a player-facing game log and diary built from them.",
+  "whyHere": "As soon as the clock ticks, the UI needs to know what changed without polling everything. Events are also what the log, pause rules, achievements and audio later listen to.",
+  "subsystems": [
+   "Event types (records)",
+   "Event queue per tick",
+   "Subscribers inside the sim (log, stats)",
+   "Bridge drain & dispatch",
+   "Game log (rolling)",
+   "Diary/chronicle (full history, later)",
+   "Event filtering by importance"
+  ],
+  "sliceScope": "~15 event records for the slice (HourPassed, DayStarted, SurvivorHurt, SurvivorDied, StockChanged, BuildingQueued/Finished, PartyDeparted/Arrived, TileRevealed, CardRaised/Answered, BattleStarted/Ended, LootAdded); `EventQueue` with Publish and Drain; `GameLog` (last 200 lines with hour + kind) fed by a sim-side subscriber; SimHost dispatches each drained event to C# events.",
+  "fullScope": "The prototype has no typed events: systems call log(state, text, kind) (200 lines kept, every line also to the diary), addCard pushes cards, and the UI redraws everything when a tick sets 'dirty'. Pause rules (ui/pacing.js afterHour) scan for new cards, deaths and first contacts. Typed events replace that scanning and feed later achievements (31 feats), chronicle, causes ('Why?') and audio.",
+  "protoRefs": [
+   "prototype/src/sim/world.js",
+   "prototype/src/ui/pacing.js",
+   "prototype/src/sim/achievements.js",
+   "prototype/src/main.js"
+  ],
+  "tasks": {
+   "data": [
+    "Event records with only IDs and values (no object refs): `SurvivorDied(int Hour, SurvivorId Who, string Cause, TileId Where)`",
+    "LogLine record { Hour, Text, Kind (info/good/bad/combat), Refs (IDs for click-to-focus) }",
+    "Importance/kind per event type to drive pause rules and log colours"
+   ],
+   "backend": [
+    "`EventQueue.Publish(e)` used by systems through SimContext; `Drain()` returns and clears",
+    "Sim-side subscribers run synchronously at publish or end of tick (GameLog writer, stats counters) and must not mutate unrelated state",
+    "Text formatting for log lines in one place (`LogText.For(event, world)`), so wording is consistent",
+    "Tests: a death publishes SurvivorDied once; the log gets a line; draining twice returns nothing the second time"
+   ],
+   "ui": [
+    "SimHost re-emits per type: `public event Action<SurvivorDied> SurvivorDied;` or one `EventRaised(IGameEvent)` with pattern matching",
+    "Log panel (RichTextLabel / ListView) showing the last lines with colours; click a line to focus its tile/survivor"
+   ]
+  },
+  "dataModel": "public interface IGameEvent { int Hour { get; } }\npublic sealed record SurvivorDied(int Hour, SurvivorId Who, string Cause, TileId Where) : IGameEvent;\npublic sealed record PartyArrived(int Hour, PartyId Party, TileId Tile) : IGameEvent;\npublic sealed record CardRaised(int Hour, CardInstanceId Card) : IGameEvent;\npublic sealed class EventQueue {\n  readonly List<IGameEvent> _pending = new();\n  public void Publish(IGameEvent e) => _pending.Add(e);\n  public IReadOnlyList<IGameEvent> Drain() { var a = _pending.ToArray(); _pending.Clear(); return a; }\n}",
+  "dependsOn": [
+   "infra.architecture",
+   "data.ids"
+  ],
+  "connections": [
+   {
+    "to": "core.clock",
+    "why": "Events are produced during ticks and drained after.",
+    "how": "SimContext carries the queue into each system.",
+    "godot": "Drain after the tick loop in _Process.",
+    "unity": "Drain after ticking in Update."
+   },
+   {
+    "to": "core.cards",
+    "why": "Raising a card is an event; pause rules react to event kinds.",
+    "how": "PacingRules inspects drained events (CardRaised, SurvivorDied).",
+    "godot": "Card window opens on CardRaised.",
+    "unity": "Same."
+   },
+   {
+    "to": "ui.cards",
+    "why": "The log window and toasts are views of events.",
+    "how": "GameLog is state (saved); toasts are transient views.",
+    "godot": "RichTextLabel with BBCode colours.",
+    "unity": "UI Toolkit ListView."
+   },
+   {
+    "to": "meta.history",
+    "why": "Achievements, diary and charts are event subscribers.",
+    "how": "Add subscribers later without touching producers.",
+    "godot": "n/a",
+    "unity": "n/a"
+   },
+   {
+    "to": "audio.all",
+    "why": "SFX and music stings react to events.",
+    "how": "Audio layer subscribes at the bridge.",
+    "godot": "AudioStreamPlayer triggered by signal.",
+    "unity": "AudioSource triggered by event."
+   }
+  ],
+  "godot": {
+   "approach": "Two options, both fine: plain C# events on SimHost (type-safe, easiest in C#) or Godot [Signal]s (connectable in the editor, work with GDScript). Pick C# events for sim events and use signals for scene-local UI wiring. Always disconnect in _ExitTree.",
+   "keyApis": [
+    "[Signal] delegate",
+    "EmitSignal",
+    "C# event Action<T>",
+    "RichTextLabel (BBCode)",
+    "Callable"
+   ],
+   "docs": [
+    {
+     "t": "Using signals",
+     "u": "https://docs.godotengine.org/en/stable/getting_started/step_by_step/signals.html"
+    },
+    {
+     "t": "C# signals",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/scripting/c_sharp/c_sharp_signals.html"
+    },
+    {
+     "t": "RichTextLabel",
+     "u": "https://docs.godotengine.org/en/stable/classes/class_richtextlabel.html"
+    }
+   ]
+  },
+  "unity": {
+   "approach": "Use C# events on SimHost for sim events; UnityEvents are handy for inspector-wired buttons but are slower and hide wiring, so avoid them for high-frequency events. Subscribe in OnEnable, unsubscribe in OnDisable.",
+   "keyApis": [
+    "C# event / Action<T>",
+    "UnityEvent (inspector wiring)",
+    "OnEnable / OnDisable"
+   ],
+   "docs": [
+    {
+     "t": "UnityEvents",
+     "u": "https://docs.unity3d.com/Manual/UnityEvents.html"
+    },
+    {
+     "t": "MonoBehaviour",
+     "u": "https://docs.unity3d.com/Manual/class-MonoBehaviour.html"
+    }
+   ]
+  },
+  "learn": [
+   {
+    "t": "Event Queue",
+    "u": "https://gameprogrammingpatterns.com/event-queue.html"
+   },
+   {
+    "t": "Observer",
+    "u": "https://gameprogrammingpatterns.com/observer.html"
+   },
+   {
+    "t": "Events (C# guide)",
+    "u": "https://learn.microsoft.com/en-us/dotnet/csharp/programming-guide/events/"
+   }
+  ],
+  "newb": [
+   "An event is a past-tense fact: 'SurvivorDied'. A command is a wish: 'SendParty'. Keep the names that way and the code reads itself.",
+   "Queue, then deliver: the UI hears about everything after the tick finishes, so it never sees half-updated state.",
+   "Events carry IDs and values, not objects; the UI asks for fresh data if it needs more.",
+   "The log is saved state (the player reads history), toasts are just views: do not save toasts."
+  ],
+  "pitfalls": [
+   "Delivering events to the UI in the middle of a tick (UI reads half-applied state).",
+   "Sim subscribers that cause side effects in other systems (hidden coupling); prefer explicit system calls for rules.",
+   "Letting the event list grow forever when the UI is closed (headless): drain every tick or cap it.",
+   "Writing log text in 20 places with different wording."
+  ],
+  "test": "xUnit: each slice system publishes its expected events in a scripted scenario; GameLog keeps 200 lines; Drain is idempotent; a recorded week's event list is stable for seed 42 (golden). Manual: a death shows in the log in red and a click centres the map.",
+  "size": "S"
+ },
+ {
+  "id": "core.commands",
+  "title": "Player commands (intents) & validation",
+  "summary": "Every player (and AI) action as a small command record (SendParty, QueueBuild, AssignWork, AnswerCard, MoveUnit…) that the sim validates (returning a human-readable reason when refused) and then applies, logged for replay.",
+  "whyHere": "With state, clock and events in place, commands complete the loop: the UI can now change the world in a controlled, testable way. Every gameplay card defines its commands here.",
+  "subsystems": [
+   "Command records",
+   "Validators (CanX -> reason)",
+   "Handlers (apply)",
+   "Command result & reasons",
+   "Command log & replay",
+   "Undo (selected commands, later)",
+   "Shared use by AI (parity)"
+  ],
+  "sliceScope": "ICommand + `CommandResult(Ok, Reason)`; a handler registry; slice commands: SetSpeed, QueueBuild, CancelBuild, AssignRole, FormParty, SendParty(path), ReturnHome, AnswerCard(choiceIndex), StartRaid(poi), battle commands (Move, Shoot, Melee, Reload, Search, EndTurn, Extract). Validation returns reasons like 'Not enough wood (need 12, have 8)'; the command log is saved for replay tests.",
+  "fullScope": "The prototype's main.js is the action dispatcher: data-action handlers grouped per UI module (*_ACTIONS maps), and the sim offers 'problem' functions that return a reason or '' (woodProblem, huntProblem, detachProblem, gatherProblem) before an order is given; ui/undo.js undoes some planner steps. ADR 0001 requires AI groups to act under the same rules, so commands must be callable by AI.",
+  "protoRefs": [
+   "prototype/src/main.js",
+   "prototype/src/sim/orders.js",
+   "prototype/src/ui/undo.js",
+   "docs/adr/0001-ai-parity.md"
+  ],
+  "tasks": {
+   "data": [
+    "One record per command with only IDs and values: `QueueBuild(BaseId Base, string BuildingId, TileId? Plot)`",
+    "Reason strings as data (key + args) so UI can localise later: `Reason(\"need_material\", item, need, have)`",
+    "Command log entry { Hour, Command, Actor (player/faction id) } saved with the game"
+   ],
+   "backend": [
+    "`ICommandHandler<T> { CommandResult Validate(World, T); void Apply(World, T, SimContext); }`",
+    "`Game.Execute(cmd)`: find handler, Validate, Apply only if ok, publish CommandApplied/Refused",
+    "`Game.Check(cmd)` = validate without applying, for greying out buttons with a tooltip reason",
+    "Replay test: NewGame(seed) + recorded command log at recorded hours reproduces the digest",
+    "AI and autopilot submit the same commands (Actor = faction)"
+   ],
+   "ui": [
+    "Buttons call Check() to set disabled + tooltip reason, and Send() on click",
+    "Refused commands show a toast with the reason"
+   ]
+  },
+  "dataModel": "public interface ICommand { }\npublic sealed record QueueBuild(BaseId Base, string BuildingId) : ICommand;\npublic sealed record SendParty(PartyId Party, ImmutableArray<TileId> Path) : ICommand;\npublic sealed record AnswerCard(CardInstanceId Card, int Choice) : ICommand;\npublic readonly record struct CommandResult(bool Ok, string? Reason = null) {\n  public static CommandResult Fail(string why) => new(false, why);\n}\npublic interface ICommandHandler<T> where T : ICommand {\n  CommandResult Validate(World w, T c); void Apply(World w, T c, SimContext ctx);\n}",
+  "dependsOn": [
+   "infra.architecture",
+   "data.state",
+   "core.events"
+  ],
+  "connections": [
+   {
+    "to": "core.events",
+    "why": "Applied commands produce events; refused ones produce a reason.",
+    "how": "Execute publishes CommandRefused(reason) for toasts.",
+    "godot": "Toast on CommandRefused.",
+    "unity": "Same."
+   },
+   {
+    "to": "ui.input",
+    "why": "Input actions map to commands.",
+    "how": "Input layer builds commands; the sim never sees keys.",
+    "godot": "InputMap action -> SimHost.Send(cmd).",
+    "unity": "Input System action callback -> SimHost.Send(cmd)."
+   },
+   {
+    "to": "ai.governor",
+    "why": "AI parity: same commands, same validation.",
+    "how": "Governor emits ICommand with Actor = faction id.",
+    "godot": "n/a",
+    "unity": "n/a"
+   },
+   {
+    "to": "travel.parties",
+    "why": "Expeditions are the richest command set (orders queue).",
+    "how": "SendParty/QueueOrder handlers live with travel systems.",
+    "godot": "Right-click menu lists Check()'d orders.",
+    "unity": "Same."
+   },
+   {
+    "to": "data.save",
+    "why": "The command log makes saves debuggable and replays possible.",
+    "how": "Log saved; replay tests rebuild state.",
+    "godot": "n/a",
+    "unity": "n/a"
+   }
+  ],
+  "godot": {
+   "approach": "Screens build commands from UI state and call SimHost.Send; use the command's Check() result to set Button.Disabled and TooltipText. Keep input-to-command mapping in one InputRouter node so rebinding (ui.input) is easy.",
+   "keyApis": [
+    "Button.Disabled / TooltipText",
+    "InputMap",
+    "_UnhandledInput",
+    "PopupMenu (context orders)"
+   ],
+   "docs": [
+    {
+     "t": "Input examples",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/inputs/input_examples.html"
+    },
+    {
+     "t": "UI index",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/ui/index.html"
+    }
+   ]
+  },
+  "unity": {
+   "approach": "UI callbacks construct commands and call SimHost.Send; Check() drives SetEnabled and tooltips. With the Input System, bind actions to small handlers that create commands.",
+   "keyApis": [
+    "UI Toolkit Button.clicked / SetEnabled",
+    "Input System InputAction",
+    "Tooltips (UI Toolkit)"
+   ],
+   "docs": [
+    {
+     "t": "UI Toolkit",
+     "u": "https://docs.unity3d.com/Manual/UIElements.html"
+    },
+    {
+     "t": "MonoBehaviour",
+     "u": "https://docs.unity3d.com/Manual/class-MonoBehaviour.html"
+    }
+   ]
+  },
+  "learn": [
+   {
+    "t": "Command",
+    "u": "https://gameprogrammingpatterns.com/command.html"
+   }
+  ],
+  "newb": [
+   "A command is a written request ('please queue a Lodge at base 3'). The sim checks it like a referee before anything changes.",
+   "Validation returning a reason doubles as UI: the same check greys out the button and explains why.",
+   "Because commands are data, you can save them, replay them, send them from the AI or a test, and later undo some.",
+   "Commands carry IDs, so a command made before a save still means the same thing after a load."
+  ],
+  "pitfalls": [
+   "Validating in the UI only (the AI and replays bypass it).",
+   "Commands with object references or lambdas (cannot be logged).",
+   "Apply that can fail halfway; validate everything first, then apply in one go.",
+   "One giant switch statement over all commands; use a handler per command type."
+  ],
+  "test": "xUnit per handler: valid command changes state as expected; each invalid case returns its reason and changes nothing (digest unchanged); replay of a recorded log equals the original run. Manual: the Build button greys out with 'Not enough wood' and enables when wood arrives.",
+  "size": "M"
+ },
+ {
+  "id": "core.hexgrid",
+  "title": "Hex grid math",
+  "summary": "The State Map's geometry: pointy-top hexes stored in offset rows (tile id = y × width + x) with axial/cube coordinates for math: neighbours, distance, rings, ranges, line drawing, pixel conversion, and a generic A* over tiles.",
+  "whyHere": "Mapgen, travel, fog, the dead's spread and the map view all speak hexes. Getting the coordinate system right once (and tested) saves endless off-by-one bugs.",
+  "subsystems": [
+   "Offset <-> axial/cube conversion",
+   "Neighbours (6 directions)",
+   "Distance & rings/ranges",
+   "Hex line (for sight)",
+   "Pixel <-> hex (layout)",
+   "Generic A* with cost function",
+   "Bounds & wrap rules"
+  ],
+  "sliceScope": "`HexGrid(width,height)` with Id/XY/InBounds, Neighbours(id) (odd-r offset, same as prototype), Distance, Within(center, r), Ring(center, r), Line(a,b), ToPixel/FromPixel; `HexPath.Find(start, goal, cost, maxCost)` A* with a binary heap. Fully unit-tested; no engine types (own `HexCoord` struct).",
+  "fullScope": "The prototype's hex.js (219 lines) uses pointy-top 'odd-r' offset layout, tile id = y × width + x, neighbours by even/odd row direction tables, cube coords for distance/within, toPixel/fromPixel, and findPath (A* with a binary heap, costFn, maxCost, minStep). Maps run from 150 × 75 (Small) to 500 × 300 (Huge, 150,000 tiles); the original density unit is 64 × 42.",
+  "protoRefs": [
+   "prototype/src/sim/hex.js",
+   "prototype/src/sim/worldsize.js",
+   "prototype/src/sim/data.js",
+   "docs/features/campaign.md"
+  ],
+  "tasks": {
+   "data": [
+    "Choose and document: pointy-top, odd-r offset storage (matches the prototype) with axial for math",
+    "`HexCoord(int Q, int R)` struct and `TileId` conversion"
+   ],
+   "backend": [
+    "Conversions offset<->axial<->cube; Neighbours; Distance (cube distance)",
+    "Within(center, radius) and Ring(center, radius) in a fixed order (deterministic)",
+    "Line(a, b) by cube lerp + rounding (for sight and 'beyond' checks)",
+    "A*: open set as binary heap/PriorityQueue, closed set as bool[] sized width×height, heuristic = distance × min step cost; returns path + cost",
+    "Tests: known neighbours on even and odd rows and at edges; distance symmetric; ring sizes 6r; A* equals BFS cost on uniform grids; A* respects impassable (water)"
+   ],
+   "ui": [
+    "Debug overlay: draw hex outlines with ids and distance from the selected tile"
+   ]
+  },
+  "dataModel": "public readonly record struct HexCoord(int Q, int R) { public int S => -Q - R; }\npublic sealed class HexGrid {\n  public readonly int Width, Height;\n  public TileId Id(int x, int y) => new(y * Width + x);\n  public HexCoord ToAxial(TileId id) { int x = id.Value % Width, y = id.Value / Width; return new(x - (y - (y & 1)) / 2, y); }\n  public int Distance(TileId a, TileId b);\n  public IEnumerable<TileId> Neighbours(TileId id);\n  public IEnumerable<TileId> Within(TileId c, int r);\n}\npublic static class HexPath { public static PathResult Find(HexGrid g, TileId s, TileId t, Func<TileId,TileId,float> cost, float maxCost = float.PositiveInfinity); }",
+  "dependsOn": [
+   "data.ids",
+   "infra.testing"
+  ],
+  "connections": [
+   {
+    "to": "travel.pathing",
+    "why": "Travel pathing is A* on this grid with terrain/road/weather costs.",
+    "how": "HexPath.Find with a cost delegate built by travel rules.",
+    "godot": "Route drawn as Line2D through ToPixel points.",
+    "unity": "LineRenderer through ToPixel points."
+   },
+   {
+    "to": "core.mapgen",
+    "why": "Generation walks neighbours, rings and paths (rivers, roads).",
+    "how": "Mapgen uses HexGrid + HexPath.",
+    "godot": "n/a",
+    "unity": "n/a"
+   },
+   {
+    "to": "ui.statemap",
+    "why": "The view must place hexes exactly where the sim thinks they are.",
+    "how": "Shared layout constants (hex size, odd-r).",
+    "godot": "TileMapLayer with a hexagonal TileSet (offset axis horizontal, layout matching odd-r) or draw your own.",
+    "unity": "Tilemap with Hexagonal Point Top grid; convert cell coords via HexGrid."
+   },
+   {
+    "to": "travel.fog",
+    "why": "Sight radius = Within(tile, r).",
+    "how": "Fog system calls Within/Line.",
+    "godot": "Fog tiles on a separate TileMapLayer.",
+    "unity": "Fog Tilemap layer."
+   }
+  ],
+  "godot": {
+   "approach": "Godot's TileMapLayer supports hexagonal TileSets (tile shape Hexagon, offset axis, layout). Its built-in coordinates may not match your odd-r convention, so write and test one conversion between Godot's map coords and your TileId, and keep all game math in the sim's HexGrid. AStar2D exists but use your own sim A* so rules stay testable and deterministic.",
+   "keyApis": [
+    "TileMapLayer",
+    "TileSet (Hexagon shape)",
+    "TileMapLayer.MapToLocal / LocalToMap",
+    "Line2D",
+    "AStar2D (not for rules)"
+   ],
+   "docs": [
+    {
+     "t": "Using TileSets",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/2d/using_tilesets.html"
+    },
+    {
+     "t": "Using TileMaps",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/2d/using_tilemaps.html"
+    },
+    {
+     "t": "TileMapLayer",
+     "u": "https://docs.godotengine.org/en/stable/classes/class_tilemaplayer.html"
+    }
+   ]
+  },
+  "unity": {
+   "approach": "Unity's Grid component supports Hexagon Point Top layout with Tilemaps; it uses an offset coordinate scheme you convert with one tested function. Keep pathfinding in the sim, not NavMesh.",
+   "keyApis": [
+    "Grid (Hexagon Point Top)",
+    "Tilemap",
+    "Tilemap.CellToWorld / WorldToCell",
+    "LineRenderer"
+   ],
+   "docs": [
+    {
+     "t": "Hexagonal Tilemaps",
+     "u": "https://docs.unity3d.com/Manual/Tilemap-Hexagonal.html"
+    },
+    {
+     "t": "Tilemap",
+     "u": "https://docs.unity3d.com/Manual/Tilemap.html"
+    }
+   ]
+  },
+  "learn": [
+   {
+    "t": "Red Blob Games: Hexagonal Grids",
+    "u": "https://www.redblobgames.com/grids/hexagons/"
+   },
+   {
+    "t": "Red Blob Games: Hex implementation guide",
+    "u": "https://www.redblobgames.com/grids/hexagons/implementation.html"
+   },
+   {
+    "t": "Red Blob Games: Introduction to A*",
+    "u": "https://www.redblobgames.com/pathfinding/a-star/introduction.html"
+   }
+  ],
+  "newb": [
+   "Offset coordinates (column, row) are easy to store in an array; axial/cube coordinates make math easy. Store one, convert to the other, and test the conversion on even and odd rows.",
+   "A* is 'Dijkstra with a hint': it explores the cheapest-looking tiles first, using distance to the goal as the hint, so it finds the best route without searching the whole map.",
+   "A cost function makes A* reusable: walking, driving, a horde or an AI party each pass their own costs.",
+   "Read Red Blob's hex guide once end to end; nearly every hex game uses it."
+  ],
+  "pitfalls": [
+   "Mixing odd-r and even-r (or pointy and flat) between sim and view: everything is off by half a hex on alternate rows.",
+   "Heuristic larger than the true minimum cost (roads at 0.25 h/tile) makes A* return non-optimal paths; scale it by the cheapest step.",
+   "Allocating new lists per neighbour call in hot loops on a 150,000-tile map.",
+   "Using the engine's tile coords as your saved IDs."
+  ],
+  "test": "xUnit: neighbour tables for corner/edge/even/odd tiles; Distance(a,b) == Distance(b,a) and matches hand-checked values; Within(c,2) has 19 tiles in the interior; A* on a map with a wall finds the detour with the expected cost; ToPixel(FromPixel(p)) round-trips. Manual: debug overlay distances match what you count by eye.",
+  "size": "S"
+ },
+ {
+  "id": "core.mapgen",
+  "title": "Procedural State Map generation",
+  "summary": "Building the State of Calder from a seed: terrain (water, farmland, forest, hills, mountains, suburbs, city), a town or two, points of interest per tile, roads, starting infection and a hub start spot; slice-sized first, scaled up later by world.mapgen.",
+  "whyHere": "The slice needs a map to travel on, POIs to raid and a start tile, and mapgen is the first big consumer of hexgrid, RNG streams and content; it also gives the UI something real to draw.",
+  "subsystems": [
+   "Terrain from noise",
+   "Settlements (town, city later)",
+   "POI placement & naming",
+   "Roads",
+   "Infection / dead seeding",
+   "Start/hub placement",
+   "Validation (reachability, counts)"
+  ],
+  "sliceScope": "A 40 × 30 map (configurable) from Rng.Map + hash dice: noise-based terrain over the 7 terrain types, one town (centre tile + 1–2 satellites) with 3–6 POIs, a few rural POIs, one road joining the town to the edge, infection highest at the town, a hub tile on open land 4–8 tiles from the town; unique POI names; a validator that the hub can reach every POI on foot.",
+  "fullScope": "The prototype's mapgen.js builds terrain, rivers, Calder City and a second city, towns (13 on the 64 × 42 density map, about 180 on Normal 250 × 150), countryside sites, landmarks (Guard base, prison, dam, airport), highways and infection; every name is unique (forms like 'North Hadley', then numerals). Sizes Small 150 × 75 to Huge 500 × 300 (about 700 towns, 65 cities, 8,000 named sites); the last 4 maps are cached; tools/maptest.js and uniquenametest.js check rules and determinism.",
+  "protoRefs": [
+   "prototype/src/sim/mapgen.js",
+   "prototype/src/sim/worldsize.js",
+   "prototype/src/sim/data.js",
+   "prototype/tools/maptest.js",
+   "docs/features/campaign.md"
+  ],
+  "tasks": {
+   "data": [
+    "content/terrain.json from prototype TERRAIN (walk 1 h/tile, vehicle 0.5, road 0.25, mountains closed to cars, water impassable)",
+    "content/poi_types.json for the slice (house, gas station, corner store, farm, police station) with zone, loot table id, battle template id",
+    "content/names.json: town names, site name pools and the uniqueness 'forms'",
+    "MapConfig record: width, height, towns, poisPerTown, noise scales"
+   ],
+   "backend": [
+    "Terrain pass: two noise fields (elevation, moisture) -> terrain type; water edges; mountains on high elevation",
+    "Town pass: pick a centre on open land, mark suburb ring, place POIs on centre/satellite tiles; unique names via a used-names set",
+    "Road pass: A* (HexPath) from town to map edge with a cost that prefers flat land; mark tiles as road",
+    "Start pass: hub tile on farmland/forest, distance band from the town, not on a POI",
+    "Validator + tests: same seed => same map hash; every POI reachable from hub; names unique; counts within config"
+   ],
+   "ui": [
+    "Map view draws terrain colours from TerrainDef (placeholder flat colours from the prototype's palette), POI icons, road lines",
+    "New-game screen: seed field + 'Generate' preview"
+   ]
+  },
+  "dataModel": "public sealed record TerrainDef(string Id, string Name, string Art, float Walk, float Vehicle, float Traffic);\npublic sealed record MapConfig(int Width, int Height, int Towns, int RuralPois, int Seed);\npublic sealed class Tile {\n  public TileId Id; public string Terrain = \"terrain.plains\";\n  public bool Road; public float Infection; public int Dead;\n  public List<PoiId> Pois = new(); public SettlementId? Settlement;\n}\npublic static class MapGen { public static MapState Generate(MapConfig cfg, ContentDb db, Rng rng); }",
+  "dependsOn": [
+   "core.hexgrid",
+   "data.rng",
+   "data.content",
+   "data.state"
+  ],
+  "connections": [
+   {
+    "to": "travel.pois",
+    "why": "POIs placed here carry the loot pools and battle templates.",
+    "how": "Tile.Pois -> PoiState with PoiTypeDef id.",
+    "godot": "POI icons as Sprite2D children of the map.",
+    "unity": "POI icon GameObjects / Tilemap overlay."
+   },
+   {
+    "to": "dead.population",
+    "why": "Initial dead per tile is seeded from settlements and infection.",
+    "how": "Mapgen writes Tile.Infection; dead.population turns it into counts.",
+    "godot": "n/a",
+    "unity": "n/a"
+   },
+   {
+    "to": "ui.statemap",
+    "why": "The view renders what mapgen produced.",
+    "how": "MapState view model per tile (terrain art key, road, fog).",
+    "godot": "TileMapLayer per layer (terrain, roads, fog, icons).",
+    "unity": "Tilemap layers."
+   },
+   {
+    "to": "world.mapgen",
+    "why": "The full generator (rivers, cities, unique names, big sizes) extends this one.",
+    "how": "Same passes, more of them, MapConfig gains sizes.",
+    "godot": "n/a",
+    "unity": "n/a"
+   }
+  ],
+  "godot": {
+   "approach": "Mapgen is pure sim; Godot draws its result. For 40 × 30 a TileMapLayer with one hex tile per terrain colour is enough; generate in a background Task for big maps later and show a 'Generating map…' popup (the prototype does).",
+   "keyApis": [
+    "TileMapLayer.SetCell",
+    "TileSet atlas (placeholder hexes)",
+    "Task.Run + CallDeferred",
+    "Sprite2D (POI icons)"
+   ],
+   "docs": [
+    {
+     "t": "Using TileMaps",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/2d/using_tilemaps.html"
+    },
+    {
+     "t": "Using TileSets",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/2d/using_tilesets.html"
+    }
+   ]
+  },
+  "unity": {
+   "approach": "Generate in the sim, then fill a hex Tilemap via SetTile per terrain tile; for bigger maps run generation on a background thread (Task) and apply on the main thread.",
+   "keyApis": [
+    "Tilemap.SetTile",
+    "Tile / TileBase assets",
+    "System.Threading.Tasks",
+    "Grid (Hexagon)"
+   ],
+   "docs": [
+    {
+     "t": "Hexagonal Tilemaps",
+     "u": "https://docs.unity3d.com/Manual/Tilemap-Hexagonal.html"
+    },
+    {
+     "t": "Tilemap",
+     "u": "https://docs.unity3d.com/Manual/Tilemap.html"
+    }
+   ]
+  },
+  "learn": [
+   {
+    "t": "Red Blob Games: Making maps with noise",
+    "u": "https://www.redblobgames.com/maps/terrain-from-noise/"
+   },
+   {
+    "t": "Red Blob Games: Hexagonal Grids",
+    "u": "https://www.redblobgames.com/grids/hexagons/"
+   }
+  ],
+  "newb": [
+   "Procedural generation is a pipeline of passes, each simple: terrain, then towns, then roads, then the start. Debug one pass at a time with an overlay.",
+   "Noise (Perlin/Simplex/value noise) gives smooth random fields; thresholds turn it into terrain bands. You can write a small value-noise function in the sim instead of using an engine's noise class.",
+   "Validate the output, don't trust it: 'hub can reach every POI' as a test catches maps that wall you in.",
+   "Small first: a 40 × 30 map is 1,200 tiles; a Huge prototype map is 150,000. Make it work small, measure, then grow."
+  ],
+  "pitfalls": [
+   "Using the engine's FastNoiseLite in the sim (engine dependency, and results can change between engine versions).",
+   "Generation order depending on dictionary iteration, so seeds are not stable.",
+   "Placing POIs before roads, then roads cutting through them (decide pass order and test it).",
+   "Making the map huge before travel, fog and AI can handle it (the prototype needed perf budgets for big maps)."
+  ],
+  "test": "xUnit: seed 42 produces the same map hash twice and in a fresh process; 50 seeds all pass the validator (reachability, one town, POI counts, unique names, hub not on water); terrain distribution within expected bands. Manual: Generate shows a believable map; changing the seed changes it; the same seed gives the same map.",
+  "size": "L"
+ },
+ {
+  "id": "core.weather",
+  "title": "Seasons & daily weather (basic)",
+  "summary": "Calder's calendar and sky: four 28-day seasons, one weather type per day (clear, overcast, rain, storm, fog, snow) with temperature, generated ahead from its own RNG stream, feeding travel speed, needs and battle sight.",
+  "whyHere": "Weather is a cheap, early source of variety and a clean first daily system on the scheduler; travel, needs and events in L3 read its multipliers.",
+  "subsystems": [
+   "Season calendar",
+   "Daily weather roll (own stream, rolled ahead)",
+   "Temperature hi/lo",
+   "Effects table (travel, sight, needs)",
+   "Short forecast",
+   "Ground state (mud/snow, later)"
+  ],
+  "sliceScope": "Season(day) with the prototype calendar (year 112 days, day 1 = spring day 15); WeatherDay {type, hi, lo} generated 7 days ahead from Rng.Weather with season-weighted tables; effects: travel multiplier (rain ×1.25, storm ×1.5, snow ×1.5), sight −1 in fog/blizzard, cold raises wood/food need; a 3-day forecast; one statewide weather (no fronts yet).",
+  "fullScope": "The prototype's weather.js (1,196 lines): a statewide sky plus regional fronts that cross the map over hours to days (scaled with map size), rain in 3–4 waves, fog banks, river ice from a freezing index, mud/snow cover/soil moisture carrying over, forecasts of 3 days (4 with a watchtower, 5 with a radio station) that are deliberately imperfect, and travel/vehicle effects. It never draws from the main RNG, so ETAs hold. tools/weathertest.js checks seasons, determinism, climate and ETA exactness.",
+  "protoRefs": [
+   "prototype/src/sim/weather.js",
+   "prototype/src/sim/eras.js",
+   "prototype/tools/weathertest.js",
+   "docs/features/campaign.md"
+  ],
+  "tasks": {
+   "data": [
+    "content/weather.json: types with icon art key, travel multiplier, sight modifier, severe flag",
+    "content/seasons.json: 4 seasons with temperature ranges and weather weights per type",
+    "Calendar constants shared with core.clock (YEAR_DAYS 112, START_OFFSET 14)"
+   ],
+   "backend": [
+    "WeatherSystem (IDaily, first in the daily order): ensure days are generated up to today + 7 from Rng.Weather in order",
+    "Query API: Season(world), WeatherOn(day), TravelFactor(world, hour), SightPenalty(world)",
+    "Forecast(world, days) with simple uncertainty (tomorrow right ~90%, day 3 less)",
+    "Tests: same seed => same 224 days; other systems rolling more dice never changes the weather; seasonal mix plausible over 50 seeds; no NaN over 2 years"
+   ],
+   "ui": [
+    "Top bar: season + weather icon + temperature; a 3-day forecast tooltip",
+    "Cheap screen tint for rain/fog/snow on the State Map (placeholder)"
+   ]
+  },
+  "dataModel": "public enum WeatherKind { Clear, Overcast, Rain, Storm, Fog, Snow, Blizzard }\npublic sealed record WeatherDef(string Id, WeatherKind Kind, string Art, float TravelMult, int SightMod, bool Severe);\npublic sealed record WeatherDay(int Day, WeatherKind Kind, float HiC, float LoC);\npublic sealed class WeatherState { public List<WeatherDay> Days = new(); }\npublic static class Calendar {\n  public const int SeasonDays = 28, YearDays = 112, StartOffset = 14;\n  public static int SeasonIndex(int day) => ((day - 1 + StartOffset) % YearDays) / SeasonDays;\n}",
+  "dependsOn": [
+   "core.clock",
+   "data.rng",
+   "data.content"
+  ],
+  "connections": [
+   {
+    "to": "travel.pathing",
+    "why": "Weather multiplies travel time; estimates must use the pre-rolled days.",
+    "how": "Cost delegate multiplies by Weather.TravelFactor(hour).",
+    "godot": "Route ETA label recomputed on DayStarted.",
+    "unity": "Same."
+   },
+   {
+    "to": "surv.needs",
+    "why": "Cold and heat change wood/water/food needs and mood.",
+    "how": "Needs system reads WeatherOn(today).",
+    "godot": "n/a",
+    "unity": "n/a"
+   },
+   {
+    "to": "combat.los",
+    "why": "Fog and blizzards cut sight in battle.",
+    "how": "BattleState copies the tile's weather at start.",
+    "godot": "Battle view fog overlay.",
+    "unity": "Same."
+   },
+   {
+    "to": "world.weather",
+    "why": "Full weather (fronts, rain waves, ponds, ice) extends this.",
+    "how": "Same WeatherState gains Fronts; API stays.",
+    "godot": "n/a",
+    "unity": "n/a"
+   }
+  ],
+  "godot": {
+   "approach": "Show weather with a CanvasModulate tint or a simple particle layer (GPUParticles2D) driven by the current WeatherKind from SimHost. All rolls stay in the sim.",
+   "keyApis": [
+    "CanvasModulate",
+    "GPUParticles2D / CPUParticles2D",
+    "TextureRect (icon)",
+    "TooltipText"
+   ],
+   "docs": [
+    {
+     "t": "UI index",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/ui/index.html"
+    },
+    {
+     "t": "Random number generation (cosmetic only)",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/math/random_number_generation.html"
+    }
+   ]
+  },
+  "unity": {
+   "approach": "Drive a full-screen tint and a particle system from SimHost's weather view model; keep it cosmetic.",
+   "keyApis": [
+    "ParticleSystem",
+    "UI Toolkit VisualElement (tint)",
+    "Sprite icons"
+   ],
+   "docs": [
+    {
+     "t": "UI Toolkit",
+     "u": "https://docs.unity3d.com/Manual/UIElements.html"
+    },
+    {
+     "t": "Random (cosmetic only)",
+     "u": "https://docs.unity3d.com/ScriptReference/Random.html"
+    }
+   ]
+  },
+  "learn": [
+   {
+    "t": "Type Object (weather types as data)",
+    "u": "https://gameprogrammingpatterns.com/type-object.html"
+   }
+  ],
+  "newb": [
+   "Rolling weather ahead and storing it means the forecast and travel estimates can be honest: tomorrow's weather already exists.",
+   "Own RNG stream: the weather for day 40 is the same whether or not you looted 30 houses before it.",
+   "Effects as a data table (travel ×1.5 in storms) lets you balance without code.",
+   "A season is just a function of the day number: no state needed."
+  ],
+  "pitfalls": [
+   "Rolling weather lazily when something asks, so the order of questions changes the weather.",
+   "Effects scattered as magic numbers in travel, needs and combat code instead of one table.",
+   "Off-by-one between the clock's day and the weather's day after midnight.",
+   "Building fronts and regional weather before the slice needs them."
+  ],
+  "test": "xUnit: Season(1) is spring day 15; day 99 starts year 2; 224 days identical for a seed; an extra 1,000 loot rolls do not change weather; TravelFactor applies the table. Manual: the top bar icon changes at midnight; the forecast mostly matches the next days.",
+  "size": "S"
+ },
+ {
+  "id": "core.cards",
+  "title": "Event cards & pacing (decision cards, pause rules, auto-answers)",
+  "summary": "The game's storyteller interface: decision cards ('Blocked highway: clear it (4 h, noisy) / detour (3 fuel) / squeeze through') defined as data, raised by systems, held in a tray, pausing the clock by kind, and answering themselves with a safe default if left too long.",
+  "whyHere": "Travel events, hub events, recruits and battle offers all arrive as cards; the card model must be data (saveable) and the pause rules must exist before L3 starts raising cards.",
+  "subsystems": [
+   "CardDef (content) & CardInstance (state)",
+   "Choices: conditions, hints, effects",
+   "Effect handlers (data -> rules)",
+   "Card queue & tray",
+   "Pause kinds & options",
+   "Default answer & timeout",
+   "Staleness (subject gone)"
+  ],
+  "sliceScope": "CardDef JSON with choices whose effects are typed records (Delay(hours), Spend(item, qty), Injure(min,max), SkillCheck(skill, dc, onPass, onFail), StartBattle(template), Log(text)); CardInstance {defId, context IDs, raisedHour}; AnswerCard command; pause kinds (combat, death, orders, other) with defaults; TRAY_HOURS = 8 then default choice; 4–6 slice cards (blocked road, storm, lone walker, abandoned car, survivor at the gate).",
+  "fullScope": "The prototype's cardrules.js: 9 pause kinds (combat, raid, death, contact, hostile, horde, trade, orders, other) + 'always', each with an Options switch and default; cards wait TRAY_HOURS = 8 game hours (2 min 40 s at 1×) then take a default answer chosen by rules (marked default, 'do nothing' labels, retreat, non-gamble…), stale cards are dropped, and a team whose card waits holds still. events.js has ~40 road cards with weight/when/card functions; choices are closures, which is why an open card cannot be saved.",
+  "protoRefs": [
+   "prototype/src/sim/cardrules.js",
+   "prototype/src/ui/pacing.js",
+   "prototype/src/sim/events.js",
+   "prototype/tools/traytest.js"
+  ],
+  "tasks": {
+   "data": [
+    "content/cards/*.json: id, kind, title, text template ('Wrecked cars choke the road near {tile}'), conditions (vehicle, road, weather), weight, choices",
+    "Choice: label, hint, requires (item/skill), isDefault, effects: list of typed effect records (polymorphic JSON with `$type`)",
+    "Pause kinds table with player-facing labels and defaults (content/pacing.json)",
+    "CardInstance in state: InstanceId, DefId, Context (PartyId, TileId, SurvivorIds), RaisedHour"
+   ],
+   "backend": [
+    "Card roller: eligible defs by conditions, weighted pick from Rng.Events, bind context, publish CardRaised",
+    "Effect interpreter: one handler per effect type (Delay, Spend, Injure, SkillCheck, Log, StartBattle), deterministic via Rng.Events",
+    "Pacing rules: ShouldPause(card kind, options); TRAY_HOURS timeout -> DefaultChoice (prototype rules) -> AnswerCard",
+    "Staleness: drop a card whose subject (party/survivor) no longer exists, with a log line",
+    "Tests: every card in content resolves (all effects known, templates fill), defaults never pick a fight; save/load with an open card works"
+   ],
+   "ui": [
+    "Card window (title, text, choice buttons with hints and disabled reasons) opens on CardRaised for pausing kinds",
+    "Card tray chips for waiting cards with a countdown; Options > 'Pause for…' toggles"
+   ]
+  },
+  "dataModel": "public sealed record CardDef(string Id, CardKind Kind, string Title, string Text,\n  ImmutableArray<Condition> When, float Weight, ImmutableArray<ChoiceDef> Choices);\npublic sealed record ChoiceDef(string Label, string? Hint, bool IsDefault, ImmutableArray<Effect> Effects);\n[JsonPolymorphic] [JsonDerivedType(typeof(Delay), \"delay\")] [JsonDerivedType(typeof(SkillCheck), \"check\")]\npublic abstract record Effect;\npublic sealed record Delay(int Hours) : Effect;\npublic sealed record SkillCheck(string Skill, int Dc, ImmutableArray<Effect> Pass, ImmutableArray<Effect> Fail) : Effect;\npublic sealed class CardInstance { public CardInstanceId Id; public string DefId = \"\"; public PartyId? Party; public int RaisedHour; }",
+  "dependsOn": [
+   "core.events",
+   "core.commands",
+   "core.clock",
+   "data.content"
+  ],
+  "connections": [
+   {
+    "to": "travel.events",
+    "why": "Travel event cards are the biggest card set.",
+    "how": "Party movement calls CardRoller with context (party, tile).",
+    "godot": "n/a",
+    "unity": "n/a"
+   },
+   {
+    "to": "ui.cards",
+    "why": "Card window, tray and time controls are this card's view.",
+    "how": "View model per CardInstance with resolved text and Check()'d choices.",
+    "godot": "PanelContainer + VBoxContainer of Buttons; tray as HBoxContainer of chips.",
+    "unity": "UI Toolkit modal + ListView tray."
+   },
+   {
+    "to": "core.clock",
+    "why": "Pause rules stop the clock.",
+    "how": "AdvanceHours stops when a pausing card is raised; tray timeouts run before each hour.",
+    "godot": "Speed buttons reflect the pause.",
+    "unity": "Same."
+   },
+   {
+    "to": "data.save",
+    "why": "Cards as data make open cards saveable (fixing the prototype's limit).",
+    "how": "CardInstance saved; CardDef looked up by ID.",
+    "godot": "n/a",
+    "unity": "n/a"
+   },
+   {
+    "to": "core.hubevents",
+    "why": "Hub events reuse the same card machinery.",
+    "how": "Different condition set and kind.",
+    "godot": "n/a",
+    "unity": "n/a"
+   }
+  ],
+  "godot": {
+   "approach": "A CardWindow scene (PanelContainer with title Label, RichTextLabel body, VBoxContainer of choice Buttons) instanced by a CardLayer on CanvasLayer when SimHost raises a card; buttons call SimHost.Send(new AnswerCard(id, i)). Keep the tray as a small HBoxContainer of chips with a countdown from the sim.",
+   "keyApis": [
+    "PanelContainer / VBoxContainer",
+    "RichTextLabel",
+    "Button + TooltipText",
+    "CanvasLayer",
+    "PackedScene.Instantiate"
+   ],
+   "docs": [
+    {
+     "t": "Using containers",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/ui/gui_containers.html"
+    },
+    {
+     "t": "RichTextLabel",
+     "u": "https://docs.godotengine.org/en/stable/classes/class_richtextlabel.html"
+    },
+    {
+     "t": "Nodes and scenes",
+     "u": "https://docs.godotengine.org/en/stable/getting_started/step_by_step/nodes_and_scenes.html"
+    }
+   ]
+  },
+  "unity": {
+   "approach": "A UI Toolkit modal (UXML template) filled from the card view model; choice buttons send AnswerCard. A ListView holds the tray. If you author cards in the editor, a ScriptableObject importer can convert JSON for preview, but JSON remains the source.",
+   "keyApis": [
+    "UI Toolkit UXML / VisualElement",
+    "Button.clicked",
+    "ListView",
+    "ScriptableObject (preview only)"
+   ],
+   "docs": [
+    {
+     "t": "UI Toolkit",
+     "u": "https://docs.unity3d.com/Manual/UIElements.html"
+    },
+    {
+     "t": "ScriptableObject",
+     "u": "https://docs.unity3d.com/Manual/class-ScriptableObject.html"
+    }
+   ]
+  },
+  "learn": [
+   {
+    "t": "Type Object",
+    "u": "https://gameprogrammingpatterns.com/type-object.html"
+   },
+   {
+    "t": "Command",
+    "u": "https://gameprogrammingpatterns.com/command.html"
+   },
+   {
+    "t": "System.Text.Json polymorphism",
+    "u": "https://learn.microsoft.com/en-us/dotnet/standard/serialization/system-text-json/polymorphism"
+   }
+  ],
+  "newb": [
+   "The big lesson from the prototype: make card choices data (effect records), not code (lambdas). Data can be saved, validated, balanced in JSON and tested in bulk.",
+   "An effect interpreter is a tiny language: each effect type is a verb the sim knows (Delay, Spend, Injure). New cards need no code unless they need a new verb.",
+   "Pacing is player comfort: pausing for deaths and fights but letting routine cards wait in a tray keeps long games flowing (RimWorld/Frostpunk do similar).",
+   "Default answers must be safe (never start a fight), so leaving the game running is never punished."
+  ],
+  "pitfalls": [
+   "Closures in card choices (cannot save mid-card; the prototype's known limit).",
+   "Card text built by string concatenation everywhere; use templates with named placeholders.",
+   "Cards about a party that died in the meantime (check staleness every hour).",
+   "Rolling card outcomes with the main RNG and breaking determinism of unrelated systems."
+  ],
+  "test": "xUnit: all content cards validate (effects known, templates filled with a sample context); a forced card raised mid-trip pauses AdvanceHours; left 8 hours it auto-answers with the default and logs it; a card whose party is gone is dropped; save with an open card, load, answer: identical to answering without saving. Manual: the blocked-highway card appears on a road trip by car and each choice does what its hint says.",
+  "size": "M"
+ }
+]
