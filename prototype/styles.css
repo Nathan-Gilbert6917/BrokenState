@@ -1606,6 +1606,7 @@ body.tl-on #watchlist, body.tl-on #noteedit { display: none !important; }
 .gd-dayline.later { opacity: 0.75; }
 .gd-today { font-size: 0.72rem; color: var(--accent); }
 .gd-late { font-size: 0.72rem; color: #ffd166; }
+.gd-step.locked .gd-go { opacity: 0.7; }
 .gd-note { border-bottom: 1px solid var(--line); margin: 0.15rem 0 0.25rem; padding-bottom: 0.2rem; }
 .gd-note .gd-name { flex: 1; color: #ffd166; }
 .gd-note .gd-why { margin-left: 0; }

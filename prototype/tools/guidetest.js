@@ -131,6 +131,10 @@ section("Hub start: the base list, day by day, ticks off from the state");
   check(clean(html) && /data-action="gd-show" data-id="raid"/.test(html) && /data-action="gd-show" data-id="night3"/.test(html), "a click on Day 3's line shows its steps");
   GUIDE_ACTIONS["gd-day"](st, ui, { day: "3" });
   check(!/data-id="raid"/.test(renderGuide(st, ui)), "and again folds it");
+  GUIDE_ACTIONS["gd-day"](st, ui, { day: "7" });
+  html = renderGuide(st, ui);
+  check(/gd-step locked"><button class="gd-go" data-action="gd-pick" data-id="hold"[^>]*data-tip="Comes once every step of days 1 to 6 is done/.test(html) && /🔒/.test(html), "day 7's attack: locked until days 1 to 6 are done, its hover says so");
+  GUIDE_ACTIONS["gd-day"](st, ui, { day: "7" });
   check(renderGuide(st, { ...ui, started: false }) === "" && renderGuide(st, { ...ui, timelapse: {} }) === "", "hidden before the start and in the timelapse");
 
   // Show me for each step points at what the screen has.
@@ -200,6 +204,11 @@ section("Hub start: the base list, day by day, ticks off from the state");
   check(/queued/.test(queueBuild(st, hub(st), "farm_plot")) && guideCheck(st, ui).some((x) => x.id === "farm"), "farm: a farm plot queued (more than the hub's own)");
   const def = Object.keys(BUILDINGS).find((k) => BUILDINGS[k].tab === "defenses" && canBuild(st, hub(st), k).ok);
   check(!!def && /queued/.test(queueBuild(st, hub(st), def)) && guideCheck(st, ui).some((x) => x.id === "defence"), `defence: a first defence queued (${def})`);
+  // Day 2's water boiler (the user's request 2026-10-28: "build a boiler to purify the water").
+  check(guideSteps(g).find((x) => x.id === "boiler").why.includes("wrench") && GUIDE_PHASES.base[1].ids.includes("boiler") && GUIDE_PHASES.road[1].ids.includes("boiler"), "boiler: on day 2 of both lists, and it names the wrench it needs");
+  hub(st).armory.push(newItem("toolkit"));
+  Object.assign(hub(st).stock, { scrap: (hub(st).stock.scrap || 0) + 10, stone: (hub(st).stock.stone || 0) + 10 });
+  check(/queued/.test(queueBuild(st, hub(st), "boiler")) && guideCheck(st, ui).some((x) => x.id === "boiler"), "boiler: a water boiler queued");
   // Day 7: the diary; the nights to the sixth.
   ui.diary = { day: 1 };
   check(guideCheck(st, ui).some((x) => x.id === "diary"), "diary: opened");
@@ -207,6 +216,7 @@ section("Hub start: the base list, day by day, ticks off from the state");
   st.hour = dawnOf(g, 6);
   guideCheck(st, ui);
   check(g.on && ["night2", "night3", "night4", "night5", "night6"].every((id) => g.done[id] != null) && g.done.night7 == null && guideDay(st, g) === 7, "the nights tick at their dawns; day 7, its night still ahead");
+  check(g.ready === st.hour, "days 1 to 6 all done: ready for the seventh night's attack (g.ready)");
   GUIDE_ACTIONS["gd-fold"](st, ui, {}); GUIDE_ACTIONS["gd-fold"](st, ui, {}); // as it was: open
   html = renderGuide(st, ui);
   check(clean(html) && (html.match(/class="gd-phase gd-dayline past/g) || []).length === GUIDE.DAYS - 1 && /<b>Day 7<\/b>[^<]*<span class="gd-today">today/.test(html) && (html.match(/data-action="gd-show"/g) || []).length === 2 && /data-id="hold"/.test(html) && /data-id="night7"/.test(html), "day 7: the six days behind it one line each; the attack and the night left");
@@ -216,7 +226,7 @@ section("Hub start: the base list, day by day, ticks off from the state");
   st.hour = dawnOf(g, 7) - 10; // 20:00 of day 7
   st.cards.length = 0;
   let atk = null;
-  for (let i = 0; i < 9 && !atk; i++) { tickHour(st); guideCheck(st, ui); atk = st.cards.find((c) => c.campAttack === hub(st).id); if (!atk) st.cards.length = 0; }
+  for (let i = 0; i < 9 && !atk; i++) { tickHour(st); guideCheck(st, ui); atk = st.cards.find((c) => c.campAttack === hub(st).id || c.firstWeek === hub(st).id); if (!atk) st.cards.length = 0; }
   check(!!atk && g.attack && !g.attack.quiet && g.done.hold == null && st.log.some((l) => /watching/.test(l.text)), `the seventh night: warned, then the attack (${atk ? atk.title : "none"}); not held yet`);
   if (atk) { st.cards.splice(st.cards.indexOf(atk), 1); atk.choices.find((x) => x.default).resolve(st); }
   st.cards.length = 0;
@@ -331,7 +341,7 @@ section(`Road start (${mode}): the road list day by day, the shelter on day ${GU
   st.nameAsk = []; // the naming popup answered
   check(!!hub(st) && hub(st).camp === true && guideCheck(st, ui).some((x) => x.id === "camp"), "camp: the camp is set up (a base)");
   check(g.woodLow === (hub(st).stock.wood || 0) && !g.done.wood, `wood: counted from the camp's own pile (${g.woodLow}), not ticked by setting it up`);
-  for (const id of ["work", "wood", "food", "scavenge", "raid", "place", "needs", "farm", "defence", "found"]) {
+  for (const id of ["work", "boiler", "wood", "food", "scavenge", "raid", "place", "needs", "farm", "defence", "found"]) {
     const u = freshUi();
     const r = showMe(st, u, id);
     check(r.hit.length > 0, `Show me (${id}, at the camp): ${r.sels.join(" | ")} found on screen`);
@@ -360,15 +370,18 @@ section(`Road start (${mode}): the road list day by day, the shelter on day ${GU
   Object.assign(hub(st).stock, { scrap: 30, buildmat: 2, wood: 400 }); // a trip home with the rest (the wood: a Cut wood order)
   const fresh = guideCheck(st, ui);
   check(fresh.some((x) => x.id === "needs") && g.done.wood != null, "needs: everything is in; wood: someone on it or the pile grew");
-  check(!/queued/.test(queueBuild(st, hub(st), "farm_plot")) && guideSteps(g).find((x) => x.id === "farm").why.includes("shovel"), "farm: no plot without a shovel, and the step says so");
-  hub(st).armory.push(newItem("shovel"), newItem("toolkit")); // found on a raid
-  check(/queued/.test(queueBuild(st, hub(st), "farm_plot")) && guideCheck(st, ui).some((x) => x.id === "farm"), "farm: a farm plot queued at the camp");
-  const def = Object.keys(BUILDINGS).find((k) => BUILDINGS[k].tab === "defenses" && canBuild(st, hub(st), k).ok);
-  check(!!def && /queued/.test(queueBuild(st, hub(st), def)) && guideCheck(st, ui).some((x) => x.id === "defence"), `defence: a first defence queued at the camp (${def})`);
   run(st, 24 * 8, () => { guideCheck(st, ui); return !!hub(st) && hub(st).camp !== true; });
   run(st, 30, () => { guideCheck(st, ui); return !!g.done.night; }); // the shelter can stand within a day (20 work-hours): its first night after it
   guideCheck(st, ui);
   check(!!hub(st) && !!g.done.found && !!g.done.clock && !!g.done.night, `found: the shelter stands (day ${day(st)}), the clock and the first night ticked`);
+  // Days 5, 6 and 2's builds, at the shelter (queued after the shack: the builders take the queue in order).
+  check(!/queued/.test(queueBuild(st, hub(st), "farm_plot")) && guideSteps(g).find((x) => x.id === "farm").why.includes("shovel"), "farm: no plot without a shovel, and the step says so");
+  hub(st).armory.push(newItem("shovel"), newItem("toolkit")); // found on a raid
+  check(/queued/.test(queueBuild(st, hub(st), "farm_plot")) && guideCheck(st, ui).some((x) => x.id === "farm"), "farm: a farm plot queued at the shelter");
+  const def = Object.keys(BUILDINGS).find((k) => BUILDINGS[k].tab === "defenses" && canBuild(st, hub(st), k).ok);
+  check(!!def && /queued/.test(queueBuild(st, hub(st), def)) && guideCheck(st, ui).some((x) => x.id === "defence"), `defence: a first defence queued at the shelter (${def})`);
+  Object.assign(hub(st).stock, { scrap: (hub(st).stock.scrap || 0) + 10, stone: (hub(st).stock.stone || 0) + 10 });
+  check(/queued/.test(queueBuild(st, hub(st), "boiler")) && guideCheck(st, ui).some((x) => x.id === "boiler"), "boiler: a water boiler queued at the shelter (the toolkit's wrench)");
   check(g.on && !g.done.diary, "still on until the diary and the nights");
   // A road guide over (the hub stands) and closed: the menu starts the base list.
   GUIDE_ACTIONS["gd-close"](st, ui, {});

@@ -6,20 +6,21 @@
 //   Nth night", ticked at its dawn; the user's request 2026-10-28):
 //   - the road start (Normal and Hardcore since issue #79, and Crashlanding: no base past a camp yet): 1 off the road
 //     (the team, the clock, water, the camp fire's wood and stone, Establish base); 2 the camp at work (priorities, wood,
-//     food); 3 into the ruins (a team out, a raid); 4 home, and the shelter shack placed; 5 its needs in, a farm plot;
+//     food, a water boiler); 3 into the ruins (a team out, a raid); 4 home, and the shelter shack placed; 5 its needs in, a farm plot;
 //     6 a first defence; 7 the shelter founded, the diary, the attack held off;
-//   - a hub start (Custom): 1 the stores, the clock, priorities; 2 a building, wood; 3 a team out, a raid; 4 home, food;
+//   - a hub start (Custom): 1 the stores, the clock, priorities; 2 a building, wood, a water boiler; 3 a team out, a raid; 4 home, food;
 //     5 a farm plot; 6 a first defence; 7 the diary, the attack held off.
 //   Which one is picked when the guide starts: no base past a camp yet = the road list. A step can read differently
 //   on the road (ROAD_WORDS). The card shows today in full, an earlier day's open steps under "still to do", a later
 //   day as one line (a click shows its steps: ui.guidePeek); the guide's day (guideDay) turns at each dawn.
-// - state.guide = { kind: "base" | "road", on, keep, fold, done: { step id: hour }, h0, b0, p0, d0, sent: [{ id, who,
-//   mission }], wLow, woodLow, fLow, raided, seen: { tip id: hour }, ended }. Saved with the world (sim/save.js writes
+// - state.guide = { kind: "base" | "road", on, keep, fold, done: { step id: hour }, h0, b0, p0, d0, w0, sent: [{ id,
+//   who, mission }], wLow, woodLow, fLow, raided, ready, warned, attack, seen: { tip id: hour }, ended }. Saved with the world (sim/save.js writes
 //   the whole state); an older save has none and shows nothing.
 //   h0: the hour it started (the nights count from it); b0, p0, d0: buildings, farm plots and defences then; sent:
 //   player teams seen leaving a base (for "bring them home" and a raid); wLow, fLow: the least water and food held so
 //   far (for "find water", "food coming in"); woodLow: the least wood at the hub so far (for "wood coming in"; null
-//   until there is a hub); raided: the hour a raid's map first came up; warned, attack: the seventh night's attack
+//   until there is a hub); raided: the hour a raid's map first came up; w0: water boilers then; ready: the hour days 1
+//   to 6 were all done; warned, attack: the seventh night's attack
 //   (sim/firstweekattack.js).
 // - Off by itself once every step is done or at the dawn after the seventh night (not when brought back by hand from
 //   the menu: keep), or with its ✕. The menu's Game tab brings it back or hides it (gd-toggle).
@@ -32,8 +33,9 @@
 //   top of the card. Each is told once a run: g.seen = { tip id: hour }.
 // - The player's: it never pauses the clock, adds cards or touches the simulation itself; the autopilot and the
 //   headless tools never start it. The one thing the game does for it: the seventh night's attack (sim/firstweekattack.js,
-//   while the guide is on: a warning at the seventh dawn, then a raider band or a pack of the dead at the hub; the user's
-//   request 2026-10-28), which its "Hold off the attack" step on day 7 reads (g.attack).
+//   while the guide is on and once every step of days 1 to 6 is done, g.ready: a warning, then a nomad band on your trail
+//   or a horde of the dead at the hub; the user's requests 2026-10-28), which its "Hold off the attack" step on day 7
+//   reads (g.attack) and shows locked (🔒) until then.
 import { hub, alive } from "../sim/world.js";
 import { partyTile, partyMembers, carried } from "../sim/parties.js";
 import { teamWaterIn, waterIn } from "../sim/water.js";
@@ -173,10 +175,16 @@ const STEPS = {
     done: (state, g) => plotCount(state) > (g.p0 || 0), // a plot more than the base started with
     show: (state, ui, act) => (openHub(state, ui, act, "construction") ? ['[data-action="queuebuild"][data-type="farm_plot"]', '[data-action="basetab"][data-tab="construction"]'] : noCamp(state, ui, act)),
   },
+  boiler: {
+    title: "Build a water boiler", get why() { return `Water from a river, a lake or a rain catcher is raw and can carry the worm. The camp fire boils a little at a time; a Water boiler (Construction tab: ${costText(BUILDINGS.boiler.cost)}, and a wrench or a toolkit at the base) boils everything the base draws before it is drunk, for a little wood a day a head.`; },
+    done: (state, g) => countAt(state, (t) => t === "boiler") > (g.w0 || 0), // queued or standing, more than at the start
+    show: (state, ui, act) => (openHub(state, ui, act, "construction") ? ['[data-action="queuebuild"][data-type="boiler"]', '[data-action="basetab"][data-tab="construction"]'] : noCamp(state, ui, act)),
+  },
   hold: {
-    title: "Hold off the attack on the seventh night", why: "Whoever has been watching comes on the seventh night: a band of raiders or a pack of the dead from round about, a few more than you. Defend opens the fight on the base's map: place your people (the wounded back, the guns where they can see the way in), then start it. Your first defence and someone on Guard help; hiding instead costs you some of the stores.",
-    touch: "Whoever has been watching comes on the seventh night: a band of raiders or a pack of the dead from round about, a few more than you. Defend opens the fight on the base's map: place your people (the wounded back, the guns where they can see the way in), then Start the fight. Your first defence and someone on Guard help; hiding instead costs you some of the stores.",
-    done: (state, g) => { const a = g.attack; if (!a) return false; if (a.quiet) return true; const b = state.bases.find((x) => x.id === a.base); return !b || (!(b.campAttack && b.campAttack.wave) && !state.combat && !(state.cards || []).some((c) => c.campAttack === b.id)); }, // fought or hidden from, and over
+    title: "Hold off the attack on the seventh night", why: "Once every step of days 1 to 6 is done, whoever has been watching comes on the seventh night: a band of nomads on your trail, or a horde of the dead from round about, a few more than you. Defend opens the fight on the base's map: place your people (the wounded back, the guns where they can see the way in), then start it. Your first defence and someone on Guard help; hiding instead costs you some of the stores.",
+    touch: "Once every step of days 1 to 6 is done, whoever has been watching comes on the seventh night: a band of nomads on your trail, or a horde of the dead from round about, a few more than you. Defend opens the fight on the base's map: place your people (the wounded back, the guns where they can see the way in), then Start the fight. Your first defence and someone on Guard help; hiding instead costs you some of the stores.",
+    done: (state, g) => { const a = g.attack; if (!a) return false; if (a.quiet) return true; const b = state.bases.find((x) => x.id === a.base); return !b || (!(b.campAttack && b.campAttack.wave) && !state.combat && !(state.cards || []).some((c) => c.campAttack === b.id || c.firstWeek === b.id)); }, // fought or hidden from, and over
+    locked: (state, g) => g.ready == null, // the attack comes only once days 1 to 6 are done (sim/firstweekattack.js)
     show: (state, ui, act) => (openHub(state, ui, act, "construction") ? ['[data-action="cxtab"][data-tab="defenses"]', '[data-action="basetab"][data-tab="work"]'] : noCamp(state, ui, act)),
   },
   defence: {
@@ -271,7 +279,7 @@ const ROAD_WORDS = {
 export const GUIDE_PHASES = {
   base: [
     { label: "Day 1", sub: "find your feet", ids: ["stores", "clock", "work", "night"] },
-    { label: "Day 2", sub: "build and gather", ids: ["build", "wood", "night2"] },
+    { label: "Day 2", sub: "build and gather", ids: ["build", "wood", "boiler", "night2"] },
     { label: "Day 3", sub: "into the ruins", ids: ["scavenge", "raid", "night3"] },
     { label: "Day 4", sub: "bring it home", ids: ["home", "food", "night4"] },
     { label: "Day 5", sub: "food that lasts", ids: ["farm", "night5"] },
@@ -280,7 +288,7 @@ export const GUIDE_PHASES = {
   ],
   road: [
     { label: "Day 1", sub: "off the road and through the night", ids: ["team", "clock", "water", "fire", "camp", "night"] },
-    { label: "Day 2", sub: "set the camp to work", ids: ["work", "wood", "food", "night2"] },
+    { label: "Day 2", sub: "set the camp to work", ids: ["work", "boiler", "wood", "food", "night2"] },
     { label: "Day 3", sub: "into the ruins", ids: ["scavenge", "raid", "night3"] },
     { label: "Day 4", sub: "bring it home, plan the shelter", ids: ["home", "place", "night4"] },
     { label: "Day 5", sub: "gather what the shelter needs", ids: ["needs", "farm", "night5"] },
@@ -352,7 +360,7 @@ export function startGuide(state, on = true, { keep = false } = {}) {
   if (!on) return null;
   state.guide = {
     kind: roadOver(state) ? "base" : "road", on: true, keep: !!keep, fold: true, done: {}, // folded to its Next line until opened (the user's request 2026-10-24: the alerts' corner takes less of the map)
-    h0: state.hour, b0: buildingCount(state), p0: plotCount(state), d0: countAt(state, isDefence), sent: [], wLow: waterHeld(state), woodLow: hubWood(state), fLow: foodHeld(state), raided: null, seen: {}, ended: null,
+    h0: state.hour, b0: buildingCount(state), p0: plotCount(state), d0: countAt(state, isDefence), w0: countAt(state, (t) => t === "boiler"), sent: [], wLow: waterHeld(state), woodLow: hubWood(state), fLow: foodHeld(state), raided: null, seen: {}, ended: null,
   };
   return state.guide;
 }
@@ -389,6 +397,8 @@ export function guideCheck(state, ui) {
     if (ok) { g.done[st.id] = state.hour; fresh.push(st); }
   }
   const n = steps.filter((st) => g.done[st.id] != null).length;
+  // Days 1 to 6 all done: the seventh night's attack may come (sim/firstweekattack.js reads g.ready).
+  if (g.ready == null && steps.filter((st) => st.phase < GUIDE.DAYS - 1).every((st) => g.done[st.id] != null)) g.ready = state.hour;
   if (fresh.length) {
     if (ui.guidePulse && fresh.some((st) => st.id === ui.guidePulse.step)) ui.guidePulse.until = 0;
     const pr = guideProgress(state, g), ph = phasesOf(g)[pr.day - 1];
@@ -397,7 +407,7 @@ export function guideCheck(state, ui) {
   }
   const over = !g.keep && state.hour >= nightDawn(g, GUIDE.DAYS); // the dawn after the seventh night
   if (n === steps.length) endGuide(state, ui, "done", "✔ First week: every step done, the seventh night behind you. The guide steps aside; the menu brings it back.");
-  else if (over) endGuide(state, ui, n === steps.length ? "done" : "days", `The first week is over: the guide steps aside after day ${GUIDE.DAYS}.${g.kind === "road" && g.done.found == null && isCamp(hub(state)) ? " No shelter yet: the camp's Camp tab shows what it still needs." : ""} The menu (Game tab) brings it back.`);
+  else if (over) endGuide(state, ui, n === steps.length ? "done" : "days", `The first week is over: the guide steps aside after day ${GUIDE.DAYS}.${g.ready == null ? " The watchers never came: some steps of days 1 to 6 were left undone." : ""}${g.kind === "road" && g.done.found == null && isCamp(hub(state)) ? " No shelter yet: the camp's Camp tab shows what it still needs." : ""} The menu (Game tab) brings it back.`);
   return fresh;
 }
 function endGuide(state, ui, why, text) {
@@ -577,8 +587,9 @@ export function renderGuide(state, ui) {
   if (g.fold) return `<div class="guide folded">${head}${note}${cur ? `<div class="gd-next small">Next: ${esc(cur.title)}</div>` : ""}</div>`;
   const row = (st) => {
     if (g.done[st.id] != null) return `<div class="gd-step done"${tip(sayFor(st, "why"))}><span class="gd-mark">✔</span><span class="gd-name">${esc(st.title)}</span></div>`;
-    const on = cur && st.id === cur.id;
-    return `<div class="gd-step${on ? " cur" : ""}"><button class="gd-go" data-action="gd-pick" data-id="${st.id}"${tip(sayFor(st, "why"))}><span class="gd-mark">${on ? "▶" : "○"}</span>${esc(st.title)}</button>` +
+    const on = cur && st.id === cur.id, locked = !!(st.locked && st.locked(state, g));
+    const left = locked ? steps.filter((x) => x.phase < GUIDE.DAYS - 1 && g.done[x.id] == null).length : 0;
+    return `<div class="gd-step${on ? " cur" : ""}${locked ? " locked" : ""}"><button class="gd-go" data-action="gd-pick" data-id="${st.id}"${tip(locked ? `Comes once every step of days 1 to 6 is done (${left} left). ${sayFor(st, "why")}` : sayFor(st, "why"))}><span class="gd-mark">${locked ? "🔒" : on ? "▶" : "○"}</span>${esc(st.title)}</button>` +
       `<button class="gd-show" data-action="gd-show" data-id="${st.id}"${tip("Open the screen for this step and point at the button to press")}>Show me</button></div>` +
       (on ? `<div class="gd-why">${padHtml(esc(sayFor(st, "why")))}</div>` : "");
   };

@@ -1,11 +1,14 @@
 // The first week's attack (sim/firstweekattack.js; the user's request 2026-10-28: "add a scripted raid on the base of a
 // nomad group or horde at the end of the week"), without a browser.
 // Usage: node tools/firstweekattacktest.js
-// - only while the first-week guide is on (not brought back by hand, not beside the autopilot), once a guide
-// - the warning at the seventh dawn, the attack in the seventh night (21:00 to 03:00), the first hour the hub is ready
-// - a pack of the dead (the people at home + 2, 3 to 8) or a raider band (half of them, 2 to 4), drawn out of the land
-//   round the base (nothing made), the base's card whatever the walls; Defend plays the base defence; the guide's
-//   "Hold off the attack" step ticks once it is over
+// - only while the first-week guide is on (not brought back by hand, not beside the autopilot), once a guide, and only
+//   once its steps of days 1 to 6 are all done (g.ready, set by ui/guide.js guideCheck; the user's request 2026-10-28)
+// - the warning, the attack in the seventh night (21:00 to 03:00), the first hour the hub is ready
+// - a nomad band on your trail first (drifters or looters, not friendly, within reach): it comes beside the base, a
+//   raiding party of its own people; Defend (the band's dead off it) or Hide (a share of the stores carried off into
+//   its own); it moves on after
+// - else a horde of the dead (the people at home + 2, 3 to 8) or the land's raiders, drawn out of the land round the
+//   base (nothing made), the base's card whatever the walls; the guide's "Hold off the attack" step ticks once it is over
 // - nothing within reach, or the night gone by: a quiet night; saved with the guide; hooked into the hour
 import { createWorld, tickHour, hub, homeAt, alive } from "../src/sim/world.js";
 import "../src/ui/ui.js"; // the UI's modules in their usual order (ui/guide.js after it)
@@ -14,7 +17,8 @@ import { roadTeam } from "../src/sim/hardcore-start.js";
 import { openDead, openRaiders, putBack, putBackRaiders, drawFromTile, drawRaiders } from "../src/sim/deadpop.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
 import { FIRST_ATTACK, firstWeekHour, nightDawn } from "../src/sim/firstweekattack.js";
-import { startGuide, guideCheck, guideSteps, GUIDE_PHASES } from "../src/ui/guide.js";
+import { startGuide, guideCheck, guideSteps, GUIDE_PHASES, GUIDE } from "../src/ui/guide.js";
+import { nomadsOf, spawnNomads } from "../src/sim/nomads.js";
 import { readFileSync } from "node:fs";
 
 let fails = 0, passes = 0;
@@ -22,8 +26,9 @@ const check = (ok, msg) => { if (ok) passes++; else { fails++; console.log(`  FA
 const section = (t) => console.log(t);
 const freshUi = () => ({ started: true, speed: 0, tab: "bases", selected: -1, baseView: null, expedition: null, diary: null });
 
-// A Normal road start with its camp set up and the guide on from the first hour.
-function camp(seed, { guide = true } = {}) {
+// A Normal road start with its camp set up and the guide on from the first hour (ready: days 1 to 6 taken as done), no
+// nomad band on the map.
+function camp(seed, { guide = true, ready = true } = {}) {
   const st = createWorld({ seed, factionCount: 5, mode: "normal", roadStart: true });
   st.noWanderers = true;
   const g = guide ? startGuide(st, true) : null;
@@ -34,6 +39,8 @@ function camp(seed, { guide = true } = {}) {
   st.cards.length = 0;
   st.nameAsk = [];
   for (const s of alive(st)) s.health = 100;
+  if (st.nomads) st.nomads.bands.length = 0;
+  if (g && ready) g.ready = st.hour;
   return { st, g, b: hub(st) };
 }
 const reach = (st, b) => st.grid.within(b.tile, FIRST_ATTACK.REACH);
@@ -64,6 +71,29 @@ section("Only while the guide is on, once");
   check(!c3.g.attack, "beside the autopilot: no attack");
 }
 
+section("Only once the steps of days 1 to 6 are done");
+{
+  const { st, g, b } = camp(37, { ready: false });
+  putBack(st, b.tile, null, 10);
+  const log0 = st.log.length;
+  for (const h of [6, 12, 21, 23, 2]) { st.hour = at(g, h); firstWeekHour(st); }
+  check(!g.attack && g.warned == null && st.log.length === log0 && !attackCard(st, b), "not ready: no warning and no attack through the seventh day and night");
+  st.hour = at(g, 3);
+  firstWeekHour(st);
+  check(!g.attack, "the night gone by: none after it either");
+  // The guide marks ready when every step of days 1 to 6 is done, and not before.
+  const ui = freshUi();
+  const steps = guideSteps(g), early = steps.filter((x) => x.phase < GUIDE.DAYS - 1);
+  check(early.length && steps.filter((x) => x.phase === GUIDE.DAYS - 1).every((x) => ["found", "diary", "hold", "night7"].includes(x.id)), "day 7's own steps (the shelter, the diary, the attack, the night) are not needed");
+  for (const x of early.slice(1)) g.done[x.id] = 0;
+  st.hour = at(g, 7);
+  guideCheck(st, ui);
+  check(g.ready == null || early.every((x) => g.done[x.id] != null), "one step of days 1 to 6 open: not ready");
+  for (const x of early) g.done[x.id] = 0;
+  guideCheck(st, ui);
+  check(g.ready === st.hour, "all done: ready");
+}
+
 section("The warning, then a pack of the dead in the seventh night");
 {
   const { st, g, b } = camp(32);
@@ -86,8 +116,8 @@ section("The warning, then a pack of the dead in the seventh night");
   firstWeekHour(st);
   const want = Math.max(FIRST_ATTACK.DEAD[0], Math.min(FIRST_ATTACK.DEAD[1], people + 2));
   const card = attackCard(st, b);
-  check(g.attack && g.attack.kind === "dead" && g.attack.n === want && g.attack.base === b.id, `21:00: a pack of ${g.attack && g.attack.n} dead for ${people} at home (want ${want})`);
-  check(!!card && /in the night/.test(card.title) && /gathering/.test(card.text) && card.choices.length === 2 && /Defend/.test(card.choices[0].label), `the base's card: "${card && card.title}"`);
+  check(g.attack && g.attack.kind === "dead" && g.attack.n === want && g.attack.base === b.id, `21:00, no nomads near: a horde of ${g.attack && g.attack.n} dead for ${people} at home (want ${want})`);
+  check(!!card && /A horde of the dead/.test(card.title) && /gathering/.test(card.text) && card.choices.length === 2 && /Defend/.test(card.choices[0].label), `the base's card: "${card && card.title}"`);
   check(deadNear(st, b) === near0 - g.attack.n && b.campAttack.wave.d === g.attack.n, `drawn out of the land round the base (${near0} → ${deadNear(st, b)}): nothing made`);
   const n = st.cards.length;
   st.hour += 1;
@@ -103,10 +133,57 @@ section("The warning, then a pack of the dead in the seventh night");
   check(JSON.stringify(ld.guide.attack) === JSON.stringify(g.attack) && ld.guide.warned === g.warned, "saved with the guide");
 }
 
+section("A nomad band on your trail comes first");
+{
+  const { st, g, b } = camp(38);
+  putBack(st, b.tile, null, 10); // the dead about too: the band still comes first
+  const far = st.grid.within(b.tile, 20).find((t) => st.grid.distance(b.tile, t) === 20 && st.tiles[t].terrain !== "water");
+  const band = spawnNomads(st, { tier: 1, tile: far, pop: 5 });
+  band.goodwill = -50;
+  const people = homeAt(st, b.id).length, dead0 = deadNear(st, b);
+  st.hour = at(g, 21);
+  firstWeekHour(st);
+  const want = Math.min(5, Math.max(FIRST_ATTACK.NOMADS[0], Math.min(FIRST_ATTACK.NOMADS[1], Math.ceil(people / 2) + 1)));
+  const card = st.cards.find((c) => c.firstWeek === b.id);
+  check(g.attack && g.attack.kind === "nomads" && g.attack.band === band.id && g.attack.n === want, `the looters come: ${g.attack && g.attack.n} of them for ${people} at home (want ${want})`);
+  check(st.grid.distance(band.tile, b.tile) <= 1 && band.phase === "battle" && deadNear(st, b) === dead0, `the band beside the base (${st.grid.distance(band.tile, b.tile)} away), held for the raid; the dead left where they are`);
+  check(!!card && card.title.includes(band.name.charAt(0).toUpperCase() + band.name.slice(1)) && /following your trail/.test(card.text) && /Defend/.test(card.choices[0].label) && /Hide/.test(card.choices[1].label) && card.raidReport, `the card: "${card && card.title}"`);
+  const hold = () => guideSteps(g).find((x) => x.id === "hold").done(st, g, freshUi());
+  check(!hold(), "not held while the card waits");
+  st.cards.splice(st.cards.indexOf(card), 1);
+  const pop0 = band.pop;
+  card.choices.find((x) => x.default).resolve(st); // Defend: played out headless
+  const gone = !nomadsOf(st).includes(band);
+  check(!st.combat && hold() && (gone || (band.pop < pop0 || band.pop === pop0) && band.phase !== "battle"), `defended: the fight over (the band ${gone ? "broken up" : `${pop0} → ${band.pop}, ${band.phase}`}), the step ticks`);
+  // Hide: they carry off a share of the stores into their own, and move on.
+  const c2 = camp(39);
+  const far2 = c2.st.grid.within(c2.b.tile, 15).find((t) => c2.st.grid.distance(c2.b.tile, t) === 15 && c2.st.tiles[t].terrain !== "water");
+  const band2 = spawnNomads(c2.st, { tier: 0, tile: far2, pop: 4 });
+  band2.goodwill = 0;
+  c2.b.stock.scrap = 40;
+  const bs0 = band2.stock.scrap || 0;
+  c2.st.hour = at(c2.g, 22);
+  firstWeekHour(c2.st);
+  const card2 = c2.st.cards.find((c) => c.firstWeek === c2.b.id);
+  check(c2.g.attack && c2.g.attack.kind === "nomads" && !!card2, "drifters come too (not friendly)");
+  c2.st.cards.splice(c2.st.cards.indexOf(card2), 1);
+  card2.choices[1].resolve(c2.st);
+  check(c2.b.stock.scrap === 30 && band2.stock.scrap === bs0 + 10 && band2.phase !== "battle" && c2.st.log.some((l) => /hid while/.test(l.text)), `hidden from: 10 of 40 scrap carried off into the band's own (${c2.b.stock.scrap}, theirs ${band2.stock.scrap}), the band moves on (${band2.phase})`);
+  // Friendly bands and survivalists keep away: the dead come instead.
+  const c3 = camp(40);
+  putBack(c3.st, c3.b.tile, null, 10);
+  const t3 = c3.st.grid.within(c3.b.tile, 6).find((t) => c3.st.grid.distance(c3.b.tile, t) === 6 && c3.st.tiles[t].terrain !== "water");
+  const f1 = spawnNomads(c3.st, { tier: 1, tile: t3, pop: 4 }); f1.goodwill = 30;
+  spawnNomads(c3.st, { tier: 2, tile: t3, pop: 5 });
+  c3.st.hour = at(c3.g, 21);
+  firstWeekHour(c3.st);
+  check(c3.g.attack && c3.g.attack.kind === "dead", "a friendly band and survivalists near: the dead come instead");
+}
+
 section("A raider band when there are raiders about");
 {
   const { st, g, b } = camp(33);
-  clearDead(st, b);
+  clearDead(st, b); // no dead and no nomads: the land's raiders
   putBackRaiders(st, b.tile, null, 6);
   const people = homeAt(st, b.id).length, r0 = raidersNear(st, b);
   st.hour = at(g, 23);

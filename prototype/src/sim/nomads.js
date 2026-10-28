@@ -983,6 +983,51 @@ function onNomadFight(state, result, setup) {
 }
 registerCombatHandler("nomadFight", onNomadFight);
 
+// ---------- the first week's raid on your hub (firstweekattack.js) ----------
+// The band that has picked up your trail: drifters or looters (the hungry and the hostile; survivalists and preppers keep
+// their distance), not friendly to you, big enough to send a raiding party, the nearest within reach. Or null.
+/** @param {any} state @param {any} base @param {number} reach */
+export function bandToRaid(state, base, reach) {
+  let best = null, bd = Infinity;
+  for (const b of nomadsOf(state)) {
+    if (b.tier > 1 || b.pop < N.MIN_POP || b.phase === "battle" || ["Friendly", "Allied"].includes(attitude(b))) continue;
+    const d = state.grid.distance(b.tile, base.tile);
+    if (d <= reach && d < bd) { best = b; bd = d; }
+  }
+  return best;
+}
+// The band comes to the base: on the tile beside it (or the base's own), its camp struck, held there for the raid.
+/** @param {any} state @param {any} b @param {any} base */
+export function bandAtBase(state, b, base) {
+  const near = state.grid.within(base.tile, 1).filter((t) => t !== base.tile && state.tiles[t] && state.tiles[t].terrain !== "water");
+  dropCampMarker(state, b);
+  b.tile = near.length ? near[Math.floor(hash01(state.seed, "bandAtBase", b.id) * near.length)] : base.tile;
+  if (b.camp != null) b.lastCamp = b.camp;
+  b.camp = null;
+  b.phase = "battle"; // held: no walking off mid-raid (nomadsHour moves only "travel")
+  b.act = `raiding ${base.name}`;
+}
+// The raid over: its dead off the band (broken up under MIN_POP), a share of the base's stores carried off into its own
+// (share: 0 when beaten off), and the band moving on, away from the base. Returns what was taken, as text.
+/** @param {any} state @param {any} b @param {number} killed @param {any} base @param {number} share */
+export function bandRaidEnd(state, b, killed, base, share) {
+  if (!b || !nomadsOf(state).includes(b)) return "";
+  b.pop -= killed;
+  nomads(state).stats.killed += killed;
+  const taken = {};
+  if (share > 0 && base) {
+    for (const k of Object.keys(base.stock)) {
+      if (!(SUPPLIES[k] || FOODS[k]) || k === "jars") continue;
+      const q = Math.floor((base.stock[k] || 0) * share);
+      if (q > 0) { base.stock[k] -= q; b.stock[k] = (b.stock[k] || 0) + q; taken[k] = q; }
+    }
+  }
+  if (b.pop < N.MIN_POP) { breakUp(state, b, "beaten"); return planText(taken); }
+  b.camp = b.tile; b.phase = "camp"; // where they stand, until they move on
+  breakCamp(state, b, base ? base.tile : null);
+  return planText(taken);
+}
+
 // ---------- trade (trade.js reads this as a visit: the team trades from what it carries) ----------
 export function openNomadTrade(state, b, p) {
   const t = { nomadId: b.id, partyId: p.id, factionId: null, offer: {}, ask: {}, offerGear: [], askGear: [], intel: { area: "", sightings: false, sell: false } };
