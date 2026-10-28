@@ -2,7 +2,9 @@
 // heating (upkeep.js heatUse: a base burns wood first, 30 wood heating as much as 0.2 fuel: HEAT.wood =
 // 0.2 / 30 a wood, then fuel for the rest). Fuel is scarce and wanted for the vehicles and the generator; wood grows back.
 // Two ways to cut it:
-//   - the base job "Cut wood" (work.js, economy.js ROLES "wood"): people cut within 2 tiles of the base 6 hours a day;
+//   - the base job "Cut wood" (work.js, economy.js ROLES "wood"): people cut within 2 tiles of the base, in trips
+//     (jobtrips.js), each hour at the work cutting what a team's hour on that tile does (about 9 hours a day one tile
+//     out, the walks and lunch out of the 12 of daylight; 6 hours' worth until 2026-10-27: tripland.js tripScale);
 //   - the team order "Cut wood" on a land tile (N hours, like Forage; orders.js), and a plan step.
 //
 // The land (per tile; state.wood[tile] = [level, hour], created on the first cutting):
@@ -28,7 +30,7 @@
 //   0.4). A team's spare tools in the cargo go to those without one; at a base the armory's tools do.
 // Wood an hour = RATE (18) × abundance × level × season × time × weather × the woodcutters.
 //   Expect (an average woodcutter, skill ~3: × 0.85): a forest tile with a felling axe ~34 an hour, a fire axe ~31
-//   (about 175 a day on the base job), bare-handed ~11 (about 60 a day); hills about 60% of that, farmland a quarter,
+//   (about 280 a day on the base job), bare-handed ~11 (about 100 a day); hills about 60% of that, farmland a quarter,
 //   suburbs a fifth, a city next to nothing.
 // Risks: chopping is loud: a team order builds field Heat ×1.3 (fieldheat.js), and at a base each woodcutter adds to
 //   its Heat (base.woodNoise: 0.8 with an axe, 0.3 gathering by hand; hordes.js baseHeat). Axes slip: a team order
@@ -66,7 +68,7 @@ import { mouthsAt, HEAT, woodFor, heatRate } from "./upkeep.js"; // heatRate: wh
 import { KITCHEN, hasKitchen, kitchenWood } from "./kitchen.js"; // the Kitchen's stove burns wood every day (woodNeed)
 import { boilerUse, WORM, baseWater } from "./worm.js"; // the water boiler burns wood a head every day its water needs boiling; baseWater: a camp's fire boils the drinking while un-purified water is drawn
 import { noteOutput } from "./output.js"; // the base's Work now panel: what each job brought in a day (activity.js)
-import { workLand, distFactor, tripScale, TRIP_JOBS, walkMult, tileFactor } from "./tripland.js"; // the Cut wood job in trips: the land and its walking (jobtrips.js)
+import { workLand, distFactor, tripScale, TRIP_JOBS, walkMult, tileFactor, tripDayHours } from "./tripland.js"; // the Cut wood job in trips: the land and its walking (jobtrips.js)
 import { baseCarts, CART_JOB } from "./carts.js"; // a cart at the base: a woodcutter hauls more home (call-time only)
 import { WINTER } from "./winter.js"; // winter's wood (call-time only)
 import { cutOffWhy } from "./poirooms.js"; // a camp inside a POI cut off: nobody leaves its map (issue #71; call-time only)
@@ -88,7 +90,7 @@ export const WOOD = {
   // go first, the rest is a longer haul), on top of the land thinning (a forest tile holds ~7,500, so a day's cutting
   // barely dents it). How many go is sized to the need (woodHandsWanted): the shortfall over `stockDays` (or the days
   // to the cold, if sooner; at least minDays), plus the boiler's.
-  base: { radius: 2, hours: 6, crowd: 0.05, crowdFloor: 0.5, stockDays: 21, minDays: 5 },
+  base: { radius: 2, hours: tripDayHours("wood"), crowd: 0.05, crowdFloor: 0.5, stockDays: 21, minDays: 5 },
   worth: 12,                 // a woodcutter must be expected to bring in this much a day for the job to be open
   fire: { land: 0.15, shelter: 18, camp: 9, deadfall: 0.5, keepDays: 4, boilHead: 3, cookHead: 1, campHead: 2 }, // deadfall enough to help (abundance), wood a lit fire burns a day, × deadfall where there is some; a head: boiling the drinking, the pot (a team's pot: campHead)
   nightDays: 14, chillAmp: 5,  // the nights' fires (fire-nights): days of them kept in store; a season's night is about this much under its mean (chillDaysAhead)
@@ -323,7 +325,7 @@ export function woodHandsWanted(state, base, { w = woodNeed(state, base), days =
   const d = days ?? Math.max(WOOD.base.minDays, Math.min(WOOD.base.stockDays, w.toCold));
   return handsForDay(Math.max(0, w.need - w.have) / d + (w.daily > 0 ? w.daily : 0), each); // the boiler's and the kitchen's day too
 }
-// One woodcutter's trip (jobtrips.js): `hours` of the old job's hours (the walk already out of them) on `tile`, read
+// One woodcutter's trip (jobtrips.js): `hours` of work (the walk and lunch already out of them) on `tile`, read
 // at `hour`; their share as the k-th of the base's woodcutters (woodCrowd), with their own tool or the armory's. The
 // land thins by what they cut; the wood comes home with them. Returns { wood, tool }.
 export function woodTrip(state, base, s, tile, hours, hour) {
@@ -331,7 +333,7 @@ export function woodTrip(state, base, s, tile, hours, hour) {
   if (!people.includes(s)) people.push(s);
   const crew = chopCrew(people); // their own tools: the armory's go out with them (jobtrips.js checkOutTool), the rest cut by hand
   const k = Math.max(0, crew.findIndex((c) => c.s === s)), c = crew[k] || chopCrew([s])[0];
-  const m = c.mult * Math.min(1, workFactor(s)) * woodCrowd(k) * (k < baseCarts(state, base) ? 1 + CART_JOB : 1); // carts.js: the first woodcutters wheel it home in the base's carts
+  const m = c.mult * woodCrowd(k) * (k < baseCarts(state, base) ? 1 + CART_JOB : 1); // c.mult holds their work factor (woodcutterMult), as a team's; carts.js: the first woodcutters wheel it home in the base's carts
   const amount = Math.round(woodRate(state, tile, hour, m) * hours * (0.7 + 0.6 * state.rng.next()) * 100) / 100;
   takeWood(state, tile, amount);
   const share = hours / WOOD.base.hours;
