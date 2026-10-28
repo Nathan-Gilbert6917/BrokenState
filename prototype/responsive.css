@@ -312,6 +312,9 @@
 /* An upright phone: the speeds keep their row; the weather chip by the clock goes (the ⋯ menu's forecast has it). */
 @media (max-width: 759px) and (orientation: portrait) {
   #tb-clock .wx { display: none; }
+  /* The title: the prototype banner across the top, the logo under it. */
+  #title .tt-proto { top: calc(0.75rem + env(safe-area-inset-top)); bottom: auto; left: 1rem; right: 1rem; max-width: none; font-size: 0.78rem; }
+  #title .tt-logo { top: calc(9rem + env(safe-area-inset-top)); }
   #cbhud .bh-roster { width: 9rem; }
 }
 
@@ -333,6 +336,7 @@
   /* The title screen: the logo to the right of the menu, not over it. */
   #title .tt-logo { left: auto; right: 4vw; translate: 0 0; top: 8vh; width: min(46vw, 30rem); }
   #title .tt-menu { bottom: 8vh; }
+  #title .tt-proto { right: 4vw; bottom: 0.75rem; max-width: min(46vw, 30rem); font-size: 0.75rem; padding: 0.5rem 0.7rem; }
 }
 
 /* ================= a tablet held upright (760–1023px): drawers, the top bar as on a desktop ================= */
