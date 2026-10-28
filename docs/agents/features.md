@@ -333,6 +333,7 @@ Detail: [ui.md](../features/ui.md).
 - **Codex** encyclopedia, first-week guide and help [ui/codex, ui/guide, ui/help] `tools/guidetest.js`. [details](../features/ui.md#first-week-guide)
 - **The dead on the land on screen**: tile panel rows, POI dialogue, map layer, raid Earshot [ui/threatui, ui/poiview, ui/render] `tools/threatknowtest.js`. [details](../features/ui.md#the-dead-on-the-land-on-screen)
 - **Command palette (Ctrl+K)**, minimap, watch list, map notes, threat bar [ui/cmdpalette, ui/minimap, watchlist, mapnotes, ui/threatbar].
+- **Prototype banner on the title**: says the build is a prototype with AI music and sprites, to test the fun and the features before Unity or Godot [ui/title] `tools/titletest.js`. [details](../features/ui.md#prototype-banner-on-the-title)
 - **New-run screen layout**: full screen, sticky header, settings in three groups, a crew grid that fits [ui/newgame, ui/title, ui/startgear] `tools/custombgtest.js` `tools/titletest.js`. [details](../features/ui.md#new-run-screen-layout)
 - **Generating map popup**: a "Generating map…" box with a spinner and the size in hexes while a map is built [ui/newgame, main] `tools/generatingtest.js`. [details](../features/ui.md#generating-map-popup)
 - **Static Crashlanding setup**: a crash run shows what its map holds and takes its defaults; traits, skills and look stay yours [ui/newgame, main, hardcore] `tools/crashlandinguitest.js`. [details](../features/ui.md#static-crashlanding-setup)

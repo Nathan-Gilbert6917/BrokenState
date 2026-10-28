@@ -6,10 +6,11 @@
 //   opens its window (ui/halloffame.js) over it; the title
 //   is never covered by the new-run screen (ui.js) while it is up.
 // - The backgrounds take turns: three scenes, each held and then cross-faded into the next, round and round.
+// - The prototype banner: says AI music and sprites, testing the fun and the features, Unity or Godot next.
 // - main.js: opens on the title (unless ?notitle), hands Esc and the map keys to it, loading a game closes it, and the
 //   menu's Exit / Save and exit go back to it (settings.js).
 import { readFileSync } from "node:fs";
-import { TITLE_ACTIONS, titleMenuHTML, initTitle, titleCovers } from "../src/ui/title.js";
+import { TITLE_ACTIONS, titleMenuHTML, initTitle, titleCovers, PROTOTYPE_NOTE } from "../src/ui/title.js";
 import { SETTINGS_ACTIONS } from "../src/ui/settings.js";
 import { HALL_ACTIONS } from "../src/ui/halloffame.js"; // the title's Hall of fame
 
@@ -73,6 +74,9 @@ check(scenes.split(",").length === 3 && /skyline/.test(scenes) && /camp/.test(sc
 check(/HOLD_S = \d+/.test(title) && /FADE_S = \d+/.test(title) && /\(show\.cur \+ 1\) % SCENES\.length/.test(title), "each is held, then the next fades in, round and round");
 for (const fn of ["skylineScene", "campScene", "wallsScene"]) check(new RegExp(`function ${fn}\\(\\)`).test(title) && new RegExp(`${fn}\\(\\)`).test(title.slice(0, title.indexOf(`function ${fn}`))), `${fn} exists and is used`);
 check(!/title-bg|title-style|tt-look|TITLE_BGS|TITLE_STYLES/.test(title) && !/tt-look|tt-pick/.test(readFileSync(new URL("../title.css", import.meta.url), "utf8")), "no background or title picker");
+{ const n = PROTOTYPE_NOTE.head + " " + PROTOTYPE_NOTE.body;
+  check(/prototype/i.test(n) && /\bAI\b/.test(n) && /music/.test(n) && /sprites/.test(n) && /fun/.test(n) && /features/.test(n) && /Unity/.test(n) && /Godot/.test(n), "the prototype banner says AI music and sprites, fun and features, Unity or Godot");
+  check(title.includes('<aside class="tt-proto" role="note"><b>${esc(PROTOTYPE_NOTE.head)}</b>${esc(PROTOTYPE_NOTE.body)}</aside>') && /\.tt-proto \{/.test(readFileSync(new URL("../title.css", import.meta.url), "utf8")), "the title shows the banner, styled"); }
 check(/class="tt-runs"/.test(title) && !/<g id="tt-drips">[\s\S]*filter=/.test(title.slice(title.indexOf('class="tt-runs"'))), "the paint runs live outside the filtered lettering");
 check(/showTitle\(ui\)/.test(main) && /notitle/.test(main), "main.js opens on the title, ?notitle skips it");
 check(/if \(ui\.title\) \{[^\n]*titleKey/.test(main), "main.js hands the keys to the title while it is up");
