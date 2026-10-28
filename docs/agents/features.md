@@ -332,6 +332,7 @@ Detail: [ui.md](../features/ui.md).
 - **Save/load and save list** [save, savesummary, ui/saves].
 - **Diary, Ledger charts, history and chronicle**, and the **timelapse viewer** [diary, history, ui/ledger, chronicle, ui/timelapse].
 - **Codex** encyclopedia, first-week guide and help [ui/codex, ui/guide, ui/help] `tools/guidetest.js`. [details](../features/ui.md#first-week-guide)
+- **How to play**: eight short pages for a new player, then the full reference folded into ten areas [ui/help, ui/settings, ui/title] `tools/guidetest.js`. [details](../features/ui.md#how-to-play)
 - **The dead on the land on screen**: tile panel rows, POI dialogue, map layer, raid Earshot [ui/threatui, ui/poiview, ui/render] `tools/threatknowtest.js`. [details](../features/ui.md#the-dead-on-the-land-on-screen)
 - **Command palette (Ctrl+K)**, minimap, watch list, map notes, threat bar [ui/cmdpalette, ui/minimap, watchlist, mapnotes, ui/threatbar].
 - **Rebuild board on the title**: a title button opens the plan for the real game (board/) in the browser, the desktop app's too; no Hall of fame there [ui/title] `tools/titletest.js`. [details](../features/ui.md#rebuild-board-on-the-title)

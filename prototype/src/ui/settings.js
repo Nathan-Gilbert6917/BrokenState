@@ -2,7 +2,7 @@
 // Game (resume, save, load, save and exit, new campaign, quit to desktop in the app, the save list, files),
 // Options (autosave, confirmations, pause on focus loss, Display: UI size, map detail and animations, zombie look,
 // colour-blind colours, larger map text, reduce motion, the minimap and the dev tools; Confirmations: the questions not
-// asked any more; the battle's end-turn question, what the mouse does), Controls (every key, rebindable: ui/controls.js), Help (how the game works, one topic at a time: ui/help.js) and About. Saving and loading go through ui/saves.js (storage) and sim/save.js (the world). The autosave
+// asked any more; the battle's end-turn question, what the mouse does), Controls (every key, rebindable: ui/controls.js), Help (How to play for a new player, then the reference by area: ui/help.js) and About. Saving and loading go through ui/saves.js (storage) and sim/save.js (the world). The autosave
 // (autosaveCheck, called every frame by main.js) runs at dawn every N days, when a hive assault starts and when the
 // run ends.
 import {
@@ -16,7 +16,7 @@ import { day, hub, alive } from "../sim/world.js";
 import { WORLD_SIZES, stateSizeDef } from "../sim/worldsize.js";
 import { cui, setConfirmEnd, setAutoRedeploy, setTapConfirm } from "./combat.js";
 import { barkMode, setBarkMode, BARK_MODES } from "./barks.js"; // Combat barks: speech bubbles in battle
-import { helpTab } from "./help.js";
+import { helpTab, helpGroupOf } from "./help.js";
 import { controlsTab } from "./controls.js"; // the Controls tab: every key, rebindable (ui/keymap.js)
 import { modeLabel } from "./hardcore.js";
 import { setMapDetail } from "./terraindeco.js";
@@ -78,7 +78,7 @@ export function settingsModal(state, ui, api = API) {
   const head = winBar({ title: "<h1>⚙ Menu</h1>", close: "set-close", closeTip: ui.started ? "Back to the game (Esc)" : "Back (Esc)",
     tabs: tabs.map(([k, l]) => `<button data-action="set-tab" data-tab="${k}" class="${S.tab === k ? "active" : ""}">${l}</button>`).join("") });
   const msg = S.msg ? `<div class="setmsg ${S.err ? "danger" : "good"}">${esc(S.msg)}</div>` : "";
-  const body = S.tab === "options" ? optionsTab(state, ui, api) : S.tab === "controls" ? controlsTab(ui) : S.tab === "about" ? aboutTab(state, ui, api) : S.tab === "help" ? helpTab(S.help) : gameTab(state, ui, api);
+  const body = S.tab === "options" ? optionsTab(state, ui, api) : S.tab === "controls" ? controlsTab(ui) : S.tab === "about" ? aboutTab(state, ui, api) : S.tab === "help" ? helpTab(S.help, S.helpGroup) : gameTab(state, ui, api);
   return `<div class="box wide settings">${head}${msg}${confirmBox(S)}${body}</div>`;
 }
 
@@ -296,10 +296,15 @@ export const SETTINGS_ACTIONS = {
   "set-tab": (state, ui, d) => { ui.settings.tab = d.tab; ui.settings.msg = ""; ui.settings.confirm = null; },
   "pace-opt": (state, ui, d) => PACE_ACTIONS["pace-opt"](state, ui, d), // Options → Pause for… (ui/pacing.js)
   // Help: a topic of the Help tab; help-open (the "?" buttons, the top bar's Help) opens the menu at a topic.
-  "set-help": (state, ui, d) => { if (ui.settings) ui.settings.help = d.sec || ""; },
+  // help-group folds or unfolds an area of the Reference (one open at a time; picking a topic opens its own).
+  "set-help": (state, ui, d) => { if (ui.settings) Object.assign(ui.settings, { help: d.sec || "", helpGroup: null }); },
   "help-open": (state, ui, d) => {
     if (!ui.settings) { openSettings(ui, "help", d.sec || ""); return; }
-    Object.assign(ui.settings, { tab: "help", help: d.sec || "", msg: "", confirm: null });
+    Object.assign(ui.settings, { tab: "help", help: d.sec || "", helpGroup: null, msg: "", confirm: null });
+  },
+  "help-group": (state, ui, d) => {
+    const S = ui.settings;
+    if (S) S.helpGroup = (S.helpGroup ?? helpGroupOf(S.help)) === d.g ? "" : d.g;
   },
   "set-no": (state, ui) => { ui.settings.confirm = null; },
   "set-yes": (state, ui, d, api) => {
