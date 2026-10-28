@@ -7,7 +7,7 @@
 //   👁 Watching    pins and map notes (only while there are any)    shows or hides the Watching panel
 //   🗺 Layers      how many layers are on                           shows or hides the Layers box
 //   ▣ Minimap      (lit while it shows)                             shows or hides the minimap (as M does)
-//   🧭 First week  steps done of the list, while the guide is on    shows or hides the first-week guide
+//   🧭 First week  the guide's day and its steps done, while the guide is on    shows or hides the first-week guide
 // A click toggles that one box; any number may be open at once, and each open box is a window that moves by its header
 // (ui/overlaydrag.js). The buttons go through the boxes' own state, so the keys (Shift+], M, \\ Map only), autoReveal
 // (a new urgent alert opens the alerts) and the layout saved in the browser keep working: main.js "panel-toggle"
@@ -17,7 +17,7 @@
 // strip over the map does this (ui/responsive.js) and the bar is not drawn.
 import { view } from "./render.js";
 import { LAYERS } from "../sim/markers.js";
-import { guideSteps } from "./guide.js";
+import { guideProgress } from "./guide.js";
 import { compactUI } from "./responsive.js";
 
 const CHIPS = [
@@ -25,7 +25,7 @@ const CHIPS = [
   ["watch", "👁", "Watching", "What you pinned with 📌 (a person, a team, a horde, a group, a base) with its status live, and your map notes. Click to show or hide the panel"],
   ["legend", "🗺", "Layers", "The map's layers: switch each on or off (the count is how many are on). Click to show or hide the box"],
   ["minimap", "▣", "Minimap", "The whole state as far as you know it: click or drag on it to look there. Click to show or hide it (M)"],
-  ["guide", "🧭", "First week", "The first-week guide: steps for a new holdout, ticked off as you do them, with Show me (the count: steps done). Click to show or hide it"],
+  ["guide", "🧭", "First week", "The first-week guide: steps for a new holdout, ticked off as you do them, with Show me (the count: the day and its steps done). Click to show or hide it"],
 ];
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const $ = (id) => document.getElementById(id);
@@ -68,14 +68,14 @@ function chipState(state, ui, layout, options) {
   const on = Object.keys(LAYERS).filter((k) => view.layers.has(k)).length;
   const mm = $("minimap"), mmOn = !!(mm && !mm.classList.contains("hidden"));
   const g = live ? state.guide : null, gOn = !!(g && g.on);
-  const steps = gOn ? guideSteps(g) : [], done = steps.filter((st) => g.done[st.id] != null).length;
+  const pr = gOn ? guideProgress(state, g) : null; // today's steps done of today's
   return {
     live,
     alerts: { show: live, open: !layout.alerts, n: alerts.length, danger: danger.length > 0, keys: danger },
     watch: { show: live && pins + notes > 0, open: !!w && !w.collapsed, n: pins + notes },
     legend: { show: live, open: !layout.legend, n: on },
     minimap: { show: live, open: options ? options.minimap !== false : mmOn, n: "" }, // the option, not the element: the frame loop shows it a moment later
-    guide: { show: gOn, open: !layout.guide, n: steps.length ? `${done}/${steps.length}` : "" },
+    guide: { show: gOn, open: !layout.guide, n: pr ? `D${pr.day} ${pr.done}/${pr.total}` : "" },
   };
 }
 let last = null; // the last state synced (the click reads it)
