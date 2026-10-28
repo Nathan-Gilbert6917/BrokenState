@@ -9,7 +9,7 @@
   "ui.framework": 43,
   "ui.input": 44,
   "econ.land": 67,
-  "ui.platforms": 123
+  "ui.platforms": 124
  },
  "deps": {
   "ui.battle": [
@@ -80,6 +80,16 @@
   "travel.fog": {
    "backend": [
     "A 'what the player knows' query (seen tiles, last-seen day, known POIs, the dead's numbers as a band) that the State Map UI reads instead of the true world."
+   ]
+  },
+  "combat.pathing": {
+   "backend": [
+    "Count movement in metres from the start (1 cell = 1 m, a diagonal 1.5 m) so the free-movement option (combat.freemove) can spend the same budget without a rewrite."
+   ]
+  },
+  "combat.actions": {
+   "backend": [
+    "Let MoveCmd take a target point (on the grid, a cell centre) rather than only a cell index, so free movement (combat.freemove) reuses the same command."
    ]
   }
  },
@@ -809,6 +819,12 @@
    "High",
    null,
    "Shipping is the goal; set up export builds early, the store page later."
+  ],
+  "combat.freemove": [
+   "P2",
+   "Medium",
+   null,
+   "A battle feel many players love, offered as an option beside the grid. It touches pathing, sight, cover, the AI and the battle UI, so build it once the grid battle is fun. The two slice tasks (moves counted in metres, MoveCmd taking a point) keep it from becoming a rewrite."
   ]
  },
  "removeDeps": {

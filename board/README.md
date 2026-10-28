@@ -33,7 +33,8 @@ board/
     card-order.md     the lanes and every card's number, id and title: the build order
     cards/*.json      the cards, one array a file (A infrastructure, data and core; B survivors, base, items;
                       C travel and world; D slice combat; E deep tactics and gear; F placeholder UI and controller;
-                      G meta, art, release; H the living hub; I the dead, defence, groups)
+                      G meta, art, release; H the living hub; I the dead, defence, groups;
+                      J the free-movement option)
     card-brief.md     the format of a card: every field and what goes in it
     fixups.json       changes made while merging the cards: order swaps, added or removed dependencies, extra tasks,
                       lanes, and every card's priority [P0–P3, value, effort (null: from its size), why]

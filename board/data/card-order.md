@@ -155,39 +155,40 @@ agent D: 42 combat.resolve — Battle results → world, and auto-resolve
 92 gear.gunbuilder — Attachments & gun builder
 93 gear.armour — Armour classes, helmets, rigs
 94 gear.condition — Item condition, repair, salvage, valuation, lock boxes
+95 combat.freemove — Free movement option (Baldur's Gate 3 style: a distance budget in metres)
 
 ### L8 M5 · The dead & defence — agent I
-95 dead.hordes — Hordes on the State Map
-96 dead.hives — Hives, hive birth, hive tech tree (the win condition)
-97 dead.specials — Special dead, counter-dead, bosses, tunnels
-98 dead.hivecrawl — The hive crawl
-99 def.walls — Defences: walls, defenses tab, field works
-100 def.sieges — Raids & sieges on the base map, deploy, defence plans, alarm
+96 dead.hordes — Hordes on the State Map
+97 dead.hives — Hives, hive birth, hive tech tree (the win condition)
+98 dead.specials — Special dead, counter-dead, bosses, tunnels
+99 dead.hivecrawl — The hive crawl
+100 def.walls — Defences: walls, defenses tab, field works
+101 def.sieges — Raids & sieges on the base map, deploy, defence plans, alarm
 
 ### L9 M6 · Other groups — agent I
-101 ai.governor — Autopilot governor (shared decision AI for player autopilot & AI groups)
-102 groups.factions — AI groups: growth, expansion, raids, parity
-103 groups.diplomacy — Diplomacy, blocs, wars, the Calder Coalition
-104 groups.trade — Trade, caravans, meeting to trade
-105 groups.radio — Radio network, envoys, intel
-106 groups.conflict — Conquest, occupation, prisoners, ransom, rescue
-107 groups.nomads — Nomads, visitors, splinter bands, posted jobs
+102 ai.governor — Autopilot governor (shared decision AI for player autopilot & AI groups)
+103 groups.factions — AI groups: growth, expansion, raids, parity
+104 groups.diplomacy — Diplomacy, blocs, wars, the Calder Coalition
+105 groups.trade — Trade, caravans, meeting to trade
+106 groups.radio — Radio network, envoys, intel
+107 groups.conflict — Conquest, occupation, prisoners, ransom, rescue
+108 groups.nomads — Nomads, visitors, splinter bands, posted jobs
 
 ### L10 M7 · Campaign, meta & platforms — agent G (113 by agent F)
-108 meta.modes — Game modes (Normal, Hardcore, Crashlanding, Custom) & world config
-109 meta.victory — Victories, eras, outbreak pressure, threat forecast
-110 meta.history — Achievements, hall of fame, diary, ledger charts, chronicle, timelapse
-111 meta.help — Codex, first-week guide, tooltips, "Why?" cause chains
-112 meta.qol — Command palette, minimap, watch list, map notes
-113 ui.platforms — Gamepad, touch, key hints by device, responsive layout  (agent F)
-114 meta.balance — Headless balance runs & telemetry
-115 meta.perf — Performance & scaling (big maps, pathing budgets, threads)
+109 meta.modes — Game modes (Normal, Hardcore, Crashlanding, Custom) & world config
+110 meta.victory — Victories, eras, outbreak pressure, threat forecast
+111 meta.history — Achievements, hall of fame, diary, ledger charts, chronicle, timelapse
+112 meta.help — Codex, first-week guide, tooltips, "Why?" cause chains
+113 meta.qol — Command palette, minimap, watch list, map notes
+114 ui.platforms — Gamepad, touch, key hints by device, responsive layout  (agent F)
+115 meta.balance — Headless balance runs & telemetry
+116 meta.perf — Performance & scaling (big maps, pathing budgets, threads)
 
 ### L11 M8 · Human-made art, audio & release — agent G
-116 art.direction — Art direction & style guide (for the human artists)
-117 art.world — State Map & terrain art
-118 art.characters — Survivors, the dead, animation
-119 art.props — Buildings, furniture, items, icons
-120 art.ui — UI skin, fonts, icons
-121 audio.all — Music, ambience & SFX (adaptive)
-122 release.ship — Packaging, store page, updates, crash reports
+117 art.direction — Art direction & style guide (for the human artists)
+118 art.world — State Map & terrain art
+119 art.characters — Survivors, the dead, animation
+120 art.props — Buildings, furniture, items, icons
+121 art.ui — UI skin, fonts, icons
+122 audio.all — Music, ambience & SFX (adaptive)
+123 release.ship — Packaging, store page, updates, crash reports
