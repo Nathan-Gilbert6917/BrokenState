@@ -1,0 +1,141 @@
+[
+ {
+  "id": "combat.freemove",
+  "title": "Free movement option (Baldur's Gate 3 style)",
+  "summary": "A battle setting beside the grid: in Free movement each unit spends a distance budget in metres along a smooth path to any point on the floor, splitting it between actions, instead of hopping from cell centre to cell centre. Grid stays the default; the player picks per run or per battle.",
+  "whyHere": "After the deep-tactics cards, because it reaches into pathing, sight, cover, stealth, doors and the AI, and those should work on the grid first. The slice's two prep tasks (moves counted in metres, MoveCmd taking a point) mean this card adds a mode instead of rewriting the battle.",
+  "subsystems": [
+    "Battle setting: Grid or Free",
+    "Positions in centimetres",
+    "Any-angle pathfinding & path smoothing",
+    "Movement budget (shared with AP, or separate)",
+    "Point-to-point sight lines & angle-based cover",
+    "The dead moving freely",
+    "Path preview, range outline, distance readout"
+  ],
+  "sliceScope": "First version: the setting (Grid / Free) on the new-run screen and in the raid plan. Units keep a position in centimetres; the cell they stand in (floor of the position) is still what doors, containers, cover and the dead's flow field use. Movement budget = 5 m per AP (the grid's move range), spent in any amount: walk 3.2 m, shoot, walk the rest. Paths: A* on the 1 m grid with walls grown by the unit's radius (0.3 m), then string-pulled into straight segments; the cost is the real length. Sight: a ray from point to point. Cover: the nearest wall or cover cell between shooter and target within 1 m of the target. UI: a path line with \"3.2 m of 5 m\", a ghost at the end point, the reachable area as an outline.",
+  "fullScope": "The prototype's battles are cell-based: people move 5 cells a move action (a dash 10), walkers 3, runners 6, diagonals cost 1.5, animated cell by cell (ui/moveanim.js); cover comes from the solid cells beside a target, sight is walked cell to cell, and the dead follow a distance field. Baldur's Gate 3, the model here, gives each character a movement allowance in metres separate from its Action and Bonus action, lets it be split freely, halves it in difficult terrain, and adds Dash and Jump. The full version here can offer both pools (5 m per AP, or a separate allowance plus actions), difficult ground (mud, snow, rubble ×1.5–2), jumping a gap, opportunity grabs by the dead when you walk past them, and formation moves for the team.",
+  "protoRefs": [
+    "prototype/src/sim/combat.js",
+    "prototype/src/ui/moveanim.js",
+    "prototype/src/sim/vision.js",
+    "docs/features/combat.md"
+  ],
+  "tasks": {
+    "data": [
+      "BattleSettings in content and the save: MoveMode { Grid, Free }, FreePool { SharedAp, Separate }, MetresPerAp (5), SeparateAllowanceM (9), UnitRadiusM (0.3), MeleeReachM (1.5).",
+      "Per-walker speeds in metres (person 5, walker 3, runner 6 a move) and ground multipliers (mud, snow, rubble, stairs) on the terrain records.",
+      "Unit position as integer centimetres (Pos: (int xCm, int yCm)) plus MoveLeftCm; the cell is derived, never stored twice."
+    ],
+    "backend": [
+      "Clearance map: each cell's distance to the nearest wall, so a 0.3 m unit never clips a corner; rebuilt for a cell when a door opens or a wall breaks.",
+      "Any-angle path: A* (or Theta*) on the grid over the clearance map, then string pulling (the funnel algorithm) into straight segments; cost = length × ground multiplier. Unit-test: a straight corridor gives one segment; an L-shaped room hugs the corner by the radius.",
+      "Reachable area for the UI: Dijkstra from the unit on a 0.25 m sub-grid out to its budget, returning the outline polygon.",
+      "MoveCmd(point) in Free mode: refuses beyond the budget or into a wall; walks the path in steps, raising noise and triggering sight checks along the way (the stealth and overwatch rules fire mid-move, not only at the end).",
+      "Sight and cover by point: Los between two positions (DDA through cells); cover from the cover cell nearest the target on the shooter's side, flanked when the angle to its face is over 60°. The grid rules stay the same function with cell centres as points.",
+      "The dead in Free mode: follow the flow field by sampling it at their position and steering to the lowest neighbour, then straight-line to a target in the last cell; melee when within reach (1.5 m)."
+    ],
+    "ui": [
+      "Ground picking to a continuous point: the inverse of the iso projection, not the cell lookup; a 'snap to cell' modifier key.",
+      "Path preview line, ghost at the end, a distance label (\"3.2 m of 5 m\", red past the budget), the reachable outline, a dashed segment for the dash.",
+      "Animate along the path's segments at the walker's speed; y-sort by continuous position."
+    ]
+  },
+  "dataModel": "public enum MoveMode { Grid, Free }\npublic enum FreePool { SharedAp, Separate }\npublic sealed record BattleSettings(MoveMode Mode, FreePool Pool, int MetresPerAp = 5, int SeparateAllowanceM = 9);\npublic readonly record struct PosCm(int X, int Y) { public (int x, int y) Cell => (X / 100, Y / 100); }\npublic sealed class Unit { public PosCm Pos; public int MoveLeftCm; /* ...the grid fields */ }\npublic sealed record MoveToCmd(int UnitId, PosCm Target) : IBattleCommand;\npublic static class FreePath { public static IReadOnlyList<PosCm>? Find(BattleMap m, PosCm from, PosCm to, int radiusCm, out int lengthCm); }",
+  "dependsOn": [
+    "combat.pathing",
+    "combat.los",
+    "combat.actions",
+    "combat.ai",
+    "ui.battle",
+    "combat.terrain",
+    "combat.stealth"
+  ],
+  "connections": [
+    {
+      "to": "combat.pathing",
+      "why": "Free paths reuse the grid's walls, doors and costs, only measured along smooth lines.",
+      "how": "FreePath runs A* over the same BattleMap and door rules, then string-pulls; Reachable gains a sub-grid version for the outline.",
+      "godot": "The sim computes the path; Godot only draws the points it returns with a Line2D.",
+      "unity": "The sim computes the path; Unity only draws the points it returns with a LineRenderer."
+    },
+    {
+      "to": "combat.los",
+      "why": "Sight and cover must work from any point, not just cell centres.",
+      "how": "Los.Clear(PosCm a, PosCm b) walks the cells the ray crosses (DDA); the grid mode calls it with cell centres, so there is one rule.",
+      "godot": "Draw the shot line and the cover shield at the computed points.",
+      "unity": "Draw the shot line and the cover shield at the computed points."
+    },
+    {
+      "to": "combat.ai",
+      "why": "The dead need to chase and surround on free positions too.",
+      "how": "DeadMind's move step samples the distance field at its position and steers; it spends the same metre budget as the player's units.",
+      "godot": "No change: enemy moves arrive as the same MoveTo events and animate like the player's.",
+      "unity": "No change: enemy moves arrive as the same MoveTo events and animate like the player's."
+    },
+    {
+      "to": "ui.battle",
+      "why": "Free movement lives or dies on the preview: players must see the path, the distance and what they can reach before they click.",
+      "how": "A query, PreviewMove(unit, point) → path, length, refusal, AP after; the UI never paths on its own.",
+      "godot": "Mouse motion → inverse iso transform → SimHost.PreviewMove; Line2D for the path, Polygon2D for the reachable outline, a Label for the metres.",
+      "unity": "Camera.ScreenPointToRay + Plane.Raycast on the ground plane (or the inverse iso transform in 2D) → SimHost.PreviewMove; LineRenderer for the path, a generated mesh for the outline."
+    },
+    {
+      "to": "data.save",
+      "why": "A battle saved mid-turn must come back with every unit exactly where it stood.",
+      "how": "Positions and budgets are integers (centimetres), so saves and replays stay deterministic on every machine.",
+      "godot": "Nothing engine-side: the sim serialises PosCm.",
+      "unity": "Nothing engine-side: the sim serialises PosCm."
+    }
+  ],
+  "godot": {
+    "approach": "The rules stay in the C# sim; Godot handles picking, preview and animation. Convert the mouse to a continuous ground point with the inverse of the iso transform (TileMapLayer.local_to_map only gives the cell). Draw the path with Line2D, the reachable area with Polygon2D, and move the unit's node along the returned points with a Tween (one tween_property per segment, duration = length ÷ speed). Godot's NavigationServer2D is worth reading for the ideas, but do not let it decide game rules: its results are not part of your deterministic sim.",
+    "keyApis": [
+      "Line2D",
+      "Polygon2D",
+      "Tween / tween_property",
+      "TileMapLayer.local_to_map / map_to_local",
+      "Node2D.y_sort_enabled"
+    ],
+    "docs": [
+      {"t": "Line2D", "u": "https://docs.godotengine.org/en/stable/classes/class_line2d.html"},
+      {"t": "Tween", "u": "https://docs.godotengine.org/en/stable/classes/class_tween.html"},
+      {"t": "2D navigation overview (for the concepts)", "u": "https://docs.godotengine.org/en/stable/tutorials/navigation/navigation_introduction_2d.html"}
+    ]
+  },
+  "unity": {
+    "approach": "The rules stay in the C# sim; Unity handles picking, preview and animation. For a 3D or 2.5D view, pick the ground with Camera.ScreenPointToRay and Plane.Raycast; in a 2D iso Tilemap, invert the iso transform. Draw the path with a LineRenderer, the reachable outline with a generated mesh, and move along the points in a coroutine at the walker's speed. Unity's NavMesh (AI Navigation package) solves the same problem, but keep it out of the rules: the sim must stay deterministic and engine-free.",
+    "keyApis": [
+      "LineRenderer",
+      "Camera.ScreenPointToRay",
+      "Plane.Raycast",
+      "Mesh (generated outline)",
+      "Coroutines"
+    ],
+    "docs": [
+      {"t": "Line Renderer", "u": "https://docs.unity3d.com/Manual/class-LineRenderer.html"},
+      {"t": "Camera.ScreenPointToRay", "u": "https://docs.unity3d.com/ScriptReference/Camera.ScreenPointToRay.html"},
+      {"t": "Plane.Raycast", "u": "https://docs.unity3d.com/ScriptReference/Plane.Raycast.html"}
+    ]
+  },
+  "learn": [
+    {"t": "Red Blob Games: Introduction to A*", "u": "https://www.redblobgames.com/pathfinding/a-star/introduction.html"},
+    {"t": "Mikko Mononen: Simple Stupid Funnel Algorithm (string pulling)", "u": "https://digestingduck.blogspot.com/2010/03/simple-stupid-funnel-algorithm.html"}
+  ],
+  "newb": [
+    "Free movement still has a grid underneath. The grid stops being what the player sees and clicks, but walls, doors, cover and loot stay in cells, because cells are easy to test and to save.",
+    "Path smoothing is two steps: find any path on the grid with A*, then pull it tight like a string so it only bends at corners. That gives the straight-line BG3 feel without a navmesh.",
+    "Store positions as whole centimetres, not floats. Floats can round differently on different machines, which breaks replays, saves and golden tests; integers never do.",
+    "Give units a radius and grow the walls by it (a clearance map). Then a path that fits the grown map always fits the real unit, and you never clip a door frame.",
+    "Movement that is not tied to cells needs a better preview, not better rules. Most of the work that makes it feel good is the line, the metres, the ghost and the outline."
+  ],
+  "pitfalls": [
+    "Letting the engine's navmesh decide where units can go: results differ between engine versions and the sim can no longer run headless.",
+    "Checking sight and overwatch only at the end of a move: a unit could walk straight through a guard's view. Check along the path.",
+    "Floats in positions or budgets: tiny differences grow into different battles from the same seed.",
+    "Two rule sets for Grid and Free: keep one, where Grid is just Free with points snapped to cell centres."
+  ],
+  "test": "Unit: corridor and L-room paths (segment count, hugging corners by the radius); a budget of 5 m refuses a 5.01 m move; split moves (2 m, shoot, 3 m) land where one 5 m move would; LOS from points matches the grid rule at cell centres; a golden battle replayed in Free mode gives the same result twice. Manual: one raid in Free mode: can you always tell before clicking how far you can go, and why a move is refused?",
+  "size": "L"
+ }
+]

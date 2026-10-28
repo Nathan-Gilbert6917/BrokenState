@@ -1,9 +1,10 @@
-// Help (the menu's Help tab, ui/settings.js): one topic at a time, picked from a list on the left. "Start here" comes
-// first (the game in plain words, with links to the deeper topics; the first-week guide, ui/guide.js, points at it). The rest are
-// the paragraphs of the game's help text (ui/ui.js helpText, one per bold title) plus the map's layers and legend,
-// which used to be spelled out in the Layers popup on the map. Small "?" buttons around the UI (data-action
-// "help-open" data-sec="<topic id>") open the menu at a topic. Windows and panels (folding, resizing, map only)
-// comes from ui/layout.js.
+// Help (the menu's Help tab, ui/settings.js; the title menu's How to play opens it): one topic at a time, picked from
+// a list on the left. The list starts with How to play, a few short pages for a new player ("Start here" first: the
+// first-week guide, ui/guide.js, points at it), then the Reference, folded by area (HELP_GROUPS) with only the area
+// of the topic shown open. The reference topics are the paragraphs of the game's help text (ui/ui.js helpText, one
+// per bold title) plus the map's layers and legend, which used to be spelled out in the Layers popup on the map.
+// Small "?" buttons around the UI (data-action "help-open" data-sec="<topic id>") open the menu at a topic. Windows
+// and panels (folding, resizing, map only) comes from ui/layout.js.
 import { LAYERS } from "../sim/markers.js";
 import { helpText } from "./ui.js";
 import { windowsHelp } from "./layout.js";
@@ -45,8 +46,14 @@ import { raidPlanHelp } from "../sim/raidplan.js"; // choices before a raid: the
 import { BLOCS_WARS_HELP } from "../sim/playerwars.js"; // blocs between groups, wars with you
 import { traitsHelp } from "./traitpick.js"; // every trait, its tiers and points
 import { fieldWorksHelp } from "../sim/fieldworks.js"; // roadblocks, towers, stockpiles, blinds, snares, caches, spikes
+import { devText } from "./hints.js"; // How to play in the words of the device in use (tap, Ⓐ…)
+import { inputMode, keyHint } from "./inputmode.js";
+import { CAMP, BUILDINGS } from "../sim/buildings.js"; // the camp fire's cost, the shelter shack's and the walls' (Your first week, Raiding for supplies)
+import { ESTABLISH_LABEL } from "../sim/staging.js";
+import { GUIDE } from "./guide.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const tip = (t) => (t ? ` data-tip="${esc(t)}"` : "");
 const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "topic";
 
 // The little color chip next to a layer (the Layers popup and the help): a CSS background, or a glyph.
@@ -132,23 +139,165 @@ function codexHelp() {
     <b>Search</b> (${k("win.palette", "Ctrl+K")}): a box in the middle of the screen that finds anything by a few letters of its name: your people (opens their screen), bases and outposts (centers the map and opens the base), teams (their panel), the other groups (their radio panel, or the map at their base), sites and towns you know, the buildings you can build at the selected base (its Construction tab), the menu (save, load, options, controls), the diary, roster and codex, the Help topics and the codex entries you have opened. ↑ ↓ pick, Enter goes, Esc closes. With nothing typed it lists what you picked last.`;
 }
 
-// "Start here" (first in the list, and what Help opens on): the game in plain words, with links to the deeper topics.
-const see = (...ids) => ` <span class="muted">More:</span> ${ids.map(([id, t]) => `<a class="link" data-action="set-help" data-sec="${id}">${t}</a>`).join(", ")}.`;
-function startHereTopic() {
-  return `Broken State in a few lines. The <b>First-week guide</b> (under the alerts on a desktop; the 🧭 chip in the strip over the map on a phone) walks you through the first days, and while it is on, the first window and the first alert of each kind (a raid, someone asking to join, a team waiting, the worm…) get a short note on what they are, with a ? to their Help topic (⚙ Menu → Game shows it again).<br><br>
-    <b>Your people.</b> A handful of survivors in the State of Calder on the day it falls, on the road with no home yet (a Custom run starts years later at a hub of your own, Crashlanding alone by a wreck). Keep them fed, watered, healthy and in good spirits: everything else follows from that.${see(["goal", "Goal"], ["hardcore-mode", "Hardcore mode"])}<br><br>
-    <b>Bases.</b> The first week is about a home: carry wood and stone for a camp fire, give your team the order <i>Establish base</i> on a good spot (water, trees and sites near, few of the dead), then build the camp's Shelter shack to make it a shelter, later your hub. The people there farm, build, guard, craft and treat the sick, by the job you give them or by work priorities. <i>Manage</i> on the Bases tab opens its screen: stock, Work, Farming, Construction, the base map and the rest. Wood builds most things, cooks and heats: keep someone cutting it. Food and water days are always in the top bar, and the threat forecast beside them shows the week coming. Outposts come later.${see(["bases-manage", "Bases (Manage)"], ["wood", "Wood"], ["food-and-the-winter", "Food and the winter"], ["water-and-the-summer", "Water and the summer"], ["threat-forecast", "Threat forecast"])}<br><br>
-    <b>Teams.</b> Everything beyond the walls is done by teams. Click a site on the map, pick a mission (scavenge, recon, trade…), choose who goes and what they carry, and launch. They walk there, search, fight if they must and bring home what they found; every team reports as it goes and takes orders anywhere.${see(["sending-a-team", "Sending a team"], ["team-panel", "Team panel"], ["raids-scavenging-a-site", "Raids"])}<br><br>
-    <b>The State Map.</b> Bright land is what your people see now, dim land your last report of it, dark land unknown. Hordes of the dead roam it, hives breed them, and other groups hold towns of their own: trade with them, ally or fight.${see(["map", "Map"], ["map-legend", "Map legend"], ["groups", "Groups"])}<br><br>
-    <b>Cards and alerts.</b> When something happens (a team meets strangers, a fight starts, someone falls ill) a card asks what to do. The big ones (a fight, a raid, a death, a team waiting for orders) stop the clock; the rest wait in the card tray at the top of the map while the clock runs, and take their safest answer if left for 8 hours (⚙ Menu → Options → Pause for… sets which stop it). The alerts on the right list what needs you now; click one to go there.${see(["time", "Time"], ["pause-rules-and-the-card-tray", "Pause rules and the card tray"], ["alerts", "Alerts"])}<br><br>
-    <b>The clock.</b> A new game starts paused: look around and give your first orders, then press Space. 0–5 set the speed (0 is 0.25× to watch up close, 5× for quiet stretches; it drops back to 1× when something happens); windows and the cards that stop the clock hold it while they are open.<br><br>
-    <b>Winning and losing.</b> You win by destroying every hive, or by building a coalition with other groups that holds more than 60% of the land for a year, with no hive left and no group outside it, (a member's land counts after a year in the coalition, and not while it is at war); neither comes before year ${ERAS.WIN_FROM_YEAR}. You lose when the last of your people is dead or gone.${see(["eras-and-winning", "Eras and winning"], ["hives-and-hordes", "Hives and hordes"])}`;
-}
+// ---------- How to play: a few short pages for a new player ----------
+// The user's request 2026-10-28: "Update and simplify the how to play guide on the main menu and settings to actually
+// be helpful to new players and not a long book." Each page is a handful of short lines in the words of the device in
+// use (devText, keyHint), with links to the Reference for the detail. "Start here" is first and what Help opens on.
+const link = (id, t) => `<a class="link" data-action="set-help" data-sec="${id}">${t}</a>`;
+const see = (...ids) => `<p class="howmore"><span class="muted">More:</span> ${ids.map(([id, t]) => link(id, t)).join(" · ")}</p>`;
+const list = (tag, items) => `<${tag} class="howto">${items.filter(Boolean).map((s) => `<li>${s}</li>`).join("")}</${tag}>`;
+const key = (id, d) => `<b>${esc(keyLabel(id, 1) || d)}</b>`;
+const say = (html) => devText(html);
+const fireCost = () => Object.entries(CAMP.fireCost).map(([k, n]) => `${n} ${k}`).join(" and ");
+// The scrap the shelter shack takes in all: its own and the building materials' (each made from CAMP.matScrap scrap).
+const shackScrap = () => (BUILDINGS.camp_up.cost.scrap || 0) + (BUILDINGS.camp_up.cost.buildmat || 0) * CAMP.matScrap;
+
+// The pages in order: [title, html()]. Their ids are the titles' slugs (start-here, your-first-week, raiding-for-supplies, basic-controls…).
+const HOW_TO_PLAY = [
+  ["Start here", () => say(`<p class="lead">You lead a handful of survivors through the fall of the State of Calder. Keep them alive, give them a home, and in time push back the dead.</p>
+    <h3>The game in five lines</h3>${list("ul", [
+      `<b>Your people</b> need water, food, sleep and good spirits. The top bar shows how many days of water and food you have left.`,
+      `<b>Bases</b> are home. The people there farm, build, cut wood, cook, guard and heal.`,
+      `<b>Teams</b> do everything beyond the walls. Click a place on the <b>State Map</b>, pick a mission and send people out to scavenge, scout or trade.`,
+      `<b>Cards</b> pop up when something happens and ask what to do. The big ones stop the clock until you answer.`,
+      `<b>You win</b> by wiping out every hive of the dead, or by leading a coalition of groups that holds most of the land (not before year ${ERAS.WIN_FROM_YEAR}). <b>You lose</b> when the last of your people is gone. ${link("goal", "How winning works")}`,
+    ])}
+    <h3>Your first minutes</h3>${list("ul", [
+      `The game starts <b>paused</b>. Look around, then ${keyHint({ key: `press ${key("time.pause", "Space")}`, touch: "tap <b>▶ Run</b> on the banner", pad: "press <b>☰</b>" })} to run the clock.`,
+      `Follow the <b>First-week guide</b>: it shows the next step, and <i>Show me</i> points at the button to press. ⚙ Menu → Game brings it back.`,
+      `Hover almost anything for a short description. The small <b>?</b> buttons open the Help page about it.`,
+    ])}
+    <h3>Read next</h3>${list("ul", [
+      `${link("your-first-week", "Your first week")}: from the road to a shelter, step by step.`,
+      `${link("raiding-for-supplies", "Raiding for supplies")}: where the scrap for your shelter and walls comes from.`,
+      `${link("basic-controls", "Basic controls")}: what to press, and where.`,
+      `${link("keeping-people-alive", "Keeping people alive")}, ${link("teams-and-missions", "Teams and missions")} and ${link("fights-and-danger", "Fights and danger")}.`,
+      `${link("map", "The State Map")}: what bright, dim and dark land mean.`,
+      `${link("tips-for-a-first-run", "Tips for a first run")}: the mistakes that end most first games.`,
+    ])}
+    <p class="muted">Everything else is in the Reference below the pages, by area. You never need to read it all.</p>`)],
+
+  ["Your first week", () => say(`<p class="lead">A new game starts on the road the day Calder falls: one team, what they carry, and no home. The goal for the week is a shelter by day ${GUIDE.DAYS}; the First-week guide takes it a day at a time, each day ending with its night.</p>${list("ol", [
+      `<b>Find water.</b> Thirst kills in days. Fetch it from a river or lake, or search a shop or diner. Raw water can carry the worm.`,
+      `<b>Gather a camp fire.</b> It takes ${fireCost()}. Click your team to open its panel and use <i>Cut wood…</i> and <i>Gather stone…</i> (by daylight; stone is easiest in the hills).`,
+      `<b>Set up camp.</b> Pick a spot near water and trees, with places to scavenge close by and few of the dead. Give the team the order <i>${ESTABLISH_LABEL}</i>: the camp is your first home.`,
+      `<b>Build the shelter shack.</b> On the camp's <i>Camp</i> tab press <i>Place the shelter shack</i> and click where it goes. The tab lists what it still needs: bring it in.`,
+      `<b>Raid for scrap.</b> The shack takes ${shackScrap()} scrap besides its wood, and only the ruins have it. Send a small team to the places near the camp: ${link("raiding-for-supplies", "Raiding for supplies")}.`,
+      `<b>Keep wood coming.</b> Put someone on <i>Cut wood</i> (the job beside their name). Wood builds, cooks, boils water and heats.`,
+      `<b>Boil the water.</b> A <i>Water boiler</i> (${BUILDINGS.boiler.cost.scrap} scrap, ${BUILDINGS.boiler.cost.stone} stone, a wrench) makes all the camp's water safe.`,
+      `<b>Be ready for the seventh night.</b> Finish the guide's first six days and the watchers come: nomads on your trail or a horde of the dead. A wall and a guard help.`,
+    ])}
+    <p>Night runs 20:00 to 06:00; the fire warms, but its light draws the dead. Once the shack stands, the camp is a shelter and later your hub. (A Custom run starts at a hub.)</p>
+    ${see(["water-and-the-summer", "Water"], ["wood", "Wood"], ["bases-manage", "Bases"], ["night-on-the-map", "Night"])}`)],
+
+  ["Raiding for supplies", () => {
+    const sh = BUILDINGS.camp_up.cost;
+    return say(`<p class="lead">Wood you can cut, but scrap, tools, meds and ammo only come from the ruins. In the first week a few small raids pay for the shelter and the camp's first defenses.</p>
+    <h3>What you need</h3>${list("ul", [
+      `<b>The shelter shack:</b> ${sh.wood} wood, ${sh.scrap} scrap and ${sh.buildmat} building materials, which the builders make from ${CAMP.matScrap} scrap each: ${shackScrap()} scrap in all.`,
+      `<b>Defenses:</b> walls take only wood (${BUILDINGS.wall1.cost.wood} a tile, on the camp's <i>Defenses</i> tab), but a gate or a wall stand needs building materials too: bring home more scrap than the shack needs.`,
+    ])}
+    <h3>How to raid</h3>${list("ol", [
+      `<b>Start close and small.</b> The houses, sheds and shops on the tiles round the camp are quick raids with few of the dead (a <i>Survey</i> of a tile finds the places you don't know yet). A town has more scrap and food, and more of the dead; leave cities for later.`,
+      `<b>Send a few, keep a few.</b> Click the site, pick <i>Scavenge / raid</i> and choose who goes; the planner packs their food and water. Leave people at the camp to cut wood and build.`,
+      `<b>In the raid,</b> move your people from room to room and search the containers (Shift+S). Take scrap, tools, meds and food first; scrap is heavy, so packs and more hands bring more home.`,
+      `<b>Get out in time.</b> Every turn and every noise adds to the Heat, and Heat brings more of the dead. Leave by a green exit (X) with what you carry.`,
+      `<b>Bring it home.</b> Back at the camp the haul goes into the stores, and the shack takes what it still needs as it comes in. Then go again.`,
+    ])}${see(["raids-scavenging-a-site", "Raids"], ["places-on-a-tile-surveys-and-raids", "Places and surveys"], ["what-you-find", "What you find"], ["defending-your-base", "Defending your base"])}`);
+  }],
+
+  ["Basic controls", () => {
+    const pad = inputMode() === "pad", touch = inputMode() === "touch";
+    const map = pad ? [
+      `The <b>left stick</b> or D-pad moves the cursor; the <b>right stick</b> pans; <b>LT</b> / <b>RT</b> zoom.`,
+      `<b>Ⓐ</b> picks what is under the cursor; <b>Ⓧ</b> opens the tile's actions; <b>Ⓑ</b> goes back.`,
+      `<b>☰</b> runs and pauses the clock; <b>Ⓨ</b> goes to the next team waiting for orders.`,
+      `The strip at the bottom of the screen always shows what each button does.`,
+    ] : touch ? [
+      `<b>Tap</b> a tile, a team or a base to see it; <b>long-press</b> a tile for its actions.`,
+      `<b>Drag</b> to pan, <b>pinch</b> to zoom.`,
+      `<b>▶ Run</b> on the banner runs the clock; <b>❗ Next team</b> goes to a team waiting for orders.`,
+      `<b>Long-press</b> anything for a short description; <b>✕</b> closes a window.`,
+    ] : [
+      `<b>Click</b> a tile, a team or a base to see it; <b>right-click</b> a tile for its actions.`,
+      `<b>Drag</b> or <b>W A S D</b> to pan, the <b>mouse wheel</b> to zoom.`,
+      `${key("time.pause", "Space")} runs and pauses the clock; <b>1–5</b> set the speed (<b>0</b> is slow motion).`,
+      `${key("team.next", "Tab")} goes to the next team waiting for orders; ${key("map.hub", "H")} back to your hub.`,
+      `${key("ui.close", "Esc")} closes the top window; with none open it shows the menu.`,
+    ];
+    const fight = pad ? [
+      `<b>LB</b> / <b>RB</b> pick one of your people; <b>Ⓐ</b> moves, shoots or strikes at the cursor; <b>Ⓨ</b> ends the turn.`,
+    ] : [
+      `${touch ? "Tap" : "Click"} one of your people, then a tile to move or an enemy to shoot. Each person has two actions a turn.`,
+      touch ? `<b>End turn</b> ends your turn; <b>AI plays my side</b> hands the fight to the computer; 🏳️ sounds the retreat.`
+        : `${key("battle.endTurn", "Space")} ends your turn; ${key("battle.autoplay", "Shift+A")} lets the AI play your side; ${key("battle.retreatAll", "Shift+R")} sounds the retreat.`,
+    ];
+    return `<p class="lead">You only need a few of these to play.${pad || touch ? "" : " Every key can be changed in ⚙ Menu → Controls."}</p>
+      <h3>On the map</h3>${list("ul", map)}<h3>In a fight</h3>${list("ul", fight)}
+      ${pad || touch ? "" : `<h3>Handy windows</h3>${list("ul", [`${key("win.diary", "J")} the diary, everything that happened · ${key("win.roster", "R")} your people · ${key("win.codex", "C")} the codex, everything you have met`, `${key("win.palette", "Ctrl+K")} search: finds a person, a base, a building or a Help page by name`])}`}
+      ${see(["keys", "Every key"], ["windows-and-panels", "Windows and panels"], ["battle-view", "Battle view"])}`;
+  }],
+
+  ["Keeping people alive", () => say(`<p class="lead">Most first runs are lost to thirst, hunger, cold and sickness, not to the dead.</p>${list("ul", [
+      `<b>Water first.</b> Thirst kills in days. Wells, rain catchers and rivers keep it coming; boil raw water.`,
+      `<b>Food.</b> Farm, forage, hunt, fish and scavenge. Lay food by for the winter, when little grows.`,
+      `<b>Wood.</b> It builds, cooks, boils water and heats. Keep someone on <i>Cut wood</i> and fill the pile before the cold.`,
+      `<b>Jobs.</b> Give each person a job (beside their name), or put everyone on <i>work priorities</i> and they pick the most urgent work each hour.`,
+      `<b>Beds and mood.</b> Without a bed people sleep rough and their mood drops. Unhappy people quarrel and may walk out: rest, beds, food and free time help.`,
+      `<b>Sickness.</b> A medic with meds treats the ill. Keep the sick apart.`,
+      `<b>Alerts</b> on the side list what needs you now. Click one to go there.`,
+    ])}${see(["hunger-thirst-and-mood", "Hunger, thirst and mood"], ["food-and-the-winter", "Food and the winter"], ["bases-manage", "Bases"], ["medical", "Medical"], ["alerts", "Alerts"])}`)],
+
+  ["Teams and missions", () => say(`<p class="lead">Anything beyond your walls is done by a team.</p>${list("ol", [
+      `<b>Pick a place.</b> Click a site on the map and pick a mission: scavenge, recon, trade and more.`,
+      `<b>Pick who goes.</b> The planner packs their food, water and gear. Leave enough people at home to work and guard it.`,
+      `<b>On the way</b> they report what they see. When they arrive they wait for orders (a <b>!</b> on the map; Tab goes to the next one).`,
+      `<b>At a site</b> you choose the place to go into and play the raid on its own map: search, grab what you can, and leave by a green exit before the noise brings more of the dead.`,
+      `<b>Bring them home.</b> What they found is only yours once they are back: <i>Return home</i> on the team's panel.`,
+    ])}${see(["sending-a-team", "Sending a team"], ["team-panel", "Team panel"], ["raids-scavenging-a-site", "Raids"], ["places-on-a-tile-surveys-and-raids", "Places and surveys"])}`)],
+
+  ["Fights and danger", () => say(`<p class="lead">The dead are everywhere, but most fights can be avoided, or at least chosen.</p>${list("ul", [
+      `<b>Fights are turn based.</b> Each of your people has two actions a turn: move, shoot, strike, reload, heal.`,
+      `<b>Noise draws the dead.</b> Guns are loud, blades are quiet. In a raid every turn adds to the Heat, and Heat brings more of them.`,
+      `<b>Not every meeting is a fight.</b> A card shows each answer's odds: slipping away or talking is often the better choice.`,
+      `<b>Losing? Get out.</b> Sound the retreat and live to try again. Someone who is down can be stabilized by a teammate beside them.`,
+      `<b>Your base.</b> When the dead come, the people with <i>Guard</i> set go to the walls. Walls, a watchtower and lights help you hold.`,
+      `<b>Hordes and hives.</b> Hordes roam the map (the red badges) and hives breed the dead. Keep clear of them early on.`,
+    ])}${see(["battles", "Battles"], ["defending-your-base", "Defending your base"], ["hives-and-hordes", "Hives and hordes"], ["the-dead-and-the-worm", "The dead"])}`)],
+
+  ["Tips for a first run", () => say(`${list("ul", [
+      `<b>Pause often.</b> Orders given while paused wait until the clock runs again.`,
+      `<b>Water, then food, then a roof.</b> Everything else can wait for the first week.`,
+      `<b>Don't send everyone out.</b> A base with nobody in it does nothing, and an empty camp can be looted.`,
+      `<b>Look before you go in.</b> A tile's panel shows how many of the dead were about when you last looked. A recon or a survey tells you more.`,
+      `<b>Run before you lose people.</b> A bad fight is better left than finished.`,
+      `<b>Hover for detail.</b> Most numbers and buttons explain themselves in their description.`,
+      `<b>Learn from losses.</b> When someone dies, the <i>Why?</i> link on their line shows what led to it.`,
+    ])}${see(["why-did-this-happen", "Why did this happen?"], ["pause-rules-and-the-card-tray", "Pause rules"], ["threat-forecast", "Threat forecast"])}`)],
+];
+
+// The Reference, folded by area in the Help list (in this order). A topic in none of them goes to "More" at the end.
+export const HELP_GROUPS = [
+  ["world", "Time, seasons and winning", ["goal", "time", "pause-rules-and-the-card-tray", "seasons-and-weather", "regional-weather", "frozen-rivers", "night-on-the-map", "lights", "eras-and-winning", "hardcore-mode", "world-size", "world-configuration"]],
+  ["map", "The map", ["map", "map-layers", "map-legend", "fog-of-war", "travel-times", "threat-forecast", "watch-list-and-map-notes", "minimap"]],
+  ["bases", "Bases, food and water", ["bases-manage", "hunger-thirst-and-mood", "food-and-the-winter", "meals-and-rations", "the-food-chain", "food-by-kind", "the-harvest-festival", "water-and-the-summer", "hunting-fishing-and-snares", "foraging", "wood", "the-kitchen-and-cooking", "cooking-and-meals", "crafting", "machines-and-machine-parts", "orders-power-and-base-leaders", "land-claims-and-wells", "field-works", "abandoned-bases", "prisoners-and-jails", "children-and-families"]],
+  ["health", "Health and people", ["medical", "training-medics", "traits", "moving-people-between-bases", "roster-bulk-actions"]],
+  ["teams", "Teams and travel", ["sending-a-team", "templates-repeat-trip-and-undo", "forming-a-team", "team-panel", "places-on-a-tile-surveys-and-raids", "sweep-area-and-rumours", "raids-scavenging-a-site", "what-you-find", "vehicles", "found-cars", "army-trucks-and-convoys", "boats", "supply-runs-and-trade-routes"]],
+  ["fights", "Fighting", ["battles", "the-battle-bar", "battle-view", "battle-map-sizes", "medics-and-the-downed", "choices-before-a-raid", "magazines-and-reloading", "fire-modes-jams-and-suppressing-fire", "grenade-launchers-and-rockets", "explosions-and-gear", "flashbangs", "facing-sneaking-and-the-dark", "non-lethal-weapons-and-surrender", "sounding-the-retreat", "retreat-by-the-numbers", "defending-your-base", "siege-fire-and-decoys", "defending-against-hordes"]],
+  ["gear", "Weapons and gear", ["inventory", "guns-and-melee-weapons", "gun-attachments", "gun-builder", "knives-and-swords", "survival-guns-and-gear", "magazines-rigs-and-plates", "tools-for-building-and-crafting", "lock-boxes-and-cases"]],
+  ["groups", "Other groups", ["groups", "diplomacy", "trade-window", "radio", "caravans", "caravans-on-the-road", "raids-on-your-bases", "conquest", "blocs-and-wars", "volunteers", "getting-captives-back", "outsiders"]],
+  ["dead", "The dead and the hives", ["the-dead-and-the-worm", "more", "catching-the-worm-and-curing-it", "infested-animals", "the-other-groups-and-the-worm", "the-special-dead", "hives-and-hordes", "hives-being-born", "hive-growths", "the-hive-crawl"]],
+  ["interface", "Screens, keys and saving", ["keys", "keys-on-the-map", "windows-and-panels", "alerts", "why-did-this-happen", "codex-and-search", "ledger-and-run-summary", "readability", "confirmations", "sound", "saving", "autosaves-and-crashes", "dev-tools"]],
+];
+const GROUP_OF = new Map(HELP_GROUPS.flatMap(([g, , ids]) => ids.map((id) => [id, g])));
+const GROUP_ORDER = ["how", ...HELP_GROUPS.map(([g]) => g), "more"];
 
 // "Why?" on deaths and lost bases (sim/causes.js, ui/causes.js).
 const WHY_HELP = `When someone dies or a base is lost, a <b>Why?</b> link sits on its line in the log and the diary, on the memorial wall, on the survivor screen of the dead and on the lost-base card. It opens a short chain of causes written down at the moment it happened: the immediate cause, then up to four things that led to it, drawn from the base, the team and the diary (a well that broke and the scrap that was missing to fix it, a trip that ran overdue, the walls and who was on guard, when a group turned hostile and why). Click a day to open the diary there, or a name or a place to go to it. Deaths from before this was added are pieced together from the diary. Setbacks have one too: a vehicle left behind with nobody to drive it, a whole team lost, a vehicle a group took or stripped, a mission that failed (a team home with nothing, an envoy turned away or lost, a convoy not recovered) and someone who walked out; the link is on their line, on an abandoned vehicle's marker card, and in the run summary's Setbacks.`;
 
-// The topics in order: Start here, then the game's help paragraphs, with the map layers and legend right after "Map".
+// The topics in the order of the Help list: How to play (Start here first), then the Reference by area (HELP_GROUPS).
+// Each is { id, title, html, group }. The Reference is the game's help paragraphs, with the map layers and legend
+// right after "Map".
 export function helpTopics() {
   const out = [];
   const seen = new Set();
@@ -158,7 +307,7 @@ export function helpTopics() {
     seen.add(id);
     out.push({ id, title, html });
   };
-  add("Start here", startHereTopic());
+  for (const [title, html] of HOW_TO_PLAY) { add(title, html()); out[out.length - 1].group = "how"; }
   for (const raw of helpText().split(/<br>\s*(?:<br>\s*)?/)) {
     const chunk = raw.trim();
     if (!chunk) continue;
@@ -216,17 +365,33 @@ export function helpTopics() {
   if (!seen.has("traits")) add("Traits", traitsHelp());
   add("Keys", keysSheet()); // ui/controls.js
   add("Codex and search", codexHelp());
-  return out;
+  for (const t of out) t.group = t.group || GROUP_OF.get(t.id) || "more";
+  const rank = (t) => GROUP_ORDER.indexOf(t.group);
+  return out.sort((a, b) => rank(a) - rank(b)); // stable: each area keeps the help text's order
 }
 
-// The Help tab: the topic list and the topic picked (sec: a topic id; an unknown one shows the first).
-export function helpTab(sec) {
+// The area of the Help list a topic is in ("how", a HELP_GROUPS id, "more"; an unknown topic: Start here's).
+export const helpGroupOf = (sec) => (helpTopics().find((t) => t.id === sec) || { group: "how" }).group;
+
+// The Help tab: the topic list and the topic picked (sec: a topic id; an unknown one shows the first). How to play is
+// always open; of the Reference's areas only one is: open (a HELP_GROUPS id, "" for none; by default the topic's).
+export function helpTab(sec, open) {
   const topics = helpTopics();
   const i = Math.max(0, topics.findIndex((t) => t.id === sec));
   const cur = topics[i];
+  const shown = open ?? cur.group;
   const step = (j, label) => (topics[j] ? `<button data-action="set-help" data-sec="${topics[j].id}">${label}</button>` : "<span></span>");
+  const btn = (t) => `<button data-action="set-help" data-sec="${t.id}" class="${t === cur ? "active" : ""}">${esc(t.title)}</button>`;
+  const names = { how: "How to play", more: "More", ...Object.fromEntries(HELP_GROUPS.map(([g, name]) => [g, name])) };
+  const nav = GROUP_ORDER.map((g) => {
+    const ts = topics.filter((t) => t.group === g);
+    if (!ts.length) return "";
+    if (g === "how") return `<div class="helphead">${names.how}</div>${ts.map(btn).join("")}<div class="helphead">Reference</div>`;
+    const on = g === shown;
+    return `<button class="helpgrp${on ? " open" : ""}" data-action="help-group" data-g="${g}" aria-expanded="${on}"${tip(on ? "Fold this area" : `${ts.length} topics`)}><span class="hg-ar">${on ? "▾" : "▸"}</span> ${esc(names[g])}</button>${on ? `<div class="helpsub">${ts.map(btn).join("")}</div>` : ""}`;
+  }).join("");
   return `<div class="helpwrap">
-    <div class="helpnav">${topics.map((t, j) => `<button data-action="set-help" data-sec="${t.id}" class="${j === i ? "active" : ""}">${esc(t.title)}</button>`).join("")}</div>
+    <div class="helpnav">${nav}</div>
     <div class="helpbody"><h2>${esc(cur.title)}</h2><div class="text">${cur.html}</div>
       <div class="spread">${step(i - 1, `◂ ${topics[i - 1] ? esc(topics[i - 1].title) : ""}`)}${step(i + 1, `${topics[i + 1] ? esc(topics[i + 1].title) : ""} ▸`)}</div></div>
   </div>`;

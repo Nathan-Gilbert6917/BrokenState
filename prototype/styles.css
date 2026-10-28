@@ -332,6 +332,18 @@ body.tl-on #fps { top: 0.6rem; bottom: auto; right: auto; left: 50%; transform: 
 .settings .helpwrap { display: grid; grid-template-columns: minmax(10rem, 14rem) 1fr; gap: 0.9rem; height: min(66vh, 46rem); }
 .settings .helpnav { display: flex; flex-direction: column; gap: 0.2rem; overflow-y: auto; padding-right: 0.3rem; border-right: 1px solid var(--line); }
 .settings .helpnav button { text-align: left; padding: 0.25rem 0.55rem; font-size: 0.88rem; }
+/* How to play on top, the Reference folded by area under it (helpTab: .helphead, .helpgrp, .helpsub). */
+.settings .helpnav .helphead { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 0.5rem 0 0.15rem 0.2rem; }
+.settings .helpnav .helphead:first-child { margin-top: 0; }
+.settings .helpnav .helpgrp { display: flex; gap: 0.2rem; font-weight: 600; background: transparent; border-color: transparent; }
+.settings .helpnav .helpgrp.open { border-color: var(--line); }
+.settings .helpnav .helpgrp .hg-ar { display: inline-block; width: 0.8rem; color: var(--muted); }
+.settings .helpnav .helpsub { display: flex; flex-direction: column; gap: 0.2rem; margin: 0 0 0.3rem 0.7rem; padding-left: 0.4rem; border-left: 1px solid var(--line); }
+.settings .helpbody .lead { font-size: 1.02rem; margin: 0 0 0.6rem; }
+.settings .helpbody h3 { margin: 0.8rem 0 0.25rem; font-size: 0.95rem; }
+.settings .helpbody .howto { margin: 0.2rem 0 0.5rem; padding-left: 1.3rem; }
+.settings .helpbody .howto li { margin: 0.3rem 0; }
+.settings .helpbody .howmore { margin: 0.7rem 0 0; }
 .settings .helpbody { overflow-y: auto; padding-right: 0.4rem; }
 .settings .helpbody h2 { margin: 0 0 0.4rem; font-size: 1.15rem; }
 .settings .helpbody .text { line-height: 1.6; }

@@ -1,0 +1,1476 @@
+[
+  {
+    "id": "surv.model",
+    "title": "Survivors: attributes, skills, traits (basic)",
+    "summary": "The Survivor record every other system reads: name, health, mood, a handful of 0–20 skills and 1–3 traits that bend the numbers. Rolled from the run's seed so a seed always gives the same crew.",
+    "whyHere": "First gameplay card: needs, health, work, inventory and combat units all hang off a Survivor. It only needs IDs, content and RNG from L1, so it can start as soon as those exist.",
+    "subsystems": [
+      "Survivor record & roster",
+      "Skill table (0–20)",
+      "Trait defs & modifier lookup",
+      "Seeded survivor generator",
+      "Location (base / party / battle)",
+      "Skill check helper"
+    ],
+    "sliceScope": "4 survivors rolled at new game. 6 skills (Shooting, Melee, Medicine, Building, Farming, Scavenging), each 0–20: a roll of 0–9 plus 1–2 specialties +3..7. 6 traits from JSON (Tough, Frail, Quick Healer, Glutton, Brave, Coward), 1–2 each. Health 0–100, mood 0–100. No XP yet: skills are fixed for the slice. No STR/DEX-style attributes: the prototype gets by on skills + traits, so do the same.",
+    "fullScope": "12 skills 0–20 that grow by use (XP to level up = 40 + 0.32×L³, 11 XP for a full day's job, daily caps 20/30/25), teaching, books and perks (surv.skills); ~30 traits with tiers I–III and point costs; backgrounds, appearance and custom crews (meta.modes). Families, recruits and relations come in surv.family/surv.relations.",
+    "protoRefs": [
+      "prototype/src/sim/skills.js",
+      "prototype/src/sim/traits.js",
+      "prototype/src/sim/world.js",
+      "prototype/src/sim/data.js",
+      "docs/features/survivors.md"
+    ],
+    "tasks": {
+      "data": [
+        "content/skills.json: id, display name, art key (6 entries for the slice)",
+        "content/traits.json: id, name, description, opposites (Tough vs Frail), and a list of effects {stat, op: mul|add, value}",
+        "Survivor runtime class in BrokenState.Sim (Id, Name, Skills dict, Traits list, Health, Mood, Location) + save mapping",
+        "content/names.json: first/last name pools for the generator"
+      ],
+      "backend": [
+        "SurvivorFactory.Create(Rng, quality): skills, specialties, traits (no opposite pairs), name; uses its own RNG stream",
+        "TraitFx.Mul(survivor, stat) / Add(...): the ONE place trait effects are read (e.g. \"woundMult\" Tough ×0.75, Frail ×1.25)",
+        "Skills.Effective(s, skill): base level + trait add, clamped 0–20; SkillMult(level) for work/aim formulas",
+        "Roster queries: Alive(), AtBase(baseId), InParty(partyId); SurvivorDied removes from queries, keeps record for history",
+        "xUnit: same seed → same 4 survivors; no Tough+Frail; effective skill clamps"
+      ],
+      "ui": [
+        "Roster list: name, health/mood bars, top 2 skills (placeholder text, no portraits)",
+        "Survivor detail panel: skill bars and trait chips with tooltip descriptions"
+      ]
+    },
+    "dataModel": "public enum SkillId { Shooting, Melee, Medicine, Building, Farming, Scavenging }\npublic sealed record TraitDef(string Id, string Name, string Desc, string[] Opposites, TraitEffect[] Effects, string ArtKey);\npublic sealed record TraitEffect(string Stat, EffectOp Op, float Value);\npublic sealed class Survivor {\n  public int Id; public string Name = \"\";\n  public Dictionary<SkillId,int> Skills = new();\n  public List<string> Traits = new();\n  public float Health = 100, Mood = 60;\n  public Location Loc; public bool Alive = true;\n}\npublic readonly record struct Location(LocKind Kind, int RefId); // Base, Party, Battle",
+    "dependsOn": [
+      "data.ids",
+      "data.content",
+      "data.state",
+      "data.rng"
+    ],
+    "connections": [
+      {
+        "to": "surv.needs",
+        "why": "needs gauges live on the survivor; Glutton changes hunger rate",
+        "how": "Needs is a component class owned by Survivor; NeedsSystem reads TraitFx.Mul(s, \"appetite\")",
+        "godot": "SimHost emits SurvivorChanged(id) signal; roster UI re-reads the record",
+        "unity": "SimHost raises C# event SurvivorChanged(int id); roster view subscribes in OnEnable"
+      },
+      {
+        "to": "base.work",
+        "why": "skills decide who is good at which job and how fast",
+        "how": "Work output = hours × Skills.SkillMult(level) × condition factors, read via survivor id",
+        "godot": "Work tab OptionButton per survivor sends AssignJob command through SimHost",
+        "unity": "DropdownField per row sends AssignJob command via SimHost"
+      },
+      {
+        "to": "combat.turns",
+        "why": "a battle unit is built from a survivor (aim from Shooting, HP from Health)",
+        "how": "BattleUnit.FromSurvivor(s) copies stats in; combat.resolve writes Health back by id",
+        "godot": "Battle scene spawns unit nodes keyed by survivor id",
+        "unity": "Battle prefab per unit holds survivor id, no sim data duplicated"
+      },
+      {
+        "to": "data.save",
+        "why": "survivors are the core of every save",
+        "how": "Survivor is a plain class serialised by System.Text.Json; traits/skills stored as ids",
+        "godot": "No engine code: save is sim-only",
+        "unity": "No engine code: save is sim-only"
+      }
+    ],
+    "godot": {
+      "approach": "No game logic in Godot: the Survivor lives in BrokenState.Sim. Godot only shows it: a roster scene (VBoxContainer of rows) that SimHost refreshes on a SurvivorChanged signal. Trait/skill icons come from the ArtCatalog by art key.",
+      "keyApis": [
+        "VBoxContainer",
+        "ProgressBar",
+        "Label / RichTextLabel",
+        "Control.TooltipText",
+        "Signals"
+      ],
+      "docs": [
+        {
+          "t": "Godot: User interface (UI)",
+          "u": "https://docs.godotengine.org/en/stable/tutorials/ui/index.html"
+        },
+        {
+          "t": "Godot: ProgressBar",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_progressbar.html"
+        },
+        {
+          "t": "Godot: C# signals",
+          "u": "https://docs.godotengine.org/en/stable/tutorials/scripting/c_sharp/c_sharp_signals.html"
+        }
+      ]
+    },
+    "unity": {
+      "approach": "Same split: the Sim assembly owns Survivor; a RosterView (UI Toolkit) binds rows to survivor ids and redraws when SimHost raises SurvivorChanged. Do not make Survivor a MonoBehaviour or ScriptableObject: it is runtime state that must save and test headless.",
+      "keyApis": [
+        "UI Toolkit ListView",
+        "ProgressBar",
+        "VisualElement.tooltip",
+        "C# events"
+      ],
+      "docs": [
+        {
+          "t": "Unity: UI Toolkit",
+          "u": "https://docs.unity3d.com/Manual/UIElements.html"
+        },
+        {
+          "t": "Unity: UIElements.ListView",
+          "u": "https://docs.unity3d.com/ScriptReference/UIElements.ListView.html"
+        },
+        {
+          "t": "Unity: UIElements.ProgressBar",
+          "u": "https://docs.unity3d.com/ScriptReference/UIElements.ProgressBar.html"
+        }
+      ]
+    },
+    "learn": [
+      {
+        "t": "Game Programming Patterns: Type Object",
+        "u": "https://gameprogrammingpatterns.com/type-object.html"
+      },
+      {
+        "t": "C# records (Microsoft Learn)",
+        "u": "https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/builtin-types/record"
+      },
+      {
+        "t": "Game Programming Patterns: Component",
+        "u": "https://gameprogrammingpatterns.com/component.html"
+      }
+    ],
+    "newb": [
+      "Definitions vs instances: a TraitDef (\"Tough\") is static content in JSON; a survivor just holds the string \"tough\". This is the Type Object pattern and it keeps saves small and content editable.",
+      "Route every trait effect through one lookup (TraitFx). The prototype does this (traits.js traitFx) so a new trait is a JSON row, not 20 scattered if-statements.",
+      "Fewer stats is better: skills + traits already cover what attributes would. Each stat you add must be shown, balanced and explained.",
+      "Give the generator its own RNG stream so adding a survivor roll later does not change the map the same seed produces."
+    ],
+    "pitfalls": [
+      "Storing references to other objects (a Base object) on Survivor: store ids, or saves and tests get tangled.",
+      "Letting UI code edit Health/Mood directly instead of sending commands.",
+      "Hard-coding trait checks (if traits.Contains(\"tough\")) across systems instead of TraitFx."
+    ],
+    "test": "xUnit: seeded generation is stable (snapshot of 4 survivors for seed 1234), clamps hold, opposite traits never co-occur, TraitFx returns 1.0 with no traits. Manual: start a run, see 4 distinct survivors with sensible skills; same seed shows the same crew.",
+    "size": "M"
+  },
+  {
+    "id": "surv.needs",
+    "title": "Needs: hunger, thirst, sleep, mood",
+    "summary": "Hourly gauges that make survivors people: hunger and thirst fall and are refilled from the stockpile, tiredness builds while awake and is slept off, and mood sums short-lived reasons (\"Ate a meal\", \"Hungry\").",
+    "whyHere": "Needs turn the daily economy into pressure: without them food and water are just numbers. It sits right after the Survivor model and the clock, and before base.core, by reading food through a small interface.",
+    "subsystems": [
+      "Hunger & thirst gauges",
+      "Eating & drinking from a food source",
+      "Tiredness & sleep hours",
+      "Mood modifiers (thoughts) with expiry",
+      "Need effects (work/aim penalties)",
+      "Starvation damage"
+    ],
+    "sliceScope": "3 needs + mood. Hunger falls 40/day, thirst 60/day (1.5× hunger, as the prototype); below 70 a survivor eats/drinks up to 100 from the base stock (1 food or 1 water unit fills 40/60). Tiredness +1/h awake, −3/h asleep, default sleep 22–06; Tired at 24 (aim −5), Exhausted at 36 (aim −12). Mood = 60 base + modifiers (Hungry −10, Thirsty −15, Tired −5, Ate −0 …) each with an end hour. On a team they eat from the party's supplies. Below 15 hunger/thirst: health loss.",
+    "fullScope": "Person-by-person meal breaks at 06/12/20 with a fullness target 80–100, a meal mood ladder, food preferences (Vegetarian, Picky), base ration levels (lean ×0.8, feast ×1.5), short rations under 7 days of food (60%), the cold (+10–20% food below 0°C), season thirst (summer ×1.3, hot day ×1.6), watch shifts and sleeping in. Mental breaks and comforts are surv.morale; food types and cooking are econ.food.",
+    "protoRefs": [
+      "prototype/src/sim/needs.js",
+      "prototype/src/sim/eating.js",
+      "prototype/src/sim/sleep.js",
+      "prototype/src/sim/upkeep.js"
+    ],
+    "tasks": {
+      "data": [
+        "content/needs.json: rates per day, eat thresholds (eat below 70 to 100), starving line (15), tired/exhausted lines (24/36), sleep window",
+        "content/moods.json: thought defs {id, label, amount, hours} (Hungry, Thirsty, Tired, Exhausted, AteMeal, SleptWell)",
+        "Needs component on Survivor (Hunger, Thirst, Tired, Moods list) + save mapping"
+      ],
+      "backend": [
+        "NeedsSystem.TickHour(world): decay, sleep/awake, apply thresholds → add/remove thoughts",
+        "IFoodSource interface (TryTake(SupplyId, n)) implemented by Base stockpile and Party supplies; eating pulls from the survivor's current location",
+        "Mood = clamp(base + Σ active thoughts); expire thoughts by hour",
+        "NeedFactor(s) for work speed and aim (used by base.work and combat)",
+        "Emit events: SurvivorStarving, SurvivorExhausted (for the log/cards)",
+        "xUnit: 24h with food keeps gauges level; no food → hunger hits 0 by ~2.5 days; thirst runs out first"
+      ],
+      "ui": [
+        "Three small bars + mood number on each roster row; tooltip lists active thoughts with their +/−",
+        "Status chips (Hungry, Tired) for the hub screen"
+      ]
+    },
+    "dataModel": "public sealed class Needs {\n  public float Hunger = 100, Thirst = 100; // 0–100\n  public float Tired;                     // hours of sleep owed\n  public List<Thought> Thoughts = new();\n}\npublic sealed record Thought(string DefId, float Amount, int EndsAtHour);\npublic sealed record NeedsDef(float FoodPerDay, float WaterPerDay, float EatBelow, float Starving, int TiredAt, int ExhaustedAt, int SleepFrom, int SleepTo);\npublic interface IFoodSource { int Take(string supplyId, int n); }",
+    "dependsOn": [
+      "surv.model",
+      "core.clock",
+      "core.events",
+      "data.content"
+    ],
+    "connections": [
+      {
+        "to": "base.core",
+        "why": "at home they eat and drink from the stockpile",
+        "how": "Base implements IFoodSource; NeedsSystem calls source.Take(\"food\", 1)",
+        "godot": "Stock panel listens to the StockChanged signal to update counts",
+        "unity": "Stock view subscribes to SimHost.StockChanged"
+      },
+      {
+        "to": "econ.daily",
+        "why": "the daily ledger and forecasts must agree with what needs actually ate",
+        "how": "NeedsSystem records consumption into the base's DailyLedger; forecast uses the same per-day rates from NeedsDef",
+        "godot": "End-of-day report popup reads the ledger after DayEnded signal",
+        "unity": "DayEnded C# event opens the report panel"
+      },
+      {
+        "to": "base.work",
+        "why": "sleep hours and exhaustion decide who works this hour",
+        "how": "Scheduler asks Sleep.IsSleepHour(s, hour) and NeedFactor(s)",
+        "godot": "Activity label per survivor updates on hourly tick signal",
+        "unity": "Activity label refresh on SimHost.HourTicked"
+      },
+      {
+        "to": "travel.parties",
+        "why": "away from base, needs drain from the team's packed supplies",
+        "how": "Party implements IFoodSource; same NeedsSystem, different source by Location",
+        "godot": "Team panel shows days of food left",
+        "unity": "Team panel shows days of food left"
+      }
+    ],
+    "godot": {
+      "approach": "Needs run in the sim's hourly tick, not in _Process. The hub UI shows three ProgressBars per survivor and re-reads them when SimHost emits HourTicked. Thought tooltips use Control.TooltipText or a small custom tooltip panel.",
+      "keyApis": [
+        "ProgressBar",
+        "Control.TooltipText",
+        "Signals",
+        "Autoload SimHost"
+      ],
+      "docs": [
+        {
+          "t": "Godot: ProgressBar",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_progressbar.html"
+        },
+        {
+          "t": "Godot: Control (incl. drag & drop)",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_control.html"
+        },
+        {
+          "t": "Godot: Singletons (Autoload)",
+          "u": "https://docs.godotengine.org/en/stable/tutorials/scripting/singletons_autoload.html"
+        }
+      ]
+    },
+    "unity": {
+      "approach": "Same: the sim ticks needs; a UI Toolkit row template has three ProgressBars bound to the survivor id and refreshed on SimHost.HourTicked. Keep UI pull-based (read on event) rather than pushing every value change.",
+      "keyApis": [
+        "UI Toolkit ProgressBar",
+        "VisualElement.tooltip",
+        "C# events"
+      ],
+      "docs": [
+        {
+          "t": "Unity: UIElements.ProgressBar",
+          "u": "https://docs.unity3d.com/ScriptReference/UIElements.ProgressBar.html"
+        },
+        {
+          "t": "Unity: UI Toolkit",
+          "u": "https://docs.unity3d.com/Manual/UIElements.html"
+        },
+        {
+          "t": "Unity: UI Toolkit events",
+          "u": "https://docs.unity3d.com/Manual/UIE-Events.html"
+        }
+      ]
+    },
+    "learn": [
+      {
+        "t": "Game Programming Patterns: Update Method",
+        "u": "https://gameprogrammingpatterns.com/update-method.html"
+      },
+      {
+        "t": "Game Programming Patterns: Observer",
+        "u": "https://gameprogrammingpatterns.com/observer.html"
+      }
+    ],
+    "newb": [
+      "A need is just a number that drifts and a threshold that triggers something. Keep rates in JSON so you can tune by playtest without recompiling.",
+      "Mood as a list of timed 'thoughts' (RimWorld's approach) is easy to explain to the player: the tooltip IS the formula.",
+      "Tick needs per game-hour, not per frame: at 5× speed frames and hours drift apart, and per-frame logic would break determinism and saves.",
+      "Use an interface (IFoodSource) so needs do not care whether food comes from a base or a backpack: same rule everywhere, also for AI groups (ADR 0001)."
+    ],
+    "pitfalls": [
+      "Eating in one system and counting upkeep in another with different numbers: forecasts then lie. One source of truth.",
+      "Forgetting that time skipping (travel, sleep) must run every hour, not just the last one.",
+      "Mood that only goes down: add positive thoughts (ate, rested) or players feel punished."
+    ],
+    "test": "xUnit: 72 simulated hours with full stock keeps hunger/thirst above 60 and consumes ~3 food, ~3 water per person; empty stock → Starving event and health loss; awake 24h → Tired thought. Manual: run 3 days at 5×, watch bars dip and refill; empty the water cheat → thirst crashes first.",
+    "size": "M"
+  },
+  {
+    "id": "surv.health",
+    "title": "Wounds, healing, death (basic)",
+    "summary": "Health 0–100 per survivor: damage from battles and starving lowers it, wounds can turn infected, rest and a medic with meds heal it, and at 0 the survivor dies and the game reacts.",
+    "whyHere": "The slice's loop ends with 'wounded heal, someone may die': battle damage needs a home before combat.resolve exists. It depends only on the Survivor model and the clock.",
+    "subsystems": [
+      "Damage intake (Hurt)",
+      "Wound state (severe, infected)",
+      "Passive healing per hour",
+      "Medic treatment with meds",
+      "Death & SurvivorDied",
+      "Rest flag for work"
+    ],
+    "sliceScope": "One Health number plus a Wound flag set: Severe (<30), Infected. Hurt(amount, cause) applies trait multipliers (Tough ×0.75, Frail ×1.25); a hit of 10+ has a 25% chance to need dressing, undressed for a day → may turn infected. Healing at base 4/day + 0.4 × best Medicine; infected halves healing and drains 3/day; no healing while the base is out of food or water. One treatment a day by the Medic job: 1 meds, clears infection, +10. Severe survivors rest (no work). Health 0 → death: event, log line, items to base stock, removed from roster.",
+    "fullScope": "Hospital tiers (infirmary → field hospital → clinic → trauma hospital) with medic staffing and bed caps, surgery on severe wounds, admit lines, auto-treat with a meds reserve; illnesses (camp fever, wound fever, flu season, contagion by headcount), the worm, medic training, battlefield medics and a downed state. Grief and the memorial wall on death.",
+    "protoRefs": [
+      "prototype/src/sim/medical.js",
+      "prototype/src/sim/health.js",
+      "prototype/src/sim/world.js",
+      "docs/features/health.md"
+    ],
+    "tasks": {
+      "data": [
+        "content/health.json: severe line (30), base heal/day (4), medicine factor (0.4), infection drain (3/day), dressing chance (0.25), treatment meds cost",
+        "Wound fields on Survivor (Severe derived, Infected, NeedsDressingSinceHour) + save mapping",
+        "Death cause strings / log templates (\"died of an infected wound\")"
+      ],
+      "backend": [
+        "Health.Hurt(world, s, amount, cause): trait multipliers, wound roll (own RNG stream), death at ≤0",
+        "Health.TickHour: healing rate formula, infection drain, healing blocked by base hunger/thirst days",
+        "Medical.DailyTreatment(base): worst first, one per patient a day, uses meds from stock, Medicine skill bonus",
+        "Death pipeline: Survivor.Alive=false, drop gear to location (base stock / party cargo / battle body), publish SurvivorDied",
+        "xUnit: 50 damage on Tough = 37.5; infected wound without meds kills in N days; healing paused with no food"
+      ],
+      "ui": [
+        "Health bar colour bands + Severe/Infected chips on roster",
+        "Death popup / log entry with cause; greyed survivor in history list"
+      ]
+    },
+    "dataModel": "public sealed class Survivor { /* … */ public float Health = 100; public bool Infected; public int? UndressedSince; }\npublic static class Health {\n  public const float SevereBelow = 30f;\n  public static bool IsSevere(Survivor s) => s.Alive && s.Health < SevereBelow;\n  public static void Hurt(World w, Survivor s, float amt, string cause) { /* trait mult, roll, die */ }\n}\npublic sealed record SurvivorDied(int SurvivorId, string Cause, Location Where) : IDomainEvent;",
+    "dependsOn": [
+      "surv.model",
+      "core.clock",
+      "core.events",
+      "data.rng"
+    ],
+    "connections": [
+      {
+        "to": "combat.resolve",
+        "why": "battle damage and deaths come back to the campaign",
+        "how": "combat.resolve calls Health.Hurt with the unit's lost HP; units killed in battle go through the same death pipeline",
+        "godot": "Battle results screen lists wounded/dead from SurvivorDied events",
+        "unity": "Results panel built from the drained event queue"
+      },
+      {
+        "to": "base.work",
+        "why": "badly hurt people rest; the Medic job does the treating",
+        "how": "Scheduler checks Health.IsSevere → Rest; Medic job slots feed Medical.DailyTreatment",
+        "godot": "Activity label shows \"Resting (wounded)\"",
+        "unity": "Activity label shows \"Resting (wounded)\""
+      },
+      {
+        "to": "core.cards",
+        "why": "a death or infection can raise a decision card",
+        "how": "Card system subscribes to SurvivorDied / WoundInfected events",
+        "godot": "Card popup scene opened by SimHost on CardRaised signal",
+        "unity": "Card UIDocument shown on CardRaised event"
+      },
+      {
+        "to": "base.buildings",
+        "why": "an infirmary speeds healing",
+        "how": "Healing reads base.Buildings.Has(\"infirmary\") bonus from building effects",
+        "godot": "Building tooltip shows the heal bonus",
+        "unity": "Building tooltip shows the heal bonus"
+      }
+    ],
+    "godot": {
+      "approach": "Health is pure sim. Godot shows a coloured ProgressBar (theme override per band) and listens for SurvivorDied to play a placeholder sting and open a popup. Keep death presentation separate from the death rule.",
+      "keyApis": [
+        "ProgressBar (theme overrides)",
+        "AcceptDialog / PopupPanel",
+        "Signals"
+      ],
+      "docs": [
+        {
+          "t": "Godot: ProgressBar",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_progressbar.html"
+        },
+        {
+          "t": "Godot: C# signals",
+          "u": "https://docs.godotengine.org/en/stable/tutorials/scripting/c_sharp/c_sharp_signals.html"
+        },
+        {
+          "t": "Godot: User interface (UI)",
+          "u": "https://docs.godotengine.org/en/stable/tutorials/ui/index.html"
+        }
+      ]
+    },
+    "unity": {
+      "approach": "Sim owns health; a UI Toolkit ProgressBar with USS classes per band (ok / hurt / severe). SimHost converts SurvivorDied to a C# event; a DeathPopup controller shows it.",
+      "keyApis": [
+        "UI Toolkit ProgressBar",
+        "USS classes",
+        "C# events"
+      ],
+      "docs": [
+        {
+          "t": "Unity: UIElements.ProgressBar",
+          "u": "https://docs.unity3d.com/ScriptReference/UIElements.ProgressBar.html"
+        },
+        {
+          "t": "Unity: UI Toolkit",
+          "u": "https://docs.unity3d.com/Manual/UIElements.html"
+        },
+        {
+          "t": "Unity: UI Toolkit events",
+          "u": "https://docs.unity3d.com/Manual/UIE-Events.html"
+        }
+      ]
+    },
+    "learn": [
+      {
+        "t": "Game Programming Patterns: Observer",
+        "u": "https://gameprogrammingpatterns.com/observer.html"
+      },
+      {
+        "t": "Game Programming Patterns: Event Queue",
+        "u": "https://gameprogrammingpatterns.com/event-queue.html"
+      }
+    ],
+    "newb": [
+      "Start with a single health number; RimWorld-style per-body-part wounds are a big jump in UI and balance. The prototype itself uses one number plus flags.",
+      "Death is an event, not a deletion: keep the record (Alive=false) so history, grief and 'Why?' explanations can find them later.",
+      "Make every number (heal rate, infection drain) data-driven so Hardcore mode can scale them later with a multiplier."
+    ],
+    "pitfalls": [
+      "Deleting a dead survivor while other systems still hold their id (party member lists, jobs).",
+      "Applying damage in the UI or battle view code instead of through Health.Hurt: trait multipliers get skipped.",
+      "Healing that ignores hunger: the prototype blocks healing while the base has no food or water, which is what makes shortages scary."
+    ],
+    "test": "xUnit: trait multipliers, death at exactly 0, infection progression, treatment uses one meds and clears infection, healing blocked on hunger days. Manual: cheat-wound a survivor to 25, watch them rest and heal over days; remove meds and let an infected one die → popup + log.",
+    "size": "M"
+  },
+  {
+    "id": "gear.items",
+    "title": "Items, stacks & inventory (slots, weight)",
+    "summary": "Everything a survivor can hold: item definitions from JSON, item instances that can stack, and a personal inventory of equipment slots, pockets and a pack, limited by weight. Bulk supplies (food, water, wood, rounds) stay as counts, not items.",
+    "whyHere": "Weapons, loot, the stockpile's armory and the battle's search/reload all move items. It needs content (ItemDef) and survivors; weapons and loot build directly on it.",
+    "subsystems": [
+      "ItemDef content (JSON)",
+      "Item instance & stacks",
+      "Equipment slots & pockets",
+      "Pack contents",
+      "Weight / max load",
+      "Move/split/merge with validation",
+      "Supplies vs items"
+    ],
+    "sliceScope": "~20 item defs (3 guns, 2 melee, ammo boxes per calibre, bandage, meds kit, backpack, crowbar, flashlight, food can, water bottle…). Slots: Hands, Body, Back (pack), 4 Pockets; a pack has 6 slots. Stackables merge up to StackMax and split. Max load 40 kg (Strong Back later). A MoveItem command validates slot type, small-only pockets, stack rules and weight. Survivors on a team carry; the base holds an Armory list of loose items.",
+    "fullScope": "RPG slots for weapon, off hand tool, sidearm, belt melee, sling, ear pro, body/head/arms/legs armour and pack; rig pouches by kind; loose vs boxed rounds and bulk ammo cans; supplies taken out of stores as carriable items; two-handed carried things; load bands that slow travel; item condition and salvage. Prototype item data spans GEAR, ~146 guns, dozens of blades and kits.",
+    "protoRefs": [
+      "prototype/src/sim/inventory.js",
+      "prototype/src/sim/itemstack.js",
+      "prototype/src/sim/stacks.js",
+      "prototype/src/sim/load.js",
+      "docs/features/gear.md"
+    ],
+    "tasks": {
+      "data": [
+        "content/items.json: id, name, kg, value, slot kind, small (fits pocket), stackMax, tags[], artKey",
+        "content/supplies.json: bulk supply ids (food, water, wood, scrap, meds, ammo_9mm…) with kg per unit",
+        "ItemInstance + Inventory runtime classes with stable instance ids + save mapping",
+        "ContentDb validation tests: every item has an art key, positive weight, unique id"
+      ],
+      "backend": [
+        "Inventory API: CanPlace(item, slot), Place, Remove, Find; Weight(s); MaxLoad(s) via TraitFx",
+        "Stacks: Merge(a,b) up to StackMax, Split(item, n), UseOne(item)",
+        "MoveItem command: from/to ItemLocation (survivor slot, pack slot, base armory, party cargo, container) with clear refusal reasons",
+        "Location addressing as a typed record (not strings like the prototype's \"s:12:pocket:3\")",
+        "xUnit: weight sums, pocket refuses large items, merge overflow leaves remainder, moving across locations only at the same place"
+      ],
+      "ui": [
+        "Placeholder paper-doll: slot boxes + pocket row + pack grid with item names/icons from ArtCatalog; weight line \"23.4 / 40 kg\"",
+        "Drag-and-drop between slots (or click-to-select then click-to-place) sending MoveItem; red flash + reason on refusal"
+      ]
+    },
+    "dataModel": "public sealed record ItemDef(string Id, string Name, float Kg, int Value, SlotKind Slot, bool Small, int StackMax, string[] Tags, string ArtKey);\npublic sealed class ItemInstance { public long Id; public string DefId = \"\"; public int Count = 1; public List<ItemInstance>? Contents; }\npublic enum SlotKind { None, Hands, Body, Back }\npublic sealed class Inventory {\n  public Dictionary<SlotKind, ItemInstance?> Worn = new();\n  public ItemInstance?[] Pockets = new ItemInstance?[4];\n}\npublic abstract record ItemLocation; // SurvivorSlot, PocketSlot, PackSlot, Armory, Cargo, Container",
+    "dependsOn": [
+      "data.content",
+      "data.ids",
+      "surv.model",
+      "core.commands"
+    ],
+    "connections": [
+      {
+        "to": "gear.weapons",
+        "why": "a weapon is an item with extra combat data",
+        "how": "WeaponDef keyed by the same item id; Inventory.Hands gives the equipped weapon",
+        "godot": "Weapon panel reads the Hands slot item",
+        "unity": "Weapon panel reads the Hands slot item"
+      },
+      {
+        "to": "gear.loot",
+        "why": "loot rolls produce ItemInstances and supply counts",
+        "how": "LootRoller returns List<ItemInstance> + Dictionary<supplyId,int>; MoveItem takes them out of a container",
+        "godot": "Search window shows container contents beside the doll",
+        "unity": "Search window shows container contents beside the doll"
+      },
+      {
+        "to": "ui.inventory",
+        "why": "the inventory screen is the main view of this data",
+        "how": "UI only sends MoveItem/Split commands and re-reads Inventory on InventoryChanged(ownerId)",
+        "godot": "Control._GetDragData/_CanDropData/_DropData on slot Controls",
+        "unity": "UI Toolkit pointer events / manipulators on slot VisualElements"
+      },
+      {
+        "to": "base.core",
+        "why": "loose items at home live in the base armory and count toward storage kg",
+        "how": "Base.Armory is an item list; Storage.UsedKg adds item weights",
+        "godot": "Armory tab lists items",
+        "unity": "Armory tab lists items"
+      },
+      {
+        "to": "travel.parties",
+        "why": "weight carried slows and limits a team",
+        "how": "Party load = Σ member Inventory.Weight + share of cargo; checked against MaxLoad",
+        "godot": "Team panel shows load bar",
+        "unity": "Team panel shows load bar"
+      }
+    ],
+    "godot": {
+      "approach": "Build each slot as a Control (Panel + TextureRect icon + count Label). Godot's built-in drag-and-drop virtuals on Control (_GetDragData, _CanDropData, _DropData) map neatly onto MoveItem: _CanDropData asks the sim's CanPlace, _DropData sends the command. Icons come from the ArtCatalog Resource by art key.",
+      "keyApis": [
+        "Control drag & drop virtuals",
+        "GridContainer",
+        "TextureRect",
+        "Resource (ArtCatalog)"
+      ],
+      "docs": [
+        {
+          "t": "Godot: Control (incl. drag & drop)",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_control.html"
+        },
+        {
+          "t": "Godot: GridContainer",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_gridcontainer.html"
+        },
+        {
+          "t": "Godot: Resources",
+          "u": "https://docs.godotengine.org/en/stable/tutorials/scripting/resources.html"
+        }
+      ]
+    },
+    "unity": {
+      "approach": "UI Toolkit: a UXML template per slot, a grid for the pack; implement drag with PointerDown/Move/Up events (or a PointerManipulator) and call the sim's CanPlace/MoveItem. Item icons via an ArtCatalog ScriptableObject mapping art keys to Sprites.",
+      "keyApis": [
+        "UI Toolkit VisualElement",
+        "PointerManipulator / pointer events",
+        "ScriptableObject (ArtCatalog)",
+        "Sprite"
+      ],
+      "docs": [
+        {
+          "t": "Unity: UI Toolkit",
+          "u": "https://docs.unity3d.com/Manual/UIElements.html"
+        },
+        {
+          "t": "Unity: UI Toolkit events",
+          "u": "https://docs.unity3d.com/Manual/UIE-Events.html"
+        },
+        {
+          "t": "Unity: ScriptableObject",
+          "u": "https://docs.unity3d.com/Manual/class-ScriptableObject.html"
+        }
+      ]
+    },
+    "learn": [
+      {
+        "t": "Game Programming Patterns: Flyweight",
+        "u": "https://gameprogrammingpatterns.com/flyweight.html"
+      },
+      {
+        "t": "Game Programming Patterns: Type Object",
+        "u": "https://gameprogrammingpatterns.com/type-object.html"
+      },
+      {
+        "t": "System.Text.Json polymorphism",
+        "u": "https://learn.microsoft.com/en-us/dotnet/standard/serialization/system-text-json/polymorphism"
+      }
+    ],
+    "newb": [
+      "ItemDef (shared, read-only) vs ItemInstance (this particular box with 37 rounds): the Flyweight idea. Never copy the def's fields onto every instance.",
+      "Keep bulk goods (food, wood, rounds in base stock) as counts in a dictionary. Making 900 wood into 900 objects kills performance and saves, which is why the prototype pools supplies.",
+      "All inventory changes go through one validated MoveItem command: UI, AI groups and tests use the same door, so rules cannot be bypassed.",
+      "Weight is the real limit; slots only say where something is. That keeps the rules simple to explain."
+    ],
+    "pitfalls": [
+      "Duplicating items on a failed move (remove succeeded, add failed): do moves as check-then-apply.",
+      "Instance ids that are not saved: references from equipment/jobs break after load.",
+      "Building drag-and-drop logic into the UI that the AI and tests can't use."
+    ],
+    "test": "xUnit: place/move/split/merge suite, weight limit refusals, round-trip save of a full inventory. Manual: drag a pistol from the armory to Hands, ammo box into a pocket, try to put a backpack in a pocket (refused with reason), split a stack of 6 cans 3/3.",
+    "size": "L"
+  },
+  {
+    "id": "gear.weapons",
+    "title": "Weapons & ammo (basic: a few guns & melee)",
+    "summary": "The combat numbers behind weapon items: damage range, optimal range and falloff, aim bonus, noise, magazine size and calibre for guns; damage and skill scaling for melee. Ammo is counted by calibre.",
+    "whyHere": "Battles (combat.actions, combat.los, combat.ai) need weapon numbers and an ammo rule, and loot needs weapons to find. It builds on items and survivor skills.",
+    "subsystems": [
+      "WeaponDef content",
+      "Calibre & ammo supply ids",
+      "Loaded rounds per gun",
+      "Reload rule",
+      "Skill scaling & requirement",
+      "Noise value"
+    ],
+    "sliceScope": "3 guns and 2 melee, using the prototype's numbers: 9mm pistol (dmg 15–22, opt range 6, aim +4, cap 15, noise 2), pump shotgun (24–36, opt 4, aim +10 close, cap 6, noise 3), hunting rifle .308 (31–43, opt 8, cap 5, noise 3); kitchen knife (14–22, silent) and baseball bat (15–24). 3 calibres as supplies (9mm, 12ga, .308). A gun stores LoadedRounds; Reload fills from ammo stacks the shooter carries. Shooting/Melee skill adds aim/damage; below a weapon's required skill, a penalty.",
+    "fullScope": "Physical round stacks in firing order inside guns and magazines; ammo types (FMJ, HP, AP, subsonic, rubber) per calibre with damage/pen; spare magazines and reload sources costing 1–2 actions; fire modes, jams by reliability, suppression (gear.ballistics); attachments and the gun builder (gear.gunbuilder); ~146 guns, blades with quick strikes/bleed/stagger, launchers, non-lethal weapons, throwables.",
+    "protoRefs": [
+      "prototype/src/sim/data-guns.js",
+      "prototype/src/sim/data-blades.js",
+      "prototype/src/sim/ammo.js",
+      "prototype/src/sim/data-ammo.js",
+      "docs/features/gear.md"
+    ],
+    "tasks": {
+      "data": [
+        "content/weapons.json keyed by item id: kind (gun|melee), dmgMin/Max, optRange, falloff, aim, apCost, noise, cap, calibre, reqSkill",
+        "content/calibres.json: id, name, kg per round, box size (9mm 50), art key",
+        "Gun state on ItemInstance (LoadedRounds) + save mapping"
+      ],
+      "backend": [
+        "Weapons.Of(item) lookup; DamageRoll(rng, weapon, skill) with crit chance",
+        "RangeModifier(weapon, distance): full to optRange, then −falloff per tile",
+        "Reload(unit/survivor, gun): take rounds of the gun's calibre from own pockets/pack (not teammates), fill to cap, report rounds used",
+        "Skill gap rule: aim penalty per level below reqSkill",
+        "xUnit: damage within range, reload stops at cap and at available rounds, wrong calibre never loads"
+      ],
+      "ui": [
+        "Weapon tooltip: damage, range, rounds \"12/15\", noise as a 0–3 meter",
+        "Rounds badge on the gun's inventory icon"
+      ]
+    },
+    "dataModel": "public enum WeaponKind { Gun, Melee }\npublic sealed record WeaponDef(string ItemId, WeaponKind Kind, int DmgMin, int DmgMax, int OptRange, float Falloff, int Aim, int Noise, int Cap, string? Calibre, int ReqSkill);\npublic sealed record CalibreDef(string Id, string Name, float KgPerRound, int BoxSize, string ArtKey);\n// on a gun instance\npublic sealed class GunState { public int Loaded; }",
+    "dependsOn": [
+      "gear.items",
+      "surv.model",
+      "data.content",
+      "data.rng"
+    ],
+    "connections": [
+      {
+        "to": "combat.actions",
+        "why": "Shoot/Melee/Reload actions use these numbers",
+        "how": "Actions call Weapons.DamageRoll and Weapons.Reload; spend Loaded per shot",
+        "godot": "Action bar buttons enabled by sim CanShoot/CanReload queries",
+        "unity": "Action bar buttons enabled by sim CanShoot/CanReload queries"
+      },
+      {
+        "to": "combat.los",
+        "why": "hit chance combines range, aim and cover",
+        "how": "HitChance = base + weapon.Aim + skill − RangeModifier − cover",
+        "godot": "Hit % label over the target",
+        "unity": "Hit % label over the target"
+      },
+      {
+        "to": "combat.ai",
+        "why": "gunshots make noise the dead hear",
+        "how": "Shot publishes NoiseEvent(position, weapon.Noise); dead AI reads it",
+        "godot": "Placeholder noise ring effect at the shooter",
+        "unity": "Placeholder noise ring effect at the shooter"
+      },
+      {
+        "to": "gear.loot",
+        "why": "guns and ammo are what players hunt for",
+        "how": "Loot tables reference weapon item ids and calibre supply ids",
+        "godot": "n/a (sim only)",
+        "unity": "n/a (sim only)"
+      }
+    ],
+    "godot": {
+      "approach": "Pure data + sim. Godot only displays weapon stats (tooltip panel) and a rounds badge; later a Resource subclass can attach placeholder sprites/sounds per weapon art key without touching the sim's WeaponDef.",
+      "keyApis": [
+        "Resource (ArtCatalog entry)",
+        "PanelContainer tooltip",
+        "Label"
+      ],
+      "docs": [
+        {
+          "t": "Godot: Resources",
+          "u": "https://docs.godotengine.org/en/stable/tutorials/scripting/resources.html"
+        },
+        {
+          "t": "Godot: User interface (UI)",
+          "u": "https://docs.godotengine.org/en/stable/tutorials/ui/index.html"
+        }
+      ]
+    },
+    "unity": {
+      "approach": "Weapon numbers stay in JSON loaded by the sim (not in ScriptableObjects) so tests and both engines share them. A WeaponArt ScriptableObject maps art keys to sprites/audio clips for presentation only.",
+      "keyApis": [
+        "ScriptableObject",
+        "CreateAssetMenu",
+        "UI Toolkit tooltip"
+      ],
+      "docs": [
+        {
+          "t": "Unity: ScriptableObject",
+          "u": "https://docs.unity3d.com/Manual/class-ScriptableObject.html"
+        },
+        {
+          "t": "Unity: CreateAssetMenuAttribute",
+          "u": "https://docs.unity3d.com/ScriptReference/CreateAssetMenuAttribute.html"
+        },
+        {
+          "t": "Unity: UI Toolkit",
+          "u": "https://docs.unity3d.com/Manual/UIElements.html"
+        }
+      ]
+    },
+    "learn": [
+      {
+        "t": "Red Blob Games: Damage rolls",
+        "u": "https://www.redblobgames.com/articles/probability/damage-rolls.html"
+      },
+      {
+        "t": "Game Programming Patterns: Type Object",
+        "u": "https://gameprogrammingpatterns.com/type-object.html"
+      }
+    ],
+    "newb": [
+      "A damage range (15–22) with a flat roll is easy to read; Red Blob's damage-rolls article shows how to make it feel less swingy if needed.",
+      "Ammo by calibre is what makes loot exciting: a .308 rifle with no .308 is a decision. Keep that rule even in the slice.",
+      "Noise is a weapon stat, not a sound file: the AI reacts to the number; audio is added later on top.",
+      "Store loaded rounds on the gun instance so a reload in one battle carries into the next (the prototype's 'guns leave loaded')."
+    ],
+    "pitfalls": [
+      "Hard-coding weapon numbers in combat code; balancing then needs recompiles.",
+      "A reload that pulls from the base stockpile mid-battle: only what the shooter carries.",
+      "Building magazines/ammo types into the slice: that is gear.ballistics later."
+    ],
+    "test": "xUnit: per-weapon damage bounds over 10k seeded rolls, falloff values, reload edge cases (empty, partial, wrong calibre), skill gap penalty. Manual: equip the shotgun, fire 6 times in a test battle, reload from a pocket box; rounds badge matches.",
+    "size": "M"
+  },
+  {
+    "id": "base.core",
+    "title": "Base entity & stockpile (supplies, storage)",
+    "summary": "A Base is a place on the State Map where survivors live: its residents, a stockpile of bulk supplies (food, water, wood, meds, scrap, rounds), an armory of loose items, beds and a storage capacity in kg.",
+    "whyHere": "Needs eat from it, buildings are built at it, work produces into it and loot lands in it. It must exist before buildings, work and the daily economy.",
+    "subsystems": [
+      "Base record & location",
+      "Stockpile (supply counts)",
+      "Armory (item list)",
+      "Storage capacity (kg) & overflow",
+      "Daily ledger (in/out)",
+      "Transfers to/from parties"
+    ],
+    "sliceScope": "One hub base on the start hex with 4 residents. Stock dictionary for ~8 supplies (food, water, wood, scrap, meds, ammo_9mm, ammo_12ga, ammo_308). Armory list of items. Storage = 1200 kg core + storage buildings; overflow is only shown as \"outside\" (no wear yet). Beds = from buildings. TransferSupplies command between base and a party on the same hex. Ledger records each day's produced/used per supply.",
+    "fullScope": "Base tiers camp (0 kg) / shelter (150) / outpost (500) / hub (1200), storage ladder from storage box 60 kg to warehouse 6000 kg, containers and bins, goods outside wearing 2%/day (×2 wet) and raided first, food lots with spoilage, water capacity separate, woodpile not counted; several bases, supply runs and hauling, a 500×500 base map with placed buildings, hidden bases, sieges.",
+    "protoRefs": [
+      "prototype/src/sim/basestorage.js",
+      "prototype/src/sim/containers.js",
+      "prototype/src/sim/storage.js",
+      "docs/features/bases.md"
+    ],
+    "tasks": {
+      "data": [
+        "Base runtime class: Id, Name, Hex, Tier, Stock, Armory, Ledger + save mapping",
+        "content/supplies.json fields used here: kg per unit, stored (bool: wood/water not counted)",
+        "content/base_tiers.json: core storage kg per tier (slice uses hub only)"
+      ],
+      "backend": [
+        "Stockpile API: Has, Take (returns what was taken), Add; implements IFoodSource for surv.needs",
+        "Storage.UsedKg/CapacityKg/OutsideKg (stock by kg + armory item weights; buildings add capacity)",
+        "Residents query by survivor Location; Beds from building effects",
+        "TransferSupplies / TransferItem commands base⇄party with validation (same hex, enough stock, party carry room)",
+        "DailyLedger: Record(supply, delta, reason); rolled over at day end",
+        "xUnit: take never goes negative, overflow math, transfer conserves totals"
+      ],
+      "ui": [
+        "Hub 'Stock' tab: supply table with counts and today's +/−, storage bar \"860 / 1200 kg\"",
+        "Armory list (reuses ui.inventory item rows)"
+      ]
+    },
+    "dataModel": "public sealed class Base {\n  public int Id; public string Name = \"\"; public Hex Hex; public BaseTier Tier;\n  public Dictionary<string,int> Stock = new();   // supplyId -> units\n  public List<ItemInstance> Armory = new();\n  public List<BuildingInstance> Buildings = new();\n  public DailyLedger Ledger = new();\n}\npublic sealed class DailyLedger { public Dictionary<string, Dictionary<string,int>> Today = new(); } // supply -> reason -> delta",
+    "dependsOn": [
+      "data.state",
+      "data.content",
+      "gear.items",
+      "core.commands",
+      "core.hexgrid"
+    ],
+    "connections": [
+      {
+        "to": "surv.needs",
+        "why": "residents eat and drink from the stock",
+        "how": "Base implements IFoodSource; Take() records into the ledger with reason \"eaten\"",
+        "godot": "StockChanged signal refreshes the stock tab",
+        "unity": "StockChanged C# event refreshes the stock view"
+      },
+      {
+        "to": "travel.parties",
+        "why": "teams pack supplies out and bring loot home",
+        "how": "TransferSupplies command; arrival at the base hex auto-unloads cargo",
+        "godot": "Team-forming screen shows base stock beside party packs",
+        "unity": "Team-forming panel shows base stock beside party packs"
+      },
+      {
+        "to": "combat.resolve",
+        "why": "loot from a raid lands in the stockpile",
+        "how": "On PartyArrived at home: cargo items → Armory, supplies → Stock, ledger reason \"loot\"",
+        "godot": "Arrival toast lists what came in",
+        "unity": "Arrival toast lists what came in"
+      },
+      {
+        "to": "ui.hub",
+        "why": "the hub screens are mostly views of this",
+        "how": "Read-only queries + commands; refresh on StockChanged/DayEnded",
+        "godot": "TabContainer with Stock/Roster/Build/Work tabs",
+        "unity": "UIDocument with tab buttons switching panels"
+      }
+    ],
+    "godot": {
+      "approach": "The base is sim data; in Godot the hub is a scene with a TabContainer. The Stock tab is a Tree (columns: supply, count, today) rebuilt on StockChanged. The base's marker on the State Map is drawn by ui.statemap from Base.Hex.",
+      "keyApis": [
+        "TabContainer",
+        "Tree (columns)",
+        "ProgressBar",
+        "Signals"
+      ],
+      "docs": [
+        {
+          "t": "Godot: TabContainer",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_tabcontainer.html"
+        },
+        {
+          "t": "Godot: Tree",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_tree.html"
+        },
+        {
+          "t": "Godot: C# signals",
+          "u": "https://docs.godotengine.org/en/stable/tutorials/scripting/c_sharp/c_sharp_signals.html"
+        }
+      ]
+    },
+    "unity": {
+      "approach": "A HubScreen UIDocument with tab panels; the stock table is a MultiColumnListView bound to a list of (supply, count, delta) rows built from the sim on StockChanged. No MonoBehaviour per base: the base is not a GameObject.",
+      "keyApis": [
+        "UIDocument",
+        "MultiColumnListView",
+        "ProgressBar",
+        "C# events"
+      ],
+      "docs": [
+        {
+          "t": "Unity: UIElements.MultiColumnListView",
+          "u": "https://docs.unity3d.com/ScriptReference/UIElements.MultiColumnListView.html"
+        },
+        {
+          "t": "Unity: UI Toolkit",
+          "u": "https://docs.unity3d.com/Manual/UIElements.html"
+        },
+        {
+          "t": "Unity: UIElements.ProgressBar",
+          "u": "https://docs.unity3d.com/ScriptReference/UIElements.ProgressBar.html"
+        }
+      ]
+    },
+    "learn": [
+      {
+        "t": "Dictionary<TKey,TValue>",
+        "u": "https://learn.microsoft.com/en-us/dotnet/api/system.collections.generic.dictionary-2"
+      },
+      {
+        "t": "Game Programming Patterns: Command",
+        "u": "https://gameprogrammingpatterns.com/command.html"
+      }
+    ],
+    "newb": [
+      "Bases are data, not scenes or GameObjects. The view is built from the data; this makes saving and AI groups (which run the same base rules, ADR 0001) trivial.",
+      "A ledger with reasons (\"eaten\", \"built bunkhouse\", \"loot\") costs little and pays back hugely: the end-of-day report and 'why am I out of food?' come for free.",
+      "Storage as kg rather than slot counts is easy to reason about and matches the prototype's one rule: nothing is refused, overflow just lies outside."
+    ],
+    "pitfalls": [
+      "Stock going negative because two systems took the last unit in the same tick: Take returns what it actually took.",
+      "Storing supply names as display strings: use ids and look up names.",
+      "Building multi-base logic now: one hub is enough; keep the code base-id driven so more bases drop in later (econ.hauling)."
+    ],
+    "test": "xUnit: stock arithmetic, storage capacity/overflow, transfer conservation (total food in world unchanged by a transfer), ledger sums equal stock change. Manual: the Stock tab shows starting supplies; pack food into a team and see stock drop; send them home and see it return.",
+    "size": "M"
+  },
+  {
+    "id": "base.buildings",
+    "title": "Buildings & construction queue (slice: 4–5 buildings)",
+    "summary": "Building definitions in JSON (cost, build hours, limits, effects such as beds, storage, water or food) and a per-base construction queue that builders work through hour by hour.",
+    "whyHere": "The slice asks the player to queue 1–2 buildings; buildings also give beds, storage and production that the economy reads. It needs the base and its stockpile first.",
+    "subsystems": [
+      "BuildingDef content",
+      "Effects (beds, storage kg, water, food, healing)",
+      "Construction queue",
+      "Cost check & reservation",
+      "Builder progress per hour",
+      "Demolish & refund"
+    ],
+    "sliceScope": "5 buildings, abstract (no placement grid; the hub has a few plots): Farm plot (40 wood, 4 h, food with a farmer), Rain catcher (water/day, more in rain), Bunkhouse (+6 beds), Storage crates (+150 kg), Infirmary (+healing, needs Medicine 2 to staff). QueueBuild checks cost, max count and a skill req, deducts materials at start; each builder-hour adds hours × skill mult; done → BuildingCompleted. Cancel refunds all, demolish refunds half.",
+    "fullScope": "~85 building defs: plots by base size, general buildings with fittings (bunk beds, shelves 150 kg, lockers 100 kg), upgrade chains (crafting bench → workbench → master workbench needing Mechanics 2/5), stations (ammo bench, med station, machine shop), storage ladder to warehouse 6000 kg, tool and blueprint requirements, building materials and sheets, power, breakdowns and repairs, placement on the 500×500 base map, field works outside the walls.",
+    "protoRefs": [
+      "prototype/src/sim/buildings.js",
+      "prototype/src/sim/basestorage.js",
+      "docs/features/bases.md",
+      "docs/adr/0002-base-building.md"
+    ],
+    "tasks": {
+      "data": [
+        "content/buildings.json: id, name, cost{supply:n}, hours, max, req{skill:level}, effects[{kind, value}], artKey",
+        "BuildingInstance (defId, builtDay) and BuildJob (defId, hoursDone, hoursNeeded) runtime classes + save",
+        "Validation test: every cost supply id and effect kind exists"
+      ],
+      "backend": [
+        "Buildings.CanBuild(base, def) → ok or reason (cost, max, req, plots)",
+        "QueueBuild / CancelBuild / Demolish commands with refunds",
+        "ConstructionSystem.TickHour(base): sum builder output (base.work) into the front job; complete → add instance, publish BuildingCompleted",
+        "Effects.Sum(base, kind): beds, storageKg, waterPerDay, healBonus read by other systems",
+        "xUnit: cost deducted once, cancel refund, 2 builders finish in half the time, max respected"
+      ],
+      "ui": [
+        "Build tab: list of defs with cost, hours, effect, greyed with reason when not allowed; Queue button",
+        "Queue panel: progress bars, cancel; built list with Demolish"
+      ]
+    },
+    "dataModel": "public sealed record BuildingDef(string Id, string Name, Dictionary<string,int> Cost, float Hours, int Max, Dictionary<SkillId,int> Req, BuildingEffect[] Effects, string ArtKey);\npublic sealed record BuildingEffect(string Kind, float Value); // \"beds\", \"storageKg\", \"waterPerDay\", \"healBonus\", \"farmPlot\"\npublic sealed class BuildingInstance { public long Id; public string DefId = \"\"; public int BuiltDay; }\npublic sealed class BuildJob { public long Id; public string DefId = \"\"; public float HoursDone; }",
+    "dependsOn": [
+      "base.core",
+      "data.content",
+      "core.commands",
+      "core.clock"
+    ],
+    "connections": [
+      {
+        "to": "base.work",
+        "why": "the Build job turns survivors' hours into progress",
+        "how": "Scheduler hands ConstructionSystem the builders this hour; output uses Building skill mult",
+        "godot": "Queue progress bars update on HourTicked",
+        "unity": "Queue progress bars update on HourTicked"
+      },
+      {
+        "to": "econ.daily",
+        "why": "farm plots, rain catchers produce daily",
+        "how": "Daily production reads Effects.Sum(base, \"farmPlot\"/\"waterPerDay\")",
+        "godot": "Building tooltip shows yesterday's output",
+        "unity": "Building tooltip shows yesterday's output"
+      },
+      {
+        "to": "core.events",
+        "why": "completions show in the log and may raise cards",
+        "how": "Publish BuildingCompleted(baseId, defId)",
+        "godot": "Log panel appends on the bridged signal",
+        "unity": "Log panel appends on the bridged event"
+      },
+      {
+        "to": "ui.hub",
+        "why": "the Build tab is the player's way in",
+        "how": "UI lists ContentDb.Buildings with CanBuild reasons; sends QueueBuild",
+        "godot": "ItemList/VBox rows with disabled buttons + tooltip reason",
+        "unity": "ListView rows with SetEnabled(false) + tooltip reason"
+      }
+    ],
+    "godot": {
+      "approach": "Pure sim queue. The Build tab is a scroll list of rows (Label, cost Labels, Button); a disabled Button with TooltipText shows why. Placement on a grid comes later with base.basemap (TileMapLayer), so keep defs free of grid data for now.",
+      "keyApis": [
+        "ScrollContainer + VBoxContainer",
+        "Button.Disabled",
+        "ProgressBar",
+        "Control.TooltipText"
+      ],
+      "docs": [
+        {
+          "t": "Godot: User interface (UI)",
+          "u": "https://docs.godotengine.org/en/stable/tutorials/ui/index.html"
+        },
+        {
+          "t": "Godot: ProgressBar",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_progressbar.html"
+        },
+        {
+          "t": "Godot: Control (incl. drag & drop)",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_control.html"
+        }
+      ]
+    },
+    "unity": {
+      "approach": "UI Toolkit ListView of building rows from a UXML template; button SetEnabled(false) with a tooltip reason; a queue panel with ProgressBars. Grid placement (Tilemap) waits for base.basemap.",
+      "keyApis": [
+        "ListView + makeItem/bindItem",
+        "VisualElement.SetEnabled",
+        "ProgressBar"
+      ],
+      "docs": [
+        {
+          "t": "Unity: UIElements.ListView",
+          "u": "https://docs.unity3d.com/ScriptReference/UIElements.ListView.html"
+        },
+        {
+          "t": "Unity: UIElements.ProgressBar",
+          "u": "https://docs.unity3d.com/ScriptReference/UIElements.ProgressBar.html"
+        },
+        {
+          "t": "Unity: UI Toolkit",
+          "u": "https://docs.unity3d.com/Manual/UIElements.html"
+        }
+      ]
+    },
+    "learn": [
+      {
+        "t": "Game Programming Patterns: Type Object",
+        "u": "https://gameprogrammingpatterns.com/type-object.html"
+      },
+      {
+        "t": "Game Programming Patterns: Command",
+        "u": "https://gameprogrammingpatterns.com/command.html"
+      }
+    ],
+    "newb": [
+      "Effects as a small list of {kind, value} lets you add a new building by writing JSON only, as long as the effect kind already exists.",
+      "Always return a reason from CanBuild: the same string greys the button, explains the tooltip and tells the AI why it can't.",
+      "Deduct materials when the job starts (or reserve them) so two queued jobs cannot spend the same wood.",
+      "ADR 0002 in the repo is the prototype's own base-building decision record: read it before inventing your own placement rules."
+    ],
+    "pitfalls": [
+      "Starting with grid placement: it is a big UI job; the slice only needs a queue.",
+      "Completing jobs in the UI thread/frame rather than the sim tick.",
+      "Effects read by name with typos: validate effect kinds in a content test."
+    ],
+    "test": "xUnit: CanBuild reasons, queue order, progress per builder-hour, refunds, effects sum (bunkhouse → beds +6). Manual: queue a bunkhouse with 2 builders at 5×, watch progress, see beds rise and the log line on completion.",
+    "size": "M"
+  },
+  {
+    "id": "base.work",
+    "title": "Work assignment & job scheduler (slice: simple roles)",
+    "summary": "Each survivor at a base has one job (Build, Farm, Fetch water, Scavenge, Medic, Guard, Rest); every game-hour a scheduler decides what they actually do (sleep, rest if hurt, else their job) and job systems turn those hours into output.",
+    "whyHere": "Buildings, farming, water and healing all need 'who is working on what this hour'. It joins survivors, needs and health to the base's systems, so it comes after those cards.",
+    "subsystems": [
+      "Job definitions",
+      "AssignJob command",
+      "Hourly scheduler (sleep / rest / job)",
+      "Work factor (skill × condition)",
+      "Activity line (what & why)",
+      "Idle detection"
+    ],
+    "sliceScope": "One job per survivor from 7 roles in JSON. Hourly: sleep hours → asleep; Severe wound → rest; else on the job. Work factor = skill mult × health/tired/mood factors (e.g. Exhausted ×0.7). Job systems pull workers: ConstructionSystem (Build), farm (Farm), water (Fetch water), scavenging, Medical (Medic), Guard (alertness for later). Each survivor gets an activity line (\"Building bunkhouse\", \"Resting (wounded)\", \"Idle: nothing to build\"). An 'Assign idle' button picks the base's most urgent job.",
+    "fullScope": "RimWorld-style priorities: 19 work types with a 1–5 grid per role, role skill minimums, a 24-hour schedule per role (work/guard/free/sleep letters), emergencies (raiders → Guard, horde → hold limit), watch roster with shifts, no-idle helpers who keep their role, leaders and stewards, an idle planner by base need, the governor; job trips outside the walls.",
+    "protoRefs": [
+      "prototype/src/sim/work.js",
+      "prototype/src/sim/idlework.js",
+      "prototype/src/sim/sleep.js",
+      "docs/features/economy.md"
+    ],
+    "tasks": {
+      "data": [
+        "content/jobs.json: id, name, verb (\"Building\"), skill used, needs (e.g. Build needs a queued job), artKey",
+        "Survivor.JobId + runtime Activity (jobId, reason) + save"
+      ],
+      "backend": [
+        "AssignJob(survivorId, jobId) command with validation (at a base, alive)",
+        "WorkScheduler.TickHour(base): ordered rules (asleep → rest if hurt → job), producing Activity per survivor",
+        "WorkFactor(s): skill mult × NeedFactor × health factor (one function used by every job)",
+        "Job registry: IJobSystem { string JobId; bool HasWork(base); void Work(base, workers, hours) }",
+        "IdlePlanner.Suggest(base): rank needs (water short, food short, build queued) → job per idle survivor",
+        "xUnit: sleeping survivors produce nothing; wounded rest; idle when Build has no queue"
+      ],
+      "ui": [
+        "Work tab: one row per survivor with a job dropdown, skill for that job, and the activity line",
+        "'Assign idle' button with a preview list before applying"
+      ]
+    },
+    "dataModel": "public sealed record JobDef(string Id, string Name, string Verb, SkillId? Skill, string ArtKey);\npublic readonly record struct Activity(string JobId, string Reason);\npublic interface IJobSystem {\n  string JobId { get; }\n  bool HasWork(Base b, out string whyNot);\n  void Work(World w, Base b, IReadOnlyList<Survivor> workers, float hours);\n}",
+    "dependsOn": [
+      "surv.model",
+      "surv.needs",
+      "surv.health",
+      "base.core",
+      "core.clock",
+      "core.commands"
+    ],
+    "connections": [
+      {
+        "to": "base.buildings",
+        "why": "Build job drives construction progress",
+        "how": "ConstructionSystem implements IJobSystem for \"build\"",
+        "godot": "Work tab shows \"Building X (40%)\"",
+        "unity": "Work tab shows \"Building X (40%)\""
+      },
+      {
+        "to": "econ.daily",
+        "why": "farmers, water fetchers and scavengers produce what the day reports",
+        "how": "Job systems add to stock with ledger reasons; daily totals drive the end-of-day report",
+        "godot": "End-of-day panel groups output by job",
+        "unity": "End-of-day panel groups output by job"
+      },
+      {
+        "to": "surv.health",
+        "why": "Medic job treats; wounded rest",
+        "how": "Medical system implements IJobSystem \"medic\"; scheduler checks Health.IsSevere",
+        "godot": "Activity label \"Treating Ana\"",
+        "unity": "Activity label \"Treating Ana\""
+      },
+      {
+        "to": "ui.hub",
+        "why": "the Work tab is a hub screen",
+        "how": "UI sends AssignJob; reads Activity after HourTicked",
+        "godot": "OptionButton per row; ItemSelected → command",
+        "unity": "DropdownField per row; RegisterValueChangedCallback → command"
+      }
+    ],
+    "godot": {
+      "approach": "The scheduler is a sim function run on each game hour. The Work tab is a GridContainer (name | job OptionButton | skill | activity). OptionButton.ItemSelected sends AssignJob via SimHost; rows refresh on HourTicked.",
+      "keyApis": [
+        "GridContainer",
+        "OptionButton",
+        "Label",
+        "Signals"
+      ],
+      "docs": [
+        {
+          "t": "Godot: GridContainer",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_gridcontainer.html"
+        },
+        {
+          "t": "Godot: OptionButton",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_optionbutton.html"
+        },
+        {
+          "t": "Godot: C# signals",
+          "u": "https://docs.godotengine.org/en/stable/tutorials/scripting/c_sharp/c_sharp_signals.html"
+        }
+      ]
+    },
+    "unity": {
+      "approach": "A MultiColumnListView (name, job DropdownField, skill, activity). The dropdown's value-changed callback sends AssignJob; rows rebind on SimHost.HourTicked.",
+      "keyApis": [
+        "MultiColumnListView",
+        "DropdownField",
+        "RegisterValueChangedCallback"
+      ],
+      "docs": [
+        {
+          "t": "Unity: UIElements.MultiColumnListView",
+          "u": "https://docs.unity3d.com/ScriptReference/UIElements.MultiColumnListView.html"
+        },
+        {
+          "t": "Unity: UIElements.DropdownField",
+          "u": "https://docs.unity3d.com/ScriptReference/UIElements.DropdownField.html"
+        },
+        {
+          "t": "Unity: UI Toolkit events",
+          "u": "https://docs.unity3d.com/Manual/UIE-Events.html"
+        }
+      ]
+    },
+    "learn": [
+      {
+        "t": "Game Programming Patterns: State",
+        "u": "https://gameprogrammingpatterns.com/state.html"
+      },
+      {
+        "t": "Game Programming Patterns: Update Method",
+        "u": "https://gameprogrammingpatterns.com/update-method.html"
+      }
+    ],
+    "newb": [
+      "The scheduler is a tiny state machine: each hour a survivor is in one state (Asleep, Resting, Working, Idle) chosen by an ordered list of rules. Write the rules top-down; the first that matches wins.",
+      "Always store WHY with WHAT (Activity.Reason). Players forgive a lot when the game explains itself; the prototype shows a reason on every idle worker.",
+      "One WorkFactor function used by every job keeps tiredness, wounds and skill effects consistent.",
+      "Start with one job per person; the RimWorld priority grid (base.workgrid) can replace the job choice later without changing the IJobSystem side."
+    ],
+    "pitfalls": [
+      "Each job system checking sleep/health on its own: put those rules once in the scheduler.",
+      "Running job output per frame instead of per game-hour.",
+      "Silent idle workers: always surface idle with a reason."
+    ],
+    "test": "xUnit: rule order (asleep beats job; wounded rests), work factor values, idle reason when no build queued, IdlePlanner picks Fetch water when water < 2 days. Manual: put 2 people on Build with nothing queued → \"Idle: nothing to build\"; queue a building → they start next hour.",
+    "size": "M"
+  },
+  {
+    "id": "econ.daily",
+    "title": "Daily economy & upkeep (consumption, production)",
+    "summary": "The day-end pass for every base: production (farm food, rain and well water, wood, scavenged scrap), upkeep (heating wood in the cold), short rations when food runs low, and a report and forecast of days of food and water left.",
+    "whyHere": "This is where the slice's 'food, water, wood' loop closes, and it gives the player the numbers to plan expeditions. It needs the base, buildings, work and needs in place.",
+    "subsystems": [
+      "Day-end pipeline (ordered steps)",
+      "Production by job & building",
+      "Upkeep (heating)",
+      "Rationing rule",
+      "Daily report",
+      "Forecast (days left)",
+      "Shortage events"
+    ],
+    "sliceScope": "3 tracked goods: food, water, wood (+scrap from scavenging). At midnight per base: farm plots × farmers × skill → food (seasonless for the slice); rain catchers → water (×2 on a rain day from core.weather); fetch-water and wood jobs add their hours' output; heating burns wood per head below 0°C. Eating stays in surv.needs (hourly) and is only reported here. Under 7 days of food → short rations (60%) with a mood thought. Forecast = stock ÷ per-day use. Shortage warnings at 3 days → event/card.",
+    "fullScope": "Water production by wells/streams/rain with capacity, purification and the worm, summer evaporation and a summer water warning; farming by crop and season, winter's lean months; hunting, fishing, foraging and job trips; stations and crafting output; food lots spoiling by storage; supply lines and trade routes between bases; illness, recruits and hub events on the daily list; ledger charts.",
+    "protoRefs": [
+      "prototype/src/sim/economy.js",
+      "prototype/src/sim/upkeep.js",
+      "prototype/src/sim/needs.js",
+      "docs/features/economy.md"
+    ],
+    "tasks": {
+      "data": [
+        "content/economy.json: yields per worker-hour by job, per-building daily output, heating wood per head and temperature line, ration share (0.6) and trigger (7 days)",
+        "DailyReport record (per base, per supply: produced / used / by reason) kept for the last N days in the save"
+      ],
+      "backend": [
+        "EconomySystem.DayEnd(world): fixed, documented step order (produce → heat → ration check → report → warnings)",
+        "Production: one function per source reading building effects, workers and weather",
+        "Forecast(base, supply): uses the SAME rates as needs/upkeep (call the shared functions, never copy numbers)",
+        "Rationing toggle + thought; ShortageWarning event at ≤3 days",
+        "xUnit: a balanced 4-person base stays stable 7 days; no farmer → food forecast drops by 4/day; cold day burns wood"
+      ],
+      "ui": [
+        "End-of-day report popup (skippable): per supply in/out with reasons",
+        "Days-left chips on the hub header (Food 9d, Water 3d ⚠, Wood 20d)"
+      ]
+    },
+    "dataModel": "public sealed record DailyReport(int Day, int BaseId, Dictionary<string, SupplyFlow> Flows);\npublic sealed record SupplyFlow(int Start, int End, Dictionary<string,int> In, Dictionary<string,int> Out);\npublic interface IDailyStep { string Name { get; } void Run(World w, Base b, DayContext ctx); } // ordered list\npublic sealed record EconomyDef(float RationShare, int RationBelowDays, float HeatWoodPerHead, float ColdBelowC);",
+    "dependsOn": [
+      "base.core",
+      "base.buildings",
+      "base.work",
+      "surv.needs",
+      "core.clock",
+      "core.weather"
+    ],
+    "connections": [
+      {
+        "to": "core.clock",
+        "why": "runs once per game day in a fixed order",
+        "how": "Clock fires DayEnded; EconomySystem is registered as a daily system before cards",
+        "godot": "SimHost emits day_ended after the sim step",
+        "unity": "SimHost raises DayEnded after the sim step"
+      },
+      {
+        "to": "core.weather",
+        "why": "rain fills catchers, cold burns wood",
+        "how": "Reads Weather.Today(world) (temperature, rain) when producing/heating",
+        "godot": "Weather icon in the report",
+        "unity": "Weather icon in the report"
+      },
+      {
+        "to": "core.cards",
+        "why": "shortages raise decision cards",
+        "how": "Publishes ShortageWarning(baseId, supply, daysLeft); card system decides",
+        "godot": "Card popup pauses time",
+        "unity": "Card popup pauses time"
+      },
+      {
+        "to": "ui.cards",
+        "why": "the end-of-day report and warnings are shown to the player",
+        "how": "DailyReport stored on the base; UI reads latest after DayEnded",
+        "godot": "PopupPanel with a Tree of flows",
+        "unity": "Modal UIDocument with MultiColumnListView"
+      }
+    ],
+    "godot": {
+      "approach": "The economy runs in the sim; Godot shows its result. On day_ended SimHost opens a report PopupPanel (Tree rows: supply, in, out, reasons) unless the player turned it off; the hub header Labels show days left.",
+      "keyApis": [
+        "PopupPanel",
+        "Tree",
+        "Label",
+        "Signals"
+      ],
+      "docs": [
+        {
+          "t": "Godot: Tree",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_tree.html"
+        },
+        {
+          "t": "Godot: C# signals",
+          "u": "https://docs.godotengine.org/en/stable/tutorials/scripting/c_sharp/c_sharp_signals.html"
+        },
+        {
+          "t": "Godot: User interface (UI)",
+          "u": "https://docs.godotengine.org/en/stable/tutorials/ui/index.html"
+        }
+      ]
+    },
+    "unity": {
+      "approach": "A ReportPanel UIDocument shown on SimHost.DayEnded with a MultiColumnListView of flows; header chips bind to forecast values. All numbers come from the sim's DailyReport, none computed in UI.",
+      "keyApis": [
+        "UIDocument",
+        "MultiColumnListView",
+        "Label",
+        "C# events"
+      ],
+      "docs": [
+        {
+          "t": "Unity: UIElements.MultiColumnListView",
+          "u": "https://docs.unity3d.com/ScriptReference/UIElements.MultiColumnListView.html"
+        },
+        {
+          "t": "Unity: UI Toolkit",
+          "u": "https://docs.unity3d.com/Manual/UIElements.html"
+        },
+        {
+          "t": "Unity: UI Toolkit events",
+          "u": "https://docs.unity3d.com/Manual/UIE-Events.html"
+        }
+      ]
+    },
+    "learn": [
+      {
+        "t": "Game Programming Patterns: Update Method",
+        "u": "https://gameprogrammingpatterns.com/update-method.html"
+      },
+      {
+        "t": "Game Programming Patterns: Event Queue",
+        "u": "https://gameprogrammingpatterns.com/event-queue.html"
+      }
+    ],
+    "newb": [
+      "Write the day-end as an explicit ordered list of steps. Order matters (produce before eat? heat before ration check?) and an explicit list makes it visible and testable.",
+      "Forecasts must call the same functions as the real consumption; the prototype's comments stress this ('so the stores and every forecast agree').",
+      "Balance with a headless test: simulate 30 days of a 4-person base with no input and print the stock curve. That is your first balance tool (meta.balance grows from it)."
+    ],
+    "pitfalls": [
+      "Double-counting food: hourly eating in needs AND a daily upkeep subtraction here.",
+      "Random production with the global RNG: use the economy's own stream so a new feature doesn't shift harvests.",
+      "Too many goods in the slice: 3 is plenty to learn from."
+    ],
+    "test": "xUnit: a 7-day golden run for seed X matches a stored stock table; ration trigger at <7 days; heating only below the line. Manual: play 7 days at 5×, read the daily reports; remove the farmer and watch the food forecast fall and the warning card appear.",
+    "size": "M"
+  },
+  {
+    "id": "gear.loot",
+    "title": "Loot tables & containers",
+    "summary": "What can be found where: weighted loot tables in JSON, container kinds (kitchen cabinet, locker, desk, car trunk) that point to tables, and a seeded roller that fills a container once, the first time it is opened.",
+    "whyHere": "POIs, raid maps and search actions all need loot; it sits just before battles so the slice's 'search containers, extract with loot' works. It needs items, weapons and the RNG.",
+    "subsystems": [
+      "LootTable content (weighted, nested)",
+      "Container kinds",
+      "Seeded roll-once",
+      "Theme tags",
+      "Container contents & take-out",
+      "Loot audit test"
+    ],
+    "sliceScope": "4 tables (house kitchen, house bedroom, garage, police car) and 5 container kinds, used by the slice's one building template. Entries: item or supply id, weight or chance, min–max count, or a nested table. Roll on first search with an RNG stream seeded from (world seed, POI id, container id), store the result; re-opening never re-rolls. Contents move to survivors via MoveItem. An audit test checks every slice item is findable and every table entry exists.",
+    "fullScope": "Site-type loot pools and per-container tables (gun racks, evidence lockers, ammo crates, fire engines…) with theme tags checked over 100 buildings a kind (±10%), small 'finds' rolled separately, gun distribution tables by site, blades/tools/helmets on their own dice, item condition by source, lock boxes opened with the right tool, 18% of plain dead carrying a former survivor's kit, Hardcore's scarce loot, hour-by-hour abstract scavenging with Heat, shared finite loot AI groups also take.",
+    "protoRefs": [
+      "prototype/src/sim/loot.js",
+      "prototype/src/sim/raidloot.js",
+      "prototype/src/sim/containers.js",
+      "docs/features/gear.md"
+    ],
+    "tasks": {
+      "data": [
+        "content/loot_tables.json: id, rolls (min–max), entries [{item|supply|table, weight, min, max}]",
+        "content/containers.json: kind, name, table id, search AP cost, artKey",
+        "Tags on items and tables (\"kitchen\", \"garage\", \"police\") for the audit",
+        "ContainerState runtime (rolled bool, contents) on the battle map / POI + save"
+      ],
+      "backend": [
+        "LootRoller.Roll(table, Rng): weighted pick, nested tables, count ranges; pure function",
+        "Rng stream per container: Rng.For(worldSeed, poiId, containerId) → deterministic, reload-safe",
+        "Container.OpenOrSearch(): roll once, then expose contents as an ItemLocation for MoveItem",
+        "LootAudit: every item in a slice table exists; every slice item has a source; table tags match container tags",
+        "xUnit: 10k rolls match weights within tolerance; same seed same contents; second open does not re-roll"
+      ],
+      "ui": [
+        "Search window: container contents list beside the survivor's inventory; Take / Take all",
+        "Dev overlay: show a container's table id and rolled contents (debug only)"
+      ]
+    },
+    "dataModel": "public sealed record LootTable(string Id, int RollsMin, int RollsMax, LootEntry[] Entries, string[] Tags);\npublic sealed record LootEntry(string? ItemId, string? SupplyId, string? TableId, float Weight, int Min = 1, int Max = 1);\npublic sealed record ContainerDef(string Kind, string Name, string TableId, int SearchAp, string ArtKey);\npublic sealed class ContainerState { public string Kind = \"\"; public bool Rolled; public List<ItemInstance> Items = new(); public Dictionary<string,int> Supplies = new(); }",
+    "dependsOn": [
+      "gear.items",
+      "gear.weapons",
+      "data.content",
+      "data.rng"
+    ],
+    "connections": [
+      {
+        "to": "travel.pois",
+        "why": "a POI type says which containers/tables it holds",
+        "how": "PoiDef lists container kinds or a loot pool table id; the battle map places them",
+        "godot": "POI info panel lists likely finds by tag",
+        "unity": "POI info panel lists likely finds by tag"
+      },
+      {
+        "to": "combat.actions",
+        "why": "the Search action opens a container in battle",
+        "how": "SearchAction costs ContainerDef.SearchAp and calls OpenOrSearch; noise optional",
+        "godot": "Clicking a container node sends Search command; search window opens on ContainerOpened signal",
+        "unity": "Click on container sends Search; window opens on ContainerOpened event"
+      },
+      {
+        "to": "ui.inventory",
+        "why": "players move loot by hand into pockets and packs",
+        "how": "Container exposes ItemLocation.Container(id); MoveItem works on it",
+        "godot": "Two-panel drag & drop window",
+        "unity": "Two-panel drag & drop window"
+      },
+      {
+        "to": "combat.resolve",
+        "why": "what was carried out goes home",
+        "how": "Survivor inventories and party cargo are already updated by MoveItem; resolve just moves cargo to base",
+        "godot": "Results screen lists loot",
+        "unity": "Results screen lists loot"
+      }
+    ],
+    "godot": {
+      "approach": "Sim-only rolling. In the battle scene each container is a node (Area2D or clickable Sprite) holding its container id; clicking sends a Search command through SimHost and the search window opens on the ContainerOpened signal. Loot tables are not Godot Resources: they stay JSON for the sim.",
+      "keyApis": [
+        "Area2D / input_event",
+        "ItemList",
+        "Window / PopupPanel",
+        "Signals"
+      ],
+      "docs": [
+        {
+          "t": "Godot: ItemList",
+          "u": "https://docs.godotengine.org/en/stable/classes/class_itemlist.html"
+        },
+        {
+          "t": "Godot: C# signals",
+          "u": "https://docs.godotengine.org/en/stable/tutorials/scripting/c_sharp/c_sharp_signals.html"
+        },
+        {
+          "t": "Godot: User interface (UI)",
+          "u": "https://docs.godotengine.org/en/stable/tutorials/ui/index.html"
+        }
+      ]
+    },
+    "unity": {
+      "approach": "Each container in the battle view is a GameObject with a small ContainerView MonoBehaviour storing the id; clicks send Search via SimHost; the search window is a UI Toolkit panel listing contents. Do not use ScriptableObjects for loot tables, keep them in JSON shared with tests.",
+      "keyApis": [
+        "MonoBehaviour",
+        "Physics2D raycast / OnMouseDown",
+        "UI Toolkit ListView"
+      ],
+      "docs": [
+        {
+          "t": "Unity: MonoBehaviour",
+          "u": "https://docs.unity3d.com/ScriptReference/MonoBehaviour.html"
+        },
+        {
+          "t": "Unity: UIElements.ListView",
+          "u": "https://docs.unity3d.com/ScriptReference/UIElements.ListView.html"
+        },
+        {
+          "t": "Unity: UI Toolkit",
+          "u": "https://docs.unity3d.com/Manual/UIElements.html"
+        }
+      ]
+    },
+    "learn": [
+      {
+        "t": "Red Blob Games: Damage rolls",
+        "u": "https://www.redblobgames.com/articles/probability/damage-rolls.html"
+      },
+      {
+        "t": "System.Text.Json overview",
+        "u": "https://learn.microsoft.com/en-us/dotnet/standard/serialization/system-text-json/overview"
+      }
+    ],
+    "newb": [
+      "Weighted random: sum the weights, roll 0..sum, walk the list until you pass the roll. Nested tables (an entry that points to another table) give you 'a random gun' without copying gun lists everywhere.",
+      "Roll once and store: if contents were re-rolled on every open, save-scumming and reloading would change loot. Seeding by (world, POI, container) makes it reproducible even before it is rolled.",
+      "Theme tags plus an automated audit is how the prototype keeps 'no military radios in a pharmacy' true across hundreds of tables. Start the audit test in the slice while tables are small."
+    ],
+    "pitfalls": [
+      "Using the world's main RNG for loot: every new roll elsewhere changes all loot (determinism tests break).",
+      "Item ids typed by hand in tables with no validation: one typo is an empty drop. Validate on load.",
+      "Generous slice loot: tune scarcity early or the economy has no pressure."
+    ],
+    "test": "xUnit: distribution within ±2% over 10k rolls, nested table resolution, deterministic per-container seed, roll-once, audit passes. Manual: raid the slice building twice from the same save: identical contents; search a container, take a pistol and 9mm box into pockets, extract, see it in the base armory.",
+    "size": "M"
+  }
+]

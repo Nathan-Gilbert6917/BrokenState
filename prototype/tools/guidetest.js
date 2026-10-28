@@ -12,12 +12,13 @@
 // - options: the new-run box on for the first campaign only, guideSeen kept; the new-run screen and the menu's row
 // - new things: the first window of a kind gets a note over it (#guidetip), the first alert of a kind a line on the card,
 //   each once; their Help topics exist
-// - Help: "Start here" first, its links lead to topics that exist; README and main.js hooks
+// - Help: "Start here" first, its links lead to topics that exist; How to play: a few short pages first, the Reference
+//   folded by area (one open: the topic's, or the one help-group picked); README and main.js hooks
 import { food, setFood, addDays, clearFood, jarred, setJarred, kindsOf } from "./foodkit.js"; // days of food by type (sim/foods.js)
 import { readFileSync } from "node:fs";
 import { createWorld, tickHour, hub, day, alive } from "../src/sim/world.js";
 import { launchExpedition, startReturn, partyTile, partyMembers, giveOrder } from "../src/sim/parties.js";
-import { queueBuild, BUILDINGS, canBuild, tierUpJob, tierUpType } from "../src/sim/buildings.js";
+import { queueBuild, BUILDINGS, CAMP, canBuild, tierUpJob, tierUpType } from "../src/sim/buildings.js";
 import { newItem } from "../src/sim/inventory.js";
 import { putBack } from "../src/sim/deadpop.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
@@ -27,7 +28,7 @@ import { WORK_ACTIONS } from "../src/ui/work.js";
 import { renderModal, renderRight, renderLeft, topbarParts } from "../src/ui/ui.js";
 import { newRunScreen } from "../src/ui/newgame.js";
 import { settingsModal, openSettings, SETTINGS_ACTIONS } from "../src/ui/settings.js";
-import { helpTopics, helpTab } from "../src/ui/help.js";
+import { helpTopics, helpTab, HELP_GROUPS } from "../src/ui/help.js";
 import { addCard } from "../src/sim/world.js";
 import { loadOptions, saveOptions } from "../src/ui/saves.js";
 import {
@@ -558,6 +559,32 @@ section("Help: Start here; README and main.js");
   check(links.length >= 8 && links.every((id) => ids.has(id)), `its links lead to topics that exist (${links.filter((id) => !ids.has(id)).join(", ") || links.length + " links"})`);
   check(["bases", "teams", "state map", "card", "win", "lose"].every((w) => start.html.toLowerCase().includes(w)), "it covers bases, teams, the State Map, cards, winning and losing");
   check(clean(start.html), "clean");
+  // How to play (the user's request 2026-10-28: "helpful to new players and not a long book"): a few short pages first.
+  const strip = (h) => h.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+  const how = topics.filter((t) => t.group === "how");
+  check(how.length >= 5 && how.length <= 8 && topics.slice(0, how.length).every((t) => t.group === "how"), `How to play: ${how.length} pages, before the Reference`);
+  check(how.every((t) => strip(t.html).length < 1600 && clean(t.html)), `each page is short (${how.map((t) => strip(t.html).length).join(", ")} characters)`);
+  check(how.every((t) => [...t.html.matchAll(/data-sec="([^"]+)"/g)].every((m) => ids.has(m[1]))), "their links lead to topics that exist");
+  // Raiding in the first week (the user's request 2026-10-28: "Add raiding for your first week help to find supplies to build you base shelter and defenses").
+  const raid = how.find((t) => t.id === "raiding-for-supplies"), week = how.find((t) => t.id === "your-first-week");
+  const shackScrap = BUILDINGS.camp_up.cost.scrap + BUILDINGS.camp_up.cost.buildmat * CAMP.matScrap;
+  check(!!raid && /Scavenge \/ raid/.test(raid.html) && strip(raid.html).includes(`${shackScrap} scrap in all`) && /Defenses/.test(raid.html) && /wall stand/.test(raid.html), `Raiding for supplies: how to raid, the shack's ${shackScrap} scrap and the defenses'`);
+  check(!!week && /data-sec="raiding-for-supplies"/.test(week.html) && /data-sec="raiding-for-supplies"/.test(start.html), "Your first week and Start here point at it");
+  check(topics.every((t) => t.group === "how" || HELP_GROUPS.some(([g]) => g === t.group)), `every Reference topic is in an area (${topics.filter((t) => t.group === "more").map((t) => t.id).join(", ") || "none left over"})`);
+  const nav = (h) => h.split('<div class="helpbody">')[0];
+  const shown = (h) => [...nav(h).matchAll(/data-action="set-help" data-sec="([^"]+)"/g)].map((m) => m[1]);
+  const first = shown(helpTab(""));
+  check(first.length === how.length && how.every((t) => first.includes(t.id)) && (nav(helpTab("")).match(/data-action="help-group"/g) || []).length === HELP_GROUPS.length, `Help opens with the pages listed and the Reference's ${HELP_GROUPS.length} areas folded`);
+  const atLayers = shown(helpTab("map-layers"));
+  check(atLayers.includes("map-legend") && !atLayers.includes("battles") && /data-g="map" aria-expanded="true"/.test(helpTab("map-layers")), "a Reference topic shows its own area open, the others folded");
+  const u = { started: true, settings: null };
+  SETTINGS_ACTIONS["help-open"](null, u, { sec: "map-layers" });
+  SETTINGS_ACTIONS["help-group"](null, u, { g: "fights" });
+  check(u.settings.helpGroup === "fights" && shown(helpTab(u.settings.help, u.settings.helpGroup)).includes("battles"), "help-group opens another area");
+  SETTINGS_ACTIONS["help-group"](null, u, { g: "fights" });
+  check(u.settings.helpGroup === "" && shown(helpTab(u.settings.help, u.settings.helpGroup)).length === how.length, "and again folds it");
+  SETTINGS_ACTIONS["set-help"](null, u, { sec: "battles" });
+  check(u.settings.helpGroup === null && /data-g="fights" aria-expanded="true"/.test(helpTab(u.settings.help, u.settings.helpGroup)), "picking a topic opens its area");
   const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8");
   check(/First-week guide/.test(readme) && /Start here/.test(readme) && /guidetest/.test(readme), "the README describes the guide, Start here and this test");
   const main = readFileSync(new URL("../src/main.js", import.meta.url), "utf8");

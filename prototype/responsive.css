@@ -177,6 +177,9 @@
   /* The strip's chips: the icon over a small name (six fit across a 390px screen). */
   #rs-hud .rs-hc { flex-direction: column; gap: 0.1rem; min-height: 2.9rem; padding: 0.2rem 0.15rem; font-size: 0.62rem; }
   #rs-hud .rs-ic { font-size: 1.1rem; }
+  /* Help (ui/help.js helpTab): the topic list over the page, not beside it, so the page keeps the screen's width. */
+  #modal .settings .helpwrap { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); height: calc(100dvh - 8.5rem - env(safe-area-inset-bottom)); }
+  #modal .settings .helpnav { max-height: 32dvh; border-right: none; border-bottom: 1px solid var(--line); padding: 0 0 0.4rem; }
 }
 
 /* On its side, a phone has width to spare and little height: the dock stands at the map's right edge. */

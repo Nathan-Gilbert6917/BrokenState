@@ -1,0 +1,1965 @@
+[
+ {
+  "id": "meta.modes",
+  "title": "Game modes & world configuration",
+  "summary": "The new-run choices: Normal (road start), Hardcore (Ironman, scarce, harsher), Crashlanding (a scripted lone-survivor scenario) and Custom (hub start with your own counts), plus the World… dials that scale hunger, loot, the dead, raids and more.",
+  "whyHere": "Modes are mostly multipliers and start recipes over systems that must already exist (map gen, bases, groups, hives), so they come once the full game is in; they also give balance runs (meta.balance) their test matrix.",
+  "subsystems": [
+   "Mode definitions",
+   "World dials (cfgOf)",
+   "Hardcore rule set",
+   "Start recipes (road / hub / crash)",
+   "Custom counts",
+   "Presets",
+   "New-run screen"
+  ],
+  "sliceScope": "One ModeDef record with a handful of dials (hunger, loot, deadCount, raidRate) read through a single Cfg(key) helper, Normal and Hardcore presets, and an Ironman flag that the save system honours.",
+  "fullScope": "Normal and Hardcore start on the road (crew 1–8 / 1–4, a car, tents); Hardcore is always Ironman, heals slower, loots a quarter to a half less and has a threat director. Crashlanding: year 3, a 300 × 200 map, one survivor, no base or car, a bunker reveal. Custom: survivors 1–30, groups 1–50, hives 1–50, cities 1–12, towns 1–60. About 20 World… dials, each read at exactly one place in the sim.",
+  "protoRefs": [
+   "prototype/src/sim/worldcfg.js",
+   "prototype/src/sim/hardrules.js",
+   "prototype/src/sim/custommode.js",
+   "prototype/src/sim/crashmode.js",
+   "docs/features/campaign.md"
+  ],
+  "tasks": {
+   "data": [
+    "content/modes/*.json: one file per mode (id, startRecipe, ironman, keepPlayingAllowed, dial multipliers, map size preset)",
+    "WorldDials schema: every dial's id, min/max/default and which system reads it; a test fails if a dial is unused",
+    "Custom count limits (MIN/MAX/DEF per count) and named presets (Gentle, Standard, Brutal)",
+    "Crashlanding scenario data: crash site rules, target bunker, scripted stages and their flags"
+   ],
+   "backend": [
+    "WorldConfig on the World (saved); Cfg(world, key) helper so each rate is scaled in one place only",
+    "StartRecipe strategy per mode: RoadStart, HubStart, CrashStart, each building the initial World from the same seed",
+    "Hardcore rule hooks: heal-speed share, infection penalty, threat director multiplier, forecast off",
+    "Ironman: one save slot, autosave on quit, delete on death (talks to data.save)",
+    "Tests: each mode creates a valid world on 20 seeds; dials at 1 reproduce Normal's golden hash"
+   ],
+   "ui": [
+    "New-run screen: mode dropdown, size, seed, vehicle toggle, a World… window of sliders with presets",
+    "Mode badge in the top bar and on save slots"
+   ]
+  },
+  "dataModel": "public enum StartKind { Road, Hub, Crash }\npublic sealed record ModeDef(string Id, StartKind Start, bool Ironman,\n  bool KeepPlaying, IReadOnlyDictionary<string,float> Dials);\npublic sealed class WorldConfig {\n  public string ModeId = \"normal\";\n  public Dictionary<string,float> Dials = new();\n  public CustomCounts? Custom;\n  public float Get(string key) => Dials.TryGetValue(key, out var v) ? v : 1f;\n}",
+  "dependsOn": [
+   "core.mapgen",
+   "world.mapgen",
+   "base.tiers",
+   "data.save",
+   "ui.menus"
+  ],
+  "connections": [
+   {
+    "to": "world.mapgen",
+    "why": "Size presets and Custom's city/town/military counts drive generation",
+    "how": "MapGenRequest(seed, size, counts) built from WorldConfig; mapgen never reads the mode itself",
+    "godot": "The new-run Control fills a request and calls SimHost.NewGame(request) on a worker Task while a 'Generating map…' popup spins",
+    "unity": "NewGameScreen (UI Toolkit) calls SimHost.NewGame(request) via Task.Run, awaiting on the main thread"
+   },
+   {
+    "to": "data.save",
+    "why": "The config is part of the run; Ironman changes how saving works",
+    "how": "WorldConfig is serialized inside World; SaveService checks Ironman before allowing manual slots",
+    "godot": "Save menu greys out slots when SimHost.World.Config.Ironman",
+    "unity": "Save panel binds its enabled state to SimHost.World.Config.Ironman"
+   },
+   {
+    "to": "meta.balance",
+    "why": "Every mode × dial preset is a balance run configuration",
+    "how": "Headless runner takes a ModeDef id and dial overrides on the command line",
+    "godot": "Not needed: balance runs are dotnet console runs",
+    "unity": "Not needed: balance runs are dotnet console runs"
+   },
+   {
+    "to": "meta.victory",
+    "why": "Hardcore disables 'Keep playing'; Crashlanding has its own ending",
+    "how": "VictorySystem reads ModeDef.KeepPlaying and registers mode-specific end conditions",
+    "godot": "End screen hides the Keep playing button",
+    "unity": "End screen hides the Keep playing button"
+   }
+  ],
+  "godot": {
+   "approach": "Mode JSON stays in content/ and is loaded by ContentDb; the engine side is only the new-run screen. Build it as a Control scene with OptionButton, SpinBox and HSlider nodes generated from the dial schema, so a new dial appears without UI code. Run world generation off the main thread and show progress.",
+   "keyApis": [
+    "OptionButton",
+    "HSlider / SpinBox",
+    "Task.Run + CallDeferred",
+    "Control scene",
+    "ConfigFile (remember last settings)"
+   ],
+   "docs": [
+    {
+     "t": "Using containers (UI layout)",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/ui/gui_containers.html"
+    },
+    {
+     "t": "Using multiple threads",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/performance/using_multiple_threads.html"
+    },
+    {
+     "t": "ConfigFile",
+     "u": "https://docs.godotengine.org/en/stable/classes/class_configfile.html"
+    }
+   ]
+  },
+  "unity": {
+   "approach": "Same JSON definitions; the new-run screen is a UI Toolkit document whose slider rows are generated from the dial schema at runtime. Optionally mirror presets as ScriptableObjects for designers, but keep JSON as the source of truth so the sim tests see them.",
+   "keyApis": [
+    "UI Toolkit (UIDocument, SliderInt, DropdownField)",
+    "ScriptableObject",
+    "Task / Awaitable"
+   ],
+   "docs": [
+    {
+     "t": "UI Toolkit",
+     "u": "https://docs.unity3d.com/Manual/UIElements.html"
+    },
+    {
+     "t": "ScriptableObject",
+     "u": "https://docs.unity3d.com/Manual/class-ScriptableObject.html"
+    },
+    {
+     "t": "Awaitable",
+     "u": "https://docs.unity3d.com/ScriptReference/Awaitable.html"
+    }
+   ]
+  },
+  "learn": [
+   {
+    "t": "Game Programming Patterns: Type Object",
+    "u": "https://gameprogrammingpatterns.com/type-object.html"
+   }
+  ],
+  "newb": [
+   "A 'mode' should be data, not a pile of if (hardcore) checks: a record of multipliers and a start recipe, read in one place per rule.",
+   "The Strategy pattern fits start recipes: one interface (IStartRecipe.Build(world, rng)) with three implementations.",
+   "Keep every dial at 1.0 equal to Normal, so a golden test proves the config layer changed nothing.",
+   "Custom is not a separate mode in the prototype: it is a hub start plus counts. Fewer modes means fewer code paths to test."
+  ],
+  "pitfalls": [
+   "Reading the mode in dozens of places: the prototype funnels every rate through cfgOf at the single point it is applied.",
+   "Letting a dial reorder RNG calls (e.g. skipping a roll when a car is off) changes the whole map; roll first, then discard.",
+   "Unbounded Custom counts: the prototype caps them because each extra group or hive costs every hour."
+  ],
+  "test": "xUnit: each mode builds a valid world on many seeds; all dials = 1 matches Normal's golden digest; Ironman refuses a second slot. Manual: start each mode, check the start (road/hub/crash) and that a hunger dial of 2 visibly doubles food use in the ledger.",
+  "size": "M"
+ },
+ {
+  "id": "meta.victory",
+  "title": "Victories, eras, outbreak & threat forecast",
+  "summary": "How a campaign ends and escalates: two victories (destroy every hive once the outbreak beyond the border burns out, or win with the Calder Coalition), three eras that grow the threats each year, the border outbreak that keeps hives alive, and a 7-day threat meter.",
+  "whyHere": "It ties together hives, hordes, groups and diplomacy, so it can only be written once those exist; it is what turns a sandbox into a campaign with a shape.",
+  "subsystems": [
+   "Era calendar & growth curves",
+   "Outbreak beyond the border",
+   "Victory & defeat checks",
+   "Keep playing",
+   "Threat forecast aggregator",
+   "End screens"
+  ],
+  "sliceScope": "A GameOverCheck run at the daily tick: defeat when nobody is alive, and one victory (every hive destroyed); an era lookup by year that scales horde size; an end screen with the run's numbers.",
+  "fullScope": "Eras: early (years 1–4), mid (5–9, hive tech tier 2), late (10+), threats growing from year 3; a year is 112 days. The outbreak keeps at least 2 hives (1 from year 8) by sending ~1,100 dead to build one, until it burns out in a seeded year 11–14. Coalition victory at 60% of the land. The forecast sums weather, hordes' drift, heard raids, food/water/fuel outlooks, illness and wars over 7 days, with a cause list on hover.",
+  "protoRefs": [
+   "prototype/src/sim/eras.js",
+   "prototype/src/sim/outbreak.js",
+   "prototype/src/sim/forecast.js",
+   "prototype/tools/wincensus.js",
+   "docs/agents/features.md"
+  ],
+  "tasks": {
+   "data": [
+    "content/eras.json: era boundaries, per-year growth (horde size, raid strength, hive income), GROW_FROM",
+    "Outbreak config: hive floor by year, gather delay 20–40 days, burn-out year range",
+    "Victory definitions: id, condition kind, thresholds (coalition land share), allowed in which modes",
+    "Forecast source list: each source's id, weight, icon key and text template"
+   ],
+   "backend": [
+    "EraSystem: Era EraOf(day), float Growth(kind, year); every threat system asks it instead of hard-coding",
+    "OutbreakSystem daily: count hives + build sites, schedule a border mass when under the floor; seeded burn-out year",
+    "VictorySystem daily: check defeat, hive victory (requires outbreak over), coalition victory; raise GameEnded event once; KeepPlaying resumes",
+    "ThreatForecast(world, days): pure function reusing each system's own estimate (never a new rule), returns level + causes",
+    "Census test: run N headless campaigns and assert endings fall in the intended years (shares the meta.balance runner)"
+   ],
+   "ui": [
+    "Top-bar forecast meter with a cause tooltip",
+    "Goals panel: era, border status, hives left, coalition share",
+    "Victory / defeat screens with Keep playing and the run summary"
+   ]
+  },
+  "dataModel": "public enum Era { Early, Mid, Late }\npublic enum Ending { HiveVictory, Coalition, Reunited, Defeat }\npublic sealed record EraDef(Era Era, int FromYear, float HordeGrowth, float RaidGrowth);\npublic sealed record ForecastCause(string SourceId, float Severity, int Day, string Text);\npublic sealed record Forecast(float Level, IReadOnlyList<ForecastCause> Causes);\npublic sealed class CampaignState { public int OutbreakEndsYear; public Ending? Ended; public bool KeptPlaying; }",
+  "dependsOn": [
+   "core.clock",
+   "core.events",
+   "dead.hives",
+   "dead.hordes",
+   "groups.diplomacy",
+   "world.weather"
+  ],
+  "connections": [
+   {
+    "to": "dead.hives",
+    "why": "The hive victory and the outbreak both count and create hives",
+    "how": "OutbreakSystem calls HiveSystem.CreateBuildSite(tile, deadCount); VictorySystem queries HiveSystem.AllSecured()",
+    "godot": "HiveDestroyed signal from SimHost updates the Goals panel",
+    "unity": "SimHost.HiveDestroyed C# event updates the Goals panel"
+   },
+   {
+    "to": "groups.diplomacy",
+    "why": "The coalition victory reads alliance membership and land share",
+    "how": "IAllianceQuery.LandShare(world) consumed by VictorySystem",
+    "godot": "Goals panel polls a view model on DayPassed",
+    "unity": "Goals panel refreshes on SimHost.DayPassed"
+   },
+   {
+    "to": "meta.history",
+    "why": "An ending writes a hall of fame entry and achievements",
+    "how": "GameEnded(Ending, day) domain event; HallOfFame builds its entry from it",
+    "godot": "Autoload listens to GameEnded and writes user:// hall file",
+    "unity": "HallOfFameService listens to GameEnded and writes persistentDataPath"
+   },
+   {
+    "to": "audio.all",
+    "why": "Endings and crisis levels drive music states",
+    "how": "Forecast.Level and GameEnded exposed read-only to the music director",
+    "godot": "MusicDirector node reads SimHost each 0.5 s",
+    "unity": "MusicDirector MonoBehaviour reads SimHost each 0.5 s"
+   }
+  ],
+  "godot": {
+   "approach": "All logic is in the sim. Godot shows a meter (TextureProgressBar) with a tooltip built from Forecast.Causes, a Goals panel, and end screens swapped in by the scene manager when the GameEnded signal fires.",
+   "keyApis": [
+    "TextureProgressBar",
+    "Control.tooltip_text / _MakeCustomTooltip",
+    "Signals",
+    "SceneTree.change_scene_to_packed"
+   ],
+   "docs": [
+    {
+     "t": "Using signals",
+     "u": "https://docs.godotengine.org/en/stable/getting_started/step_by_step/signals.html"
+    },
+    {
+     "t": "Control (tooltips)",
+     "u": "https://docs.godotengine.org/en/stable/classes/class_control.html"
+    },
+    {
+     "t": "TextureProgressBar",
+     "u": "https://docs.godotengine.org/en/stable/classes/class_textureprogressbar.html"
+    }
+   ]
+  },
+  "unity": {
+   "approach": "Same sim; a UI Toolkit ProgressBar plus a tooltip panel, and end screens shown by a screen manager on the SimHost.GameEnded event.",
+   "keyApis": [
+    "UI Toolkit ProgressBar",
+    "C# events",
+    "SceneManager"
+   ],
+   "docs": [
+    {
+     "t": "UI Toolkit",
+     "u": "https://docs.unity3d.com/Manual/UIElements.html"
+    },
+    {
+     "t": "SceneManager",
+     "u": "https://docs.unity3d.com/ScriptReference/SceneManagement.SceneManager.html"
+    }
+   ]
+  },
+  "learn": [],
+  "newb": [
+   "Escalation as data: eras are a table of growth numbers by year, so tuning the late game is editing JSON and re-running the census.",
+   "The forecast is an aggregator, not a predictor: it asks each system for its own estimate, so it can never disagree with what really happens.",
+   "Raise GameEnded once and latch it; a check that fires every day after the win spams endings.",
+   "A 'floor' mechanic (the outbreak) keeps the game from being won too early by accident; it is a pacing tool, not a story beat."
+  ],
+  "pitfalls": [
+   "Victory checks that touch RNG change the run; make them read-only.",
+   "Forgetting Keep playing: after a win the systems must keep ticking and a second, different ending must still be recordable.",
+   "Tuning eras by feel: use the census runs (meta.balance) to see when campaigns actually end."
+  ],
+  "test": "xUnit: scripted worlds hit each ending exactly once; the hive victory is blocked while the outbreak burns; forecast causes match injected threats. Census: 30+ autopilot campaigns end mostly in years 10–15. Manual: watch the meter rise as a horde drifts toward the base.",
+  "size": "M"
+ },
+ {
+  "id": "meta.history",
+  "title": "Achievements, hall of fame, diary, ledger, chronicle & timelapse",
+  "summary": "The run's memory: a day-by-day diary of every log line, a daily history row for ledger charts, 31 per-run achievements, a hall of fame of endings kept outside saves, and a chronicle that replays the whole map as a timelapse.",
+  "whyHere": "These are recorders that read the finished systems; they need the event bus and save format to be stable, and they matter most once campaigns run for years.",
+  "subsystems": [
+   "Diary (per-day log)",
+   "History rows & ledger charts",
+   "Achievements",
+   "Hall of fame store",
+   "Chronicle frames (delta + keyframes)",
+   "Timelapse player"
+  ],
+  "sliceScope": "A Diary that stores every GameLog line by day (saved) and a History row per day with food, water, wood and headcount, drawn as one line chart.",
+  "fullScope": "31 achievements earned daily or at events, recording only; hall of fame up to 200 entries (~2 KB each) with filters and Export; ledger charts over 30/90/365 days per resource with in/out flows; the chronicle stores one frame a day as deltas with periodic keyframes and is replayed with fog off. Saves grow ~11 KB a game day, the diary being the largest part.",
+  "protoRefs": [
+   "prototype/src/sim/diary.js",
+   "prototype/src/sim/history.js",
+   "prototype/src/sim/achievements.js",
+   "prototype/src/sim/halloffame.js",
+   "prototype/src/sim/chronicle.js"
+  ],
+  "tasks": {
+   "data": [
+    "content/achievements.json: id, title, description, icon art key, condition kind + params",
+    "History column list (stocks, in/out flows, people, mood) as a schema both sim and charts read",
+    "Diary entry record (hour, kind, category, text) and chronicle frame/keyframe records",
+    "Hall of fame entry schema with its own version (it lives outside saves)"
+   ],
+   "backend": [
+    "Recorders subscribe to domain events and the daily tick; they never touch Rng (golden test proves it)",
+    "AchievementSystem: daily pass + event hooks; earn once, raise AchievementEarned",
+    "Chronicle: per-day delta of tile owners/infection, keyframe every N frames, captions from major events",
+    "Hall of fame builder from GameEnded; storage service outside the save folder with export/import",
+    "Pruning/chunking so year-10 saves stay small (cap old diary days, compress chronicle)"
+   ],
+   "ui": [
+    "Diary window with day picker and search",
+    "Ledger: line/bar charts per resource with hover values",
+    "Achievement toast and list; hall of fame list with filters",
+    "Timelapse player that feeds chronicle frames to the normal map renderer"
+   ]
+  },
+  "dataModel": "public sealed record DiaryEntry(byte Hour, LogKind Kind, string Text);\npublic sealed class Diary { public List<List<DiaryEntry>> Days = new(); }\npublic sealed record HistoryRow(int Day, float[] Values); // columns by schema index\npublic sealed record AchievementDef(string Id, string Title, string IconKey, string Condition);\npublic sealed record HallEntry(int Version, string Campaign, Ending Ending, int Days, int PeakPeople, string[] Founders);\npublic sealed record ChronicleFrame(int Day, bool Key, Dictionary<int,int> TileOwnerDelta);",
+  "dependsOn": [
+   "core.events",
+   "data.save",
+   "ui.framework",
+   "meta.victory"
+  ],
+  "connections": [
+   {
+    "to": "core.events",
+    "why": "Every recorder is an event subscriber",
+    "how": "Recorders implement IEventSink and are registered on the sim's EventBus",
+    "godot": "No engine code: recorders live in the sim",
+    "unity": "No engine code: recorders live in the sim"
+   },
+   {
+    "to": "data.save",
+    "why": "Diary, history and chronicle are saved and are the biggest parts of a long save",
+    "how": "Separate save sections, optionally chunked by year, each with schemaVersion",
+    "godot": "SaveService writes them with the world into user://saves",
+    "unity": "SaveService writes them into Application.persistentDataPath"
+   },
+   {
+    "to": "ui.statemap",
+    "why": "The timelapse redraws the State Map from recorded frames",
+    "how": "ChronicleReader produces a read-only IMapView the map renderer already accepts",
+    "godot": "StateMap scene takes an IMapView; timelapse swaps its source",
+    "unity": "StateMapView takes an IMapView; timelapse swaps its source"
+   },
+   {
+    "to": "meta.victory",
+    "why": "An ending creates the hall of fame entry",
+    "how": "GameEnded event -> HallOfFame.Build(world)",
+    "godot": "Autoload writes the entry when the end screen opens",
+    "unity": "Service writes the entry when the end screen opens"
+   }
+  ],
+  "godot": {
+   "approach": "Charts: a Control that overrides _Draw and uses DrawPolyline over history rows (no chart library needed). Hall of fame is a JSON file in user:// outside the saves folder. The timelapse reuses the State Map scene with a different data source and a play/scrub HSlider.",
+   "keyApis": [
+    "Control._Draw / DrawPolyline",
+    "FileAccess + user://",
+    "HSlider",
+    "Tween (toasts)"
+   ],
+   "docs": [
+    {
+     "t": "Custom drawing in 2D",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/2d/custom_drawing_in_2d.html"
+    },
+    {
+     "t": "File paths in Godot projects (user://)",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/io/data_paths.html"
+    },
+    {
+     "t": "Tween",
+     "u": "https://docs.godotengine.org/en/stable/classes/class_tween.html"
+    }
+   ]
+  },
+  "unity": {
+   "approach": "Charts drawn with UI Toolkit's generateVisualContent and Painter2D; hall of fame JSON in Application.persistentDataPath. Timelapse reuses the map view with a recorded data source.",
+   "keyApis": [
+    "VisualElement.generateVisualContent",
+    "Painter2D",
+    "Application.persistentDataPath"
+   ],
+   "docs": [
+    {
+     "t": "Application.persistentDataPath",
+     "u": "https://docs.unity3d.com/ScriptReference/Application-persistentDataPath.html"
+    },
+    {
+     "t": "UI Toolkit",
+     "u": "https://docs.unity3d.com/Manual/UIElements.html"
+    }
+   ]
+  },
+  "learn": [
+   {
+    "t": "Game Programming Patterns: Observer",
+    "u": "https://gameprogrammingpatterns.com/observer.html"
+   }
+  ],
+  "newb": [
+   "'Recording only' is a rule: if a recorder changes play, the same seed plays differently with the feature on or off. A determinism test catches it.",
+   "Delta + keyframe storage is how video compresses: store changes each frame and a full snapshot every N, so you can jump anywhere cheaply.",
+   "Keep cross-run data (hall of fame) out of saves, or deleting a save erases your history.",
+   "A history row per day with fixed columns is a tiny time-series database; charts just read it."
+  ],
+  "pitfalls": [
+   "Unbounded growth: the prototype's day-1000 save was 14.9 MB, 6.5 MB of it diary.",
+   "Storing object references in log text; store plain text and resolve names/links in the UI.",
+   "Achievement checks that run every hour over every survivor; daily or event-driven is enough."
+  ],
+  "test": "xUnit: a seed's digest is identical with recorders on or off; an achievement fires once; a 1,000-day headless run's save stays under a size budget; hall entry round-trips through export/import. Manual: finish a short run, see the entry, open the timelapse and scrub.",
+  "size": "L"
+ },
+ {
+  "id": "meta.help",
+  "title": "Codex, first-week guide, tooltips & 'Why?' chains",
+  "summary": "Teaching the game: a Codex that unlocks entries as you meet things (with numbers from the content tables), an opt-in first-week checklist that ticks itself from game state, help topics, rich tooltips and a 'Why did this happen?' chain for every death and loss.",
+  "whyHere": "Help reads the content database and the finished systems; written late, it describes the real rules rather than plans. The cause chains need the event history to explain from.",
+  "subsystems": [
+   "Codex entries & unlocks",
+   "First-week guide steps",
+   "Help topics",
+   "Tooltip system",
+   "Cause chains (Why?)",
+   "'Show me' highlights"
+  ],
+  "sliceScope": "Tooltips on every number in the hub and battle UI, a guide of 5 steps for the slice's first week (form a team, queue a building, survive the night…) ticking from state, and a Why? chain for deaths only.",
+  "fullScope": "Codex covers every kind of the dead, hives and growths, items, supplies, buildings, illnesses and groups, opened on first sight; the guide has road-start and hub lists in two phases (day 1, rest of week) with 'Show me' that opens the screen and pulses the button; Why? chains cover deaths, lost bases, lost vehicles, wiped teams, failed missions and walkouts, at most a few factors each, linked to diary days.",
+  "protoRefs": [
+   "prototype/src/ui/codex.js",
+   "prototype/src/ui/guide.js",
+   "prototype/src/sim/causes.js",
+   "prototype/src/ui/help.js",
+   "docs/features/ui.md"
+  ],
+  "tasks": {
+   "data": [
+    "Codex entry schema: id, category, title, body template with {stat} placeholders filled from ContentDb, unlock trigger",
+    "content/guide.json: steps with id, phase, text, why, completion condition, 'show me' target id",
+    "Help topics as Markdown-ish text files (easy to edit and localize)",
+    "Cause kinds enum and factor templates"
+   ],
+   "backend": [
+    "CodexKnowledge: set of unlocked ids in the save; unlock on SeenEntity events",
+    "Guide evaluator: pure predicates over World (team out, build queued, past first dawn)",
+    "CauseBuilder: at SurvivorDied/BaseLost build a chain from state + recent diary (no RNG)",
+    "Stat text generator so codex numbers always come from the same records the sim uses"
+   ],
+   "ui": [
+    "Codex window with categories and search; Help window with topic list",
+    "Guide checklist pinned on the map with a 'Show me' highlight",
+    "Tooltip framework (delay, rich text, nested hover) and a Why? panel with links to diary days"
+   ]
+  },
+  "dataModel": "public sealed record CodexEntry(string Id, string Category, string Title, string BodyTemplate, string UnlockOn);\npublic sealed record GuideStep(string Id, int Phase, string Text, string Why, string Condition, string? ShowMeTarget);\npublic enum CauseKind { Starvation, Wounds, Illness, Horde, Raid, Desertion }\npublic sealed record CauseFactor(string Text, int? Day);\npublic sealed record WhyChain(CauseKind Kind, string Headline, IReadOnlyList<CauseFactor> Factors);",
+  "dependsOn": [
+   "data.content",
+   "core.events",
+   "ui.framework",
+   "meta.history"
+  ],
+  "connections": [
+   {
+    "to": "data.content",
+    "why": "Codex numbers must match the live tables",
+    "how": "Templates resolve {weapon.damage} against ContentDb records at display time",
+    "godot": "CodexWindow asks SimHost.Content for the record",
+    "unity": "CodexWindow asks SimHost.Content for the record"
+   },
+   {
+    "to": "meta.history",
+    "why": "Why? chains cite diary days",
+    "how": "CauseFactor.Day links into Diary; built from the last N days' entries",
+    "godot": "RichTextLabel meta_clicked opens the Diary at that day",
+    "unity": "Clickable label opens the Diary at that day"
+   },
+   {
+    "to": "ui.framework",
+    "why": "'Show me' must find and pulse any button",
+    "how": "UI elements register stable target ids; guide steps name them",
+    "godot": "A HighlightService autoload maps ids to Control nodes and tweens their modulate",
+    "unity": "A HighlightService queries VisualElements by name and toggles a USS class"
+   },
+   {
+    "to": "ui.platforms",
+    "why": "Tooltips and hints are worded for mouse and keyboard now, and for a controller once ui.platforms lands.",
+    "how": "Text templates use {key:action} tokens resolved for the active device.",
+    "godot": "Tooltip text resolves InputMap actions for the active device",
+    "unity": "Tooltip text resolves Input System bindings for the active device"
+   }
+  ],
+  "godot": {
+   "approach": "Use RichTextLabel with BBCode for codex and help pages and [url] tags for cross-links. Override _MakeCustomTooltip on Controls for rich tooltips. The guide is a small VBoxContainer; 'Show me' tweens the target Control's modulate.",
+   "keyApis": [
+    "RichTextLabel (BBCode, meta_clicked)",
+    "Control._MakeCustomTooltip",
+    "Tween",
+    "TranslationServer (tr())"
+   ],
+   "docs": [
+    {
+     "t": "BBCode in RichTextLabel",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/ui/bbcode_in_richtextlabel.html"
+    },
+    {
+     "t": "Control (tooltips)",
+     "u": "https://docs.godotengine.org/en/stable/classes/class_control.html"
+    },
+    {
+     "t": "Internationalizing games",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/i18n/internationalizing_games.html"
+    }
+   ]
+  },
+  "unity": {
+   "approach": "UI Toolkit labels support rich text tags and links; build a custom tooltip VisualElement that follows the pointer. Use the Localization package's String Tables if you plan translations.",
+   "keyApis": [
+    "UI Toolkit Label (rich text)",
+    "PointerEnterEvent / PointerLeaveEvent",
+    "Localization String Tables"
+   ],
+   "docs": [
+    {
+     "t": "UI Toolkit",
+     "u": "https://docs.unity3d.com/Manual/UIElements.html"
+    },
+    {
+     "t": "Localization package",
+     "u": "https://docs.unity3d.com/Manual/com.unity.localization.html"
+    }
+   ]
+  },
+  "learn": [],
+  "newb": [
+   "Generate help text from the data, never type numbers by hand, or the codex lies after the first balance pass.",
+   "Guide steps should tick from game state, not from clicking them, so the player learns by doing.",
+   "A cause chain built at the moment of death is cheap; reconstructing it later from logs is hard. Capture context when the event happens.",
+   "Put all player-facing strings in files from the start; localizing later is much easier."
+  ],
+  "pitfalls": [
+   "Tooltips that cover the thing they describe or flicker at the screen edge; clamp to the viewport.",
+   "Codex that reveals everything at once (spoilers) or never unlocks because the trigger event was missed on load.",
+   "Too many factors in a Why? chain; the prototype caps them so it reads as a lesson."
+  ],
+  "test": "xUnit: guide predicates on scripted worlds; every codex template resolves against ContentDb (no missing keys); a starvation death yields a Starvation chain citing the right days. Manual: a new player follows the guide through week one without outside help.",
+  "size": "M"
+ },
+ {
+  "id": "meta.qol",
+  "title": "Command palette, minimap, watch list & map notes",
+  "summary": "Quality-of-life tools for a big map: Ctrl+K search that jumps to any person, base, team, site or menu; a minimap of what you know; a pinned watch list of people, teams, hordes and groups; and your own notes pinned on tiles.",
+  "whyHere": "Only worth building once the world is big (M3 maps up to 500 × 300) and full of things to find; they are pure UI over existing state plus two tiny saved lists.",
+  "subsystems": [
+   "Search index & fuzzy match",
+   "Command palette",
+   "Minimap texture",
+   "Watch list",
+   "Map notes",
+   "Threat bar"
+  ],
+  "sliceScope": "Map notes (icon + text on a tile, saved) and a minimap: one pixel per tile coloured by terrain and fog, click to move the camera.",
+  "fullScope": "The palette searches people, bases, teams, groups, known sites and towns, buildable buildings, menu actions, help and opened codex entries, with recent picks when empty. The minimap shows only what you know and redraws at most twice a second. The watch list holds up to 16 pins of 5 kinds and remembers a horde's last seen place. Notes have a set of icons and are listed and edited in the Watching panel.",
+  "protoRefs": [
+   "prototype/src/ui/cmdpalette.js",
+   "prototype/src/ui/minimap.js",
+   "prototype/src/sim/watchlist.js",
+   "prototype/src/sim/mapnotes.js"
+  ],
+  "tasks": {
+   "data": [
+    "MapNote and WatchEntry records saved in the World (nothing in the sim reads them)",
+    "Note icon set (id, glyph/art key, colour)",
+    "Palette action table: id, label, keywords, target"
+   ],
+   "backend": [
+    "SearchIndex: builds (label, kind, id) from known entities respecting fog; fuzzy/prefix scoring",
+    "Watch list service: pin/unpin, last-seen snapshot for hidden hordes, cap 16",
+    "Minimap colour source: per-tile byte array from terrain + fog + layer, dirty flag on change"
+   ],
+   "ui": [
+    "Palette overlay (Ctrl+K or /): text field, result list, ↑↓ Enter Esc",
+    "Minimap in a corner with a camera frame, click/drag to look",
+    "Watching panel with pins and notes; right-click a tile → Add note"
+   ]
+  },
+  "dataModel": "public enum WatchKind { Person, Team, Horde, Group, Base }\npublic sealed record WatchEntry(WatchKind Kind, int Id, string NameWhenPinned, HexCoord? LastSeen, int? LastSize);\npublic sealed record MapNote(int Id, HexCoord Tile, string IconId, string Text);\npublic sealed record SearchHit(string Label, string Kind, string TargetId, float Score);",
+  "dependsOn": [
+   "ui.statemap",
+   "ui.input",
+   "travel.fog",
+   "data.save"
+  ],
+  "connections": [
+   {
+    "to": "travel.fog",
+    "why": "Search and minimap must only show what the player knows",
+    "how": "SearchIndex and minimap read IKnowledge (fog state), never the true world",
+    "godot": "Minimap rebuilds its Image when SimHost emits FogChanged",
+    "unity": "Minimap rebuilds its Texture2D on SimHost.FogChanged"
+   },
+   {
+    "to": "ui.statemap",
+    "why": "Picking a result or clicking the minimap moves the camera",
+    "how": "UI-only: a CameraService.FocusHex(coord)",
+    "godot": "Camera2D position tweened to the hex's pixel centre",
+    "unity": "Camera (or Cinemachine) moved to the hex's world position"
+   },
+   {
+    "to": "ui.input",
+    "why": "Ctrl+K, M and the watch-list keys are rebindable actions",
+    "how": "Input actions named palette.open, minimap.toggle",
+    "godot": "InputMap actions checked in _UnhandledInput",
+    "unity": "Input System actions in the UI action map"
+   }
+  ],
+  "godot": {
+   "approach": "Minimap: build an Image with one pixel per hex column/row, upload to an ImageTexture and show it in a TextureRect with nearest filtering; update only when dirty. Palette: a PopupPanel with LineEdit and ItemList.",
+   "keyApis": [
+    "Image / ImageTexture",
+    "TextureRect",
+    "LineEdit + ItemList",
+    "PopupPanel",
+    "Camera2D"
+   ],
+   "docs": [
+    {
+     "t": "Image",
+     "u": "https://docs.godotengine.org/en/stable/classes/class_image.html"
+    },
+    {
+     "t": "ImageTexture",
+     "u": "https://docs.godotengine.org/en/stable/classes/class_imagetexture.html"
+    },
+    {
+     "t": "Camera2D",
+     "u": "https://docs.godotengine.org/en/stable/classes/class_camera2d.html"
+    }
+   ]
+  },
+  "unity": {
+   "approach": "Minimap: a Texture2D (point filter) filled with SetPixels32 when dirty, shown in a UI Toolkit Image. Palette: a UI Toolkit overlay with TextField and ListView.",
+   "keyApis": [
+    "Texture2D.SetPixels32 / Apply",
+    "UI Toolkit ListView",
+    "TextField"
+   ],
+   "docs": [
+    {
+     "t": "Texture2D.SetPixels32",
+     "u": "https://docs.unity3d.com/ScriptReference/Texture2D.SetPixels32.html"
+    },
+    {
+     "t": "UI Toolkit",
+     "u": "https://docs.unity3d.com/Manual/UIElements.html"
+    }
+   ]
+  },
+  "learn": [],
+  "newb": [
+   "A minimap is just a tiny picture of the map: one pixel per tile, scaled up with nearest-neighbour filtering. No second camera needed.",
+   "Rebuild only on change (a dirty flag); redrawing 150,000 pixels every frame is wasted work.",
+   "Data that only the UI reads (notes, pins) can still live in the save so it survives reloads; just keep sim logic from depending on it."
+  ],
+  "pitfalls": [
+   "Search leaking hidden info (an unknown group's base appearing in results).",
+   "Palette hotkeys firing while typing in a text field.",
+   "Pins that hold object references instead of IDs break when the thing dies; keep the name it had."
+  ],
+  "test": "xUnit: index excludes fogged entities; fuzzy search ranks exact prefix first; watch list caps at 16 and survives save/load. Manual: on a Huge map, Ctrl+K a survivor's name and land on their screen in under a second.",
+  "size": "M"
+ },
+ {
+  "id": "meta.balance",
+  "title": "Headless balance runs & telemetry",
+  "summary": "Because the sim is engine-free, whole campaigns can be played by the autopilot governor in a console app, thousands of days at a time, to measure deaths, food, pacing of event cards, endings and battle win rates.",
+  "whyHere": "It needs the autopilot (ai.governor) and the full set of systems; from here on every tuning change is checked by numbers, not feel, before a human playtest.",
+  "subsystems": [
+   "Headless runner (console app)",
+   "Autopilot styles",
+   "Metrics collectors",
+   "Parallel runs (one per core)",
+   "Reports & CSV",
+   "Balance sheet / tables",
+   "Opt-in playtest telemetry"
+  ],
+  "sliceScope": "A dotnet console app: `bs-sim --days 120 --seed 42 --groups 8` creates a world, lets the governor play, prints population, deaths by cause, food days left and cards per day.",
+  "fullScope": "The prototype has simtest (one run summary), pacing (cards per day, bursts, quiet stretches, crises stacking; 42 campaign-years in about 8 minutes, parallel by core), balancesim (outcome census), wincensus (how campaigns end), combattest (thousands of AI-vs-AI battles per matchup and per weapon) and a balance sheet of the weapon tables.",
+  "protoRefs": [
+   "prototype/tools/simtest.js",
+   "prototype/tools/pacing.js",
+   "prototype/tools/balancesim.js",
+   "prototype/tools/pool.js",
+   "prototype/README.md"
+  ],
+  "tasks": {
+   "data": [
+    "Run config record (mode, size, seed range, days, autopilot style, dial overrides) loadable from JSON",
+    "Metric definitions and a stable CSV/JSON report schema (so runs can be diffed over time)",
+    "Baseline report files checked in for the key scenarios"
+   ],
+   "backend": [
+    "BrokenState.Balance console project referencing BrokenState.Sim only",
+    "Collectors subscribing to domain events (deaths, cards, battles, endings) without changing play",
+    "Parallel.ForEach over seeds, each run fully isolated (no static state in the sim!)",
+    "Battle harness: N AI-vs-AI battles per matchup → win rate, turns, ammo used",
+    "Compare tool: current report vs baseline with tolerances; optional CI job on a schedule"
+   ],
+   "ui": [
+    "Optional: an in-engine dev panel to start an autopilot run at 50× and watch it",
+    "Charts from CSV (a spreadsheet is fine at first)"
+   ]
+  },
+  "dataModel": "public sealed record RunConfig(string Mode, string Size, int SeedFrom, int SeedTo, int Days, string Style);\npublic sealed record RunReport(int Seed, int DaysPlayed, Ending? Ending, int Deaths,\n  Dictionary<string,int> DeathsByCause, float CardsPerDay, int PeakPeople);\npublic interface IMetricCollector { void OnEvent(IDomainEvent e, World w); void OnDay(World w); }",
+  "dependsOn": [
+   "ai.governor",
+   "infra.devtools",
+   "infra.ci",
+   "data.rng",
+   "meta.modes"
+  ],
+  "connections": [
+   {
+    "to": "ai.governor",
+    "why": "The autopilot plays the player's side in every run",
+    "how": "Runner calls Governor.PlanHour(world, faction=player, style) each hour",
+    "godot": "None: runs are pure dotnet",
+    "unity": "None: runs are pure dotnet"
+   },
+   {
+    "to": "data.rng",
+    "why": "Each seed must replay exactly to investigate an outlier",
+    "how": "Report stores seed + config; rerun reproduces it bit for bit",
+    "godot": "A dev command loads the same seed into the game",
+    "unity": "A dev command loads the same seed into the game"
+   },
+   {
+    "to": "infra.ci",
+    "why": "Catch balance regressions automatically",
+    "how": "A nightly GitHub Actions job runs a small census and compares to baseline",
+    "godot": "n/a",
+    "unity": "n/a"
+   },
+   {
+    "to": "meta.perf",
+    "why": "The same runner times hours and days",
+    "how": "Stopwatch per tick stage feeds a perf report",
+    "godot": "n/a",
+    "unity": "n/a"
+   }
+  ],
+  "godot": {
+   "approach": "Nothing engine-specific is needed: the runner is a .NET console app. For watching a run, Godot can also run headless (--headless) with a scene that only ticks SimHost, useful to smoke-test the bridge.",
+   "keyApis": [
+    "dotnet run (console)",
+    "godot --headless",
+    "OS.GetCmdlineArgs"
+   ],
+   "docs": [
+    {
+     "t": "Command line tutorial (--headless)",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/editor/command_line_tutorial.html"
+    },
+    {
+     "t": "C# basics in Godot",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/scripting/c_sharp/c_sharp_basics.html"
+    }
+   ]
+  },
+  "unity": {
+   "approach": "Same console app. If you need Unity-side runs, use batch mode with -executeMethod to call a static method that ticks the sim; but prefer plain dotnet, it starts in a second.",
+   "keyApis": [
+    "-batchmode -nographics -executeMethod",
+    "Assembly definitions (shared sim)"
+   ],
+   "docs": [
+    {
+     "t": "Command-line arguments",
+     "u": "https://docs.unity3d.com/Manual/CommandLineArguments.html"
+    },
+    {
+     "t": "Assembly definitions",
+     "u": "https://docs.unity3d.com/Manual/ScriptCompilationAssemblyDefinitionFiles.html"
+    }
+   ]
+  },
+  "learn": [
+   {
+    "t": "Task Parallel Library",
+    "u": "https://learn.microsoft.com/en-us/dotnet/standard/parallel-programming/task-parallel-library-tpl"
+   }
+  ],
+  "newb": [
+   "This is the big payoff of an engine-free sim: a year of game time runs in seconds, so you can try 100 seeds before lunch.",
+   "Look at distributions (p50, p90, worst), not averages; one starving seed in ten is a real player's bad week.",
+   "Collectors must be read-only, or measuring changes the result (like the prototype's 'recording only' rule).",
+   "Static mutable state (a global ID counter, a cache) breaks parallel runs; make it per-World."
+  ],
+  "pitfalls": [
+   "Balancing for the autopilot instead of a human: the governor is a proxy, confirm with playtests.",
+   "Changing many numbers at once; change one, rerun the census, keep the diff.",
+   "Reports without the seed and config, which makes outliers impossible to reproduce."
+  ],
+  "test": "xUnit: a collector-on run has the same digest as collector-off; two runs of one seed give identical reports. Manual: run 20 seeds × 120 days and check deaths-by-cause and cards-per-day look sane against the prototype's numbers.",
+  "size": "M"
+ },
+ {
+  "id": "meta.perf",
+  "title": "Performance & scaling",
+  "summary": "Keeping a 500 × 300 map with dozens of AI groups, hordes and years of history smooth: profiling, per-tick budgets, caching and allocation-free hot paths, moving heavy work to threads, chunked map rendering and pathfinding budgets.",
+  "whyHere": "Optimize after the systems exist and the balance runner can measure them; doing it earlier guesses at the wrong hotspots. It must land before release on big maps.",
+  "subsystems": [
+   "Profiling workflow",
+   "Tick stage timers & budgets",
+   "Hot-path allocation removal",
+   "Sim threading (off main thread)",
+   "Pathfinding budgets & caches",
+   "Map chunking & culling",
+   "Save size & speed"
+  ],
+  "sliceScope": "Stage timers around each daily/hourly system with a dev overlay showing ms per stage, and running the sim tick off the render thread so a slow midnight never freezes the UI.",
+  "fullScope": "Prototype targets: a 500 × 500 battle turn with 100 dead in about 1 s, the enemy turn under 40 ms for 99% of battles, the first midnight cut from 835 ms, a 2,688-tile map scan per frame removed, the save growing ~11 KB a day. Fixes there were memoisation, allocation-free hex helpers (43 ns → 12 ns), patching flow fields instead of rebuilding, and rendering the map in cached chunks.",
+  "protoRefs": [
+   "prototype/tools/perfprofile.js",
+   "docs/prompts/performance.md",
+   "prototype/tools/perfbudgettest.js",
+   "prototype/tools/bigmapbench.js",
+   "prototype/README.md"
+  ],
+  "tasks": {
+   "data": [
+    "Perf budgets file: ms per hourly tick, per midnight, per enemy turn, per frame, by map size",
+    "Benchmark scenarios (seed, size, day) saved as fixtures"
+   ],
+   "backend": [
+    "TickProfiler: Stopwatch per system stage, p50/p90/p99/worst, written by the headless runner",
+    "Golden digest check before/after every optimisation (a pure speedup must not change the hash)",
+    "Remove allocations in hex/grid helpers (structs, Span<T>, pooled lists); cache paths and flow fields",
+    "Run the sim on a worker thread: double-buffered snapshot or command queue to the main thread",
+    "Parallelize independent per-faction daily work only where it stays deterministic (fixed order merge)"
+   ],
+   "ui": [
+    "Map drawn in chunks (e.g. 32 × 32 hexes) that rebuild only when their tiles change; cull off-screen",
+    "Perf overlay: FPS, frame ms, sim ms, draw calls"
+   ]
+  },
+  "dataModel": "public sealed class TickProfiler {\n  readonly Dictionary<string, List<double>> _ms = new();\n  public IDisposable Measure(string stage) => new Scope(this, stage, Stopwatch.GetTimestamp());\n}\npublic sealed record PerfBudget(string Size, double HourMs, double MidnightMs, double EnemyTurnMs);\npublic readonly record struct MapChunk(int Cx, int Cy, int Version);",
+  "dependsOn": [
+   "meta.balance",
+   "travel.pathing",
+   "combat.pathing",
+   "world.mapgen",
+   "ui.statemap"
+  ],
+  "connections": [
+   {
+    "to": "meta.balance",
+    "why": "Same headless runner produces timing reports",
+    "how": "Runner flag --profile wraps each stage in TickProfiler",
+    "godot": "n/a",
+    "unity": "n/a"
+   },
+   {
+    "to": "travel.pathing",
+    "why": "A* on 150,000 hexes for many parties is a top cost",
+    "how": "Path cache keyed by (from,to,terrainVersion); budget N searches per tick, queue the rest",
+    "godot": "n/a (sim)",
+    "unity": "n/a (sim)"
+   },
+   {
+    "to": "ui.statemap",
+    "why": "Drawing the whole map every frame is the main render cost",
+    "how": "Sim exposes per-chunk version numbers; the view rebuilds dirty chunks only",
+    "godot": "One TileMapLayer or MultiMeshInstance2D per chunk; VisibleOnScreenNotifier2D for culling",
+    "unity": "One Tilemap/mesh per chunk; rely on camera culling"
+   },
+   {
+    "to": "infra.architecture",
+    "why": "Threading changes how SimHost talks to the sim",
+    "how": "Commands queued in, events/snapshots queued out through thread-safe queues",
+    "godot": "SimHost drains a ConcurrentQueue in _Process; never touch nodes from the worker",
+    "unity": "SimHost drains a ConcurrentQueue in Update; never touch Unity objects off the main thread"
+   }
+  ],
+  "godot": {
+   "approach": "Use the built-in Profiler and Monitors for frame time and draw calls, and dotnet-trace/dotnet-counters attached to the game process for C# hot spots. Run the sim in a System.Threading.Tasks task; only the main thread touches nodes. Big maps: chunked TileMapLayers or MultiMesh so you draw thousands of hexes in a few calls.",
+   "keyApis": [
+    "Debugger > Profiler / Monitors",
+    "Performance singleton",
+    "MultiMeshInstance2D",
+    "TileMapLayer",
+    "WorkerThreadPool / Task"
+   ],
+   "docs": [
+    {
+     "t": "The Profiler",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/scripting/debug/the_profiler.html"
+    },
+    {
+     "t": "Performance (index)",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/performance/index.html"
+    },
+    {
+     "t": "Using multiple threads",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/performance/using_multiple_threads.html"
+    },
+    {
+     "t": "Optimization using MultiMeshes",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/performance/using_multimesh.html"
+    }
+   ]
+  },
+  "unity": {
+   "approach": "Unity Profiler (deep profile sparingly) and the Memory Profiler package; watch GC.Alloc per frame. The engine-free sim runs on a plain Task; the Job System + Burst is for engine-side bulk work (e.g. building chunk meshes), not for sim classes that use managed objects.",
+   "keyApis": [
+    "Profiler window & ProfilerMarker",
+    "Memory Profiler",
+    "Job System / Burst",
+    "Tilemap chunk mode"
+   ],
+   "docs": [
+    {
+     "t": "Profiler overview",
+     "u": "https://docs.unity3d.com/Manual/Profiler.html"
+    },
+    {
+     "t": "Memory Profiler package",
+     "u": "https://docs.unity3d.com/Manual/com.unity.memoryprofiler.html"
+    },
+    {
+     "t": "Job System",
+     "u": "https://docs.unity3d.com/Manual/JobSystem.html"
+    },
+    {
+     "t": "Burst package",
+     "u": "https://docs.unity3d.com/Manual/com.unity.burst.html"
+    }
+   ]
+  },
+  "learn": [
+   {
+    "t": "dotnet-trace",
+    "u": "https://learn.microsoft.com/en-us/dotnet/core/diagnostics/dotnet-trace"
+   },
+   {
+    "t": ".NET garbage collection",
+    "u": "https://learn.microsoft.com/en-us/dotnet/standard/garbage-collection/"
+   },
+   {
+    "t": "Game Programming Patterns: Spatial Partition",
+    "u": "https://gameprogrammingpatterns.com/spatial-partition.html"
+   }
+  ],
+  "newb": [
+   "Measure first: profilers regularly prove the slow part is not where you guessed (in the prototype it was the weekly market refresh and the panel refresh).",
+   "A frame at 60 fps is 16.7 ms for everything; a sim hour that takes 80 ms must run off the main thread or be split across frames.",
+   "Determinism and threads: run independent pieces in parallel, but merge results in a fixed order so the same seed still gives the same world.",
+   "Garbage collection pauses come from allocating many small objects per frame; reuse lists and use structs for coordinates."
+  ],
+  "pitfalls": [
+   "Optimising without a golden-hash check, silently changing gameplay.",
+   "Touching engine objects (nodes, GameObjects) from a worker thread: crashes or random corruption.",
+   "Profiling debug builds only; always confirm in a release export."
+  ],
+  "test": "Benchmarks (BenchmarkDotNet or the runner's --profile) on fixed scenarios with budgets that fail CI when exceeded; golden digests unchanged. Manual: Huge map at 5× for a game month with no frame over 33 ms and no stutter at midnight.",
+  "size": "L"
+ },
+ {
+  "id": "art.direction",
+  "title": "Art direction, style guide & asset spec",
+  "summary": "The brief for human artists: the look of Calder, a palette, lighting rules, and a spec sheet of every asset's size, pivot, view angle and file name (= its art key), so delivered files drop into the ArtCatalog with no code change.",
+  "whyHere": "First card of M8: art is commissioned late, once gameplay is proven and every art key is known from the placeholder kit. Every other art card follows this guide.",
+  "subsystems": [
+   "Style guide & mood board",
+   "Palette & lighting rules",
+   "Asset spec sheet (generated)",
+   "Naming = art keys",
+   "Import pipeline conventions",
+   "2D vs low-poly 3D decision",
+   "Licensing & contracts"
+  ],
+  "sliceScope": "Smallest useful version: a one-page style guide, a 16–32 colour palette, and a spec sheet generated from the ArtCatalog listing every key with its size and pivot, then one test asset per category delivered end to end.",
+  "fullScope": "The prototype has 469 catalogued sprites in 26 categories (57 terrain, 91 POIs, 42 party pieces, 34 hive growths…), 248 furniture kinds, a 16 × 16 icon per item, battle tiles of 32 × 16 art px (2:1 iso) with units ~30 px tall, survivors 22 × 26 native px, and low-poly figures drawn in the iso projection.",
+  "protoRefs": [
+   "docs/design-doc/sprites/manifest.json",
+   "docs/design-doc/sprites/survivor-sprites-3d.md",
+   "docs/design-doc/sprites/survivor-sprites.md",
+   "prototype/src/ui/isoview.js"
+  ],
+  "tasks": {
+   "data": [
+    "Export the ArtCatalog keys to a spec CSV: key, category, size px, pivot, frames, facing count, status (placeholder/final)",
+    "Naming convention: file path = art key (art/item/pistol_9mm.png for item.pistol_9mm); one rule, no exceptions",
+    "Palette file (.gpl/.ase/.png swatch) and a lighting rule (light from top-left, faces darker to the right, as the prototype)",
+    "Decide per category: 2D sprite, pre-rendered 3D sprite, or real low-poly 3D model"
+   ],
+   "backend": [
+    "Catalog validator: lists keys with no final art, files with no key, wrong sizes/pivots (run in CI)",
+    "Fallback chain: final → placeholder → magenta 'missing' so a missing file never crashes"
+   ],
+   "ui": [
+    "An in-game Art Gallery debug screen showing every key at game zoom on light and dark ground",
+    "Side-by-side placeholder vs final toggle for review"
+   ]
+  },
+  "dataModel": "public enum ArtKind { Sprite, SpriteSheet, Model3D, Icon }\npublic sealed record ArtSpec(string Key, ArtKind Kind, int W, int H,\n  float PivotX, float PivotY, int Frames, int Facings, string Status);\n// file convention: art/<category>/<name>.png  <=>  key \"<category>.<name>\"",
+  "dependsOn": [
+   "ui.placeholders",
+   "data.content"
+  ],
+  "connections": [
+   {
+    "to": "ui.placeholders",
+    "why": "The placeholder ArtCatalog defines the keys the artists fill",
+    "how": "Catalog lists keys from ContentDb art fields; the spec sheet is generated from it",
+    "godot": "ArtCatalog is a Resource; an EditorScript scans res://art/ and fills key → Texture2D",
+    "unity": "ArtCatalog is a ScriptableObject; an editor script (AssetPostprocessor) fills key → Sprite"
+   },
+   {
+    "to": "art.world",
+    "why": "Hex and iso tile specs come from this guide",
+    "how": "Spec rows for terrain.* keys define size, pivot and blending",
+    "godot": "TileSet atlas cell size set to the spec",
+    "unity": "Grid cell size and Tilemap tile anchor set to the spec"
+   },
+   {
+    "to": "art.characters",
+    "why": "Figure scale, facings and animation list come from here",
+    "how": "Spec rows define frames per action and facing count",
+    "godot": "SpriteFrames animations named by action",
+    "unity": "Animator states/clips named by action"
+   },
+   {
+    "to": "art.ui",
+    "why": "Palette and fonts are shared with the UI skin",
+    "how": "Palette file is the single source for theme colours",
+    "godot": "Theme resource colours taken from the palette",
+    "unity": "USS variables taken from the palette"
+   }
+  ],
+  "godot": {
+   "approach": "Keep final art under res://art/<category>/ with names equal to art keys; an @tool EditorScript rebuilds the ArtCatalog Resource by scanning folders, so dropping a file in is the whole integration. Set default import presets per folder (pixel art: Filter Nearest, no mipmaps) via the Import dock's 'Set as Default'.",
+   "keyApis": [
+    "Resource (ArtCatalog)",
+    "EditorScript / @tool",
+    "Import dock presets",
+    "ResourceLoader"
+   ],
+   "docs": [
+    {
+     "t": "Resources",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/scripting/resources.html"
+    },
+    {
+     "t": "Import process",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/assets_pipeline/import_process.html"
+    },
+    {
+     "t": "Importing images",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/assets_pipeline/importing_images.html"
+    },
+    {
+     "t": "Running code in the editor (@tool)",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/plugins/running_code_in_the_editor.html"
+    }
+   ]
+  },
+  "unity": {
+   "approach": "Final art under Assets/Art/<category>/; an AssetPostprocessor applies import settings by folder and a menu command rebuilds the ArtCatalog ScriptableObject (or use Addressables with the art key as the address). Presets store import settings per category.",
+   "keyApis": [
+    "ScriptableObject (ArtCatalog)",
+    "AssetPostprocessor",
+    "Presets",
+    "Addressables (optional)"
+   ],
+   "docs": [
+    {
+     "t": "Texture Import Settings",
+     "u": "https://docs.unity3d.com/Manual/class-TextureImporter.html"
+    },
+    {
+     "t": "Presets",
+     "u": "https://docs.unity3d.com/Manual/Presets.html"
+    },
+    {
+     "t": "AssetPostprocessor",
+     "u": "https://docs.unity3d.com/ScriptReference/AssetPostprocessor.html"
+    },
+    {
+     "t": "Addressables package",
+     "u": "https://docs.unity3d.com/Manual/com.unity.addressables.html"
+    }
+   ]
+  },
+  "learn": [
+   {
+    "t": "Lospec palette list",
+    "u": "https://lospec.com/palette-list"
+   },
+   {
+    "t": "Creative Commons licenses",
+    "u": "https://creativecommons.org/licenses/"
+   }
+  ],
+  "newb": [
+   "The spec sheet is the contract with an artist: exact pixel sizes, pivot (the point that sits on the tile, usually the feet), facings and frame counts. Ambiguity costs rework money.",
+   "File name = art key means no code changes: the engine looks up 'item.pistol_9mm', finds art/item/pistol_9mm.png, done.",
+   "2D vs 3D: pre-rendering low-poly 3D models to sprites (8 facings) gives 3D consistency with 2D cost; real-time 3D lets the camera rotate but needs rigging and lighting skills.",
+   "Commission one category as a paid test first; check it in-game at real zoom before ordering 400 more.",
+   "Licensing: get a written work-for-hire or exclusive licence covering commercial use and modification; for stock packs read the licence (CC0 vs CC-BY vs 'no redistribution')."
+  ],
+  "pitfalls": [
+   "Reviewing art in a viewer at 400% instead of in-game at real zoom.",
+   "Mixed pixel densities (some 16 px icons, some 64 px) that look wrong side by side.",
+   "AI-generated or unlicensed art in a commercial release; store terms (e.g. Steam's AI disclosure) apply.",
+   "No source files in the contract (.psd/.aseprite/.blend): you cannot make small fixes later."
+  ],
+  "test": "CI: the catalog validator reports zero unknown files and correct sizes/pivots for delivered art. Manual: the Art Gallery screen shows every key; swapping one placeholder for a final file needs no code or scene edit.",
+  "size": "M"
+ },
+ {
+  "id": "art.world",
+  "title": "State Map & terrain art",
+  "summary": "Final art for the hex State Map (terrain, rivers, roads, towns, POIs, bases, weather overlays, fog) and the isometric battle and base ground tiles (grass, mud, snow, floors, walls, roofs) with seasonal variants.",
+  "whyHere": "Depends on the style guide and the finished map views; terrain is the largest screen area, so it sets the game's look and is commissioned first after the guide.",
+  "subsystems": [
+   "Hex terrain tiles & transitions",
+   "Rivers/roads overlays",
+   "POI & base markers",
+   "Iso ground, walls, roofs",
+   "Seasonal & weather variants",
+   "Fog of war & layer styling"
+  ],
+  "sliceScope": "One hex terrain set (grass, forest, hills, water, town) with edge transitions and one iso floor/wall/door set for the slice's building, imported via the catalog.",
+  "fullScope": "Prototype: 57 terrain sprites, 91 POI sprites, 27 base and 7 group-base sprites, map hex size 26 px, battle tiles 32 × 16 art px in 2:1 iso with height levels, seasonal trees (autumn colours, bare snowy winter), snow on roofs and walls, ponds/mud/ice, rain and fog banks over tiles, puddles after rain.",
+  "protoRefs": [
+   "docs/design-doc/sprites/manifest.json",
+   "prototype/src/ui/render.js",
+   "prototype/src/ui/isoview.js",
+   "prototype/design/tiles.html",
+   "docs/features/ui.md"
+  ],
+  "tasks": {
+   "data": [
+    "Tile spec: hex pointy/flat orientation and pixel size; iso diamond 2:1 (e.g. 64 × 32 at final res) and wall height per level",
+    "Terrain → art key table incl. season variants (terrain.forest.winter) and transition masks",
+    "Weather overlay keys (rain, fog, snow) and fog-of-war states (unknown, reported, live)"
+   ],
+   "backend": [
+    "Sim exposes per-tile visual state (terrain, season, wetness, snow depth) as plain data; no art logic in the sim",
+    "Autotile/transition rule: choose variant from neighbours deterministically (hash of coord, not RNG stream)"
+   ],
+   "ui": [
+    "Hex map layers: ground, rivers/roads, markers, weather, fog, selection",
+    "Iso battle/base map: floor, walls (cutaway when units behind), roofs hidden on hover/interior",
+    "Seasonal swap and snow overlay driven by the sim's season"
+   ]
+  },
+  "dataModel": "public sealed record TerrainArt(string TerrainId, string Season, string BaseKey, string[] VariantKeys);\npublic readonly record struct TileVisual(byte Terrain, byte Season, byte Wetness, byte Snow, bool Live);\n// variant index = Hash(q, r) % VariantKeys.Length  (stable, not the sim Rng)",
+  "dependsOn": [
+   "art.direction",
+   "ui.statemap",
+   "combat.map",
+   "world.weather"
+  ],
+  "connections": [
+   {
+    "to": "ui.statemap",
+    "why": "The map view renders these tiles",
+    "how": "View reads TileVisual per hex and resolves keys in ArtCatalog",
+    "godot": "TileSet with atlas sources per terrain; TileMapLayer per layer; terrain sets for transitions",
+    "unity": "Tilemap per layer on a hexagonal Grid; RuleTile (2D Tilemap Extras) for transitions"
+   },
+   {
+    "to": "combat.map",
+    "why": "Battle cells (floor, wall, door, cover) map to iso tiles",
+    "how": "Cell type + material id → art key",
+    "godot": "Isometric TileSet (tile shape Isometric, 2:1) with Y-sort",
+    "unity": "Isometric Tilemap with Custom Axis sort (0,1,-0.26) style sorting"
+   },
+   {
+    "to": "world.weather",
+    "why": "Season and weather choose variants and overlays",
+    "how": "TileVisual.Season/Wetness from the weather system",
+    "godot": "Shader or modulate for wet/snow; GPUParticles2D for rain",
+    "unity": "Material property or second tile; Particle System for rain"
+   }
+  ],
+  "godot": {
+   "approach": "Use TileSet atlases with the cell size from the spec; hex map uses TileShape Hexagon, battle uses Isometric with Y-sort enabled. Terrain sets give automatic transitions. Pixel art: Filter Nearest in Project Settings > Rendering > Textures. Weather overlays as separate layers or a CanvasItem shader.",
+   "keyApis": [
+    "TileSet / TileMapLayer",
+    "Terrain sets (autotile)",
+    "Y-sort",
+    "CanvasItem shader",
+    "GPUParticles2D"
+   ],
+   "docs": [
+    {
+     "t": "Using TileSets",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/2d/using_tilesets.html"
+    },
+    {
+     "t": "Using TileMaps",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/2d/using_tilemaps.html"
+    },
+    {
+     "t": "Importing images",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/assets_pipeline/importing_images.html"
+    }
+   ]
+  },
+  "unity": {
+   "approach": "Grid with Hexagon cell layout for the State Map and Isometric for battles; Tile Palettes from sliced sprite sheets packed into SpriteAtlases. RuleTiles for transitions; Sorting Layers and Transparency Sort Axis for iso depth.",
+   "keyApis": [
+    "Tilemap / Grid (Hexagon, Isometric)",
+    "Tile Palette",
+    "SpriteAtlas",
+    "Transparency Sort Axis"
+   ],
+   "docs": [
+    {
+     "t": "Tilemaps",
+     "u": "https://docs.unity3d.com/Manual/Tilemap.html"
+    },
+    {
+     "t": "Sprite Atlas",
+     "u": "https://docs.unity3d.com/Manual/class-SpriteAtlas.html"
+    }
+   ]
+  },
+  "learn": [
+   {
+    "t": "Red Blob Games: Hexagonal Grids",
+    "u": "https://www.redblobgames.com/grids/hexagons/"
+   }
+  ],
+  "newb": [
+   "Iso 2:1 means a tile is twice as wide as tall on screen (e.g. 64 × 32); walls are drawn taller and sorted by their bottom (Y-sort).",
+   "Transitions (grass meeting water) are what make tiles look painted rather than gridded; plan masks or terrain sets with the artist.",
+   "Pick variants by a hash of the coordinate, so the map looks the same every time without using the game's RNG.",
+   "Atlases (many tiles in one texture) let the GPU draw a whole map in few calls."
+  ],
+  "pitfalls": [
+   "Texture bleeding (thin lines between tiles): add padding/extrusion in atlases and use nearest filtering for pixel art.",
+   "Art sizes that don't match the grid, forcing scaling and blur.",
+   "Forgetting wall cutaways: units behind walls become invisible in iso."
+  ],
+  "test": "Manual: a Huge map at every zoom shows no seams or blur; each season looks distinct; units behind walls stay visible. Automated: catalog validator confirms every terrain×season key has final art.",
+  "size": "L"
+ },
+ {
+  "id": "art.characters",
+  "title": "Survivors, the dead & animation",
+  "summary": "Final figures for survivors (by appearance layers and worn gear), human enemies, every kind of the dead and bosses, plus the map pieces for teams and hordes, with walk, attack, shoot, reload, hit, down and death animations in every facing.",
+  "whyHere": "The most expensive art; it can only be specced once appearance options, gear slots and dead types are final, so it waits for M8 and the style guide.",
+  "subsystems": [
+   "Figure approach (2D layered vs low-poly 3D)",
+   "Appearance layers & gear on body",
+   "Facings & animation set",
+   "The dead variants & bosses",
+   "Map figures (teams, hordes)",
+   "Animation playback & events"
+  ],
+  "sliceScope": "One survivor base body with 2 outfits and one walker, 4 (or 8) facings, idle/walk/shoot/melee/hit/death, driven by battle events.",
+  "fullScope": "Prototype: low-poly figures in the iso projection with a yaw per unit (no mirroring), arms that reach the weapon, a pose per weapon, an inventory spin; appearance layers (build, skin, hair, facial hair, top, pants, accessory, armour, weapon); 24 zombie, 10 special and 3 boss sprites; 42 party pieces (vehicles by type, walkers, boats); hordes as shuffling crowds.",
+  "protoRefs": [
+   "prototype/src/ui/figures.js",
+   "docs/design-doc/sprites/survivor-sprites-3d.md",
+   "prototype/src/ui/sprites.js",
+   "prototype/src/ui/mapsprites.js",
+   "docs/features/survivors.md"
+  ],
+  "tasks": {
+   "data": [
+    "Animation list per rig: action id, frames/length, loop, event frames (shot fired, blow lands, footstep)",
+    "Appearance → art layer key map (hair.ponytail, top.hoodie.red) and gear → attachment key",
+    "Facing count decision (4, 8 or free yaw for 3D) and pivot at the feet"
+   ],
+   "backend": [
+    "Battle emits presentation events with timing hints (UnitMoved path, ShotFired, UnitDowned) the view animates",
+    "The sim never waits for animation; the view queues and plays, with a fast-forward option"
+   ],
+   "ui": [
+    "Character view component that composes layers or swaps 3D meshes and plays animations",
+    "Animation event hooks to SFX (footsteps, shots) and hit flashes",
+    "Map figures for teams/hordes with walk cycles"
+   ]
+  },
+  "dataModel": "public enum UnitAnim { Idle, Walk, Run, Shoot, Melee, Reload, Hit, Downed, Die }\npublic sealed record AnimDef(UnitAnim Anim, int Frames, float Fps, bool Loop, int[] EventFrames);\npublic sealed record LookLayers(string Body, string Skin, string Hair, string Top, string Pants, string? Weapon);",
+  "dependsOn": [
+   "art.direction",
+   "ui.battle",
+   "surv.model",
+   "dead.types",
+   "gear.armour"
+  ],
+  "connections": [
+   {
+    "to": "ui.battle",
+    "why": "The battle view plays these on sim events",
+    "how": "Presentation events from combat (UnitMoved, ShotFired) consumed in order",
+    "godot": "AnimatedSprite2D/AnimationPlayer; await animation_finished before the next queued event",
+    "unity": "Animator with triggers; animation events call back to the view"
+   },
+   {
+    "to": "surv.model",
+    "why": "Appearance data decides layers",
+    "how": "Survivor.Appearance record → LookLayers",
+    "godot": "Stacked Sprite2D layers or Skeleton3D attachments",
+    "unity": "Sprite Library / Sprite Resolver (2D Animation) or SkinnedMeshRenderer swaps"
+   },
+   {
+    "to": "audio.all",
+    "why": "Footsteps and shots sync to frames",
+    "how": "AnimDef.EventFrames name the sound cue",
+    "godot": "AnimationPlayer method/audio tracks",
+    "unity": "Animation Events call an SfxPlayer"
+   }
+  ],
+  "godot": {
+   "approach": "2D: AnimatedSprite2D with SpriteFrames per layer (sliced sheets, one animation per action_facing), or one AnimationPlayer driving stacked Sprite2D layers. Low-poly 3D like the prototype: import glTF from Blender, Skeleton3D + AnimationPlayer/AnimationTree, and either render in 3D with an orthographic iso camera or pre-render to sprites through a SubViewport.",
+   "keyApis": [
+    "AnimatedSprite2D / SpriteFrames",
+    "AnimationPlayer / AnimationTree",
+    "Skeleton3D, BoneAttachment3D",
+    "glTF import",
+    "Camera3D (orthogonal)"
+   ],
+   "docs": [
+    {
+     "t": "2D sprite animation",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/2d/2d_sprite_animation.html"
+    },
+    {
+     "t": "Animation (index)",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/animation/index.html"
+    },
+    {
+     "t": "Importing 3D scenes",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/assets_pipeline/importing_3d_scenes/index.html"
+    }
+   ]
+  },
+  "unity": {
+   "approach": "2D: sliced sprite sheets with Animator Controllers, or the 2D Animation package (bones + Sprite Library for outfit swaps). 3D: import FBX/glTF, Humanoid or Generic rig, Animator state machine with an orthographic iso camera; equip weapons as children of the hand bone.",
+   "keyApis": [
+    "Animator / Animator Controller",
+    "2D Animation (Sprite Library, Sprite Resolver)",
+    "Model import (FBX)",
+    "Animation Events"
+   ],
+   "docs": [
+    {
+     "t": "Animation overview",
+     "u": "https://docs.unity3d.com/Manual/AnimationOverview.html"
+    },
+    {
+     "t": "2D Animation package",
+     "u": "https://docs.unity3d.com/Manual/com.unity.2d.animation.html"
+    },
+    {
+     "t": "Importing models",
+     "u": "https://docs.unity3d.com/Manual/ImportingModelFiles.html"
+    }
+   ]
+  },
+  "learn": [
+   {
+    "t": "Game Programming Patterns: State",
+    "u": "https://gameprogrammingpatterns.com/state.html"
+   }
+  ],
+  "newb": [
+   "Layered 2D (body + hair + clothes + weapon, each a sheet) gives many looks from few drawings, but every layer needs every frame and facing.",
+   "8 facings × 9 actions × ~8 frames = ~576 frames per layer; this number drives the budget, so decide facings early.",
+   "Low-poly 3D rendered by an orthographic camera at the iso angle looks like the prototype and makes gear swaps cheap (attach a model to the hand bone).",
+   "An Animator/AnimationTree is a state machine: states (walk, shoot) and transitions; keep game logic out of it."
+  ],
+  "pitfalls": [
+   "Mirroring left/right facings when the character holds a weapon in one hand (the prototype avoids mirroring).",
+   "Blocking the sim on animations; long fights become unplayable without a skip/fast option.",
+   "Different scale or pivot between artists' figures; enforce the spec template file."
+  ],
+  "test": "Manual: a battle with every dead type and several outfits in all facings; footsteps and shots line up; animation speed toggle works. Automated: catalog validator checks every dead type and appearance option has its frames.",
+  "size": "XL"
+ },
+ {
+  "id": "art.props",
+  "title": "Buildings, furniture, items & icons",
+  "summary": "Final art for base buildings and their construction stages, the furniture and appliance catalogue, containers, vehicles, item icons for inventory, and weapon models held by figures.",
+  "whyHere": "Comes after the style guide and once the content database is frozen enough that the furniture and item lists won't churn; it is volume work that can be split among several artists.",
+  "subsystems": [
+   "Building sprites & build stages",
+   "Furniture & appliances (multi-cell)",
+   "Containers & lootable states",
+   "Vehicles (map + battle)",
+   "Item icons",
+   "Weapon models/sprites"
+  ],
+  "sliceScope": "Icons for the slice's ~20 items and 4–5 buildings with a 'under construction' variant, plus one container in closed/open/searched states.",
+  "fullScope": "Prototype: 248 furniture and appliance kinds with cell footprints and carry classes, a 16 × 16 icon for every non-gun item in families (food, ammo, parts, wear, tools, valuables, power, tents), guns drawn from parts as fitted, 28 building and 27 base sprites, vehicles as low-poly models by type (pickup, sedan, SUV, van, Hummer, Army truck), snow on props in winter.",
+  "protoRefs": [
+   "prototype/src/ui/itemart.js",
+   "docs/design-doc/sprites/manifest.json",
+   "docs/features/bases.md",
+   "docs/features/gear.md"
+  ],
+  "tasks": {
+   "data": [
+    "Export from ContentDb: every item, furniture, building and vehicle with art key, footprint (cells), facing count",
+    "Icon spec: size (e.g. 32 or 64 px final), background none, consistent angle and outline",
+    "Furniture rotation rules (4 rotations or 2 with mirror) and multi-cell pivot"
+   ],
+   "backend": [
+    "Sim provides object state (built %, open/searched, broken, rotation) as data for variant choice",
+    "Validator: every content record with an art key has final art or is flagged"
+   ],
+   "ui": [
+    "Inventory grid uses icons; tooltips show larger art",
+    "Base/battle map draws multi-cell furniture with Y-sort and rotation",
+    "Construction stage swap (plot → frame → finished)"
+   ]
+  },
+  "dataModel": "public sealed record PropArt(string Key, int CellsW, int CellsH, int Rotations, string[] StateKeys);\n// state keys e.g. \"closed\",\"open\",\"searched\",\"broken\"\npublic readonly record struct PropVisual(int DefId, byte Rotation, byte State, float BuiltPct);",
+  "dependsOn": [
+   "art.direction",
+   "base.furniture",
+   "base.buildings",
+   "gear.items",
+   "travel.vehicles"
+  ],
+  "connections": [
+   {
+    "to": "base.furniture",
+    "why": "Footprints and rotations must match the placement rules",
+    "how": "FurnitureDef.Footprint is the single source; art spec is generated from it",
+    "godot": "Scene per prop or atlas region; Y-sort by bottom cell",
+    "unity": "Prefab per prop or sprite; sorting by pivot at bottom cell"
+   },
+   {
+    "to": "ui.inventory",
+    "why": "Inventory shows item icons",
+    "how": "ItemDef.ArtKey → ArtCatalog icon",
+    "godot": "TextureRect in a GridContainer with an AtlasTexture",
+    "unity": "UI Toolkit Image with a Sprite from a SpriteAtlas"
+   },
+   {
+    "to": "art.characters",
+    "why": "Weapons appear both as icons and in hands",
+    "how": "WeaponDef has icon key and held-model key",
+    "godot": "BoneAttachment3D or a hand Sprite2D layer",
+    "unity": "Child of hand bone or a Sprite Resolver category"
+   }
+  ],
+  "godot": {
+   "approach": "Pack icons into an atlas (AtlasTexture regions or import as a sprite sheet) and reference them by key through ArtCatalog. Props on the iso map are Sprite2D or small scenes under a Y-sorted parent with offset set to the bottom cell. 3D vehicles can be glTF models rendered in the iso camera or pre-rendered.",
+   "keyApis": [
+    "AtlasTexture",
+    "Sprite2D (offset, region)",
+    "Node2D y_sort_enabled",
+    "PackedScene",
+    "glTF import"
+   ],
+   "docs": [
+    {
+     "t": "Importing images",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/assets_pipeline/importing_images.html"
+    },
+    {
+     "t": "AtlasTexture",
+     "u": "https://docs.godotengine.org/en/stable/classes/class_atlastexture.html"
+    },
+    {
+     "t": "Canvas layers & 2D ordering",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/2d/canvas_layers.html"
+    }
+   ]
+  },
+  "unity": {
+   "approach": "Icons in a SpriteAtlas so the inventory draws in one batch; props as sprites or prefabs with pivot at the bottom cell, sorted by Sorting Group. Use Sprite Editor to slice sheets and set pivots.",
+   "keyApis": [
+    "SpriteAtlas",
+    "Sprite Editor (slicing, pivots)",
+    "Sorting Group",
+    "Prefabs"
+   ],
+   "docs": [
+    {
+     "t": "Sprite Atlas",
+     "u": "https://docs.unity3d.com/Manual/class-SpriteAtlas.html"
+    },
+    {
+     "t": "Sprites",
+     "u": "https://docs.unity3d.com/Manual/Sprites.html"
+    },
+    {
+     "t": "2D sorting",
+     "u": "https://docs.unity3d.com/Manual/2DSorting.html"
+    }
+   ]
+  },
+  "learn": [],
+  "newb": [
+   "Icons are read at a glance: one clear silhouette, consistent angle and lighting, readable at the size players actually see.",
+   "Multi-cell objects need one pivot (usually the bottom cell nearest the camera) so they sort correctly against units.",
+   "Generate the list for the artist from the database, so nothing is forgotten and new items appear on the sheet automatically.",
+   "Stock asset packs are fine for props if the licence allows commercial use; keep a licence file per pack."
+  ],
+  "pitfalls": [
+   "Icons drawn at different scales or angles by different artists; give a template and a reference sheet.",
+   "Art that implies a different footprint than the rules (a 2-cell bed drawn 3 cells long).",
+   "Thousands of separate textures: slow loading and many draw calls; atlas them."
+  ],
+  "test": "Manual: inventory with every item shows no missing or blurry icons; furnishing a room in every rotation sorts correctly against walking units. Automated: validator reports full coverage for items, furniture and buildings.",
+  "size": "XL"
+ },
+ {
+  "id": "art.ui",
+  "title": "UI skin, fonts & icons",
+  "summary": "The final look of every window, button, panel, card and HUD: a theme built from the palette, licensed fonts, status and action icons, cursors and the title screen, applied through the UI framework's theme so no screen is restyled by hand.",
+  "whyHere": "Needs the UI framework and every screen to exist; reskinning is cheap only when all screens already use one shared theme.",
+  "subsystems": [
+   "Theme/stylesheet",
+   "Fonts & text scale",
+   "Icon set (status, actions, resources)",
+   "Panels, cards & 9-slice frames",
+   "Cursors & focus states",
+   "Title & key art",
+   "Accessibility (contrast, size)"
+  ],
+  "sliceScope": "One theme file with colours, one font family with 2–3 sizes and a UI scale setting, 9-slice panel and button frames, and 20 core icons (food, water, wood, ammo, health, mood…).",
+  "fullScope": "The prototype UI has a top bar with resources and trend arrows, left/right panels, card tray, ledger charts, codex, palette, minimap, battle action bar and hit %, inventory grids, new-run screen and key hints. The rebuild skins it for desktop resolutions (1280×720 to 4K).",
+  "protoRefs": [
+   "prototype/styles.css",
+   "prototype/src/ui/title.js",
+   "docs/features/ui.md"
+  ],
+  "tasks": {
+   "data": [
+    "Theme tokens: colours from the palette, spacing, corner radii, font sizes, as one file",
+    "Icon key list (status.bleeding, res.food, act.reload) and size spec (e.g. 24/32/48 px or SVG)",
+    "Font choice with licence (OFL fonts are safe), glyph coverage for future languages"
+   ],
+   "backend": [
+    "None in the sim; ensure all UI text and icons come from keys (no hard-coded strings/colours in screens)"
+   ],
+   "ui": [
+    "Build the Theme/USS with styles for every control type and state (hover, pressed, focus, disabled)",
+    "9-slice frames for panels, cards and tooltips; focus outlines (keyboard now, a controller later)",
+    "UI scale and text size options; colour-blind safe status colours",
+    "Title screen and loading screens with key art"
+   ]
+  },
+  "dataModel": "public sealed record UiToken(string Name, string Value); // \"color.danger\" = \"#c8463c\"\npublic sealed record IconSpec(string Key, int[] Sizes, bool Svg);\n// screens reference tokens and icon keys only, never literal colours",
+  "dependsOn": [
+   "art.direction",
+   "ui.framework",
+   "meta.help"
+  ],
+  "connections": [
+   {
+    "to": "ui.framework",
+    "why": "One theme reskins every screen",
+    "how": "All screens use theme types/classes; no per-screen overrides",
+    "godot": "A project-wide Theme resource set in Project Settings > GUI > Theme; type variations for buttons, cards",
+    "unity": "A shared Theme Style Sheet (TSS) + USS classes on every UIDocument"
+   },
+   {
+    "to": "ui.platforms",
+    "why": "Give every control a visible focus state now, so the far-future controller card needs no reskin.",
+    "how": "Focus styles in the shared theme",
+    "godot": "Theme focus StyleBox on every control type",
+    "unity": "USS :focus rules on every control type"
+   },
+   {
+    "to": "art.direction",
+    "why": "Palette and style shared with the world art",
+    "how": "Theme tokens derived from the palette file",
+    "godot": "Theme colours set from the palette",
+    "unity": "USS variables from the palette"
+   }
+  ],
+  "godot": {
+   "approach": "Make one Theme resource with the Theme editor: StyleBoxTexture (9-slice) for panels/buttons, fonts as FontFile or SystemFont, icons as theme icons. Use type variations for 'CardPanel', 'DangerButton'. Set stretch mode canvas_items and a UI scale option for different resolutions.",
+   "keyApis": [
+    "Theme / Theme editor",
+    "StyleBoxTexture (9-slice)",
+    "FontFile / FontVariation",
+    "Type variations",
+    "content_scale_factor"
+   ],
+   "docs": [
+    {
+     "t": "GUI skinning and themes",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/ui/gui_skinning.html"
+    },
+    {
+     "t": "Using the theme editor",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/ui/gui_using_theme_editor.html"
+    },
+    {
+     "t": "Using fonts",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/ui/gui_using_fonts.html"
+    },
+    {
+     "t": "Multiple resolutions",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/rendering/multiple_resolutions.html"
+    }
+   ]
+  },
+  "unity": {
+   "approach": "UI Toolkit: a Theme Style Sheet importing USS files with CSS-like variables for colours and sizes; 9-slice via -unity-slice-* properties; fonts as Font Assets. Panel Settings scale mode 'Scale With Screen Size'.",
+   "keyApis": [
+    "USS / Theme Style Sheet",
+    "-unity-slice-*",
+    "Panel Settings (scale)",
+    "Font Asset"
+   ],
+   "docs": [
+    {
+     "t": "USS (Unity Style Sheets)",
+     "u": "https://docs.unity3d.com/Manual/UIE-USS.html"
+    },
+    {
+     "t": "UI Toolkit",
+     "u": "https://docs.unity3d.com/Manual/UIElements.html"
+    }
+   ]
+  },
+  "learn": [
+   {
+    "t": "Google Fonts (OFL-licensed fonts)",
+    "u": "https://fonts.google.com/"
+   }
+  ],
+  "newb": [
+   "A theme is a stylesheet for the whole game: change it once, every button changes. That only works if no screen sets its own colours.",
+   "9-slice (nine-patch) frames stretch the middle of an image but keep the corners crisp, so one small image fits any panel size.",
+   "Check fonts' licences: SIL Open Font License fonts can be embedded in a commercial game.",
+   "Strategy games are text-heavy; test the smallest text on a laptop at 1366 × 768 and on a 4K screen."
+  ],
+  "pitfalls": [
+   "Hard-coded colours scattered in screens, making reskinning a hunt.",
+   "Status shown by colour alone (red/green) without an icon or shape for colour-blind players.",
+   "Fonts without the glyphs you need later (accents, Cyrillic) forcing a switch late."
+  ],
+  "test": "Manual: every screen in light of the new theme with no default-looking controls; keyboard focus visible everywhere; UI scale 75–150% without clipping. Automated: a lint/grep that finds literal colours in UI code.",
+  "size": "L"
+ },
+ {
+  "id": "audio.all",
+  "title": "Music, ambience & SFX (adaptive)",
+  "summary": "The game's sound: an audio bus layout (master, music, ambience, SFX, UI), adaptive music that follows the situation (day, night, tension, crisis, battle states, stingers), weather and wildlife ambience, and SFX for guns, melee, the dead, doors and vehicles.",
+  "whyHere": "Like art, final audio is commissioned late; but the bus layout and the event → cue map can be wired early with placeholders, so this card replaces placeholders with real assets and tunes the mix.",
+  "subsystems": [
+   "Bus layout & mixer",
+   "Music director (state machine + hysteresis)",
+   "Adaptive music playback",
+   "Ambience by place/weather/time",
+   "SFX events & variation",
+   "Positional battle audio",
+   "Volume options & ducking"
+  ],
+  "sliceScope": "Buses (Master, Music, Ambience, SFX, UI) with volume sliders, a day and a battle loop with a crossfade, 10 SFX (gunshot, melee, footstep, zombie groan, door, UI click) with random pitch, triggered from sim events.",
+  "fullScope": "Prototype (all synthesized, no files): a music director checked every 0.5 s with states title, day, night, tension, crisis, festival, battleQuiet/Seen/Fight/Win/Lose and stings (one of yours down, a colonist dead, base lost, battle won), with hysteresis (up after ~0.9 s, down after 8–16 s); ambience of wind, rain, thunder, night drone, birds, crickets by tile and zoom; SFX families for guns, melee, steps, doors, gear, vehicles, the dead; mute when unfocused.",
+  "protoRefs": [
+   "prototype/src/ui/musicdirector.js",
+   "prototype/src/ui/music.js",
+   "prototype/src/ui/audio.js",
+   "prototype/src/ui/ambience.js",
+   "prototype/tools/audiotest.js"
+  ],
+  "tasks": {
+   "data": [
+    "Cue table: sim event → cue id → clips, volume, pitch range, cooldown, bus",
+    "Music states and transitions (from, to, min hold seconds, crossfade/bar-sync) as data",
+    "Ambience rules: weather × time × biome → layers",
+    "Asset spec for the composer/sound designer: formats (OGG/WAV 48 kHz), loudness targets, loop points"
+   ],
+   "backend": [
+    "MusicDirector as pure C# (reads a read-only situation from the sim, returns a state + stings), unit-tested like the prototype's",
+    "Sim events already carry what audio needs (ShotFired with weapon id and position)"
+   ],
+   "ui": [
+    "Audio bus layout and options sliders (saved in settings)",
+    "Adaptive music player with crossfades/bar-synced transitions",
+    "Positional SFX in battle; ambience layers on the map; ducking music under dialogue/cards"
+   ]
+  },
+  "dataModel": "public enum MusicState { Title, Day, Night, Tension, Crisis, Festival, BattleQuiet, BattleSeen, BattleFight, BattleWin, BattleLose }\npublic sealed record Situation(bool InBattle, bool EnemySeen, bool Fighting, float Threat, bool Night);\npublic sealed record CueDef(string Id, string[] Clips, string Bus, float PitchVar, float Cooldown);\npublic interface IMusicDirector { (MusicState state, string[] stings) Direct(Situation s, double now); }",
+  "dependsOn": [
+   "core.events",
+   "ui.menus",
+   "ui.battle",
+   "combat.actions",
+   "meta.victory"
+  ],
+  "connections": [
+   {
+    "to": "core.events",
+    "why": "Sounds fire from domain events",
+    "how": "Audio bridge subscribes to drained events and maps them through the cue table",
+    "godot": "SimHost signal → AudioManager autoload plays an AudioStreamPlayer from a pool",
+    "unity": "SimHost event → AudioManager plays a pooled AudioSource"
+   },
+   {
+    "to": "meta.victory",
+    "why": "Threat level and endings choose music",
+    "how": "Situation built from Forecast.Level, battle state, GameEnded",
+    "godot": "MusicDirector node polls every 0.5 s and sets the AudioStreamInteractive clip",
+    "unity": "MusicDirector polls every 0.5 s and transitions snapshots/FMOD parameter"
+   },
+   {
+    "to": "art.characters",
+    "why": "Footsteps and shots sync to animation frames",
+    "how": "Animation event names = cue ids",
+    "godot": "AnimationPlayer audio/method tracks",
+    "unity": "Animation Events → AudioManager.Play(cue)"
+   },
+   {
+    "to": "ui.menus",
+    "why": "Volume settings per bus",
+    "how": "Settings record with bus volumes in dB/linear",
+    "godot": "AudioServer.SetBusVolumeDb per bus",
+    "unity": "AudioMixer.SetFloat on exposed parameters"
+   }
+  ],
+  "godot": {
+   "approach": "Set up buses in the Audio Bus layout (Music, Ambience, SFX, UI) with a compressor/limiter on Master. Godot 4.3+ AudioStreamInteractive holds music clips with transition rules (bar-synced, crossfade), AudioStreamPlaylist/Synchronized for layers, AudioStreamRandomizer for SFX variation. AudioStreamPlayer2D/3D for positional battle sounds.",
+   "keyApis": [
+    "AudioServer & bus layout",
+    "AudioStreamInteractive",
+    "AudioStreamRandomizer",
+    "AudioStreamPlayer / 2D / 3D",
+    "AudioEffectCompressor"
+   ],
+   "docs": [
+    {
+     "t": "Audio buses",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/audio/audio_buses.html"
+    },
+    {
+     "t": "AudioStreamInteractive",
+     "u": "https://docs.godotengine.org/en/stable/classes/class_audiostreaminteractive.html"
+    },
+    {
+     "t": "AudioStreamRandomizer",
+     "u": "https://docs.godotengine.org/en/stable/classes/class_audiostreamrandomizer.html"
+    },
+    {
+     "t": "Audio (index)",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/audio/index.html"
+    }
+   ]
+  },
+  "unity": {
+   "approach": "An Audio Mixer with groups per bus, exposed volume parameters and snapshots (calm, tension, battle) for mix changes; Audio Random Container (Unity 6) for SFX variation. For deeper adaptive music use FMOD Studio or Wwise (free tiers for small indies) with a parameter like 'threat'.",
+   "keyApis": [
+    "AudioMixer (groups, snapshots, exposed params)",
+    "AudioSource",
+    "Audio Random Container",
+    "FMOD/Wwise Unity integration"
+   ],
+   "docs": [
+    {
+     "t": "Audio Mixer",
+     "u": "https://docs.unity3d.com/Manual/AudioMixer.html"
+    },
+    {
+     "t": "AudioMixerSnapshot",
+     "u": "https://docs.unity3d.com/ScriptReference/Audio.AudioMixerSnapshot.html"
+    }
+   ]
+  },
+  "learn": [
+   {
+    "t": "FMOD documentation",
+    "u": "https://www.fmod.com/docs"
+   },
+   {
+    "t": "Audiokinetic Wwise library",
+    "u": "https://www.audiokinetic.com/en/library/"
+   }
+  ],
+  "newb": [
+   "A bus is a channel strip: everything on the SFX bus can be turned down together, compressed or muted when a card pops up.",
+   "The music director is a state machine with hysteresis: it must stay in 'battle' for a few seconds after the last shot, or the music flaps on and off.",
+   "Small random pitch and volume changes stop repeated sounds (footsteps, gunshots) from sounding robotic.",
+   "Licensing: buy music/SFX with a licence covering commercial games and soundtrack streaming; keep receipts and licence text."
+  ],
+  "pitfalls": [
+   "Dozens of the same sound in one frame (10 zombies groaning): cap voices per cue and add cooldowns.",
+   "Clipping when many sounds stack; put a limiter on Master.",
+   "Music loops with a click at the loop point; ask for proper loop points or tails."
+  ],
+  "test": "xUnit: MusicDirector on scripted situations goes up quickly and down slowly, never flaps. Manual: a battle from quiet to fight to win changes music smoothly; volume sliders persist; 20 dead do not drown the mix.",
+  "size": "L"
+ },
+ {
+  "id": "release.ship",
+  "title": "Packaging, store page, updates & crash reports",
+  "summary": "Shipping the game: export presets for Windows (and Linux/macOS), a store page and builds on itch.io and/or Steam, code signing, automatic updates, crash reporting with the save attached, and a release checklist.",
+  "whyHere": "Last card: it needs final art, audio, performance and balance. Set up a dummy export and itch.io upload early (from infra.ci) so the last mile isn't a surprise.",
+  "subsystems": [
+   "Export presets & build pipeline",
+   "Store pages (Steam / itch.io)",
+   "Steamworks (achievements, cloud saves)",
+   "Code signing",
+   "Auto-update & patch notes",
+   "Crash reporting & logs",
+   "Versioning & save compatibility"
+  ],
+  "sliceScope": "Smallest useful version: a CI job that exports a Windows build, zips it with the version number, and uploads it to a private itch.io page with butler; an in-game crash screen that writes the log and a crash save.",
+  "fullScope": "The prototype ships an Electron desktop app with a Setup.exe, a portable exe and electron-updater checking releases at launch and every 4 hours, installing on quit; an error screen stops the clock, writes a crash save slot and shows the commit for the report. Its browser build is not carried over: the rebuild ships for desktop only.",
+  "protoRefs": [
+   "desktop/updater.js",
+   "prototype/src/ui/crash.js",
+   "prototype/README.md",
+   "desktop/package.json"
+  ],
+  "tasks": {
+   "data": [
+    "Version scheme (semver + commit) shown on title and in saves; save schemaVersion migration tested across releases",
+    "Store assets list: capsule images in each required size, screenshots, trailer, description, tags",
+    "Release checklist and patch-notes template"
+   ],
+   "backend": [
+    "Global exception handler: stop the clock, write crash save + log, show a report screen",
+    "Achievements bridge: map meta.history achievements to Steam achievement ids (optional)",
+    "Settings/saves path per platform; cloud save folder compatible with Steam Auto-Cloud"
+   ],
+   "ui": [
+    "Crash/report screen with 'copy details' and 'open save folder'",
+    "Update notice / patch notes on title",
+    "Steam overlay friendly: pause on overlay, no input conflicts"
+   ]
+  },
+  "dataModel": "public sealed record BuildInfo(string Version, string Commit, DateTime BuiltUtc, string Platform);\npublic sealed record CrashReport(BuildInfo Build, string Exception, string StackTrace,\n  string LastLogLines, string? CrashSavePath, string ModeId, int Day);",
+  "dependsOn": [
+   "infra.ci",
+   "data.save",
+   "meta.perf",
+   "meta.balance",
+   "art.ui",
+   "audio.all"
+  ],
+  "connections": [
+   {
+    "to": "infra.ci",
+    "why": "Release builds come from CI, never a dev machine",
+    "how": "Tag v* triggers export + sign + upload jobs",
+    "godot": "godot --headless --export-release \"Windows Desktop\" in GitHub Actions (e.g. with a Godot .NET export image)",
+    "unity": "Unity build via GameCI unity-builder action or -batchmode -executeMethod BuildScript.Build"
+   },
+   {
+    "to": "data.save",
+    "why": "Updates must load old saves; crash saves must be loadable",
+    "how": "schemaVersion migrations with fixture saves from each release in tests",
+    "godot": "user:// path stays stable across versions",
+    "unity": "persistentDataPath stays stable (same company/product name)"
+   },
+   {
+    "to": "meta.history",
+    "why": "Steam achievements mirror in-game ones",
+    "how": "AchievementEarned event → platform service interface IPlatform.Unlock(id)",
+    "godot": "GodotSteam (GDExtension) or Steamworks.NET in C#",
+    "unity": "Steamworks.NET or Facepunch.Steamworks"
+   }
+  ],
+  "godot": {
+   "approach": "Create export presets (Windows, Linux, macOS) and export headless in CI; .NET projects export with the .NET runtime bundled. Set the icon and version via export options; sign Windows builds with signtool (configurable in the Windows export preset). For Steam use GodotSteam or Steamworks.NET; for crashes log to user://logs and optionally use Sentry's Godot SDK.",
+   "keyApis": [
+    "Export presets / export_presets.cfg",
+    "--headless --export-release",
+    "Feature tags",
+    "user://logs",
+    "GodotSteam / Steamworks.NET"
+   ],
+   "docs": [
+    {
+     "t": "Exporting projects",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/export/exporting_projects.html"
+    },
+    {
+     "t": "Exporting for Windows (code signing)",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/export/exporting_for_windows.html"
+    },
+    {
+     "t": "Feature tags",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/export/feature_tags.html"
+    },
+    {
+     "t": "Export (index)",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/export/index.html"
+    }
+   ]
+  },
+  "unity": {
+   "approach": "Unity 6 Build Profiles per platform; IL2CPP for release (watch code stripping for reflection-based JSON). Sign the exe with signtool after the build. Use Steamworks.NET for Steam, Unity's player log for diagnostics and a crash service (Unity Cloud Diagnostics or Sentry) for reports.",
+   "keyApis": [
+    "Build Profiles",
+    "Player Settings",
+    "IL2CPP & managed code stripping (link.xml)",
+    "Player log files"
+   ],
+   "docs": [
+    {
+     "t": "Build Profiles",
+     "u": "https://docs.unity3d.com/Manual/build-profiles.html"
+    },
+    {
+     "t": "Player settings",
+     "u": "https://docs.unity3d.com/Manual/class-PlayerSettings.html"
+    },
+    {
+     "t": "Managed code stripping",
+     "u": "https://docs.unity3d.com/Manual/managed-code-stripping.html"
+    },
+    {
+     "t": "Log files",
+     "u": "https://docs.unity3d.com/Manual/LogFiles.html"
+    }
+   ]
+  },
+  "learn": [
+   {
+    "t": "Steamworks documentation",
+    "u": "https://partner.steamgames.com/doc/home"
+   },
+   {
+    "t": "itch.io butler (upload & patching)",
+    "u": "https://itch.io/docs/butler/"
+   },
+   {
+    "t": "SignTool (code signing)",
+    "u": "https://learn.microsoft.com/en-us/windows/win32/seccrypto/signtool"
+   }
+  ],
+  "newb": [
+   "itch.io is the easy first store: free, instant, and butler gives players delta patches. Steam needs a fee per app, review and lead time for the 'Coming Soon' page (wishlists matter).",
+   "Code signing stops 'unknown publisher' warnings on Windows; unsigned indie builds work but scare some players.",
+   "Steam and itch apps update the game for you; you only need your own updater (like the prototype's Electron one) for direct downloads.",
+   "Always attach the build version and a save to bug reports, or you cannot reproduce them."
+  ],
+  "pitfalls": [
+   "Release builds stripping code the JSON loader needs via reflection (Unity IL2CPP), or AOT trimming in .NET; use source-generated System.Text.Json.",
+   "Changing the save path or company name between versions, 'losing' everyone's saves.",
+   "Shipping without testing on a clean machine (missing runtime, absolute paths, case-sensitive file names on Linux)."
+  ],
+  "test": "CI: tag produces signed builds for each platform, uploads to a private branch/channel; a fixture save from the previous release loads. Manual: install on a clean PC, play 30 minutes, force a crash and check the crash save and report; update to a new build keeps settings and saves.",
+  "size": "L"
+ }
+]

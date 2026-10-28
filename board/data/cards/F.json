@@ -1,0 +1,1818 @@
+[
+ {
+  "id": "ui.framework",
+  "title": "UI framework, theme & window system",
+  "summary": "The skeleton every screen sits in: a root layout (top bar, map viewport, side panel, log strip), a window manager for modal and floating panels, one Theme/USS skin, and presenters that read sim state and send commands.",
+  "whyHere": "First UI card: menus, map, hub and battle all plug into its window manager, theme and presenter base, so you build \"how a panel opens, refreshes and closes\" once instead of nine times.",
+  "subsystems": [
+   "Root screen layout",
+   "Window manager (stack, Esc, focus)",
+   "Theme / USS skin tokens",
+   "Presenter (view-model) base",
+   "UI command sink",
+   "Tooltip service",
+   "UI scale & colour-blind option",
+   "Toasts"
+  ],
+  "sliceScope": "Root scene: top bar (date/time, speed buttons), central viewport, right info panel, bottom log strip. A WindowManager that opens modal or floating windows with title bar + close, Esc closes the top one. One default Theme with 6 semantic tones (neutral, good, warn, danger, info, accent) and a free font. Hover tooltips. UI scale 100/125/150%. A debug key that outlines every control.",
+  "fullScope": "Prototype: DOM panels round a canvas map; foldable, resizable left/right panels and log whose rules are plain functions tested headless (ui/layout.js); a shared window title bar with scrolling tabs; a bottom-left HUD row of toggles with counts; uikit cost chips (have/need green/red), stat rows and badges; a meaning-colour palette with an Okabe–Ito colour-blind set; every click goes through one action dispatcher in main.js.",
+  "protoRefs": [
+   "prototype/src/ui/windows.js",
+   "prototype/src/ui/layout.js",
+   "prototype/src/ui/uikit.js",
+   "prototype/src/ui/palette.js",
+   "docs/features/ui.md"
+  ],
+  "tasks": {
+   "data": [
+    "Define UI tokens: semantic tones (Neutral, Good, Warn, Danger, Info, Accent), font sizes, spacing; a default set and an Okabe–Ito colour-blind set.",
+    "WindowDef table (id, title, default size, modal?, singleton?, closes on Esc) as JSON or a static C# list.",
+    "UiPrefs record (UI scale, colour-blind, panel widths, window rects) saved apart from the game save."
+   ],
+   "backend": [
+    "Create a BrokenState.Presentation assembly (engine-free) for view-models: pure functions that turn state into display rows, e.g. SurvivorRow(name, hp%, mood, job, tone); xUnit-tested.",
+    "Layout rules as plain functions (clamp a window to the screen, keep the map >= 1/3 of the width, panel fold state) with tests, as the prototype's ui/layout.js.",
+    "UiCommandSink: the one place UI calls SimHost.Submit(ICommand); returns CommandResult(ok, reason) for inline feedback.",
+    "Event fan-out: SimHost drains sim events once per frame and marks subscribed presenters dirty; each presenter rebuilds at most once a frame."
+   ],
+   "ui": [
+    "Root scene from containers: TopBar, Viewport, RightPanel, LogStrip; full-rect anchors; obeys UI scale.",
+    "Reusable Window (title bar, close button, drag) + WindowManager stack + cursor tooltip.",
+    "One Theme/.tss of flat placeholder colours; no per-node colour overrides anywhere."
+   ]
+  },
+  "dataModel": "public enum UiTone { Neutral, Good, Warn, Danger, Info, Accent }\npublic sealed record WindowDef(string Id, string Title, int W, int H, bool Modal, bool Singleton);\npublic sealed record WinRect(int X, int Y, int W, int H);\npublic sealed record UiPrefs(float Scale, bool ColorBlind, Dictionary<string, WinRect> Windows);\npublic interface IPresenter { void Bind(ISimHost host); void Refresh(); void Unbind(); }\npublic sealed record SurvivorRow(int Id, string Name, float HpPct, string Mood, string Job, UiTone Tone);\npublic sealed record CommandResult(bool Ok, string? Reason);",
+  "dependsOn": [
+   "infra.architecture",
+   "core.events",
+   "core.commands",
+   "core.clock"
+  ],
+  "connections": [
+   {
+    "to": "infra.architecture",
+    "why": "Presenters need read access to the sim and a way to send intents, without owning the sim.",
+    "how": "SimHost exposes a read-only view (IReadOnlyWorld) and Submit(ICommand); presenters get both through an ISimHost interface so they can be tested with a fake.",
+    "godot": "SimHost is an autoload; presenters fetch it in _Ready (GetNode<SimHost>(\"/root/SimHost\")), subscribe to its C# events, and unsubscribe in _ExitTree.",
+    "unity": "SimHost MonoBehaviour referenced by a serialized field or a static Instance; presenters subscribe in OnEnable and unsubscribe in OnDisable."
+   },
+   {
+    "to": "core.events",
+    "why": "Screens refresh when something changed instead of polling the world every frame.",
+    "how": "Bridge drains the domain event queue each frame and raises typed C# events (SurvivorChanged(id), DailyTick); presenters set Dirty and Refresh once.",
+    "godot": "Re-emit as [Signal] delegates on SimHost or plain C# events (lighter, no Variant marshalling).",
+    "unity": "Plain C# events (event Action<SurvivorChanged>) on SimHost; UnityEvents only where you want Inspector wiring."
+   },
+   {
+    "to": "core.commands",
+    "why": "The UI never mutates state: every button becomes a validated command, the same path AI groups use (ADR 0001 parity).",
+    "how": "Button handler builds a command record (QueueBuild, SetJob) and calls UiCommandSink; a refused CommandResult.Reason goes to a toast or the button's tooltip.",
+    "godot": "button.Pressed += () => sink.Submit(new SetJob(id, job));",
+    "unity": "button.clicked += () => sink.Submit(new SetJob(id, job)); (UI Toolkit Button)"
+   },
+   {
+    "to": "ui.placeholders",
+    "why": "Icons, portraits and panel art come from the ArtCatalog, colours from the theme: the two seams that let M8 art drop in.",
+    "how": "Views take art keys from view-models (row.Art) and ask ArtService.Get(key).",
+    "godot": "TextureRect.Texture = ArtService.Get(row.Art); styles from the root Theme.",
+    "unity": "element.style.backgroundImage = new StyleBackground(ArtService.Get(row.Art)); styles from the .tss."
+   },
+   {
+    "to": "ui.platforms",
+    "why": "Controller focus navigation (far future) extends this skeleton.",
+    "how": "Keep windows built from containers with a default focus control and no hard-coded pixel positions.",
+    "godot": "Set FocusMode and a default control per Window, so a pad can drive it later.",
+    "unity": "Mark elements focusable, so a pad can drive them later."
+   }
+  ],
+  "godot": {
+   "approach": "Build UI from Control nodes inside Containers (VBox/HBox/Margin/PanelContainer) and let containers do layout; use anchors only for the root (Full Rect) and corner overlays. One Theme resource on the root Control styles every child; theme type variations (e.g. \"DangerLabel\") give semantic styles. Put the HUD in a CanvasLayer so it ignores the map camera. The WindowManager is a Control that instantiates window scenes (PackedScene) and handles ui_cancel.",
+   "keyApis": [
+    "Control",
+    "Container (VBox/HBox/Margin/PanelContainer)",
+    "Theme",
+    "StyleBoxFlat",
+    "CanvasLayer",
+    "PackedScene",
+    "Control.TooltipText"
+   ],
+   "docs": [
+    {
+     "t": "Introduction to GUI skinning",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/ui/gui_skinning.html"
+    },
+    {
+     "t": "Using the theme editor",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/ui/gui_using_theme_editor.html"
+    },
+    {
+     "t": "Using Containers",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/ui/gui_containers.html"
+    },
+    {
+     "t": "Size and anchors",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/ui/size_and_anchors.html"
+    }
+   ]
+  },
+  "unity": {
+   "approach": "Use UI Toolkit, Unity 6's recommended runtime UI: UXML for structure, USS for style, a UIDocument + PanelSettings per layer, flexbox layout like CSS. Put semantic colours in USS variables (--good, --danger) inside a Theme Style Sheet (.tss) so a later skin is a file swap. uGUI (Canvas, RectTransform anchors, Layout Groups) still works and has more tutorials, but don't mix both; keep uGUI for world-space bits only if needed. Presenters are plain C# classes that query elements by name (root.Q<Label>(\"date\")).",
+   "keyApis": [
+    "UIDocument",
+    "PanelSettings",
+    "VisualElement",
+    "UXML / USS",
+    "Theme Style Sheet (.tss)",
+    "UI Builder"
+   ],
+   "docs": [
+    {
+     "t": "UI Toolkit",
+     "u": "https://docs.unity3d.com/Manual/UIElements.html"
+    },
+    {
+     "t": "Comparison of UI systems in Unity",
+     "u": "https://docs.unity3d.com/Manual/UI-system-compare.html"
+    },
+    {
+     "t": "Get started with runtime UI",
+     "u": "https://docs.unity3d.com/Manual/UIE-get-started-with-runtime-ui.html"
+    },
+    {
+     "t": "Theme Style Sheet (TSS)",
+     "u": "https://docs.unity3d.com/Manual/UIE-tss.html"
+    }
+   ]
+  },
+  "learn": [
+   {
+    "t": "Microsoft Learn: The Model-View-ViewModel pattern",
+    "u": "https://learn.microsoft.com/en-us/dotnet/architecture/maui/mvvm"
+   },
+   {
+    "t": "Game Programming Patterns: Observer",
+    "u": "https://gameprogrammingpatterns.com/observer.html"
+   },
+   {
+    "t": "Game Programming Patterns: Command",
+    "u": "https://gameprogrammingpatterns.com/command.html"
+   }
+  ],
+  "newb": [
+   "The golden rule: UI reads state and sends commands; it never changes sim state. If a dropdown sets survivor.Job directly, saves, AI parity and tests never see it happen; a SetJob command goes through the same validation as everyone else.",
+   "Presenter / view-model, lightly: a small class between the sim and the widgets that turns state into ready-to-show values (text, %, tone). Widgets stay dumb and the presenter is unit-testable without an engine.",
+   "Refresh on change, not every frame: an event marks a presenter dirty; rebuild once. Only cheap things like the clock text update every frame.",
+   "Anchors pin a control to its parent's edges (root, HUD corners); containers arrange their children automatically (everything inside a panel). Hand-positioning children of a container is the classic Godot UI fight.",
+   "The theme is the skin: if every colour and font comes from one Theme/.tss, the artists' UI skin at M8 replaces one file."
+  ],
+  "pitfalls": [
+   "Per-node colour/font overrides scattered through scenes: the skin swap misses them.",
+   "Presenters keeping references to sim objects across a load; keep IDs and look them up again on WorldReplaced.",
+   "Subscribing without unsubscribing: closed windows still receive events and touch freed nodes.",
+   "Building a docking framework before you have screens; modal + floating windows are enough for the slice."
+  ],
+  "test": "Unit: layout rules (clamp, min map width) and view-model fixtures (state in, rows out). Engine (gdUnit4 / Unity Test Framework): open 3 windows, Esc closes them top-first. Manual: resize 1280×720 → 2560×1440 and UI scale 150%: nothing clips or overlaps; a button press appears in the sim log as a command.",
+  "size": "M"
+ },
+ {
+  "id": "ui.placeholders",
+  "title": "Placeholder art kit & art-swap seams (ArtCatalog)",
+  "summary": "Every visual is looked up by a string art key (\"item.pistol_9mm\", \"terrain.forest\", \"dead.walker\") through an ArtCatalog; until M8 the catalog maps keys to CC0 placeholder packs, coloured shapes and labels, so the human-made art drops in with no code change.",
+  "whyHere": "Right after the framework and before any view: map, hub, inventory and battle all need something to draw, and if scenes load textures by path, swapping art later means touching every scene.",
+  "subsystems": [
+   "Art key convention",
+   "ArtCatalog asset",
+   "ArtService + loud fallback",
+   "Generated shape/colour/label placeholders",
+   "CC0 pack import (Kenney)",
+   "Coverage test",
+   "Debug draw overlay",
+   "Art gallery scene"
+  ],
+  "sliceScope": "Key convention \"area.name[.variant]\"; an ArtCatalog with ~60 keys (8 terrain, 5 POIs, 6 units/dead, 20 items, 5 buildings, 15 icons) mapped to Kenney sprites or flat colours; a fallback that draws a magenta-bordered shape with the key's short label (never a crash); a test that every content art key has an entry or an allowed fallback; F3 debug overlay showing keys and cell coordinates.",
+  "fullScope": "The prototype has no image files at all: everything is procedural pixel art painted and cached in code (survivors from appearance layers, ui/mapsprites.js's 3914 lines of trucks, walkers and boats, a drawing per item family, 32×16 iso tiles scaled nearest-neighbour). The rebuild keeps art as data instead: hundreds of keys across items, terrain, buildings, the dead, portraits and icons, filled by the artists in art.world, art.characters, art.props and art.ui.",
+  "protoRefs": [
+   "prototype/src/ui/sprites.js",
+   "prototype/src/ui/itemart.js",
+   "prototype/src/ui/mapsprites.js",
+   "prototype/src/ui/palette.js"
+  ],
+  "tasks": {
+   "data": [
+    "Fix the art key convention and add an `art` field to every content record (items, terrain, buildings, dead types, POIs) in data.content's JSON.",
+    "ArtEntry schema: key → texture/atlas region, pivot, size in cells, frames, placeholder colour + label.",
+    "Pick CC0 packs (Kenney hexagon, isometric, UI and icon packs); record source and licence in CREDITS.md.",
+    "Fix sizes now: hex cell px, iso tile 2:1 (e.g. 64×32), icon 32/64 px; artists will draw to these specs."
+   ],
+   "backend": [
+    "ContentDb.AllArtKeys(): every key the sim can ask for, engine-free.",
+    "Coverage test: every content art key resolves in the catalog manifest (a JSON export of the catalog) or is on an allowed-fallback list; print coverage %.",
+    "Stable placeholder colour from the key (hash → hue) so a key always looks the same across runs."
+   ],
+   "ui": [
+    "ArtCatalog Resource / ScriptableObject + ArtService.Get(key) returning a texture or a generated placeholder.",
+    "F3 debug overlay: art keys, cell coords, bounding boxes over map and battle.",
+    "A gallery debug scene listing every key with its current art, so artists see what is missing."
+   ]
+  },
+  "dataModel": "public sealed record ArtEntry(string Key, string? Texture, int[]? Region, (int X, int Y) Pivot, int Frames, string PlaceholderHex, string Label);\npublic interface IArtCatalog { bool TryGet(string key, out ArtEntry entry); IEnumerable<string> Keys { get; } }\n// content side: public sealed record ItemDef(string Id, string Name, float Kg, string Art);\n// Godot: [GlobalClass] public partial class ArtCatalog : Resource { [Export] public Godot.Collections.Dictionary<string, Texture2D> Map = new(); }\n// Unity: public class ArtCatalog : ScriptableObject { public List<ArtPair> entries; Dictionary<string, Sprite> map; }",
+  "dependsOn": [
+   "data.content",
+   "ui.framework"
+  ],
+  "connections": [
+   {
+    "to": "data.content",
+    "why": "Content records name their art; the catalog must cover every name.",
+    "how": "Each def has an Art string; ContentDb validation test checks keys are well-formed; the coverage test checks they resolve.",
+    "godot": "ArtService autoload loads res://art/art_catalog.tres once at startup.",
+    "unity": "Bootstrap holds a serialized ArtCatalog ScriptableObject reference (or Resources.Load at startup)."
+   },
+   {
+    "to": "ui.statemap",
+    "why": "Terrain, POI and team markers are drawn by key.",
+    "how": "TerrainDef.Art → catalog entry → tile source/atlas coords, resolved once when the TileSet is built.",
+    "godot": "Build TileSet atlas sources from the catalog; SetCell(coord, sourceId, atlasCoords).",
+    "unity": "Catalog maps key → TileBase asset; Tilemap.SetTile(cell, tile)."
+   },
+   {
+    "to": "ui.battle",
+    "why": "Floors, walls, props, survivors and the dead are drawn by key.",
+    "how": "UnitView.Art / TileKind art keys from the battle view-model.",
+    "godot": "Sprite2D.Texture = ArtService.Get(unit.Art) on spawn.",
+    "unity": "spriteRenderer.sprite = ArtService.Get(unit.Art) on spawn."
+   },
+   {
+    "to": "art.direction",
+    "why": "The key list plus sizes and pivots is the artists' work order at M8.",
+    "how": "Export the gallery/coverage report (key, size, pivot, where used) as CSV/Markdown.",
+    "godot": "Artists' PNGs replace entries in the .tres; scenes untouched.",
+    "unity": "Artists' sprites replace references in the ScriptableObject; prefabs untouched."
+   },
+   {
+    "to": "art.ui",
+    "why": "The UI skin is the theme file this card and ui.framework keep central.",
+    "how": "Icons go through ArtCatalog, panel styles through the Theme/.tss; nothing else holds visuals.",
+    "godot": "Swap the root Theme .tres.",
+    "unity": "Swap the Theme Style Sheet on PanelSettings."
+   }
+  ],
+  "godot": {
+   "approach": "Make ArtCatalog a custom Resource ([GlobalClass] partial class) with an exported Dictionary<string, Texture2D> (or an array of entry sub-resources), saved as a .tres and edited in the Inspector. An ArtService autoload returns a Texture2D or AtlasTexture region, and for a missing key a generated ImageTexture in the key's hash colour, plus a warning in the log. Import pixel-art PNGs with filter Nearest.",
+   "keyApis": [
+    "Resource",
+    "[GlobalClass]",
+    "AtlasTexture",
+    "ImageTexture",
+    "ResourceLoader",
+    "CanvasItem texture filter (Nearest)"
+   ],
+   "docs": [
+    {
+     "t": "Resources",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/scripting/resources.html"
+    },
+    {
+     "t": "Custom drawing in 2D",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/2d/custom_drawing_in_2d.html"
+    },
+    {
+     "t": "Using TileSets",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/2d/using_tilesets.html"
+    }
+   ]
+  },
+  "unity": {
+   "approach": "ArtCatalog is a ScriptableObject with a serialized List of (key, Sprite) turned into a Dictionary in OnEnable; one asset per area keeps diffs small. Pack Kenney sheets into Sprite Atlases (Filter Mode Point for pixel art). Missing keys return a tinted white sprite and log a warning. Addressables can replace direct references later if memory matters; not needed for the slice.",
+   "keyApis": [
+    "ScriptableObject",
+    "Sprite",
+    "SpriteAtlas",
+    "Texture2D",
+    "Resources.Load",
+    "Addressables (later)"
+   ],
+   "docs": [
+    {
+     "t": "ScriptableObject (Manual)",
+     "u": "https://docs.unity3d.com/Manual/class-ScriptableObject.html"
+    },
+    {
+     "t": "ScriptableObject (Scripting API)",
+     "u": "https://docs.unity3d.com/ScriptReference/ScriptableObject.html"
+    }
+   ]
+  },
+  "learn": [
+   {
+    "t": "Kenney: free CC0 game assets",
+    "u": "https://kenney.nl/assets"
+   },
+   {
+    "t": "Game Programming Patterns: Flyweight",
+    "u": "https://gameprogrammingpatterns.com/flyweight.html"
+   }
+  ],
+  "newb": [
+   "An art key is a promise, not a picture: code says \"draw item.pistol_9mm\"; the catalog decides what that is today (a grey box) and at M8 (a painted icon).",
+   "Placeholders should be ugly but readable: a distinct colour and a short label beat a pretty asset that misleads you about size or silhouette.",
+   "CC0 is public domain: Kenney packs need no credit, but a CREDITS file is a good habit and becomes the M8 replacement list.",
+   "A Resource (Godot) or ScriptableObject (Unity) is a data asset saved as a file and edited in the Inspector; ideal for lookup tables like this."
+  ],
+  "pitfalls": [
+   "Loading textures by path in scenes (\"res://art/pistol.png\"): it bypasses the catalog and breaks the swap.",
+   "Crashing on a missing key instead of drawing a loud fallback.",
+   "Mixing filtered and pixel art, or random sizes: scale bugs hide until real art arrives.",
+   "Spending days making placeholders pretty."
+  ],
+  "test": "Unit: coverage test over ContentDb art keys; hash colour stable. Engine: the gallery scene opens with no errors; deleting one texture shows a magenta fallback, not a crash. Manual: point the catalog at a second Kenney pack and see map, inventory and battle change with no code edit.",
+  "size": "S"
+ },
+ {
+  "id": "ui.menus",
+  "title": "Title, new game, save/load, settings",
+  "summary": "The out-of-game flow: title screen (Continue, New game, Load, Settings, Quit), the new-run screen (seed, map size, the 4 starting survivors), the save list, the pause menu and settings.",
+  "whyHere": "You can't playtest without starting, saving and loading a run; it also fixes the scene flow (title → generating → game → back) every later card assumes.",
+  "subsystems": [
+   "Game flow state machine",
+   "New-run setup",
+   "Generating/loading overlay",
+   "Save list & slots",
+   "Autosave & quick-save",
+   "Pause menu",
+   "Settings persistence",
+   "Confirm dialogs"
+  ],
+  "sliceScope": "Title: Continue / New game / Load / Settings / Quit. New run: seed (random, editable), map size (Small only), the 4-person crew with Reroll. A \"Generating map…\" overlay. Esc pause menu: Resume, Save, Load, Settings, Quit to title. Save list: name, in-game day/hour, real date, delete. One autosave a day (keep 3) + F5/F9 quick save/load. Settings: volume, fullscreen, UI scale.",
+  "fullScope": "Prototype title: Continue, New game, Load, Hall of fame, Settings, How to play, Quit. The new-run screen has three groups (Mode & people, World, Crew), world-config dials, 4 modes and a start-position picker; saves are grouped by campaign (manual, last 3 autosaves, battle-start save, Ironman slot, crash save), gzip-compressed with an index and .bsave export; Settings has Game, Options, Controls, Help and About tabs.",
+  "protoRefs": [
+   "prototype/src/ui/title.js",
+   "prototype/src/ui/newgame.js",
+   "prototype/src/ui/saves.js",
+   "prototype/src/ui/settings.js",
+   "prototype/src/ui/savelist.js"
+  ],
+  "tasks": {
+   "data": [
+    "NewRunOptions record (seed, map size, mode, crew reroll count): the only input that creates a run.",
+    "SaveMeta index per slot (id, name, campaign id, day, hour, hub, saved at, auto?, schemaVersion) kept beside the save files so the list loads without opening saves.",
+    "Settings record (audio, display, UI scale, bindings) in its own JSON file, never inside a save."
+   ],
+   "backend": [
+    "GameFlow state machine (Title → NewRun → Generating → InGame ⇄ Paused → Title), engine-free, transitions tested.",
+    "SaveService over data.save: list, write (temp file then rename), read, delete, autosave rotation (keep 3), unreadable-file result instead of a crash.",
+    "Deterministic crew reroll from seed + reroll counter, so a seed reproduces the crew."
+   ],
+   "ui": [
+    "Title, NewRun, SaveList, Settings and PauseMenu screens built from the framework windows and theme.",
+    "Generating/loading overlay with a spinner while worldgen runs off the main thread.",
+    "Confirm dialogs (overwrite? quit without saving?)."
+   ]
+  },
+  "dataModel": "public enum FlowState { Title, NewRun, Generating, InGame, Paused }\npublic sealed record NewRunOptions(ulong Seed, MapSize Size, GameMode Mode, int CrewRerolls);\npublic sealed record SaveMeta(string Id, string Name, string CampaignId, int Day, int Hour, DateTime SavedAt, bool Auto, int SchemaVersion);\npublic sealed record Settings(float Master, float Music, bool Fullscreen, float UiScale, Dictionary<string, string[]> Binds);\npublic sealed class GameFlow { public FlowState State { get; private set; } public bool Go(FlowState to); }",
+  "dependsOn": [
+   "ui.framework",
+   "data.save",
+   "core.mapgen",
+   "surv.model"
+  ],
+  "connections": [
+   {
+    "to": "data.save",
+    "why": "The menus are the user-facing side of save/load.",
+    "how": "ISaveService.Write(World, SaveMeta) / Read(id) → Result<World>; the bridge swaps SimHost.World and raises WorldReplaced.",
+    "godot": "Files under user:// (System.IO with ProjectSettings.GlobalizePath, or FileAccess); SimHost emits WorldReplaced; every presenter rebinds.",
+    "unity": "Files under Application.persistentDataPath with System.IO; SimHost raises a WorldReplaced C# event."
+   },
+   {
+    "to": "core.mapgen",
+    "why": "New game = generate a world from NewRunOptions.",
+    "how": "WorldGen.Create(options) → World, run on a worker thread; the result is handed to SimHost on the main thread.",
+    "godot": "await Task.Run(() => WorldGen.Create(o)); then apply via CallDeferred, update the overlay meanwhile.",
+    "unity": "await Task.Run(...) then Awaitable.MainThreadAsync() before touching UI."
+   },
+   {
+    "to": "ui.input",
+    "why": "The Controls tab of Settings edits and saves bindings.",
+    "how": "Settings.Binds holds overrides; ui.input applies them at startup.",
+    "godot": "InputMap updated from Settings on load.",
+    "unity": "LoadBindingOverridesFromJson on the actions asset."
+   },
+   {
+    "to": "meta.modes",
+    "why": "Later adds Hardcore/Custom modes and world config to the new-run screen.",
+    "how": "NewRunOptions grows (mode, WorldConfig); keep it a record so old saves' options still deserialize.",
+    "godot": "Extra OptionButtons/sliders in the same NewRun scene.",
+    "unity": "Extra DropdownField/Slider elements in the same UXML."
+   }
+  ],
+  "godot": {
+   "approach": "Keep one Main scene with the SimHost autoload and swap child screens (title, game) by instancing PackedScenes, so the sim lives through screen changes; ChangeSceneToFile also works when state sits in autoloads. Settings go in a ConfigFile or JSON under user://. Run world generation in a Task and update the overlay with CallDeferred.",
+   "keyApis": [
+    "SceneTree",
+    "PackedScene.Instantiate",
+    "ConfigFile",
+    "FileAccess / user://",
+    "ConfirmationDialog",
+    "LineEdit",
+    "OptionButton"
+   ],
+   "docs": [
+    {
+     "t": "Change scenes manually",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/scripting/change_scenes_manually.html"
+    },
+    {
+     "t": "Saving games",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/io/saving_games.html"
+    },
+    {
+     "t": "Singletons (Autoload)",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/scripting/singletons_autoload.html"
+    }
+   ]
+  },
+  "unity": {
+   "approach": "One persistent Bootstrap scene with SimHost (DontDestroyOnLoad); load Title and Game scenes with SceneManager.LoadSceneAsync, or keep one scene and swap UIDocuments. Saves go in Application.persistentDataPath via System.IO; PlayerPrefs only for tiny settings if at all. Generate the world off the main thread and come back before touching UI.",
+   "keyApis": [
+    "SceneManager.LoadSceneAsync",
+    "DontDestroyOnLoad",
+    "Application.persistentDataPath",
+    "PlayerPrefs",
+    "UIDocument",
+    "Awaitable"
+   ],
+   "docs": [
+    {
+     "t": "SceneManager",
+     "u": "https://docs.unity3d.com/ScriptReference/SceneManagement.SceneManager.html"
+    },
+    {
+     "t": "Application.persistentDataPath",
+     "u": "https://docs.unity3d.com/ScriptReference/Application-persistentDataPath.html"
+    },
+    {
+     "t": "PlayerPrefs",
+     "u": "https://docs.unity3d.com/ScriptReference/PlayerPrefs.html"
+    }
+   ]
+  },
+  "learn": [
+   {
+    "t": "Game Programming Patterns: State",
+    "u": "https://gameprogrammingpatterns.com/state.html"
+   }
+  ],
+  "newb": [
+   "A state machine is \"which mode am I in, and which moves are allowed\": an enum plus a transition table stops \"two menus open at once\" and \"saved from the title screen\" bugs.",
+   "Loading replaces the world object; anything holding the old one (presenters, map view) must rebind. One WorldReplaced event makes that a single code path.",
+   "Keep save metadata separate from the save: the list stays fast with 50 multi-MB saves.",
+   "Settings are not game state: volume and key bindings never go in the save."
+  ],
+  "pitfalls": [
+   "Generating the map on the main thread: the game freezes with no feedback (the prototype added a \"Generating map…\" box for exactly this).",
+   "No rule for when saving is allowed; for the slice: on the map, and automatically at battle start.",
+   "Writing a save in place: write a temp file, then rename, so a crash never leaves half a save."
+  ],
+  "test": "Unit: GameFlow transitions; autosave rotation keeps 3; a truncated file reads as an error result. Engine: new run → save → quit to title → load → same day, hour and survivor names. Manual: three new runs with the same seed give the same map and crew.",
+  "size": "M"
+ },
+ {
+  "id": "ui.statemap",
+  "title": "State Map view (hex rendering, camera, selection, layers)",
+  "summary": "The main campaign screen: the hex State of Calder drawn from what the player knows (terrain, fog, POIs, teams, the dead), with a pan/zoom camera, hover and click selection, a tile info panel and toggleable layers.",
+  "whyHere": "The centre of the slice's campaign play; it needs hex math, a generated map, fog and the art seams, and team orders (ui.team) build on its selection and picking.",
+  "subsystems": [
+   "Hex tile rendering",
+   "Fog of war layer",
+   "Markers (hub, POIs, teams, dead)",
+   "Camera pan/zoom/clamp",
+   "Screen-to-cell picking",
+   "Hover & selection",
+   "Layer toggles",
+   "Tile info panel"
+  ],
+  "sliceScope": "Pointy-top hexes for a small map (~40×30) with terrain from a Kenney hex pack or flat colours; unknown tiles black, remembered tiles dimmed with \"last seen\"; markers for hub, POIs and teams (coloured discs + labels); WASD/arrows/middle-drag pan, wheel zoom to the cursor, clamped to the map; hover outline, click select, right panel with terrain, POI, dead estimate and last seen; 3 layer toggles (dead, POIs, paths).",
+  "fullScope": "Prototype: a canvas renderer that only reads the sim; pointy-top hexes of 26 px; zoom 0.15–2.6, the minimum set so the whole map fits; maps from 32×24 to 500×300 (Huge); 10 default layers (POIs, territory, teams, workers, hordes, deaths, vehicles, finds, weather, radio) plus an infection overlay; static layers cached and redrawn only when their hash changes; rain and fog banks drawn; a minimap; team figures shown at work.",
+  "protoRefs": [
+   "prototype/src/ui/render.js",
+   "prototype/src/ui/wxmap.js",
+   "prototype/src/ui/minimap.js",
+   "docs/features/travel.md"
+  ],
+  "tasks": {
+   "data": [
+    "Map presentation table: terrain id → art key, base colour, label; layer ids with default on/off.",
+    "Hex layout constants in one place: pointy-top, cell size px, offset scheme (e.g. odd-r) agreed with core.hexgrid."
+   ],
+   "backend": [
+    "MapViewModel: per-tile Unknown / Remembered(lastSeenDay) / Visible from the player's fog knowledge; unseen tiles never expose true contents.",
+    "Engine-free HexLayout.ToPixel / FromPixel (cube rounding), tested against core.hexgrid so picking matches the sim.",
+    "TileInfo query: what the player knows about a tile (terrain, POI name, dead estimate band, last seen).",
+    "Dirty-tile set from events (TileRevealed, PartyMoved) so only changed cells are redrawn."
+   ],
+   "ui": [
+    "Terrain on a hex TileMapLayer / Unity hex Tilemap; fog on a second layer; markers as sprites + labels.",
+    "Camera: keys, middle-drag and edge pan; zoom about the cursor; clamp to map bounds; H centres on the hub.",
+    "Hover/selection outline, tile info panel and layer toggle buttons."
+   ]
+  },
+  "dataModel": "public readonly record struct Hex(int Q, int R);\npublic enum Seen { Unknown, Remembered, Visible }\npublic sealed record HexLayout(float Size) { public (float X, float Y) ToPixel(Hex h) => (Size * MathF.Sqrt(3) * (h.Q + h.R / 2f), Size * 1.5f * h.R); public Hex FromPixel(float x, float y) { /* inverse + cube round */ } }\npublic sealed record TileView(Hex At, string TerrainArt, Seen Seen, int? LastSeenDay, string? PoiArt, int DeadBand);\npublic sealed record MapSelection(int? PartyId, Hex? Hover, Hex? Selected);",
+  "dependsOn": [
+   "ui.framework",
+   "ui.placeholders",
+   "core.hexgrid",
+   "core.mapgen",
+   "travel.fog"
+  ],
+  "connections": [
+   {
+    "to": "core.hexgrid",
+    "why": "A click must land on the same cell the sim means; one off-by-one on odd rows breaks paths and orders.",
+    "how": "Sim uses axial Hex; one HexAdapter converts axial ↔ the engine's offset cell coords; tests round-trip every cell.",
+    "godot": "TileSet tile_shape = Hexagon with the offset axis matching pointy-top; TileMapLayer.LocalToMap / MapToLocal give Vector2I offset coords → HexAdapter.",
+    "unity": "Grid Cell Layout = Hexagon (pointy-top by default); GridLayout.WorldToCell / CellToWorld give offset Vector3Int → HexAdapter."
+   },
+   {
+    "to": "travel.fog",
+    "why": "The map shows the player's knowledge, not the true world.",
+    "how": "IPlayerKnowledge.TileState(hex) and a TileRevealed event.",
+    "godot": "On TileRevealed, EraseCell on the fog TileMapLayer and refresh that terrain cell.",
+    "unity": "On TileRevealed, fogTilemap.SetTile(cell, null)."
+   },
+   {
+    "to": "ui.team",
+    "why": "Selecting a team and right-clicking a tile is how expeditions are ordered.",
+    "how": "Shared MapSelection state in the presentation layer; a TileContext(hex) request when right-clicked.",
+    "godot": "Map view emits a C# event TileRightClicked(hex) from _UnhandledInput.",
+    "unity": "Map controller raises TileRightClicked(hex) when the pointer is not over UI."
+   },
+   {
+    "to": "dead.population",
+    "why": "The dead per tile are the map's main danger read-out.",
+    "how": "Show an estimate band from the player's last report (none / few / many / horde), never the exact live count.",
+    "godot": "Small Label or icon marker per known tile on a markers layer.",
+    "unity": "Pooled SpriteRenderers/TextMeshPro labels on a markers object."
+   },
+   {
+    "to": "meta.qol",
+    "why": "The minimap, map notes and watch list later sit on this view.",
+    "how": "Reuse MapViewModel and HexLayout; minimap is the same data at 1 px per tile.",
+    "godot": "SubViewport or an Image updated per dirty tile.",
+    "unity": "RenderTexture or a Texture2D updated per dirty tile."
+   }
+  ],
+  "godot": {
+   "approach": "A TileMapLayer whose TileSet has Tile Shape = Hexagon (offset axis set for pointy-top) for terrain, a second TileMapLayer for fog. Godot stores hexes in offset coords, so keep one adapter to the sim's axial Hex. Markers are Sprite2D/Label nodes under a Node2D with y_sort_enabled; Camera2D does pan and zoom (Zoom, Limit*). Picking: GetGlobalMousePosition() → terrain.LocalToMap().",
+   "keyApis": [
+    "TileMapLayer",
+    "TileSet (TileShape Hexagon)",
+    "Camera2D",
+    "TileMapLayer.LocalToMap / MapToLocal",
+    "Node2D.GetGlobalMousePosition",
+    "_UnhandledInput"
+   ],
+   "docs": [
+    {
+     "t": "Using TileMaps",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/2d/using_tilemaps.html"
+    },
+    {
+     "t": "Using TileSets",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/2d/using_tilesets.html"
+    },
+    {
+     "t": "TileMapLayer",
+     "u": "https://docs.godotengine.org/en/stable/classes/class_tilemaplayer.html"
+    },
+    {
+     "t": "Camera2D",
+     "u": "https://docs.godotengine.org/en/stable/classes/class_camera2d.html"
+    }
+   ]
+  },
+  "unity": {
+   "approach": "A Grid with Cell Layout = Hexagon and Tilemaps for terrain and fog (fog's TilemapRenderer sorted above). Unity hex tilemaps use offset coordinates (pointy-top by default; flat-top tiles exist), so add one converter to axial. An orthographic camera you move and zoom (orthographicSize), or Cinemachine 3 with a confiner; picking = Camera.ScreenToWorldPoint(pointer) → grid.WorldToCell.",
+   "keyApis": [
+    "Grid (Hexagon layout)",
+    "Tilemap / Tilemap.SetTile",
+    "GridLayout.WorldToCell",
+    "Camera.ScreenToWorldPoint",
+    "Cinemachine"
+   ],
+   "docs": [
+    {
+     "t": "Hexagonal Tilemaps",
+     "u": "https://docs.unity3d.com/Manual/Tilemap-Hexagonal.html"
+    },
+    {
+     "t": "Tilemap component",
+     "u": "https://docs.unity3d.com/Manual/class-Tilemap.html"
+    },
+    {
+     "t": "GridLayout.WorldToCell",
+     "u": "https://docs.unity3d.com/ScriptReference/GridLayout.WorldToCell.html"
+    },
+    {
+     "t": "Cinemachine 3 manual",
+     "u": "https://docs.unity3d.com/Packages/com.unity.cinemachine@3.1/manual/index.html"
+    }
+   ]
+  },
+  "learn": [
+   {
+    "t": "Red Blob Games: Hexagonal Grids",
+    "u": "https://www.redblobgames.com/grids/hexagons/"
+   },
+   {
+    "t": "Red Blob Games: Implementation of Hex Grids",
+    "u": "https://www.redblobgames.com/grids/hexagons/implementation.html"
+   }
+  ],
+  "newb": [
+   "Axial coordinates (q, r) make hex maths simple (neighbours, distance, rings); offset coordinates are how engines store hex tiles in rows. Keep axial in the sim and convert at the edge.",
+   "Screen-to-cell picking is two undo steps: undo the camera (pan/zoom) to get a world point, then undo the hex layout and round to the nearest hex. Engines do both; just go through the camera first.",
+   "Fog is a view of knowledge: draw \"last seen day 3, many dead\", not the live truth. It also keeps the player and AI groups on equal terms.",
+   "Redraw on change: 40×30 is tiny, but the full game reaches 500×300 = 150,000 tiles; setting only dirty cells scales, a full redraw per frame does not."
+  ],
+  "pitfalls": [
+   "Sim and engine disagreeing on hex orientation or offset (odd-r vs even-q): looks fine until odd rows are off by one.",
+   "Zooming about the screen centre instead of the cursor, or no zoom/pan clamp.",
+   "Drawing true contents under fog (info leak, and a cheat later).",
+   "One Node with a script per tile: use the tilemap for terrain, nodes only for the few markers."
+  ],
+  "test": "Unit: HexLayout round-trip for every cell of a 40×30 map; FromPixel near corners picks consistently; MapViewModel hides unseen POIs. Engine: clicking a cell shows the same coords the sim prints. Manual: 60 fps panning/zooming on the slice map; toggle layers; watch fog lift as a team moves.",
+  "size": "L"
+ },
+ {
+  "id": "ui.hub",
+  "title": "Hub screens (roster, stock, build, work)",
+  "summary": "The base window for the slice's one hub: the 4 survivors (needs, health, skills, job), the stockpile with daily rates, the build list and queue, and simple work assignment.",
+  "whyHere": "Once base, survivor and economy backends exist, this is how the player sees and steers them; the slice's first in-game day is spent here.",
+  "subsystems": [
+   "Base window with tabs",
+   "Roster & survivor detail",
+   "Needs/health bars",
+   "Stockpile & daily rates",
+   "Build list & queue",
+   "Work/role assignment",
+   "Refusal reasons"
+  ],
+  "sliceScope": "Base window (key B) with 4 tabs. Roster: name, HP bar, hunger/thirst/sleep/mood bars, top 3 skills, job dropdown (SetJob). Stock: food, water, wood with +/− per day and days left, item list. Build: 4–5 buildings with cost chips (have/need), Queue (QueueBuild), queue with progress bars and Cancel. Work: one role per survivor. Click a survivor for a detail panel (placeholder portrait by art key, wounds, skills).",
+  "fullScope": "Prototype: a base window with many tabs (food chain, work, armory, repairs, storage, production…); a roster table with every skill, sort, filters and bulk actions; a RimWorld-style Work grid with priorities 1–5 per work type, role defaults (Shift+click), schedules and crews; a 500×500 base map with placement; storage limits in kg.",
+  "protoRefs": [
+   "prototype/src/ui/roster.js",
+   "prototype/src/ui/work.js",
+   "prototype/src/ui/uikit.js",
+   "prototype/src/ui/storage.js",
+   "docs/features/bases.md"
+  ],
+  "tasks": {
+   "data": [
+    "Display metadata for needs (label, icon key, warn and danger thresholds) and jobs/roles (label, icon key).",
+    "Roster column definitions (id, label, sort key) so a new column is a data line."
+   ],
+   "backend": [
+    "Hub view-models: RosterRow, StockRow(supply, amount, perDay, daysLeft), BuildOption(def, cost chips, canQueue, reason), all tested with fixtures.",
+    "Use the existing commands SetJob, QueueBuild, CancelBuild; show each refusal reason on the control.",
+    "Days-left forecast taken from econ.daily's projection (one function, reused later by alerts)."
+   ],
+   "ui": [
+    "Base window with tabs; roster as a list with bar widgets; jobs as dropdowns.",
+    "Build tab: cost chips green/red, queue list with progress bars.",
+    "Survivor detail panel."
+   ]
+  },
+  "dataModel": "public sealed record RosterRow(int Id, string Name, float Hp, float Hunger, float Thirst, float Sleep, float Mood, string Job, string[] TopSkills);\npublic sealed record StockRow(string Supply, float Amount, float PerDay, float? DaysLeft);\npublic sealed record CostChip(string Supply, int Have, int Need) { public bool Met => Have >= Need; }\npublic sealed record BuildOption(string DefId, string Name, CostChip[] Costs, bool CanQueue, string? Reason);\npublic sealed record QueueBuild(int BaseId, string DefId) : ICommand;",
+  "dependsOn": [
+   "ui.framework",
+   "ui.placeholders",
+   "base.core",
+   "base.buildings",
+   "base.work",
+   "surv.needs",
+   "surv.health",
+   "econ.daily"
+  ],
+  "connections": [
+   {
+    "to": "base.buildings",
+    "why": "The Build tab lists what can be built and queues it.",
+    "how": "BuildOptions(baseId) query; QueueBuild/CancelBuild commands; BuildQueued/BuildProgress/BuildFinished events.",
+    "godot": "Build tab presenter subscribes to SimHost build events; ProgressBar.Value from progress.",
+    "unity": "Same presenter in plain C#; UI Toolkit ProgressBar.value."
+   },
+   {
+    "to": "base.work",
+    "why": "Assigning jobs is the hub's main decision in the slice.",
+    "how": "SetJob(survivorId, jobId) command; JobChanged event; refused when a survivor is wounded or away.",
+    "godot": "OptionButton.ItemSelected → sink.Submit(new SetJob(...)).",
+    "unity": "DropdownField.RegisterValueChangedCallback → sink.Submit(new SetJob(...))."
+   },
+   {
+    "to": "econ.daily",
+    "why": "Stock rates and days-left come from the daily economy.",
+    "how": "Economy.Projection(baseId) returns per-supply deltas; DailyTick event refreshes StockRows.",
+    "godot": "Stock presenter marks dirty on DailyTick.",
+    "unity": "Stock presenter marks dirty on DailyTick."
+   },
+   {
+    "to": "ui.inventory",
+    "why": "Base storage is one side of the item-transfer view.",
+    "how": "Stock tab's item list opens the transfer window with OwnerKind.BaseStock.",
+    "godot": "WindowManager.Open(\"inventory\", ctx).",
+    "unity": "WindowManager.Open(\"inventory\", ctx)."
+   }
+  ],
+  "godot": {
+   "approach": "A TabContainer inside a framework Window, one child Control and presenter per tab. For 4–30 survivors a VBoxContainer of small row scenes is fine; Tree gives sortable columns. ProgressBar for needs with theme type variations for good/warn/danger fills. Rebuild rows only when the presenter is dirty.",
+   "keyApis": [
+    "TabContainer",
+    "Tree",
+    "ItemList",
+    "ProgressBar",
+    "OptionButton",
+    "GridContainer"
+   ],
+   "docs": [
+    {
+     "t": "Control node gallery",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/ui/control_node_gallery.html"
+    },
+    {
+     "t": "Using Containers",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/ui/gui_containers.html"
+    },
+    {
+     "t": "Introduction to GUI skinning",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/ui/gui_skinning.html"
+    }
+   ]
+  },
+  "unity": {
+   "approach": "UI Toolkit TabView (Unity 6) or buttons that swap panels; MultiColumnListView for the roster (virtualised, sortable); ProgressBar for needs; DropdownField for jobs. Unity 6 runtime data binding can bind labels to view-model properties, but explicit Refresh() calls are easier to debug first.",
+   "keyApis": [
+    "TabView",
+    "MultiColumnListView",
+    "ProgressBar",
+    "DropdownField",
+    "Runtime data binding",
+    "UI Builder"
+   ],
+   "docs": [
+    {
+     "t": "UI Toolkit",
+     "u": "https://docs.unity3d.com/Manual/UIElements.html"
+    },
+    {
+     "t": "UI Builder",
+     "u": "https://docs.unity3d.com/Manual/UIE-UI-Builder.html"
+    },
+    {
+     "t": "Runtime data binding",
+     "u": "https://docs.unity3d.com/Manual/UIE-runtime-binding.html"
+    }
+   ]
+  },
+  "learn": [
+   {
+    "t": "Microsoft Learn: The Model-View-ViewModel pattern",
+    "u": "https://learn.microsoft.com/en-us/dotnet/architecture/maui/mvvm"
+   }
+  ],
+  "newb": [
+   "Hub UI is mostly lists of view-model rows: get the rows right in a unit test and the widgets are trivial.",
+   "A refused command is information: \"Need 20 wood (have 12)\" on a disabled button teaches the rules; a silent failure doesn't.",
+   "Show rates, not just totals: \"Food 34 (−6/day, ~5 days)\" tells the player what to do, and the sim already knows the projection.",
+   "One Base window with tabs, not a window per thing; the prototype's windows multiplied fast."
+  ],
+  "pitfalls": [
+   "Computing costs or forecasts in UI code: duplicates sim rules and drifts.",
+   "Rebuilding every row every frame: GC spikes, lost scroll and hover state.",
+   "Editing a survivor's fields from a dropdown handler instead of sending SetJob."
+  ],
+  "test": "Unit: a base with 12 wood and a 20-wood building → CanQueue false with the reason; DaysLeft maths. Engine: queue a build, run 2 days at 5×: the bar fills and BuildFinished shows a toast. Manual: assign all 4 survivors; the Stock tab's rates match the daily log.",
+  "size": "M"
+ },
+ {
+  "id": "ui.team",
+  "title": "Team forming & map orders (right-click menu)",
+  "summary": "Forming an expedition at the hub (pick survivors, supplies) and ordering it on the State Map: select the team, hover for a path and ETA, right-click a tile for what it can do there (move, search or raid a POI, return) with time and supply cost.",
+  "whyHere": "Links the hub to the map: it needs parties, pathing and POIs in the sim and the map's selection; without it the slice's expedition loop can't start.",
+  "subsystems": [
+   "Form team window",
+   "Team selection",
+   "Path & ETA preview",
+   "Right-click context menu",
+   "Team panel",
+   "Order queue display"
+  ],
+  "sliceScope": "Form team window: tick 1–4 survivors at the hub, take food/water from stock (FormParty). The team's marker is selectable; hovering a tile shows the path and \"~14 h · 2 food · 2 water\". Right-click menu: Move here, Search POI / Raid POI (known POIs only), Return to hub; disabled entries show why. Team panel: members, supplies, current order, Cancel.",
+  "fullScope": "Prototype: the Form a team window (people, up to 4 vehicles, gear, supplies, cargo) also edits a waiting team; the right-click team menu is built only from the player's knowledge, with travel + job time and reasons in tooltips; plain right-click replaces the plan, Shift+right-click queues; detached members; a land-job box asks the hours (30 min–24 h) with the expected yield; undo; trip templates.",
+  "protoRefs": [
+   "prototype/src/ui/teamctx.js",
+   "prototype/src/ui/teamform.js",
+   "prototype/tools/teamctxtest.js",
+   "docs/features/travel.md"
+  ],
+  "tasks": {
+   "data": [
+    "Order kinds the menu can offer (Move, SearchPoi, RaidPoi, Return, Wait) with label, icon key and the tile conditions that enable each."
+   ],
+   "backend": [
+    "ContextOptions(partyId, hex) → OrderOption list (kind, label, eta, cost, enabled, reason) from the player's knowledge only; tested like the prototype's teamctxtest.",
+    "PathPreview(partyId, hex) via travel.pathing: hexes + hours, cached per hovered cell.",
+    "FormParty, GiveOrder(queue: false|true) and CancelOrder commands with validation (at hub, members free, enough supplies)."
+   ],
+   "ui": [
+    "Form team window: survivor checkboxes, supply spin boxes showing available amounts.",
+    "Path line + ETA label on the map while hovering with a team selected.",
+    "Right-click popup menu with disabled entries and tooltips; team panel in the right sidebar."
+   ]
+  },
+  "dataModel": "public enum OrderKind { Move, SearchPoi, RaidPoi, Return, Wait }\npublic sealed record SupplyCost(int Food, int Water);\npublic sealed record OrderOption(OrderKind Kind, string Label, float EtaHours, SupplyCost Cost, bool Enabled, string? Reason);\npublic sealed record FormParty(int BaseId, int[] Members, SupplyCost Supplies) : ICommand;\npublic sealed record GiveOrder(int PartyId, OrderKind Kind, Hex Target, bool Queue) : ICommand;",
+  "dependsOn": [
+   "ui.statemap",
+   "travel.parties",
+   "travel.pathing",
+   "travel.pois"
+  ],
+  "connections": [
+   {
+    "to": "travel.pathing",
+    "why": "The preview must be the path the team will really walk, with the real time.",
+    "how": "IPathService.Find(partyId, to) → Path(hexes, hours); the same call the sim uses when the order is given.",
+    "godot": "Line2D.Points from terrain.MapToLocal(adapter.ToCell(hex)) for each hex.",
+    "unity": "LineRenderer.SetPositions from grid.CellToWorld(adapter.ToCell(hex))."
+   },
+   {
+    "to": "travel.parties",
+    "why": "Forming and ordering teams are party commands; arrivals come back as events.",
+    "how": "FormParty / GiveOrder / CancelOrder commands; PartyArrived, PartyOrderChanged events.",
+    "godot": "On PartyArrived, a toast with a button that centres Camera2D on the team.",
+    "unity": "On PartyArrived, a toast that moves the camera / Cinemachine target."
+   },
+   {
+    "to": "ui.statemap",
+    "why": "Selection and the right-clicked tile come from the map view.",
+    "how": "MapSelection.PartyId + TileRightClicked(hex) → ContextOptions query → menu.",
+    "godot": "Map view's TileRightClicked event opens a PopupMenu at the mouse.",
+    "unity": "Map controller event opens the context menu element at the pointer."
+   },
+   {
+    "to": "ui.battle",
+    "why": "A Raid order ends in a battle; the view must switch.",
+    "how": "On arrival the sim raises BattleStarted(battleId) (combat.map builds the map); the bridge pauses the campaign clock.",
+    "godot": "SimHost signal → main scene hides the map view and instances the battle scene.",
+    "unity": "SimHost event → load the Battle scene additively or enable the battle root."
+   }
+  ],
+  "godot": {
+   "approach": "Right-click on the map arrives in _UnhandledInput (after UI controls had their chance), so clicks on panels never reach the map. Pick the hex, ask the presenter for options and fill a PopupMenu (AddItem, SetItemDisabled, SetItemTooltip) at the mouse. The path preview is a Line2D in map space updated only when the hovered hex changes, with a Label for the ETA.",
+   "keyApis": [
+    "PopupMenu",
+    "_UnhandledInput",
+    "Line2D",
+    "CheckBox",
+    "SpinBox"
+   ],
+   "docs": [
+    {
+     "t": "Using InputEvent",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/inputs/inputevent.html"
+    },
+    {
+     "t": "PopupMenu",
+     "u": "https://docs.godotengine.org/en/stable/classes/class_popupmenu.html"
+    },
+    {
+     "t": "Mouse and input coordinates",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/inputs/input_mouse_and_input_coordinates.html"
+    }
+   ]
+  },
+  "unity": {
+   "approach": "Build the menu in UI Toolkit: a small panel positioned at the pointer (or ContextualMenuManipulator / DropdownMenu), entries SetEnabled(false) with tooltip text for refused orders. Stop click-through: route map clicks through one handler that first checks whether the pointer is over UI (panel.Pick). LineRenderer for the path.",
+   "keyApis": [
+    "ContextualMenuManipulator",
+    "DropdownMenu",
+    "VisualElement.SetEnabled",
+    "IPanel.Pick",
+    "LineRenderer",
+    "IntegerField"
+   ],
+   "docs": [
+    {
+     "t": "Manipulators",
+     "u": "https://docs.unity3d.com/Manual/UIE-Manipulators.html"
+    },
+    {
+     "t": "Events (UI Toolkit)",
+     "u": "https://docs.unity3d.com/Manual/UIE-Events.html"
+    }
+   ]
+  },
+  "learn": [
+   {
+    "t": "Game Programming Patterns: Command",
+    "u": "https://gameprogrammingpatterns.com/command.html"
+   },
+   {
+    "t": "Red Blob Games: Introduction to A*",
+    "u": "https://www.redblobgames.com/pathfinding/a-star/introduction.html"
+   }
+  ],
+  "newb": [
+   "The menu is a query, the click is a command: ask the sim \"what could this team do here?\", show exactly that, send GiveOrder on click. If menu and sim ever disagree, the sim wins.",
+   "Disabled-with-a-reason beats hidden: \"Raid (POI not scouted)\" teaches the rules.",
+   "Only offer what the player knows: options come from fog knowledge, so a hidden POI never appears.",
+   "Input order: engines give input to UI controls first, then to the game world; respect it and a click on a button never also moves a team."
+  ],
+  "pitfalls": [
+   "Recomputing the path every frame instead of when the hovered cell changes.",
+   "Click-through: one click closes the menu and also orders a move on the tile underneath.",
+   "An ETA from a UI speed formula that differs from the sim's travel time."
+  ],
+  "test": "Unit: team at hub + unknown tile → Move only; known POI → Search enabled; no water → Move disabled with a reason; ETA equals the pathing result. Engine: form a 2-person team, right-click a POI, Search, run time: it follows the preview and arrives within ±1 h of the ETA. Manual: Esc closes the menu without ordering anything.",
+  "size": "M"
+ },
+ {
+  "id": "ui.cards",
+  "title": "Event cards, log & time controls",
+  "summary": "The pacing UI: decision cards (title, text, 2–4 choices with hints) that pause the clock, a tray for cards that can wait, a scrolling game log, and the clock with pause/1×/2×/5×.",
+  "whyHere": "core.clock, core.cards and travel.events produce time, cards and log lines; nothing feels like a game until they appear on screen, and every later playtest depends on controlling speed.",
+  "subsystems": [
+   "Clock & speed bar",
+   "Card modal",
+   "Card tray & auto-answer timer",
+   "Game log",
+   "Toasts",
+   "Pause rules"
+  ],
+  "sliceScope": "Top bar: \"Day 3 · 14:20\" (minutes interpolated), Pause/1×/2×/5× buttons with Space and 1–3 keys. A card modal that pauses and sends AnswerCard(cardId, choice). A tray of waiting cards showing hours left before the default answer. A log panel (newest first, tone colours, click a line to centre its tile). Speed drops to 1× when a card arrives at 5×.",
+  "fullScope": "Prototype: speeds 0.25×, 0.5×, 1×, 2×, 3×, 5× (keys 0–5), dropping to 1× at 3×/5× when a card comes; per-kind pause rules in Options; a tray where a card takes its default answer after 8 in-game hours (TRAY_HOURS) and its team holds meanwhile; battles, searches and trade always stop the clock; a separate log window and a diary.",
+  "protoRefs": [
+   "prototype/src/ui/pacing.js",
+   "prototype/src/ui/logwindow.js",
+   "prototype/src/ui/alerts.js",
+   "docs/features/campaign.md"
+  ],
+  "tasks": {
+   "data": [
+    "Card presentation: kind → icon key, tone, pauses-by-default; log line tones.",
+    "Speed table (0, 1, 2, 5) and hotkeys in one config."
+   ],
+   "backend": [
+    "PacingPolicy (engine-free): from pending cards and settings decide run/pause and speed; tested (card at 5× → 1×; urgent card → pause).",
+    "Projections: CardView(id, title, body, choices with hints, hoursLeft) and LogLine(time, text, tone, focus hex).",
+    "AnswerCard and SetSpeed commands; the UI changes the clock only through them."
+   ],
+   "ui": [
+    "Time bar with toggle-group speed buttons and a date/time label interpolating minutes.",
+    "Card modal (rich text body, a button per choice with its hint as tooltip) and tray chips.",
+    "Capped or virtualised log list with tone colours; toasts for minor events."
+   ]
+  },
+  "dataModel": "public enum Speed { Paused = 0, X1 = 1, X2 = 2, X5 = 5 }\npublic sealed record ChoiceView(int Index, string Label, string? Hint, bool Enabled);\npublic sealed record CardView(int Id, string Kind, string Title, string Body, ChoiceView[] Choices, float HoursLeft, bool Pauses);\npublic sealed record LogLine(int Day, float Hour, string Text, UiTone Tone, Hex? Focus);\npublic sealed record AnswerCard(int CardId, int Choice) : ICommand;\npublic sealed record SetSpeed(Speed Speed) : ICommand;",
+  "dependsOn": [
+   "ui.framework",
+   "core.clock",
+   "core.events",
+   "core.cards",
+   "travel.events"
+  ],
+  "connections": [
+   {
+    "to": "core.clock",
+    "why": "Speed buttons drive the campaign clock; the label shows its time.",
+    "how": "SetSpeed command; Clock exposes Day, Hour and HourFraction (for smooth minutes between hourly ticks).",
+    "godot": "SimHost._Process(delta) advances the sim by delta × speed; the time Label updates each frame.",
+    "unity": "SimHost.Update() advances by Time.unscaledDeltaTime × speed; the Label updates each frame."
+   },
+   {
+    "to": "core.cards",
+    "why": "Cards are sim objects; the UI shows and answers them.",
+    "how": "CardRaised / CardResolved events; AnswerCard command; pending cards live in the save, so the tray rebuilds on WorldReplaced.",
+    "godot": "CardRaised → WindowManager.Open(\"card\", view); CardResolved closes it if still open.",
+    "unity": "Same, with a UXML card template instantiated per card."
+   },
+   {
+    "to": "travel.events",
+    "why": "Travel cards stop a team on the map and must point at it.",
+    "how": "CardView carries a focus hex / party id; opening the card centres the camera.",
+    "godot": "Card presenter calls the map camera's FocusOn(hex).",
+    "unity": "Card presenter calls the camera controller's FocusOn(hex)."
+   },
+   {
+    "to": "core.events",
+    "why": "The game log is a projection of domain events.",
+    "how": "A LogFormatter in the presentation assembly turns events into LogLines; tested for wording.",
+    "godot": "Log presenter appends to a capped list.",
+    "unity": "Log presenter feeds a ListView's itemsSource."
+   }
+  ],
+  "godot": {
+   "approach": "The time bar is an HBoxContainer of toggle Buttons sharing a ButtonGroup so one speed is lit. The card is a modal window under the WindowManager built from a CardView, with choice Buttons created at runtime. The log is a ScrollContainer of labels capped at ~200 lines (or an ItemList); RichTextLabel with BBCode gives coloured, clickable text.",
+   "keyApis": [
+    "ButtonGroup",
+    "RichTextLabel (BBCode)",
+    "ScrollContainer",
+    "ItemList",
+    "Tween"
+   ],
+   "docs": [
+    {
+     "t": "BBCode in RichTextLabel",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/ui/bbcode_in_richtextlabel.html"
+    },
+    {
+     "t": "Control node gallery",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/ui/control_node_gallery.html"
+    }
+   ]
+  },
+  "unity": {
+   "approach": "UI Toolkit: a ToggleButtonGroup or RadioButtonGroup for speeds; a ListView with makeItem/bindItem for the log (virtualised, fine for thousands of lines); rich-text tags in Labels for tones. The card modal is a UXML template instantiated per card; a USS transition gives a simple slide-in.",
+   "keyApis": [
+    "ToggleButtonGroup / RadioButtonGroup",
+    "ListView (makeItem/bindItem)",
+    "Label rich text",
+    "VisualTreeAsset.Instantiate",
+    "USS transitions"
+   ],
+   "docs": [
+    {
+     "t": "UI Toolkit",
+     "u": "https://docs.unity3d.com/Manual/UIElements.html"
+    },
+    {
+     "t": "USS (Unity style sheets)",
+     "u": "https://docs.unity3d.com/Manual/UIE-USS.html"
+    }
+   ]
+  },
+  "learn": [
+   {
+    "t": "Game Programming Patterns: Game Loop",
+    "u": "https://gameprogrammingpatterns.com/game-loop.html"
+   },
+   {
+    "t": "Game Programming Patterns: Event Queue",
+    "u": "https://gameprogrammingpatterns.com/event-queue.html"
+   }
+  ],
+  "newb": [
+   "Speed multiplies sim time per real second; the sim still runs the same hourly rules, so 5× is just more ticks per second. Minutes between ticks are interpolated for display only.",
+   "Pause is a speed (0), not a separate flag scattered around; one value avoids \"paused but still ticking\".",
+   "The log comes from domain events, not from text written in random UI code, so log, saves and tests agree.",
+   "Auto-answer timers keep the game playable at speed; show the hours left so the default never feels like the game chose behind your back."
+  ],
+  "pitfalls": [
+   "Pausing with Engine.TimeScale / Time.timeScale: it also freezes UI tweens; pause the sim's speed instead.",
+   "An unbounded log of label nodes: slow after a few in-game weeks; cap or virtualise.",
+   "A card modal left open after the sim auto-answered it; close on CardResolved."
+  ],
+  "test": "Unit: PacingPolicy table; the interpolated clock never goes backwards across an hour tick; LogFormatter wording. Engine: at 5× a travel card arrives → speed drops (or pauses), answering resumes, the result is in the log. Manual: play a full day at 5× and read the log: every card and arrival is there, in order.",
+  "size": "M"
+ },
+ {
+  "id": "ui.inventory",
+  "title": "Inventory & loot transfer UI",
+  "summary": "Seeing and moving items between survivors, a team's packs, containers, bodies and base storage: equip slots, a weight bar, click-then-target and drag-and-drop, and a small right-click item menu.",
+  "whyHere": "The slice ends in \"extract with loot → stockpile\"; searching containers in battle, equipping weapons and packing team supplies all need one shared transfer view on top of gear.items and gear.loot.",
+  "subsystems": [
+   "Item list / slot grid widget",
+   "Two-sided transfer window",
+   "Weight bar",
+   "Drag & drop + click-then-target",
+   "Item tooltip / Inspect",
+   "Item context menu",
+   "Stack split dialog"
+  ],
+  "sliceScope": "A two-sided transfer window (left: survivor or team; right: container, body or base stock) listing items with icon (art key), name, qty and kg; equip slots (main weapon, sidearm, armour, pack); weight vs capacity bar; click an item then a target, or drag; Take all; right-click: Inspect, Equip/Unequip, Split, Drop. Every move is a MoveItem command.",
+  "fullScope": "Prototype: an RPG paper-doll inventory with slots, pockets, a pack grid and a storage box; click-select-then-target and drag-and-drop; a \"Loot the bodies\" screen after a won battle; a Tarkov-style right-click menu everywhere (Inspect, Equip, Split, Open, Repair, Salvage, Reload/Unload, magazines, Modify in the gun builder, Clear jam); team inventory and base Armory views.",
+  "protoRefs": [
+   "prototype/src/ui/inventory.js",
+   "prototype/src/ui/itemmenu.js",
+   "prototype/src/ui/stackmove.js",
+   "docs/features/gear.md"
+  ],
+  "tasks": {
+   "data": [
+    "Slot definitions (id, label, accepted tags, empty-slot icon key) and item display fields (art key, short name, kg, max stack).",
+    "Container kinds (body, crate, locker, base stock) with labels and capacity from gear.items."
+   ],
+   "backend": [
+    "ItemLoc addressing (owner kind + id + slot/index) and MoveItem(from, to, qty) validated by gear.items (weight, slot tags, stack merge); tested.",
+    "CanDrop(from, to) query for drag highlights, with no side effects.",
+    "Item menu options query (which actions apply here, enabled + reason), like the map's context options."
+   ],
+   "ui": [
+    "Reusable ItemList/SlotGrid control fed by a view-model; two of them make the transfer window.",
+    "Drag ghost + green/red target highlight; weight bar.",
+    "Tooltip/Inspect panel, right-click menu, split dialog with a slider."
+   ]
+  },
+  "dataModel": "public enum OwnerKind { Survivor, Party, Container, BaseStock, Body }\npublic readonly record struct ItemLoc(OwnerKind Kind, int OwnerId, string Slot, int Index);\npublic sealed record ItemView(int ItemId, string Art, string Name, int Qty, float Kg, string[] Tags);\npublic sealed record DropCheck(bool Ok, string? Reason);\npublic sealed record MoveItem(ItemLoc From, ItemLoc To, int Qty) : ICommand;",
+  "dependsOn": [
+   "ui.framework",
+   "ui.placeholders",
+   "gear.items",
+   "gear.loot"
+  ],
+  "connections": [
+   {
+    "to": "gear.items",
+    "why": "All item rules (weight, slots, stacks) live in the sim.",
+    "how": "MoveItem command; ItemsChanged(ownerKind, ownerId) event redraws both sides; CanDrop shares MoveItem's validator.",
+    "godot": "Inventory presenter subscribes to ItemsChanged on SimHost.",
+    "unity": "Inventory presenter subscribes to ItemsChanged on SimHost."
+   },
+   {
+    "to": "combat.actions",
+    "why": "Searching a container in battle opens this view and costs action points.",
+    "how": "Search action → ContainerOpened(battleId, containerId) event; moves inside a battle are MoveItem with a battle context the sim charges AP for.",
+    "godot": "Battle scene opens the transfer window over the map on ContainerOpened.",
+    "unity": "Battle UIDocument shows the transfer panel on ContainerOpened."
+   },
+   {
+    "to": "combat.resolve",
+    "why": "After extraction the loot pool goes to the team, then the base.",
+    "how": "BattleResult.LootPool is a temporary owner (OwnerKind.Container) shown on the right side.",
+    "godot": "Results screen opens the transfer window with the loot pool.",
+    "unity": "Results screen opens the transfer panel with the loot pool."
+   },
+   {
+    "to": "gear.weapons",
+    "why": "Reload/Unload from the item menu are weapon rules.",
+    "how": "Menu entries submit Reload(itemId, ammoLoc) / Unload(itemId) commands.",
+    "godot": "PopupMenu.IdPressed → sink.Submit(...).",
+    "unity": "DropdownMenu action → sink.Submit(...)."
+   }
+  ],
+  "godot": {
+   "approach": "Controls have built-in drag and drop: override _GetDragData (return the ItemLoc and call SetDragPreview), _CanDropData (ask the presenter's CanDrop) and _DropData (submit MoveItem). Each item cell is a small scene (TextureRect icon + Labels); GridContainer for slots; PopupMenu for the right-click menu; an HSlider dialog for splits.",
+   "keyApis": [
+    "Control._GetDragData / _CanDropData / _DropData",
+    "Control.SetDragPreview",
+    "TextureRect",
+    "GridContainer",
+    "PopupMenu",
+    "HSlider"
+   ],
+   "docs": [
+    {
+     "t": "Control",
+     "u": "https://docs.godotengine.org/en/stable/classes/class_control.html"
+    },
+    {
+     "t": "Control node gallery",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/ui/control_node_gallery.html"
+    },
+    {
+     "t": "Using Containers",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/ui/gui_containers.html"
+    }
+   ]
+  },
+  "unity": {
+   "approach": "UI Toolkit has no ready-made runtime drag-and-drop for game items, so write a small PointerManipulator: on PointerDown capture the pointer and show a ghost element, follow PointerMove, on PointerUp find the slot under the pointer (panel.Pick) and submit MoveItem. Item cells come from a UXML template; ListView for long lists. uGUI's IBeginDragHandler/IDropHandler is the older route many tutorials show.",
+   "keyApis": [
+    "PointerManipulator",
+    "CapturePointer",
+    "IPanel.Pick",
+    "ListView",
+    "VisualTreeAsset",
+    "Slider"
+   ],
+   "docs": [
+    {
+     "t": "Manipulators",
+     "u": "https://docs.unity3d.com/Manual/UIE-Manipulators.html"
+    },
+    {
+     "t": "Events (UI Toolkit)",
+     "u": "https://docs.unity3d.com/Manual/UIE-Events.html"
+    },
+    {
+     "t": "UI Toolkit",
+     "u": "https://docs.unity3d.com/Manual/UIElements.html"
+    }
+   ]
+  },
+  "learn": [],
+  "newb": [
+   "The UI never moves an item itself: it asks \"may I drop here?\" (to colour the slot), then sends MoveItem; the sim moves it and an event redraws both sides. Weight limits, battle AP and saves stay consistent.",
+   "Address items by location (who, which slot), not by object reference: an ItemLoc survives save/load and fits in a command.",
+   "One widget, many screens: battle search, post-battle loot, team packing and base storage are all \"two inventories side by side\".",
+   "Click-then-target matters as much as drag: it keeps controller support possible later (ui.platforms)."
+  ],
+  "pitfalls": [
+   "Moving the icon before the sim accepts: on a refusal the UI lies.",
+   "Forgetting stacks: dropping 30 rounds onto 20 must merge or split by the sim's rule.",
+   "Drag-only interaction with no click alternative."
+  ],
+  "test": "Unit: MoveItem refusals (overweight, wrong slot tag) with reasons; stack merge; CanDrop agrees with MoveItem on every case. Engine: open a crate in a test battle, Take all: items on the survivor, crate empty, AP spent. Manual: after extraction move everything to base stock; the Stock tab totals match.",
+  "size": "M"
+ },
+ {
+  "id": "ui.battle",
+  "title": "Battle view (isometric grid, units, action bar, hit %)",
+  "summary": "The XCOM-style tactical screen: an isometric view of one building and its yard, survivors and the dead as placeholder sprites, move range and path preview, an action bar with AP, hit chance and cover read-outs, turn controls and a battle log.",
+  "whyHere": "The last big view: it needs the whole combat backend (map, turns, pathing, LOS, actions, AI); with it the slice's loop closes.",
+  "subsystems": [
+   "Isometric tile renderer",
+   "Depth sorting (y-sort) & wall cutaway",
+   "Units & tweened moves",
+   "Move range & path preview",
+   "Action bar & AP",
+   "Hit chance & cover display",
+   "Enemy turn playback",
+   "Camera & picking"
+  ],
+  "sliceScope": "A 2:1 isometric map of one building template (floor, walls, doors, crates) with walls near the selected unit cut away or faded; units as coloured placeholder sprites with name and HP; select → reachable tiles shaded by 1 and 2 AP, hover → path + AP cost; action bar Move, Shoot, Melee, Reload, Search, Extract, End turn (keys 1–6, Enter) with AP pips; hovering a target shows hit % and its breakdown (range, cover, skill) from the sim; noise rings and \"heard\" markers on the dead; the enemy turn replayed with short tweens; a battle log.",
+  "fullScope": "Prototype: an isometric pseudo-3D view only (no top-down), 32×16 art-px tiles, 20 px per height level, zoom steps 0.75–5, view rotation, roofs and upper floors; procedural pixel art cached and scaled nearest-neighbour; an XCOM bottom bar (unit card, order icons, turn controls, weapon panel), squad strip, big colour-coded hit chances whose breakdown is the sim's own shotOdds steps so they cannot drift; raid strip, log window; lights, weather and decor.",
+  "protoRefs": [
+   "prototype/src/ui/isoview.js",
+   "prototype/src/ui/combat.js",
+   "prototype/src/ui/battlebar.js",
+   "prototype/src/ui/battlehud.js",
+   "docs/features/combat.md"
+  ],
+  "tasks": {
+   "data": [
+    "Battle presentation table: tile kinds → art keys (floor, wall N/W, door, window, crate), unit kinds → art key + colour; iso tile size (e.g. 64×32) and wall height.",
+    "Action bar definitions: action id, icon key, hotkey, AP cost source."
+   ],
+   "backend": [
+    "BattleViewModel: units (cell, hp, ap, side, visible), reachable cells by AP band and the path to the hovered cell, all from combat.pathing / combat.turns queries.",
+    "HitPreview(shooter, target): the sim's own odds breakdown (the function the roll uses), never a UI formula.",
+    "Presentation fx queue: the sim resolves the whole enemy turn at once and emits UnitMoved / ShotFired / UnitDied; the view plays them back in order.",
+    "Iso projection helpers (cell ↔ screen, sort key from x + y + level), unit-tested."
+   ],
+   "ui": [
+    "Floor TileMapLayer / Tilemap + a y-sorted layer for walls, props and units; wall cutaway around the selected unit.",
+    "Range overlay, path line with AP label, target hover with hit % and breakdown tooltip.",
+    "Action bar, unit card, End turn, battle log; camera pan/zoom and centre-on-unit."
+   ]
+  },
+  "dataModel": "public enum Side { Survivors, Dead }\npublic readonly record struct Cell(int X, int Y, int Z);\npublic sealed record UnitView(int Id, Cell At, string Art, int Hp, int MaxHp, int Ap, Side Side, bool Visible);\npublic sealed record HitPreview(int Pct, (string Part, int Delta)[] Breakdown, Cover Cover);\npublic sealed record ActionButton(string Id, string Icon, string Hotkey, int ApCost, bool Enabled, string? Reason);\npublic abstract record BattleFx; public sealed record FxMove(int Unit, Cell[] Path) : BattleFx; public sealed record FxShot(int From, int To, bool Hit) : BattleFx;",
+  "dependsOn": [
+   "ui.framework",
+   "ui.placeholders",
+   "combat.map",
+   "combat.turns",
+   "combat.pathing",
+   "combat.los",
+   "combat.actions",
+   "combat.ai"
+  ],
+  "connections": [
+   {
+    "to": "combat.los",
+    "why": "Hit % and cover shown must be exactly what the shot rolls against.",
+    "how": "ICombatQueries.HitOdds(shooterId, targetId) returns pct + parts; Shoot uses the same function.",
+    "godot": "Target hover → presenter → Label above the target + tooltip with the parts.",
+    "unity": "Target hover → presenter → UI Toolkit label placed with RuntimePanelUtils.CameraTransformWorldToPanel."
+   },
+   {
+    "to": "combat.actions",
+    "why": "The action bar issues battle commands.",
+    "how": "MoveUnit, Shoot, Melee, Reload, Search, Extract commands validated for AP; ActionResolved events with fx.",
+    "godot": "Bar Buttons and hotkeys → sink.Submit(...); input disabled while fx play.",
+    "unity": "Bar Buttons and Input System actions → sink.Submit(...)."
+   },
+   {
+    "to": "combat.turns",
+    "why": "The turn state machine decides when the player may act.",
+    "how": "TurnChanged(side) event; UI modes PlayerTurn (input on) / EnemyTurn (input off, play fx) / Ended.",
+    "godot": "A small view-state enum in the battle scene switches on TurnChanged.",
+    "unity": "Same enum in the battle MonoBehaviour."
+   },
+   {
+    "to": "combat.resolve",
+    "why": "The battle ends in a results screen and a return to the map.",
+    "how": "BattleEnded(result) event → results + loot (ui.inventory) → campaign clock resumes.",
+    "godot": "Free the battle scene, show the map view again.",
+    "unity": "Unload the battle scene / disable its root."
+   },
+   {
+    "to": "ui.inventory",
+    "why": "Search opens the transfer view on a container or body.",
+    "how": "ContainerOpened event with battle context.",
+    "godot": "WindowManager.Open(\"inventory\", ctx) over the battle.",
+    "unity": "Show the transfer panel over the battle."
+   }
+  ],
+  "godot": {
+   "approach": "A TileMapLayer with an isometric TileSet (Tile Shape Isometric, Diamond layout) for floors; walls, props and units as Sprite2D nodes under a Node2D with y_sort_enabled so things lower on screen draw in front, each sprite's origin at its feet. For upper floors offset by level height and include it in the sort (or one y-sorted layer per floor). Replay enemy turns from the fx queue with Tweens (await ToSignal(tween, Tween.SignalName.Finished)). Pick with GetGlobalMousePosition → floor.LocalToMap.",
+   "keyApis": [
+    "TileMapLayer (Isometric TileSet)",
+    "CanvasItem.YSortEnabled",
+    "Sprite2D (Offset/Centered)",
+    "Tween",
+    "Camera2D",
+    "Line2D"
+   ],
+   "docs": [
+    {
+     "t": "Using TileSets",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/2d/using_tilesets.html"
+    },
+    {
+     "t": "TileMapLayer",
+     "u": "https://docs.godotengine.org/en/stable/classes/class_tilemaplayer.html"
+    },
+    {
+     "t": "CanvasItem (y-sort, z-index)",
+     "u": "https://docs.godotengine.org/en/stable/classes/class_canvasitem.html"
+    }
+   ]
+  },
+  "unity": {
+   "approach": "A Grid with Cell Layout Isometric (or Isometric Z as Y for heights) and a Tilemap for floors. Set the 2D transparency sort axis to Custom Axis (0, 1, 0) so lower sprites draw in front, put each unit's sprite pivot at its feet, and use TilemapRenderer mode Individual for walls that must interleave with units. Replay fx with coroutines or async Awaitable. The action bar is UI Toolkit.",
+   "keyApis": [
+    "Grid (Isometric)",
+    "Tilemap",
+    "TilemapRenderer (Individual mode)",
+    "Transparency Sort Axis",
+    "SortingGroup",
+    "Awaitable / Coroutines",
+    "RuntimePanelUtils"
+   ],
+   "docs": [
+    {
+     "t": "Isometric Tilemaps",
+     "u": "https://docs.unity3d.com/Manual/Tilemap-Isometric.html"
+    },
+    {
+     "t": "2D Sorting",
+     "u": "https://docs.unity3d.com/Manual/2DSorting.html"
+    },
+    {
+     "t": "GridLayout.WorldToCell",
+     "u": "https://docs.unity3d.com/ScriptReference/GridLayout.WorldToCell.html"
+    }
+   ]
+  },
+  "learn": [
+   {
+    "t": "Game Programming Patterns: Event Queue",
+    "u": "https://gameprogrammingpatterns.com/event-queue.html"
+   },
+   {
+    "t": "Red Blob Games: Introduction to A*",
+    "u": "https://www.redblobgames.com/pathfinding/a-star/introduction.html"
+   }
+  ],
+  "newb": [
+   "Isometric is a squashed, rotated square grid: screenX = (x − y) × w/2, screenY = (x + y) × h/2 − z × levelHeight. The rules stay on a plain grid; only drawing is diagonal.",
+   "Depth sorting (y-sort): draw what is higher on screen first, so a unit in front of a wall covers it. Pivots at the feet make it work.",
+   "Separate what happened from showing it: the sim resolves the dead's turn instantly; the view replays a queue of effects you can speed up or skip without touching rules.",
+   "Show the sim's numbers: hit % and its breakdown come from the same function as the roll, so \"75%\" can be trusted (a rule the prototype adopted).",
+   "Walls hide units in iso; plan cutaway (hide walls south/east of the focus) from day one."
+  ],
+  "pitfalls": [
+   "Sprite pivot at the centre: units sink into floors and sort wrong against walls.",
+   "UI recomputing reachability or odds with its own formula.",
+   "Accepting clicks during enemy playback; gate input by turn state.",
+   "Everything in one TileMap: walls and units must sort together, so walls need y-sorted nodes or an Individual-mode renderer."
+  ],
+  "test": "Unit: iso projection round-trip; sort keys for unit-behind-wall cases; HitPreview equals the odds a seeded Shoot uses. Engine: a seeded test battle: select, move 4 tiles, shoot; AP and hit % match the sim log. Manual: play the slice building to extraction twice; no unit hidden without cutaway; an enemy turn plays in under 5 s.",
+  "size": "L"
+ },
+ {
+  "id": "ui.input",
+  "title": "Input actions (mouse/keyboard, rebindable)",
+  "summary": "One table of named input actions (time.pause, map.panUp, battle.endTurn…) with default keys and contexts (Global, Map, Battle, Menu), player rebinding saved in Settings, and handlers that ask \"was action X pressed?\" instead of reading raw keys.",
+  "whyHere": "Right after the UI framework, so every screen uses named actions from the start instead of hard-coded keys. Its action ids are also what a controller binds to in the far-future ui.platforms card.",
+  "subsystems": [
+   "Action catalogue & contexts",
+   "Default bindings",
+   "Input router → commands",
+   "Rebinding UI",
+   "Conflict check",
+   "Persistence",
+   "Key-hint labels"
+  ],
+  "sliceScope": "~30 actions in 4 contexts: Esc close, Space pause, 1–3 speeds, WASD/arrows pan, wheel zoom, H hub, B base, F5/F9 quick save/load, battle 1–6 actions, Tab next unit, Enter end turn. A Controls tab listing actions by group with click-to-rebind, reset and a conflict warning; overrides saved in Settings; button hints read the live binding (\"Pause [Space]\").",
+  "fullScope": "Prototype: one KEYMAP table of every key with ids, labels, 18 groups and contexts (map, team queue, planner/build/work, battle, timelapse, title, work tab, question box); handlers ask keyAction/keyIs instead of testing key codes, so a rebind in Menu → Controls changes everything at once; key hints follow the device in use.",
+  "protoRefs": [
+   "prototype/src/ui/keymap.js",
+   "prototype/src/ui/controls.js",
+   "prototype/src/ui/hints.js"
+  ],
+  "tasks": {
+   "data": [
+    "Action table: id, label, group, context, default keyboard/mouse bindings (a pad column left empty for ui.platforms).",
+    "Bindings override record inside Settings (action id → binding strings)."
+   ],
+   "backend": [
+    "Engine-free action catalogue + conflict finder (same key in overlapping contexts), tested.",
+    "One InputRouter per context mapping actions to commands (time.pause → SetSpeed(Paused)), so input never touches state."
+   ],
+   "ui": [
+    "Register actions with the engine from the table at startup and apply overrides.",
+    "Controls tab: grouped list, press-to-rebind, reset to defaults, conflict prompt.",
+    "KeyHint helper rendering \"[Space]\" from the live binding for buttons and tooltips."
+   ]
+  },
+  "dataModel": "public enum InputCtx { Global, Map, Battle, Menu }\npublic sealed record ActionDef(string Id, string Label, string Group, InputCtx Ctx, string[] Keys);\npublic sealed record Bindings(Dictionary<string, string[]> Overrides);\npublic static class BindingConflicts { public static IEnumerable<(string A, string B, string Key)> Find(IReadOnlyList<ActionDef> defs, Bindings b) => ...; }",
+  "dependsOn": [
+   "ui.framework",
+   "core.commands",
+   "ui.menus"
+  ],
+  "connections": [
+   {
+    "to": "core.commands",
+    "why": "Every action ends as a command, so keys, buttons and tests share one path.",
+    "how": "InputRouter maps action ids to command factories per context.",
+    "godot": "In _UnhandledInput: if (@event.IsActionPressed(\"time.pause\")) sink.Submit(new SetSpeed(Speed.Paused));",
+    "unity": "pauseAction.performed += _ => sink.Submit(new SetSpeed(Speed.Paused));"
+   },
+   {
+    "to": "ui.menus",
+    "why": "Rebinding lives in Settings → Controls and persists with the settings file.",
+    "how": "Settings.Binds holds overrides; applied at startup and on change.",
+    "godot": "InputMap.ActionEraseEvents + ActionAddEvent from the saved strings.",
+    "unity": "actions.LoadBindingOverridesFromJson / SaveBindingOverridesAsJson."
+   },
+   {
+    "to": "ui.platforms",
+    "why": "A controller binds to the same action ids in the far future; hints switch by device.",
+    "how": "ActionDef gains a Pad column; KeyHint takes an InputMode (Mouse or Pad).",
+    "godot": "Add InputEventJoypadButton events to the same InputMap actions.",
+    "unity": "Add Gamepad bindings and a control scheme to the same actions."
+   },
+   {
+    "to": "ui.battle",
+    "why": "Battle keys must not fire on the map and vice versa.",
+    "how": "Only the active context's router is enabled; Global always on.",
+    "godot": "Battle scene's controller processes input only while active (SetProcessUnhandledInput).",
+    "unity": "Enable the Battle action map, disable the Map map on BattleStarted."
+   }
+  ],
+  "godot": {
+   "approach": "Define actions in Project Settings → Input Map, or at startup with InputMap.AddAction/ActionAddEvent from your table, and check them with @event.IsActionPressed in _UnhandledInput so focused UI controls get first claim. Rebinding: wait for the next InputEventKey, ActionEraseEvents + ActionAddEvent, save the key as text in Settings. Contexts: each screen's controller only processes input while it is active.",
+   "keyApis": [
+    "InputMap",
+    "Input.IsActionPressed",
+    "InputEvent.IsActionPressed",
+    "_UnhandledInput",
+    "InputEventKey",
+    "InputEventMouseButton"
+   ],
+   "docs": [
+    {
+     "t": "Using InputEvent",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/inputs/inputevent.html"
+    },
+    {
+     "t": "Input examples",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/inputs/input_examples.html"
+    },
+    {
+     "t": "InputMap",
+     "u": "https://docs.godotengine.org/en/stable/classes/class_inputmap.html"
+    }
+   ]
+  },
+  "unity": {
+   "approach": "Use the Input System package: an Input Actions asset with one action map per context (Map, Battle, Menu), enabled and disabled as screens change, read through the generated C# class or PlayerInput. Interactive rebinding is built in (PerformInteractiveRebinding) and overrides save as JSON. Avoid the old Input Manager (Input.GetKey) in new code.",
+   "keyApis": [
+    "Input System",
+    "InputActionAsset / InputActionMap",
+    "PerformInteractiveRebinding",
+    "SaveBindingOverridesAsJson",
+    "PlayerInput"
+   ],
+   "docs": [
+    {
+     "t": "Input System manual",
+     "u": "https://docs.unity3d.com/Packages/com.unity.inputsystem@1.11/manual/index.html"
+    },
+    {
+     "t": "Input Action Assets",
+     "u": "https://docs.unity3d.com/Packages/com.unity.inputsystem@1.11/manual/ActionAssets.html"
+    },
+    {
+     "t": "Input bindings (incl. rebinding)",
+     "u": "https://docs.unity3d.com/Packages/com.unity.inputsystem@1.11/manual/ActionBindings.html"
+    }
+   ]
+  },
+  "learn": [
+   {
+    "t": "Game Programming Patterns: Command",
+    "u": "https://gameprogrammingpatterns.com/command.html"
+   }
+  ],
+  "newb": [
+   "Actions, not keys: code says \"battle.endTurn\", the table says Enter. Rebinding, gamepad support and key hints all come from that one indirection.",
+   "Contexts stop collisions: \"1\" is 1× speed on the map and the first action in battle; only the active context listens.",
+   "UI first, then the world: engines route input to focused controls before \"unhandled\" game input, so typing a save name never pans the map.",
+   "Input → command is the Command pattern: SetSpeed can come from a key, a button, a pad or a test script."
+  ],
+  "pitfalls": [
+   "Raw key checks scattered around (Input.GetKey(KeyCode.Space)) that rebinding misses.",
+   "Reading input in sim code: the sim only ever sees commands.",
+   "Letting the player unbind Esc/menu: keep a fixed fallback."
+  ],
+  "test": "Unit: conflict finder; every ActionDef has a unique id and a default. Engine: rebind Pause to P, restart: P pauses and the top bar hint reads [P]. Manual: type a save name containing W, A, S, D: the map does not pan.",
+  "size": "S"
+ },
+ {
+  "id": "slice.playtest",
+  "title": "Slice integration, definition of done & playtest checklist",
+  "summary": "Wiring every slice card into one playable \"One week in Calder\" run, the checklist that says when the slice is done, and a repeatable way to playtest it and measure whether it is stable and fun.",
+  "whyHere": "The last slice card: it only makes sense once the data, sim and UI cards exist, and it is the gate before any M2 (Living hub) work starts.",
+  "subsystems": [
+   "End-to-end wiring",
+   "Definition-of-done checklist",
+   "Headless slice smoke test",
+   "Determinism & save round-trip",
+   "Telemetry recorder",
+   "Playtest protocol",
+   "Bug triage & cut list"
+  ],
+  "sliceScope": "Done when all pass on a fresh CI build: [1] new run from the title; same seed → same map and crew. [2] Small hex map with fog, pan/zoom, tile info. [3] Hub: 4 survivors with needs, health and skills; jobs assigned; 1–2 buildings queued and finished. [4] Daily food/water/wood in and out; Stock rates match the log. [5] Pause/1×/2×/5×; cards pause and resolve; tray auto-answers. [6] Team formed; travel drains supplies; fog lifts; at least one travel card. [7] POI raid in one building: move, shoot, melee, reload, search, extract; LOS/cover shown; the dead hear and chase. [8] Extract with loot or retreat/auto-resolve; loot in stockpile; wounded heal; deaths recorded. [9] Save, quit, load (incl. autosave), keep playing, nothing lost. [10] 7 in-game days, no crash or softlock; all art via ArtCatalog.",
+  "fullScope": "The prototype's equivalent is 427 headless tools/*test.js checks behind a merge gate, plus tools/balancesim.js, which runs many autopilot campaigns and measures outcomes, deaths by cause, cards per day, days where crises overlap, quiet stretches and hub stocks. The rebuild grows this into meta.balance (headless runs & telemetry) and a playtest at the end of every milestone.",
+  "protoRefs": [
+   "prototype/tools/balancesim.js",
+   "docs/agents/testing.md",
+   "prototype/src/ui/devtools.js",
+   "docs/features/campaign.md"
+  ],
+  "tasks": {
+   "data": [
+    "Write the 10-item checklist into the repo (docs/slice-dod.md) and as checklist items on this card; mark each item automated or manual.",
+    "Pick 3 golden seeds (easy, normal, rough start) used by every test and playtest.",
+    "Define the telemetry line format (JSON lines: real time, day, hour, kind, value) and a 5-question feedback form."
+   ],
+   "backend": [
+    "Headless slice smoke test: scripted commands for 7 days on each golden seed (assign jobs, queue a build, send a team, raid or auto-resolve, save/load mid-way); asserts no exception and invariants (no negative stock, the dead don't work).",
+    "Determinism + save tests: same seed + same commands → same final state hash; hash before save == hash after load.",
+    "Telemetry recorder on the event bus: cards per day, deaths, food days left, battles and turns per battle, real minutes per in-game day."
+   ],
+   "ui": [
+    "Playtest overlay from infra.devtools: fps, sim tick ms, day/hour, seed, build version.",
+    "F8 \"report\": screenshot + save + typed note into a playtest folder.",
+    "Fix the top UI friction found in playtests; log the rest as issues, don't grow the slice."
+   ]
+  },
+  "dataModel": "public sealed record DodItem(int No, string Text, bool Automated, string? TestName, bool Passed);\npublic sealed record Metric(DateTime At, int Day, float Hour, string Kind, double Value);\npublic sealed record SessionSummary(string Build, ulong Seed, int DaysPlayed, int Deaths, int Battles, double RealMinutes, int Crashes, string[] Notes);\npublic static class StateHash { public static string Of(World w) => /* SHA256 of canonical save JSON */ \"\"; }",
+  "dependsOn": [
+   "ui.menus",
+   "ui.statemap",
+   "ui.hub",
+   "ui.team",
+   "ui.cards",
+   "ui.inventory",
+   "ui.battle",
+   "ui.input",
+   "combat.resolve",
+   "data.save",
+   "infra.ci",
+   "infra.devtools"
+  ],
+  "connections": [
+   {
+    "to": "infra.ci",
+    "why": "The smoke, determinism and save tests guard the slice on every push; CI also produces the playtest build.",
+    "how": "dotnet test --filter Category=Slice in the sim job; an engine export job uploads a build artefact.",
+    "godot": "godot --headless --export-release in GitHub Actions; a --smoke run of the exported game exits non-zero on failure.",
+    "unity": "Batchmode build (-batchmode -executeMethod Build.Player) plus PlayMode tests via the Unity Test Framework in CI."
+   },
+   {
+    "to": "infra.devtools",
+    "why": "Cheats and overlays make playtests fast (reveal map, skip a day, spawn dead, force a card).",
+    "how": "Dev commands go through the same command bus, flagged as dev in the log.",
+    "godot": "Dev console autoload, enabled in debug exports only (OS.IsDebugBuild()).",
+    "unity": "Dev console behind #if DEVELOPMENT_BUILD || UNITY_EDITOR."
+   },
+   {
+    "to": "data.save",
+    "why": "Save/load round-trip is the slice item most likely to break as features land.",
+    "how": "StateHash(world) before save equals after load, on all 3 seeds, at day 1, mid-battle-start and day 7.",
+    "godot": "Engine-level check: the loaded world's view matches (counts of tiles, survivors, items).",
+    "unity": "Same check in a PlayMode test."
+   },
+   {
+    "to": "meta.balance",
+    "why": "The telemetry recorder is the seed of headless balance runs later.",
+    "how": "Same Metric records, written by a headless runner instead of a playtester.",
+    "godot": "No engine needed: runs from dotnet.",
+    "unity": "No engine needed: runs from dotnet."
+   },
+   {
+    "to": "combat.resolve",
+    "why": "The battle → world hand-off closes the loop the slice exists to prove.",
+    "how": "BattleResult applied to the world (loot, wounds, deaths) is asserted in the smoke test.",
+    "godot": "Results screen → map view returns with the clock paused.",
+    "unity": "Results panel → map scene returns with the clock paused."
+   }
+  ],
+  "godot": {
+   "approach": "Run the slice from one Main scene. Add a --smoke command-line flag (OS.GetCmdlineArgs) that skips the menus, drives a scripted session through SimHost and quits with an exit code, so CI catches wiring bugs pure sim tests miss (godot --headless). Export Windows/Linux builds for testers with the overlay on; use the debugger's Profiler and Monitors to find frame-time spikes.",
+   "keyApis": [
+    "OS.GetCmdlineArgs",
+    "--headless",
+    "SceneTree.Quit(exitCode)",
+    "Performance monitors",
+    "Export presets"
+   ],
+   "docs": [
+    {
+     "t": "Command line tutorial",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/editor/command_line_tutorial.html"
+    },
+    {
+     "t": "Exporting projects",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/export/exporting_projects.html"
+    },
+    {
+     "t": "Performance",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/performance/index.html"
+    }
+   ]
+  },
+  "unity": {
+   "approach": "Add a PlayMode test in the Unity Test Framework that loads the game scene and drives a scripted session through SimHost, failing on any logged exception, plus a batchmode build entry point for CI. Give testers a Development Build so the Profiler can attach; watch frame time and GC allocations on the zoomed-out map and during enemy turns.",
+   "keyApis": [
+    "Unity Test Framework (PlayMode tests)",
+    "-batchmode / -executeMethod",
+    "BuildPipeline.BuildPlayer",
+    "Profiler",
+    "Development Build"
+   ],
+   "docs": [
+    {
+     "t": "Profiler overview",
+     "u": "https://docs.unity3d.com/Manual/Profiler.html"
+    },
+    {
+     "t": "Command line arguments",
+     "u": "https://docs.unity3d.com/Manual/CommandLineArguments.html"
+    },
+    {
+     "t": "Unity Test Framework",
+     "u": "https://docs.unity3d.com/Packages/com.unity.test-framework@1.4/manual/index.html"
+    }
+   ]
+  },
+  "learn": [
+   {
+    "t": "Game Programming Patterns: Game Loop",
+    "u": "https://gameprogrammingpatterns.com/game-loop.html"
+   }
+  ],
+  "newb": [
+   "A vertical slice is thin but complete: every layer (map, hub, battle, save) works end to end with little content, so you find where the seams hurt before scaling up.",
+   "\"Done\" must be checkable: each checklist item is either an automated test or a two-minute manual step anyone can repeat.",
+   "Measure, don't guess: real minutes per in-game day, turns per battle, cards per day, deaths per week, days of food left over time. A flat line means no tension; a cliff means a death spiral.",
+   "Watch someone play without helping and note where they hesitate; confusion found now is cheap to fix.",
+   "Cut ruthlessly: anything not on the checklist goes to the M2+ lanes."
+  ],
+  "pitfalls": [
+   "Polishing placeholder art or UI before the loop is fun (art is M8 by design).",
+   "Testing only your long-running save: always try a fresh run and loading an older save.",
+   "\"It worked once\" is not done: run the smoke test on all 3 seeds.",
+   "Growing the slice (more buildings, more guns) before the checklist passes."
+  ],
+  "test": "Automated: slice smoke on 3 golden seeds, determinism and save/load hash tests all green in CI. Manual: 3 sessions (other people, or you on 3 different days) of 7 in-game days each from a fresh build; record a SessionSummary each; 0 crashes, 0 softlocks, all 10 items ticked; the answers to \"what did you want to do next?\" set M2's priorities.",
+  "size": "M"
+ },
+ {
+  "id": "ui.platforms",
+  "title": "Controller support (gamepad)",
+  "summary": "Playing the whole game with a controller: focus navigation through every window, a hex cursor on the State Map and a cell cursor in battle, and key hints that switch between keyboard and pad glyphs. Far future: desktop with mouse and keyboard comes first, and there is no phone or touch support.",
+  "whyHere": "Far future, after the art and release cards. It needs every screen and ui.input's action table to be final; doing it earlier means redoing it whenever a screen changes. Keeping named actions and focusable buttons from the start keeps it cheap.",
+  "subsystems": [
+   "Input mode detection (mouse or pad)",
+   "Gamepad focus navigation",
+   "Map & battle cursors",
+   "Device key hints & glyphs",
+   "Pad settings (dead zone, repeat)",
+   "Steam Input / Steam Deck check"
+  ],
+  "sliceScope": "First version: pad bindings for every ui.input action; focus navigation in menus and windows (A press, B back, visible focus ring); a hex cursor on the State Map moved by D-pad/stick with the camera following, and a cell cursor in battle; hints switch \"[Space]\" ↔ \"Ⓐ\" by the last device used.",
+  "fullScope": "Prototype: Xbox/standard-mapping pads with a 0.25 radial dead zone and key repeat (380 ms, then every 110 ms); a focus-ring layer over every window and menu; map cursor with A select, X tile menu, Y next team, LB/RB speed, triggers zoom; hints switching between mouse and pad; the whole game playable by pad.",
+  "protoRefs": [
+   "prototype/src/ui/gamepad.js",
+   "prototype/src/ui/padnav.js",
+   "prototype/src/ui/hints.js",
+   "docs/features/ui.md"
+  ],
+  "tasks": {
+   "data": [
+    "Fill the pad column of the action table and per-context pad layouts; a glyph table (Xbox / PlayStation art keys) for hints.",
+    "Pad settings: stick dead zone, repeat delay/rate, cursor speed."
+   ],
+   "backend": [
+    "InputModeTracker (last device used wins; ignore a twitching mouse) raising ModeChanged; tested.",
+    "Cursor helpers: 8-way stick angle → nearest of 6 hex directions; key-repeat timer.",
+    "Hint builder: (action id, mode) → \"[Space]\" or \"Ⓐ\", plus word swaps (click → press Ⓐ)."
+   ],
+   "ui": [
+    "Default focus and focus neighbours on every window; a focus-ring style in the theme; return focus to the opener on close.",
+    "Map and battle cursors with camera follow; a radial or bar for actions that have no button yet.",
+    "Play through on a Steam Deck or with Steam Input to check glyphs and the 1280×800 screen."
+   ]
+  },
+  "dataModel": "public enum InputMode { Mouse, Pad }\npublic sealed record PadBinding(string ActionId, string Button, InputCtx Ctx);\npublic sealed record PadCfg(float DeadZone = 0.25f, int RepeatDelayMs = 380, int RepeatMs = 110);\npublic static class Hints { public static string For(string actionId, InputMode mode, Bindings b) => ...; }",
+  "dependsOn": [
+   "ui.input",
+   "ui.framework",
+   "ui.statemap",
+   "ui.battle",
+   "ui.inventory"
+  ],
+  "connections": [
+   {
+    "to": "ui.input",
+    "why": "Pads bind to the same action ids; nothing new reaches the sim.",
+    "how": "ActionDef gains Pad bindings; routers unchanged; KeyHint takes InputMode.",
+    "godot": "Add InputEventJoypadButton/Motion events to the existing InputMap actions.",
+    "unity": "Add a Gamepad control scheme to the same Input Actions asset."
+   },
+   {
+    "to": "ui.framework",
+    "why": "Focus navigation lives in the shared skeleton.",
+    "how": "WindowDef gains DefaultFocus.",
+    "godot": "GrabFocus() on open; FocusNeighbor* where the automatic order jumps.",
+    "unity": "element.Focus() on open; tabIndex where the automatic order jumps."
+   },
+   {
+    "to": "meta.help",
+    "why": "Tooltips, the codex and the first-week guide must speak the device in use.",
+    "how": "Help text uses action-id placeholders (\"{time.pause}\") resolved by Hints.For.",
+    "godot": "Re-render labels on ModeChanged.",
+    "unity": "Re-render labels on PlayerInput.onControlsChanged."
+   },
+   {
+    "to": "release.ship",
+    "why": "Steam shows controller support on the store page, and Steam Input remaps pads.",
+    "how": "Declare controller support in the store settings; test with Steam Input on and off.",
+    "godot": "Desktop export presets only; test with Steam Input.",
+    "unity": "Desktop Build Profiles only; test with Steam Input."
+   }
+  ],
+  "godot": {
+   "approach": "Controls support focus navigation out of the box: set FocusMode, GrabFocus() on a window's default button, and fix odd jumps with FocusNeighbor* / FocusNext; ui_accept and ui_cancel are already bound to pad A/B. Pads arrive as InputEventJoypadButton/Motion through the same InputMap actions as the keyboard.",
+   "keyApis": [
+    "Control.FocusMode / GrabFocus / FocusNeighbor*",
+    "InputEventJoypadButton / JoypadMotion",
+    "Input.GetJoyName"
+   ],
+   "docs": [
+    {
+     "t": "Keyboard/Controller navigation and focus",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/ui/gui_navigation.html"
+    },
+    {
+     "t": "Controllers, gamepads, and joysticks",
+     "u": "https://docs.godotengine.org/en/stable/tutorials/inputs/controllers_gamepads_and_joysticks.html"
+    }
+   ]
+  },
+  "unity": {
+   "approach": "The Input System covers pads (Gamepad) through the same actions with a Gamepad control scheme; PlayerInput.onControlsChanged tells you which device is active for hints. UI Toolkit navigates focus with pad and keyboard (focusable, tabIndex, Focus()); style :focus in USS for the ring.",
+   "keyApis": [
+    "Gamepad",
+    "Control schemes",
+    "PlayerInput.onControlsChanged",
+    "VisualElement.Focus"
+   ],
+   "docs": [
+    {
+     "t": "Input System: Gamepad support",
+     "u": "https://docs.unity3d.com/Packages/com.unity.inputsystem@1.11/manual/Gamepad.html"
+    }
+   ]
+  },
+  "learn": [
+   {
+    "t": "Game Accessibility Guidelines",
+    "u": "https://gameaccessibilityguidelines.com/"
+   },
+   {
+    "t": "Red Blob Games: Hexagonal Grids",
+    "u": "https://www.redblobgames.com/grids/hexagons/"
+   }
+  ],
+  "newb": [
+   "Design for focus, not for the mouse position: a pad moves a focus from control to control; if every action has a focusable button or bar entry, pad support is mostly wiring.",
+   "Input mode = the last device used, not the hardware present: touch the mouse and the hints say [Esc] again (the prototype's rule).",
+   "Click-then-target (not drag-only) lets one UI serve mouse and pad.",
+   "A hex cursor from an 8-way stick: take the stick angle, snap to the nearest of the 6 hex directions, repeat while held (a delay, then faster)."
+  ],
+  "pitfalls": [
+   "Hover-only information: give every tooltip a focus route too.",
+   "Focus lost after closing a window, leaving a pad player stuck; always return focus to the opener.",
+   "Assuming one controller family; use glyph art keys per pad type."
+  ],
+  "test": "Unit: InputMode switching; stick angle → hex direction; hint strings per mode. Engine: pad only: title → new run → map → base → queue a build → form a team → order → battle → end turn. Manual: play one in-game day pad-only and list every dead end.",
+  "size": "L"
+ }
+]

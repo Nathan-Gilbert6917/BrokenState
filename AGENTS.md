@@ -18,6 +18,10 @@ Single-context: one `CONTEXT.md` plus `docs/adr/` at the repo root. See `docs/ag
 
 Every major game feature, grouped by area, one line each with its key modules and tests: `docs/agents/features.md`. Read it first to find where a system lives. The detail (the user's requests and dates, rules, numbers, function names) is in `docs/features/<area>.md`, linked from each line; add new features in the format at the top of the index.
 
+### Rebuild board
+
+The plan for rebuilding the game in Godot or Unity is the sub-project `board/` (cards in build order, priorities, engine notes, the Art school), published at `/BrokenState/board/`. See `board/README.md`.
+
 ## Testing
 
 Never run the full suite (`npm test`): it takes hours. Run only the tests your change affects, by the recipe in `docs/agents/testing.md` (`node prototype/tools/affected.js` lists them).
