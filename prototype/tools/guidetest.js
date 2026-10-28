@@ -401,6 +401,15 @@ section("Road start: a camp but no shelter by the end of the week");
   check(!!hub(st) && startGuide(st, true).kind === "road", "a guide started at the camp is still the road list (the camp is not the shelter)");
   const g = st.guide;
   guideCheck(st, ui);
+  // Keep watch: a lookout work priorities picked by themselves does not count; one set on Guard by hand does (the
+  // playtest 2026-10-28 saw it tick with nobody asked to).
+  const w = alive(st).find((s) => s.location.kind === "base");
+  w.work = { ...(w.work || {}), role: "build" }; w.role = "guard"; // on priorities, the hour's job Guard
+  guideCheck(st, ui);
+  check(g.done.defence == null, "Keep watch: not ticked by the lookout priorities picked");
+  w.work.role = null; // set on Guard by hand
+  guideCheck(st, ui);
+  check(g.done.defence != null, "Keep watch: ticked by someone set on Guard");
   st.hour = dawnOf(g, GUIDE.DAYS);
   guideCheck(st, ui);
   check(!g.on && g.ended === "days" && /No shelter yet/.test(ui.flash.text) && /Camp tab/.test(ui.flash.text), `after the seventh night it steps aside, saying where the shelter stands (${ui.flash.text})`);

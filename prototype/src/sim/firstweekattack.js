@@ -95,7 +95,7 @@ function nomadCard(state, b, base, n) {
   const tier = tierOf(b).name.toLowerCase();
   return {
     title: `Nomads at ${base.name}: ${cap1(b.name)}`, firstWeek: base.id, raidReport: { baseId: base.id },
-    text: `${cap1(b.name)}, ${n} ${tier} on the road, have been following your tracks for days. Now they come over the edge of the camp in broad daylight for its stores.`,
+    text: `${cap1(b.name)}, ${n} ${tier} on the road, have been following your tracks for days. Now they come over the edge of the camp ${state.hour % 24 < 17 ? "in broad daylight" : "before night falls"} for its stores.`,
     choices: [
       { label: "Defend the camp", default: true, hint: `A fight on ${base.name}'s map: whoever is home against ${n} of them. Beat them off and they leave with nothing.`, resolve: (st) => defendNomads(st, base.id) },
       { label: "Hide and let them take what they find", hint: `Everyone hides: they carry off about ${Math.round(F.HIDE_TAKE * 100)}% of the stores and go.`, resolve: (st) => hideNomads(st, base.id) },
