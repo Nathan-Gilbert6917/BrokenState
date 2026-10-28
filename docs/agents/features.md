@@ -331,7 +331,7 @@ Detail: [ui.md](../features/ui.md).
 - **Autopilot governor**, also used headless for balance runs; fells for wood and staffs the felling [autopilot, noidle]. [details](../features/ui.md#autopilot-governor-wood)
 - **Save/load and save list** [save, savesummary, ui/saves].
 - **Diary, Ledger charts, history and chronicle**, and the **timelapse viewer** [diary, history, ui/ledger, chronicle, ui/timelapse].
-- **Codex** encyclopedia, first-week guide and help [ui/codex, ui/guide, ui/help] `tools/guidetest.js`. [details](../features/ui.md#first-week-guide)
+- **Codex** encyclopedia, first-week guide (day by day, the seventh night's attack) and help [ui/codex, ui/guide, ui/help, firstweekattack] `tools/guidetest.js`, `tools/firstweekattacktest.js`. [details](../features/ui.md#first-week-guide)
 - **The dead on the land on screen**: tile panel rows, POI dialogue, map layer, raid Earshot [ui/threatui, ui/poiview, ui/render] `tools/threatknowtest.js`. [details](../features/ui.md#the-dead-on-the-land-on-screen)
 - **Command palette (Ctrl+K)**, minimap, watch list, map notes, threat bar [ui/cmdpalette, ui/minimap, watchlist, mapnotes, ui/threatbar].
 - **Prototype banner on the title**: says the build is a prototype with AI music and sprites, to test the fun and the features before Unity or Godot [ui/title] `tools/titletest.js`. [details](../features/ui.md#prototype-banner-on-the-title)

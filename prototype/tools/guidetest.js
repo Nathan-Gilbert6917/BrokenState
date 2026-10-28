@@ -19,6 +19,7 @@ import { createWorld, tickHour, hub, day, alive } from "../src/sim/world.js";
 import { launchExpedition, startReturn, partyTile, partyMembers, giveOrder } from "../src/sim/parties.js";
 import { queueBuild, BUILDINGS, canBuild, tierUpJob, tierUpType } from "../src/sim/buildings.js";
 import { newItem } from "../src/sim/inventory.js";
+import { putBack } from "../src/sim/deadpop.js";
 import { saveToString, loadFromString } from "../src/sim/save.js";
 import { roadTeam } from "../src/sim/hardcore-start.js";
 import { setAutopilot } from "../src/sim/autopilot.js";
@@ -208,7 +209,19 @@ section("Hub start: the base list, day by day, ticks off from the state");
   check(g.on && ["night2", "night3", "night4", "night5", "night6"].every((id) => g.done[id] != null) && g.done.night7 == null && guideDay(st, g) === 7, "the nights tick at their dawns; day 7, its night still ahead");
   GUIDE_ACTIONS["gd-fold"](st, ui, {}); GUIDE_ACTIONS["gd-fold"](st, ui, {}); // as it was: open
   html = renderGuide(st, ui);
-  check(clean(html) && (html.match(/class="gd-phase gd-dayline past/g) || []).length === GUIDE.DAYS - 1 && /<b>Day 7<\/b>[^<]*<span class="gd-today">today/.test(html) && (html.match(/data-action="gd-show"/g) || []).length === 1 && /data-id="night7"/.test(html), "day 7: the six days behind it one line each, its night the one step left");
+  check(clean(html) && (html.match(/class="gd-phase gd-dayline past/g) || []).length === GUIDE.DAYS - 1 && /<b>Day 7<\/b>[^<]*<span class="gd-today">today/.test(html) && (html.match(/data-action="gd-show"/g) || []).length === 2 && /data-id="hold"/.test(html) && /data-id="night7"/.test(html), "day 7: the six days behind it one line each; the attack and the night left");
+  // The seventh night's attack (sim/firstweekattack.js), played through the hours: Defend, played out headless.
+  putBack(st, hub(st).tile, null, 12); // the dead about, so it comes
+  for (const s of alive(st)) s.health = 100;
+  st.hour = dawnOf(g, 7) - 10; // 20:00 of day 7
+  st.cards.length = 0;
+  let atk = null;
+  for (let i = 0; i < 9 && !atk; i++) { tickHour(st); guideCheck(st, ui); atk = st.cards.find((c) => c.campAttack === hub(st).id); if (!atk) st.cards.length = 0; }
+  check(!!atk && g.attack && !g.attack.quiet && g.done.hold == null && st.log.some((l) => /watching/.test(l.text)), `the seventh night: warned, then the attack (${atk ? atk.title : "none"}); not held yet`);
+  if (atk) { st.cards.splice(st.cards.indexOf(atk), 1); atk.choices.find((x) => x.default).resolve(st); }
+  st.cards.length = 0;
+  guideCheck(st, ui);
+  check(g.done.hold != null && g.on, "hold: the fight over, the step ticked");
   st.hour = dawnOf(g, 7);
   guideCheck(st, ui);
   check(!g.on && g.ended === "done" && g.done.night7 != null && /every step done/.test(ui.flash.text) && renderGuide(st, ui) === "", "the seventh night over and every step done: the guide steps aside with a toast");
