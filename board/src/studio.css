@@ -171,3 +171,12 @@
 .pxs-times { font: 600 1.1rem var(--mono); color: var(--muted); padding-bottom: 8px; }
 .pxs-start .pxs-lname { display: flex; flex-direction: column; align-items: flex-start; }
 .pxs-overlay { position: fixed; inset: 0; z-index: 59; }
+
+/* a dialog over the studio (Clear asks first) */
+.pxs-modal { position: absolute; inset: 0; z-index: 8; display: flex; align-items: center; justify-content: center; padding: 16px; background: var(--scrim); }
+.pxs-modal[hidden] { display: none; }
+.pxs-modal-c { background: var(--panel); border: 1px solid var(--rule); border-radius: 12px; padding: 16px; width: min(440px, 100%); max-height: 100%; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; box-shadow: var(--shadow); }
+.pxs-modal-c h4 { margin: 0; font: 800 1.3rem/1.1 var(--display); text-transform: uppercase; letter-spacing: .02em; color: var(--ink); }
+.pxs-modal .pxs-check { min-height: 44px; }
+.pxs-btn.pxs-danger { background: var(--hive); color: var(--panel); border-color: var(--hive); }
+.pxs-btn.pxs-danger:hover { color: var(--panel); filter: brightness(1.08); }

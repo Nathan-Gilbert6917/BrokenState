@@ -68,7 +68,8 @@ window.PixelStudio = (function () {
     all: '<rect x="4" y="4" width="16" height="16" stroke-dasharray="3 2"/><path d="M8 12l3 3 5-6"/>',
     none: '<rect x="4" y="4" width="16" height="16" stroke-dasharray="3 2"/>',
     newwin: '<rect x="3" y="5" width="18" height="14" rx="1.5"/><path d="M3 9h18M12 11.5v5M9.5 14h5"/>',
-    home: '<path d="M4 20V10l8-6 8 6v10h-5v-6h-6v6z"/>'
+    home: '<path d="M4 20V10l8-6 8 6v10h-5v-6h-6v6z"/>',
+    clear: '<path d="M20 4l-7 7"/><path d="M13 11l-2.5-2.5L5 14l5 5 5.5-5.5z"/><path d="M7.5 16.5L5 21M10 19l-1 2.5"/>'
   };
   function icon(name) {
     const s = document.createElementNS(SVG, "svg"); s.setAttribute("viewBox", "0 0 24 24"); s.setAttribute("aria-hidden", "true"); s.setAttribute("class", "pxs-ic");
@@ -274,7 +275,9 @@ window.PixelStudio = (function () {
     const savedEl = el("span", { class: "pxs-saved", text: "" });
     const undoBtn = ib("undo", "Undo", () => undo()), redoBtn = ib("redo", "Redo", () => redo()), fullBtn = ib("full", "Full screen", () => setFull(!ui.full));
     const startBtn = onClose ? ib("home", "Start screen: create or import a sprite", () => showStart()) : ib("newwin", "Open a new studio: create or import a sprite", () => PS.open(opts));
-    const top = el("div", { class: "pxs-top", role: "toolbar", "aria-label": "Sprite" }, nameBtn, savedEl, startBtn, undoBtn, redoBtn, fullBtn);
+    const clearBtn = ib("clear", "Clear the drawing", () => askClear());
+    const top = el("div", { class: "pxs-top", role: "toolbar", "aria-label": "Sprite" }, nameBtn, savedEl, startBtn, undoBtn, redoBtn, clearBtn, fullBtn);
+    const modal = el("div", { class: "pxs-modal", role: "dialog", "aria-modal": "true", "aria-labelledby": "pxs-modal-t", hidden: true });
     const startEl = el("div", { class: "pxs-start", role: "region", "aria-label": "Start a sprite", hidden: true });
     const sw = (label, onclick) => el("button", { type: "button", class: "pxs-sw", "aria-label": label, title: label, onclick }, el("i"));
     const fgSw = sw("Foreground colour: tap to edit it", () => openColour("fg")), bgSw = sw("Background colour: tap to edit it", () => openColour("bg"));
@@ -302,7 +305,7 @@ window.PixelStudio = (function () {
       panelEls[key] = sec; panelBodies[key] = body; return sec;
     }
     const panels = el("div", { class: "pxs-panels" }, panel("colour", "Colour"), panel("layers", "Layers"), panel("palette", "Palette"), panel("preview", "Preview"), panel("frames", "Frames", true), panel("canvas", "Canvas", true), panel("file", "File", true));
-    root.append(probe, top, view, colours, tools, optsBar, time, tabs, panels, status, startEl);
+    root.append(probe, top, view, colours, tools, optsBar, time, tabs, panels, status, startEl, modal);
     host.append(root);
     let sayT = 0;
     function say(msg, keep) { status.textContent = msg || ""; clearTimeout(sayT); if (msg && !keep) sayT = setTimeout(() => { if (status.textContent === msg) status.textContent = ""; }, 8000); }
@@ -861,6 +864,35 @@ window.PixelStudio = (function () {
     function toggleOpen(k) { ui.open[k] = !ui.open[k]; applyOpen(k); if (ui.open[k]) { refreshPanels(k); panels.scrollTop = panelEls[k].offsetTop - panels.offsetTop; } saveUi(); }
     function refreshToggles() { renderOpts(); const b = panelBodies.canvas; if (b) b.querySelectorAll("[data-ui]").forEach(i => { i.checked = !!ui[i.dataset.ui]; }); }
 
+    // ---- clear: this frame on the layer, this frame, or the whole sprite; a dialog asks first, Undo brings it back ----
+    let modalBack = null;
+    function askClear() {
+      if (!doc) return;
+      modal.textContent = "";
+      const L = doc.layers[ui.layer], locked = doc.layers.filter(x => x.locked).length;
+      const scopes = [["cel", "This frame on the layer “" + (L ? L.name : "") + "”"], ["frame", "This frame, every layer"], ["all", "The whole sprite: every frame and every layer"]];
+      let scope = "cel";
+      const radios = scopes.map(([v, t], i) => el("label", { class: "pxs-check" }, el("input", { type: "radio", name: "pxs-clear-scope", value: v, checked: i === 0 ? true : null, onchange: () => { scope = v; } }), t));
+      const ok = btn("Clear", () => { closeModal(); clearScope(scope); }, "pxs-danger"), cancel = btn("Cancel", () => closeModal());
+      modal.append(el("div", { class: "pxs-modal-c" }, el("h4", { id: "pxs-modal-t", text: "Clear the drawing?" }),
+        el("p", { class: "pxs-note", text: "The pixels go" + (locked ? ", except on a locked layer" : "") + "; Undo brings them back." }),
+        el("div", { class: "pxs-list" }, radios), el("div", { class: "pxs-row" }, ok, cancel)));
+      modalBack = document.activeElement; modal.hidden = false; try { ok.focus({ preventScroll: true }); } catch (e) {}
+    }
+    function closeModal() { if (modal.hidden) return; modal.hidden = true; modal.textContent = ""; try { if (modalBack && modalBack.focus && modalBack.isConnected) modalBack.focus({ preventScroll: true }); } catch (e) {} modalBack = null; }
+    modal.addEventListener("click", e => { if (e.target === modal) closeModal(); });
+    function clearScope(scope) {
+      if (scope === "cel") { const why = cantDraw(); if (why) { say(why); return; } }
+      const wipe = (l, f) => { const cel = doc.cels[l][f]; if (cel && !doc.layers[l].locked) cel.data.fill(0); };
+      docStep(() => {
+        if (scope === "cel") wipe(ui.layer, ui.frame);
+        else if (scope === "frame") doc.layers.forEach((x, l) => wipe(l, ui.frame));
+        else doc.layers.forEach((x, l) => doc.frames.forEach((y, f) => wipe(l, f)));
+      });
+      ui.sel = null; refreshSelBar(); requestDraw();
+      say(scope === "cel" ? "Cleared this frame on the layer." : scope === "frame" ? "Cleared this frame." : "Cleared the whole sprite.");
+    }
+
     // ---- the start screen: a new sprite with its width (x) and height (y), an import, or a saved sprite ----
     function renderStart() {
       startEl.textContent = "";
@@ -1073,7 +1105,7 @@ window.PixelStudio = (function () {
         el("div", { class: "pxs-row" }, field("Shift x", dx), field("Shift y", dy), btn("Shift", () => shiftSprite(dx.value, dy.value, wrap.checked)), el("label", { class: "pxs-check" }, wrap, "Wrap round"),
           el("span", { class: "pxs-row pxs-tight", role: "group", "aria-label": "Shift by one pixel" }, ib("left", "Shift left by 1", () => shiftSprite(-1, 0, wrap.checked)), ib("right", "Shift right by 1", () => shiftSprite(1, 0, wrap.checked)), ib("up", "Shift up by 1", () => shiftSprite(0, -1, wrap.checked)), ib("down", "Shift down by 1", () => shiftSprite(0, 1, wrap.checked)))),
         el("div", { class: "pxs-h", text: "Template" }),
-        el("div", { class: "pxs-row" }, field("Guide", tsel), btn("Guess from the size", () => { cur.template = guessTemplate(presets, doc.w, doc.h); maskCv = null; requestDraw(); refreshPanels("canvas"); say(cur.template ? "Template: " + presets[cur.template].label + "." : "No template is " + doc.w + " × " + doc.h + "."); }), btn("Clip to template", () => clipToTemplate())),
+        el("div", { class: "pxs-row" }, field("Guide", tsel), btn("Guess from the size", () => { cur.template = guessTemplate(presets, doc.w, doc.h); maskCv = null; requestDraw(); refreshPanels("canvas"); say(cur.template ? "Template: " + presets[cur.template].label + "." : "No template is " + doc.w + " × " + doc.h + "."); }), btn("Clip to template", () => clipToTemplate()), btn("Clear…", () => askClear())),
         cur.template && presets[cur.template] ? el("p", { class: "pxs-note", text: presets[cur.template].note + (presets[cur.template].key ? " Art key: " + presets[cur.template].key + "." : "") }) : null,
         el("div", { class: "pxs-h", text: "Selection" }),
         el("div", { class: "pxs-row pxs-tight" }, ...SEL_ACTIONS.map(([ic, label, op]) => ib(ic, label, () => selOp(op)))),
@@ -1308,6 +1340,7 @@ window.PixelStudio = (function () {
     const onKeyDown = e => {
       if (!doc || PS.active !== api || location.hash !== "#art" || inField()) return;
       const mod = e.ctrlKey || e.metaKey, k = e.key, onCanvas = document.activeElement === cv;
+      if (!modal.hidden) { if (k === "Escape") { e.preventDefault(); closeModal(); } return; }
       if (k === "Escape") { if (ui.full) { e.preventDefault(); setFull(false); } else if (ui.float) commitFloat(); else if (ui.sel) selOp("none"); else if (ui.phone && root.classList.contains("pxs-open")) closePanel(); return; }
       if (k === "Alt") { ui.alt = true; cv.classList.add("pxs-cur-pick"); return; }
       if (k === " ") { if (onCanvas) { e.preventDefault(); if (!e.repeat) { ui.space = true; ui.spaceUsed = false; cv.classList.add("pxs-cur-pan"); } } return; }
@@ -1374,7 +1407,8 @@ window.PixelStudio = (function () {
       scrollIntoView: () => { const hdr = document.querySelector("header.top"), off = hdr && /sticky|fixed/.test(getComputedStyle(hdr).position) ? hdr.offsetHeight : 0; try { window.scrollTo({ top: window.scrollY + host.getBoundingClientRect().top - off - 6, behavior: "smooth" }); } catch (e) { host.scrollIntoView(); } },
       getView: () => ({ zoom: ui.zoom, panX: ui.panX, panY: ui.panY, frame: ui.frame, layer: ui.layer, tool: ui.tool, panel: ui.panel, phone: ui.phone, full: ui.full, sel: ui.sel ? Object.assign({}, ui.sel) : null, template: cur.template, id: cur.id, playing: ui.playing }),
       undo: () => undo(), redo: () => redo(), root,
-      newCustom: (w, h, n, name) => newCustom(w, h, n, name), showStart: () => showStart(), isStart: () => !startEl.hidden, destroy: () => destroy()
+      newCustom: (w, h, n, name) => newCustom(w, h, n, name), showStart: () => showStart(), isStart: () => !startEl.hidden, destroy: () => destroy(),
+      askClear: () => askClear(), clear: scope => clearScope(scope)
     };
     PS.api = api; PS.active = api;
     async function migrateOldDraft() {

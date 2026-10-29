@@ -3,7 +3,8 @@
 // Builds the board (node board/build.js), serves board/dist on a free port and opens /#art at each size, then checks:
 // no page error and no console error at any point; the studio mounted with a template and the board's palette; a stroke
 // (a finger on the phone, the mouse on the desktop) changes the document's cel; a two-finger pinch changes the zoom and
-// draws nothing (the desktop: the wheel zooms); add frame, switch frame, undo; a colour from the editor's hex field;
+// draws nothing (the desktop: the wheel zooms); add frame, switch frame, undo; Clear asks first (Cancel keeps the
+// drawing, the whole-sprite scope empties every cel, Undo brings it back); a colour from the editor's hex field;
 // every panel opens (the tabs on the phone, the sections on the desktop) with its controls and the sheet leaves the
 // strips under it reachable; full screen fixes the studio to the viewport and Escape leaves it; api.exportBytes()
 // reads back through AseFormats.decodeAseprite with the same size and frame count; a palette import by setting a
@@ -122,6 +123,22 @@ async function run(browser, base, phone, tmp) {
   await page.locator('.pxs-top [aria-label="Redo"]').click(); await sleep(200);
   d = await docInfo(); check(d.frames === 2, "redo brings it back");
   await shot("frames");
+
+  // clear, asked first
+  const hc0 = await page.evaluate(HASH);
+  await page.locator('.pxs-top [aria-label="Clear the drawing"]').click(); await sleep(200);
+  const md = await page.evaluate(() => { const m = document.querySelector(".pxs-modal"); return { open: !!m && !m.hidden, radios: m ? m.querySelectorAll('input[type="radio"]').length : 0, focus: document.activeElement && document.activeElement.textContent }; });
+  check(md.open && md.radios === 3, "the Clear button asks first, with three scopes", JSON.stringify(md));
+  await shot("clear-ask");
+  await page.locator('.pxs-modal button:has-text("Cancel")').click(); await sleep(150);
+  check((await page.evaluate(HASH)) === hc0 && (await page.evaluate(() => document.querySelector(".pxs-modal").hidden)), "Cancel keeps the drawing and closes the dialog");
+  await page.locator('.pxs-top [aria-label="Clear the drawing"]').click(); await sleep(150);
+  await page.locator('.pxs-modal input[value="all"]').check();
+  await page.locator('.pxs-modal button:has-text("Clear")').click(); await sleep(250);
+  const empty = await page.evaluate(() => PixelStudio.api.getDoc().cels.every(L => L.every(c => !c || c.data.every(v => v === 0))));
+  check(empty, "Clear with the whole-sprite scope empties every cel");
+  await page.locator('.pxs-top [aria-label="Undo"]').click(); await sleep(200);
+  check((await page.evaluate(HASH)) === hc0, "Undo brings the drawing back after a clear");
 
   // the colour editor
   await page.locator(".pxs-fgbg .pxs-sw").nth(0).click(); await sleep(250);
