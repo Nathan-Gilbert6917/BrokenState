@@ -944,7 +944,7 @@ window.PixelStudio = (function () {
     document.addEventListener("fullscreenchange", onFsChange);
 
     // ---- the top strip ----
-    function refreshTop() { nameEl.textContent = doc.name; dimEl.textContent = doc.w + " × " + doc.h + (doc.frames.length > 1 ? " · " + doc.frames.length + " fr" : ""); }
+    function refreshTop() { nameEl.textContent = doc.name; dimEl.textContent = doc.w + " × " + doc.h; if (doc.frames.length > 1) dimEl.append(el("span", { class: "pxs-frc", text: " · " + doc.frames.length + " fr" })); }
     function inlineEdit(anchor, value, done) {
       const inp = el("input", { type: "text", class: "pxs-inline", value, "aria-label": "New name" }); let fin = false;
       const finish = ok => { if (fin) return; fin = true; inp.replaceWith(anchor); if (ok) done(inp.value.trim()); };

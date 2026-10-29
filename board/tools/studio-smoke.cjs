@@ -93,6 +93,11 @@ async function run(browser, base, phone, tmp) {
   const rects = await page.evaluate(() => { const r = s => document.querySelector(s).getBoundingClientRect(); return { view: r(".pxs-view"), colours: r(".pxs-colours"), top: r(".pxs-top"), tools: r(".pxs-tools"), cam: r("#camtool") }; });
   check(rects.view.bottom <= rects.colours.top + 1 && rects.top.bottom <= rects.view.top + 1, "the strips do not overlap the canvas view");
   check(rects.cam.height > 100, "the Art school's sections below the studio still render (the 3D camera is " + Math.round(rects.cam.height) + " px tall)");
+  const topStrip = () => page.evaluate(() => { const strip = document.querySelector(".pxs-top"), kids = [...strip.children].filter(k => k.offsetWidth > 0).map(k => k.getBoundingClientRect()), sr = strip.getBoundingClientRect();
+    for (let i = 1; i < kids.length; i++) if (kids[i].left < kids[i - 1].right - 1) return "child " + i + " overlaps the one before it";
+    for (const k of kids) if (k.right > sr.right + 1 || k.left < sr.left - 1) return "a child sits outside the strip";
+    const nm = document.querySelector(".pxs-name"); return nm.getBoundingClientRect().width >= 44 ? "ok" : "the name has only " + Math.round(nm.getBoundingClientRect().width) + " px"; });
+  check((await topStrip()) === "ok", "the top strip's buttons and labels do not overlap", await topStrip());
 
   // a stroke with a colour that is not under the pointer yet
   await page.locator(".pxs-pal .pxs-sw").nth(11).click(); await sleep(100);
@@ -123,6 +128,8 @@ async function run(browser, base, phone, tmp) {
   await page.locator('.pxs-top [aria-label="Redo"]').click(); await sleep(200);
   d = await docInfo(); check(d.frames === 2, "redo brings it back");
   await shot("frames");
+  await page.waitForFunction(() => document.querySelector(".pxs-saved").textContent.startsWith("Saved"), null, { timeout: 5000 }).catch(() => {});
+  check((await topStrip()) === "ok", "the top strip still fits with the frame count and Saved showing", await topStrip());
 
   // clear, asked first
   const hc0 = await page.evaluate(HASH);

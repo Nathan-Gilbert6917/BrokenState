@@ -26,8 +26,15 @@
 .pxs-tool { flex-direction: column; min-width: 58px; gap: 3px; padding: 4px 4px 3px; }
 .pxs-tool small { font-size: .6rem; }
 .pxs-name { flex: 1 1 auto; min-width: 0; justify-content: flex-start; text-align: left; font-weight: 700; padding-left: 8px; }
+.pxs-name { overflow: hidden; }
 .pxs-name > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.pxs-name .pxs-dim { color: var(--muted); font: 500 .72rem var(--mono); margin-left: 6px; flex: none; }
+.pxs-name .pxs-nm { flex: 1 1 auto; max-width: max-content; }
+.pxs-name .pxs-dim { color: var(--muted); font: 500 .72rem var(--mono); margin-left: 6px; flex: 0 4 auto; }
+/* a phone's top strip: smaller buttons, no frame count, so the name, its size and Saved fit beside six buttons */
+.pxs.pxs-phone .pxs-top { padding: 2px 4px; gap: 0; }
+.pxs.pxs-phone .pxs-top .pxs-ib:not(.pxs-name) { min-width: 40px; padding: 0 2px; }
+.pxs.pxs-phone .pxs-top .pxs-frc { display: none; }
+.pxs.pxs-phone .pxs-top .pxs-saved { padding: 0 2px; }
 .pxs-saved { font: 600 .6rem var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); white-space: nowrap; padding: 0 4px; }
 .pxs-saved.pxs-dirty { color: var(--gold); }
 .pxs-inline { font: inherit; font-weight: 700; padding: 6px 8px; border: 1px solid var(--accent); border-radius: 6px; background: var(--panel); color: var(--ink); min-width: 0; width: 100%; min-height: 40px; }
