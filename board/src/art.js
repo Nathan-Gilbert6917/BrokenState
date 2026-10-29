@@ -1,4 +1,5 @@
-// Art school: lessons from DATA.art and three hands-on tools (pixel studio, sheet player, 3D-to-sprite camera).
+// Art school: lessons from DATA.art and three hands-on tools: the pixel studio (src/studio.js, mounted here), the sprite-sheet
+// player and the 3D-to-sprite camera. Built by build.js after formats.js and studio.js.
 window.renderArt = function (H) {
   const { el, docs, bullets, store } = H;
   const A = DATA.art || {};
@@ -37,242 +38,21 @@ window.renderArt = function (H) {
   }
   for (const t of tracks) trackBtns.append(el("button", { type: "button", role: "tab", "data-t": t.id, onclick: () => { track = t.id; store.set("bs-art-track", track); renderTrack(); }, text: t.title }));
 
-  // ---------- pixel studio ----------
-  const S = { preset: "icon16", w: 16, h: 16, frames: [], cur: 0, color: PALETTE[2], tool: "pen", mirror: false, onion: true, grid: true, guide: true, fps: 8, playing: true, view: "anim" };
-  const undo = [];
-  function blank() { return new Array(S.w * S.h).fill(""); }
-  function loadDraft() {
-    const d = store.get("bs-art-studio", null);
-    if (d && d.w && d.frames && d.frames.length && PRESETS[d.preset]) { Object.assign(S, { preset: d.preset, w: d.w, h: d.h, frames: d.frames, fps: d.fps || 8 }); S.cur = 0; }
-    else setPreset("icon16", false);
-  }
-  let saveT = 0;
-  function saveDraft() { clearTimeout(saveT); saveT = setTimeout(() => store.set("bs-art-studio", { preset: S.preset, w: S.w, h: S.h, frames: S.frames, fps: S.fps }), 300); }
-  function setPreset(key, keep) {
-    const P = PRESETS[key]; S.preset = key; S.w = P.w; S.h = P.h;
-    S.frames = [blank()]; S.cur = 0; undo.length = 0;
-    if (P.seed) seed(P.seed);
-    saveDraft();
-  }
-  // a starting drawing so the tool opens doing something
-  function seed(kind) {
-    const f = S.frames[0], put = (x, y, c) => { if (x >= 0 && y >= 0 && x < S.w && y < S.h) f[y * S.w + x] = c; };
-    const inM = (x, y) => mask(S.preset, x + .5, y + .5);
-    if (kind === "hexgrass" || kind === "isofloor" || kind === "isoblock") {
-      for (let y = 0; y < S.h; y++) for (let x = 0; x < S.w; x++) if (inM(x, y)) {
-        const n = (x * 7 + y * 13 + ((x * y) % 5)) % 11;
-        const h2 = ((x * 73856093) ^ (y * 19349663)) >>> 0, r = h2 % 23;
-        let c = kind === "isoblock" ? "#8a6a48" : (r === 0 ? "#7a8f4e" : r === 1 ? "#3c4734" : "#5d6b4f");
-        if (kind === "isoblock") { const top = topFace(x + .5, y + .5); c = top ? (n < 3 ? "#c9cfc9" : "#8b938c") : (x < S.w / 2 ? "#6b4f35" : "#8a6a48"); }
-        if (kind === "isofloor") c = n < 3 ? "#8b938c" : "#c9cfc9";
-        f[y * S.w + x] = c;
-      }
-    } else if (kind === "beans") {
-      for (let y = 3; y < 14; y++) for (let x = 4; x < 12; x++) put(x, y, x === 4 || x === 11 ? "#2c3832" : y < 6 || y > 11 ? "#8b938c" : "#b8332b");
-      for (let x = 5; x < 11; x++) { put(x, 3, "#c9cfc9"); put(x, 8, "#e0b44a"); put(x, 9, "#e0b44a"); }
-      for (let x = 4; x < 12; x++) { put(x, 2, "#2c3832"); put(x, 14, "#2c3832"); }
-    } else if (kind === "survivor") {
-      const cx = Math.floor(S.w / 2), base = (PRESETS[S.preset].pivotY != null ? PRESETS[S.preset].pivotY : S.h - 4) + 1;
-      const rect = (x0, y0, w, h, c) => { for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) put(x, y, c); };
-      rect(cx - 3, base - 10, 2, 10, "#2c3832"); rect(cx + 1, base - 10, 2, 10, "#2c3832");
-      rect(cx - 4, base - 22, 8, 12, "#2f6fb3"); rect(cx - 5, base - 21, 1, 9, "#d9a37a"); rect(cx + 4, base - 21, 1, 9, "#d9a37a");
-      rect(cx - 3, base - 29, 6, 7, "#d9a37a"); rect(cx - 3, base - 30, 6, 2, "#6b4f35"); put(cx - 2, base - 26, "#17201c"); put(cx + 1, base - 26, "#17201c");
-      rect(cx - 4, base - 1, 3, 1, "#17201c"); rect(cx + 1, base - 1, 3, 1, "#17201c");
+  // ---------- pixel studio (src/studio.js) ----------
+  const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim() || "#888";
+  // The page's way of saving a file: the artifact's downloads capability when it is there, an ordinary download otherwise.
+  async function saveFile({ filename, blob }) {
+    if (!(window.claude && window.claude.use)) {
+      const url = URL.createObjectURL(blob), link = document.createElement("a"); link.href = url; link.download = filename; document.body.append(link); link.click(); link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 30000); return "Saved " + filename + ".";
     }
+    const dl = await window.claude.use("downloads");
+    if (!dl) throw new Error("Saving files is not available here.");
+    try { await dl.save({ filename, data: blob }); return "Saved " + filename + "."; }
+    catch (e) { throw new Error(e && e.code === "declined" ? "Not saved." : "Could not save " + filename + " here."); }
   }
-  function topFace(x, y) { const w = S.w, t = w / 2; return Math.abs(x - w / 2) / (w / 2) + Math.abs(y - t / 2) / (t / 2) <= 1; }
-  // template masks: where the tile's pixels belong
-  function mask(key, x, y) {
-    const P = PRESETS[key], w = P.w, h = P.h;
-    if (P.shape === "hexpointy") { const dx = Math.abs(x - w / 2), dy = Math.abs(y - h / 2); return dx <= w / 2 && dy <= h / 2 && dy <= h / 2 - (dx / (w / 2)) * (h / 4); }
-    if (P.shape === "hexflat") { const dx = Math.abs(x - w / 2), dy = Math.abs(y - h / 2); return dy <= h / 2 && dx <= w / 2 && dx <= w / 2 - (dy / (h / 2)) * (w / 4); }
-    if (P.shape === "diamond") return Math.abs(x - w / 2) / (w / 2) + Math.abs(y - h / 2) / (h / 2) <= 1;
-    if (P.shape === "block") { const t = w / 2, dx = Math.abs(x - w / 2); return y >= (t / 2) * (dx / (w / 2)) - .01 && y <= h - (t / 2) * (dx / (w / 2)) + .01; }
-    return true;
-  }
-
-  const cv = el("canvas", { class: "studio-cv", "aria-label": "Pixel canvas: draw with the mouse or a finger" });
-  const ctx = cv.getContext("2d");
-  let cell = 20;
-  function fit() {
-    const maxW = Math.min(520, (cv.parentElement ? cv.parentElement.clientWidth : 520) - 4), maxH = 520;
-    cell = Math.max(3, Math.floor(Math.min(maxW / S.w, maxH / S.h)));
-    cv.width = S.w * cell; cv.height = S.h * cell; cv.style.width = cv.width + "px"; cv.style.height = cv.height + "px";
-  }
-  function css(v) { return getComputedStyle(document.documentElement).getPropertyValue(v).trim() || "#888"; }
-  function drawStudio() {
-    const f = S.frames[S.cur], P = PRESETS[S.preset];
-    const a = css("--sunk"), b = css("--panel");
-    for (let y = 0; y < S.h; y++) for (let x = 0; x < S.w; x++) {
-      ctx.fillStyle = ((x >> 1) + (y >> 1)) % 2 ? a : b; ctx.fillRect(x * cell, y * cell, cell, cell);
-    }
-    if (S.onion && S.cur > 0) { ctx.globalAlpha = .28; paint(S.frames[S.cur - 1]); ctx.globalAlpha = 1; }
-    paint(f);
-    if (S.guide) {
-      ctx.fillStyle = "rgba(120,30,25,.22)";
-      for (let y = 0; y < S.h; y++) for (let x = 0; x < S.w; x++) if (!mask(S.preset, x + .5, y + .5)) ctx.fillRect(x * cell, y * cell, cell, cell);
-      ctx.strokeStyle = css("--accent"); ctx.lineWidth = 2; ctx.setLineDash([6, 4]); ctx.beginPath();
-      const W = S.w * cell, Hh = S.h * cell;
-      if (P.shape === "hexpointy") poly([[W / 2, 0], [W, Hh / 4], [W, 3 * Hh / 4], [W / 2, Hh], [0, 3 * Hh / 4], [0, Hh / 4]]);
-      else if (P.shape === "hexflat") poly([[W / 4, 0], [3 * W / 4, 0], [W, Hh / 2], [3 * W / 4, Hh], [W / 4, Hh], [0, Hh / 2]]);
-      else if (P.shape === "diamond") poly([[W / 2, 0], [W, Hh / 2], [W / 2, Hh], [0, Hh / 2]]);
-      else if (P.shape === "block") { const t = W / 2; poly([[W / 2, 0], [W, t / 2], [W, Hh - t / 2], [W / 2, Hh], [0, Hh - t / 2], [0, t / 2]]); ctx.moveTo(0, t / 2); ctx.lineTo(W / 2, t); ctx.lineTo(W, t / 2); ctx.moveTo(W / 2, t); ctx.lineTo(W / 2, Hh); }
-      else if (P.shape === "char") { const gy = (P.pivotY != null ? P.pivotY : S.h - 2) * cell; ctx.moveTo(0, gy); ctx.lineTo(W, gy); ctx.moveTo(W / 2, 0); ctx.lineTo(W / 2, Hh); ctx.stroke(); ctx.beginPath(); ctx.setLineDash([]); ctx.ellipse(W / 2, gy, W * .32, W * .16, 0, 0, Math.PI * 2); ctx.moveTo(W / 2 - 8, gy); ctx.lineTo(W / 2 + 8, gy); }
-      ctx.stroke(); ctx.setLineDash([]);
-    }
-    if (S.grid && cell >= 6) {
-      ctx.strokeStyle = "rgba(128,140,132,.28)"; ctx.lineWidth = 1; ctx.beginPath();
-      for (let x = 1; x < S.w; x++) { ctx.moveTo(x * cell + .5, 0); ctx.lineTo(x * cell + .5, S.h * cell); }
-      for (let y = 1; y < S.h; y++) { ctx.moveTo(0, y * cell + .5); ctx.lineTo(S.w * cell, y * cell + .5); }
-      ctx.stroke();
-    }
-  }
-  function poly(pts) { ctx.moveTo(pts[0][0], pts[0][1]); for (const p of pts.slice(1)) ctx.lineTo(p[0], p[1]); ctx.closePath(); }
-  function paint(f) { for (let i = 0; i < f.length; i++) if (f[i]) { ctx.fillStyle = f[i]; ctx.fillRect((i % S.w) * cell, Math.floor(i / S.w) * cell, cell, cell); } }
-
-  function frameCanvas(f) {
-    const c = document.createElement("canvas"); c.width = S.w; c.height = S.h; const x = c.getContext("2d");
-    for (let i = 0; i < f.length; i++) if (f[i]) { x.fillStyle = f[i]; x.fillRect(i % S.w, Math.floor(i / S.w), 1, 1); }
-    return c;
-  }
-  // stroke handling
-  let drawing = false, last = null, strokeColor = null;
-  function cellAt(e) { const r = cv.getBoundingClientRect(); return [Math.floor((e.clientX - r.left) / (r.width / S.w)), Math.floor((e.clientY - r.top) / (r.height / S.h))]; }
-  function setPx(x, y, c) {
-    if (x < 0 || y < 0 || x >= S.w || y >= S.h) return;
-    const f = S.frames[S.cur]; f[y * S.w + x] = c;
-    if (S.mirror) f[y * S.w + (S.w - 1 - x)] = c;
-  }
-  function line(x0, y0, x1, y1, c) {
-    const dx = Math.abs(x1 - x0), dy = -Math.abs(y1 - y0), sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1; let err = dx + dy;
-    for (;;) { setPx(x0, y0, c); if (x0 === x1 && y0 === y1) break; const e2 = 2 * err; if (e2 >= dy) { err += dy; x0 += sx; } if (e2 <= dx) { err += dx; y0 += sy; } }
-  }
-  function fill(x, y, c) {
-    const f = S.frames[S.cur], t = f[y * S.w + x]; if (t === c) return;
-    const st = [[x, y]];
-    while (st.length) { const [a, b] = st.pop(); if (a < 0 || b < 0 || a >= S.w || b >= S.h || f[b * S.w + a] !== t) continue; f[b * S.w + a] = c; st.push([a + 1, b], [a - 1, b], [a, b + 1], [a, b - 1]); }
-  }
-  function pushUndo() { undo.push({ cur: S.cur, f: S.frames[S.cur].slice() }); if (undo.length > 60) undo.shift(); }
-  cv.addEventListener("pointerdown", e => {
-    e.preventDefault(); const [x, y] = cellAt(e);
-    if (S.tool === "pick") { const c = S.frames[S.cur][y * S.w + x]; if (c) { S.color = c; renderPalette(); } return; }
-    pushUndo();
-    if (S.tool === "fill") { fill(x, y, S.color); changed(); return; }
-    drawing = true; strokeColor = S.tool === "erase" || e.button === 2 ? "" : S.color; last = [x, y];
-    cv.setPointerCapture(e.pointerId); setPx(x, y, strokeColor); changed();
-  });
-  cv.addEventListener("pointermove", e => { if (!drawing) return; const [x, y] = cellAt(e); line(last[0], last[1], x, y, strokeColor); last = [x, y]; changed(); });
-  const end = () => { drawing = false; };
-  cv.addEventListener("pointerup", end); cv.addEventListener("pointercancel", end);
-  cv.addEventListener("contextmenu", e => e.preventDefault());
-  function changed() { drawStudio(); renderFrames(); saveDraft(); }
-
-  // controls
-  const presetSel = el("select", { id: "st-preset", "aria-label": "Template" }, Object.entries(PRESETS).map(([k, p]) => el("option", { value: k, text: p.label })));
-  const presetNote = el("p", { class: "note" });
-  presetSel.addEventListener("change", () => { setPreset(presetSel.value); refreshAll(); });
-  const toolSeg = el("div", { class: "seg", role: "group", "aria-label": "Drawing tool" },
-    [["pen", "Pencil"], ["erase", "Eraser"], ["fill", "Fill"], ["pick", "Pick colour"]].map(([k, t]) => el("button", { type: "button", "data-tool": k, onclick: () => { S.tool = k; renderTools(); }, text: t })));
-  function renderTools() { toolSeg.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.tool === S.tool))); }
-  const toggles = el("div", { class: "toggles" },
-    [["mirror", "Mirror"], ["onion", "Onion skin"], ["grid", "Grid"], ["guide", "Template guide"]].map(([k, t]) => el("label", {}, el("input", { type: "checkbox", id: "st-" + k, checked: S[k] ? true : null, onchange: e => { S[k] = e.target.checked; drawStudio(); } }), t)));
-  const pal = el("div", { class: "palette", role: "group", "aria-label": "Palette" });
-  const custom = el("input", { type: "color", id: "st-custom", "aria-label": "Custom colour", value: "#2f6fb3", oninput: e => { S.color = e.target.value; renderPalette(); } });
-  function renderPalette() {
-    pal.textContent = "";
-    for (const c of PALETTE) pal.append(el("button", { type: "button", class: "sw", style: "background:" + c, title: c, "aria-label": "Colour " + c, "aria-pressed": String(c === S.color), onclick: () => { S.color = c; if (S.tool === "erase" || S.tool === "pick") S.tool = "pen"; renderTools(); renderPalette(); } }));
-    pal.append(custom);
-  }
-  const framesBox = el("div", { class: "frames" });
-  function renderFrames() {
-    framesBox.textContent = "";
-    S.frames.forEach((f, i) => {
-      const c = frameCanvas(f); c.className = "thumb";
-      framesBox.append(el("button", { type: "button", class: "fr", "aria-pressed": String(i === S.cur), "aria-label": "Frame " + (i + 1), onclick: () => { S.cur = i; drawStudio(); renderFrames(); } }, c, el("span", { text: String(i + 1) })));
-    });
-  }
-  const frameBtns = el("div", { class: "row-btns" },
-    el("button", { type: "button", class: "btn", onclick: () => { S.frames.splice(S.cur + 1, 0, blank()); S.cur++; changed(); }, text: "+ Frame" }),
-    el("button", { type: "button", class: "btn", onclick: () => { S.frames.splice(S.cur + 1, 0, S.frames[S.cur].slice()); S.cur++; changed(); }, text: "Duplicate" }),
-    el("button", { type: "button", class: "btn", onclick: () => { if (S.frames.length > 1) { S.frames.splice(S.cur, 1); S.cur = Math.max(0, S.cur - 1); changed(); } }, text: "Delete frame" }),
-    el("button", { type: "button", class: "btn", onclick: () => { const u = undo.pop(); if (u) { S.frames[u.cur] = u.f; S.cur = Math.min(u.cur, S.frames.length - 1); changed(); } }, text: "Undo" }),
-    el("button", { type: "button", class: "btn", onclick: () => { pushUndo(); const f = S.frames[S.cur]; for (let y = 0; y < S.h; y++) for (let x = 0; x < S.w; x++) if (!mask(S.preset, x + .5, y + .5)) f[y * S.w + x] = ""; changed(); }, text: "Clip to template" }),
-    el("button", { type: "button", class: "btn", onclick: () => { pushUndo(); S.frames[S.cur] = blank(); changed(); }, text: "Clear" }));
-  document.addEventListener("keydown", e => { if ((e.ctrlKey || e.metaKey) && e.key === "z" && location.hash === "#art" && document.activeElement && document.activeElement.tagName !== "INPUT") { e.preventDefault(); const u = undo.pop(); if (u) { S.frames[u.cur] = u.f; changed(); } } });
-
-  // previews
-  const pvA = el("canvas", { class: "pv", width: 220, height: 220, "aria-label": "Animation preview" });
-  const pvT = el("canvas", { class: "pv wide", width: 420, height: 260, "aria-label": "Tiled preview to check seams" });
-  const fpsIn = el("input", { type: "range", id: "st-fps", min: 1, max: 24, value: S.fps, "aria-label": "Frames per second" });
-  const fpsOut = el("span", { class: "mono" });
-  fpsIn.addEventListener("input", () => { S.fps = +fpsIn.value; fpsOut.textContent = S.fps + " fps · " + Math.round(1000 / S.fps) + " ms a frame"; saveDraft(); });
-  let tick = 0, lastT = 0;
-  function drawPreviews(now) {
-    if (location.hash !== "#art") { requestAnimationFrame(drawPreviews); return; }
-    if (now - lastT > 1000 / S.fps) { tick++; lastT = now; }
-    const fi = tick % S.frames.length, fc = frameCanvas(S.frames[fi]);
-    const a = pvA.getContext("2d"); a.imageSmoothingEnabled = false; a.fillStyle = css("--sunk"); a.fillRect(0, 0, pvA.width, pvA.height);
-    const sc = Math.max(1, Math.floor(Math.min(200 / S.w, 200 / S.h)));
-    a.drawImage(fc, (pvA.width - S.w * sc) / 2, (pvA.height - S.h * sc) / 2, S.w * sc, S.h * sc);
-    a.fillStyle = css("--muted"); a.font = "11px " + css("--mono"); a.fillText("frame " + (fi + 1) + "/" + S.frames.length + " · " + sc + "×", 6, pvA.height - 6);
-    drawTiled(fc);
-    requestAnimationFrame(drawPreviews);
-  }
-  function drawTiled(fc) {
-    const t = pvT.getContext("2d"), P = PRESETS[S.preset], W = pvT.width, Hh = pvT.height; t.imageSmoothingEnabled = false;
-    t.fillStyle = css("--sunk"); t.fillRect(0, 0, W, Hh);
-    const sc = P.tileScale || 2, w = S.w * sc, h = S.h * sc;
-    const blit = (x, y) => t.drawImage(fc, Math.round(x), Math.round(y), w, h);
-    if (P.shape === "hexpointy") { for (let r = -1; r < Hh / (h * .75) + 1; r++) for (let q = -1; q < W / w + 1; q++) blit(q * w + (r & 1 ? w / 2 : 0), r * h * .75); }
-    else if (P.shape === "hexflat") { for (let q = -1; q < W / (w * .75) + 1; q++) for (let r = -1; r < Hh / h + 1; r++) blit(q * w * .75, r * h + (q & 1 ? h / 2 : 0)); }
-    else if (P.shape === "diamond" || P.shape === "block") {
-      const th = w / 2, ox = W / 2 - w / 2, oy = P.shape === "block" ? h - th - 10 : 0, N = Math.ceil(Math.max(W / w, Hh / th)) + 2;
-      if (P.shape === "diamond") { for (let s = 0; s < 2 * N; s++) for (let i = 0; i <= s; i++) blit(ox + (i - s + i) * w / 2, (s) * th / 2); }
-      else {
-        // a floor of plain diamonds, then an L-shaped wall drawn back to front so nearer blocks cover farther ones (y-sort)
-        for (let s = 0; s < 2 * N; s++) for (let i = 0; i <= s; i++) { const j = s - i, x = ox + (i - j) * w / 2, y = oy + h - th + (i + j) * th / 2;
-          t.fillStyle = (i + j) % 2 ? css("--panel") : css("--bg"); t.beginPath(); t.moveTo(x + w / 2, y); t.lineTo(x + w, y + th / 2); t.lineTo(x + w / 2, y + th); t.lineTo(x, y + th / 2); t.closePath(); t.fill(); }
-        const wall = []; for (let k = 1; k < 6; k++) wall.push([k, 2]); for (let k = 3; k < 6; k++) wall.push([1, k]);
-        wall.sort((p, q) => (p[0] + p[1]) - (q[0] + q[1])).forEach(([i, j]) => blit(ox + (i - j) * w / 2, oy + (i + j) * th / 2));
-      }
-    } else if (P.shape === "char") {
-      const tw = 32 * sc, th = 16 * sc, ox = W / 2 - tw / 2; t.strokeStyle = css("--rule");
-      for (let i = 0; i < 7; i++) for (let j = 0; j < 7; j++) { const x = ox + (i - j) * tw / 2, y = (i + j) * th / 2 - 40; t.fillStyle = (i + j) % 2 ? css("--panel") : css("--bg"); t.beginPath(); t.moveTo(x + tw / 2, y); t.lineTo(x + tw, y + th / 2); t.lineTo(x + tw / 2, y + th); t.lineTo(x, y + th / 2); t.closePath(); t.fill(); t.stroke(); }
-      for (const [i, j] of [[3, 3], [4, 2], [2, 5]]) { const cx = ox + (i - j) * tw / 2 + tw / 2, cy = (i + j) * th / 2 - 40 + th / 2; t.drawImage(fc, Math.round(cx - w / 2), Math.round(cy - (P.pivotY != null ? P.pivotY : S.h - 2) * sc), w, h); }
-    } else { for (let y = 0; y < Hh; y += h + 6) for (let x = 0; x < W; x += w + 6) blit(x, y); }
-  }
-
-  // export
-  const sheetImg = el("img", { class: "sheet", alt: "Your sprite sheet", hidden: true });
-  const exportNote = el("p", { class: "note" });
-  async function exportSheet(scale) {
-    const c = document.createElement("canvas"); c.width = S.w * S.frames.length * scale; c.height = S.h * scale;
-    const x = c.getContext("2d"); x.imageSmoothingEnabled = false;
-    S.frames.forEach((f, i) => x.drawImage(frameCanvas(f), i * S.w * scale, 0, S.w * scale, S.h * scale));
-    const name = (PRESETS[S.preset].key || "sprite") + (S.frames.length > 1 ? "_sheet" : "") + (scale > 1 ? "@" + scale + "x" : "") + ".png";
-    sheetImg.src = c.toDataURL("image/png"); sheetImg.hidden = false;
-    try {
-      if (!(window.claude && window.claude.use)) {
-        // the installed app or a plain browser: an ordinary download
-        const link = document.createElement("a"); link.href = sheetImg.src; link.download = name; document.body.append(link); link.click(); link.remove();
-        exportNote.textContent = "Saved " + name + "."; return;
-      }
-      const dl = await window.claude.use("downloads");
-      if (!dl) { exportNote.textContent = "Saving files is not available here. Right-click or long-press the sheet below to save it."; return; }
-      const blob = await new Promise(r => c.toBlob(r, "image/png"));
-      await dl.save({ filename: name, data: blob }); exportNote.textContent = "Saved " + name + ".";
-    } catch (e) { exportNote.textContent = e && e.code === "declined" ? "Not saved." : "Could not save the file here. Right-click or long-press the sheet below to save it."; }
-  }
-  const exportBtns = el("div", { class: "row-btns" },
-    el("button", { type: "button", class: "btn primary", onclick: () => exportSheet(1), text: "Save PNG (1×, for the engine)" }),
-    el("button", { type: "button", class: "btn", onclick: () => exportSheet(4), text: "Save PNG (4×, to share)" }));
-
-  function refreshAll() {
-    presetSel.value = S.preset; const P = PRESETS[S.preset];
-    presetNote.textContent = P.note + " Canvas " + S.w + " × " + S.h + " px. Art key: " + (P.key || "") + ".";
-    fit(); drawStudio(); renderFrames(); renderTools(); renderPalette();
-    fpsIn.value = S.fps; fpsOut.textContent = S.fps + " fps · " + Math.round(1000 / S.fps) + " ms a frame";
-  }
+  const studioHost = el("div", { class: "pxs-host" });
+  let studio = null;   // the studio's api, mounted once the page is in the document
 
   // ---------- sheet player ----------
   const spCv = el("canvas", { class: "pv", width: 260, height: 260, "aria-label": "Sprite sheet playback" });
@@ -288,16 +68,14 @@ window.renderArt = function (H) {
   });
   Object.values(spIn).forEach(i => i.addEventListener("input", drawSheet));
   const spToStudio = el("button", { type: "button", class: "btn", onclick: () => {
-    if (!spImg) return; const fw = +spIn.fw.value, fh = +spIn.fh.value;
-    if (fw > 96 || fh > 128) { spNote.textContent = "The studio takes frames up to 96 × 128 px."; return; }
-    const c = document.createElement("canvas"); c.width = spImg.width; c.height = spImg.height; const x = c.getContext("2d"); x.drawImage(spImg, 0, 0);
-    const n = +spIn.n.value || Math.floor(spImg.width / fw), row = +spIn.row.value; const frames = [];
-    for (let k = 0; k < n; k++) { const d = x.getImageData(k * fw, row * fh, fw, fh).data, f = [];
-      for (let i = 0; i < fw * fh; i++) f.push(d[i * 4 + 3] < 128 ? "" : "#" + [d[i * 4], d[i * 4 + 1], d[i * 4 + 2]].map(v => v.toString(16).padStart(2, "0")).join("")); frames.push(f); }
-    PRESETS.custom = { label: "Imported sheet", w: fw, h: fh, shape: "free", note: "Frames loaded from your sheet.", key: "imported" };
-    if (!presetSel.querySelector('option[value="custom"]')) presetSel.append(el("option", { value: "custom", text: "Imported sheet" }));
-    Object.assign(S, { preset: "custom", w: fw, h: fh, frames, cur: 0 }); undo.length = 0; refreshAll(); saveDraft();
-    document.getElementById("studio").scrollIntoView({ behavior: "smooth", block: "start" });
+    if (!spImg || !studio) return; const fw = +spIn.fw.value || 1, fh = +spIn.fh.value || 1;
+    if (fw > 256 || fh > 256) { spNote.textContent = "The studio takes frames up to 256 × 256 px."; return; }
+    const c = document.createElement("canvas"); c.width = spImg.width; c.height = spImg.height; const x = c.getContext("2d", { willReadFrequently: true }); x.drawImage(spImg, 0, 0);
+    const n = Math.max(1, +spIn.n.value || Math.floor(spImg.width / fw)), row = +spIn.row.value || 0, fps = +spIn.fps.value || 8;
+    const doc = AseFormats.newDoc({ w: fw, h: fh, name: "imported", palette: PALETTE });
+    doc.frames = []; doc.cels[0] = [];
+    for (let k = 0; k < n; k++) { doc.frames.push({ duration: Math.round(1000 / fps) }); doc.cels[0].push({ data: new Uint8ClampedArray(x.getImageData(k * fw, row * fh, fw, fh).data), opacity: 255 }); }
+    studio.openDoc(doc, { template: null }); studio.scrollIntoView();
   }, text: "Open frames in the studio" });
   function drawSheet() {
     if (!spImg) return; const fw = +spIn.fw.value || 1, fh = +spIn.fh.value || 1, sc = Math.max(1, Math.min(4, Math.floor(560 / spImg.width)));
@@ -392,9 +170,9 @@ window.renderArt = function (H) {
 
   function practise(id) {
     if (id === "models3d") { document.getElementById("camtool").scrollIntoView({ behavior: "smooth", block: "start" }); return; }
+    if (!studio) return;
     const map = { sprites2d: "char", worldtiles: "hex", raidtiles: "isofloor", animation: "char" };
-    setPreset(map[id] || "icon16"); if (id === "animation") { S.frames.push(S.frames[0].slice()); S.frames.push(S.frames[0].slice()); S.frames.push(S.frames[0].slice()); }
-    refreshAll(); document.getElementById("studio").scrollIntoView({ behavior: "smooth", block: "start" });
+    studio.newFromTemplate(map[id] || "icon16", { frames: id === "animation" ? 4 : 1 }); studio.scrollIntoView();
   }
 
   // ---------- page ----------
@@ -406,14 +184,9 @@ window.renderArt = function (H) {
       el("thead", {}, el("tr", {}, ["Style", "Good at", "Hard part", "For Broken State"].map(h => el("th", { text: h })))),
       el("tbody", {}, A.styleChoices.map(r => el("tr", {}, el("td", { text: r.style }), el("td", { text: r.good }), el("td", { text: r.hard }), el("td", { text: r.fit }))))))) : null,
     el("section", { class: "tracks" }, el("h3", { text: "Five tracks" }), trackBtns, trackPane),
-    el("section", { id: "studio", class: "tool" }, el("div", { class: "tool-h" }, el("h3", { text: "Pixel studio" }),
-      el("p", { text: "Draw a sprite or tile on a template sized for the game, add frames for animation, and check it tiled the way the engine will lay it out. Your drawing is kept in this browser." })),
-      el("div", { class: "studio" },
-        el("div", { class: "studio-l" }, el("div", { class: "ctl" }, el("label", { for: "st-preset", text: "Template" }), presetSel), presetNote, toolSeg, toggles, pal,
-          el("div", { class: "cv-wrap" }, cv), el("h4", { class: "bx", text: "Frames" }), framesBox, frameBtns),
-        el("div", { class: "studio-r" }, el("h4", { class: "bx", text: "Animation" }), pvA, el("div", { class: "ctl" }, el("label", { for: "st-fps", text: "Speed" }), fpsIn, fpsOut),
-          el("h4", { class: "bx", text: "Tiled, as the engine lays it out" }), pvT, el("p", { class: "note", text: "Look for seams: lines or colour jumps where copies meet. Fix them at the tile's edges." }),
-          el("h4", { class: "bx", text: "Export" }), exportBtns, exportNote, sheetImg))),
+    el("section", { id: "studio", class: "tool pxs-section" }, el("div", { class: "tool-h" }, el("h3", { text: "Pixel studio" }),
+      el("p", { text: "An Aseprite-like editor for the game's sprites and tiles, made for a phone: draw with one finger and pinch to zoom, add layers and frames, tag animations, and import or export Aseprite files, palettes, sheets and GIFs; your sprites are kept in this browser." })),
+      studioHost),
     el("section", { class: "tool" }, el("div", { class: "tool-h" }, el("h3", { text: "Sprite sheet player" }), spNote),
       el("div", { class: "studio" },
         el("div", { class: "studio-l" }, el("div", { class: "ctl" }, spFile),
@@ -431,9 +204,9 @@ window.renderArt = function (H) {
       A.commissioning ? el("div", { class: "box" }, el("h3", { text: "If you hire artists" }), bullets(A.commissioning, "tips")) : null),
     A.learnLinks ? el("section", { class: "box" }, el("h3", { text: "Where to keep learning" }), docs(A.learnLinks)) : null].filter(Boolean));
 
-  loadDraft(); renderTrack(); camText();
-  const onResize = () => { fit(); drawStudio(); fitCam(); };
-  window.addEventListener("resize", onResize); window.addEventListener("hashchange", () => { if (location.hash === "#art") setTimeout(() => { onResize(); refreshAll(); }, 0); });
-  setTimeout(() => { refreshAll(); fitCam(); }, 0);
-  requestAnimationFrame(drawPreviews); requestAnimationFrame(spLoop); requestAnimationFrame(camLoop);
+  renderTrack(); camText();
+  studio = window.PixelStudio ? window.PixelStudio.mount(studioHost, { el, store, presets: PRESETS, palette: PALETTE, formats: window.AseFormats, saveFile }) : null;
+  window.addEventListener("resize", fitCam); window.addEventListener("hashchange", () => { if (location.hash === "#art") setTimeout(fitCam, 0); });
+  setTimeout(fitCam, 0);
+  requestAnimationFrame(spLoop); requestAnimationFrame(camLoop);
 };

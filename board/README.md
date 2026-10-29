@@ -5,7 +5,35 @@ A planning board for rebuilding Broken State in Godot or Unity, built from this 
 tasks, a C# data sketch, what it needs and unlocks, how it connects to other cards in each engine, beginner notes and
 doc links. Tabs: **Board**, **Vertical slice**, **Infrastructure** (the stack, repo layout, Godot vs Unity), **Learn**
 (learning path, glossary, using the prototype as the spec) and **Art school** (lessons for 2D sprites, 3D models, hex
-map tiles, raid tiles and animation, with a pixel studio, a sprite-sheet player and a 3D-to-sprite camera).
+map tiles, raid tiles and animation, with the pixel studio, a sprite-sheet player and a 3D-to-sprite camera).
+
+## The pixel studio
+
+The Art school's studio is an Aseprite-like pixel editor made for a phone first (the user's request 2026-10-29): draw,
+change and animate sprites on the game's templates (16 × 16 icon, 48 × 52 character with the feet on the pivot, 48 × 56
+hex, 32 × 16 iso floor, 32 × 50 iso wall cell) or any size up to 256 × 256, with layers, frames, tags and onion skin.
+
+- **Phone first.** One finger draws, two fingers pinch to zoom and pan; the tools, colours and timeline sit in strips
+  under the canvas with the panels (Layers, Palette, Frames, Preview, Canvas, File) as a sheet above them; **Full
+  screen** fixes the studio to the whole screen. On a desktop the same studio spreads out (tools left, panels right)
+  and takes the keyboard (B pencil, E eraser, G fill, L line, U rectangle, O ellipse, M select, V move, I pick, H pan,
+  X swap colours, [ ] brush size, , . frames, Ctrl+Z / Ctrl+Y, Ctrl+C / X / V).
+- **Tools.** Pencil (sizes 1–4, pixel-perfect), eraser, fill (contiguous or global), line, rectangle, ellipse,
+  rectangle select with move / cut / copy / paste / flip / rotate, move with wrap for tiles, eyedropper, pan; mirror X
+  and Y; undo and redo (100 steps). Layers with visibility, lock, opacity, merge and flatten. Frames with their own
+  durations in ms, tags with a direction, playback of the sprite or a tag, onion skin, the animation preview and the
+  tiled preview that lays a tile out the way the engine will.
+- **Aseprite's files.** Imports and exports `.aseprite` / `.ase` (layers, cels, durations, tags, the palette; indexed
+  and greyscale files are read as RGBA, groups are flattened out, tilemaps are skipped with a note) and its palettes:
+  `.gpl` (GIMP, with Aseprite's RGBA channels), `.pal` (JASC), `.act` (Adobe), `.hex` (Lospec) and a PNG strip. Also
+  imports a PNG (one frame, a row of frames by frame size, or Aseprite's sheet JSON beside it), and exports a PNG sheet
+  with Aseprite's JSON, the current frame at any scale, and a GIF of the animation.
+- **Kept on the device.** Every sprite autosaves (as `.aseprite` bytes in the browser's IndexedDB; localStorage when
+  that is not there), and the File panel lists them: open, rename, duplicate, delete.
+
+The format code is `src/formats.js` (no DOM; `node board/tools/formats-test.js` round-trips every format) and the
+editor `src/studio.js` + `src/studio.css`; `NODE_PATH=$(npm root -g) node board/tools/studio-smoke.cjs [--shots dir]`
+drives the built page in headless Chromium at a phone's size and a desktop's.
 
 ## Open it, and put it on your phone
 
@@ -42,10 +70,14 @@ board/
     art-school.json   the Art school's lessons; presets.json its studio templates and palette
   src/
     template.html     the page (styles, board, drawer, the four other tabs)
-    art.js            the Art school's tools
+    formats.js        Aseprite's file formats for the studio: .aseprite, palettes, sheet JSON, GIF (no DOM)
+    studio.js         the pixel studio; studio.css its styles
+    art.js            the Art school page: lessons, the studio's mount, the sheet player, the 3D camera
     app-head.html     the web-app tags for dist/index.html
   public/             manifest.webmanifest, sw.js (network first, the cache offline), icons/
   tools/make-icons.cjs  draws public/icons (NODE_PATH=$(npm root -g) node board/tools/make-icons.cjs)
+  tools/formats-test.js  the format round trips (node board/tools/formats-test.js)
+  tools/studio-smoke.cjs the studio driven in headless Chromium at a phone's and a desktop's size
 ```
 
 `node board/build.js` writes `board/dist/` (git-ignored): `index.html` (the app), `artifact.html` (the same page

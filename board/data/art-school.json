@@ -1,5 +1,5 @@
 {
- "intro": "You do not need talent to make Broken State's art. You need one style, one palette and a set of fixed sizes, used the same way every time: a plain set that hangs together looks better than a skilled one that doesn't. The prototype already sets the look: gritty, muted pixel art, low-poly figures in a 2:1 isometric view, a 16 × 16 icon per item. So the shortest route is to keep that look. Learn pixel art for icons, hex tiles and raid tiles, and learn just enough Blender to build low-poly figures and render them to sprites. Work in this order: tiny items, then tiles, then characters, then animation. Every piece goes into the game straight away under its art key, so you can see it in place. Draw and import placeholders early, and replace them one at a time.",
+ "intro": "You do not need talent to make Broken State's art. You need one style, one palette and a set of fixed sizes, used the same way every time: a plain set that hangs together looks better than a skilled one that doesn't. The prototype already sets the look: gritty, muted pixel art, low-poly figures in a 2:1 isometric view, a 16 × 16 icon per item. So the shortest route is to keep that look. Learn pixel art for icons, hex tiles and raid tiles, and learn just enough Blender to build low-poly figures and render them to sprites. Work in this order: tiny items, then tiles, then characters, then animation. Every piece goes into the game straight away under its art key, so you can see it in place. Draw and import placeholders early, and replace them one at a time. The pixel studio below is an Aseprite-like editor made for a phone: start a sprite there on the bus, and carry it to Aseprite and back as an .aseprite file with its palette.",
  "styleChoices": [
   {
    "style": "Pixel art (2D)",
@@ -145,7 +145,7 @@
     {
      "t": "Set up and draw your first icon",
      "steps": [
-      "Install Aseprite (or Pixelorama).",
+      "Install Aseprite (or Pixelorama), or start in the pixel studio on this page: it opens and saves Aseprite's .aseprite files and palettes.",
       "New sprite 16 × 16, RGBA. Turn on the 1 px grid.",
       "Load a palette (Lospec Resurrect 64) and limit yourself to 6 colours.",
       "Draw a tin of beans: silhouette first, then a flat fill, then one shadow and one highlight.",
