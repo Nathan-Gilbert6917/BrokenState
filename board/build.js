@@ -65,7 +65,10 @@ if (problems.length) { console.error(problems.join("\n")); process.exit(1); }
 const presets = json(data("presets.json"));
 const payload = JSON.stringify({ lanes: Object.keys(LANES).map(key => ({ key, ...LANES[key] })), cards, guide: json(data("guide.json")), art: json(data("art-school.json")),
   artPresets: presets.presets, artPalette: presets.palette }).replace(/</g, "\\u003c");
-const page = read(path.join(dir, "src/template.html")).replace("/*__DATA__*/null", () => payload).replace("/*__ART__*/", () => read(path.join(dir, "src/art.js")));
+// The Art school's scripts, inlined in this order: the file formats (no DOM), the pixel studio, then the page's tools.
+const art = ["src/formats.js", "src/studio.js", "src/art.js"].map(f => read(path.join(dir, f))).join("\n");
+const page = read(path.join(dir, "src/template.html")).replace("/*__DATA__*/null", () => payload)
+  .replace("/*__STUDIO_CSS__*/", () => read(path.join(dir, "src/studio.css"))).replace("/*__ART__*/", () => art);
 console.log(cards.length + " cards in " + Object.keys(LANES).length + " lanes, " + Math.round(page.length / 1024) + " KB");
 if (process.argv.includes("--check")) process.exit(0);
 
