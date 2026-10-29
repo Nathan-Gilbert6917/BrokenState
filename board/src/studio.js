@@ -7,7 +7,10 @@
 // Templates (the game's sprite and tile sizes with their guides, seed drawings and the tiled previews) live here too.
 // Sections: helpers · icons · colours · templates · storage · mount (state, rendering, gestures, tools, history,
 // autosave, strips, panels, files, keyboard, api). window.PixelStudio.mount(host, opts) returns the api art.js uses
-// (newFromTemplate, openDoc, getDoc, exportBytes, scrollIntoView, getView, undo, redo); PixelStudio.api is the last one.
+// (newFromTemplate, openDoc, getDoc, exportBytes, scrollIntoView, getView, undo, redo, newCustom, showStart, destroy);
+// PixelStudio.api is the last one mounted and PixelStudio.active the one the keyboard goes to. PixelStudio.open(opts)
+// puts a fresh studio over the whole page, starting from the start screen (a new sprite with its width and height, an
+// import, or a saved sprite), which its Close removes; the top strip's button opens one.
 window.PixelStudio = (function () {
   "use strict";
   const MAX = 256, PHONE = 760, HIST_MAX = 100, HIST_BYTES = 96 * 1024 * 1024;
@@ -63,7 +66,9 @@ window.PixelStudio = (function () {
     flipV: '<path d="M3 12h18M7 4l5 5 5-5zM7 20l5-5 5 5z"/>',
     rotate: '<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 5v6h-6"/>',
     all: '<rect x="4" y="4" width="16" height="16" stroke-dasharray="3 2"/><path d="M8 12l3 3 5-6"/>',
-    none: '<rect x="4" y="4" width="16" height="16" stroke-dasharray="3 2"/>'
+    none: '<rect x="4" y="4" width="16" height="16" stroke-dasharray="3 2"/>',
+    newwin: '<rect x="3" y="5" width="18" height="14" rx="1.5"/><path d="M3 9h18M12 11.5v5M9.5 14h5"/>',
+    home: '<path d="M4 20V10l8-6 8 6v10h-5v-6h-6v6z"/>'
   };
   function icon(name) {
     const s = document.createElementNS(SVG, "svg"); s.setAttribute("viewBox", "0 0 24 24"); s.setAttribute("aria-hidden", "true"); s.setAttribute("class", "pxs-ic");
@@ -223,6 +228,7 @@ window.PixelStudio = (function () {
   // ---------- mount: the studio in a host element ----------
   function mount(host, opts) {
     const { el, store, formats, saveFile } = opts;
+    const startMode = !!opts.start, onClose = typeof opts.onClose === "function" ? opts.onClose : null;   // a fresh studio (PS.open): the start screen first; its Close removes it
     const presets = opts.presets || {}, presetKeys = Object.keys(presets);
     const boardPalette = (opts.palette && opts.palette.length ? opts.palette : ["#000000", "#ffffff"]).map(String);
     const storage = makeStorage();
@@ -267,7 +273,9 @@ window.PixelStudio = (function () {
     const nameBtn = el("button", { type: "button", class: "pxs-ib pxs-name", "aria-label": "Rename the sprite", title: "Rename", onclick: () => renameSprite() }, nameEl, dimEl);
     const savedEl = el("span", { class: "pxs-saved", text: "" });
     const undoBtn = ib("undo", "Undo", () => undo()), redoBtn = ib("redo", "Redo", () => redo()), fullBtn = ib("full", "Full screen", () => setFull(!ui.full));
-    const top = el("div", { class: "pxs-top", role: "toolbar", "aria-label": "Sprite" }, nameBtn, savedEl, undoBtn, redoBtn, fullBtn);
+    const startBtn = onClose ? ib("home", "Start screen: create or import a sprite", () => showStart()) : ib("newwin", "Open a new studio: create or import a sprite", () => PS.open(opts));
+    const top = el("div", { class: "pxs-top", role: "toolbar", "aria-label": "Sprite" }, nameBtn, savedEl, startBtn, undoBtn, redoBtn, fullBtn);
+    const startEl = el("div", { class: "pxs-start", role: "region", "aria-label": "Start a sprite", hidden: true });
     const sw = (label, onclick) => el("button", { type: "button", class: "pxs-sw", "aria-label": label, title: label, onclick }, el("i"));
     const fgSw = sw("Foreground colour: tap to edit it", () => openColour("fg")), bgSw = sw("Background colour: tap to edit it", () => openColour("bg"));
     bgSw.classList.add("pxs-bg");
@@ -294,7 +302,7 @@ window.PixelStudio = (function () {
       panelEls[key] = sec; panelBodies[key] = body; return sec;
     }
     const panels = el("div", { class: "pxs-panels" }, panel("colour", "Colour"), panel("layers", "Layers"), panel("palette", "Palette"), panel("preview", "Preview"), panel("frames", "Frames", true), panel("canvas", "Canvas", true), panel("file", "File", true));
-    root.append(probe, top, view, colours, tools, optsBar, time, tabs, panels, status);
+    root.append(probe, top, view, colours, tools, optsBar, time, tabs, panels, status, startEl);
     host.append(root);
     let sayT = 0;
     function say(msg, keep) { status.textContent = msg || ""; clearTimeout(sayT); if (msg && !keep) sayT = setTimeout(() => { if (status.textContent === msg) status.textContent = ""; }, 8000); }
@@ -853,16 +861,55 @@ window.PixelStudio = (function () {
     function toggleOpen(k) { ui.open[k] = !ui.open[k]; applyOpen(k); if (ui.open[k]) { refreshPanels(k); panels.scrollTop = panelEls[k].offsetTop - panels.offsetTop; } saveUi(); }
     function refreshToggles() { renderOpts(); const b = panelBodies.canvas; if (b) b.querySelectorAll("[data-ui]").forEach(i => { i.checked = !!ui[i.dataset.ui]; }); }
 
+    // ---- the start screen: a new sprite with its width (x) and height (y), an import, or a saved sprite ----
+    function renderStart() {
+      startEl.textContent = "";
+      const name = el("input", { type: "text", value: "", placeholder: "name", "aria-label": "Name of the new sprite" });
+      const w = numIn({ min: 1, max: MAX, value: 32, "aria-label": "Width of the new sprite in pixels (x)" }), h = numIn({ min: 1, max: MAX, value: 32, "aria-label": "Height of the new sprite in pixels (y)" }), nf = numIn({ min: 1, max: 64, value: 1, "aria-label": "Frames of the new sprite" });
+      const tsel = el("select", { "aria-label": "Template of the new sprite" }, el("option", { value: "", text: "Custom size" }), presetKeys.map(k => el("option", { value: k, text: presets[k].label })));
+      tsel.addEventListener("change", () => { const P = presets[tsel.value]; if (P) { w.value = P.w; h.value = P.h; } });
+      // a template at its own size opens with its seed drawing and guide; any other size is a plain sprite of that size
+      const create = () => { const n = Math.max(1, Math.round(num(nf.value, 1))), P = presets[tsel.value]; if (P && num(w.value, 0) === P.w && num(h.value, 0) === P.h) newFromTemplate(tsel.value, { frames: n, name: name.value.trim() }); else newCustom(num(w.value, 32), num(h.value, 32), n, name.value.trim()); };
+      for (const i of [name, w, h, nf]) i.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); create(); } });
+      const fw = numIn({ min: 1, max: MAX, placeholder: "auto", "aria-label": "Frame width, to split a strip" }), fh = numIn({ min: 1, max: MAX, placeholder: "auto", "aria-label": "Frame height, to split a strip" });
+      const imp = el("input", { type: "file", multiple: true, accept: ".aseprite,.ase,.png,.gif,.webp,.jpg,.jpeg,.json", "aria-label": "Import a sprite: an Aseprite file, an image, or an image with its Aseprite sheet JSON", onchange: e => { const fs = [...(e.target.files || [])]; e.target.value = ""; importFiles(fs, num(fw.value, 0), num(fh.value, 0)); } });
+      const saved = el("div", { class: "pxs-list", role: "list", "aria-label": "Sprites saved on this device" });
+      startEl.append(el("h3", { text: "Start a sprite" }),
+        el("div", { class: "pxs-cards" },
+          el("div", { class: "pxs-card" }, el("h4", { text: "Create a new sprite" }),
+            el("div", { class: "pxs-row" }, field("Name", name), field("Template", tsel)),
+            el("div", { class: "pxs-row" }, el("span", { class: "pxs-xy" }, field("Width (x)", w), el("span", { class: "pxs-times", text: "×" }), field("Height (y)", h)), field("Frames", nf)),
+            el("p", { class: "pxs-note", text: "The sprite's size in pixels, up to " + MAX + " × " + MAX + ". A template fills in the game's size for that kind of sprite." }),
+            el("div", { class: "pxs-row" }, btn("Create", create, "pxs-primary"))),
+          el("div", { class: "pxs-card" }, el("h4", { text: "Import a sprite" }),
+            el("div", { class: "pxs-row" }, imp),
+            el("div", { class: "pxs-row" }, field("Frame width", fw), field("Frame height", fh)),
+            el("p", { class: "pxs-note", text: "An .aseprite file with its layers, frames, tags and palette; or a PNG, GIF, WebP or JPEG as one frame, a strip split by the frame size, or a sheet with its Aseprite .json chosen alongside." })),
+          el("div", { class: "pxs-card" }, el("h4", { text: "Open a saved sprite" }), saved)));
+      storage.list().then(items => {
+        if (!saved.isConnected) return;
+        if (!items.length) { saved.append(el("p", { class: "pxs-note", text: "Nothing is saved on this device yet." })); return; }
+        for (const m of items.slice(0, 12)) saved.append(el("div", { class: "pxs-sprite", role: "listitem" }, m.thumb ? el("img", { src: m.thumb, alt: "" }) : null,
+          el("span", { class: "pxs-lname" }, el("span", { text: m.name }), el("span", { class: "pxs-dim", text: m.w + " × " + m.h + (m.frames > 1 ? " · " + m.frames + " fr" : "") })), btn("Open", () => openSaved(m))));
+      });
+    }
+    function showStart() { renderStart(); startEl.style.top = top.offsetHeight + "px"; startEl.hidden = false; closePanel(); if (!ui.phone) { const f = startEl.querySelector("input"); if (f) { try { f.focus({ preventScroll: true }); } catch (e) {} } } }
+    function hideStart() { if (!startEl.hidden) { startEl.hidden = true; startEl.textContent = ""; } }
+
     // ---- full screen: the studio fixed over the whole viewport (and the browser's own full screen where it exists) ----
     let nativeFs = false;
     function setFull(on) {
-      if (ui.full === on) return; ui.full = on; root.classList.toggle("pxs-full", on); document.body.style.overflow = on ? "hidden" : "";
-      fullBtn.replaceChildren(icon(on ? "close" : "full")); fullBtn.setAttribute("aria-label", on ? "Close full screen" : "Full screen"); fullBtn.title = on ? "Close full screen (Escape)" : "Full screen"; fullBtn.setAttribute("aria-pressed", String(on));
+      if (ui.full === on) return;
+      if (!on && onClose) { onClose(); return; }   // a fresh studio over the page: leaving full screen closes it
+      ui.full = on; root.classList.toggle("pxs-full", on); document.body.style.overflow = on ? "hidden" : "";
+      const closeLabel = onClose ? "Close this studio" : "Close full screen";
+      fullBtn.replaceChildren(icon(on ? "close" : "full")); fullBtn.setAttribute("aria-label", on ? closeLabel : "Full screen"); fullBtn.title = on ? closeLabel + " (Escape)" : "Full screen"; fullBtn.setAttribute("aria-pressed", String(on));
       if (on) { try { const p = root.requestFullscreen && root.requestFullscreen(); if (p && p.then) p.then(() => { nativeFs = true; }, () => {}); } catch (e) {} }
       else if (nativeFs) { nativeFs = false; try { if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {}); } catch (e) {} }
       setTimeout(() => { onResize(); fitZoom(); }, 60);
     }
-    document.addEventListener("fullscreenchange", () => { if (!document.fullscreenElement && nativeFs) { nativeFs = false; if (ui.full) setFull(false); } });
+    const onFsChange = () => { if (!document.fullscreenElement && nativeFs) { nativeFs = false; if (ui.full) setFull(false); } };
+    document.addEventListener("fullscreenchange", onFsChange);
 
     // ---- the top strip ----
     function refreshTop() { nameEl.textContent = doc.name; dimEl.textContent = doc.w + " × " + doc.h + (doc.frames.length > 1 ? " · " + doc.frames.length + " fr" : ""); }
@@ -1127,6 +1174,7 @@ window.PixelStudio = (function () {
       refreshTop(); refreshTimeline(); refreshColours(); refreshPanels(); refreshSelBar(); ui.fitted = false; fitZoom(); requestDraw();
       if (o.save) scheduleSave(); else setSaved(cur.saved ? "Saved" : "", false);
       if (d.warnings.length) say(d.warnings.join(" "), true); else if (o.message) say(o.message);
+      hideStart();
       return doc;
     }
     function newFromTemplate(key, o) {
@@ -1257,8 +1305,8 @@ window.PixelStudio = (function () {
 
     // ---- the keyboard (a desktop): only while the Art school shows and no text field has the focus ----
     function inField() { const a = document.activeElement; if (!a) return false; const t = a.tagName; if (t === "TEXTAREA" || t === "SELECT" || a.isContentEditable) return true; return t === "INPUT" && !["range", "checkbox", "radio", "button", "file"].includes(a.type); }
-    document.addEventListener("keydown", e => {
-      if (!doc || location.hash !== "#art" || inField()) return;
+    const onKeyDown = e => {
+      if (!doc || PS.active !== api || location.hash !== "#art" || inField()) return;
       const mod = e.ctrlKey || e.metaKey, k = e.key, onCanvas = document.activeElement === cv;
       if (k === "Escape") { if (ui.full) { e.preventDefault(); setFull(false); } else if (ui.float) commitFloat(); else if (ui.sel) selOp("none"); else if (ui.phone && root.classList.contains("pxs-open")) closePanel(); return; }
       if (k === "Alt") { ui.alt = true; cv.classList.add("pxs-cur-pick"); return; }
@@ -1280,11 +1328,14 @@ window.PixelStudio = (function () {
       if (k === "Enter") { if (ui.float) { e.preventDefault(); commitFloat(); } else if (onCanvas) { e.preventDefault(); togglePlay(); } return; }
       if (k === "Delete" || k === "Backspace") { if (ui.sel) { e.preventDefault(); selOp("delete"); } return; }
       if (k === "+" || k === "=") { zoomStep(1); return; } if (k === "-" || k === "_") { zoomStep(-1); return; } if (k === "0") { fitZoom(); }
-    });
-    document.addEventListener("keyup", e => {
+    };
+    document.addEventListener("keydown", onKeyDown);
+    const onKeyUp = e => {
+      if (PS.active !== api) return;
       if (e.key === "Alt") { ui.alt = false; if (ui.tool !== "pick") cv.classList.remove("pxs-cur-pick"); }
       if (e.key === " " && ui.space) { ui.space = false; if (ui.tool !== "pan") cv.classList.remove("pxs-cur-pan"); if (!ui.spaceUsed && doc && location.hash === "#art" && document.activeElement === cv) togglePlay(); }
-    });
+    };
+    document.addEventListener("keyup", onKeyUp);
 
     // ---- layout: phone or desktop by the host's width, the sheet's offset, the canvas's size ----
     function measureBars() { root.style.setProperty("--pxs-bars", (colours.offsetHeight + tools.offsetHeight + optsBar.offsetHeight + time.offsetHeight + tabs.offsetHeight + status.offsetHeight) + "px"); }
@@ -1292,13 +1343,27 @@ window.PixelStudio = (function () {
       const W = root.clientWidth; if (!W) return; const phone = W < PHONE;
       if (phone !== ui.phone) { ui.phone = phone; root.classList.toggle("pxs-phone", phone); root.classList.toggle("pxs-desk", !phone); closePanel(); refreshPanels(); }
       if (phone) measureBars();
+      if (!startEl.hidden) startEl.style.top = top.offsetHeight + "px";
       if (layout()) { if (!ui.fitted) fitZoom(); else clampPan(); requestDraw(); }
     }
     ui.phone = null;
-    try { const ro = new ResizeObserver(() => onResize()); ro.observe(root); ro.observe(view); } catch (e) { window.addEventListener("resize", onResize); }
-    window.addEventListener("hashchange", () => { if (location.hash === "#art") setTimeout(() => { onResize(); openObs(); refreshPanels(); }, 0); });
-    try { matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { tokAt = -1e9; requestDraw(); }); } catch (e) {}
-    function loop(now) { requestAnimationFrame(loop); if (!doc || location.hash !== "#art") return; tickPlay(now); tickPreview(now); if (drawQueued) draw(); }
+    let ro = null, dead = false;
+    try { ro = new ResizeObserver(() => onResize()); ro.observe(root); ro.observe(view); } catch (e) { window.addEventListener("resize", onResize); }
+    const onHash = () => { if (location.hash === "#art") setTimeout(() => { onResize(); openObs(); refreshPanels(); }, 0); };
+    window.addEventListener("hashchange", onHash);
+    const onScheme = () => { tokAt = -1e9; requestDraw(); }; let mq = null;
+    try { mq = matchMedia("(prefers-color-scheme: dark)"); mq.addEventListener("change", onScheme); } catch (e) {}
+    function loop(now) { if (dead) return; requestAnimationFrame(loop); if (!doc || location.hash !== "#art") return; tickPlay(now); tickPreview(now); if (drawQueued) draw(); }
+    // the keyboard goes to one studio: the last one touched or focused (a fresh studio over the page takes it as it opens)
+    root.addEventListener("pointerdown", () => { PS.active = api; }, true); root.addEventListener("focusin", () => { PS.active = api; });
+    // a fresh studio closing: its pending save goes out, its listeners and loop stop, its element leaves the page
+    function destroy() {
+      dead = true; if (savePending) { clearTimeout(saveT); savePending = false; autosave(); }
+      try { if (ro) ro.disconnect(); } catch (e) {} window.removeEventListener("resize", onResize); window.removeEventListener("hashchange", onHash); try { if (mq) mq.removeEventListener("change", onScheme); } catch (e) {}
+      document.removeEventListener("keydown", onKeyDown); document.removeEventListener("keyup", onKeyUp); document.removeEventListener("fullscreenchange", onFsChange);
+      if (ui.full) { document.body.style.overflow = ""; if (nativeFs) { nativeFs = false; try { if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {}); } catch (e) {} } }
+      root.remove(); if (PS.api === api) PS.api = null; if (PS.active === api) PS.active = null;
+    }
     requestAnimationFrame(loop);
     setTool(ui.tool); refreshSelBar(); updateUndo();
     for (const k of ["frames", "canvas", "file"]) applyOpen(k);
@@ -1308,9 +1373,10 @@ window.PixelStudio = (function () {
       newFromTemplate: (key, o) => newFromTemplate(key, o), openDoc: (d, o) => openDoc(d, o), getDoc: () => doc, exportBytes: () => formats.encodeAseprite(doc),
       scrollIntoView: () => { const hdr = document.querySelector("header.top"), off = hdr && /sticky|fixed/.test(getComputedStyle(hdr).position) ? hdr.offsetHeight : 0; try { window.scrollTo({ top: window.scrollY + host.getBoundingClientRect().top - off - 6, behavior: "smooth" }); } catch (e) { host.scrollIntoView(); } },
       getView: () => ({ zoom: ui.zoom, panX: ui.panX, panY: ui.panY, frame: ui.frame, layer: ui.layer, tool: ui.tool, panel: ui.panel, phone: ui.phone, full: ui.full, sel: ui.sel ? Object.assign({}, ui.sel) : null, template: cur.template, id: cur.id, playing: ui.playing }),
-      undo: () => undo(), redo: () => redo(), root
+      undo: () => undo(), redo: () => redo(), root,
+      newCustom: (w, h, n, name) => newCustom(w, h, n, name), showStart: () => showStart(), isStart: () => !startEl.hidden, destroy: () => destroy()
     };
-    PS.api = api;
+    PS.api = api; PS.active = api;
     async function migrateOldDraft() {
       const d = store.get("bs-art-studio", null); if (!d || !d.w || !d.h || !Array.isArray(d.frames) || !d.frames.length) return null;
       try {
@@ -1325,6 +1391,7 @@ window.PixelStudio = (function () {
     }
     async function init() {
       newFromTemplate(presetKeys[0], { frames: 1 }); say("");
+      if (startMode) { if (onClose) setFull(true); showStart(); root.dataset.ready = "1"; return; }
       try {
         const migrated = await migrateOldDraft(), last = store.get("bs-studio-last", null) || migrated;
         if (last) {
@@ -1341,6 +1408,18 @@ window.PixelStudio = (function () {
     init();
     return api;
   }
-  const PS = { mount, api: null };
+  // A fresh studio over the whole page, from the start screen (a new sprite with its width and height, an import, or a
+  // saved sprite); its Close removes it and the page's own studio carries on where it was.
+  function open(opts) {
+    const host = document.createElement("div"); host.className = "pxs-overlay"; document.body.append(host);
+    const was = PS.active, wasApi = PS.api, back = document.activeElement; let api = null;
+    api = mount(host, Object.assign({}, opts, { start: true, onClose: () => {
+      if (!api) return; const a = api; api = null; a.destroy(); host.remove(); PS.active = was; PS.api = wasApi;
+      if (was && was.root && was.root.isConnected && was.getView().full) document.body.style.overflow = "hidden";
+      try { if (back && back.focus && back.isConnected) back.focus({ preventScroll: true }); } catch (e) {}
+    } }));
+    return api;
+  }
+  const PS = { mount, open, api: null, active: null };
   return PS;
 })();

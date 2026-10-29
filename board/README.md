@@ -30,6 +30,10 @@ hex, 32 × 16 iso floor, 32 × 50 iso wall cell) or any size up to 256 × 256, w
   with Aseprite's JSON, the current frame at any scale, and a GIF of the animation.
 - **Kept on the device.** Every sprite autosaves (as `.aseprite` bytes in the browser's IndexedDB; localStorage when
   that is not there), and the File panel lists them: open, rename, duplicate, delete.
+- **A fresh studio.** **Open a new studio** (the button by the studio's heading, or the top strip's window icon; the
+  user's request 2026-10-29) puts a second studio over the whole page, starting from a start screen: create a new sprite
+  with its width (x) and height (y) in pixels, a name, frames and an optional template; import an `.aseprite` file or
+  an image; or open a saved sprite. Its Close (or Escape) removes it, and the page's own studio carries on where it was.
 
 The format code is `src/formats.js` (no DOM; `node board/tools/formats-test.js` round-trips every format) and the
 editor `src/studio.js` + `src/studio.css`; `NODE_PATH=$(npm root -g) node board/tools/studio-smoke.cjs [--shots dir]`

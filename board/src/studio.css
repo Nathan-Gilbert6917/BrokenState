@@ -159,3 +159,15 @@
 /* full screen: the studio over the whole viewport */
 .pxs.pxs-full { position: fixed; inset: 0; z-index: 60; height: auto; min-height: 0; border: 0; border-radius: 0; padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px); overscroll-behavior: contain; }
 @media (prefers-reduced-motion: no-preference) { .pxs.pxs-phone.pxs-open .pxs-panels { animation: pxs-up .16s ease-out; } @keyframes pxs-up { from { transform: translateY(16px); opacity: .5; } } }
+
+/* the start screen (a fresh studio from PixelStudio.open, or the home button): over the view and the strips, under the top strip */
+.pxs-start { position: absolute; left: 0; right: 0; top: 48px; bottom: 0; z-index: 6; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; background: var(--bg); padding: 14px 16px 24px; display: flex; flex-direction: column; gap: 12px; }
+.pxs-start[hidden] { display: none; }
+.pxs-start h3 { margin: 0; font: 800 1.5rem/1.1 var(--display); text-transform: uppercase; letter-spacing: .02em; color: var(--ink); }
+.pxs-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 12px; align-items: start; }
+.pxs-card { background: var(--panel); border: 1px solid var(--rule); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.pxs-card h4 { margin: 0; font: 600 .7rem var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.pxs-xy { display: inline-flex; align-items: flex-end; gap: 6px; }
+.pxs-times { font: 600 1.1rem var(--mono); color: var(--muted); padding-bottom: 8px; }
+.pxs-start .pxs-lname { display: flex; flex-direction: column; align-items: flex-start; }
+.pxs-overlay { position: fixed; inset: 0; z-index: 59; }
