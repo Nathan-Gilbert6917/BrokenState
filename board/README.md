@@ -20,7 +20,8 @@ hex, 32 × 16 iso floor, 32 × 50 iso wall cell) or any size up to 256 × 256, w
   X swap colours, [ ] brush size, , . frames, Ctrl+Z / Ctrl+Y, Ctrl+C / X / V).
 - **Tools.** Pencil (sizes 1–4, pixel-perfect), eraser, fill (contiguous or global), line, rectangle, ellipse,
   rectangle select with move / cut / copy / paste / flip / rotate, move with wrap for tiles, eyedropper, pan; mirror X
-  and Y; undo and redo (100 steps). Layers with visibility, lock, opacity, merge and flatten. Frames with their own
+  and Y; undo and redo (100 steps); a Clear button that asks first (this frame on the layer, this frame, or the whole sprite;
+  the user's request 2026-10-29). Layers with visibility, lock, opacity, merge and flatten. Frames with their own
   durations in ms, tags with a direction, playback of the sprite or a tag, onion skin, the animation preview and the
   tiled preview that lays a tile out the way the engine will.
 - **Aseprite's files.** Imports and exports `.aseprite` / `.ase` (layers, cels, durations, tags, the palette; indexed
@@ -30,6 +31,10 @@ hex, 32 × 16 iso floor, 32 × 50 iso wall cell) or any size up to 256 × 256, w
   with Aseprite's JSON, the current frame at any scale, and a GIF of the animation.
 - **Kept on the device.** Every sprite autosaves (as `.aseprite` bytes in the browser's IndexedDB; localStorage when
   that is not there), and the File panel lists them: open, rename, duplicate, delete.
+- **A fresh studio.** **Open a new studio** (the button by the studio's heading, or the top strip's window icon; the
+  user's request 2026-10-29) puts a second studio over the whole page, starting from a start screen: create a new sprite
+  with its width (x) and height (y) in pixels, a name, frames and an optional template; import an `.aseprite` file or
+  an image; or open a saved sprite. Its Close (or Escape) removes it, and the page's own studio carries on where it was.
 
 The format code is `src/formats.js` (no DOM; `node board/tools/formats-test.js` round-trips every format) and the
 editor `src/studio.js` + `src/studio.css`; `NODE_PATH=$(npm root -g) node board/tools/studio-smoke.cjs [--shots dir]`

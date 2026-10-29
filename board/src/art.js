@@ -52,6 +52,7 @@ window.renderArt = function (H) {
     catch (e) { throw new Error(e && e.code === "declined" ? "Not saved." : "Could not save " + filename + " here."); }
   }
   const studioHost = el("div", { class: "pxs-host" });
+  const studioOpts = { el, store, presets: PRESETS, palette: PALETTE, formats: window.AseFormats, saveFile };
   let studio = null;   // the studio's api, mounted once the page is in the document
 
   // ---------- sheet player ----------
@@ -185,7 +186,9 @@ window.renderArt = function (H) {
       el("tbody", {}, A.styleChoices.map(r => el("tr", {}, el("td", { text: r.style }), el("td", { text: r.good }), el("td", { text: r.hard }), el("td", { text: r.fit }))))))) : null,
     el("section", { class: "tracks" }, el("h3", { text: "Five tracks" }), trackBtns, trackPane),
     el("section", { id: "studio", class: "tool pxs-section" }, el("div", { class: "tool-h" }, el("h3", { text: "Pixel studio" }),
-      el("p", { text: "An Aseprite-like editor for the game's sprites and tiles, made for a phone: draw with one finger and pinch to zoom, add layers and frames, tag animations, and import or export Aseprite files, palettes, sheets and GIFs; your sprites are kept in this browser." })),
+      el("p", { text: "An Aseprite-like editor for the game's sprites and tiles, made for a phone: draw with one finger and pinch to zoom, add layers and frames, tag animations, and import or export Aseprite files, palettes, sheets and GIFs; your sprites are kept in this browser." }),
+      el("div", { class: "row-btns" }, el("button", { type: "button", class: "btn primary", onclick: () => { if (window.PixelStudio) window.PixelStudio.open(studioOpts); }, text: "Open a new studio" }),
+        el("span", { class: "note", text: "A fresh studio over the whole page: create a sprite with its width and height, or import one." }))),
       studioHost),
     el("section", { class: "tool" }, el("div", { class: "tool-h" }, el("h3", { text: "Sprite sheet player" }), spNote),
       el("div", { class: "studio" },
@@ -205,7 +208,7 @@ window.renderArt = function (H) {
     A.learnLinks ? el("section", { class: "box" }, el("h3", { text: "Where to keep learning" }), docs(A.learnLinks)) : null].filter(Boolean));
 
   renderTrack(); camText();
-  studio = window.PixelStudio ? window.PixelStudio.mount(studioHost, { el, store, presets: PRESETS, palette: PALETTE, formats: window.AseFormats, saveFile }) : null;
+  studio = window.PixelStudio ? window.PixelStudio.mount(studioHost, studioOpts) : null;
   window.addEventListener("resize", fitCam); window.addEventListener("hashchange", () => { if (location.hash === "#art") setTimeout(fitCam, 0); });
   setTimeout(fitCam, 0);
   requestAnimationFrame(spLoop); requestAnimationFrame(camLoop);
