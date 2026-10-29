@@ -103,14 +103,16 @@
 .pxs-lname > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pxs-lname .pxs-dim { color: var(--muted); font-size: .72rem; margin-left: 4px; }
 .pxs-lthumb { width: 32px; height: 32px; image-rendering: pixelated; flex: none; border-radius: 4px; border: 1px solid var(--rule); }
-.pxs-lop { display: flex; align-items: center; gap: 4px; flex: 0 1 120px; min-width: 70px; font: 600 .66rem var(--mono); color: var(--muted); }
-.pxs-lop input[type=range] { min-width: 44px; }
-.pxs-lop output { min-width: 32px; text-align: right; }
+.pxs-lop { display: flex; align-items: center; gap: 4px; flex: 0 0 104px; min-width: 0; font: 600 .66rem var(--mono); color: var(--muted); }
+.pxs-lop input[type=range] { min-width: 0; flex: 1 1 40px; }
+.pxs-lop output { min-width: 30px; text-align: right; }
 .pxs-palgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(40px, 1fr)); gap: 4px; }
 .pxs-palgrid .pxs-sw { width: 100%; height: 40px; }
 .pxs-sprite { gap: 8px; }
 .pxs-sprite img { width: 40px; height: 40px; object-fit: contain; image-rendering: pixelated; flex: none; border-radius: 4px; border: 1px solid var(--rule); background: var(--sunk); }
-.pxs-sprite .pxs-lname { flex-direction: column; align-items: flex-start; gap: 0; }
+.pxs-sprite .pxs-lname { flex-direction: column; align-items: flex-start; gap: 0; padding-left: 2px; }
+.pxs-sprite .pxs-lname > span { max-width: 100%; }
+.pxs-sprite .pxs-dim { margin: 0; }
 .pxs-big { position: relative; height: 64px; border-radius: 8px; border: 1px solid var(--rule); background-color: var(--panel); background-image: linear-gradient(45deg, var(--rule) 25%, transparent 25%, transparent 75%, var(--rule) 75%), linear-gradient(45deg, var(--rule) 25%, transparent 25%, transparent 75%, var(--rule) 75%); background-size: 16px 16px; background-position: 0 0, 8px 8px; }
 .pxs-big i { position: absolute; inset: 0; border-radius: 7px; background: var(--c); }
 .pxs-big b { position: absolute; right: 8px; bottom: 6px; font: 600 .72rem var(--mono); color: var(--ink); background: var(--panel); padding: 1px 6px; border-radius: 4px; }
@@ -135,7 +137,7 @@
 .pxs.pxs-phone .pxs-collapse { display: none; }
 
 /* a desktop: the same strips and panels in a grid */
-.pxs.pxs-desk { display: grid; grid-template-columns: 80px minmax(0, 1fr) 330px; grid-template-rows: auto minmax(0, 1fr) auto auto auto auto; grid-template-areas: "top top top" "tools view panels" "tools colours panels" "tools opts panels" "tools time panels" "status status status"; height: min(calc(100dvh - 90px), 900px); min-height: 600px; }
+.pxs.pxs-desk { display: grid; grid-template-columns: 80px minmax(0, 1fr) 360px; grid-template-rows: auto minmax(0, 1fr) auto auto auto auto; grid-template-areas: "top top top" "tools view panels" "tools colours panels" "tools opts panels" "tools time panels" "status status status"; height: min(calc(100dvh - 90px), 900px); min-height: 600px; }
 .pxs.pxs-desk .pxs-top { grid-area: top; }
 .pxs.pxs-desk .pxs-view { grid-area: view; }
 .pxs.pxs-desk .pxs-tools { grid-area: tools; flex-direction: column; align-items: stretch; justify-content: flex-start; overflow: hidden auto; border-top: 0; border-right: 1px solid var(--rule); padding: 6px 4px; }

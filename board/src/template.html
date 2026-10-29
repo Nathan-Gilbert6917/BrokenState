@@ -212,7 +212,7 @@ dl.spec { margin: 0; display: grid; gap: 0; }
 dl.spec div { display: grid; grid-template-columns: minmax(110px, 38%) 1fr; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--rule); }
 dl.spec dt { font-weight: 700; font-size: .9rem; } dl.spec dd { margin: 0; font-size: .9rem; min-width: 0; }
 .practice { display: flex; flex-direction: column; gap: 4px; }
-.practice label, .toggles label, .nums label { display: flex; gap: 8px; align-items: flex-start; font-size: .92rem; cursor: pointer; }
+.practice label, .nums label { display: flex; gap: 8px; align-items: flex-start; font-size: .92rem; cursor: pointer; }
 .practice input { margin-top: 4px; accent-color: var(--built); }
 .lessons { display: flex; flex-direction: column; gap: 6px; }
 .lessons details { background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; }
@@ -230,20 +230,9 @@ dl.spec dt { font-weight: 700; font-size: .9rem; } dl.spec dd { margin: 0; font-
 .ctl label { font-weight: 600; }
 .ctl select, .nums input, .ctl input[type=file] { padding: 5px 8px; border: 1px solid var(--rule); border-radius: 6px; background: var(--panel); max-width: 100%; }
 .wrapctl > * { flex: 0 1 auto; }
-.toggles { display: flex; flex-wrap: wrap; gap: 6px 16px; }
-.palette { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
-.palette .sw { width: 26px; height: 26px; border-radius: 5px; border: 2px solid var(--rule); cursor: pointer; padding: 0; }
-.palette .sw[aria-pressed="true"] { border-color: var(--ink); box-shadow: 0 0 0 2px var(--panel) inset; }
-.palette input[type=color] { width: 34px; height: 28px; border: 1px solid var(--rule); border-radius: 5px; background: var(--panel); padding: 1px; }
 .cv-wrap { overflow-x: auto; max-width: 100%; }
-.studio-cv { display: block; touch-action: none; cursor: crosshair; border: 1px solid var(--rule); border-radius: 4px; image-rendering: pixelated; }
-.frames { display: flex; gap: 6px; flex-wrap: wrap; }
-.fr { border: 2px solid var(--rule); background: var(--sunk); border-radius: 6px; padding: 3px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 2px; font: 600 .65rem var(--mono); color: var(--muted); }
-.fr[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
-.fr .thumb { width: 40px; height: 40px; object-fit: contain; image-rendering: pixelated; }
 .row-btns { display: flex; gap: 6px; flex-wrap: wrap; }
 canvas.pv { display: block; max-width: 100%; border-radius: 8px; border: 1px solid var(--rule); image-rendering: pixelated; }
-.sheet { max-width: 100%; image-rendering: pixelated; border: 1px solid var(--rule); border-radius: 6px; background: var(--sunk); }
 .nums { display: flex; flex-wrap: wrap; gap: 8px 14px; }
 .nums label { flex-direction: column; gap: 2px; font-size: .8rem; color: var(--muted); }
 .nums input { width: 92px; }

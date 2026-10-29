@@ -411,7 +411,8 @@ window.PixelStudio = (function () {
     function fitZoom() {
       const W = view.clientWidth, H = view.clientHeight; if (!W || !H || !doc) return;
       let z = Math.min((W - 24) / doc.w, (H - 24) / doc.h); z = z >= 1 ? Math.floor(z) : Math.max(0.25, Math.floor(z * 4) / 4);
-      ui.zoom = z; ui.panX = Math.round((W - doc.w * z) / 2); ui.panY = Math.round((H - doc.h * z) / 2); zoomV.textContent = Math.round(z * 100) + "%"; requestDraw(); saveUi();
+      ui.zoom = z; ui.panX = Math.round((W - doc.w * z) / 2); ui.panY = Math.round((H - doc.h * z) / 2); ui.fitted = true; zoomV.textContent = Math.round(z * 100) + "%"; requestDraw(); saveUi();
+      if (ui.restoreZoom) { const rz = ui.restoreZoom; ui.restoreZoom = 0; setZoom(rz); }
     }
     function clampPan() { const W = view.clientWidth, H = view.clientHeight, m = 32; ui.panX = clamp(ui.panX, m - doc.w * ui.zoom, W - m); ui.panY = clamp(ui.panY, m - doc.h * ui.zoom, H - m); }
 
@@ -662,13 +663,13 @@ window.PixelStudio = (function () {
     function changed() { requestDraw(); scheduleThumbs(); scheduleSave(); }
 
     // ---- autosave: the doc as .aseprite bytes on the device, 500 ms after the last change ----
-    let saveT = 0, saveBusy = false, saveAgain = false;
+    let saveT = 0, saveBusy = false, saveAgain = false, savePending = false;
     function setSaved(t, dirty) { savedEl.textContent = t; savedEl.classList.toggle("pxs-dirty", !!dirty); }
-    function scheduleSave() { clearTimeout(saveT); saveT = setTimeout(autosave, 500); setSaved("Unsaved", true); }
+    function scheduleSave() { savePending = true; clearTimeout(saveT); saveT = setTimeout(autosave, 500); setSaved("Unsaved", true); }
     function thumbUrl(d) { try { const c = document.createElement("canvas"); const sc = Math.min(1, 48 / Math.max(d.w, d.h)); c.width = Math.max(1, Math.round(d.w * sc)); c.height = Math.max(1, Math.round(d.h * sc)); const x = c.getContext("2d"); x.imageSmoothingEnabled = false; x.drawImage(d === doc ? flatCanvas(0) : dataCanvas(formats.flatten(d, 0), d.w, d.h), 0, 0, c.width, c.height); return c.toDataURL("image/png"); } catch (e) { return ""; } }
     const metaOf = (d, id, template) => ({ id, name: d.name, template, updated: Date.now(), w: d.w, h: d.h, frames: d.frames.length, thumb: thumbUrl(d) });
     async function autosave() {
-      if (!doc) return; if (saveBusy) { saveAgain = true; return; } saveBusy = true;
+      if (!doc) return; if (saveBusy) { saveAgain = true; return; } saveBusy = true; savePending = false;
       try {
         if (!cur.id) cur.id = newId();
         const bytes = await formats.encodeAseprite(doc), where = await storage.save(metaOf(doc, cur.id, cur.template), bytes);
@@ -849,7 +850,7 @@ window.PixelStudio = (function () {
     }
     function closePanel() { root.classList.remove("pxs-open"); for (const p in panelEls) panelEls[p].classList.remove("pxs-active"); for (const t in tabBtns) tabBtns[t].setAttribute("aria-pressed", "false"); ui.panel = null; saveUi(); }
     function applyOpen(k) { panelEls[k].classList.toggle("pxs-closed", !ui.open[k]); const b = panelEls[k].querySelector(".pxs-collapse"); if (b) b.setAttribute("aria-expanded", String(!!ui.open[k])); }
-    function toggleOpen(k) { ui.open[k] = !ui.open[k]; applyOpen(k); if (ui.open[k]) refreshPanels(k); saveUi(); }
+    function toggleOpen(k) { ui.open[k] = !ui.open[k]; applyOpen(k); if (ui.open[k]) { refreshPanels(k); panels.scrollTop = panelEls[k].offsetTop - panels.offsetTop; } saveUi(); }
     function refreshToggles() { renderOpts(); const b = panelBodies.canvas; if (b) b.querySelectorAll("[data-ui]").forEach(i => { i.checked = !!ui[i.dataset.ui]; }); }
 
     // ---- full screen: the studio fixed over the whole viewport (and the browser's own full screen where it exists) ----
@@ -872,3 +873,474 @@ window.PixelStudio = (function () {
       inp.addEventListener("blur", () => finish(true)); anchor.replaceWith(inp); inp.focus(); inp.select();
     }
     function renameSprite() { inlineEdit(nameBtn, doc.name, v => { const n = safeName(v); if (n !== doc.name) docStep(() => { doc.name = n; }); }); }
+
+    // ---- the panels' contents ----
+    const stale = new Set();
+    const field = (label, input) => el("label", { class: "pxs-field" }, label, input);
+    const numIn = (attrs) => el("input", Object.assign({ type: "number", inputmode: "numeric" }, attrs));
+    const check = (label, key, onchange) => el("label", { class: "pxs-check" }, el("input", { type: "checkbox", "data-ui": key, checked: ui[key] ? true : null, onchange: e => { ui[key] = e.target.checked; renderOpts(); saveUi(); requestDraw(); if (onchange) onchange(); } }), label);
+    function panelVisible(k) {
+      if (location.hash !== "#art") return false;
+      if (ui.phone) return ui.panel === k && root.classList.contains("pxs-open");
+      return k === "colour" ? panelEls.colour.classList.contains("pxs-active") : (k in ui.open ? !!ui.open[k] : true);
+    }
+    const RENDER = { layers: renderLayers, palette: renderPalette, frames: renderFrames, preview: renderPreview, canvas: renderCanvas, file: renderFile, colour: syncColourPanel };
+    function refreshPanels(only) {
+      for (const k of Object.keys(RENDER)) { if (only && k !== only) continue; if (panelVisible(k)) { RENDER[k](panelBodies[k]); stale.delete(k); } else stale.add(k); }
+    }
+    const openObs = () => { for (const k of [...stale]) if (panelVisible(k)) { RENDER[k](panelBodies[k]); stale.delete(k); } };
+
+    // layers: top to bottom (the model's array is bottom first)
+    const layerThumbs = [];
+    function drawLayerThumb(c, l) { const x = c.getContext("2d"); x.imageSmoothingEnabled = false; x.clearRect(0, 0, c.width, c.height); const sc = Math.min(c.width / doc.w, c.height / doc.h), w = doc.w * sc, h = doc.h * sc; if (doc.cels[l] && doc.cels[l][ui.frame]) x.drawImage(layerCanvas(l), (c.width - w) / 2, (c.height - h) / 2, w, h); }
+    function refreshLayerThumbs() { if (!panelVisible("layers")) return; layerThumbs.forEach((c, l) => { if (c && c.isConnected && doc.layers[l]) drawLayerThumb(c, l); }); }
+    function renderLayers(body) {
+      body.textContent = ""; layerThumbs.length = 0;
+      body.append(el("div", { class: "pxs-row pxs-tight" }, ib("plus", "Add layer", () => addLayer()), ib("dup", "Duplicate layer", () => dupLayer()), ib("trash", "Delete layer", () => delLayer()),
+        ib("up", "Move layer up", () => moveLayer(1)), ib("down", "Move layer down", () => moveLayer(-1)), btn("Merge down", () => mergeDown()), btn("Flatten", () => flattenLayers())));
+      const list = el("div", { class: "pxs-list", role: "list", "aria-label": "Layers, top first" });
+      for (let l = doc.layers.length - 1; l >= 0; l--) {
+        const L = doc.layers[l], th = el("canvas", { class: "pxs-lthumb", width: 32, height: 32 }); layerThumbs[l] = th; drawLayerThumb(th, l);
+        const pc = Math.round(L.opacity / 255 * 100), op = el("input", { type: "range", min: 0, max: 100, value: pc, "aria-label": "Opacity of " + L.name + " in percent" }), out = el("output", { text: pc + "%" });
+        op.addEventListener("input", () => { if (!op.dataset.before) { op.dataset.before = "1"; op._before = formats.cloneDoc(doc); } L.opacity = Math.round(op.value * 255 / 100); out.textContent = op.value + "%"; flatCache.clear(); onionCache.clear(); requestDraw(); });
+        op.addEventListener("change", () => { const before = op._before; op._before = null; delete op.dataset.before; if (!before) return; const after = formats.cloneDoc(doc); push({ kind: "doc", before, after, bytes: docBytes(before) + docBytes(after), uiBefore: { layer: ui.layer, frame: ui.frame }, uiAfter: { layer: ui.layer, frame: ui.frame } }); changed(); });
+        const nameB = el("button", { type: "button", class: "pxs-ib pxs-lname", "aria-label": "Layer " + L.name + (l === ui.layer ? ", active. Tap to rename it" : ". Tap to make it active"),
+          onclick: e => { if (ui.layer === l) inlineEdit(e.currentTarget, L.name, v => { if (v && v !== L.name) setLayerProp(l, "name", v); }); else { ui.layer = l; refreshPanels("layers"); requestDraw(); } } },
+          el("span", { text: L.name }), L.blend && L.blend !== "normal" ? el("span", { class: "pxs-dim", text: "(blend: " + L.blend + ")" }) : null);
+        list.append(el("div", { class: "pxs-layer", role: "listitem", "aria-current": String(l === ui.layer) },
+          ib(L.visible ? "eye" : "eyeOff", (L.visible ? "Hide " : "Show ") + L.name, () => setLayerProp(l, "visible", !L.visible)),
+          ib(L.locked ? "lock" : "unlock", (L.locked ? "Unlock " : "Lock ") + L.name, () => setLayerProp(l, "locked", !L.locked)),
+          th, nameB, el("label", { class: "pxs-lop" }, op, out)));
+      }
+      body.append(list);
+    }
+
+    // palette
+    let palGrid = null;
+    function refreshPaletteGrid() {
+      if (!palGrid || !palGrid.isConnected) return; palGrid.textContent = "";
+      doc.palette.forEach((hex, i) => { const b = sw("Colour " + (i + 1) + ", " + hex, () => pickPalette(i)); b.setAttribute("aria-pressed", String(i === ui.fgIndex)); paintSw(b, parseHex(hex) || [0, 0, 0, 255]); palGrid.append(b); });
+    }
+    function palOp(kind, colour) {
+      const i = ui.fgIndex, hex = toHex(colour || ui.fg);
+      if (kind === "add") { if (doc.palette.length >= 256) { say("A palette holds at most 256 colours."); return; } docStep(() => { doc.palette.push(hex); }); ui.fgIndex = doc.palette.length - 1; refreshColours(); return; }
+      if (kind === "replace") { if (i < 0 || i >= doc.palette.length) { say("Tap a swatch to replace first."); return; } docStep(() => { doc.palette[i] = hex; }); ui.fgIndex = i; refreshColours(); return; }
+      if (kind === "remove") { if (i < 0 || i >= doc.palette.length) { say("Tap a swatch to remove first."); return; } if (doc.palette.length < 2) { say("A palette keeps at least one colour."); return; } docStep(() => { doc.palette.splice(i, 1); }); ui.fgIndex = clamp(i, 0, doc.palette.length - 1); refreshColours(); return; }
+      if (kind === "left" || kind === "right") { const j = i + (kind === "left" ? -1 : 1); if (i < 0 || j < 0 || j >= doc.palette.length) return; docStep(() => { [doc.palette[i], doc.palette[j]] = [doc.palette[j], doc.palette[i]]; }); ui.fgIndex = j; refreshColours(); return; }
+      if (kind === "hue" || kind === "light") {
+        const key = h => { const c = parseHex(h) || [0, 0, 0, 255]; if (kind === "light") return lightness(c); const [hh, s, v] = rgbToHsv(c[0], c[1], c[2]); return s < .08 ? 1000 + v * 100 : hh * 10 + v; };
+        docStep(() => { doc.palette = doc.palette.slice().sort((a, b) => key(a) - key(b)); }); ui.fgIndex = doc.palette.indexOf(toHex(ui.fg)); refreshColours(); return;
+      }
+      if (kind === "board") { docStep(() => { doc.palette = boardPalette.slice(); }); ui.fgIndex = doc.palette.indexOf(toHex(ui.fg)); refreshColours(); say("The board's palette, " + doc.palette.length + " colours."); return; }
+      if (kind === "sprite") {
+        const seen = new Set(), cols = []; for (let f = 0; f < doc.frames.length && cols.length < 256; f++) for (const c of formats.uniqueColors(flatData(f), 256)) { if (!seen.has(c) && cols.length < 256) { seen.add(c); cols.push(c); } }
+        if (!cols.length) { say("The sprite has no colours yet."); return; } docStep(() => { doc.palette = cols; }); ui.fgIndex = doc.palette.indexOf(toHex(ui.fg)); refreshColours(); say(cols.length + " colours from the sprite.");
+      }
+    }
+    function renderPalette(body) {
+      body.textContent = ""; palGrid = el("div", { class: "pxs-palgrid", role: "group", "aria-label": "Palette colours: tap one to draw with it" }); refreshPaletteGrid();
+      body.append(palGrid,
+        el("div", { class: "pxs-row" }, btn("Add FG", () => palOp("add")), btn("Replace selected", () => palOp("replace")), btn("Remove", () => palOp("remove")), el("span", { class: "pxs-sizes", role: "group", "aria-label": "Move the colour" }, ib("left", "Move the colour left", () => palOp("left")), ib("right", "Move the colour right", () => palOp("right")))),
+        el("div", { class: "pxs-row" }, btn("Sort by hue", () => palOp("hue")), btn("Sort by lightness", () => palOp("light")), btn("The board's palette", () => palOp("board")), btn("From the sprite", () => palOp("sprite"))),
+        el("div", { class: "pxs-h", text: "Import" }),
+        el("div", { class: "pxs-row" }, el("input", { type: "file", accept: ".gpl,.pal,.act,.hex,.txt,.ase,.aseprite,.png", "aria-label": "Import a palette: GPL, JASC-PAL, ACT, HEX, Paint.NET TXT, an Aseprite file or a PNG", onchange: e => { const f = e.target.files && e.target.files[0]; e.target.value = ""; importPaletteFile(f); } })),
+        el("p", { class: "pxs-note", text: "Aseprite's own palette files (.gpl, .pal, .act, .hex), Paint.NET .txt, the palette of an .aseprite file, or every colour of a PNG." }),
+        el("div", { class: "pxs-h", text: "Export" }), el("div", { class: "pxs-row" }, ...["gpl", "pal", "act", "hex", "png"].map(f => btn(f.toUpperCase(), () => exportPalette(f)))));
+    }
+
+    // frames, tags and the onion skin
+    function renderFrames(body) {
+      body.textContent = ""; const f = ui.frame, fr = doc.frames[f];
+      const dur = numIn({ min: 1, max: 65535, value: fr.duration, "aria-label": "Duration of this frame in milliseconds", onchange: e => setDuration(e.target.value, false) });
+      const tagsList = el("div", { class: "pxs-list", role: "list", "aria-label": "Tags" }), formHost = el("div");
+      doc.tags.forEach((t, i) => {
+        const playing = ui.playing && ui.playTag === i;
+        tagsList.append(el("div", { class: "pxs-tag", role: "listitem", "aria-current": String(ui.playTag === i) }, el("i", { class: "pxs-tagc", style: "background:" + (parseHex(t.color) ? t.color : TAG_COLOURS[i % TAG_COLOURS.length]) }),
+          el("div", { class: "pxs-ib pxs-lname" }, el("span", { text: t.name }), el("span", { class: "pxs-dim", text: (t.from + 1) + "–" + (t.to + 1) + " · " + (DIRS.find(d => d[0] === t.direction) || DIRS[0])[1] })),
+          ib(playing ? "pause" : "play", playing ? "Pause" : "Play this tag", () => { if (playing) { ui.playing = false; refreshTimeline(); refreshPanels("frames"); } else togglePlay(i); }),
+          btn("Edit", () => tagForm(i)), ib("trash", "Delete the tag " + t.name, () => docStep(() => { doc.tags.splice(i, 1); }))));
+      });
+      function tagForm(i) {
+        const t = i == null ? { name: "tag " + (doc.tags.length + 1), from: ui.frame, to: ui.frame, direction: "forward", repeat: 0, color: TAG_COLOURS[doc.tags.length % TAG_COLOURS.length] } : doc.tags[i];
+        const name = el("input", { type: "text", value: t.name, "aria-label": "Tag name" }), from = numIn({ min: 1, max: doc.frames.length, value: t.from + 1, "aria-label": "First frame" }), to = numIn({ min: 1, max: doc.frames.length, value: t.to + 1, "aria-label": "Last frame" });
+        const dir = el("select", { "aria-label": "Direction" }, DIRS.map(([v, l]) => el("option", { value: v, text: l, selected: v === t.direction ? true : null })));
+        formHost.replaceChildren(el("div", { class: "pxs-form" }, el("div", { class: "pxs-row" }, field("Name", name), field("From", from), field("To", to), field("Direction", dir)),
+          el("div", { class: "pxs-row" }, btn(i == null ? "Add the tag" : "Save the tag", () => {
+            const a = clamp(Math.round(num(from.value, 1)), 1, doc.frames.length) - 1, b = clamp(Math.round(num(to.value, 1)), 1, doc.frames.length) - 1;
+            if (b < a) { say("The tag's last frame comes before its first."); return; }
+            const nt = { name: name.value.trim() || t.name, from: a, to: b, direction: dir.value, repeat: t.repeat || 0, color: t.color || "#000000" };
+            docStep(() => { if (i == null) doc.tags.push(nt); else doc.tags[i] = nt; });
+          }, "pxs-primary"), btn("Cancel", () => formHost.textContent = ""))));
+        name.focus();
+      }
+      const onionNum = (label, key) => field(label, numIn({ min: 0, max: 3, value: ui[key], "aria-label": label + " frames in the onion skin", onchange: e => { ui[key] = clamp(Math.round(num(e.target.value, 1)), 0, 3); e.target.value = ui[key]; saveUi(); requestDraw(); } }));
+      const op = el("input", { type: "range", min: 5, max: 90, value: ui.onionAlpha, "aria-label": "Onion skin opacity" }); op.addEventListener("input", () => { ui.onionAlpha = +op.value; requestDraw(); }); op.addEventListener("change", saveUi);
+      body.append(el("div", { class: "pxs-row" }, el("b", { text: "Frame " + (f + 1) + " of " + doc.frames.length }), field("Duration (ms)", dur), btn("Set all", () => setDuration(dur.value, true)), ib("left", "Move the frame left", () => moveFrame(-1)), ib("right", "Move the frame right", () => moveFrame(1))),
+        el("div", { class: "pxs-h", text: "Tags" }), tagsList,
+        el("div", { class: "pxs-row" }, btn("+ Add tag", () => tagForm(null)), ui.playTag != null ? btn("Play all frames", () => { ui.playTag = null; refreshPanels("frames"); }) : null), formHost,
+        el("div", { class: "pxs-h", text: "Onion skin" }), el("div", { class: "pxs-row" }, check("On", "onion"), onionNum("Previous", "onionPrev"), onionNum("Next", "onionNext"), field("Opacity", op)));
+    }
+
+    // preview: the animation at a scale, and the tile laid out as the engine does
+    let pvA = null, pvT = null; const pv = { frame: 0, last: 0, playDir: 1 };
+    function renderPreview(body) {
+      body.textContent = "";
+      pvA = el("canvas", { class: "pxs-pv", "aria-label": "Animation preview" }); pvT = el("canvas", { class: "pxs-pv", "aria-label": "Tiled preview: the tile laid out as the engine does, to check its seams" });
+      const sel = el("select", { "aria-label": "Preview scale" }, [[0, "fit"], [1, "1×"], [2, "2×"], [3, "3×"], [4, "4×"], [6, "6×"], [8, "8×"]].map(([v, t]) => el("option", { value: v, text: t, selected: ui.pvScale === v ? true : null })));
+      sel.addEventListener("change", () => { ui.pvScale = +sel.value; saveUi(); });
+      body.append(el("div", { class: "pxs-row" }, field("Scale", sel), el("span", { class: "pxs-note", text: "Plays every frame, or the tag that is playing." })), pvA,
+        el("div", { class: "pxs-h", text: "Tiled, as the engine lays it out" }), pvT, el("p", { class: "pxs-note", text: "Look for seams: lines or colour jumps where copies meet. Fix them at the tile's edges." }));
+      pv.frame = ui.frame; pv.last = 0;
+    }
+    function tickPreview(now) {
+      if (!pvA || !pvA.isConnected || !panelVisible("preview")) return;
+      const n = doc.frames.length; if (pv.frame >= n) pv.frame = 0;
+      if (now - pv.last > Math.max(20, doc.frames[pv.frame].duration)) { pv.last = now; pv.frame = n > 1 ? stepFrame(pv.frame, ui.playTag != null ? doc.tags[ui.playTag] : null, pv) : 0; }
+      const t = tokens(), d = Math.min(2, dpr()), cw = pvA.clientWidth || 280;
+      if (cw <= 0) return;
+      const ah = 180; if (pvA.width !== Math.round(cw * d) || pvA.height !== ah * d) { pvA.width = Math.round(cw * d); pvA.height = ah * d; pvA.style.height = ah + "px"; }
+      const a = pvA.getContext("2d"); a.setTransform(d, 0, 0, d, 0, 0); a.imageSmoothingEnabled = false; a.fillStyle = t.sunk; a.fillRect(0, 0, cw, ah);
+      const sc = ui.pvScale || Math.max(1, Math.floor(Math.min((cw - 16) / doc.w, (ah - 24) / doc.h))), fc = flatCanvas(pv.frame);
+      a.drawImage(fc, Math.round((cw - doc.w * sc) / 2), Math.round((ah - 10 - doc.h * sc) / 2), doc.w * sc, doc.h * sc);
+      a.fillStyle = t.muted; a.font = "11px " + t.mono; a.fillText("frame " + (pv.frame + 1) + "/" + n + " · " + sc + "×", 6, ah - 6);
+      const th = 220; if (pvT.width !== Math.round(cw * d) || pvT.height !== th * d) { pvT.width = Math.round(cw * d); pvT.height = th * d; pvT.style.height = th + "px"; }
+      const x = pvT.getContext("2d"); x.setTransform(d, 0, 0, d, 0, 0); drawTiled(x, cw, th, fc, doc.w, doc.h, presets[cur.template] || null, t);
+    }
+
+    // canvas: the sprite's size and shape, the template, the view's toggles
+    const anchor = { x: .5, y: .5 };
+    function renderCanvas(body) {
+      body.textContent = "";
+      const w = numIn({ min: 1, max: MAX, value: doc.w, "aria-label": "New width" }), h = numIn({ min: 1, max: MAX, value: doc.h, "aria-label": "New height" });
+      const grid = el("div", { class: "pxs-anchor", role: "group", "aria-label": "Anchor: where the old pixels stay" });
+      const anchors = []; for (const ay of [0, .5, 1]) for (const ax of [0, .5, 1]) { const b = el("button", { type: "button", "aria-label": "Anchor " + (ay === 0 ? "top" : ay === 1 ? "bottom" : "middle") + " " + (ax === 0 ? "left" : ax === 1 ? "right" : "centre"), "aria-pressed": String(anchor.x === ax && anchor.y === ay), onclick: () => { anchor.x = ax; anchor.y = ay; anchors.forEach(q => q.b.setAttribute("aria-pressed", String(q.ax === ax && q.ay === ay))); } }); anchors.push({ b, ax, ay }); grid.append(b); }
+      const dx = numIn({ value: 0, "aria-label": "Shift right by" }), dy = numIn({ value: 0, "aria-label": "Shift down by" }), wrap = el("input", { type: "checkbox", checked: ui.wrap ? true : null, "data-ui": "wrap", onchange: e => { ui.wrap = e.target.checked; renderOpts(); saveUi(); } });
+      const sameSize = presetKeys.filter(k => presets[k].w === doc.w && presets[k].h === doc.h);
+      const tsel = el("select", { "aria-label": "Template guide" }, el("option", { value: "", text: "No template", selected: !cur.template ? true : null }), sameSize.map(k => el("option", { value: k, text: presets[k].label, selected: k === cur.template ? true : null })));
+      tsel.addEventListener("change", () => { cur.template = tsel.value || null; maskCv = null; requestDraw(); scheduleSave(); });
+      body.append(el("div", { class: "pxs-h", text: "Size" }),
+        el("div", { class: "pxs-row" }, field("Width", w), field("Height", h), grid, btn("Resize", () => resizeCanvas(w.value, h.value, anchor.x, anchor.y), "pxs-primary")),
+        el("div", { class: "pxs-row" }, btn("Scale ×2", () => scaleSprite(2)), btn("Scale ÷2", () => scaleSprite(.5)), btn("Crop to selection", () => cropToSel())),
+        el("div", { class: "pxs-h", text: "Whole sprite (every frame and layer)" }),
+        el("div", { class: "pxs-row" }, btn("Flip horizontal", () => flipSprite(true, false)), btn("Flip vertical", () => flipSprite(false, true)), btn("Rotate 90°", () => rotateSprite())),
+        el("div", { class: "pxs-row" }, field("Shift x", dx), field("Shift y", dy), btn("Shift", () => shiftSprite(dx.value, dy.value, wrap.checked)), el("label", { class: "pxs-check" }, wrap, "Wrap round"),
+          el("span", { class: "pxs-row pxs-tight", role: "group", "aria-label": "Shift by one pixel" }, ib("left", "Shift left by 1", () => shiftSprite(-1, 0, wrap.checked)), ib("right", "Shift right by 1", () => shiftSprite(1, 0, wrap.checked)), ib("up", "Shift up by 1", () => shiftSprite(0, -1, wrap.checked)), ib("down", "Shift down by 1", () => shiftSprite(0, 1, wrap.checked)))),
+        el("div", { class: "pxs-h", text: "Template" }),
+        el("div", { class: "pxs-row" }, field("Guide", tsel), btn("Guess from the size", () => { cur.template = guessTemplate(presets, doc.w, doc.h); maskCv = null; requestDraw(); refreshPanels("canvas"); say(cur.template ? "Template: " + presets[cur.template].label + "." : "No template is " + doc.w + " × " + doc.h + "."); }), btn("Clip to template", () => clipToTemplate())),
+        cur.template && presets[cur.template] ? el("p", { class: "pxs-note", text: presets[cur.template].note + (presets[cur.template].key ? " Art key: " + presets[cur.template].key + "." : "") }) : null,
+        el("div", { class: "pxs-h", text: "Selection" }),
+        el("div", { class: "pxs-row pxs-tight" }, ...SEL_ACTIONS.map(([ic, label, op]) => ib(ic, label, () => selOp(op)))),
+        el("div", { class: "pxs-h", text: "Show" }),
+        el("div", { class: "pxs-row" }, check("Grid", "grid"), check("Template guide", "guide"), check("Mirror X", "mirrorX"), check("Mirror Y", "mirrorY"), check("Pixel-perfect", "pixelPerfect"), check("Onion skin", "onion")));
+    }
+
+    // file: new, the sprites on this device, import, export
+    let listHost = null;
+    function renderFile(body) {
+      body.textContent = "";
+      const name = el("input", { type: "text", value: "", placeholder: "name", "aria-label": "Name of the new sprite" });
+      const w = numIn({ min: 1, max: MAX, value: 32, "aria-label": "Width of the new sprite" }), h = numIn({ min: 1, max: MAX, value: 32, "aria-label": "Height of the new sprite" }), nf = numIn({ min: 1, max: 64, value: 1, "aria-label": "Frames of the new sprite" });
+      const tsel = el("select", { "aria-label": "Template of the new sprite" }, presetKeys.map(k => el("option", { value: k, text: presets[k].label })), el("option", { value: "", text: "Custom size" }));
+      const syncSize = () => { const P = presets[tsel.value]; w.disabled = h.disabled = !!P; if (P) { w.value = P.w; h.value = P.h; } }; tsel.addEventListener("change", syncSize); syncSize();
+      listHost = el("div", { class: "pxs-list", role: "list", "aria-label": "Sprites saved on this device" });
+      const fw = numIn({ min: 1, max: MAX, placeholder: "auto", "aria-label": "Frame width, to split a strip" }), fh = numIn({ min: 1, max: MAX, placeholder: "auto", "aria-label": "Frame height, to split a strip" });
+      const imp = el("input", { type: "file", multiple: true, accept: ".aseprite,.ase,.png,.gif,.webp,.jpg,.jpeg,.json", "aria-label": "Import sprites: Aseprite files, images, or an image with its Aseprite sheet JSON", onchange: e => { const fs = [...(e.target.files || [])]; e.target.value = ""; importFiles(fs, num(fw.value, 0), num(fh.value, 0)); } });
+      const lay = el("select", { "aria-label": "Sheet layout" }, [["row", "one row"], ["rows-by-tag", "a row a tag"], ["grid", "a grid of N columns"]].map(([v, t]) => el("option", { value: v, text: t })));
+      const cols = numIn({ min: 1, max: 64, value: 8, "aria-label": "Columns of the sheet grid" }), pngScale = numIn({ min: 1, max: 16, value: 1, "aria-label": "Scale of the PNG" }), gifScale = numIn({ min: 1, max: 16, value: 1, "aria-label": "Scale of the GIF" });
+      body.append(el("div", { class: "pxs-h", text: "New sprite" }),
+        el("div", { class: "pxs-row" }, field("Name", name), field("Template", tsel), field("Width", w), field("Height", h), field("Frames", nf),
+          btn("Create", () => { const n = Math.max(1, Math.round(num(nf.value, 1))); if (tsel.value) newFromTemplate(tsel.value, { frames: n, name: name.value.trim() }); else newCustom(num(w.value, 32), num(h.value, 32), n, name.value.trim()); }, "pxs-primary")),
+        el("div", { class: "pxs-h", text: "Sprites on this device" }), listHost,
+        el("div", { class: "pxs-h", text: "Import" }), el("div", { class: "pxs-row" }, imp), el("div", { class: "pxs-row" }, field("Frame width", fw), field("Frame height", fh), el("span", { class: "pxs-note", text: "For a strip: the size of one frame. Or choose the sheet's .json next to its PNG." })),
+        el("div", { class: "pxs-h", text: "Export" }),
+        el("div", { class: "pxs-row" }, btn("Save .aseprite", () => exportAse(), "pxs-primary")),
+        el("div", { class: "pxs-row" }, field("Sheet", lay), field("Columns", cols), btn("PNG sheet + JSON", () => exportSheet(lay.value, num(cols.value, 8)))),
+        el("div", { class: "pxs-row" }, field("Scale", pngScale), btn("PNG of this frame", () => exportFramePng(num(pngScale.value, 1))), field("Scale", gifScale), btn("GIF of the animation", () => exportGif(num(gifScale.value, 1)))),
+        el("div", { class: "pxs-row" }, el("span", { class: "pxs-note", text: "Palette:" }), ...["gpl", "pal", "act", "hex", "png"].map(f => btn(f.toUpperCase(), () => exportPalette(f)))));
+      refreshSpriteList();
+    }
+    async function refreshSpriteList() {
+      const host = listHost; if (!host || !host.isConnected) return;
+      const items = await storage.list(); if (host !== listHost || !host.isConnected) return; host.textContent = "";
+      if (!items.length) { host.append(el("p", { class: "pxs-note", text: "No sprites saved on this device yet: the sprite you draw appears here." })); return; }
+      for (const m of items) {
+        const nameB = el("div", { class: "pxs-ib pxs-lname" }, el("span", { text: m.name }), el("span", { class: "pxs-dim", text: m.w + " × " + m.h + " · " + m.frames + (m.frames === 1 ? " frame" : " frames") }));
+        const del = ib("trash", "Delete " + m.name, () => { if (!del.dataset.armed) { del.dataset.armed = "1"; del.style.color = "var(--hive)"; say("Tap the bin again to delete " + m.name + "."); setTimeout(() => { delete del.dataset.armed; del.style.color = ""; }, 4000); return; } delSaved(m); });
+        host.append(el("div", { class: "pxs-sprite", role: "listitem", "aria-current": String(m.id === cur.id) }, m.thumb ? el("img", { src: m.thumb, alt: "", width: 40, height: 40 }) : el("span", { class: "pxs-lthumb" }), nameB,
+          btn("Open", () => openSaved(m)), ib("pencil", "Rename " + m.name, () => inlineEdit(nameB, m.name, v => renameSaved(m, v))), ib("dup", "Duplicate " + m.name, () => dupSaved(m)), del));
+      }
+    }
+
+    // the colour editor
+    const ce = {};
+    function buildColour(body) {
+      const sl = (label, max, aria) => { const r = el("input", { type: "range", min: 0, max, step: 1, "aria-label": aria }), o = el("output"); return { r, o, row: el("label", { class: "pxs-slider" }, el("span", { text: label }), r, o) }; };
+      Object.assign(ce, { prev: el("div", { class: "pxs-big" }, el("i"), el("b", { text: "" })), H: sl("H", 360, "Hue"), S: sl("S", 100, "Saturation"), V: sl("V", 100, "Value"), A: sl("A", 255, "Alpha"),
+        hex: el("input", { type: "text", "aria-label": "Hex colour, #rrggbb or #rrggbbaa", spellcheck: "false", maxlength: 9 }), native: el("input", { type: "color", "aria-label": "The browser's colour picker" }),
+        recent: el("div", { class: "pxs-recent", role: "group", "aria-label": "Recent colours" }), fgB: btn("Foreground", () => { ui.editTarget = "fg"; syncColourPanel(); }), bgB: btn("Background", () => { ui.editTarget = "bg"; syncColourPanel(); }), syncing: false });
+      const apply = c => { if (ce.syncing) return; setColour(ui.editTarget, c); };
+      const fromHsv = () => apply([...hsvToRgb(+ce.H.r.value, ce.S.r.value / 100, ce.V.r.value / 100), +ce.A.r.value]);
+      for (const k of ["H", "S", "V", "A"]) ce[k].r.addEventListener("input", fromHsv);
+      ce.hex.addEventListener("change", () => { const c = parseHex(ce.hex.value); if (c) apply(c); else say("A colour is written #rrggbb or #rrggbbaa."); });
+      ce.native.addEventListener("input", () => { const c = parseHex(ce.native.value); if (c) apply([c[0], c[1], c[2], +ce.A.r.value]); });
+      body.append(el("div", { class: "pxs-row pxs-tight", role: "group", "aria-label": "Which colour to edit" }, ce.fgB, ce.bgB), ce.prev, ce.H.row, ce.S.row, ce.V.row, ce.A.row,
+        el("div", { class: "pxs-row" }, field("Hex", ce.hex), field("Picker", ce.native), btn("Transparent", () => apply([0, 0, 0, 0]))),
+        el("div", { class: "pxs-h", text: "Recent" }), ce.recent,
+        el("div", { class: "pxs-row" }, btn("Add to palette", () => palOp("add", ui[ui.editTarget])), btn("Replace selected swatch", () => palOp("replace", ui[ui.editTarget]))));
+    }
+    function syncColourPanel() {
+      if (!ce.prev || !panelVisible("colour")) return; ce.syncing = true;
+      const c = ui[ui.editTarget], [h, s, v] = rgbToHsv(c[0], c[1], c[2]);
+      ce.prev.style.setProperty("--c", cssRgba(c)); ce.prev.querySelector("b").textContent = (ui.editTarget === "fg" ? "FG " : "BG ") + (c[3] ? toHex(c) : "transparent");
+      if (s > 0 && v > 0) ce.H.r.value = Math.round(h); if (v > 0) ce.S.r.value = Math.round(s * 100); ce.V.r.value = Math.round(v * 100); ce.A.r.value = c[3];
+      ce.H.o.textContent = ce.H.r.value + "°"; ce.S.o.textContent = ce.S.r.value + "%"; ce.V.o.textContent = ce.V.r.value + "%"; ce.A.o.textContent = Math.round(c[3] / 255 * 100) + "%";
+      ce.hex.value = toHex(c); ce.native.value = toHex([c[0], c[1], c[2], 255]);
+      ce.fgB.setAttribute("aria-pressed", String(ui.editTarget === "fg")); ce.bgB.setAttribute("aria-pressed", String(ui.editTarget === "bg"));
+      ce.recent.textContent = ""; for (const hx of ui.recent) { const rc = parseHex(hx); if (!rc) continue; const b = sw("Recent colour " + hx, () => setColour(ui.editTarget, rc)); paintSw(b, rc); ce.recent.append(b); }
+      ce.syncing = false;
+    }
+    function openColour(which) { ui.editTarget = which; openPanel("colour"); syncColourPanel(); }
+    buildColour(panelBodies.colour);
+
+    // ---- documents: new, open, and the sprites on the device ----
+    const msg = e => (e && e.message) || String(e);
+    function sanitize(d) {
+      if (!d || typeof d !== "object") throw new Error("That is not a sprite.");
+      d.w = clamp(Math.round(num(d.w, 1)), 1, MAX); d.h = clamp(Math.round(num(d.h, 1)), 1, MAX); d.name = safeName(d.name);
+      if (!Array.isArray(d.layers) || !d.layers.length) d.layers = [newLayer("Layer 1")];
+      d.layers.forEach((L, i) => { L.name = String(L.name || "Layer " + (i + 1)); L.visible = L.visible !== false; L.locked = !!L.locked; L.opacity = clamp(Math.round(num(L.opacity, 255)), 0, 255); L.blend = L.blend || "normal"; });
+      if (!Array.isArray(d.frames) || !d.frames.length) d.frames = [{ duration: 100 }];
+      d.frames.forEach(f => { f.duration = clamp(Math.round(num(f.duration, 100)), 1, 65535); });
+      const n = d.w * d.h * 4, cels = Array.isArray(d.cels) ? d.cels : [];
+      d.cels = d.layers.map((L, l) => d.frames.map((f, i) => { const c = cels[l] && cels[l][i]; if (!c || !c.data) return null; let data = asClamped(c.data); if (data.length !== n) { const fixed = new Uint8ClampedArray(n); fixed.set(data.subarray(0, Math.min(n, data.length))); data = fixed; } return { data, opacity: clamp(Math.round(num(c.opacity, 255)), 0, 255) }; }));
+      d.tags = (Array.isArray(d.tags) ? d.tags : []).filter(t => t && typeof t === "object").map(t => { const from = clamp(t.from | 0, 0, d.frames.length - 1); return { name: String(t.name || "tag"), from, to: clamp(Math.max(t.to | 0, from), 0, d.frames.length - 1), direction: DIRS.some(x => x[0] === t.direction) ? t.direction : "forward", repeat: t.repeat | 0, color: parseHex(t.color) ? t.color : "#000000" }; });
+      d.palette = (Array.isArray(d.palette) ? d.palette : []).map(String).filter(h => parseHex(h)).slice(0, 256); if (!d.palette.length) d.palette = boardPalette.slice();
+      if (d.transparentIndex == null) d.transparentIndex = 0; if (!Array.isArray(d.warnings)) d.warnings = [];
+    }
+    function openDoc(d, o) {
+      o = o || {}; sanitize(d);
+      if (stroke) cancelStroke(); ui.float = null; ui.sel = null; ui.playing = false; ui.playTag = null;
+      doc = d; cur = { id: o.id || null, template: o.template && presets[o.template] ? o.template : guessTemplate(presets, d.w, d.h), saved: !!o.id };
+      hist.undo.length = 0; hist.redo.length = 0; hist.bytes = 0; updateUndo();
+      ui.frame = 0; ui.layer = d.layers.length - 1; lcs.length = 0; lcsFrame = -1; markAll();
+      ui.fgIndex = d.palette.findIndex(h => { const p = parseHex(h); return p && sameCol(p, ui.fg); });
+      refreshTop(); refreshTimeline(); refreshColours(); refreshPanels(); refreshSelBar(); ui.fitted = false; fitZoom(); requestDraw();
+      if (o.save) scheduleSave(); else setSaved(cur.saved ? "Saved" : "", false);
+      if (d.warnings.length) say(d.warnings.join(" "), true); else if (o.message) say(o.message);
+      return doc;
+    }
+    function newFromTemplate(key, o) {
+      o = o || {}; const k = presets[key] ? key : presetKeys[0], P = presets[k] || { w: 32, h: 32, shape: "free", label: "Sprite" };
+      const d = formats.newDoc({ w: P.w, h: P.h, name: safeName(o.name || P.key || k || "sprite"), palette: boardPalette });
+      if (P.seed) seedDoc(d, P.seed, P);
+      const n = clamp(Math.round(num(o.frames, 1)), 1, 256);
+      for (let i = 1; i < n; i++) { d.frames.push({ duration: 100 }); d.cels[0].push(celCopy(d.cels[0][0])); }
+      return openDoc(d, { template: k, message: (P.label || "Sprite") + ": " + P.w + " × " + P.h + " px" + (n > 1 ? ", " + n + " frames" : "") + ". " + (P.note || "") });
+    }
+    function newCustom(w, h, n, name) {
+      w = clamp(Math.round(num(w, 32)), 1, MAX); h = clamp(Math.round(num(h, 32)), 1, MAX); n = clamp(Math.round(num(n, 1)), 1, 256);
+      const d = formats.newDoc({ w, h, name: safeName(name || "sprite"), palette: boardPalette });
+      for (let i = 1; i < n; i++) { d.frames.push({ duration: 100 }); d.cels[0].push(null); }
+      return openDoc(d, { message: "New sprite: " + w + " × " + h + " px" + (n > 1 ? ", " + n + " frames" : "") + "." });
+    }
+    async function flushSave() { if (savePending) { clearTimeout(saveT); savePending = false; await autosave(); } while (saveBusy) await new Promise(r => setTimeout(r, 40)); }
+    async function openSaved(m) {
+      try {
+        await flushSave(); const bytes = await storage.load(m.id); if (!bytes) throw new Error("its data is missing on this device");
+        const d = await formats.decodeAseprite(bytes, { name: m.name }); d.name = m.name || d.name;
+        openDoc(d, { id: m.id, template: m.template, message: "Opened " + d.name + "." }); store.set("bs-studio-last", m.id); refreshSpriteList();
+      } catch (e) { say("Could not open " + m.name + ": " + msg(e)); }
+    }
+    async function dupSaved(m) {
+      try { await flushSave(); const bytes = await storage.load(m.id); if (!bytes) throw new Error("its data is missing on this device"); await storage.save(Object.assign({}, m, { id: newId(), name: m.name + " copy", updated: Date.now() }), bytes); refreshSpriteList(); say("Duplicated " + m.name + "."); }
+      catch (e) { say("Could not duplicate " + m.name + ": " + msg(e)); }
+    }
+    async function renameSaved(m, v) {
+      const n = safeName(v); if (!v || n === m.name) { refreshSpriteList(); return; }
+      try { if (m.id === cur.id) { docStep(() => { doc.name = n; }); return; } const bytes = await storage.load(m.id); if (!bytes) throw new Error("its data is missing"); await storage.save(Object.assign({}, m, { name: n }), bytes); refreshSpriteList(); }
+      catch (e) { say("Could not rename " + m.name + ": " + msg(e)); }
+    }
+    async function delSaved(m) {
+      try { await storage.remove(m.id); if (m.id === cur.id) { cur.id = null; cur.saved = false; setSaved("", false); } if (store.get("bs-studio-last", null) === m.id) store.set("bs-studio-last", null); say("Deleted " + m.name + "."); refreshSpriteList(); }
+      catch (e) { say("Could not delete " + m.name + ": " + msg(e)); }
+    }
+
+    // ---- import: Aseprite files, images (one frame, a strip by frame size, or a sheet with its Aseprite JSON) ----
+    function readImage(file) {
+      return new Promise((res, rej) => {
+        const url = URL.createObjectURL(file), img = new Image();
+        img.onload = () => { URL.revokeObjectURL(url); try { const c = document.createElement("canvas"); c.width = img.naturalWidth; c.height = img.naturalHeight; const x = c.getContext("2d", { willReadFrequently: true }); x.drawImage(img, 0, 0); res({ w: c.width, h: c.height, data: x.getImageData(0, 0, c.width, c.height).data }); } catch (e) { rej(e); } };
+        img.onerror = () => { URL.revokeObjectURL(url); rej(new Error(file.name + " is not an image this browser can open")); }; img.src = url;
+      });
+    }
+    function docFromImage(img, name, sheet, fw, fh) {
+      const { w, h, data } = img; let rects, durations = null, tags = [];
+      if (sheet && sheet.frames) {
+        const list = Array.isArray(sheet.frames) ? sheet.frames : Object.keys(sheet.frames).map(k => Object.assign({ filename: k }, sheet.frames[k]));
+        const ok = list.filter(fr => fr && fr.frame && fr.frame.w > 0 && fr.frame.h > 0); if (!ok.length) throw new Error("the JSON has no frames in Aseprite's sheet format");
+        rects = ok.map(fr => fr.frame); durations = ok.map(fr => clamp(Math.round(num(fr.duration, 100)), 1, 65535));
+        tags = ((sheet.meta && sheet.meta.frameTags) || []).map(t => ({ name: String(t.name || "tag"), from: Math.max(0, t.from | 0), to: Math.max(0, t.to | 0), direction: DIRS.some(d => d[0] === t.direction) ? t.direction : "forward", repeat: 0, color: parseHex(t.color) ? t.color : "#000000" }));
+      } else if (fw > 0 || fh > 0) {
+        fw = Math.round(fw) || w; fh = Math.round(fh) || h; rects = [];
+        for (let y = 0; y + fh <= h; y += fh) for (let x = 0; x + fw <= w; x += fw) rects.push({ x, y, w: fw, h: fh });
+        if (!rects.length) throw new Error("the frame size " + fw + " × " + fh + " is bigger than the image (" + w + " × " + h + ")");
+      } else rects = [{ x: 0, y: 0, w, h }];
+      const FW = rects[0].w, FH = rects[0].h;
+      if (FW > MAX || FH > MAX) throw new Error((rects.length > 1 ? "a frame" : "the image") + " is " + FW + " × " + FH + " px; the studio takes up to " + MAX + " × " + MAX + " (type a frame size to split it)");
+      const d = formats.newDoc({ w: FW, h: FH, name: safeName(name), palette: boardPalette }); d.frames = []; d.cels[0] = [];
+      rects.forEach((r, i) => {
+        const cel = new Uint8ClampedArray(FW * FH * 4);
+        for (let y = 0; y < Math.min(FH, r.h); y++) { const sy = r.y + y; if (sy < 0 || sy >= h) continue; for (let x = 0; x < Math.min(FW, r.w); x++) { const sx = r.x + x; if (sx < 0 || sx >= w) continue; cel.set(data.subarray((sy * w + sx) * 4, (sy * w + sx) * 4 + 4), (y * FW + x) * 4); } }
+        d.frames.push({ duration: durations ? durations[i] : 100 }); d.cels[0].push({ data: cel, opacity: 255 });
+      });
+      d.tags = tags.filter(t => t.from < d.frames.length).map(t => Object.assign(t, { to: Math.min(t.to, d.frames.length - 1) }));
+      const cols = formats.uniqueColors(data, 256); if (cols.length) d.palette = cols;
+      return d;
+    }
+    async function importFiles(files, fw, fh) {
+      if (!files.length) return;
+      const jsons = files.filter(f => /\.json$/i.test(f.name)), ases = files.filter(f => /\.(ase|aseprite)$/i.test(f.name)), imgs = files.filter(f => !/\.(json|ase|aseprite)$/i.test(f.name));
+      try {
+        await flushSave(); const got = [];
+        for (const f of ases) got.push({ d: await formats.decodeAseprite(new Uint8Array(await f.arrayBuffer()), { name: f.name.replace(/\.[^.]+$/, "") }), name: f.name });
+        let sheet = null; if (jsons.length) { try { sheet = JSON.parse(await jsons[0].text()); } catch (e) { throw new Error(jsons[0].name + " is not JSON"); } }
+        for (const f of imgs) { const d = docFromImage(await readImage(f), f.name.replace(/\.[^.]+$/, ""), sheet, fw, fh); if (/\.gif$/i.test(f.name) && d.frames.length === 1) d.warnings.push("Only the GIF's first frame is read; export a sheet from Aseprite for the rest."); got.push({ d, name: f.name }); }
+        if (!got.length) { say("Choose an .aseprite file or an image" + (jsons.length ? " next to the JSON" : "") + "."); return; }
+        for (const g of got.slice(0, -1)) { sanitize(g.d); await storage.save(metaOf(g.d, newId(), guessTemplate(presets, g.d.w, g.d.h)), await formats.encodeAseprite(g.d)); }
+        const last = got[got.length - 1], d = last.d;
+        openDoc(d, { save: true, message: "Imported " + last.name + (got.length > 1 ? " (and " + (got.length - 1) + " more, in Sprites on this device)" : "") + ": " + d.w + " × " + d.h + " px, " + d.frames.length + (d.frames.length === 1 ? " frame" : " frames") + (d.layers.length > 1 ? ", " + d.layers.length + " layers" : "") + "." });
+        refreshSpriteList();
+      } catch (e) { say("Could not import: " + msg(e)); }
+    }
+    async function importPaletteFile(file) {
+      if (!file) return;
+      try {
+        let colors, from = file.name;
+        if (/\.png$/i.test(file.name)) { const img = await readImage(file); colors = formats.uniqueColors(img.data, 256); if (!colors.length) throw new Error("No colours found in " + file.name); }
+        else { const r = await formats.parsePalette(file.name, new Uint8Array(await file.arrayBuffer())); colors = r.colors; if (r.name) from = r.name; }
+        docStep(() => { doc.palette = colors.slice(0, 256); }); pickPalette(0); say("Loaded " + colors.length + " colours from " + from + ".");
+      } catch (e) { say(msg(e)); }
+    }
+
+    // ---- export, through the page's saveFile ----
+    const toBlob = c => new Promise((res, rej) => c.toBlob(b => b ? res(b) : rej(new Error("the PNG could not be made")), "image/png"));
+    async function deliver(filename, blob) {
+      try { const r = await saveFile({ filename, blob }); say(typeof r === "string" && r ? r : "Saved " + filename + "."); return true; }
+      catch (e) { say(msg(e) || ("Could not save " + filename + ".")); return false; }
+    }
+    async function exportAse() { try { await deliver(safeName(doc.name) + ".aseprite", new Blob([await formats.encodeAseprite(doc)], { type: "application/octet-stream" })); } catch (e) { say("Could not export: " + msg(e)); } }
+    async function exportSheet(mode, columns) {
+      try {
+        const lay = formats.sheetLayout(doc, { mode, columns: clamp(Math.round(num(columns, 8)), 1, 64), padding: 0 });
+        const c = document.createElement("canvas"); c.width = lay.w; c.height = lay.h; const x = c.getContext("2d"); x.imageSmoothingEnabled = false;
+        for (const f of lay.frames) x.drawImage(flatCanvas(f.index), f.x, f.y);
+        const base = safeName(doc.name), png = base + "-sheet.png";
+        if (await deliver(png, await toBlob(c))) await deliver(base + "-sheet.json", new Blob([JSON.stringify(formats.sheetJson(doc, lay, png), null, 2)], { type: "application/json" }));
+      } catch (e) { say("Could not export the sheet: " + msg(e)); }
+    }
+    async function exportFramePng(scale) {
+      try { scale = clamp(Math.round(num(scale, 1)), 1, 16); const c = document.createElement("canvas"); c.width = doc.w * scale; c.height = doc.h * scale; const x = c.getContext("2d"); x.imageSmoothingEnabled = false; x.drawImage(flatCanvas(ui.frame), 0, 0, c.width, c.height);
+        await deliver(safeName(doc.name) + (doc.frames.length > 1 ? "-f" + (ui.frame + 1) : "") + (scale > 1 ? "@" + scale + "x" : "") + ".png", await toBlob(c)); }
+      catch (e) { say("Could not export the PNG: " + msg(e)); }
+    }
+    async function exportGif(scale) {
+      try { scale = clamp(Math.round(num(scale, 1)), 1, 16); const bytes = formats.encodeGif(doc.frames.map((fr, f) => ({ data: flatData(f), duration: fr.duration })), doc.w, doc.h, { scale, loop: 0 });
+        await deliver(safeName(doc.name) + (scale > 1 ? "@" + scale + "x" : "") + ".gif", new Blob([bytes], { type: "image/gif" })); }
+      catch (e) { say("Could not export the GIF: " + msg(e)); }
+    }
+    async function exportPalette(fmt) {
+      try {
+        if (fmt === "png") { const c = document.createElement("canvas"); c.width = doc.palette.length; c.height = 1; const x = c.getContext("2d"); doc.palette.forEach((h, i) => { x.fillStyle = cssRgba(parseHex(h) || [0, 0, 0, 255]); x.fillRect(i, 0, 1, 1); }); await deliver(safeName(doc.name) + "-palette.png", await toBlob(c)); return; }
+        const r = formats.encodePalette(fmt, doc.palette, doc.name); await deliver(safeName(doc.name) + "." + (r.ext || fmt), new Blob([r.bytes], { type: r.mime || "application/octet-stream" }));
+      } catch (e) { say("Could not export the palette: " + msg(e)); }
+    }
+
+    // ---- the keyboard (a desktop): only while the Art school shows and no text field has the focus ----
+    function inField() { const a = document.activeElement; if (!a) return false; const t = a.tagName; if (t === "TEXTAREA" || t === "SELECT" || a.isContentEditable) return true; return t === "INPUT" && !["range", "checkbox", "radio", "button", "file"].includes(a.type); }
+    document.addEventListener("keydown", e => {
+      if (!doc || location.hash !== "#art" || inField()) return;
+      const mod = e.ctrlKey || e.metaKey, k = e.key, onCanvas = document.activeElement === cv;
+      if (k === "Escape") { if (ui.full) { e.preventDefault(); setFull(false); } else if (ui.float) commitFloat(); else if (ui.sel) selOp("none"); else if (ui.phone && root.classList.contains("pxs-open")) closePanel(); return; }
+      if (k === "Alt") { ui.alt = true; cv.classList.add("pxs-cur-pick"); return; }
+      if (k === " ") { if (onCanvas) { e.preventDefault(); if (!e.repeat) { ui.space = true; ui.spaceUsed = false; cv.classList.add("pxs-cur-pan"); } } return; }
+      if (mod) {
+        const lk = k.toLowerCase();
+        if (lk === "z") { e.preventDefault(); if (e.shiftKey) redo(); else undo(); } else if (lk === "y") { e.preventDefault(); redo(); }
+        else if (lk === "a") { e.preventDefault(); selOp("all"); } else if (lk === "c" && ui.sel) { e.preventDefault(); selOp("copy"); } else if (lk === "x" && ui.sel) { e.preventDefault(); selOp("cut"); } else if (lk === "v" && ui.clip) { e.preventDefault(); selOp("paste"); }
+        return;
+      }
+      if (e.altKey) return;
+      const tool = { b: "pencil", e: "eraser", g: "fill", l: "line", u: "rect", o: "ellipse", m: "select", v: "move", i: "pick", h: "pan" }[k.toLowerCase()];
+      if (tool) { e.preventDefault(); setTool(tool); return; }
+      if (k === "x" || k === "X") { swapColours(); return; }
+      if (k === "[" || k === "]") { ui.size = clamp(ui.size + (k === "]" ? 1 : -1), 1, 4); renderOpts(); saveUi(); requestDraw(); return; }
+      if (/^[1-9]$/.test(k)) { if (doc.palette[+k - 1]) pickPalette(+k - 1); return; }
+      if (k === ",") { setFrame(ui.frame > 0 ? ui.frame - 1 : doc.frames.length - 1); return; }
+      if (k === ".") { setFrame((ui.frame + 1) % doc.frames.length); return; }
+      if (k === "Enter") { if (ui.float) { e.preventDefault(); commitFloat(); } else if (onCanvas) { e.preventDefault(); togglePlay(); } return; }
+      if (k === "Delete" || k === "Backspace") { if (ui.sel) { e.preventDefault(); selOp("delete"); } return; }
+      if (k === "+" || k === "=") { zoomStep(1); return; } if (k === "-" || k === "_") { zoomStep(-1); return; } if (k === "0") { fitZoom(); }
+    });
+    document.addEventListener("keyup", e => {
+      if (e.key === "Alt") { ui.alt = false; if (ui.tool !== "pick") cv.classList.remove("pxs-cur-pick"); }
+      if (e.key === " " && ui.space) { ui.space = false; if (ui.tool !== "pan") cv.classList.remove("pxs-cur-pan"); if (!ui.spaceUsed && doc && location.hash === "#art" && document.activeElement === cv) togglePlay(); }
+    });
+
+    // ---- layout: phone or desktop by the host's width, the sheet's offset, the canvas's size ----
+    function measureBars() { root.style.setProperty("--pxs-bars", (colours.offsetHeight + tools.offsetHeight + optsBar.offsetHeight + time.offsetHeight + tabs.offsetHeight + status.offsetHeight) + "px"); }
+    function onResize() {
+      const W = root.clientWidth; if (!W) return; const phone = W < PHONE;
+      if (phone !== ui.phone) { ui.phone = phone; root.classList.toggle("pxs-phone", phone); root.classList.toggle("pxs-desk", !phone); closePanel(); refreshPanels(); }
+      if (phone) measureBars();
+      if (layout()) { if (!ui.fitted) fitZoom(); else clampPan(); requestDraw(); }
+    }
+    ui.phone = null;
+    try { const ro = new ResizeObserver(() => onResize()); ro.observe(root); ro.observe(view); } catch (e) { window.addEventListener("resize", onResize); }
+    window.addEventListener("hashchange", () => { if (location.hash === "#art") setTimeout(() => { onResize(); openObs(); refreshPanels(); }, 0); });
+    try { matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { tokAt = -1e9; requestDraw(); }); } catch (e) {}
+    function loop(now) { requestAnimationFrame(loop); if (!doc || location.hash !== "#art") return; tickPlay(now); tickPreview(now); if (drawQueued) draw(); }
+    requestAnimationFrame(loop);
+    setTool(ui.tool); refreshSelBar(); updateUndo();
+    for (const k of ["frames", "canvas", "file"]) applyOpen(k);
+
+    // ---- the api, and the first document ----
+    const api = {
+      newFromTemplate: (key, o) => newFromTemplate(key, o), openDoc: (d, o) => openDoc(d, o), getDoc: () => doc, exportBytes: () => formats.encodeAseprite(doc),
+      scrollIntoView: () => { const hdr = document.querySelector("header.top"), off = hdr && /sticky|fixed/.test(getComputedStyle(hdr).position) ? hdr.offsetHeight : 0; try { window.scrollTo({ top: window.scrollY + host.getBoundingClientRect().top - off - 6, behavior: "smooth" }); } catch (e) { host.scrollIntoView(); } },
+      getView: () => ({ zoom: ui.zoom, panX: ui.panX, panY: ui.panY, frame: ui.frame, layer: ui.layer, tool: ui.tool, panel: ui.panel, phone: ui.phone, full: ui.full, sel: ui.sel ? Object.assign({}, ui.sel) : null, template: cur.template, id: cur.id, playing: ui.playing }),
+      undo: () => undo(), redo: () => redo(), root
+    };
+    PS.api = api;
+    async function migrateOldDraft() {
+      const d = store.get("bs-art-studio", null); if (!d || !d.w || !d.h || !Array.isArray(d.frames) || !d.frames.length) return null;
+      try {
+        const w = clamp(d.w | 0, 1, MAX), h = clamp(d.h | 0, 1, MAX), P = presets[d.preset];
+        const dd = formats.newDoc({ w, h, name: safeName((P && P.key) || d.preset || "draft"), palette: boardPalette });
+        dd.frames = d.frames.map(() => ({ duration: Math.round(1000 / clamp(num(d.fps, 8), 1, 60)) }));
+        dd.cels[0] = d.frames.map(f => { const data = new Uint8ClampedArray(w * h * 4); if (Array.isArray(f)) f.forEach((c, i) => { const rgba = c && parseHex(c); if (rgba && i < w * h) data.set(rgba, i * 4); }); return { data, opacity: 255 }; });
+        const id = newId();
+        if (await storage.save(metaOf(dd, id, P ? d.preset : guessTemplate(presets, w, h)), await formats.encodeAseprite(dd))) { try { localStorage.removeItem("bs-art-studio"); } catch (e) {} return id; }
+      } catch (e) {}
+      return null;
+    }
+    async function init() {
+      newFromTemplate(presetKeys[0], { frames: 1 }); say("");
+      try {
+        const migrated = await migrateOldDraft(), last = store.get("bs-studio-last", null) || migrated;
+        if (last) {
+          const items = await storage.list(), m = items.find(x => x.id === last) || (migrated ? items.find(x => x.id === migrated) : null), bytes = m ? await storage.load(m.id) : null;
+          if (m && bytes) {
+            const d = await formats.decodeAseprite(bytes, { name: m.name }); d.name = m.name || d.name;
+            if (uiSaved.zoom > 0 && uiSaved.zoomFor === d.w + "x" + d.h) ui.restoreZoom = clamp(uiSaved.zoom, 0.25, 64);   // the zoom of the last visit, once the view has a size
+            openDoc(d, { id: m.id, template: m.template, message: migrated === m.id ? "Your earlier drawing was moved into the new studio." : "" });
+          }
+        }
+      } catch (e) { say("Could not reopen the last sprite: " + msg(e)); }
+      root.dataset.ready = "1";
+    }
+    init();
+    return api;
+  }
+  const PS = { mount, api: null };
+  return PS;
+})();
