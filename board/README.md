@@ -21,7 +21,8 @@ hex, 32 × 16 iso floor, 32 × 50 iso wall cell) or any size up to 256 × 256, w
 - **Tools.** Pencil (sizes 1–4, pixel-perfect), eraser, fill (contiguous or global), line, rectangle, ellipse,
   rectangle select with move / cut / copy / paste / flip / rotate, move with wrap for tiles, eyedropper, pan; mirror X
   and Y; undo and redo (100 steps); a Clear button that asks first (this frame on the layer, this frame, or the whole sprite;
-  the user's request 2026-10-29). Layers with visibility, lock, opacity, merge and flatten. Frames with their own
+  the user's request 2026-10-29). Transparent pixels show a checkerboard of darker and lighter squares 4 × 4 sprite
+  pixels a side, a size set in the Canvas panel (the user's request 2026-10-30). Layers with visibility, lock, opacity, merge and flatten. Frames with their own
   durations in ms, tags with a direction, playback of the sprite or a tag, onion skin, the animation preview and the
   tiled preview that lays a tile out the way the engine will.
 - **Aseprite's files.** Imports and exports `.aseprite` / `.ase` (layers, cels, durations, tags, the palette; indexed

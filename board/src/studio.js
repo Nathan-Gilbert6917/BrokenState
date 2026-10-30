@@ -241,7 +241,7 @@ window.PixelStudio = (function () {
       tool: TOOLS.some(t => t[0] === uiSaved.tool) ? uiSaved.tool : "pencil",
       size: clamp(Math.round(num(uiSaved.size, 1)), 1, 4), pixelPerfect: uiSaved.pixelPerfect !== false, fillGlobal: !!uiSaved.fillGlobal,
       shapeFill: !!uiSaved.shapeFill, wrap: !!uiSaved.wrap, mirrorX: !!uiSaved.mirrorX, mirrorY: !!uiSaved.mirrorY,
-      grid: uiSaved.grid !== false, guide: uiSaved.guide !== false, onion: !!uiSaved.onion,
+      grid: uiSaved.grid !== false, guide: uiSaved.guide !== false, onion: !!uiSaved.onion, checkSize: clamp(Math.round(num(uiSaved.checkSize, 4)), 1, 64),
       onionPrev: clamp(Math.round(num(uiSaved.onionPrev, 1)), 0, 3), onionNext: clamp(Math.round(num(uiSaved.onionNext, 1)), 0, 3), onionAlpha: clamp(num(uiSaved.onionAlpha, 40), 5, 90),
       panel: PANELS.some(p => p[0] === uiSaved.panel) ? uiSaved.panel : null, open: Object.assign({ frames: false, canvas: false, file: false }, uiSaved.open || {}),
       pvScale: clamp(Math.round(num(uiSaved.pvScale, 0)), 0, 8), recent: Array.isArray(uiSaved.recent) ? uiSaved.recent.filter(c => parseHex(c)).slice(0, 12) : [],
@@ -254,7 +254,7 @@ window.PixelStudio = (function () {
     function saveUi() {
       clearTimeout(saveUiT);
       saveUiT = setTimeout(() => store.set("bs-studio-ui", { tool: ui.tool, size: ui.size, pixelPerfect: ui.pixelPerfect, fillGlobal: ui.fillGlobal, shapeFill: ui.shapeFill, wrap: ui.wrap,
-        mirrorX: ui.mirrorX, mirrorY: ui.mirrorY, grid: ui.grid, guide: ui.guide, onion: ui.onion, onionPrev: ui.onionPrev, onionNext: ui.onionNext, onionAlpha: ui.onionAlpha,
+        mirrorX: ui.mirrorX, mirrorY: ui.mirrorY, grid: ui.grid, checkSize: ui.checkSize, guide: ui.guide, onion: ui.onion, onionPrev: ui.onionPrev, onionNext: ui.onionNext, onionAlpha: ui.onionAlpha,
         panel: ui.panel, open: ui.open, pvScale: ui.pvScale, recent: ui.recent, zoom: ui.zoom, zoomFor: doc ? doc.w + "x" + doc.h : null }), 200);
     }
 
@@ -318,14 +318,20 @@ window.PixelStudio = (function () {
       const panel = get("--panel"), ink = get("--ink"), pa = parseCss(panel), ia = parseCss(ink);
       probe.style.fontFamily = "var(--mono)";
       tok = { panel, ink, sunk: get("--sunk"), bg: get("--bg"), rule: get("--rule"), accent: get("--accent"), hive: get("--hive"), muted: get("--muted"), gold: get("--gold"),
-        mono: getComputedStyle(probe).fontFamily || "monospace", checkA: mixCss(pa, ia, .13), checkB: mixCss(pa, ia, .04) };
+        mono: getComputedStyle(probe).fontFamily || "monospace", checkA: mixCss(pa, ia, .16), checkB: mixCss(pa, ia, .05) };
       return tok;
     }
+    // The transparent background: squares of ui.checkSize sprite pixels (4 × 4 by default), a darker and a lighter one
+    // in turn, so they line up with the pixels and scale with the zoom. The tile is 2 × 2 squares of 1 px; the pattern's
+    // transform scales it to the squares' size on screen.
     function checker() {
-      const t = tokens(), key = t.checkA + t.checkB; if (pattern && key === patKey) return pattern;
-      const c = document.createElement("canvas"); c.width = c.height = 16; const x = c.getContext("2d");
-      x.fillStyle = t.checkB; x.fillRect(0, 0, 16, 16); x.fillStyle = t.checkA; x.fillRect(0, 0, 8, 8); x.fillRect(8, 8, 8, 8);
-      pattern = ctx.createPattern(c, "repeat"); patKey = key; return pattern;
+      const t = tokens(), key = t.checkA + t.checkB; if (!pattern || key !== patKey) {
+        const c = document.createElement("canvas"); c.width = c.height = 2; const x = c.getContext("2d");
+        x.fillStyle = t.checkB; x.fillRect(0, 0, 2, 2); x.fillStyle = t.checkA; x.fillRect(0, 0, 1, 1); x.fillRect(1, 1, 1, 1);
+        pattern = ctx.createPattern(c, "repeat"); patKey = key;
+      }
+      const sq = ui.checkSize * ui.zoom; try { pattern.setTransform(new DOMMatrix([sq, 0, 0, sq, 0, 0])); } catch (e) {}
+      return pattern;
     }
 
     // ---- rendering: per-layer 1:1 canvases from the cels, composed scaled on the view canvas with the overlays ----
@@ -1110,6 +1116,9 @@ window.PixelStudio = (function () {
         el("div", { class: "pxs-h", text: "Selection" }),
         el("div", { class: "pxs-row pxs-tight" }, ...SEL_ACTIONS.map(([ic, label, op]) => ib(ic, label, () => selOp(op)))),
         el("div", { class: "pxs-h", text: "Show" }),
+        el("div", { class: "pxs-row" }, field("Background squares (px)", numIn({ min: 1, max: 64, value: ui.checkSize, "aria-label": "Size of the background's squares in sprite pixels",
+          onchange: e => { ui.checkSize = clamp(Math.round(num(e.target.value, 4)), 1, 64); e.target.value = ui.checkSize; saveUi(); requestDraw(); } })),
+          el("span", { class: "pxs-note", text: "The checkerboard behind transparent pixels: darker and lighter squares this many pixels a side." })),
         el("div", { class: "pxs-row" }, check("Grid", "grid"), check("Template guide", "guide"), check("Mirror X", "mirrorX"), check("Mirror Y", "mirrorY"), check("Pixel-perfect", "pixelPerfect"), check("Onion skin", "onion")));
     }
 
@@ -1405,10 +1414,11 @@ window.PixelStudio = (function () {
     const api = {
       newFromTemplate: (key, o) => newFromTemplate(key, o), openDoc: (d, o) => openDoc(d, o), getDoc: () => doc, exportBytes: () => formats.encodeAseprite(doc),
       scrollIntoView: () => { const hdr = document.querySelector("header.top"), off = hdr && /sticky|fixed/.test(getComputedStyle(hdr).position) ? hdr.offsetHeight : 0; try { window.scrollTo({ top: window.scrollY + host.getBoundingClientRect().top - off - 6, behavior: "smooth" }); } catch (e) { host.scrollIntoView(); } },
-      getView: () => ({ zoom: ui.zoom, panX: ui.panX, panY: ui.panY, frame: ui.frame, layer: ui.layer, tool: ui.tool, panel: ui.panel, phone: ui.phone, full: ui.full, sel: ui.sel ? Object.assign({}, ui.sel) : null, template: cur.template, id: cur.id, playing: ui.playing }),
+      getView: () => ({ checkSize: ui.checkSize, zoom: ui.zoom, panX: ui.panX, panY: ui.panY, frame: ui.frame, layer: ui.layer, tool: ui.tool, panel: ui.panel, phone: ui.phone, full: ui.full, sel: ui.sel ? Object.assign({}, ui.sel) : null, template: cur.template, id: cur.id, playing: ui.playing }),
       undo: () => undo(), redo: () => redo(), root,
       newCustom: (w, h, n, name) => newCustom(w, h, n, name), showStart: () => showStart(), isStart: () => !startEl.hidden, destroy: () => destroy(),
-      askClear: () => askClear(), clear: scope => clearScope(scope)
+      askClear: () => askClear(), clear: scope => clearScope(scope),
+      setCheckSize: n => { ui.checkSize = clamp(Math.round(num(n, 4)), 1, 64); saveUi(); requestDraw(); return ui.checkSize; }
     };
     PS.api = api; PS.active = api;
     async function migrateOldDraft() {
