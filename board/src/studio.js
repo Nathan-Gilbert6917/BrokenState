@@ -241,7 +241,8 @@ window.PixelStudio = (function () {
       tool: TOOLS.some(t => t[0] === uiSaved.tool) ? uiSaved.tool : "pencil",
       size: clamp(Math.round(num(uiSaved.size, 1)), 1, 4), pixelPerfect: uiSaved.pixelPerfect !== false, fillGlobal: !!uiSaved.fillGlobal,
       shapeFill: !!uiSaved.shapeFill, wrap: !!uiSaved.wrap, mirrorX: !!uiSaved.mirrorX, mirrorY: !!uiSaved.mirrorY,
-      grid: uiSaved.grid !== false, guide: uiSaved.guide !== false, onion: !!uiSaved.onion, checkSize: clamp(Math.round(num(uiSaved.checkSize, 4)), 1, 64),
+      grid: uiSaved.pixelGrid === true,   // the pixel grid: off by default, like Aseprite (a new key, so an older saved "on" does not carry over)
+      guide: uiSaved.guide !== false, onion: !!uiSaved.onion, checkSize: clamp(Math.round(num(uiSaved.checkSize, 4)), 1, 64),
       onionPrev: clamp(Math.round(num(uiSaved.onionPrev, 1)), 0, 3), onionNext: clamp(Math.round(num(uiSaved.onionNext, 1)), 0, 3), onionAlpha: clamp(num(uiSaved.onionAlpha, 40), 5, 90),
       panel: PANELS.some(p => p[0] === uiSaved.panel) ? uiSaved.panel : null, open: Object.assign({ frames: false, canvas: false, file: false }, uiSaved.open || {}),
       pvScale: clamp(Math.round(num(uiSaved.pvScale, 0)), 0, 8), recent: Array.isArray(uiSaved.recent) ? uiSaved.recent.filter(c => parseHex(c)).slice(0, 12) : [],
@@ -254,7 +255,7 @@ window.PixelStudio = (function () {
     function saveUi() {
       clearTimeout(saveUiT);
       saveUiT = setTimeout(() => store.set("bs-studio-ui", { tool: ui.tool, size: ui.size, pixelPerfect: ui.pixelPerfect, fillGlobal: ui.fillGlobal, shapeFill: ui.shapeFill, wrap: ui.wrap,
-        mirrorX: ui.mirrorX, mirrorY: ui.mirrorY, grid: ui.grid, checkSize: ui.checkSize, guide: ui.guide, onion: ui.onion, onionPrev: ui.onionPrev, onionNext: ui.onionNext, onionAlpha: ui.onionAlpha,
+        mirrorX: ui.mirrorX, mirrorY: ui.mirrorY, pixelGrid: ui.grid, checkSize: ui.checkSize, guide: ui.guide, onion: ui.onion, onionPrev: ui.onionPrev, onionNext: ui.onionNext, onionAlpha: ui.onionAlpha,
         panel: ui.panel, open: ui.open, pvScale: ui.pvScale, recent: ui.recent, zoom: ui.zoom, zoomFor: doc ? doc.w + "x" + doc.h : null }), 200);
     }
 
@@ -321,17 +322,17 @@ window.PixelStudio = (function () {
         mono: getComputedStyle(probe).fontFamily || "monospace", checkA: mixCss(pa, ia, .16), checkB: mixCss(pa, ia, .05) };
       return tok;
     }
-    // The transparent background: squares of ui.checkSize sprite pixels (4 × 4 by default), a darker and a lighter one
-    // in turn, so they line up with the pixels and scale with the zoom. The tile is 2 × 2 squares of 1 px; the pattern's
-    // transform scales it to the squares' size on screen.
+    // The transparent background: hard-edged squares of ui.checkSize sprite pixels (4 × 4 by default, so a 16 × 16
+    // sprite shows 4 × 4 squares), a darker and a lighter one in turn, like Aseprite's. It is drawn once at the sprite's
+    // own size, one canvas pixel a sprite pixel, and scaled with smoothing off like the layers: a scaled pattern would
+    // be smoothed into gradients by some browsers.
     function checker() {
-      const t = tokens(), key = t.checkA + t.checkB; if (!pattern || key !== patKey) {
-        const c = document.createElement("canvas"); c.width = c.height = 2; const x = c.getContext("2d");
-        x.fillStyle = t.checkB; x.fillRect(0, 0, 2, 2); x.fillStyle = t.checkA; x.fillRect(0, 0, 1, 1); x.fillRect(1, 1, 1, 1);
-        pattern = ctx.createPattern(c, "repeat"); patKey = key;
-      }
-      const sq = ui.checkSize * ui.zoom; try { pattern.setTransform(new DOMMatrix([sq, 0, 0, sq, 0, 0])); } catch (e) {}
-      return pattern;
+      const t = tokens(), key = t.checkA + t.checkB + ":" + doc.w + "x" + doc.h + ":" + ui.checkSize;
+      if (pattern && key === patKey) return pattern;
+      const c = pattern && pattern.width !== undefined ? pattern : document.createElement("canvas"); c.width = doc.w; c.height = doc.h; const x = c.getContext("2d"), n = ui.checkSize;
+      x.fillStyle = t.checkB; x.fillRect(0, 0, doc.w, doc.h); x.fillStyle = t.checkA;
+      for (let y = 0; y < doc.h; y += n) for (let px = ((y / n) & 1) * n; px < doc.w; px += 2 * n) x.fillRect(px, y, n, n);
+      pattern = c; patKey = key; return c;
     }
 
     // ---- rendering: per-layer 1:1 canvases from the cels, composed scaled on the view canvas with the overlays ----
@@ -379,7 +380,7 @@ window.PixelStudio = (function () {
       drawQueued = false; if (!doc || !layout()) return;
       const d = dpr(), W = view.clientWidth, H = view.clientHeight, z = ui.zoom, w = doc.w, h = doc.h, t = tokens(), r = spriteRect(), ox = r.x, oy = r.y;
       ctx.setTransform(d, 0, 0, d, 0, 0); ctx.clearRect(0, 0, W, H); ctx.imageSmoothingEnabled = false;
-      ctx.save(); ctx.translate(ox, oy); ctx.fillStyle = checker(); ctx.fillRect(0, 0, r.w, r.h); ctx.restore();
+      ctx.drawImage(checker(), ox, oy, r.w, r.h);
       if (ui.onion && doc.frames.length > 1 && !ui.playing) {
         for (let k = ui.onionPrev; k >= 1; k--) { const f = ui.frame - k; if (f >= 0) { ctx.globalAlpha = (ui.onionAlpha / 100) / k; ctx.drawImage(onionCanvas(f, "prev"), ox, oy, r.w, r.h); } }
         for (let k = 1; k <= ui.onionNext; k++) { const f = ui.frame + k; if (f < doc.frames.length) { ctx.globalAlpha = (ui.onionAlpha / 100) / k; ctx.drawImage(onionCanvas(f, "next"), ox, oy, r.w, r.h); } }
@@ -1119,7 +1120,7 @@ window.PixelStudio = (function () {
         el("div", { class: "pxs-row" }, field("Background squares (px)", numIn({ min: 1, max: 64, value: ui.checkSize, "aria-label": "Size of the background's squares in sprite pixels",
           onchange: e => { ui.checkSize = clamp(Math.round(num(e.target.value, 4)), 1, 64); e.target.value = ui.checkSize; saveUi(); requestDraw(); } })),
           el("span", { class: "pxs-note", text: "The checkerboard behind transparent pixels: darker and lighter squares this many pixels a side." })),
-        el("div", { class: "pxs-row" }, check("Grid", "grid"), check("Template guide", "guide"), check("Mirror X", "mirrorX"), check("Mirror Y", "mirrorY"), check("Pixel-perfect", "pixelPerfect"), check("Onion skin", "onion")));
+        el("div", { class: "pxs-row" }, check("Pixel grid", "grid"), check("Template guide", "guide"), check("Mirror X", "mirrorX"), check("Mirror Y", "mirrorY"), check("Pixel-perfect", "pixelPerfect"), check("Onion skin", "onion")));
     }
 
     // file: new, the sprites on this device, import, export
