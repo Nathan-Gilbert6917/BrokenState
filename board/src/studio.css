@@ -189,3 +189,9 @@
 .pxs-modal .pxs-check { min-height: 44px; }
 .pxs-btn.pxs-danger { background: var(--hive); color: var(--panel); border-color: var(--hive); }
 .pxs-btn.pxs-danger:hover { color: var(--panel); filter: brightness(1.08); }
+
+/* the Art studio tab: the studio fills the view under the page's header */
+.artstudio { padding-block: 12px 16px; }
+.pxs-tab-host .pxs { border: 1px solid var(--rule); border-radius: 11px; height: calc(100dvh - 100px); min-height: 480px; max-height: none; }
+/* a phone: the header scrolls away (it is not sticky there), so the studio is the screen's height and the tab scrolls to it */
+@media (max-width: 560px) { .artstudio { padding-block: 8px; } .pxs-tab-host .pxs { height: calc(100dvh - 16px); } }

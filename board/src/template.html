@@ -255,6 +255,7 @@ pre.mermaid { background: var(--panel); border: 1px solid var(--rule); border-ra
       <a href="#stack" data-view="stack">Infrastructure</a>
       <a href="#learn" data-view="learn">Learn</a>
       <a href="#art" data-view="art">Art school</a>
+      <a href="#artstudio" data-view="artstudio">Art studio</a>
     </nav>
     <div class="engine-pick">Engine
       <div class="seg" role="group" aria-label="Engine notes to show">
@@ -309,6 +310,7 @@ pre.mermaid { background: var(--panel); border: 1px solid var(--rule); border-ra
   <div id="view-stack" data-viewpane="stack" hidden><div class="page wrap" id="stack-page"></div></div>
   <div id="view-learn" data-viewpane="learn" hidden><div class="page wrap" id="learn-page"></div></div>
   <div id="view-art" data-viewpane="art" hidden><div class="page wrap" id="art-page"></div></div>
+  <div id="view-artstudio" data-viewpane="artstudio" hidden><div class="artstudio wrap" id="artstudio-page"></div></div>
 </main>
 
 <div class="scrim" id="scrim" hidden></div>
@@ -600,7 +602,7 @@ const DATA = /*__DATA__*/null;
   }
 
   // ---- views ----
-  const VIEWS = ["board", "slice", "stack", "learn", "art"];
+  const VIEWS = ["board", "slice", "stack", "learn", "art", "artstudio"];
   function route() {
     const v = VIEWS.includes(location.hash.slice(1)) ? location.hash.slice(1) : "board";
     document.querySelectorAll("[data-viewpane]").forEach(n => n.hidden = n.dataset.viewpane !== v);

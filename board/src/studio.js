@@ -229,6 +229,7 @@ window.PixelStudio = (function () {
   // ---------- mount: the studio in a host element ----------
   function mount(host, opts) {
     const { el, store, formats, saveFile } = opts;
+    const viewHash = opts.view || "#art", onView = () => location.hash === viewHash;   // the page view the studio lives in: it draws and takes keys only there
     const startMode = !!opts.start, onClose = typeof opts.onClose === "function" ? opts.onClose : null;   // a fresh studio (PS.open): the start screen first; its Close removes it
     const presets = opts.presets || {}, presetKeys = Object.keys(presets);
     const boardPalette = (opts.palette && opts.palette.length ? opts.palette : ["#000000", "#ffffff"]).map(String);
@@ -275,7 +276,7 @@ window.PixelStudio = (function () {
     const nameBtn = el("button", { type: "button", class: "pxs-ib pxs-name", "aria-label": "Rename the sprite", title: "Rename", onclick: () => renameSprite() }, nameEl, dimEl);
     const savedEl = el("span", { class: "pxs-saved", text: "" });
     const undoBtn = ib("undo", "Undo", () => undo()), redoBtn = ib("redo", "Redo", () => redo()), fullBtn = ib("full", "Full screen", () => setFull(!ui.full));
-    const startBtn = onClose ? ib("home", "Start screen: create or import a sprite", () => showStart()) : ib("newwin", "Open a new studio: create or import a sprite", () => PS.open(opts));
+    const startBtn = onClose || startMode ? ib("home", "Start screen: create or import a sprite", () => showStart()) : ib("newwin", "Open the Art studio: create or import a sprite", () => opts.newStudio ? opts.newStudio() : PS.open(opts));
     const clearBtn = ib("clear", "Clear the drawing", () => askClear());
     const top = el("div", { class: "pxs-top", role: "toolbar", "aria-label": "Sprite" }, nameBtn, savedEl, startBtn, undoBtn, redoBtn, clearBtn, fullBtn);
     const modal = el("div", { class: "pxs-modal", role: "dialog", "aria-modal": "true", "aria-labelledby": "pxs-modal-t", hidden: true });
@@ -967,10 +968,10 @@ window.PixelStudio = (function () {
     const field = (label, input) => el("label", { class: "pxs-field" }, label, input);
     const numIn = (attrs) => el("input", Object.assign({ type: "number", inputmode: "numeric" }, attrs));
     function setCheckSize(v) { ui.checkSize = clamp(Math.round(num(v, 4)), 1, 64); saveUi(); requestDraw(); return ui.checkSize; }
-    const checkSizeIn = label => numIn({ min: 1, max: 64, value: ui.checkSize, "aria-label": label });
+    const checkSizeIn = label => numIn({ min: 1, max: 64, value: clamp(Math.round(num((store.get("bs-studio-ui", {}) || {}).checkSize, ui.checkSize)), 1, 64), "aria-label": label });   // the size last set in any studio
     const check = (label, key, onchange) => el("label", { class: "pxs-check" }, el("input", { type: "checkbox", "data-ui": key, checked: ui[key] ? true : null, onchange: e => { ui[key] = e.target.checked; renderOpts(); saveUi(); requestDraw(); if (onchange) onchange(); } }), label);
     function panelVisible(k) {
-      if (location.hash !== "#art") return false;
+      if (!onView()) return false;
       if (ui.phone) return ui.panel === k && root.classList.contains("pxs-open");
       return k === "colour" ? panelEls.colour.classList.contains("pxs-active") : (k in ui.open ? !!ui.open[k] : true);
     }
@@ -1353,7 +1354,7 @@ window.PixelStudio = (function () {
     // ---- the keyboard (a desktop): only while the Art school shows and no text field has the focus ----
     function inField() { const a = document.activeElement; if (!a) return false; const t = a.tagName; if (t === "TEXTAREA" || t === "SELECT" || a.isContentEditable) return true; return t === "INPUT" && !["range", "checkbox", "radio", "button", "file"].includes(a.type); }
     const onKeyDown = e => {
-      if (!doc || PS.active !== api || location.hash !== "#art" || inField()) return;
+      if (!doc || PS.active !== api || !onView() || inField()) return;
       const mod = e.ctrlKey || e.metaKey, k = e.key, onCanvas = document.activeElement === cv;
       if (!modal.hidden) { if (k === "Escape") { e.preventDefault(); closeModal(); } return; }
       if (k === "Escape") { if (ui.full) { e.preventDefault(); setFull(false); } else if (ui.float) commitFloat(); else if (ui.sel) selOp("none"); else if (ui.phone && root.classList.contains("pxs-open")) closePanel(); return; }
@@ -1381,7 +1382,7 @@ window.PixelStudio = (function () {
     const onKeyUp = e => {
       if (PS.active !== api) return;
       if (e.key === "Alt") { ui.alt = false; if (ui.tool !== "pick") cv.classList.remove("pxs-cur-pick"); }
-      if (e.key === " " && ui.space) { ui.space = false; if (ui.tool !== "pan") cv.classList.remove("pxs-cur-pan"); if (!ui.spaceUsed && doc && location.hash === "#art" && document.activeElement === cv) togglePlay(); }
+      if (e.key === " " && ui.space) { ui.space = false; if (ui.tool !== "pan") cv.classList.remove("pxs-cur-pan"); if (!ui.spaceUsed && doc && onView() && document.activeElement === cv) togglePlay(); }
     };
     document.addEventListener("keyup", onKeyUp);
 
@@ -1397,11 +1398,11 @@ window.PixelStudio = (function () {
     ui.phone = null;
     let ro = null, dead = false;
     try { ro = new ResizeObserver(() => onResize()); ro.observe(root); ro.observe(view); } catch (e) { window.addEventListener("resize", onResize); }
-    const onHash = () => { if (location.hash === "#art") setTimeout(() => { onResize(); openObs(); refreshPanels(); }, 0); };
+    const onHash = () => { if (onView()) { PS.active = api; } if (onView()) setTimeout(() => { onResize(); openObs(); refreshPanels(); }, 0); };
     window.addEventListener("hashchange", onHash);
     const onScheme = () => { tokAt = -1e9; requestDraw(); }; let mq = null;
     try { mq = matchMedia("(prefers-color-scheme: dark)"); mq.addEventListener("change", onScheme); } catch (e) {}
-    function loop(now) { if (dead) return; requestAnimationFrame(loop); if (!doc || location.hash !== "#art") return; tickPlay(now); tickPreview(now); if (drawQueued) draw(); }
+    function loop(now) { if (dead) return; requestAnimationFrame(loop); if (!doc || !onView()) return; tickPlay(now); tickPreview(now); if (drawQueued) draw(); }
     // the keyboard goes to one studio: the last one touched or focused (a fresh studio over the page takes it as it opens)
     root.addEventListener("pointerdown", () => { PS.active = api; }, true); root.addEventListener("focusin", () => { PS.active = api; });
     // a fresh studio closing: its pending save goes out, its listeners and loop stop, its element leaves the page

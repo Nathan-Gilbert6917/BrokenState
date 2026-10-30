@@ -9,9 +9,9 @@
 // strips under it reachable; full screen fixes the studio to the viewport and Escape leaves it; api.exportBytes()
 // reads back through AseFormats.decodeAseprite with the same size and frame count; a palette import by setting a
 // small .gpl on the file input; the drawing and the palette survive a reload (the autosave); api.openDoc and
-// newFromTemplate; "Open a new studio" puts a fresh full-screen studio over the page with the start screen, whose Create
-// makes a sprite of the typed width (x) and height (y), whose import takes a PNG, and whose Close removes it with the
-// page's own studio untouched (the keyboard goes only to the fresh one); the desktop's keyboard (E, B, Ctrl+Z); nothing
+// newFromTemplate; the Art studio tab shows its own studio with the start screen, whose Create makes a sprite of the
+// typed width (x), height (y) and background squares, and whose import takes a PNG, with the Art school's studio
+// untouched (the keyboard goes to the studio of the view showing); the desktop's keyboard (E, B, Ctrl+Z); nothing
 // overflows the viewport sideways, the strips never overlap the canvas, and the page's sections below the studio still
 // render. With --shots dir, a screenshot of each
 // state at both sizes, in light and dark, goes into dir. Prints ok / FAIL lines, a count, and exits 1 on any FAIL.
@@ -73,11 +73,11 @@ async function run(browser, base, phone, tmp) {
   const scrollToStudio = async () => { await page.evaluate(() => { const h = document.querySelector(".pxs"), hdr = document.querySelector("header.top"); const off = /sticky|fixed/.test(getComputedStyle(hdr).position) ? hdr.offsetHeight : 0; window.scrollTo(0, window.scrollY + h.getBoundingClientRect().top - off - 4); }); await sleep(150); };
   const ready = async () => { await page.waitForSelector('.pxs[data-ready="1"]', { timeout: 20000 }); await sleep(300); await scrollToStudio(); };
   const openPanel = async k => {
-    if (phone) { const tab = page.locator(`.pxs-tabs button[aria-controls="pxs-panel-${k}"]`); if ((await tab.getAttribute("aria-pressed")) !== "true") await tab.click(); }
-    else { const sec = page.locator(`.pxs-panel[data-panel="${k}"]`); if ((await sec.getAttribute("class")).includes("pxs-closed")) await sec.locator(".pxs-collapse").click(); }
+    if (phone) { const tab = page.locator(`#art-page .pxs-tabs button[aria-controls="pxs-panel-${k}"]`); if ((await tab.getAttribute("aria-pressed")) !== "true") await tab.click(); }
+    else { const sec = page.locator(`#art-page .pxs-panel[data-panel="${k}"]`); if ((await sec.getAttribute("class")).includes("pxs-closed")) await sec.locator(".pxs-collapse").click(); }
     await sleep(250);
   };
-  const closePanel = async k => { if (phone) { const tab = page.locator(`.pxs-tabs button[aria-controls="pxs-panel-${k}"]`); if ((await tab.getAttribute("aria-pressed")) === "true") await tab.click(); await sleep(150); } };
+  const closePanel = async k => { if (phone) { const tab = page.locator(`#art-page .pxs-tabs button[aria-controls="pxs-panel-${k}"]`); if ((await tab.getAttribute("aria-pressed")) === "true") await tab.click(); await sleep(150); } };
   const view = () => page.evaluate(() => PixelStudio.api.getView());
   const docInfo = () => page.evaluate(() => { const d = PixelStudio.api.getDoc(); return { w: d.w, h: d.h, frames: d.frames.length, layers: d.layers.length, palette: d.palette.length, name: d.name }; });
 
@@ -100,7 +100,7 @@ async function run(browser, base, phone, tmp) {
   check((await topStrip()) === "ok", "the top strip's buttons and labels do not overlap", await topStrip());
 
   // a stroke with a colour that is not under the pointer yet
-  await page.locator(".pxs-pal .pxs-sw").nth(11).click(); await sleep(100);
+  await page.locator("#art-page .pxs-pal .pxs-sw").nth(11).click(); await sleep(100);
   const c = await page.evaluate(CENTRE);
   const h0 = await page.evaluate(HASH);
   await stroke([c.x, c.y], [c.x + c.cell * 3, c.y + c.cell * 2]); await sleep(200);
@@ -115,17 +115,17 @@ async function run(browser, base, phone, tmp) {
   const z1 = (await view()).zoom, h2 = await page.evaluate(HASH);
   check(z1 > z0, (phone ? "a two-finger pinch" : "the mouse wheel") + ` changes the zoom (${Math.round(z0 * 100)}% to ${Math.round(z1 * 100)}%)`);
   check(h2 === h1, (phone ? "the pinch" : "the wheel") + " draws nothing");
-  await page.locator('.pxs-zoom [aria-label="Fit the sprite in the view"]').click(); await sleep(150);
+  await page.locator('#art-page .pxs-zoom [aria-label="Fit the sprite in the view"]').click(); await sleep(150);
 
   // frames, undo
-  await page.locator('.pxs-time [aria-label="Add frame"]').click(); await sleep(200);
+  await page.locator('#art-page .pxs-time [aria-label="Add frame"]').click(); await sleep(200);
   let d = await docInfo(), v = await view();
   check(d.frames === 2 && v.frame === 1, "add frame makes a second frame and shows it");
-  await page.locator(".pxs-frs .pxs-fr").nth(0).click(); await sleep(150);
+  await page.locator("#art-page .pxs-frs .pxs-fr").nth(0).click(); await sleep(150);
   v = await view(); check(v.frame === 0, "tapping a frame thumbnail switches to it");
-  await page.locator('.pxs-top [aria-label="Undo"]').click(); await sleep(200);
+  await page.locator('#art-page .pxs-top [aria-label="Undo"]').click(); await sleep(200);
   d = await docInfo(); check(d.frames === 1, "undo takes the added frame back");
-  await page.locator('.pxs-top [aria-label="Redo"]').click(); await sleep(200);
+  await page.locator('#art-page .pxs-top [aria-label="Redo"]').click(); await sleep(200);
   d = await docInfo(); check(d.frames === 2, "redo brings it back");
   await shot("frames");
   await page.waitForFunction(() => document.querySelector(".pxs-saved").textContent.startsWith("Saved"), null, { timeout: 5000 }).catch(() => {});
@@ -137,7 +137,7 @@ async function run(browser, base, phone, tmp) {
   const bg = { a: await px(1, 1), b: await px(5, 1), c: await px(5, 5), d: await px(2, 2) };
   check((await view()).checkSize === 4 && bg.a === bg.d && bg.a === bg.c && bg.a !== bg.b, "the background is 4 × 4 pixel squares, darker and lighter in turn", JSON.stringify(bg));
   await openPanel("canvas");
-  const sz = page.locator('.pxs-panel[data-panel="canvas"] input[aria-label^="Size of the background"]');
+  const sz = page.locator('#art-page .pxs-panel[data-panel="canvas"] input[aria-label^="Size of the background"]');
   await sz.fill("2"); await sz.dispatchEvent("change"); await sleep(250); await closePanel("canvas");
   const bg2 = { a: await px(1, 1), b: await px(2, 1) };
   check((await view()).checkSize === 2 && bg2.a !== bg2.b, "the Canvas panel sets the squares to 2 × 2 pixels", JSON.stringify(bg2));
@@ -146,35 +146,35 @@ async function run(browser, base, phone, tmp) {
 
   // clear, asked first
   const hc0 = await page.evaluate(HASH);
-  await page.locator('.pxs-top [aria-label="Clear the drawing"]').click(); await sleep(200);
+  await page.locator('#art-page .pxs-top [aria-label="Clear the drawing"]').click(); await sleep(200);
   const md = await page.evaluate(() => { const m = document.querySelector(".pxs-modal"); return { open: !!m && !m.hidden, radios: m ? m.querySelectorAll('input[type="radio"]').length : 0, focus: document.activeElement && document.activeElement.textContent }; });
   check(md.open && md.radios === 3, "the Clear button asks first, with three scopes", JSON.stringify(md));
   await shot("clear-ask");
-  await page.locator('.pxs-modal button:has-text("Cancel")').click(); await sleep(150);
+  await page.locator('#art-page .pxs-modal button:has-text("Cancel")').click(); await sleep(150);
   check((await page.evaluate(HASH)) === hc0 && (await page.evaluate(() => document.querySelector(".pxs-modal").hidden)), "Cancel keeps the drawing and closes the dialog");
-  await page.locator('.pxs-top [aria-label="Clear the drawing"]').click(); await sleep(150);
-  await page.locator('.pxs-modal input[value="all"]').check();
-  await page.locator('.pxs-modal button:has-text("Clear")').click(); await sleep(250);
+  await page.locator('#art-page .pxs-top [aria-label="Clear the drawing"]').click(); await sleep(150);
+  await page.locator('#art-page .pxs-modal input[value="all"]').check();
+  await page.locator('#art-page .pxs-modal button:has-text("Clear")').click(); await sleep(250);
   const empty = await page.evaluate(() => PixelStudio.api.getDoc().cels.every(L => L.every(c => !c || c.data.every(v => v === 0))));
   check(empty, "Clear with the whole-sprite scope empties every cel");
-  await page.locator('.pxs-top [aria-label="Undo"]').click(); await sleep(200);
+  await page.locator('#art-page .pxs-top [aria-label="Undo"]').click(); await sleep(200);
   check((await page.evaluate(HASH)) === hc0, "Undo brings the drawing back after a clear");
 
   // the colour editor
-  await page.locator(".pxs-fgbg .pxs-sw").nth(0).click(); await sleep(250);
-  const colourVisible = await page.locator('.pxs-panel[data-panel="colour"]').isVisible();
+  await page.locator("#art-page .pxs-fgbg .pxs-sw").nth(0).click(); await sleep(250);
+  const colourVisible = await page.locator('#art-page .pxs-panel[data-panel="colour"]').isVisible();
   check(colourVisible, "tapping the foreground swatch opens the colour editor");
-  const hex = page.locator('.pxs-panel[data-panel="colour"] input[type="text"]');
+  const hex = page.locator('#art-page .pxs-panel[data-panel="colour"] input[type="text"]');
   await hex.fill("#ff00ff"); await hex.press("Enter"); await hex.dispatchEvent("change"); await sleep(150);
   const fgNow = await page.evaluate(() => getComputedStyle(document.querySelector(".pxs-fgbg .pxs-sw i")).backgroundColor);
   check(/rgba?\(255,\s*0,\s*255/.test(fgNow), "the hex field sets the foreground colour", fgNow);
   await shot("colour");
-  await page.locator('.pxs-panel[data-panel="colour"] .pxs-close').click(); await sleep(150);
+  await page.locator('#art-page .pxs-panel[data-panel="colour"] .pxs-close').click(); await sleep(150);
 
   // every panel
   for (const k of ["layers", "palette", "frames", "preview", "canvas", "file"]) {
     await openPanel(k);
-    const sec = page.locator(`.pxs-panel[data-panel="${k}"]`);
+    const sec = page.locator(`#art-page .pxs-panel[data-panel="${k}"]`);
     const visible = await sec.isVisible(), controls = await sec.locator("button, input, select").count();
     check(visible && controls > 0, `the ${k} panel opens with its controls (${controls})`);
     if (phone) {
@@ -187,7 +187,7 @@ async function run(browser, base, phone, tmp) {
   }
 
   // full screen
-  await page.locator('.pxs-top [aria-label="Full screen"]').click(); await sleep(400);
+  await page.locator('#art-page .pxs-top [aria-label="Full screen"]').click(); await sleep(400);
   const full = await page.evaluate(() => { const r = document.querySelector(".pxs").getBoundingClientRect(); return { cls: document.querySelector(".pxs").className, w: r.width, h: r.height, x: r.left, y: r.top, iw: innerWidth, ih: innerHeight, body: getComputedStyle(document.body).overflow }; });
   check(full.cls.includes("pxs-full") && Math.abs(full.w - full.iw) < 2 && Math.abs(full.h - full.ih) < 2 && full.x < 1 && full.y < 1 && full.body === "hidden", "full screen fixes the studio over the whole viewport and locks the page's scroll", JSON.stringify(full));
   await shot("full");
@@ -202,7 +202,7 @@ async function run(browser, base, phone, tmp) {
   // a palette import
   await openPanel("palette");
   const gpl = path.join(tmp, "smoke.gpl"); fs.writeFileSync(gpl, GPL);
-  await page.locator('.pxs-panel[data-panel="palette"] input[type="file"]').setInputFiles(gpl); await sleep(400);
+  await page.locator('#art-page .pxs-panel[data-panel="palette"] input[type="file"]').setInputFiles(gpl); await sleep(400);
   d = await docInfo(); check(d.palette === 3, "a .gpl set on the palette input replaces the palette (" + d.palette + " colours)");
   await shot("palette-import");
   await closePanel("palette");
@@ -210,7 +210,7 @@ async function run(browser, base, phone, tmp) {
   // autosave and reload
   const hBefore = await page.evaluate(HASH);
   await page.waitForFunction(() => document.querySelector(".pxs-saved").textContent.startsWith("Saved"), null, { timeout: 5000 }).catch(() => {});
-  const savedText = await page.locator(".pxs-saved").textContent();
+  const savedText = await page.locator("#art-page .pxs-saved").textContent();
   check(savedText.startsWith("Saved"), "the autosave reports Saved (" + savedText + ")");
   await page.reload(); await ready();
   const hAfter = await page.evaluate(HASH), dAfter = await docInfo();
@@ -224,50 +224,54 @@ async function run(browser, base, phone, tmp) {
   check(nt.w === 48 && nt.h === 52 && nt.frames === 4 && nt.template === "char", "api.newFromTemplate('char', { frames: 4 }) opens a 48 × 52 sprite with 4 frames");
   await sleep(200); await shot("char-template");
 
-  // a fresh studio over the page: the start screen makes a sprite of the typed width (x) and height (y), or imports one
+  // the Art studio tab: its own studio, starting from the start screen, which makes a sprite of the typed width (x) and
+  // height (y) or imports one; the Art school's studio is untouched
   await page.evaluate(() => { window.__pageStudio = PixelStudio.api; });
-  await scrollToStudio();
-  await page.locator('#studio .tool-h button:has-text("Open a new studio")').click(); await sleep(500);
-  const st = await page.evaluate(() => { const o = document.querySelector(".pxs-overlay .pxs"), s = o && o.querySelector(".pxs-start"); const r = s && s.getBoundingClientRect(); return { overlay: !!o, full: !!o && o.className.includes("pxs-full"), start: !!s && !s.hidden && r.height > 100, fresh: !!o && PixelStudio.api.root === o && PixelStudio.active === PixelStudio.api, cards: s ? s.querySelectorAll(".pxs-card").length : 0 }; });
-  check(st.overlay && st.full && st.start && st.fresh && st.cards === 3, "Open a new studio puts a fresh full-screen studio over the page with the start screen (create, import, saved)", JSON.stringify(st));
+  check(await page.evaluate(() => !document.querySelector('#studio button') || ![...document.querySelectorAll('#studio .tool-h button')].some(b => /new studio/i.test(b.textContent))), "the Art school has no new-studio button of its own");
+  await page.locator('nav.tabs a[data-view="artstudio"]').click(); await sleep(600);
+  const AS = "window.artStudio";
+  const st = await page.evaluate(() => { const a = window.artStudio, s = a && a.root.querySelector(".pxs-start"), r = a && a.root.getBoundingClientRect(); return { tab: location.hash, shown: !!a && r.height > 300, start: !!s && !s.hidden, cards: s ? s.querySelectorAll(".pxs-card").length : 0, art: document.getElementById("view-art").hidden, active: PixelStudio.active === a }; });
+  check(st.tab === "#artstudio" && st.shown && st.start && st.cards === 3 && st.art && st.active, "the Art studio tab shows its own studio with the start screen (create, import, saved)", JSON.stringify(st));
   await shot("start");
   if (phone) { await page.emulateMedia({ colorScheme: "dark" }); await sleep(150); await shot("start-dark"); await page.emulateMedia({ colorScheme: "light" }); }
-  const startEl = page.locator(".pxs-overlay .pxs-start");
+  const asRoot = page.locator("#artstudio-page .pxs"), startEl = asRoot.locator(".pxs-start");
   await startEl.locator('input[aria-label="Name of the new sprite"]').fill("smoke");
   await startEl.locator('input[aria-label^="Width of the new sprite"]').fill("24");
   await startEl.locator('input[aria-label^="Height of the new sprite"]').fill("40");
   await startEl.locator('input[aria-label^="Size of the background"]').fill("8");
   await startEl.locator('button:has-text("Create")').click(); await sleep(300);
-  const nd = await page.evaluate(() => { const d = PixelStudio.api.getDoc(); return { w: d.w, h: d.h, name: d.name, start: PixelStudio.api.isStart(), pageW: window.__pageStudio.getDoc().w, bg: PixelStudio.api.getView().checkSize }; });
+  const nd = await page.evaluate(() => { const a = window.artStudio, d = a.getDoc(); return { w: d.w, h: d.h, name: d.name, start: a.isStart(), pageW: window.__pageStudio.getDoc().w, bg: a.getView().checkSize }; });
   check(nd.bg === 8, "the start screen's background squares field sets the new sprite's squares to 8 px", JSON.stringify(nd));
-  check(nd.w === 24 && nd.h === 40 && nd.name === "smoke" && !nd.start && nd.pageW === 48, "Create makes a 24 × 40 sprite named smoke in the fresh studio, leaves the start screen, and the page's studio keeps its own sprite", JSON.stringify(nd));
+  check(nd.w === 24 && nd.h === 40 && nd.name === "smoke" && !nd.start && nd.pageW === 48, "Create makes a 24 × 40 sprite named smoke in the Art studio, and the Art school's studio keeps its own sprite", JSON.stringify(nd));
+  if (phone) { const fit = await page.evaluate(() => { const r = window.artStudio.root.getBoundingClientRect(); return { top: Math.round(r.top), bottom: Math.round(r.bottom), ih: innerHeight }; });
+    check(fit.top >= 0 && fit.bottom <= fit.ih + 1, "on a phone the Art studio fits the screen, its strips all showing", JSON.stringify(fit)); }
   await shot("new-studio");
   const toolBefore = await page.evaluate(() => window.__pageStudio.getView().tool);
   if (!phone) {
-    await page.locator(".pxs-overlay .pxs-cv").click({ position: { x: 5, y: 5 } }); await sleep(100);
+    await asRoot.locator(".pxs-cv").click({ position: { x: 5, y: 5 } }); await sleep(100);
     await page.keyboard.press("e"); await sleep(80);
-    const kb = await page.evaluate(() => ({ fresh: PixelStudio.api.getView().tool, page: window.__pageStudio.getView().tool }));
-    check(kb.fresh === "eraser" && kb.page === toolBefore, "a key goes to the fresh studio only", JSON.stringify(kb));
+    const kb = await page.evaluate(() => ({ fresh: window.artStudio.getView().tool, page: window.__pageStudio.getView().tool }));
+    check(kb.fresh === "eraser" && kb.page === toolBefore, "a key goes to the Art studio only", JSON.stringify(kb));
   }
-  await page.locator('.pxs-overlay .pxs-top [aria-label^="Start screen"]').click(); await sleep(300);
-  check(await page.evaluate(() => PixelStudio.api.isStart()), "the home button brings the start screen back");
+  await asRoot.locator('.pxs-top [aria-label^="Start screen"]').click(); await sleep(300);
+  check(await page.evaluate(() => window.artStudio.isStart()), "the home button brings the start screen back");
   const dataUrl = await page.evaluate(() => { const c = document.createElement("canvas"); c.width = 12; c.height = 7; const x = c.getContext("2d"); x.fillStyle = "#ff0000"; x.fillRect(0, 0, 6, 7); x.fillStyle = "#0000ff"; x.fillRect(6, 0, 6, 7); return c.toDataURL("image/png"); });
   const png = path.join(tmp, "smoke.png"); fs.writeFileSync(png, Buffer.from(dataUrl.split(",")[1], "base64"));
-  await page.locator('.pxs-overlay .pxs-start input[type="file"]').setInputFiles(png); await sleep(600);
-  const imp = await page.evaluate(() => { const d = PixelStudio.api.getDoc(); return { w: d.w, h: d.h, name: d.name, start: PixelStudio.api.isStart(), palette: d.palette.length }; });
+  await startEl.locator('input[type="file"]').setInputFiles(png); await sleep(600);
+  const imp = await page.evaluate(() => { const d = window.artStudio.getDoc(); return { w: d.w, h: d.h, name: d.name, start: window.artStudio.isStart(), palette: d.palette.length }; });
   check(imp.w === 12 && imp.h === 7 && imp.name === "smoke" && !imp.start && imp.palette === 2, "a PNG set on the start screen's import opens as a 12 × 7 sprite with its two colours", JSON.stringify(imp));
-  await page.evaluate(() => PixelStudio.api.setCheckSize(4));
-  await page.locator('.pxs-overlay .pxs-top [aria-label="Close this studio"]').click(); await sleep(400);
-  const closed = await page.evaluate(() => ({ overlay: !!document.querySelector(".pxs-overlay"), back: PixelStudio.api === window.__pageStudio && PixelStudio.active === window.__pageStudio, body: getComputedStyle(document.body).overflow, pageTool: window.__pageStudio.getView().tool, pageW: window.__pageStudio.getDoc().w }));
-  check(!closed.overlay && closed.back && closed.body !== "hidden" && closed.pageTool === toolBefore && closed.pageW === 48, "Close removes the fresh studio and the page's studio carries on where it was", JSON.stringify(closed));
-  await scrollToStudio();
+  await page.evaluate(() => window.artStudio.setCheckSize(4));
+  await page.locator('nav.tabs a[data-view="art"]').click(); await sleep(500);
+  const back = await page.evaluate(() => ({ active: PixelStudio.active === window.__pageStudio, tool: window.__pageStudio.getView().tool, w: window.__pageStudio.getDoc().w }));
+  check(back.active && back.tool === toolBefore && back.w === 48, "back on the Art school its studio has the keyboard and carries on where it was", JSON.stringify(back));
+  await page.waitForSelector('.pxs[data-ready="1"]'); await scrollToStudio();
 
   if (!phone) {
-    await page.locator(".pxs-cv").click({ position: { x: 5, y: 5 } }); await sleep(100);
+    await page.locator("#art-page .pxs-cv").click({ position: { x: 5, y: 5 } }); await sleep(100);
     await page.keyboard.press("e"); await sleep(50); const te = (await view()).tool;
     await page.keyboard.press("b"); await sleep(50); const tb = (await view()).tool;
     check(te === "eraser" && tb === "pencil", "E and B pick the eraser and the pencil");
-    await page.locator(".pxs-frs .pxs-fr").nth(0).click(); await sleep(100);
+    await page.locator("#art-page .pxs-frs .pxs-fr").nth(0).click(); await sleep(100);
     const c2 = await page.evaluate(CENTRE), hh0 = await page.evaluate(HASH);
     await stroke([c2.x, c2.y], [c2.x + c2.cell * 4, c2.y]); await sleep(150);
     const hh1 = await page.evaluate(HASH);
