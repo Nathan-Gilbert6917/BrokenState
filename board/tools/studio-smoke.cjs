@@ -131,6 +131,19 @@ async function run(browser, base, phone, tmp) {
   await page.waitForFunction(() => document.querySelector(".pxs-saved").textContent.startsWith("Saved"), null, { timeout: 5000 }).catch(() => {});
   check((await topStrip()) === "ok", "the top strip still fits with the frame count and Saved showing", await topStrip());
 
+  // the background: 4 × 4 pixel squares by default, a size set in the Canvas panel
+  const px = (sx, sy) => page.evaluate(([sx, sy]) => { const c = document.querySelector(".pxs-cv"), v = PixelStudio.api.getView(), r = window.devicePixelRatio; const d = c.getContext("2d").getImageData(Math.round((v.panX + (sx + .5) * v.zoom) * r), Math.round((v.panY + (sy + .5) * v.zoom) * r), 1, 1).data; return d[0] + "," + d[1] + "," + d[2]; }, [sx, sy]);
+  await page.evaluate(() => { const d = PixelStudio.api.getDoc(); window.__keep = { d, id: PixelStudio.api.getView().id }; PixelStudio.api.openDoc(AseFormats.newDoc({ w: 16, h: 16, name: "bg", palette: d.palette })); }); await sleep(300);
+  const bg = { a: await px(1, 1), b: await px(5, 1), c: await px(5, 5), d: await px(2, 2) };
+  check((await view()).checkSize === 4 && bg.a === bg.d && bg.a === bg.c && bg.a !== bg.b, "the background is 4 × 4 pixel squares, darker and lighter in turn", JSON.stringify(bg));
+  await openPanel("canvas");
+  const sz = page.locator('.pxs-panel[data-panel="canvas"] input[aria-label^="Size of the background"]');
+  await sz.fill("2"); await sz.dispatchEvent("change"); await sleep(250); await closePanel("canvas");
+  const bg2 = { a: await px(1, 1), b: await px(2, 1) };
+  check((await view()).checkSize === 2 && bg2.a !== bg2.b, "the Canvas panel sets the squares to 2 × 2 pixels", JSON.stringify(bg2));
+  await shot("checker-2");
+  await page.evaluate(() => { PixelStudio.api.setCheckSize(4); PixelStudio.api.openDoc(window.__keep.d, { id: window.__keep.id }); }); await sleep(250);
+
   // clear, asked first
   const hc0 = await page.evaluate(HASH);
   await page.locator('.pxs-top [aria-label="Clear the drawing"]').click(); await sleep(200);
