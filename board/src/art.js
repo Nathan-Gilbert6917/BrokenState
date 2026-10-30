@@ -52,7 +52,7 @@ window.renderArt = function (H) {
     catch (e) { throw new Error(e && e.code === "declined" ? "Not saved." : "Could not save " + filename + " here."); }
   }
   const studioHost = el("div", { class: "pxs-host" });
-  const studioOpts = { el, store, presets: PRESETS, palette: PALETTE, formats: window.AseFormats, saveFile };
+  const studioOpts = { el, store, presets: PRESETS, palette: PALETTE, formats: window.AseFormats, saveFile, newStudio: () => { location.hash = "#artstudio"; } };
   let studio = null;   // the studio's api, mounted once the page is in the document
 
   // ---------- sheet player ----------
@@ -187,8 +187,7 @@ window.renderArt = function (H) {
     el("section", { class: "tracks" }, el("h3", { text: "Five tracks" }), trackBtns, trackPane),
     el("section", { id: "studio", class: "tool pxs-section" }, el("div", { class: "tool-h" }, el("h3", { text: "Pixel studio" }),
       el("p", { text: "An Aseprite-like editor for the game's sprites and tiles, made for a phone: draw with one finger and pinch to zoom, add layers and frames, tag animations, and import or export Aseprite files, palettes, sheets and GIFs; your sprites are kept in this browser." }),
-      el("div", { class: "row-btns" }, el("button", { type: "button", class: "btn primary", onclick: () => { if (window.PixelStudio) window.PixelStudio.open(studioOpts); }, text: "Open a new studio" }),
-        el("span", { class: "note", text: "A fresh studio over the whole page: create a sprite with its width and height, or import one." }))),
+      el("p", { class: "note" }, "For a sprite of your own, start one in the ", el("a", { href: "#artstudio", text: "Art studio" }), " tab: it asks for the width and height, or an import.")),
       studioHost),
     el("section", { class: "tool" }, el("div", { class: "tool-h" }, el("h3", { text: "Sprite sheet player" }), spNote),
       el("div", { class: "studio" },
@@ -209,6 +208,18 @@ window.renderArt = function (H) {
 
   renderTrack(); camText();
   studio = window.PixelStudio ? window.PixelStudio.mount(studioHost, studioOpts) : null;
+  // The Art studio tab: its own studio filling the view, starting from the start screen (a new sprite with its width
+  // and height and its background squares, an import, or a saved sprite). It draws and takes keys only on #artstudio.
+  const asPage = document.getElementById("artstudio-page");
+  if (asPage && window.PixelStudio) {
+    const asHost = el("div", { class: "pxs-host pxs-tab-host" }); asPage.append(asHost);
+    window.artStudio = window.PixelStudio.mount(asHost, Object.assign({}, studioOpts, { view: "#artstudio", start: true, newStudio: null }));
+    if (studio) window.PixelStudio.api = studio;   // the Art school's studio stays the default api
+    window.PixelStudio.active = location.hash === "#artstudio" ? window.artStudio : studio;   // the keyboard: the studio of the view showing
+    // on a phone the header is not sticky: opening the tab scrolls the studio to the top of the screen, which it fills
+    const toStudio = () => { if (location.hash === "#artstudio" && matchMedia("(max-width: 560px)").matches) setTimeout(() => window.scrollTo({ top: asHost.getBoundingClientRect().top + window.scrollY - 8 }), 0); };
+    window.addEventListener("hashchange", toStudio); toStudio();
+  }
   window.addEventListener("resize", fitCam); window.addEventListener("hashchange", () => { if (location.hash === "#art") setTimeout(fitCam, 0); });
   setTimeout(fitCam, 0);
   requestAnimationFrame(spLoop); requestAnimationFrame(camLoop);

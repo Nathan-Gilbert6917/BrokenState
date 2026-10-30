@@ -229,6 +229,7 @@ window.PixelStudio = (function () {
   // ---------- mount: the studio in a host element ----------
   function mount(host, opts) {
     const { el, store, formats, saveFile } = opts;
+    const viewHash = opts.view || "#art", onView = () => location.hash === viewHash;   // the page view the studio lives in: it draws and takes keys only there
     const startMode = !!opts.start, onClose = typeof opts.onClose === "function" ? opts.onClose : null;   // a fresh studio (PS.open): the start screen first; its Close removes it
     const presets = opts.presets || {}, presetKeys = Object.keys(presets);
     const boardPalette = (opts.palette && opts.palette.length ? opts.palette : ["#000000", "#ffffff"]).map(String);
@@ -241,7 +242,8 @@ window.PixelStudio = (function () {
       tool: TOOLS.some(t => t[0] === uiSaved.tool) ? uiSaved.tool : "pencil",
       size: clamp(Math.round(num(uiSaved.size, 1)), 1, 4), pixelPerfect: uiSaved.pixelPerfect !== false, fillGlobal: !!uiSaved.fillGlobal,
       shapeFill: !!uiSaved.shapeFill, wrap: !!uiSaved.wrap, mirrorX: !!uiSaved.mirrorX, mirrorY: !!uiSaved.mirrorY,
-      grid: uiSaved.grid !== false, guide: uiSaved.guide !== false, onion: !!uiSaved.onion, checkSize: clamp(Math.round(num(uiSaved.checkSize, 4)), 1, 64),
+      grid: uiSaved.pixelGrid === true,   // the pixel grid: off by default, like Aseprite (a new key, so an older saved "on" does not carry over)
+      guide: uiSaved.guide !== false, onion: !!uiSaved.onion, checkSize: clamp(Math.round(num(uiSaved.checkSize, 4)), 1, 64),
       onionPrev: clamp(Math.round(num(uiSaved.onionPrev, 1)), 0, 3), onionNext: clamp(Math.round(num(uiSaved.onionNext, 1)), 0, 3), onionAlpha: clamp(num(uiSaved.onionAlpha, 40), 5, 90),
       panel: PANELS.some(p => p[0] === uiSaved.panel) ? uiSaved.panel : null, open: Object.assign({ frames: false, canvas: false, file: false }, uiSaved.open || {}),
       pvScale: clamp(Math.round(num(uiSaved.pvScale, 0)), 0, 8), recent: Array.isArray(uiSaved.recent) ? uiSaved.recent.filter(c => parseHex(c)).slice(0, 12) : [],
@@ -254,7 +256,7 @@ window.PixelStudio = (function () {
     function saveUi() {
       clearTimeout(saveUiT);
       saveUiT = setTimeout(() => store.set("bs-studio-ui", { tool: ui.tool, size: ui.size, pixelPerfect: ui.pixelPerfect, fillGlobal: ui.fillGlobal, shapeFill: ui.shapeFill, wrap: ui.wrap,
-        mirrorX: ui.mirrorX, mirrorY: ui.mirrorY, grid: ui.grid, checkSize: ui.checkSize, guide: ui.guide, onion: ui.onion, onionPrev: ui.onionPrev, onionNext: ui.onionNext, onionAlpha: ui.onionAlpha,
+        mirrorX: ui.mirrorX, mirrorY: ui.mirrorY, pixelGrid: ui.grid, checkSize: ui.checkSize, guide: ui.guide, onion: ui.onion, onionPrev: ui.onionPrev, onionNext: ui.onionNext, onionAlpha: ui.onionAlpha,
         panel: ui.panel, open: ui.open, pvScale: ui.pvScale, recent: ui.recent, zoom: ui.zoom, zoomFor: doc ? doc.w + "x" + doc.h : null }), 200);
     }
 
@@ -274,7 +276,7 @@ window.PixelStudio = (function () {
     const nameBtn = el("button", { type: "button", class: "pxs-ib pxs-name", "aria-label": "Rename the sprite", title: "Rename", onclick: () => renameSprite() }, nameEl, dimEl);
     const savedEl = el("span", { class: "pxs-saved", text: "" });
     const undoBtn = ib("undo", "Undo", () => undo()), redoBtn = ib("redo", "Redo", () => redo()), fullBtn = ib("full", "Full screen", () => setFull(!ui.full));
-    const startBtn = onClose ? ib("home", "Start screen: create or import a sprite", () => showStart()) : ib("newwin", "Open a new studio: create or import a sprite", () => PS.open(opts));
+    const startBtn = onClose || startMode ? ib("home", "Start screen: create or import a sprite", () => showStart()) : ib("newwin", "Open the Art studio: create or import a sprite", () => opts.newStudio ? opts.newStudio() : PS.open(opts));
     const clearBtn = ib("clear", "Clear the drawing", () => askClear());
     const top = el("div", { class: "pxs-top", role: "toolbar", "aria-label": "Sprite" }, nameBtn, savedEl, startBtn, undoBtn, redoBtn, clearBtn, fullBtn);
     const modal = el("div", { class: "pxs-modal", role: "dialog", "aria-modal": "true", "aria-labelledby": "pxs-modal-t", hidden: true });
@@ -321,17 +323,17 @@ window.PixelStudio = (function () {
         mono: getComputedStyle(probe).fontFamily || "monospace", checkA: mixCss(pa, ia, .16), checkB: mixCss(pa, ia, .05) };
       return tok;
     }
-    // The transparent background: squares of ui.checkSize sprite pixels (4 × 4 by default), a darker and a lighter one
-    // in turn, so they line up with the pixels and scale with the zoom. The tile is 2 × 2 squares of 1 px; the pattern's
-    // transform scales it to the squares' size on screen.
+    // The transparent background: hard-edged squares of ui.checkSize sprite pixels (4 × 4 by default, so a 16 × 16
+    // sprite shows 4 × 4 squares), a darker and a lighter one in turn, like Aseprite's. It is drawn once at the sprite's
+    // own size, one canvas pixel a sprite pixel, and scaled with smoothing off like the layers: a scaled pattern would
+    // be smoothed into gradients by some browsers.
     function checker() {
-      const t = tokens(), key = t.checkA + t.checkB; if (!pattern || key !== patKey) {
-        const c = document.createElement("canvas"); c.width = c.height = 2; const x = c.getContext("2d");
-        x.fillStyle = t.checkB; x.fillRect(0, 0, 2, 2); x.fillStyle = t.checkA; x.fillRect(0, 0, 1, 1); x.fillRect(1, 1, 1, 1);
-        pattern = ctx.createPattern(c, "repeat"); patKey = key;
-      }
-      const sq = ui.checkSize * ui.zoom; try { pattern.setTransform(new DOMMatrix([sq, 0, 0, sq, 0, 0])); } catch (e) {}
-      return pattern;
+      const t = tokens(), key = t.checkA + t.checkB + ":" + doc.w + "x" + doc.h + ":" + ui.checkSize;
+      if (pattern && key === patKey) return pattern;
+      const c = pattern && pattern.width !== undefined ? pattern : document.createElement("canvas"); c.width = doc.w; c.height = doc.h; const x = c.getContext("2d"), n = ui.checkSize;
+      x.fillStyle = t.checkB; x.fillRect(0, 0, doc.w, doc.h); x.fillStyle = t.checkA;
+      for (let y = 0; y < doc.h; y += n) for (let px = ((y / n) & 1) * n; px < doc.w; px += 2 * n) x.fillRect(px, y, n, n);
+      pattern = c; patKey = key; return c;
     }
 
     // ---- rendering: per-layer 1:1 canvases from the cels, composed scaled on the view canvas with the overlays ----
@@ -379,7 +381,7 @@ window.PixelStudio = (function () {
       drawQueued = false; if (!doc || !layout()) return;
       const d = dpr(), W = view.clientWidth, H = view.clientHeight, z = ui.zoom, w = doc.w, h = doc.h, t = tokens(), r = spriteRect(), ox = r.x, oy = r.y;
       ctx.setTransform(d, 0, 0, d, 0, 0); ctx.clearRect(0, 0, W, H); ctx.imageSmoothingEnabled = false;
-      ctx.save(); ctx.translate(ox, oy); ctx.fillStyle = checker(); ctx.fillRect(0, 0, r.w, r.h); ctx.restore();
+      ctx.drawImage(checker(), ox, oy, r.w, r.h);
       if (ui.onion && doc.frames.length > 1 && !ui.playing) {
         for (let k = ui.onionPrev; k >= 1; k--) { const f = ui.frame - k; if (f >= 0) { ctx.globalAlpha = (ui.onionAlpha / 100) / k; ctx.drawImage(onionCanvas(f, "prev"), ox, oy, r.w, r.h); } }
         for (let k = 1; k <= ui.onionNext; k++) { const f = ui.frame + k; if (f < doc.frames.length) { ctx.globalAlpha = (ui.onionAlpha / 100) / k; ctx.drawImage(onionCanvas(f, "next"), ox, oy, r.w, r.h); } }
@@ -906,8 +908,9 @@ window.PixelStudio = (function () {
       const w = numIn({ min: 1, max: MAX, value: 32, "aria-label": "Width of the new sprite in pixels (x)" }), h = numIn({ min: 1, max: MAX, value: 32, "aria-label": "Height of the new sprite in pixels (y)" }), nf = numIn({ min: 1, max: 64, value: 1, "aria-label": "Frames of the new sprite" });
       const tsel = el("select", { "aria-label": "Template of the new sprite" }, el("option", { value: "", text: "Custom size" }), presetKeys.map(k => el("option", { value: k, text: presets[k].label })));
       tsel.addEventListener("change", () => { const P = presets[tsel.value]; if (P) { w.value = P.w; h.value = P.h; } });
+      const bgq = checkSizeIn("Size of the background's squares for the new sprite");
       // a template at its own size opens with its seed drawing and guide; any other size is a plain sprite of that size
-      const create = () => { const n = Math.max(1, Math.round(num(nf.value, 1))), P = presets[tsel.value]; if (P && num(w.value, 0) === P.w && num(h.value, 0) === P.h) newFromTemplate(tsel.value, { frames: n, name: name.value.trim() }); else newCustom(num(w.value, 32), num(h.value, 32), n, name.value.trim()); };
+      const create = () => { setCheckSize(bgq.value); const n = Math.max(1, Math.round(num(nf.value, 1))), P = presets[tsel.value]; if (P && num(w.value, 0) === P.w && num(h.value, 0) === P.h) newFromTemplate(tsel.value, { frames: n, name: name.value.trim() }); else newCustom(num(w.value, 32), num(h.value, 32), n, name.value.trim()); };
       for (const i of [name, w, h, nf]) i.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); create(); } });
       const fw = numIn({ min: 1, max: MAX, placeholder: "auto", "aria-label": "Frame width, to split a strip" }), fh = numIn({ min: 1, max: MAX, placeholder: "auto", "aria-label": "Frame height, to split a strip" });
       const imp = el("input", { type: "file", multiple: true, accept: ".aseprite,.ase,.png,.gif,.webp,.jpg,.jpeg,.json", "aria-label": "Import a sprite: an Aseprite file, an image, or an image with its Aseprite sheet JSON", onchange: e => { const fs = [...(e.target.files || [])]; e.target.value = ""; importFiles(fs, num(fw.value, 0), num(fh.value, 0)); } });
@@ -917,7 +920,8 @@ window.PixelStudio = (function () {
           el("div", { class: "pxs-card" }, el("h4", { text: "Create a new sprite" }),
             el("div", { class: "pxs-row" }, field("Name", name), field("Template", tsel)),
             el("div", { class: "pxs-row" }, el("span", { class: "pxs-xy" }, field("Width (x)", w), el("span", { class: "pxs-times", text: "×" }), field("Height (y)", h)), field("Frames", nf)),
-            el("p", { class: "pxs-note", text: "The sprite's size in pixels, up to " + MAX + " × " + MAX + ". A template fills in the game's size for that kind of sprite." }),
+            el("div", { class: "pxs-row" }, field("Background squares (px)", bgq)),
+            el("p", { class: "pxs-note", text: "The sprite's size in pixels, up to " + MAX + " × " + MAX + ". A template fills in the game's size for that kind of sprite. The background squares are the checkerboard behind transparent pixels: 4 shows a 16 × 16 sprite as 4 × 4 squares." }),
             el("div", { class: "pxs-row" }, btn("Create", create, "pxs-primary"))),
           el("div", { class: "pxs-card" }, el("h4", { text: "Import a sprite" }),
             el("div", { class: "pxs-row" }, imp),
@@ -963,9 +967,11 @@ window.PixelStudio = (function () {
     const stale = new Set();
     const field = (label, input) => el("label", { class: "pxs-field" }, label, input);
     const numIn = (attrs) => el("input", Object.assign({ type: "number", inputmode: "numeric" }, attrs));
+    function setCheckSize(v) { ui.checkSize = clamp(Math.round(num(v, 4)), 1, 64); saveUi(); requestDraw(); return ui.checkSize; }
+    const checkSizeIn = label => numIn({ min: 1, max: 64, value: clamp(Math.round(num((store.get("bs-studio-ui", {}) || {}).checkSize, ui.checkSize)), 1, 64), "aria-label": label });   // the size last set in any studio
     const check = (label, key, onchange) => el("label", { class: "pxs-check" }, el("input", { type: "checkbox", "data-ui": key, checked: ui[key] ? true : null, onchange: e => { ui[key] = e.target.checked; renderOpts(); saveUi(); requestDraw(); if (onchange) onchange(); } }), label);
     function panelVisible(k) {
-      if (location.hash !== "#art") return false;
+      if (!onView()) return false;
       if (ui.phone) return ui.panel === k && root.classList.contains("pxs-open");
       return k === "colour" ? panelEls.colour.classList.contains("pxs-active") : (k in ui.open ? !!ui.open[k] : true);
     }
@@ -1117,9 +1123,9 @@ window.PixelStudio = (function () {
         el("div", { class: "pxs-row pxs-tight" }, ...SEL_ACTIONS.map(([ic, label, op]) => ib(ic, label, () => selOp(op)))),
         el("div", { class: "pxs-h", text: "Show" }),
         el("div", { class: "pxs-row" }, field("Background squares (px)", numIn({ min: 1, max: 64, value: ui.checkSize, "aria-label": "Size of the background's squares in sprite pixels",
-          onchange: e => { ui.checkSize = clamp(Math.round(num(e.target.value, 4)), 1, 64); e.target.value = ui.checkSize; saveUi(); requestDraw(); } })),
+          onchange: e => { e.target.value = setCheckSize(e.target.value); } })),
           el("span", { class: "pxs-note", text: "The checkerboard behind transparent pixels: darker and lighter squares this many pixels a side." })),
-        el("div", { class: "pxs-row" }, check("Grid", "grid"), check("Template guide", "guide"), check("Mirror X", "mirrorX"), check("Mirror Y", "mirrorY"), check("Pixel-perfect", "pixelPerfect"), check("Onion skin", "onion")));
+        el("div", { class: "pxs-row" }, check("Pixel grid", "grid"), check("Template guide", "guide"), check("Mirror X", "mirrorX"), check("Mirror Y", "mirrorY"), check("Pixel-perfect", "pixelPerfect"), check("Onion skin", "onion")));
     }
 
     // file: new, the sprites on this device, import, export
@@ -1131,13 +1137,14 @@ window.PixelStudio = (function () {
       const tsel = el("select", { "aria-label": "Template of the new sprite" }, presetKeys.map(k => el("option", { value: k, text: presets[k].label })), el("option", { value: "", text: "Custom size" }));
       const syncSize = () => { const P = presets[tsel.value]; w.disabled = h.disabled = !!P; if (P) { w.value = P.w; h.value = P.h; } }; tsel.addEventListener("change", syncSize); syncSize();
       listHost = el("div", { class: "pxs-list", role: "list", "aria-label": "Sprites saved on this device" });
+      const fbg = checkSizeIn("Size of the background's squares for the new sprite");
       const fw = numIn({ min: 1, max: MAX, placeholder: "auto", "aria-label": "Frame width, to split a strip" }), fh = numIn({ min: 1, max: MAX, placeholder: "auto", "aria-label": "Frame height, to split a strip" });
       const imp = el("input", { type: "file", multiple: true, accept: ".aseprite,.ase,.png,.gif,.webp,.jpg,.jpeg,.json", "aria-label": "Import sprites: Aseprite files, images, or an image with its Aseprite sheet JSON", onchange: e => { const fs = [...(e.target.files || [])]; e.target.value = ""; importFiles(fs, num(fw.value, 0), num(fh.value, 0)); } });
       const lay = el("select", { "aria-label": "Sheet layout" }, [["row", "one row"], ["rows-by-tag", "a row a tag"], ["grid", "a grid of N columns"]].map(([v, t]) => el("option", { value: v, text: t })));
       const cols = numIn({ min: 1, max: 64, value: 8, "aria-label": "Columns of the sheet grid" }), pngScale = numIn({ min: 1, max: 16, value: 1, "aria-label": "Scale of the PNG" }), gifScale = numIn({ min: 1, max: 16, value: 1, "aria-label": "Scale of the GIF" });
       body.append(el("div", { class: "pxs-h", text: "New sprite" }),
         el("div", { class: "pxs-row" }, field("Name", name), field("Template", tsel), field("Width", w), field("Height", h), field("Frames", nf),
-          btn("Create", () => { const n = Math.max(1, Math.round(num(nf.value, 1))); if (tsel.value) newFromTemplate(tsel.value, { frames: n, name: name.value.trim() }); else newCustom(num(w.value, 32), num(h.value, 32), n, name.value.trim()); }, "pxs-primary")),
+          field("Background squares (px)", fbg), btn("Create", () => { setCheckSize(fbg.value); const n = Math.max(1, Math.round(num(nf.value, 1))); if (tsel.value) newFromTemplate(tsel.value, { frames: n, name: name.value.trim() }); else newCustom(num(w.value, 32), num(h.value, 32), n, name.value.trim()); }, "pxs-primary")),
         el("div", { class: "pxs-h", text: "Sprites on this device" }), listHost,
         el("div", { class: "pxs-h", text: "Import" }), el("div", { class: "pxs-row" }, imp), el("div", { class: "pxs-row" }, field("Frame width", fw), field("Frame height", fh), el("span", { class: "pxs-note", text: "For a strip: the size of one frame. Or choose the sheet's .json next to its PNG." })),
         el("div", { class: "pxs-h", text: "Export" }),
@@ -1347,7 +1354,7 @@ window.PixelStudio = (function () {
     // ---- the keyboard (a desktop): only while the Art school shows and no text field has the focus ----
     function inField() { const a = document.activeElement; if (!a) return false; const t = a.tagName; if (t === "TEXTAREA" || t === "SELECT" || a.isContentEditable) return true; return t === "INPUT" && !["range", "checkbox", "radio", "button", "file"].includes(a.type); }
     const onKeyDown = e => {
-      if (!doc || PS.active !== api || location.hash !== "#art" || inField()) return;
+      if (!doc || PS.active !== api || !onView() || inField()) return;
       const mod = e.ctrlKey || e.metaKey, k = e.key, onCanvas = document.activeElement === cv;
       if (!modal.hidden) { if (k === "Escape") { e.preventDefault(); closeModal(); } return; }
       if (k === "Escape") { if (ui.full) { e.preventDefault(); setFull(false); } else if (ui.float) commitFloat(); else if (ui.sel) selOp("none"); else if (ui.phone && root.classList.contains("pxs-open")) closePanel(); return; }
@@ -1375,7 +1382,7 @@ window.PixelStudio = (function () {
     const onKeyUp = e => {
       if (PS.active !== api) return;
       if (e.key === "Alt") { ui.alt = false; if (ui.tool !== "pick") cv.classList.remove("pxs-cur-pick"); }
-      if (e.key === " " && ui.space) { ui.space = false; if (ui.tool !== "pan") cv.classList.remove("pxs-cur-pan"); if (!ui.spaceUsed && doc && location.hash === "#art" && document.activeElement === cv) togglePlay(); }
+      if (e.key === " " && ui.space) { ui.space = false; if (ui.tool !== "pan") cv.classList.remove("pxs-cur-pan"); if (!ui.spaceUsed && doc && onView() && document.activeElement === cv) togglePlay(); }
     };
     document.addEventListener("keyup", onKeyUp);
 
@@ -1391,11 +1398,11 @@ window.PixelStudio = (function () {
     ui.phone = null;
     let ro = null, dead = false;
     try { ro = new ResizeObserver(() => onResize()); ro.observe(root); ro.observe(view); } catch (e) { window.addEventListener("resize", onResize); }
-    const onHash = () => { if (location.hash === "#art") setTimeout(() => { onResize(); openObs(); refreshPanels(); }, 0); };
+    const onHash = () => { if (onView()) { PS.active = api; } if (onView()) setTimeout(() => { onResize(); openObs(); refreshPanels(); }, 0); };
     window.addEventListener("hashchange", onHash);
     const onScheme = () => { tokAt = -1e9; requestDraw(); }; let mq = null;
     try { mq = matchMedia("(prefers-color-scheme: dark)"); mq.addEventListener("change", onScheme); } catch (e) {}
-    function loop(now) { if (dead) return; requestAnimationFrame(loop); if (!doc || location.hash !== "#art") return; tickPlay(now); tickPreview(now); if (drawQueued) draw(); }
+    function loop(now) { if (dead) return; requestAnimationFrame(loop); if (!doc || !onView()) return; tickPlay(now); tickPreview(now); if (drawQueued) draw(); }
     // the keyboard goes to one studio: the last one touched or focused (a fresh studio over the page takes it as it opens)
     root.addEventListener("pointerdown", () => { PS.active = api; }, true); root.addEventListener("focusin", () => { PS.active = api; });
     // a fresh studio closing: its pending save goes out, its listeners and loop stop, its element leaves the page
@@ -1418,7 +1425,7 @@ window.PixelStudio = (function () {
       undo: () => undo(), redo: () => redo(), root,
       newCustom: (w, h, n, name) => newCustom(w, h, n, name), showStart: () => showStart(), isStart: () => !startEl.hidden, destroy: () => destroy(),
       askClear: () => askClear(), clear: scope => clearScope(scope),
-      setCheckSize: n => { ui.checkSize = clamp(Math.round(num(n, 4)), 1, 64); saveUi(); requestDraw(); return ui.checkSize; }
+      setCheckSize: n => setCheckSize(n)
     };
     PS.api = api; PS.active = api;
     async function migrateOldDraft() {

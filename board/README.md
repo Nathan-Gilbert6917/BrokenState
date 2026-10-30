@@ -22,7 +22,8 @@ hex, 32 × 16 iso floor, 32 × 50 iso wall cell) or any size up to 256 × 256, w
   rectangle select with move / cut / copy / paste / flip / rotate, move with wrap for tiles, eyedropper, pan; mirror X
   and Y; undo and redo (100 steps); a Clear button that asks first (this frame on the layer, this frame, or the whole sprite;
   the user's request 2026-10-29). Transparent pixels show a checkerboard of darker and lighter squares 4 × 4 sprite
-  pixels a side, a size set in the Canvas panel (the user's request 2026-10-30). Layers with visibility, lock, opacity, merge and flatten. Frames with their own
+  pixels a side (a 16 × 16 sprite shows 4 × 4 squares, hard-edged like Aseprite's), a size asked for with a new sprite and set in the Canvas panel, and the
+  pixel grid is off until turned on there (the user's requests 2026-10-30). Layers with visibility, lock, opacity, merge and flatten. Frames with their own
   durations in ms, tags with a direction, playback of the sprite or a tag, onion skin, the animation preview and the
   tiled preview that lays a tile out the way the engine will.
 - **Aseprite's files.** Imports and exports `.aseprite` / `.ase` (layers, cels, durations, tags, the palette; indexed
@@ -32,10 +33,11 @@ hex, 32 × 16 iso floor, 32 × 50 iso wall cell) or any size up to 256 × 256, w
   with Aseprite's JSON, the current frame at any scale, and a GIF of the animation.
 - **Kept on the device.** Every sprite autosaves (as `.aseprite` bytes in the browser's IndexedDB; localStorage when
   that is not there), and the File panel lists them: open, rename, duplicate, delete.
-- **A fresh studio.** **Open a new studio** (the button by the studio's heading, or the top strip's window icon; the
-  user's request 2026-10-29) puts a second studio over the whole page, starting from a start screen: create a new sprite
-  with its width (x) and height (y) in pixels, a name, frames and an optional template; import an `.aseprite` file or
-  an image; or open a saved sprite. Its Close (or Escape) removes it, and the page's own studio carries on where it was.
+- **The Art studio tab.** The header's **Art studio** tab (the user's request 2026-10-30, replacing the Art school's
+  "Open a new studio" button) has its own studio filling the screen, starting from a start screen: create a new sprite
+  with its width (x) and height (y) in pixels, its background squares, a name, frames and an optional template; import
+  an `.aseprite` file or an image; or open a saved sprite. Its home button brings the screen back; the Art school
+  studio's window icon opens the tab. Each studio draws and takes the keyboard only while its view shows.
 
 The format code is `src/formats.js` (no DOM; `node board/tools/formats-test.js` round-trips every format) and the
 editor `src/studio.js` + `src/studio.css`; `NODE_PATH=$(npm root -g) node board/tools/studio-smoke.cjs [--shots dir]`
