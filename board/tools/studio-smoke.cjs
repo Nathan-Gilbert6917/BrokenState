@@ -236,8 +236,10 @@ async function run(browser, base, phone, tmp) {
   await startEl.locator('input[aria-label="Name of the new sprite"]').fill("smoke");
   await startEl.locator('input[aria-label^="Width of the new sprite"]').fill("24");
   await startEl.locator('input[aria-label^="Height of the new sprite"]').fill("40");
+  await startEl.locator('input[aria-label^="Size of the background"]').fill("8");
   await startEl.locator('button:has-text("Create")').click(); await sleep(300);
-  const nd = await page.evaluate(() => { const d = PixelStudio.api.getDoc(); return { w: d.w, h: d.h, name: d.name, start: PixelStudio.api.isStart(), pageW: window.__pageStudio.getDoc().w }; });
+  const nd = await page.evaluate(() => { const d = PixelStudio.api.getDoc(); return { w: d.w, h: d.h, name: d.name, start: PixelStudio.api.isStart(), pageW: window.__pageStudio.getDoc().w, bg: PixelStudio.api.getView().checkSize }; });
+  check(nd.bg === 8, "the start screen's background squares field sets the new sprite's squares to 8 px", JSON.stringify(nd));
   check(nd.w === 24 && nd.h === 40 && nd.name === "smoke" && !nd.start && nd.pageW === 48, "Create makes a 24 × 40 sprite named smoke in the fresh studio, leaves the start screen, and the page's studio keeps its own sprite", JSON.stringify(nd));
   await shot("new-studio");
   const toolBefore = await page.evaluate(() => window.__pageStudio.getView().tool);
@@ -254,6 +256,7 @@ async function run(browser, base, phone, tmp) {
   await page.locator('.pxs-overlay .pxs-start input[type="file"]').setInputFiles(png); await sleep(600);
   const imp = await page.evaluate(() => { const d = PixelStudio.api.getDoc(); return { w: d.w, h: d.h, name: d.name, start: PixelStudio.api.isStart(), palette: d.palette.length }; });
   check(imp.w === 12 && imp.h === 7 && imp.name === "smoke" && !imp.start && imp.palette === 2, "a PNG set on the start screen's import opens as a 12 × 7 sprite with its two colours", JSON.stringify(imp));
+  await page.evaluate(() => PixelStudio.api.setCheckSize(4));
   await page.locator('.pxs-overlay .pxs-top [aria-label="Close this studio"]').click(); await sleep(400);
   const closed = await page.evaluate(() => ({ overlay: !!document.querySelector(".pxs-overlay"), back: PixelStudio.api === window.__pageStudio && PixelStudio.active === window.__pageStudio, body: getComputedStyle(document.body).overflow, pageTool: window.__pageStudio.getView().tool, pageW: window.__pageStudio.getDoc().w }));
   check(!closed.overlay && closed.back && closed.body !== "hidden" && closed.pageTool === toolBefore && closed.pageW === 48, "Close removes the fresh studio and the page's studio carries on where it was", JSON.stringify(closed));

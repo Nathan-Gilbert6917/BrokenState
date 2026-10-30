@@ -907,8 +907,9 @@ window.PixelStudio = (function () {
       const w = numIn({ min: 1, max: MAX, value: 32, "aria-label": "Width of the new sprite in pixels (x)" }), h = numIn({ min: 1, max: MAX, value: 32, "aria-label": "Height of the new sprite in pixels (y)" }), nf = numIn({ min: 1, max: 64, value: 1, "aria-label": "Frames of the new sprite" });
       const tsel = el("select", { "aria-label": "Template of the new sprite" }, el("option", { value: "", text: "Custom size" }), presetKeys.map(k => el("option", { value: k, text: presets[k].label })));
       tsel.addEventListener("change", () => { const P = presets[tsel.value]; if (P) { w.value = P.w; h.value = P.h; } });
+      const bgq = checkSizeIn("Size of the background's squares for the new sprite");
       // a template at its own size opens with its seed drawing and guide; any other size is a plain sprite of that size
-      const create = () => { const n = Math.max(1, Math.round(num(nf.value, 1))), P = presets[tsel.value]; if (P && num(w.value, 0) === P.w && num(h.value, 0) === P.h) newFromTemplate(tsel.value, { frames: n, name: name.value.trim() }); else newCustom(num(w.value, 32), num(h.value, 32), n, name.value.trim()); };
+      const create = () => { setCheckSize(bgq.value); const n = Math.max(1, Math.round(num(nf.value, 1))), P = presets[tsel.value]; if (P && num(w.value, 0) === P.w && num(h.value, 0) === P.h) newFromTemplate(tsel.value, { frames: n, name: name.value.trim() }); else newCustom(num(w.value, 32), num(h.value, 32), n, name.value.trim()); };
       for (const i of [name, w, h, nf]) i.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); create(); } });
       const fw = numIn({ min: 1, max: MAX, placeholder: "auto", "aria-label": "Frame width, to split a strip" }), fh = numIn({ min: 1, max: MAX, placeholder: "auto", "aria-label": "Frame height, to split a strip" });
       const imp = el("input", { type: "file", multiple: true, accept: ".aseprite,.ase,.png,.gif,.webp,.jpg,.jpeg,.json", "aria-label": "Import a sprite: an Aseprite file, an image, or an image with its Aseprite sheet JSON", onchange: e => { const fs = [...(e.target.files || [])]; e.target.value = ""; importFiles(fs, num(fw.value, 0), num(fh.value, 0)); } });
@@ -918,7 +919,8 @@ window.PixelStudio = (function () {
           el("div", { class: "pxs-card" }, el("h4", { text: "Create a new sprite" }),
             el("div", { class: "pxs-row" }, field("Name", name), field("Template", tsel)),
             el("div", { class: "pxs-row" }, el("span", { class: "pxs-xy" }, field("Width (x)", w), el("span", { class: "pxs-times", text: "×" }), field("Height (y)", h)), field("Frames", nf)),
-            el("p", { class: "pxs-note", text: "The sprite's size in pixels, up to " + MAX + " × " + MAX + ". A template fills in the game's size for that kind of sprite." }),
+            el("div", { class: "pxs-row" }, field("Background squares (px)", bgq)),
+            el("p", { class: "pxs-note", text: "The sprite's size in pixels, up to " + MAX + " × " + MAX + ". A template fills in the game's size for that kind of sprite. The background squares are the checkerboard behind transparent pixels: 4 shows a 16 × 16 sprite as 4 × 4 squares." }),
             el("div", { class: "pxs-row" }, btn("Create", create, "pxs-primary"))),
           el("div", { class: "pxs-card" }, el("h4", { text: "Import a sprite" }),
             el("div", { class: "pxs-row" }, imp),
@@ -964,6 +966,8 @@ window.PixelStudio = (function () {
     const stale = new Set();
     const field = (label, input) => el("label", { class: "pxs-field" }, label, input);
     const numIn = (attrs) => el("input", Object.assign({ type: "number", inputmode: "numeric" }, attrs));
+    function setCheckSize(v) { ui.checkSize = clamp(Math.round(num(v, 4)), 1, 64); saveUi(); requestDraw(); return ui.checkSize; }
+    const checkSizeIn = label => numIn({ min: 1, max: 64, value: ui.checkSize, "aria-label": label });
     const check = (label, key, onchange) => el("label", { class: "pxs-check" }, el("input", { type: "checkbox", "data-ui": key, checked: ui[key] ? true : null, onchange: e => { ui[key] = e.target.checked; renderOpts(); saveUi(); requestDraw(); if (onchange) onchange(); } }), label);
     function panelVisible(k) {
       if (location.hash !== "#art") return false;
@@ -1118,7 +1122,7 @@ window.PixelStudio = (function () {
         el("div", { class: "pxs-row pxs-tight" }, ...SEL_ACTIONS.map(([ic, label, op]) => ib(ic, label, () => selOp(op)))),
         el("div", { class: "pxs-h", text: "Show" }),
         el("div", { class: "pxs-row" }, field("Background squares (px)", numIn({ min: 1, max: 64, value: ui.checkSize, "aria-label": "Size of the background's squares in sprite pixels",
-          onchange: e => { ui.checkSize = clamp(Math.round(num(e.target.value, 4)), 1, 64); e.target.value = ui.checkSize; saveUi(); requestDraw(); } })),
+          onchange: e => { e.target.value = setCheckSize(e.target.value); } })),
           el("span", { class: "pxs-note", text: "The checkerboard behind transparent pixels: darker and lighter squares this many pixels a side." })),
         el("div", { class: "pxs-row" }, check("Pixel grid", "grid"), check("Template guide", "guide"), check("Mirror X", "mirrorX"), check("Mirror Y", "mirrorY"), check("Pixel-perfect", "pixelPerfect"), check("Onion skin", "onion")));
     }
@@ -1132,13 +1136,14 @@ window.PixelStudio = (function () {
       const tsel = el("select", { "aria-label": "Template of the new sprite" }, presetKeys.map(k => el("option", { value: k, text: presets[k].label })), el("option", { value: "", text: "Custom size" }));
       const syncSize = () => { const P = presets[tsel.value]; w.disabled = h.disabled = !!P; if (P) { w.value = P.w; h.value = P.h; } }; tsel.addEventListener("change", syncSize); syncSize();
       listHost = el("div", { class: "pxs-list", role: "list", "aria-label": "Sprites saved on this device" });
+      const fbg = checkSizeIn("Size of the background's squares for the new sprite");
       const fw = numIn({ min: 1, max: MAX, placeholder: "auto", "aria-label": "Frame width, to split a strip" }), fh = numIn({ min: 1, max: MAX, placeholder: "auto", "aria-label": "Frame height, to split a strip" });
       const imp = el("input", { type: "file", multiple: true, accept: ".aseprite,.ase,.png,.gif,.webp,.jpg,.jpeg,.json", "aria-label": "Import sprites: Aseprite files, images, or an image with its Aseprite sheet JSON", onchange: e => { const fs = [...(e.target.files || [])]; e.target.value = ""; importFiles(fs, num(fw.value, 0), num(fh.value, 0)); } });
       const lay = el("select", { "aria-label": "Sheet layout" }, [["row", "one row"], ["rows-by-tag", "a row a tag"], ["grid", "a grid of N columns"]].map(([v, t]) => el("option", { value: v, text: t })));
       const cols = numIn({ min: 1, max: 64, value: 8, "aria-label": "Columns of the sheet grid" }), pngScale = numIn({ min: 1, max: 16, value: 1, "aria-label": "Scale of the PNG" }), gifScale = numIn({ min: 1, max: 16, value: 1, "aria-label": "Scale of the GIF" });
       body.append(el("div", { class: "pxs-h", text: "New sprite" }),
         el("div", { class: "pxs-row" }, field("Name", name), field("Template", tsel), field("Width", w), field("Height", h), field("Frames", nf),
-          btn("Create", () => { const n = Math.max(1, Math.round(num(nf.value, 1))); if (tsel.value) newFromTemplate(tsel.value, { frames: n, name: name.value.trim() }); else newCustom(num(w.value, 32), num(h.value, 32), n, name.value.trim()); }, "pxs-primary")),
+          field("Background squares (px)", fbg), btn("Create", () => { setCheckSize(fbg.value); const n = Math.max(1, Math.round(num(nf.value, 1))); if (tsel.value) newFromTemplate(tsel.value, { frames: n, name: name.value.trim() }); else newCustom(num(w.value, 32), num(h.value, 32), n, name.value.trim()); }, "pxs-primary")),
         el("div", { class: "pxs-h", text: "Sprites on this device" }), listHost,
         el("div", { class: "pxs-h", text: "Import" }), el("div", { class: "pxs-row" }, imp), el("div", { class: "pxs-row" }, field("Frame width", fw), field("Frame height", fh), el("span", { class: "pxs-note", text: "For a strip: the size of one frame. Or choose the sheet's .json next to its PNG." })),
         el("div", { class: "pxs-h", text: "Export" }),
@@ -1419,7 +1424,7 @@ window.PixelStudio = (function () {
       undo: () => undo(), redo: () => redo(), root,
       newCustom: (w, h, n, name) => newCustom(w, h, n, name), showStart: () => showStart(), isStart: () => !startEl.hidden, destroy: () => destroy(),
       askClear: () => askClear(), clear: scope => clearScope(scope),
-      setCheckSize: n => { ui.checkSize = clamp(Math.round(num(n, 4)), 1, 64); saveUi(); requestDraw(); return ui.checkSize; }
+      setCheckSize: n => setCheckSize(n)
     };
     PS.api = api; PS.active = api;
     async function migrateOldDraft() {
