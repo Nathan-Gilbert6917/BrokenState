@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The engine-free sim: no Godot or Unity reference, ever (board/data/guide.json "Shared architecture").
+       netstandard2.1 + C# 9 keeps the library compilable by Unity 6 as well as Godot 4 .NET. -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <LangVersion>9</LangVersion>
+    <Nullable>enable</Nullable>
+    <RootNamespace>BrokenState.Sim</RootNamespace>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+</Project>

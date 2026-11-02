@@ -22,6 +22,10 @@ Every major game feature, grouped by area, one line each with its key modules an
 
 The plan for rebuilding the game in Godot or Unity is the sub-project `board/` (cards in build order, priorities, engine notes, the Art school), published at `/BrokenState/board/`. See `board/README.md`.
 
+### The Godot rebuild
+
+The rebuild's code: `src/BrokenState.Sim/` (the engine-free C# sim), `tests/BrokenState.Sim.Tests/` (xUnit; `dotnet test` at the root, seconds) and `godot/` (the Godot 4.7 .NET project). The State Map hex grid and its generator are there, with golden tests holding the terrain to the prototype's. See `godot/README.md`.
+
 ## Testing
 
 Never run the full suite (`npm test`): it takes hours. Run only the tests your change affects, by the recipe in `docs/agents/testing.md` (`node prototype/tools/affected.js` lists them).

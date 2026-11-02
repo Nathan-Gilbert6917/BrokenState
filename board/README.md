@@ -43,6 +43,13 @@ The format code is `src/formats.js` (no DOM; `node board/tools/formats-test.js` 
 editor `src/studio.js` + `src/studio.css`; `NODE_PATH=$(npm root -g) node board/tools/studio-smoke.cjs [--shots dir]`
 drives the built page in headless Chromium at a phone's size and a desktop's.
 
+## The code so far
+
+The first cards are built in the repo, not on the board alone: `src/BrokenState.Sim/` (the engine-free C# sim: hex
+grid, dice, A*, the State Map generator), `tests/BrokenState.Sim.Tests/` and `godot/` (the Godot 4.7 .NET project
+that draws the map). `godot/README.md` says what matches the prototype exactly, what follows its rules with its own
+dice, and what is still to do, card by card.
+
 ## Open it, and put it on your phone
 
 **https://nathan-gilbert6917.github.io/BrokenState/board/**, published by `.github/workflows/pages.yml` with the game

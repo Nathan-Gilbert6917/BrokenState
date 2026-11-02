@@ -31,3 +31,11 @@ prototype/tools/.testlogs/
 docs/shots/
 review/
 prototype/tools/census/*.json
+
+# The Godot / .NET rebuild (godot/, src/, tests/): Godot's import cache and the .NET build output
+.godot/
+bin/
+obj/
+*.user
+.vs/
+TestResults/

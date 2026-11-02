@@ -1,0 +1,9 @@
+<Project>
+  <!-- Shared C# settings for the rebuild (board/data/guide.json "Infrastructure"): the sim and its tests. -->
+  <PropertyGroup>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Deterministic>true</Deterministic>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+</Project>

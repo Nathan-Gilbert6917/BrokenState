@@ -1,0 +1,13 @@
+<Project Sdk="Godot.NET.Sdk/4.7.2">
+  <!-- The presentation: Godot 4.7 .NET. Everything about the world comes from the engine-free sim it references. -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <Nullable>enable</Nullable>
+    <RootNamespace>BrokenState.App</RootNamespace>
+    <AssemblyName>BrokenState.Godot</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../src/BrokenState.Sim/BrokenState.Sim.csproj" />
+  </ItemGroup>
+</Project>
